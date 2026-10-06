@@ -1297,7 +1297,7 @@ async function main(argv: string[]): Promise<number> {
           console.error('lingtai ticket new [--project <p>]')
           return 2
         }
-        return ticketNew({ ...(project === undefined ? {} : { project }) })
+        return ticketNew(project === undefined ? {} : { project })
       }
       if (verb === 'edit') {
         const issue = Number(positional[0])

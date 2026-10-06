@@ -86,7 +86,9 @@ async function defaultEdit(command: string, initial: string, name: string): Prom
   await writeFile(filePath, initial, 'utf8')
   const result = spawnSync('sh', ['-c', `${command} "$1"`, 'lingtai-editor', filePath], { stdio: 'inherit' })
   if (result.status !== 0) {
-    throw new Error(`the editor exited with status ${result.status ?? result.signal} — your text is kept at ${filePath}`)
+    throw new Error(
+      `the editor exited with status ${result.status ?? result.signal} — your text is kept at ${filePath}`,
+    )
   }
   const text = await readFile(filePath, 'utf8')
   return {
@@ -259,10 +261,10 @@ export type ParsedTicketForm = { ok: true; form: TicketFormFields } | { ok: fals
 /**
  * `renderTicketForm` and `parseTicketForm` must round-trip:
  * `parseTicketForm(renderTicketForm(t))` equals `{ ok: true, form: t }` for a
- * `t` whose title has no surrounding whitespace and does not start `#!`,
- * whose labels contain no comma, and whose body has no trailing whitespace
- * (`unit/ticket.test.ts` holds this). Breaking it means every `edit` rewrites
- * the ticket even when the person touched nothing.
+ * `t` whose title has no surrounding whitespace and does not start `#!` or
+ * `labels:`, whose labels contain no comma, and whose body has no trailing
+ * whitespace (`unit/ticket.test.ts` holds this). Breaking it means every
+ * `edit` rewrites the ticket even when the person touched nothing.
  *
  * `instructions` are whole lines, each already carrying its own leading
  * `#!` — `renderTicketForm` does not add the marker, so a caller writes
@@ -278,18 +280,30 @@ export function renderTicketForm(form: TicketFormFields, instructions: readonly 
 /**
  * The header is everything before the first blank line; the body is
  * everything after it, `trimEnd()`ed. `#!` lines are dropped from the header
- * wherever they fall — never recognised in the body, because the first blank
- * line has already ended the header by the time one could appear there.
+ * wherever they fall, except line 0 — never recognised in the body, because
+ * the first blank line has already ended the header by the time one could
+ * appear there.
+ *
+ * **Line 0 is always the title slot, and is read as nothing else.** The `#!`
+ * filter below runs only over the header lines after it. Were it run over
+ * line 0 too, a typed title starting `#!` would be dropped and the rendered
+ * `labels:` line would be promoted into the title slot — the labels silently
+ * come back empty and the real text is gone the moment the caller discards
+ * the file (#386 round 4). Refusing a line 0 starting `labels:` guards the
+ * same failure from the other direction: delete the empty line above
+ * `labels:` in `new`'s form and that line becomes the title, just as
+ * silently. Both are refused by name instead.
  *
  * **Emptiness is not this function's refusal.** An empty title parses fine —
  * `form.title === ''` — because the caller compares the parsed form against
  * the ticket's unedited form to decide "no change" before it decides "no
  * title": folding the empty-title case in here would make that comparison
  * collapse two different saves (same blank title, different body) into one,
- * discarding whichever body the first comparison looked at. The one way this
- * returns `ok: false` is a header carrying a line that is neither the title,
- * the optional `labels:` line, nor dropped as an instruction — text that
- * belongs in the body but landed above the blank line instead.
+ * discarding whichever body the first comparison looked at. The other ways
+ * this returns `ok: false` are line 0 reading as an instruction or a labels
+ * line, and a header line below it that is neither the title, the optional
+ * `labels:` line, nor dropped as an instruction — text that belongs in the
+ * body but landed above the blank line instead.
  */
 export function parseTicketForm(text: string): ParsedTicketForm {
   const lines = text.split('\n')
@@ -300,9 +314,15 @@ export function parseTicketForm(text: string): ParsedTicketForm {
   const headerLines = blankAt === -1 ? lines : lines.slice(0, blankAt)
   const bodyLines = blankAt === -1 ? [] : lines.slice(blankAt + 1)
 
-  const header = headerLines.filter((l) => !l.startsWith('#!'))
-  const title = (header[0] ?? '').trim()
-  const rest = header.slice(1)
+  const titleLine = headerLines[0] ?? ''
+  if (titleLine.startsWith('#!')) {
+    return { ok: false, why: `the first line is the title, and a title starting #! reads as an instruction` }
+  }
+  if (titleLine.startsWith('labels:')) {
+    return { ok: false, why: `the first line is the title, and a title starting labels: reads as the labels line` }
+  }
+  const title = titleLine.trim()
+  const rest = headerLines.slice(1).filter((l) => !l.startsWith('#!'))
 
   let labels: readonly string[] = []
   let afterLabels = rest
@@ -315,7 +335,10 @@ export function parseTicketForm(text: string): ParsedTicketForm {
     afterLabels = rest.slice(1)
   }
   if (afterLabels.length > 0) {
-    return { ok: false, why: `a line in the header is neither the title nor labels: — ${JSON.stringify(afterLabels[0])}` }
+    return {
+      ok: false,
+      why: `a line in the header is neither the title nor labels: — ${JSON.stringify(afterLabels[0])}`,
+    }
   }
 
   return { ok: true, form: { title, labels, body: bodyLines.join('\n').trimEnd() } }
@@ -335,7 +358,11 @@ function formsEqual(a: TicketFormFields, b: TicketFormFields): boolean {
  * comparing against what the editor hands back never reads a stored row's
  * trailing whitespace as a change nobody made.
  */
-function formFromTicket(ticket: { title: string; labels: readonly { name: string }[]; body: string }): TicketFormFields {
+function formFromTicket(ticket: {
+  title: string
+  labels: readonly { name: string }[]
+  body: string
+}): TicketFormFields {
   const raw: TicketFormFields = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
   const parsed = parseTicketForm(renderTicketForm(raw))
   return parsed.ok ? parsed.form : raw
@@ -523,7 +550,12 @@ export async function ticketEdit(
     await tickets.updateFields(options.issue, expected, {
       title: after.form.title,
       labels: after.form.labels,
-      body: after.form.body,
+      // `original.body` is `ticket.body` run through `formFromTicket`'s
+      // trim, so a save that did not touch the body must write the row's own
+      // bytes back rather than that trimmed form — otherwise an untouched
+      // body's trailing whitespace is silently stripped on every edit, while
+      // the success line below names only the field the person changed.
+      body: changed.includes('body') ? after.form.body : ticket.body,
     })
   } catch (err) {
     log(`${(err as Error).message} — your text is kept at ${edited.path}`)
