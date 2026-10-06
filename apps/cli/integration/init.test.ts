@@ -37,6 +37,16 @@ interface Script {
   running?: string
   /** Throw from this step, once — the Ctrl+C. */
   interruptAt?: Step
+  /**
+   * The project kind question's answer, when no App is configured (#393).
+   * Defaults to `github`; `null` is a world with nobody at its terminal for
+   * this question alone, same as an empty `answers` queue is for the database
+   * one — `ask` returns `null` for it exactly as `liveInitWorld`'s does without
+   * a TTY.
+   */
+  project?: 'github' | 'local' | null
+  /** The App question's answer, when the project is `github` (#393). Defaults to `create`; `null` is the same no-terminal world, for this question alone. */
+  appAnswer?: 'create' | 'skip' | null
 }
 
 interface Recorded {
@@ -47,6 +57,8 @@ interface Recorded {
   boards: number
   /** Calls made to ask the App whether it answers. */
   apps: number
+  /** Calls made to wait for the App to appear through the board's manifest flow. */
+  appeared: number
 }
 
 /** The database's state survives between runs, as a real one would: tables made once are there the next time. */
@@ -55,7 +67,7 @@ function database() {
 }
 
 function world(home: string, script: Script, db = database()): { world: InitWorld; seen: Recorded } {
-  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0 }
+  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0, appeared: 0 }
   const answers = [...(script.answers ?? [])]
   let interrupt = script.interruptAt
   const step = (name: Step) => {
@@ -70,7 +82,15 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       env: { LINGTAI_HOME: home, ...script.env },
       log: (line) => seen.lines.push(line),
       ask: async (question) => {
-        // The store is the one question init asks: the agent is each recipe's (#372).
+        // The project and App questions (#393) are answered directly from the
+        // script, never through the `answers` queue and never recorded as a
+        // step: the Ctrl+C matrix below is about the database question alone.
+        // `??` would treat an explicit `null` the same as "not given" and hand
+        // back the default — so a test asking for a true no-terminal world on
+        // one of these questions checks for `undefined` instead.
+        if (/a GitHub project/.test(question)) return script.project === undefined ? 'github' : script.project
+        if (/the GitHub App now/.test(question)) return script.appAnswer === undefined ? 'create' : script.appAnswer
+        // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)
         seen.asked.push(which)
@@ -98,10 +118,15 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         seen.apps++
         return script.app ?? { configured: false }
       },
-      appeared: async () => {
+      appeared: async (_signal) => {
         step('appeared')
+        seen.appeared++
         return { slug: 'lingtai-me', owner: 'me' }
       },
+      // Never resolves at a terminal with nobody at it — only on the signal
+      // the race's winner aborts it with, exactly as `liveInitWorld`'s does
+      // with no TTY.
+      pressed: (signal) => new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true })),
       boardAt: async () => script.running ?? null,
       board: async () => {
         step('board')
@@ -149,6 +174,47 @@ describe('lingtai init (#186)', () => {
     expect(seen.lines.join('\n')).not.toContain('secret')
   })
 
+  it('a local project never calls appeared or opens a browser, and exits 0 (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.opened).toEqual([])
+    expect(seen.appeared).toBe(0)
+    expect(seen.lines.join('\n')).toContain('project      local')
+    expect(seen.lines.join('\n')).not.toContain('lingtai add')
+    expect(seen.lines.join('\n')).toContain('not built yet')
+  })
+
+  it("a local project is not written down, so a re-run asks the question again (remembering it is #394's)", async () => {
+    const home = freshHome()
+    const first = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand([], first.world)).toBe(0)
+    expect(config(home)).toBe('database:\n  store: postgres\n  url: ' + URL_ + '\n')
+
+    // No --project and no terminal: the question is asked, so it refuses by name.
+    const second = world(home, { project: null })
+    expect(await initCommand([], second.world)).not.toBe(0)
+    expect(second.seen.lines.join('\n')).toContain('--project github, or --project local')
+  })
+
+  it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand(['--store', 'sqlite', '--project', 'local', '--github-app', 'create'], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('--github-app create')
+    expect(seen.opened).toEqual([])
+    expect(config(home)).not.toContain('project')
+  })
+
+  it('a skipped App opens no browser, at once, with the come-back line, and exits 0 (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], appAnswer: 'skip' })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.opened).toEqual([])
+    expect(seen.lines.join('\n')).toContain('not created (skipped)')
+    expect(seen.lines.join('\n')).toContain('run lingtai init again')
+  })
+
   it('opens the repository picker instead when the App already answers', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {
@@ -156,6 +222,38 @@ describe('lingtai init (#186)', () => {
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
     })
     expect(await initCommand([], w)).toBe(0)
+    expect(seen.opened).toEqual(['http://127.0.0.1:3200/setup/repository'])
+  })
+
+  it('refuses --project when a GitHub App is already configured, rather than silently ignoring it (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, {
+      answers: [URL_],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+    })
+    expect(await initCommand(['--project', 'local'], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('--project local')
+    expect(seen.opened).toEqual([])
+  })
+
+  it('refuses --github-app create when a GitHub App is already configured, rather than silently ignoring it (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, {
+      answers: [URL_],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+    })
+    expect(await initCommand(['--github-app', 'create'], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('--github-app create')
+    expect(seen.opened).toEqual([])
+  })
+
+  it('--github-app skip is accepted when a GitHub App is already configured — it asks for exactly what the machine already does (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, {
+      answers: [URL_],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+    })
+    expect(await initCommand(['--github-app', 'skip'], w)).toBe(0)
     expect(seen.opened).toEqual(['http://127.0.0.1:3200/setup/repository'])
   })
 
@@ -496,9 +594,19 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
 /**
  * #345. `--store` answers the store question with nobody at a terminal, by the
  * same lines the empty answer takes — and refuses by name, writing nothing,
- * wherever the machine would not obey it. Every "no terminal" here is a world
- * whose `ask` has no answers, so it returns null exactly as `liveInitWorld`'s
- * does without a TTY; `seen.asked` says the question was not reached at all.
+ * wherever the machine would not obey it. "No terminal" here means the
+ * *database* question: its world has no `answers` queued for it, so `ask`
+ * returns null exactly as `liveInitWorld`'s does without a TTY, and
+ * `seen.asked` says the question was not reached at all.
+ *
+ * It is not also true of the project and App questions (#393): `ask`'s mock
+ * answers those `github`/`create` by default whether or not a terminal is
+ * meant to be there, so a test below that wants a genuinely headless run all
+ * the way to the board passes `--project local` (or `--project github
+ * --github-app skip`) the way a real script would — and one test pins the
+ * regression this leaves otherwise: `--store sqlite` alone, with the project
+ * question put at a true no-terminal world (`project: null`), refuses there
+ * rather than finishing setup.
  */
 describe('--store answers the store question without a terminal (#345)', () => {
   function written(home: string): { text: string | null; mtime: number | null } {
@@ -514,10 +622,10 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(config(home)).toBeNull()
   })
 
-  it('--store sqlite writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
+  it('--store sqlite, with --project local, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {})
-    expect(await initCommand(['--store', 'sqlite'], w)).toBe(0)
+    expect(await initCommand(['--store', 'sqlite', '--project', 'local'], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
     expect(config(home)).toBe('database:\n  store: sqlite\n')
@@ -525,6 +633,19 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
     expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
     expect(seen.boards).toBe(1)
+  })
+
+  it('--store sqlite alone, with nobody at the project question either, writes the store and refuses there — not the usage line "Nothing was written" (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { project: null })
+    expect(await initCommand(['--store', 'sqlite'], w)).toBe(1)
+    const said = seen.lines.at(-1)!
+    expect(said).toContain('--project github, or --project local')
+    expect(said).toContain('the store chosen above is kept')
+    expect(said).not.toContain('Nothing was written')
+    // The store it names is kept: this is the claim the message makes good on.
+    expect(config(home)).toBe('database:\n  store: sqlite\n')
+    expect(seen.boards).toBe(0)
   })
 
   it('writes the same file the empty answer does', async () => {

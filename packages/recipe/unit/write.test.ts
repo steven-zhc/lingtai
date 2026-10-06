@@ -177,9 +177,7 @@ env:
     expect(resolved.recipe.steps.prepared).toEqual([
       { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
     ])
-    expect(resolved.recipe.steps.proposed).toEqual([
-      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
-    ])
+    expect(resolved.recipe.steps.proposed).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
   })
 
@@ -211,9 +209,7 @@ repo:
     expect(resolved.recipe.steps.prepared).toEqual([
       { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
     ])
-    expect(resolved.recipe.steps.proposed).toEqual([
-      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
-    ])
+    expect(resolved.recipe.steps.proposed).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
     // Only the steps the preset actually supplied and the one this change
     // named are pinned — a step neither touches (`claim`, `admit`, …) is left
@@ -248,9 +244,7 @@ repo:
     expect(resolved.recipe.steps.prepared).toEqual([
       { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
     ])
-    expect(resolved.recipe.steps.proposed).toEqual([
-      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
-    ])
+    expect(resolved.recipe.steps.proposed).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
   })
 
