@@ -20,7 +20,9 @@ import { passCeiling } from '@lingtai/conductor/ceiling'
 import { paint } from '@lingtai/env/colour'
 import {
   type Recipe,
+  type RecipeChange,
   type RecipeFiles,
+  type SetRecipeResult,
   baseOf,
   boundsBesides,
   budgetChange,
@@ -67,6 +69,26 @@ export interface LandingDeps {
 }
 
 type Answered = { ok: true } | { refused: string }
+
+/**
+ * `setRecipe` throws — `RecipeInvalidError` on a narrowing or schema refusal,
+ * `CommentWouldBeLostError` on a carry it cannot make — rather than returning
+ * a refusal, so every call site here must catch it and hand the message back
+ * as `{refused}` the same way `question()`'s own refusals are returned. Left
+ * uncaught, the answers already written stay on disk while the one that threw
+ * never reaches the terminal to be asked again (#399).
+ */
+async function setRecipeOrRefuse(
+  project: string,
+  changes: readonly RecipeChange[],
+  options: { home?: string; files?: RecipeFiles },
+): Promise<SetRecipeResult | { refused: string }> {
+  try {
+    return await setRecipe(project, changes, options)
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
 
 async function resolvedFile(
   project: string,
@@ -161,7 +183,8 @@ export async function askLanding(
     Array.isArray(rawProposed) ? rawProposed : file.proposed,
     Array.isArray(rawAdmit) ? rawAdmit : file.admit,
   )
-  const written = await setRecipe(project, changes, options)
+  const written = await setRecipeOrRefuse(project, changes, options)
+  if ('refused' in written) return written
   if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {
     world.log(
       paint.muted(
@@ -220,7 +243,10 @@ export async function askLimits(
   })
   if ('refused' in rounds) return rounds
   const roundsValue = Number(rounds.answer)
-  if (roundsValue !== limits.rounds) await setRecipe(project, [roundsChange(roundsValue)], options)
+  if (roundsValue !== limits.rounds) {
+    const written = await setRecipeOrRefuse(project, [roundsChange(roundsValue)], options)
+    if ('refused' in written) return written
+  }
 
   const wall = await question(world, {
     name: 'wall',
@@ -237,7 +263,10 @@ export async function askLimits(
     },
   })
   if ('refused' in wall) return wall
-  if (wall.answer !== limits.wall) await setRecipe(project, [wallChange(wall.answer)], options)
+  if (wall.answer !== limits.wall) {
+    const written = await setRecipeOrRefuse(project, [wallChange(wall.answer)], options)
+    if ('refused' in written) return written
+  }
 
   const budget = await question(world, {
     name: 'the spend ceiling',
@@ -255,7 +284,10 @@ export async function askLimits(
 
   const usdValue =
     budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
-  if ((usdValue ?? null) !== (limits.usd ?? null)) await setRecipe(project, [budgetChange(usdValue)], options)
+  if ((usdValue ?? null) !== (limits.usd ?? null)) {
+    const written = await setRecipeOrRefuse(project, [budgetChange(usdValue)], options)
+    if ('refused' in written) return written
+  }
 
   // `add()`'s own sentence (`onboard.ts:335-341`) is `limitsFor`/`boundsBesides`
   // against `implement`, not the bare ceiling: a per-step bound narrower than

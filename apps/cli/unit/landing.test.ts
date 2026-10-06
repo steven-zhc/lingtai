@@ -309,6 +309,28 @@ describe('askLanding', () => {
     expect(result).toMatchObject({ refused: expect.stringContaining('--land') })
     expect(files.replaced).toEqual([])
   })
+
+  it('--land release on a hand-written hold carrying a comment is refused by name, not thrown, and nothing is written', async () => {
+    const COMMENTED_HOLD = `version: 2
+repo: {base: main, submodules: false}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+steps:
+  proposed:
+    # I want to see every merge while we learn the loop
+    - name: approval
+      human: "Merge this? It is my own code."
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+    const files = mapFiles({ [PATH]: COMMENTED_HOLD })
+    const result = await askLanding(world().world, PROJECT, 'release', {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'main',
+    })
+    expect(result).toMatchObject({ refused: expect.stringContaining('carries a comment') })
+    expect(files.replaced).toEqual([])
+  })
 })
 
 /**
@@ -367,11 +389,21 @@ describe('askLimits', () => {
     expect(files.replaced).toEqual([])
   })
 
-  it('the budget prompt contains $', async () => {
+  it('the budget prompt shows an existing ceiling in money, formatted by show', async () => {
+    const files = mapFiles({ [PATH]: FIXTURE.replace('rounds: 2, restarts: 0', 'rounds: 2, restarts: 0, usd: 7') })
+    const { world: w, asked } = world(['', '', ''])
+    await askLimits(w, PROJECT, {}, { home: HOME, files })
+    // `show`'s `$${Number(value).toFixed(2)}` is what turns `usd: 7` into this
+    // bracket — the prompt's own literal ("like $5") would satisfy a bare
+    // `.includes('$')`, so this pins the formatted current value instead.
+    expect(asked[2]).toContain('[$7.00]')
+  })
+
+  it('the budget prompt shows "none" rather than money when no ceiling is set', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const { world: w, asked } = world(['', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, files })
-    expect(asked.some((line) => line.includes('$'))).toBe(true)
+    expect(asked[2]).toContain('[none]')
   })
 
   it("the printed ceiling is implement's own narrower bound, not the recipe's wide runtime.limits", async () => {
@@ -400,5 +432,21 @@ describe('askLimits', () => {
     expect(limits.rounds).toBe(0)
     expect(limits.wall).toBe('30m')
     expect(files.replaced).toHaveLength(2)
+  })
+
+  it('a wall narrower than steps.implement is refused by name, not thrown, with the rounds answer already written', async () => {
+    const files = mapFiles({ [PATH]: NARROW_IMPLEMENT })
+    // `steps.implement` is bounded to `wall: 10m`; writing the ceiling to
+    // `5m` trips 0070 §5's narrowing refusal inside `setRecipe`'s own
+    // `resolveSource` call, which must surface as `{refused}` rather than an
+    // uncaught `RecipeInvalidError` — the flags pass validation (`5m` is a
+    // valid positive duration), so only the write itself catches this.
+    const result = await askLimits(world().world, PROJECT, { rounds: '3', wall: '5m' }, { home: HOME, files })
+    expect(result).toMatchObject({ refused: expect.stringContaining('may only narrow') })
+
+    // The rounds answer, asked and written first, stays on disk.
+    const written = (await files.read(PATH))!
+    expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.rounds).toBe(3)
+    expect(files.replaced).toHaveLength(1)
   })
 })
