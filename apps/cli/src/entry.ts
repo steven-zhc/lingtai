@@ -3,12 +3,17 @@
  * `lingtai` — the entry, in front of `lingtai.ts`.
  *
  * **Five commands answer before the rest is imported** (#184, #186): `version`,
- * `upgrade`, `rollback`, `uninstall` and `init`. Everything `lingtai.ts` imports
- * loads `@lingtai/event-store`, whose client is built at module scope and throws
- * without a database URL — which a machine that has only just installed does
- * not have, one being uninstalled may no longer, and `init` is what gives it
- * one. So these are dispatched from here, and every other command is
- * `lingtai.ts`, unchanged.
+ * `upgrade`, `rollback`, `uninstall` and `init`. `lingtai.ts`'s many commands
+ * all assume a database is already configured, and read or write the log
+ * close to where they start. Since #179, importing `@lingtai/event-store`
+ * does not itself build a client — the barrel hands out a deferred view, and
+ * the client opens at the first `append`, `read` or `readAll` — so what these
+ * five avoid is not a throw at import time but calling into a log with
+ * nothing configured yet: `version`/`upgrade`/`rollback`/`uninstall` touch no
+ * log at all (`install.ts`), and `init` is what writes the store
+ * `~/.lingtai/config.yml` names before it ever reads one (`init.ts`'s own
+ * header, #394). So these are dispatched from here, and every other command
+ * is `lingtai.ts`, unchanged.
  *
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.

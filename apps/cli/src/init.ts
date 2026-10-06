@@ -101,8 +101,7 @@ import { join } from 'node:path'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { askEveryRuntime } from '@lingtai/agent/auth'
-import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
-import type { Picker } from '@lingtai/conductor/pick-repository'
+import { addLocal } from '@lingtai/conductor/onboard'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import { type ProjectState, RuntimeId } from '@lingtai/domain'
 import {
@@ -127,10 +126,10 @@ import {
   type FirstProjectWorld,
   type GitResult,
   liveGit,
-  livePicker,
   type RegisterLocalPayload,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
+import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { liveAsk, question } from './question.ts'
 
 // -------------------------------------------------------------- the world --
@@ -203,10 +202,6 @@ export interface InitWorld {
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
   registerLocal: (payload: RegisterLocalPayload) => Promise<string>
-  /** Every repository the App can see, for the GitHub branch's picker. */
-  picker: () => Promise<Picker>
-  /** `@lingtai/conductor/onboard`'s `add` — the GitHub branch's registration. */
-  addGithub: (options: AddOptions, log: (line: string) => void) => Promise<number>
 }
 
 const USAGE =
@@ -419,8 +414,17 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
           waitForApp({ log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed }, boardUrl, {
             waitMs: APP_WAIT_MS,
           }),
-        picker: world.picker,
-        add: world.addGithub,
+        // `init` never gives `chooseFirstProject` a slug — `--github` is
+        // `lingtai add`'s own flag, refused by `parseArgs` above, so
+        // `runGithubBranch`'s `givenSlug` is always null here and returns
+        // before either of these runs (#394's dead-seam finding: `InitWorld`
+        // used to carry a `picker` and an `addGithub` that nothing called).
+        picker: () => {
+          throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
+        },
+        add: () => {
+          throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
+        },
       },
     }
     const chosen = await chooseFirstProject(firstProjectWorld, flags)
@@ -793,92 +797,7 @@ function checkAgent(
 
 // ------------------------------------------------------------- live world --
 
-/** The slice of `process.stdin` `waitForKeypress` needs — narrow enough that a real socket can stand in for it in a test. */
-export interface RawStdin {
-  readonly isTTY: boolean | undefined
-  setRawMode: (mode: boolean) => void
-  resume: () => void
-  pause: () => void
-  on: (event: 'data', listener: (data: Buffer) => void) => void
-  removeListener: (event: 'data', listener: (data: Buffer) => void) => void
-}
-
-/**
- * Resolves on the first keypress at a TTY, or never (until `signal` aborts)
- * with no TTY — exported so a real OS-backed stream can exercise the backlog
- * guard below without a real terminal (#393).
- *
- * Raw mode so a bare keypress resolves it rather than waiting on Enter —
- * undone in every exit path, or `ctrl-c stops it` (init.ts's board line)
- * would stop working for the rest of the session.
- */
-export function waitForKeypress(stdin: RawStdin, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (!stdin.isTTY) {
-      signal.addEventListener('abort', () => resolve(), { once: true })
-      return
-    }
-    // Set once the wait ends any way at all, so the deferred swap below —
-    // scheduled before any of that can happen — never re-attaches `onData`
-    // onto a stdin this promise has already let go of.
-    let settled = false
-    const done = () => {
-      settled = true
-      stdin.setRawMode(false)
-      stdin.pause()
-      stdin.removeListener('data', discard)
-      stdin.removeListener('data', onData)
-      signal.removeEventListener('abort', onAbort)
-    }
-    const onData = (data: Buffer) => {
-      // Ctrl+C in raw mode arrives as this byte, not SIGINT — and must never count as a skip.
-      if (data.toString('utf8') === '\x03') {
-        done()
-        console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
-        process.exit(130)
-      }
-      done()
-      resolve()
-    }
-    // A key pressed while stdin was paused during the board's boot sits in
-    // the tty's own buffer and would otherwise arrive the instant `resume`
-    // below is called — not a deliberate skip of a wait that has not visibly
-    // started yet. Discard that backlog, then switch to listening for an
-    // actual press.
-    //
-    // A single `setImmediate` is not enough: entered from an I/O continuation
-    // (`waitForApp` awaits `world.open` before racing this in), the swap below
-    // would run in the *check* phase of the loop iteration already under way —
-    // before the *poll* phase that delivers a byte already sitting in the
-    // tty's buffer, so that byte would reach `onData` instead of `discard`.
-    // An immediate scheduled from inside an executing immediate is deferred to
-    // the *next* iteration's check phase, which comes after that iteration's
-    // poll phase — late enough for the backlog to have already been read and
-    // discarded. (Verified against a real pty, and a pipe, in #393's review.)
-    const discard = (data: Buffer) => {
-      if (data.toString('utf8') === '\x03') {
-        done()
-        console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
-        process.exit(130)
-      }
-    }
-    const onAbort = () => {
-      done()
-      resolve()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    stdin.setRawMode(true)
-    stdin.resume()
-    stdin.on('data', discard)
-    setImmediate(() => {
-      setImmediate(() => {
-        if (settled) return
-        stdin.removeListener('data', discard)
-        stdin.on('data', onData)
-      })
-    })
-  })
-}
+export { type RawStdin, waitForKeypress }
 
 /** The board lock this process holds while `lingtai init` serves one. See `board` below. */
 let kept: HeldLock | null = null
@@ -963,7 +882,5 @@ export function liveInitWorld(): InitWorld {
         payload.resolved,
         (line) => console.log(line),
       ),
-    picker: livePicker,
-    addGithub: (options, log) => add(options, log),
   }
 }

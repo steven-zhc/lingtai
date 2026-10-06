@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, exists
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Picker } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
 import { SQLITE_MACHINE, describeStore, storeChoice } from '@lingtai/env'
 import type { RecipeFiles } from '@lingtai/recipe'
@@ -60,8 +59,6 @@ interface Script {
   gitPlan?: Record<string, GitResult>
   files?: Record<string, string>
   registerLocal?: (payload: { project: string; base: string }) => Promise<string>
-  picker?: Picker
-  addGithub?: (options: { slug: string }, log: (line: string) => void) => Promise<number>
 }
 
 interface Recorded {
@@ -188,8 +185,6 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
           base: payload.base,
         })
       },
-      picker: async () => script.picker ?? { installations: [], installUrl: null },
-      addGithub: async (options, log) => (script.addGithub ?? (async () => 1))(options, log),
     },
   }
 }

@@ -65,6 +65,7 @@ import {
   type AppWaitResult,
   type AppWaitWorld,
 } from './github-app.ts'
+import { waitForKeypress } from './keypress.ts'
 import { question, type QuestionWorld } from './question.ts'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
@@ -281,6 +282,7 @@ async function runLocalBranch(
     flag: '--local <dir>',
     given: givenDir,
     prompt: 'the directory of the repository on this machine',
+    kept: world.kept,
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
   const dir = dirAnswer.answer
@@ -357,6 +359,7 @@ async function runLocalBranch(
     prompt: "the branch this project's recipe governs and merges into",
     current: typeof currentBase === 'string' ? currentBase : null,
     detected,
+    kept: world.kept,
     validate: async (answer) => {
       const check = await world.git(toplevel, ['rev-parse', '--verify', `${answer}^{commit}`])
       if (!check.ok) return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
@@ -500,7 +503,19 @@ async function runGithubBranch(
   let installation: Installation | undefined
   if (!alreadyOnboarded) {
     const picked = choose(picker, givenSlug)
-    if (!picked.ok) return { refused: picked.why }
+    if (!picked.ok) {
+      // `add()`'s own gap listing (`onboard.ts:267-271`) never runs on this
+      // path — `choose` refused before `add` was ever called — so the detail
+      // it would have printed is folded into the refusal here instead (#394
+      // finding: a scope gap must not come back as one bare sentence).
+      const lines = [picked.why]
+      if (picked.gaps.length > 0) {
+        lines.push('the installation is missing permissions:')
+        for (const g of picked.gaps) lines.push(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
+      }
+      if (picked.fix !== null) lines.push(`${picked.fix.label}: ${picked.fix.href}`)
+      return { refused: lines.join('\n') }
+    }
     installation = picked.installation
   }
 
@@ -557,8 +572,8 @@ async function liveInstallUrl(): Promise<string | null> {
   return app.configured && app.ok ? `https://github.com/apps/${app.slug}/installations/new` : null
 }
 
-/** Exported for `init.ts`'s `liveInitWorld()` — one real picker, not two. */
-export async function livePicker(): Promise<Picker> {
+/** `lingtai add`'s own — `init` never gives `chooseFirstProject` a slug, so it never reaches this (#394). */
+async function livePicker(): Promise<Picker> {
   const credentials = githubApp()
   const reader = createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
   const [projects, installUrl] = await Promise.all([loadAllProjects(), liveInstallUrl()])
@@ -581,15 +596,15 @@ export interface LiveFirstProjectOptions {
  *
  * `appWait` lets `init` hand in its own `open`/`appeared`/`pressed` — it
  * already has a browser opener and a keypress-skip wired to its own
- * `InitWorld` — and defaults to one with no keypress-skip for `add`, which has
- * no raw-mode terminal wait of its own.
+ * `InitWorld` — and defaults to the same real keypress wait for `add`, which
+ * has no raw-mode terminal wait of its own (`waitForKeypress`, pulled out of
+ * `init.ts` into `keypress.ts` for exactly this).
  */
 export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstProjectWorld {
   const appWait: Pick<AppWaitWorld, 'open' | 'appeared' | 'pressed'> = options.appWait ?? {
     open: liveOpen,
     appeared: pollForApp,
-    pressed: (signal) =>
-      new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true })),
+    pressed: (signal) => waitForKeypress(process.stdin, signal, 'running the same command again continues from here'),
   }
   const home = stateDir()
 

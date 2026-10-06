@@ -304,6 +304,40 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafefee' })
   })
+
+  it('the directory question reports the caller\'s kept clause, not "Nothing was written" (#394)', async () => {
+    // No --local: the project-kind question is asked first (answered
+    // 'local'), then the directory question — the one under test — gets no
+    // answer at all, so it refuses by name.
+    const { world } = harness({ kept: 'the store chosen above is kept', answers: ['local'] })
+
+    const result = await chooseFirstProject(world, {})
+
+    expect(result).toEqual({
+      refused: expect.stringContaining(
+        'the directory needs an answer: pass --local <dir>. the store chosen above is kept',
+      ),
+    })
+  })
+
+  it('the base branch question reports the caller\'s kept clause, not "Nothing was written" (#394)', async () => {
+    const { world } = harness({
+      kept: 'the store chosen above is kept',
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+      },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({
+      refused: expect.stringContaining(
+        'the base branch needs an answer: pass --base <branch>. the store chosen above is kept',
+      ),
+    })
+  })
 })
 
 describe('chooseFirstProject — the GitHub branch (#394)', () => {
@@ -385,6 +419,56 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     const result = await chooseFirstProject(world, { github: 'acme/other' })
 
     expect(result).toEqual({ refused: expect.stringContaining('acme/other') })
+    expect(addCalled).toBe(false)
+  })
+
+  it('a repository the App can see but the installation is missing permissions for names the gap and the fix, and add is never called (#394)', async () => {
+    const scopedReader = {
+      async request<T>(method: string, path: string, as: 'app' | number): Promise<T> {
+        if (method !== 'GET') throw new Error(`wrote to GitHub: ${method} ${path}`)
+        const url = new URL(path, 'https://api.github.com')
+        if (url.pathname === '/app/installations' && as === 'app') {
+          return [
+            {
+              id: 7,
+              // `issues` is read, not write — one gap, same shape as a scoped
+              // fine-grained token (#394 finding: the detail `add()` would
+              // have printed must survive a refusal that never calls `add`).
+              permissions: { issues: 'read', contents: 'write', pull_requests: 'write', metadata: 'read' },
+              account: { login: 'acme' },
+              repository_selection: 'selected',
+              html_url: 'https://github.com/settings/installations/7',
+            },
+          ] as T
+        }
+        if (url.pathname === '/installation/repositories' && typeof as === 'number') {
+          return { repositories: [{ name: 'widget', owner: { login: 'acme' }, private: true }] } as T
+        }
+        throw new GitHubError(404, path, 'Not Found')
+      },
+    }
+    const picker = await listRepositories({ reader: scopedReader, projects: [], installUrl: null })
+    let addCalled = false
+
+    const { world } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      picker: async () => picker,
+      add: async () => {
+        addCalled = true
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+
+    expect(result).toEqual({
+      refused: expect.stringContaining(
+        'The App can see acme/widget, but its installation on acme is missing permissions.\n' +
+          'the installation is missing permissions:\n' +
+          '  issues: have read, need write — reading work items, writing agent:* labels and comments\n' +
+          "Grant them on the installation's page: https://github.com/settings/installations/7",
+      ),
+    })
     expect(addCalled).toBe(false)
   })
 

@@ -117,6 +117,10 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 a directory on this machine with its own origin
     --github <owner>/<repo>     same as the positional
     --local <dir>                a directory on this machine instead of GitHub
+    --project <github|local>    answers the question above without a slug or
+                                --local, when neither is given
+    --github-app <create|skip>  create or skip the App, asked only when none
+                                is configured yet
     --base <branch>             github: where to *read the recipe from*, not
                                 what the base is — the recipe's own repo.base
                                 says that, and a --base contradicting it is
