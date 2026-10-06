@@ -215,6 +215,50 @@ describe('askAgents', () => {
     })
   })
 
+  describe('a leftover agent: entry anywhere else in the recipe is checked too', () => {
+    it('refuses a second steps.implement entry on a signed-out runtime, not just a second steps.review one', async () => {
+      // The guard above walked `steps.review` only, but `agentRefusal`
+      // (`conduct.ts:282`) reads every step's every action — a second
+      // `agent:` left in `steps.implement` fails the very next pass exactly
+      // as an untouched second `steps.review` entry would.
+      const TWO_IMPLEMENTERS = `${FIXTURE}steps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n    - name: second pass\n      agent: codex\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: TWO_IMPLEMENTERS })
+      const { world } = fakeWorld(['', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      expect(result).toHaveProperty('refused')
+      const refusal = (result as { refused: string }).refused
+      expect(refusal).toContain('second pass')
+      expect(refusal).toContain('codex')
+      expect(refusal).toContain('not signed in')
+      expect(files.replaced).toEqual([])
+    })
+
+    it('refuses a runtime judge: at a step this write never touches, such as steps.proposed', async () => {
+      const JUDGE_AT_PROPOSED = `${FIXTURE}steps:\n  proposed:\n    - name: findings\n      judge: codex\n      when: red\n`
+      const files = mapFiles({ [PATH]: JUDGE_AT_PROPOSED })
+      const { world } = fakeWorld(['', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      expect(result).toHaveProperty('refused')
+      const refusal = (result as { refused: string }).refused
+      expect(refusal).toContain('findings')
+      expect(refusal).toContain('judge codex')
+      expect(refusal).toContain('not signed in')
+      expect(files.replaced).toEqual([])
+    })
+  })
+
   describe('the reviewer defaults to a different model', () => {
     it('with two signed in, the reviewer default is the other runtime', async () => {
       const files = mapFiles({ [PATH]: FIXTURE })
@@ -258,10 +302,10 @@ describe('askAgents', () => {
       // An existing review action with no `model:` of its own, so the
       // reviewer-model question's default is exercised through
       // `path: [...,'model']` rather than through a whole-list `steps.review`
-      // write — the fixture used before this named no review action at all,
-      // so every write landed as `path: ['steps','review']` and `path.at(-1)`
-      // was never `'model'`: the assertion below passed whether or not the
-      // reviewer's model defaulted to the writer's.
+      // write. Every reviewer-model write goes into `modelChanges`
+      // (`agents.ts`'s `modelChanges.push` for `steps.review`), never
+      // `changes` — reading `result.changes` here made the assertion
+      // vacuously true regardless of what the reviewer's model defaulted to.
       const WITH_REVIEWER = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n`
       const files = mapFiles({ [PATH]: WITH_REVIEWER })
       const { world } = fakeWorld(['', '', ''])
@@ -276,9 +320,7 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      expect(result.changes.some((c) => c.path.at(-1) === 'model' && c.path[1] === 'review' && c.value === 'X')).toBe(
-        false,
-      )
+      expect(result.modelChanges).toContainEqual({ path: ['steps', 'review', 0, 'model'], value: undefined })
     })
   })
 
@@ -335,6 +377,31 @@ describe('askAgents', () => {
       const modelPrompt = asked.find((p) => p.includes('which model'))!
       expect(modelPrompt).not.toContain('[claude-opus-5]')
       expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
+    })
+
+    it('refuses rather than silently drop a comment above the model it would default away, on a writer switch', async () => {
+      // This repository's own house style: a comment explaining the model
+      // choice, directly above `model:` rather than above the whole action —
+      // so it is not the item-level comment `isDifferentItem` protects.
+      // Switching the writer resets `currentModel` to null (above), and
+      // pressing enter on the model question would otherwise write
+      // `value: undefined` straight through `editRecipe`'s `doc.deleteIn`,
+      // which takes a key's own comment with it the moment its exact path is
+      // named — never refused, because that deletion is never asked about.
+      const COMMENTED_MODEL = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      # opus, because the review prompt below is a hundred lines and sonnet skims it\n      model: opus\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: COMMENTED_MODEL })
+      const { world } = fakeWorld(['codex', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      expect(result).toHaveProperty('refused')
+      const refusal = (result as { refused: string }).refused
+      expect(refusal).toContain('opus, because the review prompt')
+      expect(files.replaced).toEqual([])
     })
 
     it('switching the writer on a commented action writes through two setRecipe calls rather than throw CommentWouldBeLostError', async () => {

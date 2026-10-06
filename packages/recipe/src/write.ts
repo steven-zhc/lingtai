@@ -12,7 +12,7 @@ import { dirname } from 'node:path'
  */
 import { isDeepStrictEqual } from 'node:util'
 
-import { isNode, parse as parseYaml, parseDocument } from 'yaml'
+import { isMap, isNode, isScalar, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
 
 import { type RecipeChange, editRecipe } from './emit.ts'
@@ -208,4 +208,33 @@ export async function readRecipeKey(
   if (text === null) return null
   const value = parseDocument(text).getIn(path)
   return value === undefined ? null : isNode(value) ? value.toJSON() : value
+}
+
+/**
+ * The comment written directly above the key at `path`, or null when there
+ * is none, the key is absent, or the file is absent.
+ *
+ * For a caller about to set that key to `value: undefined` — `editRecipe`
+ * deletes a map key named by its own path together with any comment above
+ * it, without asking (`emit.ts`'s `RecipeChange`: *"`undefined` removes
+ * what is there, with its comments"*). That is fine when a person named the
+ * path; it is not when the path is one a question's own default resolved to
+ * — this is how such a caller tells the two apart before writing.
+ */
+export async function readRecipeComment(
+  project: string,
+  path: readonly (string | number)[],
+  options?: { home?: string; files?: RecipeFiles },
+): Promise<string | null> {
+  const files = options?.files ?? diskFiles
+  const recipeFilePath = recipePath(project, options?.home)
+  const text = await files.read(recipeFilePath)
+  if (text === null || path.length === 0) return null
+  const parentPath = path.slice(0, -1)
+  const key = String(path[path.length - 1])
+  const doc = parseDocument(text)
+  const parent = parentPath.length === 0 ? doc.contents : doc.getIn(parentPath, true)
+  if (!isMap(parent)) return null
+  const pair = parent.items.find((p) => isScalar(p.key) && String(p.key.value) === key)
+  return isNode(pair?.key) ? (pair.key.commentBefore ?? pair.key.comment ?? null) : null
 }

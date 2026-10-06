@@ -25,7 +25,7 @@
  */
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
-import { readRecipeKey } from '@lingtai/recipe'
+import { isBuiltInJudge, readRecipeComment, readRecipeKey } from '@lingtai/recipe'
 
 import { question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound, RuntimeName } from './runtimes.ts'
@@ -46,6 +46,83 @@ function findAgentAction(list: unknown): { index: number; action: Record<string,
   if (!Array.isArray(list)) return null
   const index = list.findIndex((item) => item !== null && typeof item === 'object' && 'agent' in (item as object))
   return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
+}
+
+/**
+ * A refusal when writing `value: undefined` at `path` would delete a comment
+ * nobody was asked about — `editRecipe` takes a map key's comment with it the
+ * moment the path names that key (`emit.ts`'s `RecipeChange` doc), which is
+ * right when a person named the path and wrong when a question's own default
+ * is what resolved to empty.
+ */
+async function commentLossRefusal(
+  project: string,
+  path: readonly (string | number)[],
+  readOpts: { home: string | undefined; files: RecipeFiles | undefined },
+): Promise<string | null> {
+  const comment = await readRecipeComment(project, path, readOpts)
+  if (comment === null) return null
+  return (
+    `${path.join('.')} carries a comment ("${comment.split('\n')[0]!.trim()}") and this answer would remove it ` +
+    'silently — type the model to keep it, or edit the recipe by hand and run lingtai add again. Nothing was written'
+  )
+}
+
+/**
+ * Every `agent:` or runtime `judge:` action this write does not itself touch,
+ * logged when its own runtime is still signed in and refused when it is not.
+ *
+ * `agentRefusal` (`conduct.ts:282`) reads every step's every action against
+ * what is signed in — not only `steps.implement`'s and `steps.review`'s first
+ * entry, which is all `question()` above ever asked about — so a second
+ * `agent:` left in `steps.implement`, or a runtime `judge:` at `steps.proposed`,
+ * fails the very next pass exactly as an untouched second `steps.review` entry
+ * would. `fullyReplaced` names a step whose whole list this write is about to
+ * overwrite — its current entries are not "left as written", they are gone —
+ * and `editedInPlace` names the one action within a step this write edits
+ * where it stands.
+ */
+async function leftoverRefusal(
+  at: AskAgentsAt,
+  readOpts: { home: string | undefined; files: RecipeFiles | undefined },
+  signedInIds: readonly string[],
+  world: QuestionWorld,
+  editedInPlace: readonly { step: string; index: number }[],
+  fullyReplaced: ReadonlySet<string>,
+): Promise<string | null> {
+  const steps = await readRecipeKey(at.project, ['steps'], readOpts)
+  if (steps === null || typeof steps !== 'object') return null
+  for (const [step, list] of Object.entries(steps as Record<string, unknown>)) {
+    if (fullyReplaced.has(step) || !Array.isArray(list)) continue
+    for (let i = 0; i < list.length; i++) {
+      if (editedInPlace.some((e) => e.step === step && e.index === i)) continue
+      const item = list[i]
+      if (item === null || typeof item !== 'object') continue
+      const action = item as Record<string, unknown>
+      const key: 'agent' | 'judge' | null =
+        typeof action['agent'] === 'string'
+          ? 'agent'
+          : typeof action['judge'] === 'string' && !isBuiltInJudge(action['judge'])
+            ? 'judge'
+            : null
+      if (key === null) continue
+      const name = action[key] as string
+      const actionName = typeof action['name'] === 'string' ? (action['name'] as string) : `steps.${step}[${i}]`
+      if (signedInIds.includes(name)) {
+        world.log(
+          `steps.${step}'s "${actionName}" also names ${key} ${name} — only the first agent: entry is asked ` +
+            'about here, so this one is left as written',
+        )
+        continue
+      }
+      return (
+        `steps.${step}'s "${actionName}" also names ${key} ${name}, which is not signed in here — only the ` +
+        'first agent: entry is asked about here, so fix or remove that one by hand and run lingtai add again. ' +
+        'Nothing was written'
+      )
+    }
+  }
+  return null
 }
 
 export interface AskAgentsAt {
@@ -137,6 +214,11 @@ export async function askAgents(
   if ('refused' in modelAnswer) return modelAnswer
   const writerModel = modelAnswer.answer
 
+  if (implementAction && writerModel === '') {
+    const lost = await commentLossRefusal(at.project, ['steps', 'implement', implementAction.index, 'model'], readOpts)
+    if (lost !== null) return { refused: lost }
+  }
+
   // A different model, with no table of models anywhere in Lingtai, means a
   // different runtime (doc/design/398.md §1): with two signed in, the other
   // one; with one, there is nothing different *known* to be available.
@@ -178,38 +260,21 @@ export async function askAgents(
     }
   }
 
-  // Only the first `agent:` entry in the list is ever rewritten below — this
-  // is the one `question()` above asked about. A second one is left exactly
-  // as written when `reviewer` keeps that entry in the file at all — never
-  // when the answer is `none`, which replaces the whole list and takes the
-  // leftover entry with it, so this is checked only now that both are known.
-  // `agentRefusal` (`conduct.ts:282`) reads every `agent:` in the file, so an
-  // untouched entry on a signed-out runtime fails the very next pass — refused
-  // here instead of written, rather than left to fail that pass.
-  if (reviewer !== 'none' && reviewAction && Array.isArray(reviewList)) {
-    for (let i = reviewAction.index + 1; i < reviewList.length; i++) {
-      const item = reviewList[i]
-      if (item === null || typeof item !== 'object' || !('agent' in item)) continue
-      const extraAgent = (item as Record<string, unknown>)['agent']
-      const extraName =
-        typeof (item as Record<string, unknown>)['name'] === 'string'
-          ? ((item as Record<string, unknown>)['name'] as string)
-          : `steps.review[${i}]`
-      if (typeof extraAgent !== 'string' || signedInIds.includes(extraAgent)) {
-        world.log(
-          `steps.review's "${extraName}" also names agent ${String(extraAgent)} — only the first agent: entry ` +
-            'is asked about here, so this one is left as written',
-        )
-        continue
-      }
-      return {
-        refused:
-          `steps.review's "${extraName}" also names agent ${extraAgent}, which is not signed in here — only the ` +
-          'first agent: entry is asked about here, so fix or remove that one by hand and run lingtai add again. ' +
-          'Nothing was written',
-      }
-    }
-  }
+  // Only the first `agent:` entry in `steps.implement` and in `steps.review`
+  // is ever rewritten below — the one `question()` above asked about in each.
+  // Every other action, in either step or in any other, is left exactly as
+  // written when its own step's list is not being replaced wholesale —
+  // `leftoverRefusal` is what checks that is still safe to leave.
+  const editedInPlace: { step: string; index: number }[] = []
+  const fullyReplaced = new Set<string>()
+  if (implementAction) editedInPlace.push({ step: 'implement', index: implementAction.index })
+  else fullyReplaced.add('implement')
+  if (reviewer === 'none') fullyReplaced.add('review')
+  else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
+  else fullyReplaced.add('review')
+
+  const leftover = await leftoverRefusal(at, readOpts, signedInIds, world, editedInPlace, fullyReplaced)
+  if (leftover !== null) return { refused: leftover }
 
   let reviewerModel = ''
   if (reviewer !== 'none') {
@@ -230,6 +295,11 @@ export async function askAgents(
     })
     if ('refused' in reviewerModelAnswer) return reviewerModelAnswer
     reviewerModel = reviewerModelAnswer.answer
+
+    if (reviewAction && reviewerModel === '') {
+      const lost = await commentLossRefusal(at.project, ['steps', 'review', reviewAction.index, 'model'], readOpts)
+      if (lost !== null) return { refused: lost }
+    }
   }
 
   // `runtime.agent` is the pass's own runtime, resolved unconditionally
