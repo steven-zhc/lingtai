@@ -556,6 +556,61 @@ pnpm lingtai doctor    # per project: every required name and which layer it cam
 
 `doctor` prints names and layers, never values.
 
+#### Tickets without GitHub — `source.tickets: db`
+
+A project with no GitHub App, or whose tickets you would rather keep out of
+GitHub entirely, writes this instead of leaving `source.tickets` out:
+
+```yaml
+source:
+  tickets: db
+```
+
+Only on a project with no history — `ticketsFor` refuses a recipe that newly
+says `db` once the log already has GitHub-numbered work items, because a
+database ticket numbered from 1 would append into a GitHub issue's stream.
+
+**Restart the daemon before you rely on it.** A daemon older than this field
+parses the recipe through a schema that does not reject an unknown key under
+`source:`, so it silently drops `tickets: db` and keeps reading GitHub —
+nothing refuses, and nothing tells you.
+
+Four commands work a project's own ticket table:
+
+```
+lingtai ticket list [--all] [--project <p>]
+lingtai ticket new [--project <p>]
+lingtai ticket edit <n> [--project <p>]
+lingtai ticket close <n> [--project <p>]
+```
+
+`new` and `edit` open `$VISUAL`/`$EDITOR` on a short text form — a title, a
+`labels:` line, then the body. Saving `new` creates the ticket even with no
+kind label in `labels:`, but the queue never takes a ticket with none. Run any
+of the four against a `github` project and it refuses, naming `gh issue list`
+instead.
+
+**`lingtai ticket close` is not `lingtai close`.** It changes a row in the
+table and appends nothing to the log — `end` does not run, and the log never
+says the work item is over. `lingtai close` is still how you end one.
+
+**What `db` does not do:**
+
+- No webhook. The daemon notices a new or changed ticket on its sweep (every
+  five minutes) or at the next pass completion — never at once.
+- No web page. A ticket's `url` is always `null`, so a board card has no link.
+- No dependencies. `blockedBy` is always `0`; hold a chain by hand with
+  `agent:hold`.
+- No assignee, so a recipe's `assignee: mine` matches nothing.
+- No delete — close a ticket instead.
+- `lingtai ticket close`'s reason is accepted and not stored.
+
+**The repository itself is still on GitHub.** `source.tickets: db` moves
+where tickets live, not where code lives: refs, the merge lane and the
+GitHub App token are untouched. The two tables, `tickets` and
+`ticket_comments`, live on whichever store `database.store` names, so they
+move with that store, and `lingtai projection rebuild` never touches them.
+
 ### 2. Register it
 
 ```bash

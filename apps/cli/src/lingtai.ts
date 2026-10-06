@@ -160,10 +160,8 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --project <p>               required with more than one project registered
   lingtai ticket close <n>          closes that row in the table — not lingtai
                                 close, which ends a work item on the log; this
-                                changes nothing there. Nothing in the running
-                                conductor reads this table yet, so closing one
-                                here has no effect on what the daemon offers
-                                next
+                                changes nothing there. The daemon drops a
+                                closed ticket on its next sweep, not at once
     --project <p>               as above
   lingtai ticket new                opens $VISUAL or $EDITOR on a short text
                                 form — a title, a labels: line, then the body.

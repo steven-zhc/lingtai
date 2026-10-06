@@ -30,11 +30,44 @@ run.
    and holds no body; the body is fetched once, for the ticket that was claimed.
    Which system a ticket came from is recorded and never decides anything.
 
-2. **The source is a trusted adapter behind a port, `TicketStore`.**
-   `packages/conductor/src/ticket-store.ts` defines it and `githubTicketStore`
-   implements it. It is not a plugin: the core cannot run on tickets it does not
-   trust, so a store is chosen by whoever runs the machine, like a database
-   driver. It is called `TicketStore` because `packages/repo` already means git.
+2. **The source is a trusted adapter behind a port, `Tickets`.**
+   `packages/conductor/src/ticket-store.ts` defines it: eight verbs —
+   `listOpenIssues`, `listIssuesSince`, `getIssue`, `createIssue`, `comment`,
+   `setLabels`, `closeIssue`, `updateBody` — every read and write the core
+   makes against a ticket system. It is not a plugin: the core cannot run on
+   tickets it does not trust, so an implementation is chosen by whoever runs
+   the machine, like a database driver.
+
+   Two implementations exist. GitHub issues, where `GitHubClient` itself
+   satisfies `Tickets` structurally — pinned by a type-only check in
+   `unit/tickets.test.ts`. And `dbTickets`
+   (`packages/conductor/src/db-tickets.ts`), which uses two tables, `tickets`
+   and `ticket_comments`, on whichever store the machine chose (`TicketSql`,
+   `packages/event-store/src/ticket-sql.ts`). The tables are created on first
+   use by `ensureTicketTables`, and nothing in the code appends an event — a
+   reset of `events` (007, 010) leaves them alone.
+
+   `TicketStore`, with `propose` and `withdraw`, is the propose/withdraw layer
+   that sits on top of either: `githubTicketStore` is written only against
+   `Tickets`' verbs, so it writes a finding wherever a project's tickets
+   actually live, GitHub or `dbTickets`, despite its name.
+
+   A recipe chooses with `source.tickets: github | db` (`TicketSource`,
+   `packages/recipe/src/recipe.ts`). The field absent means `github`
+   (`ticketSourceOf`, `packages/recipe/src/settings.ts`) — the default lives
+   there and not on the schema, so a recipe that omits the field hashes
+   exactly as it did before the field existed. `ticketsFor` (`ticket-store.ts`)
+   resolves the source; `passClientOf` swaps only those eight verbs onto the
+   client a pass is handed — the refs, `fileAt`, the default branch and the
+   token are untouched.
+
+   **The source is chosen once.** `ticketsFor` refuses with
+   `TicketSourceConflict` when the recipe says `db`, `dbTickets` holds no
+   ticket yet, and the log already has `wi-<project>-*` streams — numbering
+   from 1 would otherwise step into a GitHub issue's stream. Once `dbTickets`
+   holds any ticket of its own, the project switched deliberately and this
+   passes regardless of what the log holds from before. Moving from `db` back
+   to `github` is not guarded in code.
 
 3. **The store translates; the core decides.** A store renders a declarative
    filter in its backend's terms (labels on GitHub) and writes what it is told
@@ -43,8 +76,8 @@ run.
 
 4. **Lingtai proposes; a person decides a ticket exists.** The only ticket
    Lingtai writes is one a person accepted from the findings backlog.
-   `propose` is idempotent on the finding's key, which it writes into the issue
-   body as `<!-- lingtai:finding <key> -->`. When two accepts race, the newer
+   `propose` is idempotent on the finding's key, which it writes into the
+   ticket body as `<!-- lingtai:finding <key> -->`. When two accepts race, the newer
    issue is withdrawn (commented and closed `not_planned`) in favour of the
    older.
 
@@ -114,8 +147,9 @@ run.
 
 ## Consequences
 
-- A second source is a new `TicketStore` and a widened `source` value, not a
-  change to how a pass runs.
+- A second ticket system (Jira, Linear) is one `Tickets` adapter that passes
+  `describeTicketsContract` (`packages/conductor/test/tickets-contract.ts`),
+  not a change to how a pass runs.
 - Closing on landing and closing on close are separate `end` actions. `when:
   any` also fires on `blocked` and `failed`, where closing the issue is wrong.
   This repository's recipe declares both, and
@@ -130,14 +164,16 @@ run.
 
 ## Not built yet
 
-- **The rest of the port.** `TicketStore` has `propose` and `withdraw` only.
-  The `list`, `get` and `save` it is meant to own are not extracted:
-  discovery (`discover.ts`), the prompt and `end`'s write-back still call
-  `@lingtai/github` directly, and the board's Queued column asks GitHub.
 - **`source` is still a closed enum.** `WorkItemDiscovered.source` in
   `packages/domain/src/events.ts` is `github-issue | manual | agent-followup`.
   It is meant to be an open string, so that adding a store does not change the
-  event schema.
+  event schema. `githubTicketStore` reports `source: 'github-issue'` even when
+  the ticket it wrote lives in `dbTickets` (`ticket-store.ts`).
+- **The contract suite does not run against GitHub.** It covers `memoryTickets`
+  and `dbTickets` on both SQLite and Postgres; `GitHubClient` is held to the
+  `Tickets` type only.
+- **`githubTicketStore`'s name now outlives what it does.** It writes through
+  whichever `Tickets` a project resolved to, not only GitHub's.
 
 ---
 *Replaces archived 0036, 0044, 0062, 0072 in [decisions-archive](../decisions-archive/).*
