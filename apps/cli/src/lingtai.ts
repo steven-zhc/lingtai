@@ -736,6 +736,22 @@ async function daemonCommand(
   const filters = await projectFilters(registered)
   for (const line of describeFilters(filters)) console.log(line)
 
+  const { clients, unresolved } = await clientsForProjects(registered)
+  // **Report, don't repair** (#389). A recipe that will not resolve is
+  // dropped from `clients` rather than falling back to the raw client — see
+  // `clientsForProjects`' own doc comment — and the consequence is said here,
+  // once per project per daemon start, because `reconcile(` has one caller
+  // and nothing on the work loop reaches this line again until the next
+  // start. `doctor` reads the same filter live, which is the per-sweep half
+  // of this report.
+  for (const u of unresolved) {
+    console.log(
+      paint.fail(
+        `reconcile skipped ${u.project}: its recipe will not resolve — ${u.problem}. ` +
+          'Labels, closes and leftover arms are not converged until it does.',
+      ),
+    )
+  }
   const found = await reconcile({
     log: (line) => console.log(line),
     // Told what world it is repairing: which projections should be current,
@@ -743,7 +759,7 @@ async function daemonCommand(
     // no-ops without its own input rather than guessing at a global scan.
     projections: PROJECTIONS.map((p) => p.name),
     projects: registered,
-    github: { projects: registered, clients: await clientsForProjects(registered) },
+    github: { projects: registered, clients },
   }).catch((err: unknown) => {
     // Reported, never fatal. Refusing to start because a directory could not be
     // removed would turn a mess into an outage.

@@ -59,6 +59,7 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // Subpaths, never the barrel. `@lingtai/conductor`'s index pulls in the gate
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
+import type { ClientFor, RecipeFor } from '@lingtai/conductor/filter'
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
 import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
@@ -81,6 +82,18 @@ import { createGitHubClient, type GitHubClient } from '@lingtai/github'
 
 import { withDaemonStore } from './choose.ts'
 import type { DaemonStore } from './store.ts'
+
+/** A project this daemon start could not read a recipe for, and why. */
+export interface UnresolvedProject {
+  project: string
+  problem: string
+}
+
+/** What `clientsForProjects` could build, and what it could not and why. */
+export interface ProjectClients {
+  clients: Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>
+  unresolved: UnresolvedProject[]
+}
 
 /**
  * One client per registered project.
@@ -106,36 +119,56 @@ import type { DaemonStore } from './store.ts'
  * the raw client for what might be a `db` project means its ticket numbers
  * are asked of GitHub as issue numbers, which can write Lingtai's labels onto,
  * and close, an unrelated GitHub issue that happens to share the number. So
- * this project is skipped for the pass instead — "one repository's expired
- * installation must not cost the rest theirs," extended to a recipe that
- * will not resolve.
+ * this project is dropped from `clients` instead — "one repository's expired
+ * installation must not cost the rest theirs," extended to a recipe that will
+ * not resolve — and **returned in `unresolved` rather than logged here**
+ * (`#389`): this function has one caller, at daemon startup, so there is no
+ * sweep for a line printed from inside it to repeat; the caller reports each
+ * entry once and `lingtai doctor` reads the same filter live.
  */
 export async function clientsForProjects(
   projects: readonly ProjectState[],
-): Promise<Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>> {
+  options: { hasApp?: () => boolean; clientFor?: ClientFor; recipeFor?: RecipeFor } = {},
+): Promise<ProjectClients> {
+  const hasApp = options.hasApp ?? hasGitHubApp
+  const clientFor =
+    options.clientFor ??
+    ((p: ProjectState) => createGitHubClient({ auth: githubApp(), owner: p.owner!, repo: p.project! }))
+  const recipeFor = options.recipeFor ?? currentRecipe
   const clients = new Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>()
-  if (!hasGitHubApp()) return clients
+  const unresolved: UnresolvedProject[] = []
+  if (!hasApp()) return { clients, unresolved }
   for (const p of projects) {
     if (!p.project || !p.owner) continue
     let client: GitHubClient
     try {
-      client = await createGitHubClient({ auth: githubApp(), owner: p.owner, repo: p.project })
+      client = await clientFor(p)
     } catch {
       // Named by its absence: the divergence for that project simply is not
       // found, and `doctor` still reports what the log says was not managed.
       continue
     }
     try {
-      const resolved = await currentRecipe(p, client)
+      const resolved = await recipeFor(p, client)
       clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
-    } catch {
+    } catch (err) {
       // Not known whether this project's tickets are GitHub's or dbTickets' —
       // see the doc comment above for why that rules out falling back to the
       // raw client.
-      continue
+      unresolved.push({ project: p.project, problem: oneLine((err as Error).message) })
     }
   }
-  return clients
+  return { clients, unresolved }
+}
+
+/**
+ * `RecipeInvalidError` puts one problem per line, which reads well in a
+ * thrown message and badly folded into one. `@lingtai/conductor/filter` does
+ * the same fold for the same reason, in a function of the same name it does
+ * not export.
+ */
+function oneLine(message: string): string {
+  return message.replace(/\s*\n\s*/g, ' ').trim()
 }
 
 /**

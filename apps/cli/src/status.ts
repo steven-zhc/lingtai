@@ -20,7 +20,7 @@ import {
 } from '@lingtai/conductor'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
-import { queueOf } from '@lingtai/recipe/settings'
+import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -39,6 +39,27 @@ export interface StatusOptions {
 function oneLine(text: string, n = 140): string {
   const said = text.replace(/\s+/g, ' ').trim()
   return said.length > n ? `${said.slice(0, n - 1)}…` : said
+}
+
+/**
+ * `ticketSourceOf`'s two values, in the words a person reads rather than the
+ * schema's own (`#389`). A `db` project's queue lives in `dbTickets` —
+ * `recipe.ts`'s own phrase is *"the `tickets` table on whichever store this
+ * machine chose"* — never GitHub, so the two lines below must not say GitHub
+ * about it.
+ */
+function sourceName(source: TicketSource): string {
+  return source === 'db' ? 'the ticket table' : 'GitHub'
+}
+
+/** The eligible-count line, named after wherever this project's tickets live. */
+export function offerLine(source: string, count: number, passed: string | null): string {
+  return `  from ${source}: ${count} eligible` + (passed !== null ? `, ${passed}` : '')
+}
+
+/** The failure line, naming the same system the line above would have. */
+export function offerFailedLine(source: string, err: Error): string {
+  return `  (${source} unavailable: ${err.message} — the queue cannot be listed)`
 }
 
 /**
@@ -89,12 +110,16 @@ export async function status(
     // managed repository — so without GitHub the queue can still be listed, just
     // not prioritised.
     const kinds: readonly string[] = filter.ok ? filter.kinds : []
-    // What GitHub is offering. Empty when it could not be asked, which is not
-    // the same as an empty queue and is said differently below.
+    // What the ticket source is offering. Empty when it could not be asked,
+    // which is not the same as an empty queue and is said differently below.
     let offered: { ref: string; title: string; kind: string }[] = []
-    /** Whether GitHub answered at all. An empty offer means nothing without it. */
+    /** Whether the ticket source answered at all. An empty offer means nothing without it. */
     let asked = false
     if (filter.ok) {
+      // `GitHub` or `the ticket table`, after where this project's tickets
+      // actually live (`#389`) — the one line below that said `GitHub` for a
+      // `db` project regardless, on both the success and the failure wording.
+      const source = sourceName(ticketSourceOf(filter.recipe))
       try {
         const { tickets, recipe } = filter
 
@@ -114,14 +139,14 @@ export async function status(
         // both numbers were right (`#54`). This one is about the *recipe* —
         // how many open issues its `kinds` and `exclude` will take. The line
         // below is about *state* — how many can be claimed right now.
-        log(`  from GitHub: ${found.runnable.length} eligible` + (passed !== null ? `, ${passed}` : ''))
+        log(offerLine(source, found.runnable.length, passed))
         // Once, beside the count it explains. A repository whose plan does not
         // expose dependencies passes nothing over for one, and a `blocked-by`
         // that is simply never printed reads as a repository with no chains in
         // it (#131). The phrase is `discover.ts`'s, not this file's.
         if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`)
       } catch (err) {
-        log(`  (GitHub unavailable: ${(err as Error).message} — the queue cannot be listed)`)
+        log(offerFailedLine(source, err as Error))
       }
     }
 

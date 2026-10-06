@@ -77,7 +77,7 @@ import { log } from '@lingtai/event-store'
 // connection, and the barrel's `log` is the pooled one. Through a pooler is
 // where the suite learned what a dropped connection costs (#157), and an audit
 // that reds on one would hold `lingtai restart`.
-import { createPostgresLogQueries, type LogQueries } from '@lingtai/event-store/queries'
+import { createPostgresLogQueries, type LogQueries, type UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { GitHubClient } from '@lingtai/github'
 import { REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
@@ -1355,10 +1355,24 @@ async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<Check
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
  */
-async function unconverged(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
+/**
+ * The grading, pulled out of the read so a test can hand it rows directly
+ * (`#389`) — the same split `recipeRow` gets, and for the same reason.
+ *
+ * **A row whose project is in `unresolved` is `fail`, not `warn`.** The
+ * sentence *"the next reconcile recomputes and writes the difference"* is
+ * false for that project: `clientsForProjects` drops a project whose recipe
+ * will not resolve rather than handing `convergeIssues` the raw client (see
+ * its own doc comment), so nothing is going to write anything until the
+ * recipe does resolve — a fact for a person, kept only for the rows whose
+ * project is not in the map.
+ */
+export function unconvergedRow(
+  rows: readonly UnconvergedUpdate[],
+  titles: TitleBook,
+  unresolved: ReadonlyMap<string, string>,
+): CheckResult {
   const name = 'github: what we said and did not manage'
-  const rows = await queries.unconvergedUpdates().catch(() => null)
-  if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
   if (rows.length === 0) {
     return { name, status: 'ok', detail: 'every issue carries what the log last said about it' }
   }
@@ -1367,6 +1381,7 @@ async function unconverged(queries: LogQueries, titles: TitleBook): Promise<Chec
   const computable = rows.filter((r) => r.change !== 'comment')
   const named = (r: { project: string; issue: string; change: string }) =>
     say(titles, `${r.project}#${r.issue}`, r.change)
+  const commentTail = comments.length > 0 ? ` ${comments.length} comment(s) it cannot, which need a person.` : ''
 
   if (computable.length === 0) {
     return {
@@ -1378,6 +1393,23 @@ async function unconverged(queries: LogQueries, titles: TitleBook): Promise<Chec
         '. A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.',
     }
   }
+
+  const blocked = computable.filter((r) => unresolved.has(r.project))
+  if (blocked.length > 0) {
+    const problems = [...new Set(blocked.map((r) => r.project))].map((p) => `${p} (${unresolved.get(p)})`)
+    const rest = blocked.length < computable.length ? ' The next reconcile recomputes the rest.' : ''
+    return {
+      name,
+      status: 'fail',
+      detail:
+        `${computable.length} issue(s) diverged — ` +
+        computable.slice(0, 4).map(named).join(', ') +
+        `. ${blocked.length} of them cannot converge until its recipe resolves — ${problems.join(', ')}.` +
+        rest +
+        commentTail,
+    }
+  }
+
   return {
     name,
     status: 'warn',
@@ -1387,6 +1419,17 @@ async function unconverged(queries: LogQueries, titles: TitleBook): Promise<Chec
       '. The next reconcile recomputes and writes the difference (lingtai daemon)' +
       (comments.length > 0 ? `; ${comments.length} comment(s) it cannot, which need a person.` : '.'),
   }
+}
+
+async function unconverged(
+  queries: LogQueries,
+  titles: TitleBook,
+  unresolved: ReadonlyMap<string, string>,
+): Promise<CheckResult> {
+  const rows = await queries.unconvergedUpdates().catch(() => null)
+  if (rows === null)
+    return { name: 'github: what we said and did not manage', status: 'ok', detail: 'no log to read yet' }
+  return unconvergedRow(rows, titles, unresolved)
 }
 
 /**
@@ -1468,6 +1511,32 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
 }
 
 /**
+ * One resolve per registered project, shared by every row below that grades
+ * one — `recipe:`'s own row, and since `#389` the `unconverged` rows, which
+ * need to say when a divergence belongs to a project reconcile has dropped.
+ * **Do not resolve the recipe a second time**: this is the one place that
+ * calls `projectFilters`, and both callers below are handed its result.
+ *
+ * `null` where the project streams themselves could not be read — the same
+ * fact `projectRecipes` used to discover on its own, kept as its own `skip`.
+ */
+async function projectFiltersOnce(
+  env: NodeJS.ProcessEnv,
+  load: typeof loadProjects,
+): Promise<readonly ProjectFilter[] | null> {
+  const projects = await load().catch(() => null)
+  if (projects === null) return null
+  return projectFilters(projects, recipeClientFor(env))
+}
+
+/** Each unresolved filter's project, against the recipe's own problem. */
+function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyMap<string, string> {
+  return new Map(
+    (filters ?? []).filter((f): f is ProjectFilter & { ok: false } => !f.ok).map((f) => [f.project, f.problem]),
+  )
+}
+
+/**
  * Per project: does its recipe resolve at all, and what will it therefore take.
  *
  * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
@@ -1482,16 +1551,12 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
  * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
  * startup and `lingtai status` prints per project. Three commands, one answer.
  */
-async function projectRecipes(
-  env: NodeJS.ProcessEnv,
-  load: typeof loadProjects = loadProjects,
-): Promise<CheckResult[]> {
+async function projectRecipes(filters: readonly ProjectFilter[] | null): Promise<CheckResult[]> {
   const name = 'recipe: resolves for every project'
-  const projects = await load().catch(() => null)
-  if (projects === null) {
+  if (filters === null) {
     return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
   }
-  if (projects.length === 0) {
+  if (filters.length === 0) {
     return [{ name, status: 'ok', detail: 'nothing is registered, so no recipe governs anything' }]
   }
 
@@ -1508,9 +1573,7 @@ async function projectRecipes(
   // cached probe for the whole report rather than one per project: the answer is
   // about the machine, and `signedInProbe` remembers it for a minute anyway.
   const signedIn = await signedInHere()
-  return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
-    recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn),
-  )
+  return filters.map((f) => recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn))
 }
 
 /**
@@ -1586,7 +1649,12 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
     : {
         name: `recipe: ${f.project}`,
         status: 'fail' as const,
-        detail: `${f.problem} — nothing will be taken from this project`,
+        detail:
+          `${f.problem} — nothing will be taken from this project, ` +
+          // Said even where the log holds no `IssueUpdateFailed` row for this
+          // project yet — the common case, since nothing claiming a divergence
+          // has a reason to exist before the recipe ever resolved (`#389`).
+          'and reconcile cannot converge its labels, closes or leftover arms either',
       }
 }
 
@@ -2090,6 +2158,12 @@ export async function runDoctor(
   const choice = store()
   results.push(storeRow(choice))
 
+  // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
+  // and the `unconverged` rows in both store branches read this same value,
+  // rather than each asking every project's recipe again.
+  const filters = await projectFiltersOnce(env, load)
+  const unresolved = unresolvedProblems(filters)
+
   /**
    * **A machine that wrote `sqlite` is never asked for a connection string.**
    *
@@ -2163,7 +2237,7 @@ export async function runDoctor(
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
     const titles = await issueTitles(reach.titles)
-    results.push(await unconverged(queries, titles))
+    results.push(await unconverged(queries, titles, unresolved))
     results.push(await subscribers(queries))
     results.push(await endStepRan(queries, titles))
     // Named one at a time, each saying why it does not apply and naming the
@@ -2203,7 +2277,7 @@ export async function runDoctor(
     // *called*, not what they assert, so it is read where every other
     // projection read here is read (#258).
     const titles = await issueTitles()
-    results.push(await unconverged(audit, titles))
+    results.push(await unconverged(audit, titles, unresolved))
     results.push(await subscribers(audit))
     results.push(await endStepRan(audit, titles))
   } else {
@@ -2215,7 +2289,7 @@ export async function runDoctor(
   }
 
   results.push(githubCredentials(env))
-  results.push(...(await projectRecipes(env, load)))
+  results.push(...(await projectRecipes(filters)))
   results.push(...(await declaredEnvironment(env, load)))
   results.push(...(await recipeGovernsItsBase(env, load)))
   results.push(await settingsSources(reach.settings))
