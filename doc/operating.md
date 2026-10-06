@@ -558,13 +558,24 @@ pnpm lingtai doctor    # per project: every required name and which layer it cam
 
 #### Tickets without GitHub — `source.tickets: db`
 
-A project with no GitHub App, or whose tickets you would rather keep out of
-GitHub entirely, writes this instead of leaving `source.tickets` out:
+A project whose tickets you would rather keep out of GitHub entirely writes
+this instead of leaving `source.tickets` out:
 
 ```yaml
 source:
   tickets: db
 ```
+
+**The GitHub App is still required regardless.** `source.tickets: db` moves
+only the eight ticket verbs — not whether `lingtai add` or a pass can run at
+all. `add()`'s second statement is `githubApp()`
+(`packages/conductor/src/onboard.ts:249`), which throws if
+`LINGTAI_GITHUB_APP_ID` is not set; every pass builds its client through
+`githubClientFor` (`packages/conductor/src/filter.ts:216-218`), which throws
+the same way before `ticketsFor` is ever reached; and `lingtai backlog
+accept` refuses by name (`apps/cli/src/backlog.ts:185`). There is no way to
+register or run a project without the App configured — `db` only decides
+where its tickets live once that App is in place.
 
 Only on a project with no history — `ticketsFor` refuses a recipe that newly
 says `db` once the log already has GitHub-numbered work items, because a

@@ -1820,13 +1820,20 @@ Four rules:
   which is under the boundary's ten — that one is the backstop for a promise
   that never settles at all.
 
-## lingtai subcommand — 23
+## lingtai subcommand — 26
 
 Source: the switch in `apps/cli/src/lingtai.ts`.
 
-`add` · `run` · `approve` · `backlog` · `requeue` · `waive` · `ask` · `answer` ·
-`ticket` · `attach` · `status` · `doctor` · `env` · `end` · `daemon` · `service` ·
-`restart` · `pause` · `resume` · `shutdown` · `now` · `projection` · `version`
+`add` · `run` · `approve` · `backlog` · `requeue` · `ask` · `answer` · `close` ·
+`ticket` · `attach` · `board` · `status` · `doctor` · `env` · `end` · `start` ·
+`daemon` · `service` · `restart` · `pause` · `resume` · `shutdown` · `now` ·
+`projection` · `version` · `init`
+
+`daemon` is `start`'s own case, fallen through to the same handler rather
+than removed — `lingtai.ts:1389-1394` calls `start` "the name" and keeps
+`daemon` answering so a supervisor's plist that still has the old name
+written into it does not stop working. `waive` is not among these: it names
+a decision a person can take (below), not a case in this switch.
 
 `approve`, `requeue` and `waive` are the decisions a person can take from
 here. The board's are the first two — `apps/board/src/app/actions.ts` imports

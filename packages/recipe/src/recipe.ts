@@ -1022,9 +1022,12 @@ const BACKOFF = z
  * **Wired into the pass by `ticketSourceOf` and `ticketsFor`** (`#382`) —
  * discovery, the queue, the board's Queued column and the daemon's
  * convergence all take their tickets from there rather than from a
- * `GitHubClient` directly. So does the board's task page
- * (`apps/board/src/lib/task.ts`) and `lingtai backlog accept`
- * (`apps/cli/src/backlog.ts`'s `projectClient`) — #383's.
+ * `GitHubClient` directly. Since #383, so does `lingtai backlog accept`
+ * (`apps/cli/src/backlog.ts`'s `projectClient`) — though it still needs a
+ * GitHub App to reach that point, same as `ticketsFor` itself does. The
+ * board's task page (`apps/board/src/lib/task.ts`) reads this field
+ * directly instead, to decide whether to ask GitHub at all, and never
+ * calls `ticketsFor`.
  */
 export const TicketSource = z.enum(['github', 'db'])
 export type TicketSource = z.infer<typeof TicketSource>

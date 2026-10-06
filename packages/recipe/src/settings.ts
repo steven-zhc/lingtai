@@ -303,12 +303,19 @@ export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
  * a recipe that writes nothing hashes exactly as it did before this setting
  * existed.
  *
- * The board reads it (#384), for whether a card's reference points at
- * GitHub, and so does `ticketsFor` (`@lingtai/conductor/ticket-store`,
- * `#382`), which is what the pass, the queue and the daemon's convergence
- * take their tickets from instead of a `GitHubClient` directly — and, since
- * #383, so do the board's task page (`apps/board/src/lib/task.ts`) and
- * `lingtai backlog accept` (`apps/cli/src/backlog.ts`'s `projectClient`).
+ * The board reads it directly (#384) — `apps/board/src/lib/task.ts` calls
+ * this function, not `ticketsFor`, to decide whether to ask GitHub at all,
+ * and for `db` returns without ever fetching a body. `ticketsFor`
+ * (`@lingtai/conductor/ticket-store`, `#382`) is what the pass, the queue
+ * and the daemon's convergence take their tickets from instead of a
+ * `GitHubClient` directly — and, since #383, so does `lingtai backlog
+ * accept` (`apps/cli/src/backlog.ts`'s `projectClient`).
+ *
+ * **A `db` project with no GitHub App still refuses at `backlog accept`.**
+ * `projectClient` builds a `GitHubClient` with `githubClientFor` before it
+ * ever asks `ticketsFor` where tickets live, and `backlog.ts`'s own check
+ * refuses by name first — so this setting decides where tickets are read
+ * and written, not whether the App is required to get there.
  */
 export function ticketSourceOf(recipe: Recipe): TicketSource {
   return recipe.source.tickets ?? 'github'
