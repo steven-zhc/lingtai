@@ -226,7 +226,11 @@ const EVERY_DEP: ActionDeps = {
   // The tenth, and `implement`'s own: a `run:` there commits through this
   // rather than merely judging (`#390`). Built, never run — same as every
   // other entry in this object.
-  keptRun: { keep: async () => ({ clean: true }), restore: async () => {} },
+  keptRun: {
+    baseline: async () => new Set(),
+    keep: async () => ({ clean: true }),
+    restore: async () => ({ ok: true }),
+  },
 }
 const DEPS: Record<'prepared' | 'proposed' | 'merge', ActionDeps> = {
   prepared: { env: () => ({}) },

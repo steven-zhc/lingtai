@@ -18,6 +18,14 @@
  * fix round 0057 §2 already prices — this is a second chance for that gate to
  * never fire, not a second gate.
  *
+ * **What the command found dirty, it must leave alone.** The implementing
+ * agent may have left the worktree carrying uncommitted work it decided
+ * against — an edit it chose not to commit, an experiment it never staged.
+ * `baseline()` is read *before* `inner.run` so `keep` and `restore` both know
+ * what that was, and neither ever stages, commits or deletes any of it: `keep`
+ * commits only what changed *since* the baseline, and `restore` removes only
+ * what the command left behind, never what was already there (`#390`).
+ *
  * **The port is handed in rather than built here**, for `createFileAction`'s
  * reason: a filesystem and a `git` binary are things only a caller with a
  * machine under it has, and `packages/conductor/src/kept-run-port.ts` is that
@@ -31,10 +39,13 @@ import type { Action, ActionContext, ActionResult } from './action.ts'
 export type KeptRunAnswer =
   /** Committed, at this head — the whole of what moves `onSha`. */
   | { readonly committed: string }
-  /** Staged everything and found nothing different from `HEAD`. */
+  /** Staged everything but the baseline and found nothing different from `HEAD`. */
   | { readonly clean: true }
   /** The commit itself was refused, in words a person reads (0043). */
   | { readonly notKept: string }
+
+/** What `restore` answered. A failure here is said, never swallowed (`#390`). */
+export type RestoreAnswer = { readonly ok: true } | { readonly failed: string }
 
 /**
  * The port, as the only thing this action needs from its caller.
@@ -43,10 +54,17 @@ export type KeptRunAnswer =
  * `FileActionDeps` and a reader meets one convention.
  */
 export interface KeptRunActionDeps {
-  /** Stages everything, and commits it where there is a difference from `HEAD`. */
-  keep(spec: { readonly name: string }): Promise<KeptRunAnswer>
-  /** Puts the tracked files back to `HEAD` — called only when the run did not pass. */
-  restore(): Promise<void>
+  /** What is already dirty or untracked before the command runs — `keep` and `restore` leave every one of these alone. */
+  baseline(): Promise<ReadonlySet<string>>
+  /** Stages everything but `baseline`, and commits it where there is a difference from `HEAD`. */
+  keep(spec: { readonly name: string }, baseline: ReadonlySet<string>): Promise<KeptRunAnswer>
+  /** Puts tracked files back to `HEAD` and removes what the run left untracked — called only when the run did not pass. */
+  restore(baseline: ReadonlySet<string>): Promise<RestoreAnswer>
+}
+
+/** The tail every evidence string carries once `restore` has run, naming it when `restore` itself did not finish the job. */
+function restoreCaveat(restored: RestoreAnswer): string {
+  return 'failed' in restored ? ` — the tree was not fully restored (${restored.failed})` : ''
 }
 
 export function createKeptRunAction(name: string, inner: Action, deps: KeptRunActionDeps): Action {
@@ -55,20 +73,22 @@ export function createKeptRunAction(name: string, inner: Action, deps: KeptRunAc
     kind: 'run',
 
     async run(context: ActionContext): Promise<ActionResult> {
+      const baseline = await deps.baseline()
       const ran = await inner.run(context)
 
       if (ran.verdict !== 'passed') {
-        await deps.restore()
+        const restored = await deps.restore(baseline)
         return {
           verdict: 'passed',
           evidence:
             `${ran.evidence} — nothing committed, the tree is back where \`${name}\` found it; ` +
-            "`build` judges the agent's commit as it stands",
+            "`build` judges the agent's commit as it stands" +
+            restoreCaveat(restored),
           findings: [],
         }
       }
 
-      const kept = await deps.keep({ name })
+      const kept = await deps.keep({ name }, baseline)
       if ('committed' in kept) {
         return {
           verdict: 'passed',
@@ -81,12 +101,13 @@ export function createKeptRunAction(name: string, inner: Action, deps: KeptRunAc
         return { verdict: 'passed', evidence: `${ran.evidence} — nothing to commit`, findings: [] }
       }
 
-      await deps.restore()
+      const restored = await deps.restore(baseline)
       return {
         verdict: 'passed',
         evidence:
           `${ran.evidence} — the commit was refused (${kept.notKept}); nothing committed, the tree is back ` +
-          `where \`${name}\` found it`,
+          `where \`${name}\` found it` +
+          restoreCaveat(restored),
         findings: [],
       }
     },

@@ -46,12 +46,16 @@ function fakePort(answer: KeptRunAnswer): KeptRunActionDeps & { calls: string[] 
   const calls: string[] = []
   return {
     calls,
+    async baseline() {
+      return new Set()
+    },
     async keep() {
       calls.push('keep')
       return answer
     },
     async restore() {
       calls.push('restore')
+      return { ok: true }
     },
   }
 }

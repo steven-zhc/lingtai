@@ -21,12 +21,17 @@ function port(answer: KeptRunAnswer): KeptRunActionDeps & { readonly calls: stri
   const calls: string[] = []
   return {
     calls,
+    async baseline() {
+      calls.push('baseline')
+      return new Set()
+    },
     async keep() {
       calls.push('keep')
       return answer
     },
     async restore() {
       calls.push('restore')
+      return { ok: true }
     },
   }
 }
@@ -40,7 +45,8 @@ describe('a run at implement never reports failed', () => {
 
     expect(result).toMatchObject({ verdict: 'passed', head: 'c'.repeat(40) })
     expect(result.evidence).toContain('pnpm fmt')
-    expect(deps.calls).toEqual(['keep'])
+    // `baseline` is read before the command runs, never after.
+    expect(deps.calls).toEqual(['baseline', 'keep'])
   })
 
   it('passes with no head when there was nothing to commit', async () => {
@@ -51,7 +57,7 @@ describe('a run at implement never reports failed', () => {
 
     expect(result.verdict).toBe('passed')
     expect(result).not.toHaveProperty('head')
-    expect(deps.calls).toEqual(['keep'])
+    expect(deps.calls).toEqual(['baseline', 'keep'])
   })
 
   it('restores and passes, with the failure first, when the command fails', async () => {
@@ -68,7 +74,7 @@ describe('a run at implement never reports failed', () => {
     expect(result).not.toHaveProperty('head')
     expect(result.evidence.startsWith('pnpm fmt exited 1')).toBe(true)
     // `restore` ran and `keep` never did — a failing command commits nothing.
-    expect(deps.calls).toEqual(['restore'])
+    expect(deps.calls).toEqual(['baseline', 'restore'])
   })
 
   it('restores and passes when the commit itself is refused', async () => {
@@ -80,6 +86,32 @@ describe('a run at implement never reports failed', () => {
     expect(result.verdict).toBe('passed')
     expect(result).not.toHaveProperty('head')
     expect(result.evidence).toContain('git commit refused it')
-    expect(deps.calls).toEqual(['keep', 'restore'])
+    expect(deps.calls).toEqual(['baseline', 'keep', 'restore'])
+  })
+
+  it('says so, rather than claiming it, when `restore` cannot finish the job', async () => {
+    const calls: string[] = []
+    const deps: KeptRunActionDeps = {
+      async baseline() {
+        return new Set()
+      },
+      async keep() {
+        calls.push('keep')
+        return { notKept: 'git commit refused it: nothing is staged' }
+      },
+      async restore() {
+        calls.push('restore')
+        return { failed: 'git reset refused it: index.lock exists' }
+      },
+    }
+    const action = createKeptRunAction('format', inner({ verdict: 'passed', evidence: 'pnpm fmt', findings: [] }), deps)
+
+    const result = await action.run(context)
+
+    expect(result.verdict).toBe('passed')
+    expect(result.evidence).toContain('git commit refused it')
+    expect(result.evidence).toContain('the tree was not fully restored')
+    expect(result.evidence).toContain('index.lock exists')
+    expect(calls).toEqual(['keep', 'restore'])
   })
 })

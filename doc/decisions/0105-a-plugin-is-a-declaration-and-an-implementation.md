@@ -39,7 +39,7 @@ event should carry, and the log is replayed on every projection rebuild.
 
    | key | may be declared at |
    |---|---|
-   | `run` | `prepared` `build` `proposed` `merge` |
+   | `run` | `prepared` `build` `implement` `proposed` `merge` |
    | `agent` | `design` `implement` `review` `proposed` `merge` |
    | `file` | `design` |
    | `file-brief` | `implement` |
@@ -77,8 +77,11 @@ event should carry, and the log is replayed on every projection rebuild.
    declaration names, and never the conductor's environment.
 
 6. **Today a third party extends a step with `run:`.** A `run:` action spawns a
-   command in the worktree; exit code 0 passes, anything else refuses (it is only
-   legal at the four refusing steps). `timeout:` defaults to `15m`. `env:` lists
+   command in the worktree; exit code 0 passes, and anything else refuses at
+   four of its five legal steps — at the fifth, `implement`, nothing it does
+   can refuse (`#390`): the command runs after the agent and commits what it
+   changed, so a failure there is absorbed and left for `build`'s own copy of
+   the check to catch. `timeout:` defaults to `15m`. `env:` lists
    the variable *names* it receives, resolved from `~/.lingtai/env/`; a
    `LINGTAI_*` name is refused, and a `run:` that declares nothing gets only the
    minimal process environment. Evidence is the output's tail, clipped to 60

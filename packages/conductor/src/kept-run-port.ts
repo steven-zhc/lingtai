@@ -1,4 +1,4 @@
-import type { KeptRunActionDeps, KeptRunAnswer } from '@lingtai/actions'
+import type { KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/actions'
 /**
  * **The `run` at `implement`'s port into git** — the commit `createKeptRunAction`
  * is handed, lifted out into its own module for `file-port.ts`'s reason: so a
@@ -12,9 +12,11 @@ import type { KeptRunActionDeps, KeptRunAnswer } from '@lingtai/actions'
  * before it made"*) — stage, then ask whether anything is staged, then commit
  * only where there is a difference, then ask git where `HEAD` landed:
  *
- * - `git add -A`, excluding the planted env file by pathspec — a formatter can
- *   touch any file, so unlike `design`'s `keep`, which stages one path, this
- *   stages everything *but* one.
+ * - `git add -A`, excluding the planted env file and everything `baseline`
+ *   named by pathspec. A formatter can touch any file, so unlike `design`'s
+ *   `keep`, which stages one known path, this stages everything *but* two
+ *   kinds of exception — and the second kind is why this module takes a
+ *   `baseline` at all (see *What `baseline` protects, and why* below).
  * - `git diff --cached --quiet`. A clean answer means nothing changed, so
  *   `keep` returns `{ clean: true }` and commits nothing.
  * - `git commit`, naming the action in the message. A refusal here is
@@ -24,16 +26,35 @@ import type { KeptRunActionDeps, KeptRunAnswer } from '@lingtai/actions'
  *   so `stepsOn` in `@lingtai/domain` keeps reading every verdict after this
  *   one off the run's own stream rather than filtering them out.
  *
- * ## Why the planted env file is excluded, and why `restore` runs no `git clean`
+ * `restore` is `git reset --hard HEAD` and then `git clean -fd`, both scoped
+ * away from the planted env file and from `baseline` — the design this
+ * implements ([doc/design/390.md](../../../doc/design/390.md) §*Failure*)
+ * calls for exactly this pair. Either step's refusal is answered, not
+ * swallowed: `restore` returns `{ failed }` rather than claiming a tree it
+ * did not actually put back.
+ *
+ * ## What `baseline` protects, and why
+ *
+ * The agent that ran before this action may have left the worktree carrying
+ * work it decided against — an edit to a file it never staged, a scratch file
+ * it never tracked. That is not this action's to touch, and it is not the
+ * command's output either: `git add -A` with no exclusion for it would sweep
+ * it into the command's commit, and `git clean -fd` with no exclusion for it
+ * would delete it outright the moment the command fails. `baseline()` is read
+ * *before* the command runs, so both `keep` and `restore` can tell "already
+ * here" apart from "the command's doing" and leave the former alone in either
+ * direction — committed or deleted.
+ *
+ * ## Why the planted env file is excluded
  *
  * `provisionWorktree` plants a `.env.local`-shaped file under `recipe.env.plantAt`
  * (`packages/repo/src/worktree.ts`), mode `0600`, and nothing adds it to
  * `.git/info/exclude`. A `git add -A` with no exclusion would commit it the
  * moment a managed repository's own `.gitignore` does not cover it, and the merge
- * lane would land the secrets it carries. The same fact is why `restore` is
- * `git reset --hard HEAD` and never `git clean`: a `clean` would delete that
- * same untracked file whenever it is not `.gitignore`d, on every run whose
- * command failed.
+ * lane would land the secrets it carries — and a `git clean -fd` with no
+ * exclusion would delete that same untracked file. Both are pathspec
+ * exclusions rather than `.gitignore` entries, because the worktree is not
+ * this port's to edit.
  *
  * ## What it is allowed to know, and what it is not
  *
@@ -50,8 +71,9 @@ export type GitHere = (args: string[]) => Promise<Either.Either<string, { readon
 export interface KeptRunPortOptions {
   git: GitHere
   /**
-   * `recipe.env.plantAt` — the one path `git add -A` must never stage, so the
-   * planted credentials never reach a commit this port makes.
+   * `recipe.env.plantAt` — the one path `git add -A` and `git clean -fd` must
+   * never touch, so the planted credentials never reach a commit this port
+   * makes, and never get deleted by its restore either.
    */
   plantAt: string
   /** The ticket's ref, for the commit message — `FileActionDeps.issue`'s own closure. */
@@ -64,12 +86,28 @@ export interface KeptRunPortOptions {
   recordCompletion: (head: string) => Promise<void>
 }
 
+/** A `:(exclude)` pathspec for every name in `paths`, so `git` is told to leave each one alone. */
+function excluding(paths: Iterable<string>): string[] {
+  return [...paths].map((path) => `:(exclude)${path}`)
+}
+
 export function keptRunPort(options: KeptRunPortOptions): KeptRunActionDeps {
   const { git, plantAt, issue, recordCompletion } = options
 
   return {
-    async keep(spec): Promise<KeptRunAnswer> {
-      const added = await git(['add', '-A', '--', '.', `:(exclude)${plantAt}`])
+    async baseline(): Promise<ReadonlySet<string>> {
+      const status = await git(['status', '--porcelain=v1', '--untracked-files=all', '--', '.', `:(exclude)${plantAt}`])
+      if (Either.isLeft(status)) return new Set()
+      return new Set(
+        status.right
+          .split('\n')
+          .filter((line) => line.length > 3)
+          .map((line) => line.slice(3)),
+      )
+    },
+
+    async keep(spec, baseline): Promise<KeptRunAnswer> {
+      const added = await git(['add', '-A', '--', '.', `:(exclude)${plantAt}`, ...excluding(baseline)])
       if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` }
 
       // `--quiet` implies `--exit-code`: a *right* here is *nothing staged*,
@@ -89,11 +127,14 @@ export function keptRunPort(options: KeptRunPortOptions): KeptRunActionDeps {
       return { committed: head.right }
     },
 
-    async restore(): Promise<void> {
-      // No `git clean`, and the header says why: the planted env file is
-      // untracked, and a clean would delete it whenever a managed repository's
-      // own `.gitignore` does not cover it.
-      await git(['reset', '--hard', 'HEAD'])
+    async restore(baseline): Promise<RestoreAnswer> {
+      const reset = await git(['reset', '--hard', 'HEAD'])
+      if (Either.isLeft(reset)) return { failed: `git reset refused it: ${reset.left.detail}` }
+
+      const cleaned = await git(['clean', '-fd', '--', '.', `:(exclude)${plantAt}`, ...excluding(baseline)])
+      if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
+
+      return { ok: true }
     },
   }
 }
