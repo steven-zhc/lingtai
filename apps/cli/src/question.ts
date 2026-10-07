@@ -52,27 +52,17 @@ export interface Question {
 
 export type Answered = { answer: string } | { refused: string }
 
-async function accept(q: Question, answer: string): Promise<string | null> {
-  if (q.choices !== undefined && !q.choices.includes(answer)) {
-    return `${answer} is not one of ${q.choices.join(', ')}`
-  }
-  return q.validate === undefined ? null : await q.validate(answer)
-}
-
 /**
- * One line from the person at a real terminal; null when there is none to ask
- * — `QuestionWorld.ask`'s live implementation, and the only readline this
- * process opens for a question (`init.ts` and `lingtai add` both call this
- * rather than each opening their own).
+ * A readline reader over this process's own stdin/stdout — null with no
+ * terminal attached. Shared by every live `QuestionWorld`, `init` and `add`
+ * alike, so there is one terminal reader rather than one per command (#398).
  */
 export async function liveAsk(prompt: string): Promise<string | null> {
   if (!process.stdin.isTTY) return null
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   // Ctrl+C at a question: every earlier answer is already written, and this one was not.
   rl.on('SIGINT', () => {
-    console.log(
-      '\nstopped at the question — its answer was not written, and running the same command again asks it here',
-    )
+    console.log('\nstopped at the question — its answer was not written, and running the command again asks it here')
     process.exit(130)
   })
   try {
@@ -80,6 +70,13 @@ export async function liveAsk(prompt: string): Promise<string | null> {
   } finally {
     rl.close()
   }
+}
+
+async function accept(q: Question, answer: string): Promise<string | null> {
+  if (q.choices !== undefined && !q.choices.includes(answer)) {
+    return `${answer} is not one of ${q.choices.join(', ')}`
+  }
+  return q.validate === undefined ? null : await q.validate(answer)
 }
 
 export async function question(world: QuestionWorld, q: Question): Promise<Answered> {

@@ -1,0 +1,323 @@
+/**
+ * `lingtai add`'s setup questions (#399): land on a branch or hold every pass,
+ * then the limits — rounds, wall, and a spend ceiling in money.
+ *
+ * Asked before `add()` runs, never inside it (`onboard.ts`'s `add` has a
+ * second caller, the board's Recheck, which must never ask a question), and
+ * only when the project's recipe file already exists — `add()`'s own refusal
+ * speaks for an absent one, and nothing here seeds a file that cannot resolve
+ * on its own (#395).
+ *
+ * Each answer is one `setRecipe` call, written the moment it is given (#392
+ * decision 1, #391 — *a Ctrl+C keeps what was answered*). The pure half of
+ * each write — the answer turned into `RecipeChange[]` — is `@lingtai/recipe`'s
+ * `answers.ts`, so the conductor's own test can apply the same change set and
+ * prove it holds or lands a pass, not only that it resolves.
+ */
+import { createInterface } from 'node:readline/promises'
+
+import { passCeiling } from '@lingtai/conductor/ceiling'
+import { paint } from '@lingtai/env/colour'
+import {
+  type Recipe,
+  type RecipeChange,
+  type RecipeFiles,
+  type SetRecipeResult,
+  baseOf,
+  boundsBesides,
+  budgetChange,
+  ceilingOf,
+  diskFiles,
+  landingChanges,
+  limitsFor,
+  parseDuration,
+  readRecipeKey,
+  recipePath,
+  resolveSource,
+  roundsChange,
+  setRecipe,
+  wallChange,
+} from '@lingtai/recipe'
+
+import { type QuestionWorld, question } from './question.ts'
+
+/** `console` and `stdin`, for `addCommand` — no TTY answers every question null (#392). */
+export function liveQuestionWorld(): QuestionWorld {
+  return {
+    log: (line) => console.log(line),
+    ask: async (prompt) => {
+      if (!process.stdin.isTTY) return null
+      const rl = createInterface({ input: process.stdin, output: process.stdout })
+      try {
+        return await rl.question(prompt)
+      } finally {
+        rl.close()
+      }
+    },
+  }
+}
+
+export interface LandingDeps {
+  home?: string
+  files?: RecipeFiles
+  /**
+   * The repository's default branch — asked only when nothing else answers
+   * it: no flag, and the file's own base is a blank `repo.base: ""` rather
+   * than a real branch.
+   */
+  defaultBranch: () => Promise<string | null>
+}
+
+type Answered = { ok: true } | { refused: string }
+
+/**
+ * `setRecipe` throws — `RecipeInvalidError` on a narrowing or schema refusal,
+ * or on a change it cannot carry onto the file exactly — rather than returning
+ * a refusal, so every call site here must catch it and hand the message back
+ * as `{refused}` the same way `question()`'s own refusals are returned. Left
+ * uncaught, the answers already written stay on disk while the one that threw
+ * never reaches the terminal to be asked again (#399).
+ */
+async function setRecipeOrRefuse(
+  project: string,
+  changes: readonly RecipeChange[],
+  options: { home?: string; files?: RecipeFiles },
+): Promise<SetRecipeResult | { refused: string }> {
+  try {
+    return await setRecipe(project, changes, options)
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
+
+async function resolvedFile(
+  project: string,
+  options: { home?: string; files?: RecipeFiles },
+): Promise<
+  | {
+      text: string
+      recipe: Recipe
+      proposed: readonly Record<string, unknown>[]
+      admit: readonly Record<string, unknown>[]
+      base: string
+      limits: { turns: number; wall: string; rounds: number; restarts: number; usd?: number }
+      agent: string
+    }
+  | { refused: string }
+> {
+  const files = options.files ?? diskFiles
+  const path = recipePath(project, options.home)
+  const text = await files.read(path)
+  if (text === null) return { refused: `no recipe at ${path} — lingtai add reads this project's own refusal for that` }
+  let resolved
+  try {
+    resolved = resolveSource(text, path, path)
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+  return {
+    text,
+    recipe: resolved.recipe,
+    proposed: resolved.recipe.steps.proposed,
+    admit: resolved.recipe.steps.admit,
+    base: baseOf(resolved.recipe),
+    limits: ceilingOf(resolved.recipe),
+    agent: resolved.recipe.runtime.agent,
+  }
+}
+
+/**
+ * **Land on a branch, or hold every pass for a person** — `--land <branch>|hold`.
+ *
+ * `current` is `'hold'` when the resolved recipe already carries a `human:`
+ * at `proposed` (a preset's counts, same as a person's own), else `baseOf`
+ * the resolved recipe — `steps.admit`'s `worktree.base` where one is
+ * declared, `repo.base` otherwise (`settings.ts`'s `baseOf`/`baseWrittenAt`)
+ * — unless that resolves to `''`, which is not a branch and is treated the
+ * same as nothing having answered the question. `detected` is the
+ * repository's default branch, asked only when neither answers it.
+ * `landingChanges` writes the branch answer back at that same place, never
+ * unconditionally at `repo.base`.
+ *
+ * `landingChanges` is handed `steps.proposed`/`steps.admit` as the file
+ * itself writes them (`readRecipeKey`), not the resolved, schema-defaulted
+ * version — so an entry the file already wrote tersely is carried back
+ * exactly as written, instead of pinning every field the schema would have
+ * filled in for it. Only where the file writes nothing there at all (the
+ * step is inherited whole from a preset) does the resolved list stand in,
+ * so a step `extends:` supplies is not dropped.
+ */
+export async function askLanding(
+  world: QuestionWorld,
+  project: string,
+  land: string | null,
+  deps: LandingDeps,
+): Promise<Answered> {
+  const options = { home: deps.home, files: deps.files }
+  const file = await resolvedFile(project, options)
+  if ('refused' in file) return file
+
+  const currentlyHolds = file.proposed.some((action) => 'human' in action)
+  const current = currentlyHolds ? 'hold' : file.base === '' ? null : file.base
+  // Paid only when nothing else answers the question — a flag or an already
+  // resolved `current` means `question()` never looks at `detected`, and
+  // this is the GitHub round trip `defaultBranch()` spends to get it (#399).
+  const detected = land === null && current === null ? await deps.defaultBranch() : null
+
+  const result = await question(world, {
+    name: 'the landing',
+    flag: '--land <branch>|hold',
+    given: land,
+    prompt: 'land this on which branch, or "hold" to hold every pass for a person',
+    current,
+    detected,
+    validate: async (answer) => (answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
+  })
+  if ('refused' in result) return result
+
+  const rawProposed = await readRecipeKey(project, ['steps', 'proposed'], options)
+  const rawAdmit = await readRecipeKey(project, ['steps', 'admit'], options)
+  const hadSteps = (await readRecipeKey(project, ['steps'], options)) !== null
+  const changes = landingChanges(
+    result.answer === 'hold' ? { land: 'hold' } : { land: result.answer },
+    Array.isArray(rawProposed) ? rawProposed : file.proposed,
+    Array.isArray(rawAdmit) ? rawAdmit : file.admit,
+  )
+  const written = await setRecipeOrRefuse(project, changes, options)
+  if ('refused' in written) return written
+  if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {
+    world.log(
+      paint.muted(
+        `${recipePath(project, deps.home)} had no steps: of its own — writing steps.proposed pins every other ` +
+          'step this file was inheriting from its preset, in the file, alongside it',
+      ),
+    )
+  }
+  world.log(
+    result.answer === 'hold'
+      ? paint.pass('landing       hold — every pass stops at proposed for a person')
+      : paint.pass(`landing       ${result.answer}`),
+  )
+  return { ok: true }
+}
+
+/** `--budget`'s "none", parsed the way the question accepts `5`, `5.00` and `$5`. */
+function parseBudget(answer: string): number | null | string {
+  if (answer.trim().toLowerCase() === 'none') return null
+  const n = Number(answer.trim().replace(/^\$/, ''))
+  if (!Number.isFinite(n) || n <= 0) {
+    return 'that is not a dollar amount — write a positive number like 5 or 5.00, or "none" for no ceiling'
+  }
+  return n
+}
+
+export interface LimitsFlags {
+  rounds?: string
+  wall?: string
+  budget?: string
+}
+
+/**
+ * **The limits: rounds, wall and a spend ceiling, each narrowed only when the
+ * answer differs from what the recipe resolves to now** — pressing enter on
+ * an inherited default must not pin it into the file (`write.ts`'s
+ * `readRecipeKey` comment, #392).
+ */
+export async function askLimits(
+  world: QuestionWorld,
+  project: string,
+  flags: LimitsFlags,
+  options: { home?: string; files?: RecipeFiles },
+): Promise<Answered> {
+  const file = await resolvedFile(project, options)
+  if ('refused' in file) return file
+  const { limits } = file
+
+  const rounds = await question(world, {
+    name: 'rounds',
+    flag: '--rounds <n>',
+    given: flags.rounds ?? null,
+    prompt: 'how many times a pass sends the agent back — 0 means every refusal goes straight to you',
+    current: String(limits.rounds),
+    validate: async (answer) => (/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+  })
+  if ('refused' in rounds) return rounds
+  const roundsValue = Number(rounds.answer)
+  if (roundsValue !== limits.rounds) {
+    const written = await setRecipeOrRefuse(project, [roundsChange(roundsValue)], options)
+    if ('refused' in written) return written
+  }
+
+  const wall = await question(world, {
+    name: 'wall',
+    flag: '--wall <duration>',
+    given: flags.wall ?? null,
+    prompt: 'what one agent run may take, like 30m or 2h',
+    current: limits.wall,
+    validate: async (answer) => {
+      try {
+        return parseDuration(answer) > 0 ? null : 'must be a positive duration, like 30m'
+      } catch {
+        return 'that is not a duration like 30s, 15m or 2h'
+      }
+    },
+  })
+  if ('refused' in wall) return wall
+  if (wall.answer !== limits.wall) {
+    const written = await setRecipeOrRefuse(project, [wallChange(wall.answer)], options)
+    if ('refused' in written) return written
+  }
+
+  const budget = await question(world, {
+    name: 'the spend ceiling',
+    flag: '--budget <dollars>|none',
+    given: flags.budget ?? null,
+    prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
+    current: limits.usd === undefined ? 'none' : String(limits.usd),
+    show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
+    validate: async (answer) => {
+      const parsed = parseBudget(answer)
+      return typeof parsed === 'string' ? parsed : null
+    },
+  })
+  if ('refused' in budget) return budget
+
+  const usdValue =
+    budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
+  if ((usdValue ?? null) !== (limits.usd ?? null)) {
+    const written = await setRecipeOrRefuse(project, [budgetChange(usdValue)], options)
+    if ('refused' in written) return written
+  }
+
+  // `add()`'s own sentence (`onboard.ts:335-341`) is `limitsFor`/`boundsBesides`
+  // against `implement`, not the bare ceiling: a per-step bound narrower than
+  // the ceiling makes the two disagree about what a pass costs, which is the
+  // one thing 0070 §9 put `steps` into `passCeiling` to prevent (#399). So this
+  // re-resolves what was just written and calls it the same way.
+  const after = await resolvedFile(project, options)
+  if ('refused' in after) return after
+  const implementLimits = limitsFor(after.recipe, 'implement')
+  world.log(
+    paint.muted(
+      `  ${'a pass'.padEnd(9)} ${passCeiling({
+        ...implementLimits,
+        wallMs: parseDuration(implementLimits.wall),
+        steps: boundsBesides(after.recipe, 'implement'),
+      })}`,
+    ),
+  )
+  // The runtime the file names, not `resolveSource`'s schema default: a recipe
+  // naming none runs whichever runtime this machine detects (local.ts), which
+  // may not be claude-code.
+  const named = await readRecipeKey(project, ['runtime', 'agent'], options)
+  if (after.limits.usd !== undefined && named !== 'claude-code') {
+    world.log(
+      paint.muted(
+        typeof named === 'string'
+          ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime (#370)`
+          : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.usd is written, and holds only where claude-code is the runtime that runs (#370)',
+      ),
+    )
+  }
+  return { ok: true }
+}

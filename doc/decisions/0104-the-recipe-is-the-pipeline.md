@@ -169,6 +169,16 @@ in the source.
     back to decide anything (`conductor/unit/recorded-recipe.test.ts`). An event
     that predates the field has no `recipe`, and readers say *not recorded*.
 
+14. **The recipe is machine-managed, and its comments are not protected.**
+    Lingtai's own questions write it, and a person edits a value now and then.
+    `editRecipe` (`packages/recipe/src/emit.ts`) changes the value at a named path
+    in place and carries only the changed lines onto the file, so the layout a
+    person sees does not move. It does not refuse an edit for the comments it
+    would remove: a key or an item that a change removes or replaces goes with
+    its comments. A file Lingtai creates carries a short comment above each block,
+    saying what the block is for (`emitRecipe`'s `said`), so a person reading it
+    can tell what to change.
+
 ## Consequences
 
 - Nothing in a managed repository shows that Lingtai is used on it. Two people

@@ -7,7 +7,8 @@ import { dirname } from 'node:path'
  * atomically. Nothing here re-serialises a recipe a person has edited —
  * `emit.ts`'s header says why that is the one thing this module must never do.
  *
- * `setRecipe` is not wired to a caller yet. #396–#399 are.
+ * `setRecipe`'s caller is `lingtai add` (`apps/cli/src/lingtai.ts`'s
+ * `addCommand`), through `apps/cli/src/agents.ts`'s `askAgents`.
  */
 import { isDeepStrictEqual } from 'node:util'
 
@@ -159,8 +160,9 @@ function widenStepsIfNeeded(
 
 /**
  * Sets `changes` on a project's recipe: creates the file when it is absent,
- * edits it in place — keeping every comment and every key it was not asked to
- * change — when it exists. Validates the result with `resolveSource`, the same
+ * edits it in place — keeping every key it was not asked to change, and the
+ * comments beside them; a key it removes goes with its comments (0104 §14) —
+ * when it exists. Validates the result with `resolveSource`, the same
  * function a daemon reads the file with, before anything is written: a change
  * the resolver would refuse is refused by name, and the file is left exactly
  * as it was ([doc/design/the-plugin-body.md](../../../doc/design/the-plugin-body.md)

@@ -53,9 +53,8 @@ lingtai init
 
 1. ask where Lingtai's log lives — press Enter for a SQLite file under
    `~/.lingtai`, or paste a Postgres URL if you want one;
-2. select a signed-in agent runtime;
-3. open the local board;
-4. guide you through creating or verifying a GitHub App.
+2. open the local board;
+3. guide you through creating or verifying a GitHub App.
 
 ![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, the log and the board are all yours.](img/machine.svg)
 

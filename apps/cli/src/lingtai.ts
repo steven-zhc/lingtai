@@ -40,13 +40,15 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT, boardPort } from '@lingtai/env'
+import { BOARD_PORT, boardPort, githubApp } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import { createGitHubClient, installationForRepo, parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { parseDuration } from '@lingtai/recipe'
+import { diskFiles, parseDuration, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
 
+import { askAgents } from './agents.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -70,8 +72,9 @@ import { envCommand } from './env.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from './first-project.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
+import { askLanding, askLimits, liveQuestionWorld } from './landing.ts'
 import { pauseCommand } from './pause.ts'
-import { liveAsk } from './question.ts'
+import { liveAsk, type QuestionWorld } from './question.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -82,6 +85,7 @@ import {
   restartSupervised,
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
+import { askRuntimes } from './runtimes.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
@@ -102,14 +106,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   lingtai init                      a bare machine to the board, on the wizard:
                                 git and the agents looked at, a Postgres URL
-                                connected to and its tables made, the agent
-                                chosen, ~/.lingtai/config.yml written. Run it
-                                again to continue, or to see what is set
+                                connected to and its tables made,
+                                ~/.lingtai/config.yml written. Run it again to
+                                continue, or to see what is set
     --store <sqlite|postgres>   the store, instead of being asked — what a
                                 script or installer with no terminal gives.
                                 postgres takes --database-url with it
     --database-url <url>        instead of being asked
-    --agent <claude-code|codex> instead of being asked, where both are signed in
     --port <n>                  the board's port, for this run. default: 17820,
                                 or board.port in ~/.lingtai/config.yml
   lingtai add [<owner>/<repo>]      onboard a GitHub repository the App is installed
@@ -127,6 +130,21 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 refused. local: the branch the recipe governs,
                                 asked for if not given.
                                 default: the repository's own default branch
+    --agent <claude-code|codex> which agent writes the change, instead of
+                                being asked — where the project already has a
+                                recipe. A fresh project is asked nothing here
+                                either way (#398)
+    --model <name>              the writer's model, instead of being asked
+    --reviewer <agent|none>     a cold reviewer, and which agent, or none,
+                                instead of being asked
+    --reviewer-model <name>     the reviewer's model, instead of being asked
+    --land <branch|hold>        where a pass lands, or hold every pass for a
+                                person at proposed, instead of being asked
+    --rounds <n>                fix rounds a pass may buy, instead of being asked
+    --wall <duration>           wall time per agent run, e.g. 1h, instead of
+                                being asked
+    --budget <usd>              a dollar ceiling per agent run, instead of
+                                being asked
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -371,6 +389,128 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
 }
 
 /**
+ * The repository's default branch, through the same three calls `add()` makes
+ * to read it (`onboard.ts:251-276`) — asked here only as a fallback for the
+ * land question's own default, and answered null on any failure, since a
+ * question's `detected` is just one more thing a person can type past (#399).
+ */
+async function defaultBranchOf(owner: string, repo: string): Promise<string | null> {
+  try {
+    const auth = githubApp()
+    const installation = await installationForRepo(auth, owner, repo)
+    const client = await createGitHubClient({ auth, owner, repo, installation })
+    return await client.defaultBranch()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What `lingtai add` asks and checks before a GitHub project is registered,
+ * once a slug is known (#398, #399): `--land` against `--base`, then the
+ * writer and reviewer, the landing branch and the limits, into the recipe
+ * already there. Null to go on to the registration, or the exit code to stop
+ * with. A local project, and a GitHub one picked on the board, reach none of
+ * this yet.
+ */
+async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): Promise<number | null> {
+  // Tier, gates and the base are the recipe's, in the managed repository, which
+  // is why this takes a slug and — at most — the branch to find the file on.
+  // `named`, because a person typed it here: a recipe that contradicts `--base`
+  // is refused rather than adopted (#75), which is a refusal only a typed flag
+  // may earn.
+  const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`).
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    console.error(
+      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
+        'silently. Nothing was written',
+    )
+    return 2
+  }
+
+  // Which agent writes the change, and which cold-reviews it, is asked here —
+  // before `add()` resolves the recipe — because `resolveLocalRecipe` throws
+  // `AgentUnresolvedError` on a file naming no `runtime.agent` the moment more
+  // than one runtime is signed in (`#398`). An absent recipe is not created
+  // here (`doc/design/398.md`): with no file, `add()` still refuses with
+  // `RecipeMissingError` as it always has, except a flag naming an agent is
+  // refused by name rather than silently ignored.
+  const { owner, repo } = parseSlug(slug)
+  const path = recipePath(repo)
+  const existing = await diskFiles.read(path)
+  const agentFlags = {
+    agent: flags['agent'],
+    model: flags['model'],
+    reviewer: flags['reviewer'],
+    reviewerModel: flags['reviewer-model'],
+  }
+  if (existing === null) {
+    if (Object.values(agentFlags).some((v) => v !== undefined)) {
+      console.error(`--agent needs a recipe to write into; there is none at ${path}. Nothing was written`)
+      return 1
+    }
+  } else {
+    // A file that `extends:` a preset and writes no `steps:` of its own
+    // inherits every step from the preset — the first `steps.*` answer below
+    // pins that preset's steps into the file for good (`write.ts`'s
+    // `widenStepsIfNeeded`). Named here, before the writer question, because
+    // showing that to a person is this caller's line to print, not
+    // `agents.ts`'s.
+    const extendsPreset = await readRecipeKey(repo, ['extends'])
+    const stepsWritten = await readRecipeKey(repo, ['steps'])
+    if (typeof extendsPreset === 'string' && stepsWritten === null) {
+      console.log(
+        `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
+          "preset's steps into the file, so a later change to the preset no longer reaches this project",
+      )
+    }
+
+    const runtimes = await askRuntimes()
+    const world: QuestionWorld = { ask: liveAsk, log: (line) => console.log(line) }
+    const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
+    if ('refused' in asked) {
+      console.error(asked.refused)
+      return 1
+    }
+    // `changes` sets an action's `agent:` (or creates it) and `modelChanges`
+    // that same action's `model:`, written one after the other.
+    await setRecipe(repo, asked.changes)
+    await setRecipe(repo, asked.modelChanges)
+  }
+
+  // The questions are asked before add() runs, and only when the recipe is
+  // already there — an absent one is add()'s own refusal to speak, and
+  // nothing here seeds a file that cannot resolve on its own (#395).
+  if (existsSync(path)) {
+    const world = liveQuestionWorld()
+    const landed = await askLanding(world, repo, land ?? null, {
+      defaultBranch: () => defaultBranchOf(owner, repo),
+    })
+    if ('refused' in landed) {
+      console.error(landed.refused)
+      return 1
+    }
+    const limited = await askLimits(
+      world,
+      repo,
+      { rounds: flags['rounds'], wall: flags['wall'], budget: flags['budget'] },
+      {},
+    )
+    if ('refused' in limited) {
+      console.error(limited.refused)
+      return 1
+    }
+  }
+
+  return null
+}
+
+/**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
  * positional, which asks the same GitHub-or-directory question `lingtai init`
  * does, through the one function both share (`chooseFirstProject`).
@@ -384,15 +524,25 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
  */
 async function addCommand(args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args)
-  if (positional[0] !== undefined && flags['local'] !== undefined) {
-    console.error(
-      `lingtai add ${positional[0]} and --local ${flags['local']} name two different projects. Pass one or the ` +
-        'other. Nothing was written',
-    )
-    return 1
+  // A positional beside either flag names a second project, and neither one
+  // may be dropped without a word (#394's review).
+  for (const flag of ['local', 'github'] as const) {
+    if (positional[0] !== undefined && flags[flag] !== undefined && flags[flag] !== positional[0]) {
+      console.error(
+        `lingtai add ${positional[0]} and --${flag} ${flags[flag]} name two different projects. Pass one or the ` +
+          'other. Nothing was written',
+      )
+      return 1
+    }
   }
-  if (positional[0] !== undefined && flags['github'] === undefined && flags['local'] === undefined) {
+  if (positional[0] !== undefined && flags['local'] === undefined) {
     flags['github'] = positional[0]
+  }
+
+  const slug = flags['github']
+  if (slug !== undefined && slug !== '') {
+    const stopped = await askBeforeGithubAdd(slug, flags)
+    if (stopped !== null) return stopped
   }
 
   const world = liveFirstProjectWorld({ ask: liveAsk, log: (line) => console.log(line) })
