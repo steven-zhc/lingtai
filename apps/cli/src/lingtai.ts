@@ -502,7 +502,13 @@ async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): 
 
     // #396's two questions, asked and written before `askLanding` — each as
     // soon as it is answered, so a Ctrl+C at either keeps what came before it.
-    const tickets = await askTickets(world, repo, false, flags['tickets'] ?? null, {
+    // `addCommand` hands this same `flags` object to `chooseFirstProject`
+    // once this function returns — deleted as soon as each is read, so that
+    // call's `runGithubBranch` does not see them again and refuse what this
+    // function already asked and wrote (#396 fix round, finding 1).
+    const givenTickets = flags['tickets'] ?? null
+    delete flags['tickets']
+    const tickets = await askTickets(world, repo, false, givenTickets, {
       history: liveHistory,
       kept: 'the writer and reviewer chosen above are kept',
     })
@@ -512,7 +518,9 @@ async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): 
     }
     if (tickets.changes.length > 0) await setRecipe(repo, tickets.changes)
 
-    const kinds = await askKinds(world, repo, flags['kinds'] ?? null, {
+    const givenKinds = flags['kinds'] ?? null
+    delete flags['kinds']
+    const kinds = await askKinds(world, repo, givenKinds, {
       kept: 'the writer, reviewer and ticket source chosen above are kept',
     })
     if ('refused' in kinds) {

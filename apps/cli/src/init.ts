@@ -381,6 +381,19 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
             'the GitHub App on a machine that has only local projects',
         ),
       )
+      // Nothing below here reaches `chooseFirstProject`, so nothing reads
+      // either flag — refused by name instead of silently discarded, the
+      // same reason `runGithubBranch`'s own guard exists (#396 fix round,
+      // finding 3).
+      if (flags['tickets'] !== undefined || flags['kinds'] !== undefined) {
+        const named = flags['tickets'] !== undefined ? `--tickets ${flags['tickets']}` : `--kinds ${flags['kinds']}`
+        return refuse(
+          world,
+          `${named}, but this machine already has a project and none is named to set up here — pass --project ` +
+            'github, --project local, or --local <dir>, or use lingtai add for one that already exists. ' +
+            'The store chosen above is kept',
+        )
+      }
       askProject = false
     }
   }

@@ -77,6 +77,17 @@ steps: {}
 runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
 `
 
+// `env.plantAt` is required (`z.string()`, no schema default) and absent
+// here, so `resolveSource` throws — the state `doc/design/396.md` names:
+// `source.kinds` written by a first `--kinds` answer, with nothing writing
+// `env.plantAt` yet. `source.kinds: [bug]` is still what the file says.
+const UNRESOLVABLE_KINDS_FIXTURE = `version: 2
+repo: {base: main, submodules: false}
+source: {kinds: [bug], exclude: []}
+steps: {}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
 const noHistory = async () => []
 
 describe('askTickets', () => {
@@ -210,6 +221,24 @@ describe('askKinds', () => {
     const { world: w } = world([' , ', 'bug'])
     const result = await askKinds(w, PROJECT, null, { home: HOME, files })
     expect(result).toEqual({ changes: [] })
+  })
+
+  it('a file that does not resolve on its own still has its source.kinds read, not defaulted to SETUP_KINDS (#396 fix round, finding 2)', async () => {
+    const files = mapFiles({ [PATH]: UNRESOLVABLE_KINDS_FIXTURE })
+    const { world: w, asked } = world([''])
+    const result = await askKinds(w, PROJECT, null, { home: HOME, files })
+    // The bracket must offer what the file actually says, not SETUP_KINDS —
+    // otherwise Enter here silently replaces [bug] with the default three.
+    expect(asked[0]).toContain('[bug]')
+    expect(asked[0]).not.toContain('feature')
+    expect(result).toEqual({ changes: [] })
+  })
+
+  it('a different --kinds against a file that does not resolve on its own is still a real change', async () => {
+    const files = mapFiles({ [PATH]: UNRESOLVABLE_KINDS_FIXTURE })
+    const { world: w } = world()
+    const result = await askKinds(w, PROJECT, 'feature,bug', { home: HOME, files })
+    expect(result).toEqual({ changes: [{ path: ['source', 'kinds'], value: ['feature', 'bug'] }] })
   })
 
   it('a repeated label is refused by name', async () => {

@@ -164,7 +164,17 @@ export async function askKinds(
   deps: SourceDeps,
 ): Promise<SourceAnswer> {
   const resolved = await resolvedRecipe(project, { home: deps.home, files: deps.files })
-  const currentKinds = resolved === null ? null : kindsOf(resolved)
+  // Read raw rather than through `resolvedRecipe` alone, the same asymmetry
+  // `askTickets` above was fixed for: a file that writes `source.kinds` but
+  // does not resolve on its own (`env.plantAt` still missing, say) still has
+  // a `source.kinds` worth reading, and `resolvedRecipe`'s null answers
+  // "unknown" for that file the same as for one that is absent — which would
+  // offer `SETUP_KINDS` as the default and let Enter silently replace what
+  // was actually written.
+  const rawKinds =
+    resolved === null ? await readRecipeKey(project, ['source', 'kinds'], { home: deps.home, files: deps.files }) : null
+  const currentKinds =
+    resolved !== null ? kindsOf(resolved) : Array.isArray(rawKinds) ? rawKinds.map((k) => String(k)) : null
   const currentDisplay = currentKinds === null ? null : currentKinds.join(', ')
 
   const result = await question(world, {
