@@ -7,10 +7,8 @@ import {
   type Action,
   type ActionContext,
   type ActionEvent,
-  type CleanAnswer,
   type CutAnswer,
   type KeptAnswer,
-  type KeptRunAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -183,6 +181,7 @@ import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
+import { keptRunPort } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
@@ -2069,80 +2068,27 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
-       * `keptRun`'s half of the pair a `run:` at `implement` needs (`#390`,
-       * `kept-run-action.ts`'s `clean`): puts the worktree back to the agent's
-       * own `HEAD`, before the command runs and again when it did not pass.
-       *
-       * **Two git calls, in order, and neither reads the tree before acting on
-       * it.** `git reset --hard HEAD` drops every tracked change the command (or
-       * a previous call to this) made; `git clean -fd` removes what it left
-       * untracked. Scoped by construction rather than by comparing against a
-       * baseline taken earlier — a round of review this ticket went through
-       * tried the other way, excluding whatever `git status` found dirty before
-       * the command ran, and that is what let a command's own rewrite of a file
-       * the agent had already left dirty survive both the reset and the clean:
-       * the exclusion pathspec covered it on both commands, so neither put it
-       * back nor removed it. `implement`'s own contract already closes that
-       * question from the other side — an uncommitted change does not survive
-       * the pass (`prompts/ticket.md`) — so there is nothing worth reading
-       * before this resets to what the agent committed.
-       *
-       * **`-e`, not a `:(exclude)` pathspec, for the planted env file.** A
-       * pathspec excluding `recipe.env.plantAt` still lets `git clean -fd`
-       * remove the untracked *directory* that file is usually the only tracked
-       * exception inside — `git clean -fd -- . ':(exclude)sub/.env.local'`
-       * removes `sub/` whole, planted file and all, where `git clean -fd -e
-       * /sub/.env.local` does not. Checked in a scratch repository for this
-       * ticket. The leading `/` anchors the pattern to the worktree root, so it
-       * names exactly the one path `provisionWorktree` wrote.
+       * `keptRun` — the git a `run:` at `implement` needs, in its own module so
+       * a test can reach it (`kept-run-port.ts`, `#390`). Recorded the way
+       * `firstDispatch` records the agent's own commit: `recordDiff` so
+       * `task_view.head_sha` names this commit, and `RunProposedCompletion` so a
+       * later attempt's `headOf` reads the same head.
        */
-      const clean = async (): Promise<CleanAnswer> => {
-        const reset = await gitAsked(['reset', '--hard', 'HEAD'])
-        if (Either.isLeft(reset)) return { failed: `git reset refused it: ${reset.left.detail}` }
-        const cleaned = await gitAsked(['clean', '-fd', '-e', `/${recipe.env.plantAt}`])
-        if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
-        return { ok: true }
-      }
-
-      /**
-       * `keptRun`'s other half: stages everything but the planted env file and
-       * commits it, where there is a difference from `HEAD`.
-       *
-       * **`-A` and not the single path `file:`'s `keep` adds above** — a `run:`
-       * at `implement` is a command the recipe wrote, not a destination for one
-       * document, so what it changed is whatever is in the worktree once it
-       * exits, and the only thing excluded from that is the one file this pass
-       * itself planted. `clean` above is what makes `-A` safe to write: by the
-       * time this runs, nothing is in the tree but what `HEAD` already held and
-       * what the command just did to it.
-       *
-       * **Recorded the way `firstDispatch` records the agent's own commit**
-       * (`doc/design/390.md`'s step 5): `recordDiff` so `task_view.head_sha` and
-       * its file/insertion counts name this commit rather than the agent's, and
-       * `RunProposedCompletion` so a later attempt's `headOf` and a discussion's
-       * brief read the same head. Without this, `head` was true but nothing on
-       * the log agreed with it (`#390`).
-       */
-      const keepRun = async (name: string): Promise<KeptRunAnswer> => {
-        const plant = `:(exclude)${recipe.env.plantAt}`
-        const added = await gitAsked(['add', '-A', '--', '.', plant])
-        if (Either.isLeft(added)) return { failed: `git add refused it: ${added.left.detail}` }
-        const staged = await gitAsked(['diff', '--cached', '--quiet'])
-        if (!Either.isLeft(staged)) return { nothing: true }
-        const committed = await gitAsked(['commit', '-m', `chore(implement): ${name} for #${options.issue}`])
-        if (Either.isLeft(committed)) return { failed: `git commit refused it: ${committed.left.detail}` }
-        const head = await gitAsked(['rev-parse', 'HEAD'])
-        if (Either.isLeft(head)) return { failed: `git rev-parse refused it: ${head.left.detail}` }
-        await recordDiff(branch, head.right)
-        await appendNow(runId, [
-          {
-            type: 'RunProposedCompletion',
-            actor: 'conductor',
-            data: parsePayload('RunProposedCompletion', { headSha: head.right }),
-          },
-        ])
-        return { committed: head.right }
-      }
+      const { clean, keep: keepRun } = keptRunPort({
+        git: gitAsked,
+        plantAt: recipe.env.plantAt,
+        issue: String(options.issue),
+        recordCompletion: async (head) => {
+          await recordDiff(branch, head)
+          await appendNow(runId, [
+            {
+              type: 'RunProposedCompletion',
+              actor: 'conductor',
+              data: parsePayload('RunProposedCompletion', { headSha: head }),
+            },
+          ])
+        },
+      })
 
       /**
        * `implement` — the design back off the path a `file:` kept it at (0066 §4,

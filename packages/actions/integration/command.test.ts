@@ -228,3 +228,21 @@ describe('a command the core does not wait for', () => {
     expect((await run({ run: 'exit 0' })).ok).toBe(true)
   })
 })
+
+/**
+ * The timeout is a bound on every `run:`, #390's review found it could stop
+ * being one: reporting on `close` waits for every holder of the stdio pipes,
+ * and a background process the command left behind holds them for good.
+ */
+describe('a command that times out', () => {
+  it('is reported once the command itself exits, though a background process still holds its output', async () => {
+    const started = Date.now()
+    const outcome = await run({ run: 'sleep 30 & sleep 30', timeoutMs: 300, timeoutLabel: '300ms' })
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.timedOut).toBe(true)
+    expect(outcome.evidence).toContain('timed out after 300ms')
+    // SIGTERM ends the shell at once; the backgrounded sleep keeps the pipes open.
+    expect(Date.now() - started).toBeLessThan(7_000)
+  }, 15_000)
+})

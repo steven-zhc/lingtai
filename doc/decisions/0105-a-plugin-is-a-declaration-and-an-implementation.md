@@ -39,7 +39,7 @@ event should carry, and the log is replayed on every projection rebuild.
 
    | key | may be declared at |
    |---|---|
-   | `run` | `prepared` `build` `proposed` `merge` |
+   | `run` | `prepared` `implement` `build` `proposed` `merge` |
    | `agent` | `design` `implement` `review` `proposed` `merge` |
    | `file` | `design` |
    | `file-brief` | `implement` |
