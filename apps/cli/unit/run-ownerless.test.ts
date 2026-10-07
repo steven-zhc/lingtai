@@ -13,6 +13,7 @@
  */
 import { AgentHost, Repo, type ScheduleOptions, type Tickets } from '@lingtai/conductor'
 import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -116,7 +117,11 @@ describe('run, for a project with no owner', () => {
     }
 
     const lines: string[] = []
-    const code = await run({ project: 'demo' }, (l) => lines.push(l), world)
+    // A memory store, not the omitted default: `heedThePause` reads
+    // `options.store` before `world` is ever consulted, and with no store it
+    // reaches this machine's own config rather than staying inside the fakes
+    // above (`run-pause.test.ts`'s own pattern).
+    const code = await run({ project: 'demo', store: createMemoryEventStore() }, (l) => lines.push(l), world)
 
     expect(code).toBe(0)
     expect(handed).toHaveLength(1)
@@ -150,7 +155,7 @@ describe('run, for a GitHub project', () => {
     }
 
     const lines: string[] = []
-    const code = await run({ project: 'demo' }, (l) => lines.push(l), world)
+    const code = await run({ project: 'demo', store: createMemoryEventStore() }, (l) => lines.push(l), world)
 
     expect(code).toBe(1)
     expect(lines.join('\n')).toContain('no GitHub App configured')
