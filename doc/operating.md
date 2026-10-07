@@ -634,10 +634,10 @@ Only then does it ask its setup questions and write each answer; only then does
 it read the recipe, hash it, and record `ProjectConfigured`.
 
 **With no GitHub App configured on this machine at all, there is nothing yet to
-check.** `lingtai add` asks nothing and writes nothing, and says so — the App
-is created next (through the board, or `lingtai init --project github`), and
-the setup questions are asked the next time `lingtai add` runs, once the App
-exists.
+check** — so this command skips straight to its setup questions, exactly as it
+did before `#402`. The App is created next (through the board, or
+`lingtai init --project github`), and `chooseFirstProject` registers the
+project once it exists.
 
 **Or from the board, in any state it is in.** The `+` at the end of the project
 list on the bar goes to `/setup/repository` once the App exists and to

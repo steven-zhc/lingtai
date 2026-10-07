@@ -5,13 +5,16 @@
  * import this out of it.
  *
  * In order: `--land` against `--base`; then — before a single question is
- * asked or a single answer written — whether the App is installed here and
- * grants what Lingtai needs (#402); then the writer and reviewer; then, once
- * a recipe is already there, the ticket source and the kinds (#396), the
- * landing branch and the limits. Each answer is written as soon as it is
- * given, not collected for one write at the end. Null to go on to the
- * registration, or the exit code to stop with. A local project, and a GitHub
- * one picked on the board, reach none of this yet.
+ * asked or a single answer written, and only where there is an App on this
+ * machine to ask — whether it is installed here and grants what Lingtai
+ * needs (#402); then the writer and reviewer; then, once a recipe is already
+ * there, the ticket source and the kinds (#396), the landing branch and the
+ * limits. Each answer is written as soon as it is given, not collected for
+ * one write at the end. With no App configured at all, every question below
+ * still runs: a recipe written for a project whose App does not exist yet is
+ * what lets `chooseFirstProject` offer to create it next, in the same run.
+ * Null to go on to the registration, or the exit code to stop with. A local
+ * project, and a GitHub one picked on the board, reach none of this yet.
  */
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
@@ -87,29 +90,40 @@ export async function askBeforeGithubAdd(
 
   // With no App configured on this machine at all, there is nothing yet to
   // check — `checkInstallation`'s default lookup calls `githubApp()`, which
-  // throws rather than answering "not installed". Asking and writing here
-  // regardless, as this command did before #402, left a recipe written for a
-  // project whose App was never created: `chooseFirstProject` offers to
-  // create one next, and the questions are asked on the run after that.
-  if (!hasGitHubApp()) {
-    console.log(
-      `no GitHub App is configured on this machine yet — ${slug}'s setup questions are asked once it exists; ` +
-        'run lingtai add again once the App is created.',
-    )
-    return null
-  }
-
+  // throws rather than answering "not installed". The questions below still
+  // run and still write, exactly as this command did before #402: a recipe
+  // written for a project whose App was never created is what lets
+  // `chooseFirstProject` offer to create one next, in the same run.
+  //
   // Is the App installed here at all, and does it grant what Lingtai needs —
   // checked before a single question is asked or a single answer written
-  // (#402). The check prints nothing on success; `add()` runs the same check
-  // again later and prints its own lines through `runGithubBranch`'s `said`,
-  // and printing them here too would show every successful add the same two
-  // lines twice.
-  const checked: string[] = []
-  const installation = await deps.check(slug, (line) => checked.push(line))
-  if (installation === null) {
-    console.error(checked.filter((l) => l.trim() !== '').join('\n'))
-    return 1
+  // (#402), when there is an App to check at all. The check prints nothing on
+  // success; `add()` runs the same check again later and prints its own
+  // lines through `runGithubBranch`'s `said`, and printing them here too
+  // would show every successful add the same two lines twice.
+  let installation: Installation | undefined
+  if (hasGitHubApp()) {
+    const checked: string[] = []
+    try {
+      const found = await deps.check(slug, (line) => checked.push(line))
+      if (found === null) {
+        console.error(checked.filter((l) => l.trim() !== '').join('\n'))
+        return 1
+      }
+      installation = found
+    } catch (err) {
+      // `githubApp()`, inside `deps.check`'s lookup, rethrows anything that
+      // is not `NotInstalledError` — a malformed key, a revoked key (401), an
+      // unreachable GitHub. `runGithubBranch`'s own `app.configured &&
+      // !app.ok` guard named this the same way before #402 moved the check
+      // ahead of it; that guard is never reached now, so this is the only
+      // place left to name it.
+      console.error(
+        `the GitHub App configured here does not answer — ${(err as Error).message}. Fix its credentials, or ` +
+          'remove them, and run this again. Nothing was written',
+      )
+      return 1
+    }
   }
 
   // Which agent writes the change, and which cold-reviews it, is asked here —

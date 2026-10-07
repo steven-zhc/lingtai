@@ -13,7 +13,7 @@
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import type { Installation } from '@lingtai/github'
 import { NotInstalledError } from '@lingtai/github'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 
@@ -22,7 +22,8 @@ const PREVIOUS_ENV = { ...process.env }
 beforeEach(() => {
   // `hasGitHubApp()` is read directly (#402 — there is nothing to check with
   // no App configured at all), so these two make it answer true without
-  // reaching the filesystem's `config.yml`.
+  // reaching the filesystem's `config.yml`, for every test that wants an App
+  // present. The tests that want no App deletes these two again.
   process.env['LINGTAI_GITHUB_APP_ID'] = '1'
   process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY'] = 'not-a-real-key'
 })
@@ -108,5 +109,43 @@ describe('askBeforeGithubAdd (#402)', () => {
 
     expect(code).toBeNull()
     expect(counted.reads.length).toBe(1)
+  })
+
+  it('names the App, rather than rethrowing raw, when the lookup fails for a reason other than "not installed"', async () => {
+    const counted = countedDeps(async () => {
+      throw new Error('error:1E08010C:DECODER routines::unsupported')
+    })
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
+      errors.push(String(msg))
+    })
+
+    const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
+    spy.mockRestore()
+
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('the GitHub App configured here does not answer')
+    expect(errors.join('\n')).toContain('error:1E08010C:DECODER routines::unsupported')
+    expect(counted.reads).toEqual([])
+    expect(counted.writes).toBe(0)
+    expect(counted.asks).toBe(0)
+  })
+
+  it('refuses --agent by name instead of silently dropping it when no GitHub App is configured yet', async () => {
+    delete process.env['LINGTAI_GITHUB_APP_ID']
+    delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
+    const counted = countedDeps(async () => FULLY_PERMISSIONED)
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
+      errors.push(String(msg))
+    })
+
+    const code = await askBeforeGithubAdd(SLUG, { agent: 'claude-code' }, counted.deps)
+    spy.mockRestore()
+
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('--agent needs a recipe to write into')
+    expect(counted.writes).toBe(0)
+    expect(counted.asks).toBe(0)
   })
 })
