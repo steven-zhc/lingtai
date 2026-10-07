@@ -24,6 +24,7 @@ export {
   type TicketSource,
 } from './discover.ts'
 export { currentRecipe, listProjectStreams, loadProject, loadProjects, signedInHere } from './projects.ts'
+export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
 export {
   describeFilter,
   describeFilters,

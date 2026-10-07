@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { createRuntime } from '@lingtai/agent'
+import { createRuntime, type Runtime } from '@lingtai/agent'
 /**
  * `lingtai run --once <project> --issue <n>` — Phase 1's whole shape.
  *
@@ -29,24 +29,40 @@ import { createRuntime } from '@lingtai/agent'
  * is.
  */
 import {
+  AgentHost,
   currentRecipe,
+  gitRefChannel,
   loadProject,
   passClientOf,
   passCeiling,
+  Repo,
   runOnce,
   runQueue,
   tallyPass,
   ticketsFor,
+  type PassClient,
+  type Tickets,
 } from '@lingtai/conductor'
 import { PortsLive } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
+import type { ProjectState } from '@lingtai/domain'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store'
-import { createGitHubClient } from '@lingtai/github'
-import { boundsBesides, dispatchingSteps, isBuiltInJudge, limitsFor, parseDuration, type Recipe } from '@lingtai/recipe'
-import { Data, Effect } from 'effect'
+import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
+import {
+  boundsBesides,
+  dispatchingSteps,
+  isBuiltInJudge,
+  limitsFor,
+  parseDuration,
+  type Recipe,
+  type ResolvedRecipe,
+} from '@lingtai/recipe'
+import { remoteOf, ticketSourceOf } from '@lingtai/recipe/settings'
+import type { TokenSource } from '@lingtai/repo'
+import { Data, Effect, type Layer } from 'effect'
 
-import { ConductorLock, ConductorLockLive } from './conductor-lock.ts'
+import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -206,7 +222,80 @@ export function statedBeforeDispatch(recipe: Recipe): string[] {
   return lines
 }
 
-export async function run(options: RunOptions, log = console.log): Promise<number> {
+/**
+ * Everything `run()` reaches that a test must not — the App, the log, the
+ * network, a conductor's own lock file (`#352`).
+ *
+ * Following `apps/cli/src/world.ts`'s `Live` pattern: a real implementation a
+ * test never has to construct by hand, and a fake that names exactly what the
+ * test is asserting on and nothing it has to reach outside the process to
+ * build. `run()` had no such seam before this ticket — `unit/run-before-
+ * dispatch.test.ts`'s own header says so — because every one of these was
+ * called inline.
+ *
+ * **The three layers are carried already built, not as factories the test
+ * would have to call with the right arguments.** `lock` is what
+ * `ConductorLockLive(options.lockKey ...)` already returns, `projector` is
+ * `ProjectorLive(log)`'s, and `ports` is `PortsLive` itself — `run()`'s own
+ * `Effect.provide` calls move onto these fields and decide nothing about
+ * their order, which stays `run()`'s (#93's lock-first guarantee is a fact
+ * about this file's code, not about what built the layer).
+ */
+export interface RunWorld {
+  hasGitHubApp: () => boolean
+  loadProject: (name: string) => Promise<ProjectState | null>
+  createGitHubClient: (options: CreateClientOptions) => Promise<GitHubClient>
+  /** `currentRecipe` ignores its second argument; kept so a GitHub project is resolved exactly as it is today. */
+  currentRecipe: (project: ProjectState, client?: GitHubClient) => Promise<ResolvedRecipe>
+  ticketsFor: (project: ProjectState, recipe: Recipe, client: Tickets) => Promise<Tickets>
+  readHookBinary: (path: string) => Promise<unknown>
+  readPrompt: (path: string) => Promise<string>
+  runOnce: typeof runOnce
+  runQueue: typeof runQueue
+  tallyPass: typeof tallyPass
+  lock: Layer.Layer<ConductorLock, ConductorBusy | LockUnreadable>
+  projector: Layer.Layer<Projector>
+  ports: Layer.Layer<Repo | AgentHost>
+}
+
+/** The real one. `options` and `log` are `run()`'s own, read once to build the three layers. */
+export function liveRunWorld(options: RunOptions, log: (line: string) => void): RunWorld {
+  return {
+    hasGitHubApp,
+    loadProject,
+    createGitHubClient,
+    currentRecipe,
+    ticketsFor,
+    readHookBinary: (path) => readFile(path),
+    readPrompt: (path) => readFile(path, 'utf8'),
+    runOnce,
+    runQueue,
+    tallyPass,
+    lock: ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }),
+    projector: ProjectorLive(log),
+    ports: PortsLive,
+  }
+}
+
+/** What `run()` passes to `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
+interface CommonPassOptions {
+  project: ProjectState
+  client: PassClient
+  runtime: Runtime
+  token?: TokenSource
+  merge?: boolean
+  hookBinary: string
+  promptVersion: string
+  log: (line: string) => void
+  /** Set only for a project with no owner — `remoteOf(recipe)`, checked non-null below (`#352`). */
+  remote?: string
+}
+
+export async function run(
+  options: RunOptions,
+  log: (line: string) => void = console.log,
+  world: RunWorld = liveRunWorld(options, log),
+): Promise<number> {
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -225,14 +314,8 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
      */
     yield* ConductorLock
 
-    if (!hasGitHubApp()) {
-      return yield* refuse(
-        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
-      )
-    }
-
     const project = yield* Effect.tryPromise({
-      try: () => loadProject(options.project),
+      try: () => world.loadProject(options.project),
       // Reading the project list is reading the log, and a log this command
       // cannot read is a refusal like any other rather than a stack trace.
       catch: (err) => refuse(`could not read the projects: ${(err as Error).message}`),
@@ -240,15 +323,38 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
     if (!project) {
       return yield* refuse(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }
-    if (!project.owner) {
-      return yield* refuse(`${options.project} has no owner recorded — re-run lingtai add to record it`)
+
+    /**
+     * **No App, no client, for a project with no owner** (`#352`) — one
+     * registered from a local directory (`lingtai add --local`) rather than
+     * `lingtai add <owner>/<repo>`. `client` stays `null` on that path and
+     * `work` below builds the pass a `db`-ticketed, remote-pushed project
+     * needs instead of a `GitHubClient`'s.
+     *
+     * The App refusal moved below `loadProject` to get here: it used to run
+     * first and unconditionally, so `lingtai run <owner-less project>` never
+     * got far enough to find out it did not need an App at all.
+     */
+    let client: GitHubClient | null = null
+    if (project.owner !== null) {
+      if (!world.hasGitHubApp()) {
+        return yield* refuse(
+          'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+        )
+      }
+      // Bound now: a property narrowing does not survive into the closure below.
+      const owner = project.owner
+      client = yield* Effect.tryPromise({
+        try: () => world.createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
+        // `NotInstalledError` says what to do about it, and every other failure
+        // here is the App or the network. Either way a person reads one line.
+        catch: (err) => refuse((err as Error).message),
+      })
     }
-    // Bound now: a property narrowing does not survive into the closure below.
-    const owner = project.owner
 
     const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
     yield* Effect.tryPromise({
-      try: () => readFile(hookBinary),
+      try: () => world.readHookBinary(hookBinary),
       // The hook is a compiled artefact and is not committed. It refuses nothing
       // now (ADR 0016 §6) but carries every event a run produces, so a run
       // without it is a run that records nothing — which must not start. There is
@@ -258,15 +364,8 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
 
     const promptPath = options.promptPath ?? resolve(root, 'prompts/ticket.md')
     const prompt = yield* Effect.tryPromise({
-      try: () => readFile(promptPath, 'utf8'),
+      try: () => world.readPrompt(promptPath),
       catch: () => refuse(`no prompt at ${promptPath}`),
-    })
-
-    const client = yield* Effect.tryPromise({
-      try: () => createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
-      // `NotInstalledError` says what to do about it, and every other failure
-      // here is the App or the network. Either way a person reads one line.
-      catch: (err) => refuse((err as Error).message),
     })
 
     /**
@@ -306,46 +405,107 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
        * supplies a fake runtime passes through, to save that one read.
        */
       const resolved = yield* Effect.tryPromise({
-        try: () => currentRecipe(project, client),
+        try: () => world.currentRecipe(project, client ?? undefined),
         catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
       })
 
-      // Before anything is claimed: the runtime, whose account it spends on,
-      // and what the pass may cost (`#348`) — read off the recipe `resolved`
-      // just above, and printed once per `lingtai run` rather than per pass.
-      for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
+      let common: CommonPassOptions
+      if (client === null) {
+        /**
+         * **An owner-less project names its own remote and its own ticket
+         * source, and both are refused by name before anything is printed**
+         * (`#352`) — the same place a GitHub project's App refusal would have
+         * come.
+         *
+         * `remoteOf(recipe)` null: `provision` would otherwise fall back to
+         * `worktree.ts`'s `github.com/${owner}/...` built from a null owner.
+         * `ticketSourceOf(recipe) !== 'db'`: `ticketsFor` would return the
+         * client straight through for `'github'`, and there isn't one here —
+         * #394's own local registration writes `repo.remote` and never
+         * `source.tickets`, so this is the ordinary state of a freshly
+         * registered local project and not a bug in it.
+         */
+        const remote = remoteOf(resolved.recipe)
+        if (remote === null) {
+          return yield* refuse(
+            `${options.project} has no owner and its recipe names no repo.remote — re-run lingtai add --local`,
+          )
+        }
+        if (ticketSourceOf(resolved.recipe) !== 'db') {
+          return yield* refuse(
+            `${options.project} has no owner and its recipe does not say source.tickets: db — write source.tickets: db`,
+          )
+        }
 
-      // Where this project's tickets actually live — the client itself for
-      // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`
-      // folds that choice back into one object so `runOnce` and `runQueue`
-      // keep taking one client; the refs, `fileAt`, the branch and the token
-      // still go to GitHub either way.
-      const tickets = yield* Effect.tryPromise({
-        try: () => ticketsFor(project, resolved.recipe, client),
-        catch: (err) => refuse((err as Error).message),
-      })
+        // Before anything is claimed: the runtime, whose account it spends on,
+        // and what the pass may cost (`#348`) — read off the recipe `resolved`
+        // just above, and printed once per `lingtai run` rather than per pass.
+        for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
-      const common = {
-        project,
-        client: passClientOf(client, tickets),
-        // The runtime the recipe named, not the one this file used to hardcode.
-        runtime: createRuntime(resolved.recipe.runtime.agent),
-        // Both managed repositories are private. Without this every git command in
-        // the run is an anonymous one, and the clone fails before anything else
-        // gets a chance to. Passed as the client's token *function*, not a string:
-        // an installation token lasts an hour and a run's wall limit is two.
-        token: () => client.token(),
-        merge: options.merge,
-        hookBinary,
-        promptVersion: `ticket@${prompt.length}`,
-        log,
+        const tickets = yield* Effect.tryPromise({
+          // `client` is never read here: the refusal above already requires
+          // `source.tickets: db`, `ticketsFor`'s only branch that does not
+          // pass its third argument straight through.
+          try: () => world.ticketsFor(project, resolved.recipe, undefined as unknown as Tickets),
+          catch: (err) => refuse((err as Error).message),
+        })
+
+        common = {
+          project,
+          // `passClientOf` is not used: it spreads a `GitHubClient`, and
+          // there isn't one on this path. The refs go to `git` against
+          // `remote` rather than GitHub, with no token (0062 §4, `tell.ts`'s
+          // "a channel that silently cannot delete").
+          client: { ...tickets, ...gitRefChannel({ remote }), owner: null, repo: options.project },
+          runtime: createRuntime(resolved.recipe.runtime.agent),
+          // Not a function that resolves to `undefined` — no token at all, so
+          // `git()` plants no `GIT_CONFIG_*` and this machine's own git
+          // credentials answer for the push.
+          merge: options.merge,
+          hookBinary,
+          promptVersion: `ticket@${prompt.length}`,
+          log,
+          remote,
+        }
+      } else {
+        // Bound here, not read off the outer `let`: a closure below must not
+        // rely on a narrowing a `let` does not carry into it.
+        const owned = client
+
+        for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
+
+        // Where this project's tickets actually live — the client itself for
+        // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`
+        // folds that choice back into one object so `runOnce` and `runQueue`
+        // keep taking one client; the refs, `fileAt`, the branch and the token
+        // still go to GitHub either way.
+        const tickets = yield* Effect.tryPromise({
+          try: () => world.ticketsFor(project, resolved.recipe, owned),
+          catch: (err) => refuse((err as Error).message),
+        })
+
+        common = {
+          project,
+          client: passClientOf(owned, tickets),
+          // The runtime the recipe named, not the one this file used to hardcode.
+          runtime: createRuntime(resolved.recipe.runtime.agent),
+          // Both managed repositories are private. Without this every git command in
+          // the run is an anonymous one, and the clone fails before anything else
+          // gets a chance to. Passed as the client's token *function*, not a string:
+          // an installation token lasts an hour and a run's wall limit is two.
+          token: () => owned.token(),
+          merge: options.merge,
+          hookBinary,
+          promptVersion: `ticket@${prompt.length}`,
+          log,
+        }
       }
 
       // ---- the queue ---------------------------------------------------------
       if (options.issue === undefined) {
         // The recipe is `resolved` above now, from the project's *state* and the
         // base recorded at `lingtai add` — not its name.
-        const outcome = yield* runQueue({
+        const outcome = yield* world.runQueue({
           ...common,
           prompt,
           // Asked rather than stored: a project that reorders its kinds, or adds
@@ -360,7 +520,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         // `tallyPass`. Counting the merges this process performed printed
         // `0 landed` over a merge that had happened, and exited 1 on the count.
         const { landed, held, stopped } = yield* Effect.tryPromise({
-          try: () => tallyPass(outcome.ran),
+          try: () => world.tallyPass(outcome.ran),
           catch: (err) => refuse(`the pass ran, but its summary could not be read back: ${(err as Error).message}`),
         })
         log(`${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`)
@@ -371,7 +531,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       }
 
       // ---- one nominated issue -----------------------------------------------
-      const result = yield* runOnce({
+      const result = yield* world.runOnce({
         ...common,
         issue: options.issue,
         // The raw template. `runOnce` fetches the ticket and fills it in — it is
@@ -396,16 +556,14 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       return 1
     })
 
-    return yield* work.pipe(Effect.provide(ProjectorLive(log)), Effect.provide(PortsLive))
+    return yield* work.pipe(Effect.provide(world.projector), Effect.provide(world.ports))
   })
 
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
   return Effect.runPromise(
     heedThePause(options.store).pipe(
-      Effect.zipRight(
-        program.pipe(Effect.provide(ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }))),
-      ),
+      Effect.zipRight(program.pipe(Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
       // line is for.

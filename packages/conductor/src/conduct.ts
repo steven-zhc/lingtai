@@ -327,8 +327,14 @@ export function agentRefusal(
  * the lane both read off it. `GitHubClient` satisfies this structurally —
  * pinned in `unit/tickets.test.ts` — so every caller keeps passing the same
  * value; only the type named here narrows.
+ *
+ * **`owner` is null for a project with no GitHub owner** (`#352`) — one
+ * registered from a local directory rather than `lingtai add <owner>/<repo>`.
+ * `provision` and `integrate` read it only to build a `github.com` URL they
+ * never reach when `remote` is already set, so the two call sites below pass
+ * `owner ?? ''` rather than this type growing a branch of its own.
  */
-export type PassClient = Tickets & RefChannel & { readonly owner: string; readonly repo: string }
+export type PassClient = Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }
 
 export interface RunOnceOptions {
   project: ProjectState
@@ -566,7 +572,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
     // decisions, and nothing here repairs a recorded decision silently (0024 §3).
-    const divergence = baseDivergence(resolved, `${options.client.owner}/${options.client.repo}`)
+    const divergence = baseDivergence(
+      resolved,
+      options.client.owner === null ? options.client.repo : `${options.client.owner}/${options.client.repo}`,
+    )
     if (divergence) {
       return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: divergence }
     }
@@ -1671,7 +1680,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           Effect.either(
             repo.provision({
               project,
-              owner: options.client.owner,
+              // '' when there is no owner: `remote` is always set then (the
+              // ownerless refusal in `run.ts`), so `ProvisionOptions.owner` is
+              // read only to build the `github.com` URL `remote` pre-empts.
+              owner: options.client.owner ?? '',
               repo: options.client.repo,
               base: spec.base,
               branch,
@@ -1966,7 +1978,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const result = await Effect.runPromise(
           repo.integrate({
             project,
-            owner: options.client.owner,
+            // '' when there is no owner, for `provision`'s own reason above.
+            owner: options.client.owner ?? '',
             repo: options.client.repo,
             base,
             branch,
