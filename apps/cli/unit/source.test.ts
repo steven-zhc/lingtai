@@ -66,6 +66,17 @@ steps: {}
 runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
 `
 
+// `source.kinds` is required (`.min(1)`, no schema default) and absent here,
+// so `resolveSource` throws — the stub state `write.test.ts:184` names.
+// `source.tickets: db` is still what the file says.
+const UNRESOLVABLE_DB_FIXTURE = `version: 2
+repo: {base: main, submodules: false}
+source: {tickets: db}
+env: {required: [], plantAt: .env.local}
+steps: {}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
 const noHistory = async () => []
 
 describe('askTickets', () => {
@@ -149,6 +160,24 @@ describe('askTickets', () => {
     const result = await askTickets(w, PROJECT, true, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [] })
   })
+
+  it('a file that does not resolve on its own still has its source.tickets read, not defaulted to github', async () => {
+    const files = mapFiles({ [PATH]: UNRESOLVABLE_DB_FIXTURE })
+    const { world: w } = world()
+    // --tickets github against a file that actually says db is a real
+    // switch, and must be written — not silently matched against a wrongly
+    // computed "current: github" and treated as already applied.
+    const result = await askTickets(w, PROJECT, false, 'github', { home: HOME, files, history: noHistory })
+    expect(result).toEqual({ changes: [{ path: ['source', 'tickets'], value: 'github' }] })
+  })
+
+  it('a file that does not resolve on its own offers its actual source.tickets as the default, not github', async () => {
+    const files = mapFiles({ [PATH]: UNRESOLVABLE_DB_FIXTURE })
+    const { world: w, asked } = world([''])
+    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history: noHistory })
+    expect(asked[0]).toContain('[db]')
+    expect(result).toEqual({ changes: [] })
+  })
 })
 
 describe('askKinds', () => {
@@ -186,5 +215,44 @@ describe('askKinds', () => {
   it('a repeated label is refused by name', async () => {
     const result = await askKinds(world().world, PROJECT, 'bug,bug', { home: HOME, files: mapFiles() })
     expect(result).toMatchObject({ refused: expect.stringContaining('named twice') })
+  })
+})
+
+describe('kept — neither question claims "Nothing was written" once a caller has already written', () => {
+  it('askTickets refuses with the caller-supplied kept, not the default', async () => {
+    const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
+    const { world: w } = world([null])
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      files,
+      history: noHistory,
+      kept: 'the writer and reviewer chosen above are kept',
+    })
+    expect(result).toMatchObject({ refused: expect.stringContaining('the writer and reviewer chosen above are kept') })
+    expect(result).not.toMatchObject({ refused: expect.stringContaining('Nothing was written') })
+  })
+
+  it("askTickets' local no-owner refusal carries the caller-supplied kept", async () => {
+    const files = mapFiles()
+    const { world: w } = world()
+    const result = await askTickets(w, PROJECT, true, 'github', {
+      home: HOME,
+      files,
+      history: noHistory,
+      kept: 'the store chosen above is kept',
+    })
+    expect(result).toMatchObject({ refused: expect.stringContaining('the store chosen above is kept') })
+  })
+
+  it('askKinds refuses with the caller-supplied kept, not the default', async () => {
+    const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
+    const { world: w } = world([null])
+    const result = await askKinds(w, PROJECT, null, {
+      home: HOME,
+      files,
+      kept: 'the ticket source chosen above is kept',
+    })
+    expect(result).toMatchObject({ refused: expect.stringContaining('the ticket source chosen above is kept') })
+    expect(result).not.toMatchObject({ refused: expect.stringContaining('Nothing was written') })
   })
 })

@@ -403,9 +403,14 @@ async function runLocalBranch(
     home: world.home,
     files: world.files,
     history: world.history,
+    kept: world.kept,
   })
   if ('refused' in ticketsAnswer) return { refused: ticketsAnswer.refused }
-  const kindsAnswer = await askKinds(world, name, flags['kinds'] ?? null, { home: world.home, files: world.files })
+  const kindsAnswer = await askKinds(world, name, flags['kinds'] ?? null, {
+    home: world.home,
+    files: world.files,
+    kept: world.kept,
+  })
   if ('refused' in kindsAnswer) return { refused: kindsAnswer.refused }
 
   // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
@@ -456,6 +461,20 @@ async function runGithubBranch(
   askedApp: 'create' | 'skip' | null,
   knownApp: AppCheck | null,
 ): Promise<FirstProjectOutcome> {
+  // #396's two questions are asked only by `lingtai add`'s `askBeforeGithubAdd`
+  // (`lingtai.ts`), once a recipe already exists — never by the board wizard
+  // this branch drives (#399's scope: "a GitHub one picked on the board …
+  // reach[es] none of this yet"). Refused by name instead of silently
+  // discarded, the same reason the `--github-app` check below exists.
+  if (flags['tickets'] !== undefined || flags['kinds'] !== undefined) {
+    const named = flags['tickets'] !== undefined ? `--tickets ${flags['tickets']}` : `--kinds ${flags['kinds']}`
+    return {
+      refused:
+        `${named}, but a GitHub project asks neither question here — lingtai add asks both once its recipe ` +
+        `exists. Leave it out. ${world.kept}`,
+    }
+  }
+
   const app = knownApp ?? (await world.github.app())
   if (app.configured && !app.ok) {
     return {

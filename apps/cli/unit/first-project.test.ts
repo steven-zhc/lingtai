@@ -571,6 +571,34 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     expect(addCalled).toBe(false)
   })
 
+  it('--tickets or --kinds against a GitHub project is refused rather than silently discarded (#396 fix round)', async () => {
+    let addCalled = false
+    const { world: worldWithTickets } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      add: async () => {
+        addCalled = true
+        return 0
+      },
+    })
+    const ticketsResult = await chooseFirstProject(worldWithTickets, {
+      project: 'github',
+      kinds: 'bug,documentation',
+      tickets: 'db',
+    })
+    expect(ticketsResult).toEqual({
+      refused: expect.stringContaining('--tickets db, but a GitHub project asks neither question here'),
+    })
+    expect(addCalled).toBe(false)
+
+    const { world: worldWithKinds } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+    })
+    const kindsResult = await chooseFirstProject(worldWithKinds, { project: 'github', kinds: 'bug,documentation' })
+    expect(kindsResult).toEqual({
+      refused: expect.stringContaining('--kinds bug,documentation, but a GitHub project asks neither question here'),
+    })
+  })
+
   it('a registered project is re-registered rather than refused as already onboarded (#394 finding 2)', async () => {
     const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
     const picker = await listRepositories({ reader, projects: [project('widget', 'acme')], installUrl: null })

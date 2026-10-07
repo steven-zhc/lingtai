@@ -417,10 +417,12 @@ async function defaultBranchOf(owner: string, repo: string): Promise<string | nu
 /**
  * What `lingtai add` asks and checks before a GitHub project is registered,
  * once a slug is known (#398, #399): `--land` against `--base`, then the
- * writer and reviewer, the landing branch and the limits, into the recipe
- * already there. Null to go on to the registration, or the exit code to stop
- * with. A local project, and a GitHub one picked on the board, reach none of
- * this yet.
+ * writer and reviewer, then — once a recipe is already there — the ticket
+ * source and the kinds (#396), the landing branch and the limits. Each
+ * answer is written as soon as it is given, not collected for one write at
+ * the end. Null to go on to the registration, or the exit code to stop with.
+ * A local project, and a GitHub one picked on the board, reach none of this
+ * yet.
  */
 async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): Promise<number | null> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
@@ -500,14 +502,19 @@ async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): 
 
     // #396's two questions, asked and written before `askLanding` — each as
     // soon as it is answered, so a Ctrl+C at either keeps what came before it.
-    const tickets = await askTickets(world, repo, false, flags['tickets'] ?? null, { history: liveHistory })
+    const tickets = await askTickets(world, repo, false, flags['tickets'] ?? null, {
+      history: liveHistory,
+      kept: 'the writer and reviewer chosen above are kept',
+    })
     if ('refused' in tickets) {
       console.error(tickets.refused)
       return 1
     }
     if (tickets.changes.length > 0) await setRecipe(repo, tickets.changes)
 
-    const kinds = await askKinds(world, repo, flags['kinds'] ?? null, {})
+    const kinds = await askKinds(world, repo, flags['kinds'] ?? null, {
+      kept: 'the writer, reviewer and ticket source chosen above are kept',
+    })
     if ('refused' in kinds) {
       console.error(kinds.refused)
       return 1

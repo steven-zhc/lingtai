@@ -23,7 +23,6 @@ import {
   resolveSource,
   SETUP_KINDS,
   ticketsChange,
-  ticketSourceOf,
   type TicketSource,
 } from '@lingtai/recipe'
 
@@ -34,6 +33,8 @@ export type SourceAnswer = { changes: RecipeChange[] } | { refused: string }
 export interface SourceDeps {
   home?: string
   files?: RecipeFiles
+  /** `question.ts`'s `kept` — what a refusal here says is already written, from a caller's earlier steps. */
+  kept?: string
 }
 
 export interface TicketsDeps extends SourceDeps {
@@ -82,9 +83,16 @@ export async function askTickets(
     return { refused: `${given} is not one of github, db` }
   }
 
+  const kept = deps.kept ?? 'Nothing was written'
   const history = await deps.history(project)
-  const resolved = await resolvedRecipe(project, { home: deps.home, files: deps.files })
-  const current: TicketSource = resolved === null ? 'github' : ticketSourceOf(resolved)
+  // Read raw rather than through `resolvedRecipe`: a file that does not
+  // resolve — `~/.lingtai/<project>/recipe.yml` writing `source.kinds` is
+  // missing, say — still has a `source.tickets` worth reading, and
+  // `resolvedRecipe`'s null answers "unknown" for that file the same as for
+  // one that is absent. `ticketSourceOf`'s own default applies the same way
+  // either side of that: an absent key, like an absent file, reads as `github`.
+  const rawTickets = await readRecipeKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
+  const current: TicketSource = rawTickets === 'db' ? 'db' : 'github'
 
   if (history.length > 0) {
     if (given !== null && given !== current) {
@@ -92,7 +100,7 @@ export async function askTickets(
         refused:
           `--tickets ${given}, but ${project} already has work items in the log (${history.join(', ')}), ` +
           `numbered under source.tickets: ${current} — a different source would number its own tickets into ` +
-          'those same streams (#381). Leave out --tickets, or remove the project first.',
+          `those same streams (#381). Leave out --tickets, or remove the project first. ${kept}`,
       }
     }
     world.log(
@@ -109,7 +117,7 @@ export async function askTickets(
       return {
         refused:
           'a project with no owner cannot take its tickets from GitHub — there is no repository to read issues ' +
-          'from. Pass --tickets db, or leave it out.',
+          `from. Pass --tickets db, or leave it out. ${kept}`,
       }
     }
     world.log(paint.pass('tickets       db — a local project has no GitHub issues to read'))
@@ -123,6 +131,7 @@ export async function askTickets(
     prompt: "where this project's tickets come from — github (this repository's issues), or db (Lingtai's own table)",
     current,
     choices: ['github', 'db'],
+    kept,
   })
   if ('refused' in result) return result
   world.log(paint.pass(`tickets       ${result.answer}`))
@@ -165,6 +174,7 @@ export async function askKinds(
     prompt: 'which labels are work, comma-separated, first = taken first',
     current: currentDisplay,
     fallback: currentDisplay === null ? SETUP_KINDS.join(', ') : undefined,
+    kept: deps.kept ?? 'Nothing was written',
     validate: async (answer) => {
       const parsed = parseKinds(answer)
       return typeof parsed === 'string' ? parsed : null
@@ -188,10 +198,24 @@ export async function askKinds(
  * The live `history`: a dynamic `import('@lingtai/event-store')`, for
  * `ticket-store.ts`'s own reason — a caller that only wants to ask a setup
  * question must not open a store merely by importing this module.
+ *
+ * **Two kinds of history, not one.** A `wi-<project>-*` stream is what a
+ * claimed ticket leaves in the log, whichever source claimed it. A `db`
+ * project's own tickets leave no stream until a pass claims one —
+ * `dbTickets.createIssue` (`db-tickets.ts`) is a plain `INSERT INTO
+ * tickets` — so `lingtai ticket new` can leave a project with rows in
+ * `tickets` and nothing in the log at all. `ticketsFor`'s own guard
+ * (`ticket-store.ts:247-253`) checks the table before the log for exactly
+ * that reason, and this checks both for the same one: either is enough that
+ * switching away from the project's current source would strand work.
  */
 export async function liveHistory(project: string): Promise<readonly string[]> {
-  const { log } = await import('@lingtai/event-store')
+  const { log, processTicketSql } = await import('@lingtai/event-store')
   const { parseWorkItemStream } = await import('@lingtai/domain')
+  const { dbTickets } = await import('@lingtai/conductor/db-tickets')
   const streams = await log.queries.projectStreams(`wi-${project}-`)
-  return streams.filter((id) => parseWorkItemStream(id)?.project === project)
+  const wiStreams = streams.filter((id) => parseWorkItemStream(id)?.project === project)
+  const sql = await processTicketSql()
+  const dbTicketRows = await dbTickets(sql, project).listIssuesSince(new Date(0))
+  return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
 }
