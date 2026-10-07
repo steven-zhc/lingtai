@@ -924,18 +924,22 @@ async function daemonCommand(
   for (const line of describeFilters(filters)) console.log(line)
 
   const { clients, unresolved } = await clientsForProjects(registered)
-  // **Report, don't repair** (#389). A recipe that will not resolve is
-  // dropped from `clients` rather than falling back to the raw client — see
+  // **Report, don't repair** (#389). A project whose client will not build —
+  // a recipe that will not resolve, or (`#355`) a no-owner project's own
+  // `ownerlessRefusal`, whose recipe resolves fine — is dropped from
+  // `clients` rather than falling back to the raw client — see
   // `clientsForProjects`' own doc comment — and the consequence is said here,
   // once per project per daemon start, because `reconcile(` has one caller
   // and nothing on the work loop reaches this line again until the next
   // start. `doctor` reads the same filter live, which is the per-sweep half
-  // of this report.
+  // of this report. `u.problem` already names the specific cause, so the
+  // line around it says only that reconcile is skipped — never "its recipe
+  // will not resolve", which is false for the ownerless case.
   for (const u of unresolved) {
     console.log(
       paint.fail(
-        `reconcile skipped ${u.project}: its recipe will not resolve — ${u.problem}. ` +
-          'Labels, closes and leftover arms are not converged until it does.',
+        `reconcile skipped ${u.project}: ${u.problem}. ` +
+          'Labels, closes and leftover arms are not converged while this stands.',
       ),
     )
   }

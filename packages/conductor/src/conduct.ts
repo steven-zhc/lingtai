@@ -1689,9 +1689,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           Effect.either(
             repo.provision({
               project,
-              // '' when there is no owner: `remote` is always set then (the
-              // ownerless refusal in `run.ts`), so `ProvisionOptions.owner` is
-              // read only to build the `github.com` URL `remote` pre-empts.
+              // '' when there is no owner: `remote` is always set then —
+              // `ownerlessClient` (`./ownerless.ts`) refuses a recipe naming
+              // no `repo.remote` before either of its two callers, `run.ts`
+              // and `apps/cli/src/conduct.ts`'s `conductWork`, builds this
+              // client — so `ProvisionOptions.owner` is read only to build
+              // the `github.com` URL `remote` pre-empts.
               owner: options.client.owner ?? '',
               repo: options.client.repo,
               base: spec.base,

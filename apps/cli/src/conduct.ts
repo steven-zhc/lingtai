@@ -289,6 +289,28 @@ export function conductWork(
 }
 
 /**
+ * Which registered projects a pass may look at, and the `'*'` refusal pushed
+ * when some are skipped — **no App is a reason to skip every GitHub project,
+ * not every project** (`#355`). A project with no owner has no App to check:
+ * it goes through `conductWork`'s no-owner branch regardless, so the list
+ * returned is every registered project with an App, and only the no-owner
+ * ones without. No refusal is pushed when nothing was skipped — either
+ * because there is an App, or because every registered project is
+ * owner-less already.
+ */
+export function projectsForPass(
+  registered: readonly ProjectState[],
+  hasApp: boolean,
+  outcome: PassOutcome,
+): readonly ProjectState[] {
+  const projects = hasApp ? registered : registered.filter((p) => p.owner === null)
+  if (!hasApp && registered.some((p) => p.owner !== null)) {
+    outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
+  }
+  return projects
+}
+
+/**
  * A pass, with the world provided around each item it takes.
  *
  * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
@@ -320,15 +342,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   const control = await readControl()
 
   const registered = await loadProjects()
-  // **No App is a reason to skip every GitHub project, not every project**
-  // (`#355`). A project with no owner has no App to check: it goes through
-  // `conductWork`'s no-owner branch regardless, so this project list is every
-  // registered project with an App, and only the no-owner ones without.
-  const hasApp = hasGitHubApp()
-  const projects = hasApp ? registered : registered.filter((p) => p.owner === null)
-  if (!hasApp && registered.some((p) => p.owner !== null)) {
-    outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
-  }
+  const projects = projectsForPass(registered, hasGitHubApp(), outcome)
 
   return conductProjects({
     projects,

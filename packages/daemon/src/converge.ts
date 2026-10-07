@@ -105,9 +105,10 @@ export interface ProjectClients {
  * — and is attempted whether or not `hasApp()` answers true, because there is
  * no GitHub half for an App to gate here. The App check stays, but only on
  * the GitHub branch below: no App there still makes the whole check a no-op
- * for that project rather than an error, which is what makes a machine with
- * no credentials still get its owner-less projects' worktrees cleaned and
- * claims returned.
+ * for that project rather than an error — a machine with no credentials still
+ * wants its worktrees cleaned and its expired claims returned, for every
+ * project, which `reconcile` reads off `findOrphans`/`findOrphanLogs`/
+ * `releaseForeignClaims` rather than off this map.
  *
  * A GitHub project whose client will not build is skipped and the others go
  * on. One repository's expired installation must not cost the rest their
