@@ -28,13 +28,15 @@ import {
   excludeOf,
   kindsOf,
   limitsFor,
+  remoteOf,
+  ticketSourceOf,
   type StepBound,
 } from '@lingtai/recipe/settings'
 
 import { passCeiling } from './ceiling.ts'
 import type { TicketSource } from './discover.ts'
 import { currentRecipe } from './projects.ts'
-import { passClientOf, ticketsFor, type TicketedClient, type TicketsForOptions } from './ticket-store.ts'
+import { passClientOf, ticketsFor, type Tickets, type TicketedClient, type TicketsForOptions } from './ticket-store.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
 // imported it from here still does.
@@ -171,8 +173,10 @@ export type ProjectFilter =
       /**
        * The recipe and the client that read it, carried so a caller does not
        * fetch either twice. **Not what asks GitHub what is offered** — that is
-       * `tickets`, below; a `db` project's `client` still reaches GitHub for
-       * the recipe but must not be asked for its tickets.
+       * `tickets`, below. For a GitHub project this is the `GitHubClient`
+       * itself; for a project with no owner (#354) there is no `GitHubClient`
+       * to carry, so this is `tickets` again — nothing reads `filter.client`
+       * today, so the two are indistinguishable to every caller there is.
        */
       recipe: Recipe
       client: TicketSource
@@ -219,6 +223,30 @@ export async function githubClientFor(state: ProjectState): Promise<GitHubClient
 }
 
 /**
+ * Why a project with no owner will take nothing, or null when it will.
+ *
+ * `state.owner === null` is also true of a GitHub project registered before
+ * `ProjectConfigured` carried one (`@lingtai/domain`'s `ProjectState.owner`),
+ * and for such a project the missing `source.tickets: db` is the first thing
+ * it hits — so that sentence keeps `githubClientFor`'s own advice to re-run
+ * `lingtai add <owner>/<repo>`, rather than only offering the setting a
+ * project registered `--local` actually wants.
+ *
+ * The `db` check first and the `remote` check second, matching `lingtai
+ * run`'s own order (`run.ts`) — both call this rather than keeping two copies
+ * of the wording, which is #76's lesson: a sentence written twice drifts.
+ */
+export function ownerlessRefusal(project: string, recipe: Recipe): string | null {
+  if (ticketSourceOf(recipe) !== 'db') {
+    return `${project} has no owner and its recipe does not say source.tickets: db — write source.tickets: db, or re-run lingtai add <owner>/<repo> to record the owner`
+  }
+  if (remoteOf(recipe) === null) {
+    return `${project} has no owner and its recipe names no repo.remote — re-run lingtai add --local`
+  }
+  return null
+}
+
+/**
  * One project's client and the recipe it resolved to, with the ticket verbs
  * already taken from `ticketsFor` (#382, #383).
  *
@@ -254,17 +282,43 @@ export async function projectClient(
  * answer, and "it could not be read, because …" is one of the answers rather
  * than an exception the caller may or may not remember to catch — which is the
  * shape of the empty catch this replaces.
+ *
+ * **A project with no owner (`state.owner === null`, #354) builds no
+ * `GitHubClient`.** There is no App to build one from, so `clientFor` is
+ * skipped and the recipe is resolved without one — safe, because
+ * `currentRecipe` ignores its second argument (`projects.ts`). What such a
+ * project will take still has to agree with `lingtai run`'s own refusal
+ * (`ownerlessRefusal`, checked inside the `try` below so it comes out through
+ * the same `ok: false` every other refusal here does) and, past that, with
+ * `ticketsOf` — never asked for a `client` argument it does not have.
  */
 export async function projectFilter(
   state: ProjectState,
   clientFor: ClientFor = githubClientFor,
   recipeFor: RecipeFor = currentRecipe,
+  ticketsOf: typeof ticketsFor = ticketsFor,
 ): Promise<ProjectFilter> {
   const project = state.project ?? '(unnamed)'
   try {
-    const client = await clientFor(state)
-    const resolved = await recipeFor(state, client)
-    const tickets = await ticketsFor(state, resolved.recipe, client)
+    let resolved: ResolvedRecipe
+    let client: TicketSource
+    let tickets: TicketSource
+    if (state.owner === null) {
+      resolved = await recipeFor(state, undefined)
+      const refusal = ownerlessRefusal(project, resolved.recipe)
+      if (refusal) throw new Error(refusal)
+      // Never read: the refusal above already requires `source.tickets: db`,
+      // `ticketsFor`'s only branch that does not pass its third argument
+      // straight through.
+      const dbTickets = await ticketsOf(state, resolved.recipe, undefined as unknown as Tickets)
+      tickets = dbTickets
+      client = dbTickets
+    } else {
+      const ghClient = await clientFor(state)
+      resolved = await recipeFor(state, ghClient)
+      tickets = await ticketsOf(state, resolved.recipe, ghClient)
+      client = ghClient
+    }
     return {
       project,
       ok: true,

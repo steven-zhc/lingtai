@@ -33,6 +33,7 @@ import {
   currentRecipe,
   gitRefChannel,
   loadProject,
+  ownerlessRefusal,
   passClientOf,
   passCeiling,
   Repo,
@@ -58,7 +59,7 @@ import {
   type Recipe,
   type ResolvedRecipe,
 } from '@lingtai/recipe'
-import { remoteOf, ticketSourceOf } from '@lingtai/recipe/settings'
+import { remoteOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
@@ -415,7 +416,10 @@ export async function run(
          * **An owner-less project names its own remote and its own ticket
          * source, and both are refused by name before anything is printed**
          * (`#352`) — the same place a GitHub project's App refusal would have
-         * come.
+         * come. `ownerlessRefusal` is `projectFilter`'s own check (`#354`):
+         * calling it here rather than keeping a second copy of the wording is
+         * what stops the two disagreeing about whether this project will take
+         * work (#76).
          *
          * `remoteOf(recipe)` null: `provision` would otherwise fall back to
          * `worktree.ts`'s `github.com/${owner}/...` built from a null owner.
@@ -425,17 +429,10 @@ export async function run(
          * `source.tickets`, so this is the ordinary state of a freshly
          * registered local project and not a bug in it.
          */
-        const remote = remoteOf(resolved.recipe)
-        if (remote === null) {
-          return yield* refuse(
-            `${options.project} has no owner and its recipe names no repo.remote — re-run lingtai add --local`,
-          )
-        }
-        if (ticketSourceOf(resolved.recipe) !== 'db') {
-          return yield* refuse(
-            `${options.project} has no owner and its recipe does not say source.tickets: db — write source.tickets: db`,
-          )
-        }
+        const refusal = ownerlessRefusal(options.project, resolved.recipe)
+        if (refusal) return yield* refuse(refusal)
+        // Non-null: `ownerlessRefusal` already refused a recipe naming no `repo.remote`.
+        const remote = remoteOf(resolved.recipe) as string
 
         // Before anything is claimed: the runtime, whose account it spends on,
         // and what the pass may cost (`#348`) — read off the recipe `resolved`

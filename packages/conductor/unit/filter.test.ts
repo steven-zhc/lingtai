@@ -16,17 +16,20 @@ import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlit
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import type { GitHubClient } from '@lingtai/github'
 import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from '@lingtai/recipe'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { dbTickets } from '../src/db-tickets.ts'
 import {
   type RecipeFor,
   describeAssignee,
   describeFilter,
+  ownerlessRefusal,
   passCeiling,
   projectClient,
   projectFilter,
 } from '../src/filter.ts'
+import type { ticketsFor } from '../src/ticket-store.ts'
+import { memoryTickets } from '../test/memory-tickets.ts'
 import { fakeGitHub, project as onePassProject, PROJECT } from '../test/one-pass.ts'
 
 const project = { project: 'lingtai', owner: 'steven-zhc', base: 'main' } as ProjectState
@@ -199,6 +202,109 @@ describe('projectFilter', () => {
       ok: false,
       problem: 'no owner recorded — re-run lingtai add to record it',
     })
+  })
+})
+
+const ownerlessState = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+
+const RECIPE_OWNERLESS = `
+version: 2
+repo: { base: main, remote: git@example.com:esctest/esctest.git }
+source: { kinds: [bug], exclude: [], tickets: db }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+const RECIPE_OWNERLESS_NO_DB = `
+version: 2
+repo: { base: main, remote: git@example.com:esctest/esctest.git }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+const RECIPE_OWNERLESS_NO_REMOTE = `
+version: 2
+repo: { base: main }
+source: { kinds: [bug], exclude: [], tickets: db }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+const RECIPE_OWNERLESS_NEITHER = `
+version: 2
+repo: { base: main }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+/** Ignores `client` entirely — the whole point of the path under test. */
+function recipeOf(text: string): RecipeFor {
+  return (state) => resolveRecipe(async () => text, state.base ?? 'main')
+}
+
+/**
+ * #354: a project with no owner has no App to build a `GitHubClient` from, so
+ * `projectFilter` must not try — `clientFor` below fails the test if it is
+ * called at all.
+ */
+describe('projectFilter, for a project with no owner', () => {
+  const clientFor = async (): Promise<never> => {
+    throw new Error('no client should be built for a project with no owner')
+  }
+
+  it('resolves with no client built, and its tickets taken from the fourth argument', async () => {
+    const tickets = memoryTickets()
+    const ticketsOf = vi.fn<typeof ticketsFor>(async () => tickets)
+
+    const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS), ticketsOf)
+
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
+    expect(ticketsOf).toHaveBeenCalledTimes(1)
+    const call = ticketsOf.mock.calls[0]
+    expect(call?.[0]).toBe(ownerlessState)
+    // Never read on this path: the refusal already requires `source.tickets: db`.
+    expect(call?.[2]).toBeUndefined()
+    // Nothing reads `filter.client` today (#354's design note); it carries the
+    // same tickets `filter.tickets` does, since there is no `GitHubClient`.
+    expect(filter.tickets).toBe(tickets)
+    expect(filter.client).toBe(tickets)
+  })
+
+  it('refuses by name when the recipe does not say source.tickets: db', async () => {
+    const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS_NO_DB))
+
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.problem).toContain('source.tickets: db')
+    expect(filter.problem).toContain('lingtai add <owner>/<repo>')
+  })
+
+  it('refuses by name when the recipe names no repo.remote', async () => {
+    const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS_NO_REMOTE))
+
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.problem).toContain('repo.remote')
+    expect(filter.problem).toContain('lingtai add --local')
+  })
+})
+
+describe('ownerlessRefusal', () => {
+  it('checks source.tickets: db before repo.remote', async () => {
+    const neither = await resolveRecipe(async () => RECIPE_OWNERLESS_NEITHER, 'main')
+    expect(ownerlessRefusal('esctest', neither.recipe)).toContain('source.tickets: db')
+  })
+
+  it('answers null when both are set', async () => {
+    const resolved = await resolveRecipe(async () => RECIPE_OWNERLESS, 'main')
+    expect(ownerlessRefusal('esctest', resolved.recipe)).toBeNull()
   })
 })
 

@@ -521,15 +521,29 @@ export type ProjectQueue =
  * queue of `await`s. Never throws: a failure is one of the three answers, which
  * is what lets the caller fan out without a rejection taking the whole board
  * down with the one project whose token expired.
+ *
+ * `filterFor` and `select` default to `projectFilter` and `selectRunnable` —
+ * the conductor's own reads, a local recipe file and `task_view` — and exist
+ * only so a unit test can reach this without either (#354): `projectFilter`'s
+ * default path reads `~/.lingtai/<project>/recipe.yml`, and `selectRunnable`
+ * reads `task_view` through `readTasks`, both outside the system under 0060
+ * §1 and both unreachable under `HOME=/nonexistent`. `queuedCards`'s own `ask`
+ * seam, below, is the precedent.
  */
-export async function askProject(state: ProjectState): Promise<ProjectQueue> {
-  // The default `currentRecipe`, the conductor's own read — a local file since
-  // #180, so a render asks GitHub nothing for it.
-  const filter = await projectFilter(state)
+export async function askProject(
+  state: ProjectState,
+  options: {
+    filterFor?: (state: ProjectState) => Promise<ProjectFilter>
+    select?: typeof selectRunnable
+  } = {},
+): Promise<ProjectQueue> {
+  const filterFor = options.filterFor ?? projectFilter
+  const select = options.select ?? selectRunnable
+  const filter = await filterFor(state)
   if (!filter.ok) return { state: 'unreadable', filter }
   try {
     const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
-    const runnable = await selectRunnable({
+    const runnable = await select({
       project: filter.project,
       offered: offered.runnable,
       kinds: filter.kinds,
