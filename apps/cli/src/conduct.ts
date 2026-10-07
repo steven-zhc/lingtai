@@ -16,8 +16,9 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { createRuntime } from '@lingtai/agent'
+import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
+  ownerlessClient,
   PortsLive,
   currentRecipe,
   loadProjects,
@@ -27,13 +28,19 @@ import {
   runnableNow,
   selectRunnable,
   ticketsFor,
+  type PassClient,
+  type RunOnceResult,
+  type ScheduleResult,
+  type Tickets,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
-import { type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
+import { type ControlState, type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import { createGitHubClient } from '@lingtai/github'
-import { kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
+import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
+import { baseOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -77,6 +84,211 @@ export interface PassOutcome {
 }
 
 /**
+ * What one project's share of a pass reaches outside the process:
+ * `createGitHubClient`, `currentRecipe`, `ticketsFor`, `selectRunnable`
+ * (which reads `task_view`), `runOnce` and `runQueue` (`#355`).
+ *
+ * `conductProjects` was already a seam (`conduct-pause.test.ts`), but `work` —
+ * what each project's share of a pass does — was a closure inside
+ * `conductorPass` with no way to drive it under the unit half. `ConductWorld`
+ * is that seam, following `apps/cli/src/run.ts`'s `RunWorld`/`liveRunWorld`.
+ */
+export interface ConductWorld {
+  createGitHubClient: (options: CreateClientOptions) => Promise<GitHubClient>
+  currentRecipe: (project: ProjectState, client?: GitHubClient, base?: string) => Promise<ResolvedRecipe>
+  ticketsFor: (project: ProjectState, recipe: Recipe, client: Tickets) => Promise<Tickets>
+  selectRunnable: typeof selectRunnable
+  runOnce: typeof runOnce
+  runQueue: typeof runQueue
+}
+
+/** The real one. */
+export function liveConductWorld(): ConductWorld {
+  return { createGitHubClient, currentRecipe, ticketsFor, selectRunnable, runOnce, runQueue }
+}
+
+/** What `conductWork` needs beside `ConductWorld` — everything a pass already read once. */
+export interface ConductWorkOptions {
+  hookBinary: string
+  prompt: string
+  /** The control stream, read once for the whole pass (#210). */
+  control: ControlState
+  outcome: PassOutcome
+  max?: number
+  merge?: boolean
+  paused?: () => Promise<string | null>
+  log: (line: string) => void
+}
+
+/** What a run hands `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
+interface CommonPassOptions {
+  project: ProjectState
+  client: PassClient
+  runtime: Runtime
+  token?: TokenSource
+  merge?: boolean
+  hookBinary: string
+  prompt: string
+  promptVersion: string
+  log: (line: string) => void
+  /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`, `#355`). */
+  remote?: string
+}
+
+/**
+ * One project's share of a pass — asking what it offers, and taking either
+ * what was asked for by name or the top of its queue.
+ *
+ * **Branches on `project.owner`, before anything is built** (`#355`). A
+ * project with no owner has no App to check and no `GitHubClient` to build:
+ * `ownerlessClient` is `apps/cli/src/run.ts`'s own assembly, called with
+ * `world.ticketsFor` as its seam so a test needs no `processTicketSql()`.
+ * Everything from `runnableNow` on is shared — what differs is only how
+ * `common` was built.
+ */
+export function conductWork(
+  options: ConductWorkOptions,
+  world: ConductWorld = liveConductWorld(),
+): (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'> {
+  return async (project, where) => {
+    const name = project.project!
+
+    // `max: 0` means "look at the project and take nothing". Returned here
+    // rather than through `runQueue({ max: 0 })` because a nominated issue
+    // would otherwise still jump the queue and run. Nothing was read, so it
+    // says nothing about whether the project would be refused.
+    if (options.max === 0) return 'looked-away'
+
+    let common: CommonPassOptions
+    let resolved: ResolvedRecipe
+
+    if (project.owner === null) {
+      // A local registration always records `base` (`first-project.ts`). If it
+      // did not, the fallback is the recipe's own `repo.base` — never
+      // `client.defaultBranch()`, which there is no client to ask.
+      where.ref = project.base
+      resolved = await world.currentRecipe(project, undefined, where.ref ?? undefined)
+      if (where.ref === null) where.ref = baseOf(resolved.recipe)
+
+      // Both before `where.looked()`: a refusal here — no `source.tickets:
+      // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
+      // `ProjectRefused` rather than a mid-run failure (#148).
+      const { client, remote } = await ownerlessClient(project, resolved.recipe, world.ticketsFor)
+      await where.looked()
+
+      common = {
+        project,
+        client,
+        runtime: createRuntime(resolved.recipe.runtime.agent),
+        hookBinary: options.hookBinary,
+        prompt: options.prompt,
+        promptVersion: `ticket@${options.prompt.length}`,
+        remote,
+        ...(options.merge === undefined ? {} : { merge: options.merge }),
+        log: options.log,
+      }
+    } else {
+      const client = await world.createGitHubClient({ auth: githubApp(), owner: project.owner, repo: name })
+      where.ref = project.base ?? (await client.defaultBranch())
+      resolved = await world.currentRecipe(project, client, where.ref)
+      // Where this project's tickets actually live (`ticketsFor`, `#382`) —
+      // **before `where.looked()`**, so a refusal here (a `db` project whose
+      // log already has GitHub-numbered work items) is durable: a throw after
+      // `looked()` is not recorded as a `ProjectRefused` (see below).
+      const tickets = await world.ticketsFor(project, resolved.recipe, client)
+      // Looked at, now — not when the run below returns, which can be an hour
+      // away, all of it with a refusal on record for a project being worked.
+      await where.looked()
+
+      common = {
+        project,
+        client: passClientOf(client, tickets),
+        // **The runtime the recipe named** (`#313`).
+        runtime: createRuntime(resolved.recipe.runtime.agent),
+        // A function, not a snapshot: an installation token lasts an hour and a
+        // run's wall limit is two.
+        token: () => client.token(),
+        hookBinary: options.hookBinary,
+        prompt: options.prompt,
+        promptVersion: `ticket@${options.prompt.length}`,
+        ...(options.merge === undefined ? {} : { merge: options.merge }),
+        log: options.log,
+      }
+    }
+
+    // A hand-picked issue jumps the queue.
+    //
+    // `lingtai now` used to append `RunRequested` and only *wake* the loop, which
+    // then took whatever was at the top — so the command's name promised
+    // something it did not do, and would have been wrong the moment the queue
+    // held more than one item.
+    //
+    // A request needs no separate "consumed" event: it is satisfied when the
+    // task stops being queued, which claiming it does. Filtering on that is
+    // what keeps the control stream from growing a second state machine.
+    // Asked, not read back: GitHub says what it is offering right now, so a
+    // request for an issue that was closed or relabelled by hand since it was
+    // made simply does not match.
+    //
+    // **`backoffMs: 0` — the command is called `now`** (0028). The backoff
+    // stops *blind* retries, and a person naming an issue is not blind; every
+    // other subtraction still applies, so a request for something already
+    // claimed or landed still matches nothing. Until #95 this said
+    // `source.backoff` like the pass below, and the two failures it produced
+    // were both silent: the request matched nothing, so the daemon ran
+    // whatever was at the top of the queue instead, and the request stayed
+    // pending — because the only thing that consumes one is the item ceasing
+    // to be queued.
+    const offered = await runnableNow({ client: common.client, queue: queueOf(resolved.recipe) })
+    // The rows and not a set of numbers. `selectRunnable` already carries the
+    // kind and the title, and the line below is read by somebody watching a
+    // pass decide what to spend an agent on: `taking #123` is a number they
+    // have to go and look up before it means anything (#258).
+    const queued = new Map(
+      (
+        await world.selectRunnable({
+          project: name,
+          offered: offered.runnable,
+          kinds: kindsOf(resolved.recipe),
+          backoffMs: 0,
+        })
+      ).map((t) => [t.issue, t] as const),
+    )
+    const asked = options.control.requested.find((r) => r.project === name && queued.has(r.issue))
+
+    if (asked) {
+      // Non-null because `queued.has` is what matched it. The shape is
+      // `lingtai status`'s — `#123  bug  the title`.
+      const task = queued.get(asked.issue)!
+      options.log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
+      const result: RunOnceResult = await Effect.runPromise(
+        world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
+      )
+      options.outcome.ran += 1
+      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+      else if (result.ok === 'held') options.log(`held at ${result.step}`)
+      else options.log(`stopped at ${result.stage}: ${result.detail}`)
+    } else {
+      const ran: ScheduleResult = await Effect.runPromise(
+        world
+          .runQueue({
+            ...common,
+            recipe: resolved.recipe,
+            max: options.max ?? 1,
+            // One ticket today, so the loop's own check comes first; handed in
+            // anyway so a `max` above one cannot walk into a wall the ticket
+            // before it just met.
+            ...(options.paused ? { paused: options.paused } : {}),
+          })
+          .pipe(Effect.provide(PortsLive)),
+      )
+      options.outcome.ran += ran.ran.length
+    }
+    return 'looked'
+  }
+}
+
+/**
  * A pass, with the world provided around each item it takes.
  *
  * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
@@ -88,11 +300,6 @@ export interface PassOutcome {
 export async function conductorPass(options: ConductOptions = {}): Promise<PassOutcome> {
   const log = options.log ?? (() => {})
   const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
-
-  if (!hasGitHubApp()) {
-    outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
-    return outcome
-  }
 
   const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
   try {
@@ -112,124 +319,33 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   // by the next one — which the append itself triggers.
   const control = await readControl()
 
+  const registered = await loadProjects()
+  // **No App is a reason to skip every GitHub project, not every project**
+  // (`#355`). A project with no owner has no App to check: it goes through
+  // `conductWork`'s no-owner branch regardless, so this project list is every
+  // registered project with an App, and only the no-owner ones without.
+  const hasApp = hasGitHubApp()
+  const projects = hasApp ? registered : registered.filter((p) => p.owner === null)
+  if (!hasApp && registered.some((p) => p.owner !== null)) {
+    outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
+  }
+
   return conductProjects({
-    projects: await loadProjects(),
+    projects,
     codeSha: options.codeSha ?? null,
     outcome,
     log,
     ...(options.paused ? { paused: options.paused } : {}),
-    work: async (project, where) => {
-      const name = project.project!
-      const client = await createGitHubClient({
-        auth: githubApp(),
-        owner: project.owner!,
-        repo: name,
-      })
-
-      // `max: 0` means "look at the project and take nothing". Returned here
-      // rather than through `runQueue({ max: 0 })` because a nominated issue
-      // would otherwise still jump the queue and run. Nothing was read, so it
-      // says nothing about whether the project would be refused.
-      if (options.max === 0) return 'looked-away'
-      // Asked here rather than inside `currentRecipe`, so a refusal can say
-      // which branch it was reading (#148).
-      where.ref = project.base ?? (await client.defaultBranch())
-      const resolved = await currentRecipe(project, client, where.ref)
-      // Where this project's tickets actually live (`ticketsFor`, `#382`) —
-      // **before `where.looked()`**, so a refusal here (a `db` project whose
-      // log already has GitHub-numbered work items) is durable: a throw after
-      // `looked()` is not recorded as a `ProjectRefused` (see below).
-      const tickets = await ticketsFor(project, resolved.recipe, client)
-      // Looked at, now — not when the run below returns, which can be an hour
-      // away, all of it with a refusal on record for a project being worked.
-      await where.looked()
-
-      const common = {
-        project,
-        client: passClientOf(client, tickets),
-        // **The runtime the recipe named** (`#313`). `resolved` is in hand two
-        // statements up, so nothing had to be reordered here — and until this
-        // ticket `runtime.agent: codex` did not run Codex, it made
-        // `agentRefusal` refuse every pass of the project.
-        runtime: createRuntime(resolved.recipe.runtime.agent),
-        // A function, not a snapshot: an installation token lasts an hour and a
-        // run's wall limit is two.
-        token: () => client.token(),
-        hookBinary,
-        prompt,
-        promptVersion: `ticket@${prompt.length}`,
-        ...(options.merge === undefined ? {} : { merge: options.merge }),
-        log,
-      }
-
-      // A hand-picked issue jumps the queue.
-      //
-      // `lingtai now` used to append `RunRequested` and only *wake* the loop, which
-      // then took whatever was at the top — so the command's name promised
-      // something it did not do, and would have been wrong the moment the queue
-      // held more than one item.
-      //
-      // A request needs no separate "consumed" event: it is satisfied when the
-      // task stops being queued, which claiming it does. Filtering on that is
-      // what keeps the control stream from growing a second state machine.
-      // Asked, not read back: GitHub says what it is offering right now, so a
-      // request for an issue that was closed or relabelled by hand since it was
-      // made simply does not match.
-      //
-      // **`backoffMs: 0` — the command is called `now`** (0028). The backoff
-      // stops *blind* retries, and a person naming an issue is not blind; every
-      // other subtraction still applies, so a request for something already
-      // claimed or landed still matches nothing. Until #95 this said
-      // `source.backoff` like the pass below, and the two failures it produced
-      // were both silent: the request matched nothing, so the daemon ran
-      // whatever was at the top of the queue instead, and the request stayed
-      // pending — because the only thing that consumes one is the item ceasing
-      // to be queued.
-      const offered = await runnableNow({ client: common.client, queue: queueOf(resolved.recipe) })
-      // The rows and not a set of numbers. `selectRunnable` already carries the
-      // kind and the title, and the line below is read by somebody watching a
-      // pass decide what to spend an agent on: `taking #123` is a number they
-      // have to go and look up before it means anything (#258).
-      const queued = new Map(
-        (
-          await selectRunnable({
-            project: name,
-            offered: offered.runnable,
-            kinds: kindsOf(resolved.recipe),
-            backoffMs: 0,
-          })
-        ).map((t) => [t.issue, t] as const),
-      )
-      const asked = control.requested.find((r) => r.project === name && queued.has(r.issue))
-
-      if (asked) {
-        // Non-null because `queued.has` is what matched it. The shape is
-        // `lingtai status`'s — `#123  bug  the title`.
-        const task = queued.get(asked.issue)!
-        log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
-        const result = await Effect.runPromise(
-          runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
-        )
-        outcome.ran += 1
-        if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
-        else if (result.ok === 'held') log(`held at ${result.step}`)
-        else log(`stopped at ${result.stage}: ${result.detail}`)
-      } else {
-        const ran = await Effect.runPromise(
-          runQueue({
-            ...common,
-            recipe: resolved.recipe,
-            max: options.max ?? 1,
-            // One ticket today, so the loop's own check comes first; handed in
-            // anyway so a `max` above one cannot walk into a wall the ticket
-            // before it just met.
-            ...(options.paused ? { paused: options.paused } : {}),
-          }).pipe(Effect.provide(PortsLive)),
-        )
-        outcome.ran += ran.ran.length
-      }
-      return 'looked'
-    },
+    work: conductWork({
+      hookBinary,
+      prompt,
+      control,
+      outcome,
+      max: options.max,
+      ...(options.merge === undefined ? {} : { merge: options.merge }),
+      ...(options.paused ? { paused: options.paused } : {}),
+      log,
+    }),
   })
 }
 
@@ -281,7 +397,9 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
 
   for (const project of options.projects) {
     const name = project.project
-    if (!name || !project.owner) continue
+    // **No `!project.owner`** (`#355`) — `owner: null` is an ordinary,
+    // registered project now, not one this pass skips.
+    if (!name) continue
     if (options.paused) {
       const why = await options.paused()
       if (why !== null) {

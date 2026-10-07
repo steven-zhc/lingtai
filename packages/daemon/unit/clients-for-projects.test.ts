@@ -38,6 +38,8 @@ const OK: ProjectState = {
 
 const BROKEN: ProjectState = { ...OK, project: 'broken' }
 
+const LOCAL: ProjectState = { ...OK, project: 'local', owner: null }
+
 const stubClient = {} as GitHubClient
 
 function seams() {
@@ -67,5 +69,59 @@ describe('clientsForProjects, a project whose recipe will not resolve', () => {
 
     expect(first.unresolved).toEqual(second.unresolved)
     expect(second.unresolved).toHaveLength(1)
+  })
+})
+
+/**
+ * **A project with no owner (`#355`) builds no `GitHubClient` and needs no
+ * App.** `clientFor` throws if it is asked, which is how each case below
+ * proves the no-owner branch never reaches it — the same technique
+ * `run-ownerless.test.ts` uses for `RunWorld`.
+ */
+describe('clientsForProjects, a project with no owner', () => {
+  const notReached = () => {
+    throw new Error('not reached — this project has no owner')
+  }
+
+  it('is still in clients, with no App configured and clientFor never called', async () => {
+    const { clients, unresolved } = await clientsForProjects([OK, LOCAL], {
+      hasApp: () => false,
+      clientFor: notReached,
+      recipeFor: async (state) =>
+        ({
+          recipe: {
+            version: 2 as const,
+            source: { kinds: ['bug'], tickets: 'db' },
+            repo: { remote: `https://example.invalid/${state.project}.git` },
+          },
+          ref: 'main',
+          configHash: 'c',
+        }) as never,
+      ticketsOf: async () => ({}) as never,
+    })
+
+    // No App: the GitHub project is skipped exactly as it is today.
+    expect(clients.has('ok')).toBe(false)
+    expect(clients.has('local')).toBe(true)
+    expect(unresolved).toEqual([])
+  })
+
+  it('lands in unresolved with ownerlessRefusal’s own sentence, for a recipe naming no source.tickets: db', async () => {
+    const { clients, unresolved } = await clientsForProjects([LOCAL], {
+      hasApp: () => true,
+      clientFor: notReached,
+      recipeFor: async () =>
+        ({ recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' }) as never,
+    })
+
+    expect(clients.has('local')).toBe(false)
+    expect(unresolved).toEqual([
+      {
+        project: 'local',
+        problem:
+          'local has no owner and its recipe does not say source.tickets: db — write source.tickets: db, ' +
+          'or re-run lingtai add <owner>/<repo> to record the owner',
+      },
+    ])
   })
 })

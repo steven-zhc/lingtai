@@ -25,6 +25,7 @@ export {
 } from './discover.ts'
 export { currentRecipe, listProjectStreams, loadProject, loadProjects, signedInHere } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
+export { ownerlessClient, type OwnerlessClient } from './ownerless.ts'
 export {
   describeFilter,
   describeFilters,

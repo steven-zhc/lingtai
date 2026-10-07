@@ -61,6 +61,7 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // so a barrel import here is a compile error three packages away.
 import type { ClientFor, RecipeFor } from '@lingtai/conductor/filter'
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
+import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
@@ -91,19 +92,26 @@ export interface UnresolvedProject {
 
 /** What `clientsForProjects` could build, and what it could not and why. */
 export interface ProjectClients {
-  clients: Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>
+  clients: Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>
   unresolved: UnresolvedProject[]
 }
 
 /**
  * One client per registered project.
  *
- * Empty when no App is configured, which makes the whole GitHub check a no-op
- * rather than an error: a machine with no credentials still wants its
- * worktrees cleaned and its expired claims returned.
+ * **A project with no owner (`#355`) builds no `GitHubClient` and needs no
+ * App.** It goes through `ownerlessClient` instead — the same assembly
+ * `apps/cli/src/run.ts` and `apps/cli/src/conduct.ts`'s per-project work use
+ * — and is attempted whether or not `hasApp()` answers true, because there is
+ * no GitHub half for an App to gate here. The App check stays, but only on
+ * the GitHub branch below: no App there still makes the whole check a no-op
+ * for that project rather than an error, which is what makes a machine with
+ * no credentials still get its owner-less projects' worktrees cleaned and
+ * claims returned.
  *
- * A project whose client will not build is skipped and the others go on. One
- * repository's expired installation must not cost the rest their convergence.
+ * A GitHub project whose client will not build is skipped and the others go
+ * on. One repository's expired installation must not cost the rest their
+ * convergence.
  *
  * **The value is `passClientOf`'s shape, not `GitHubClient`** (`#382`): a
  * `db` project's ticket verbs read `dbTickets` rather than GitHub, and
@@ -113,33 +121,56 @@ export interface ProjectClients {
  * **The client building and the recipe resolving fail independently, and a
  * recipe that will not resolve drops the project rather than falling back to
  * the raw client.** A recipe that throws — the daemon running code that
- * cannot serve a step the recipe names (#76), or a `db` project's own
- * `TicketSourceConflict` — leaves this function not knowing whether the
- * project's tickets live on GitHub or in `dbTickets`. Handing `convergeIssues`
- * the raw client for what might be a `db` project means its ticket numbers
- * are asked of GitHub as issue numbers, which can write Lingtai's labels onto,
- * and close, an unrelated GitHub issue that happens to share the number. So
- * this project is dropped from `clients` instead — "one repository's expired
- * installation must not cost the rest theirs," extended to a recipe that will
- * not resolve — and **returned in `unresolved` rather than logged here**
- * (`#389`): this function has one caller, at daemon startup, so there is no
- * sweep for a line printed from inside it to repeat; the caller reports each
- * entry once and `lingtai doctor` reads the same filter live.
+ * cannot serve a step the recipe names (#76), a `db` project's own
+ * `TicketSourceConflict`, or `ownerlessRefusal`'s own sentence — leaves this
+ * function not knowing whether the project's tickets live on GitHub or in
+ * `dbTickets`. Handing `convergeIssues` the raw client for what might be a
+ * `db` project means its ticket numbers are asked of GitHub as issue numbers,
+ * which can write Lingtai's labels onto, and close, an unrelated GitHub issue
+ * that happens to share the number. So this project is dropped from
+ * `clients` instead — "one repository's expired installation must not cost
+ * the rest theirs," extended to a recipe that will not resolve — and
+ * **returned in `unresolved` rather than logged here** (`#389`): this
+ * function has one caller, at daemon startup, so there is no sweep for a line
+ * printed from inside it to repeat; the caller reports each entry once and
+ * `lingtai doctor` reads the same filter live.
  */
 export async function clientsForProjects(
   projects: readonly ProjectState[],
-  options: { hasApp?: () => boolean; clientFor?: ClientFor; recipeFor?: RecipeFor } = {},
+  options: {
+    hasApp?: () => boolean
+    clientFor?: ClientFor
+    recipeFor?: RecipeFor
+    /** The seam a test needs: `ownerlessClient`'s own third argument, following `projectFilter`'s fourth (`filter.ts`). */
+    ticketsOf?: typeof ticketsFor
+  } = {},
 ): Promise<ProjectClients> {
   const hasApp = options.hasApp ?? hasGitHubApp
   const clientFor =
     options.clientFor ??
     ((p: ProjectState) => createGitHubClient({ auth: githubApp(), owner: p.owner!, repo: p.project! }))
   const recipeFor = options.recipeFor ?? currentRecipe
-  const clients = new Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>()
+  const clients = new Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>()
   const unresolved: UnresolvedProject[] = []
-  if (!hasApp()) return { clients, unresolved }
+  const app = hasApp()
   for (const p of projects) {
-    if (!p.project || !p.owner) continue
+    if (!p.project) continue
+
+    if (p.owner === null) {
+      try {
+        const resolved = await recipeFor(p, undefined)
+        const { client } = await ownerlessClient(p, resolved.recipe, options.ticketsOf)
+        clients.set(p.project, client)
+      } catch (err) {
+        // Not known whether this project's tickets are GitHub's or dbTickets' —
+        // see the doc comment above for why that rules out falling back to the
+        // raw client. Never `clientFor`: there is no GitHub client to build.
+        unresolved.push({ project: p.project, problem: oneLine((err as Error).message) })
+      }
+      continue
+    }
+
+    if (!app) continue
     let client: GitHubClient
     try {
       client = await clientFor(p)

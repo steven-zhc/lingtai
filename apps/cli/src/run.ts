@@ -31,9 +31,8 @@ import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
   AgentHost,
   currentRecipe,
-  gitRefChannel,
   loadProject,
-  ownerlessRefusal,
+  ownerlessClient,
   passClientOf,
   passCeiling,
   Repo,
@@ -59,7 +58,6 @@ import {
   type Recipe,
   type ResolvedRecipe,
 } from '@lingtai/recipe'
-import { remoteOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
@@ -288,7 +286,7 @@ interface CommonPassOptions {
   hookBinary: string
   promptVersion: string
   log: (line: string) => void
-  /** Set only for a project with no owner — `remoteOf(recipe)`, checked non-null below (`#352`). */
+  /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`). */
   remote?: string
 }
 
@@ -416,36 +414,24 @@ export async function run(
          * **An owner-less project names its own remote and its own ticket
          * source, and both are refused by name before anything is printed**
          * (`#352`) — the same place a GitHub project's App refusal would have
-         * come. `ownerlessRefusal` is `projectFilter`'s own check (`#354`):
-         * calling it here rather than keeping a second copy of the wording is
-         * what stops the two disagreeing about whether this project will take
-         * work (#76).
-         *
-         * `remoteOf(recipe)` null: `provision` would otherwise fall back to
-         * `worktree.ts`'s `github.com/${owner}/...` built from a null owner.
-         * `ticketSourceOf(recipe) !== 'db'`: `ticketsFor` would return the
-         * client straight through for `'github'`, and there isn't one here —
-         * #394's own local registration writes `repo.remote` and never
-         * `source.tickets`, so this is the ordinary state of a freshly
-         * registered local project and not a bug in it.
+         * come. `ownerlessClient` is `projectFilter`'s own check (`#354`)
+         * followed by the same assembly this file used to do inline (`#355`):
+         * calling it here rather than keeping a second copy of the wording
+         * and the shape is what stops the two disagreeing about whether this
+         * project will take work (#76).
          */
-        const refusal = ownerlessRefusal(options.project, resolved.recipe)
-        if (refusal) return yield* refuse(refusal)
-        // Non-null: `ownerlessRefusal` already refused a recipe naming no `repo.remote`.
-        const remote = remoteOf(resolved.recipe) as string
+        const { client: ownerless, remote } = yield* Effect.tryPromise({
+          // `client` is never read here: `ownerlessClient`'s own refusal
+          // already requires `source.tickets: db`, `ticketsFor`'s only
+          // branch that does not pass its third argument straight through.
+          try: () => ownerlessClient(project, resolved.recipe, world.ticketsFor),
+          catch: (err) => refuse((err as Error).message),
+        })
 
         // Before anything is claimed: the runtime, whose account it spends on,
         // and what the pass may cost (`#348`) — read off the recipe `resolved`
         // just above, and printed once per `lingtai run` rather than per pass.
         for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
-
-        const tickets = yield* Effect.tryPromise({
-          // `client` is never read here: the refusal above already requires
-          // `source.tickets: db`, `ticketsFor`'s only branch that does not
-          // pass its third argument straight through.
-          try: () => world.ticketsFor(project, resolved.recipe, undefined as unknown as Tickets),
-          catch: (err) => refuse((err as Error).message),
-        })
 
         common = {
           project,
@@ -453,7 +439,7 @@ export async function run(
           // there isn't one on this path. The refs go to `git` against
           // `remote` rather than GitHub, with no token (0062 §4, `tell.ts`'s
           // "a channel that silently cannot delete").
-          client: { ...tickets, ...gitRefChannel({ remote }), owner: null, repo: options.project },
+          client: ownerless,
           runtime: createRuntime(resolved.recipe.runtime.agent),
           // Not a function that resolves to `undefined` — no token at all, so
           // `git()` plants no `GIT_CONFIG_*` and this machine's own git

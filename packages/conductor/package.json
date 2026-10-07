@@ -26,6 +26,7 @@
     "./close": "./src/close.ts",
     "./create-app": "./src/create-app.ts",
     "./ticket-store": "./src/ticket-store.ts",
+    "./ownerless": "./src/ownerless.ts",
     "./memory-tickets": "./test/memory-tickets.ts",
     "./db-tickets": "./src/db-tickets.ts",
     "./wizard": "./src/wizard.ts",
