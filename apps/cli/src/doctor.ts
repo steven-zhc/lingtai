@@ -3,7 +3,14 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
-import { RUN_LIMITS, type AuthStatus, type RuntimeCapabilities, createRuntime, everyRuntime } from '@lingtai/agent'
+import {
+  RUN_LIMITS,
+  type AuthStatus,
+  type Runtime,
+  type RuntimeCapabilities,
+  createRuntime,
+  everyRuntime,
+} from '@lingtai/agent'
 /**
  * `lingtai doctor` — the old `preflight()`, generalised.
  *
@@ -33,6 +40,7 @@ import {
   type AgentRefusal,
   type ClientFor,
   type ProjectFilter,
+  type RecipeFor,
   agentRefusal,
   currentRecipe,
   endedWithoutEndActions,
@@ -89,7 +97,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
-import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, recipePath, type Recipe } from '@lingtai/recipe'
+import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, recipePath, remoteOf, type Recipe } from '@lingtai/recipe'
 import { git } from '@lingtai/repo'
 import pg from 'pg'
 
@@ -851,6 +859,10 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** As `currentRecipe` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
+  recipe: RecipeFor
+  /** As `resolveAgentEnv` reads it, for `declaredEnvironment`. */
+  agentEnv: typeof resolveAgentEnv
 }
 
 export interface DoctorReport {
@@ -1523,10 +1535,11 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
 async function projectFiltersOnce(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects,
+  recipe: RecipeFor = currentRecipe,
 ): Promise<readonly ProjectFilter[] | null> {
   const projects = await load().catch(() => null)
   if (projects === null) return null
-  return projectFilters(projects, recipeClientFor(env))
+  return projectFilters(projects, recipeClientFor(env), recipe)
 }
 
 /** Each unresolved filter's project, against the recipe's own problem. */
@@ -1951,12 +1964,15 @@ async function dispatchedAuthRow(
   project: string,
   agent: RuntimeId,
   asked: Map<RuntimeId, AuthStatus | null>,
+  // Found in the injected list rather than built with `createRuntime`, so a
+  // test can hand in a fake `checkAuth` instead of spawning the real binary.
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
 ): Promise<CheckResult> {
   const name = `runtime: ${project} signed in`
   if (!asked.has(agent)) {
-    const runtime = createRuntime(agent)
+    const runtime = runtimes.find((r) => r.capabilities.id === agent)
     // Exactly what a run gets. Not `process.env`.
-    asked.set(agent, runtime.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null)
+    asked.set(agent, runtime?.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null)
   }
   const status = asked.get(agent) ?? null
   if (status === null) {
@@ -1977,10 +1993,13 @@ async function dispatchedAuthRow(
 export async function declaredEnvironment(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
+  reach: Partial<DoctorReach> = {},
 ): Promise<CheckResult[]> {
   const name = 'env: declared names, and which layer'
   // No App is needed: the recipe is this machine's file (#180), and nothing in
-  // this row asks GitHub anything.
+  // this row asks GitHub anything. No owner is needed either (#357): every
+  // value this loop reads — `currentRecipe`, `resolveAgentEnv`, `extensionRow`,
+  // `limitsRow` and `dispatchedAuthRow` — takes the project name alone.
   const projects = await load().catch(() => null)
   if (projects === null) {
     return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
@@ -1989,19 +2008,30 @@ export async function declaredEnvironment(
     return [{ name, status: 'ok', detail: 'no project has a recipe to declare anything yet' }]
   }
 
+  const recipeFor = reach.recipe ?? currentRecipe
+  const agentEnvFor = reach.agentEnv ?? resolveAgentEnv
+  const runtimes = reach.runtimes?.() ?? everyRuntime()
+
   const results: CheckResult[] = []
   /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
   const asked = new Map<RuntimeId, AuthStatus | null>()
   for (const project of projects) {
-    if (!project.project || !project.owner) continue
+    if (!project.project) {
+      results.push({
+        name: `env: ${project.project ?? '(unnamed)'}`,
+        status: 'skip',
+        detail: 'no repository name recorded — re-run lingtai add',
+      })
+      continue
+    }
     const label = `env: ${project.project}`
     try {
-      const resolved = await currentRecipe(project)
+      const resolved = await recipeFor(project, undefined)
       // Every name either file offers, and which one answered — 0021 makes
       // this load-bearing rather than nice: "the operator is responsible" is
       // only true where the operator can see what is happening. Names only,
       // never values.
-      const agentEnv = await resolveAgentEnv({
+      const agentEnv = await agentEnvFor({
         project: project.project,
         required: resolved.recipe.env.required,
         allow: resolved.recipe.env.allow,
@@ -2039,7 +2069,7 @@ export async function declaredEnvironment(
       // Whether the runtime named above can actually be started — a different
       // question from whether its declared limits bind, and the one nothing
       // asked between `runtimeAuth` becoming per-machine and this row.
-      results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked))
+      results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.
@@ -2070,9 +2100,13 @@ export async function declaredEnvironment(
 export async function recipeGovernsItsBase(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
+  reach: Partial<DoctorReach> = {},
 ): Promise<CheckResult[]> {
   const name = 'recipe: the rules and the merge target are one branch'
   // No App is needed to compare them: the recipe is this machine's file (#180).
+  // No owner either (#357): the comparison is `state.base` against the
+  // recipe's own `repo.base`, read straight from the recorded registration —
+  // no fetch, no GitHub call, nothing beyond what registration already wrote.
 
   const projects = await load().catch(() => null)
   if (projects === null) {
@@ -2082,13 +2116,35 @@ export async function recipeGovernsItsBase(
     return [{ name, status: 'ok', detail: 'no project has a recorded base to disagree with a recipe yet' }]
   }
 
+  const recipeFor = reach.recipe ?? currentRecipe
   const results: CheckResult[] = []
   for (const project of projects) {
-    if (!project.project || !project.owner) continue
+    if (!project.project) {
+      results.push({
+        name: `base: ${project.project ?? '(unnamed)'}`,
+        status: 'skip',
+        detail: 'no repository name recorded — re-run lingtai add',
+      })
+      continue
+    }
     const label = `base: ${project.project}`
     try {
-      const resolved = await currentRecipe(project)
-      const divergence = baseDivergence(resolved, `${project.owner}/${project.project}`)
+      const resolved = await recipeFor(project, undefined)
+      // The slug `baseDivergence` splices after `lingtai add ` in its own
+      // "Re-register:" sentence — a GitHub project names it `owner/repo`; a
+      // `--local` one has no owner to name and no directory recorded on
+      // `ProjectState` either, so `<dir>` is what the operator fills in
+      // (`conduct.ts`'s own convention, `#352`); and an owner-less project
+      // with no `repo.remote` is a GitHub project registered before
+      // `ProjectConfigured` carried an owner — only the remote tells the two
+      // apart (`init.ts`'s own `unrecorded`, `#352`).
+      const slug =
+        project.owner !== null
+          ? `${project.owner}/${project.project}`
+          : remoteOf(resolved.recipe) !== null
+            ? '--local <dir>'
+            : `<owner>/${project.project}`
+      const divergence = baseDivergence(resolved, slug)
       results.push(
         divergence
           ? { name: label, status: 'fail', detail: divergence }
@@ -2161,7 +2217,7 @@ export async function runDoctor(
   // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
   // and the `unconverged` rows in both store branches read this same value,
   // rather than each asking every project's recipe again.
-  const filters = await projectFiltersOnce(env, load)
+  const filters = await projectFiltersOnce(env, load, reach.recipe)
   const unresolved = unresolvedProblems(filters)
 
   /**
@@ -2290,8 +2346,8 @@ export async function runDoctor(
 
   results.push(githubCredentials(env))
   results.push(...(await projectRecipes(filters)))
-  results.push(...(await declaredEnvironment(env, load)))
-  results.push(...(await recipeGovernsItsBase(env, load)))
+  results.push(...(await declaredEnvironment(env, load, reach)))
+  results.push(...(await recipeGovernsItsBase(env, load, reach)))
   results.push(await settingsSources(reach.settings))
   results.push(await runtimeAuth(reach.runtimes))
   for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })

@@ -62,6 +62,15 @@ const reach: DoctorReach = {
   titles: async () => [],
   settings: async () => null,
   runtimes: () => [signedInRuntime],
+  // Never reached on this machine: `load` below resolves to no projects, so
+  // nothing in `declaredEnvironment`, `recipeGovernsItsBase` or
+  // `projectFiltersOnce` calls either of these.
+  recipe: () => {
+    throw new Error('no project is registered — nothing should resolve a recipe')
+  },
+  agentEnv: () => {
+    throw new Error('no project is registered — nothing should resolve an agent environment')
+  },
 }
 
 const find = (results: Awaited<ReturnType<typeof runDoctor>>['results'], name: string) => {
