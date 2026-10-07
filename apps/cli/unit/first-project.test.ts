@@ -4,10 +4,11 @@
  * `choose`/`listRepositories` fed a fake reader — no filesystem, no network,
  * so this is `unit/` by 0060 §1.
  */
+import { ownerlessRefusal } from '@lingtai/conductor'
 import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
 import { GitHubError } from '@lingtai/github'
-import type { RecipeFiles } from '@lingtai/recipe'
+import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
@@ -82,6 +83,7 @@ function harness(options: {
   picker?: FirstProjectWorld['github']['picker']
   add?: FirstProjectWorld['github']['add']
   kept?: string
+  history?: FirstProjectWorld['history']
 }): Harness {
   const answers = [...(options.answers ?? [])]
   const asked: string[] = []
@@ -105,6 +107,7 @@ function harness(options: {
       return `added ${payload.project}`
     },
     kept: options.kept ?? 'Nothing was written',
+    history: options.history ?? (async () => []),
     github: {
       app: options.app ?? (async () => ({ configured: false })),
       boardUrl: async () => options.boardUrl ?? null,
@@ -127,8 +130,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       },
       projects: [],
       // The base question has no --base flag: an empty line at the terminal
-      // takes the detected default ("main", from symbolic-ref above).
-      answers: [''],
+      // takes the detected default ("main", from symbolic-ref above). The
+      // second empty line is the kinds question's own default.
+      answers: ['', ''],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo' })
@@ -161,7 +165,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/home/me/repos/widget::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/home/me/repos/widget::rev-parse --verify main^{commit}': ok('deadbee\n'),
       },
-      answers: [''],
+      answers: ['', ''],
     })
 
     const result = await chooseFirstProject(world, { local: '/home/me/repos/widget' })
@@ -297,6 +301,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
       },
+      // --base answers the base question itself; the kinds question still has
+      // no --kinds flag, so its own empty line takes its default.
+      answers: [''],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo', base: 'develop' })
@@ -337,6 +344,26 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         'the base branch needs an answer: pass --base <branch>. the store chosen above is kept',
       ),
     })
+  })
+
+  it('writes source.tickets: db, so the resolved recipe takes work (#396, ownerlessRefusal returns null)', async () => {
+    const { world, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      answers: ['', ''],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+    expect(result).toMatchObject({ ok: true })
+
+    const path = recipePath('repo', HOME)
+    const resolved = resolveSource(files.replaced[path]!, path, path).recipe
+    expect(resolved.source.tickets).toBe('db')
+    expect(ownerlessRefusal('repo', resolved)).toBeNull()
   })
 })
 

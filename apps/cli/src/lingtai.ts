@@ -87,6 +87,7 @@ import {
 import { run as runOnceCommand } from './run.ts'
 import { askRuntimes } from './runtimes.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
+import { askKinds, askTickets, liveHistory } from './source.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
@@ -130,6 +131,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 refused. local: the branch the recipe governs,
                                 asked for if not given.
                                 default: the repository's own default branch
+    --tickets <github|db>       where this project's tickets come from, instead
+                                of being asked. github: this repository's own
+                                issues. db: Lingtai's own table — the only
+                                answer a local project takes, and the only one
+                                a project already asked this is kept at (#396)
+    --kinds <a,b,c>             which labels are work, comma-separated, first
+                                taken first, instead of being asked.
+                                default: bug, feature, documentation
     --agent <claude-code|codex> which agent writes the change, instead of
                                 being asked — where the project already has a
                                 recipe. A fresh project is asked nothing here
@@ -488,6 +497,23 @@ async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): 
   // nothing here seeds a file that cannot resolve on its own (#395).
   if (existsSync(path)) {
     const world = liveQuestionWorld()
+
+    // #396's two questions, asked and written before `askLanding` — each as
+    // soon as it is answered, so a Ctrl+C at either keeps what came before it.
+    const tickets = await askTickets(world, repo, false, flags['tickets'] ?? null, { history: liveHistory })
+    if ('refused' in tickets) {
+      console.error(tickets.refused)
+      return 1
+    }
+    if (tickets.changes.length > 0) await setRecipe(repo, tickets.changes)
+
+    const kinds = await askKinds(world, repo, flags['kinds'] ?? null, {})
+    if ('refused' in kinds) {
+      console.error(kinds.refused)
+      return 1
+    }
+    if (kinds.changes.length > 0) await setRecipe(repo, kinds.changes)
+
     const landed = await askLanding(world, repo, land ?? null, {
       defaultBranch: () => defaultBranchOf(owner, repo),
     })

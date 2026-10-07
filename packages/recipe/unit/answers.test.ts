@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { budgetChange, landingChanges, roundsChange, wallChange } from '../src/answers.ts'
+import { budgetChange, kindsChanges, landingChanges, roundsChange, ticketsChange, wallChange } from '../src/answers.ts'
 
 const HOLD = { name: 'hold every pass', human: "Land this? The setup was answered 'hold'." }
 const HAND_WRITTEN_HOLD = { name: 'approval', human: 'Merge this? It is my own code.' }
@@ -88,5 +88,38 @@ describe('the limits', () => {
 
   it('budgetChange(null) removes runtime.limits.usd', () => {
     expect(budgetChange(null)).toEqual({ path: ['runtime', 'limits', 'usd'], value: undefined })
+  })
+})
+
+describe('ticketsChange', () => {
+  it('writes source.tickets', () => {
+    expect(ticketsChange('db')).toEqual({ path: ['source', 'tickets'], value: 'db' })
+    expect(ticketsChange('github')).toEqual({ path: ['source', 'tickets'], value: 'github' })
+  })
+})
+
+describe('kindsChanges', () => {
+  it('writes source.kinds when steps.claim declares no queue:', () => {
+    expect(kindsChanges(['bug', 'feature'], null)).toEqual([{ path: ['source', 'kinds'], value: ['bug', 'feature'] }])
+    expect(kindsChanges(['bug'], [{ name: 'take one', run: 'echo hi' }])).toEqual([
+      { path: ['source', 'kinds'], value: ['bug'] },
+    ])
+  })
+
+  it('rewrites queue.kinds in place when claim declares one, and leaves other entries and fields untouched', () => {
+    const TAKE = { name: 'take one', queue: { kinds: ['bug'], exclude: ['agent:hold'] } }
+    const OTHER = { name: 'something else', run: 'echo hi' }
+    expect(kindsChanges(['feature', 'bug'], [OTHER, TAKE])).toEqual([
+      {
+        path: ['steps', 'claim'],
+        value: [OTHER, { name: 'take one', queue: { kinds: ['feature', 'bug'], exclude: ['agent:hold'] } }],
+      },
+    ])
+  })
+
+  it('the order comes out as given', () => {
+    expect(kindsChanges(['documentation', 'bug', 'feature'], null)).toEqual([
+      { path: ['source', 'kinds'], value: ['documentation', 'bug', 'feature'] },
+    ])
   })
 })

@@ -113,6 +113,11 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         // one of these questions checks for `undefined` instead.
         if (/a GitHub project/.test(question)) return script.project === undefined ? 'github' : script.project
         if (/the GitHub App now/.test(question)) return script.appAnswer === undefined ? 'create' : script.appAnswer
+        // #396's kinds question, asked on the local branch alongside the
+        // directory and base branch questions — answered with its own
+        // default, same as those, since nothing here is about which labels
+        // are work.
+        if (/which labels are work/.test(question)) return ''
         // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)
@@ -185,6 +190,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
           base: payload.base,
         })
       },
+      history: async () => [],
     },
   }
 }

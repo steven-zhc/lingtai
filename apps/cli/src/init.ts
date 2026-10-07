@@ -131,6 +131,7 @@ import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { liveAsk, question } from './question.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import { liveHistory } from './source.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -186,11 +187,14 @@ export interface InitWorld {
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
   registerLocal: (payload: RegisterLocalPayload) => Promise<string>
+  /** `FirstProjectWorld.history` (#396) — `wi-<project>-*` streams already in the log for this project. */
+  history: (project: string) => Promise<readonly string[]>
 }
 
 const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
-  '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip]'
+  '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
+  '[--tickets github|db] [--kinds <a,b,c>]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -240,7 +244,19 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
   const flags: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
-    if (!['--store', '--database-url', '--port', '--project', '--local', '--base', '--github-app'].includes(name))
+    if (
+      ![
+        '--store',
+        '--database-url',
+        '--port',
+        '--project',
+        '--local',
+        '--base',
+        '--github-app',
+        '--tickets',
+        '--kinds',
+      ].includes(name)
+    )
       return { refused: `${USAGE} — no ${name}` }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
@@ -399,6 +415,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       home,
       signedIn: world.signedIn,
       register: world.registerLocal,
+      history: world.history,
       // The store above is already written by the time this runs — the same
       // reason `askFirstProject` carries this sentence (#394 finding 2).
       kept: 'the store chosen above is kept',
@@ -853,5 +870,6 @@ export function liveInitWorld(): InitWorld {
         payload.resolved,
         (line) => console.log(line),
       ),
+    history: liveHistory,
   }
 }

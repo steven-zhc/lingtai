@@ -8,6 +8,7 @@
  * `setRecipe`; this is the one place both of those tests import.
  */
 import type { RecipeChange } from './emit.ts'
+import type { TicketSource } from './recipe.ts'
 
 function isHumanEntry(entry: unknown): boolean {
   return typeof entry === 'object' && entry !== null && 'human' in entry
@@ -15,6 +16,10 @@ function isHumanEntry(entry: unknown): boolean {
 
 function isWorktreeEntry(entry: unknown): entry is Record<string, unknown> & { worktree: Record<string, unknown> } {
   return typeof entry === 'object' && entry !== null && 'worktree' in entry
+}
+
+function isQueueEntry(entry: unknown): entry is Record<string, unknown> & { queue: Record<string, unknown> } {
+  return typeof entry === 'object' && entry !== null && 'queue' in entry
 }
 
 /** The one thing the setup's own hold says, quoted into the recipe. */
@@ -105,4 +110,45 @@ export function wallChange(wall: string): RecipeChange {
  */
 export function budgetChange(usd: number | null): RecipeChange {
   return { path: ['runtime', 'limits', 'usd'], value: usd === null ? undefined : usd }
+}
+
+/** `source.tickets` — written only by the caller's own differs-from-current check, same as the other builders here. */
+export function ticketsChange(value: TicketSource): RecipeChange {
+  return { path: ['source', 'tickets'], value }
+}
+
+/**
+ * #396's default for "which labels are work" — asked once, at setup, and
+ * distinct from `PROPOSED_KINDS` (`propose.ts`), which answers a different
+ * question: which of a GitHub repository's *existing* labels to propose as
+ * kinds. Editing that constant for this one would change what `propose.ts`
+ * matches against a repository's labels.
+ */
+export const SETUP_KINDS = ['bug', 'feature', 'documentation'] as const
+
+/**
+ * The changes `--kinds` writes, from the parsed, ordered label list and
+ * `rawClaim` — the `steps.claim` entries as the file literally writes them
+ * (`readRecipeKey`), or `null` where it writes none.
+ *
+ * **Writes where `kindsOf` reads**, for `landingChanges`' reason: `kindsOf`
+ * (`settings.ts:283-285`) takes `takeAt(recipe)?.kinds ?? recipe.source.kinds`,
+ * so a recipe that declares its queue at `claim` would take a `source.kinds`
+ * write and keep running on the old list without a word. When one of
+ * `rawClaim`'s entries carries a `queue:`, this rewrites that entry's
+ * `kinds` in place and leaves every other entry and field untouched;
+ * otherwise it writes `source.kinds`.
+ */
+export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknown[] | null): RecipeChange[] {
+  const claim = rawClaim ?? []
+  const queueIndex = claim.findIndex(isQueueEntry)
+  if (queueIndex === -1) return [{ path: ['source', 'kinds'], value: [...kinds] }]
+  return [
+    {
+      path: ['steps', 'claim'],
+      value: claim.map((entry, i) =>
+        i === queueIndex && isQueueEntry(entry) ? { ...entry, queue: { ...entry.queue, kinds: [...kinds] } } : entry,
+      ),
+    },
+  ]
 }

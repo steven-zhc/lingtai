@@ -43,7 +43,6 @@ import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
 import {
   AgentUnresolvedError,
   diskFiles,
-  PROPOSED_KINDS,
   readRecipeKey,
   recipePath,
   resolveAgent,
@@ -67,6 +66,7 @@ import {
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
 import { question, type QuestionWorld } from './question.ts'
+import { askKinds, askTickets, liveHistory } from './source.ts'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
 export interface GitResult {
@@ -95,6 +95,8 @@ export interface FirstProjectWorld extends QuestionWorld {
   signedIn: SignedIn
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
+  /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
+  history: (project: string) => Promise<readonly string[]>
   /**
    * The clause a refusal here ends with in place of "Nothing was written" —
    * what is still true about what this caller already wrote before any
@@ -392,20 +394,34 @@ async function runLocalBranch(
     }
   }
 
-  // `source.kinds` and `env.plantAt` have no schema default (`recipe.ts`'s
-  // `KINDS`, `plantAt: z.string()`) — a brand-new file needs both or it will
-  // not resolve at all, and nothing a directory offers answers either for it.
-  // Written only when there is no file yet: an existing one already has them,
-  // possibly edited since, and a re-run must not overwrite that silently.
+  // #396's two questions — where tickets come from, and which labels are
+  // work. Asked once the directory, base and agent are all settled, so a
+  // refusal from either of these still reaches a person before this one
+  // does; their own `changes` fold into the one write below rather than
+  // writing on their own (`setup-build.ts`'s "this writes nothing").
+  const ticketsAnswer = await askTickets(world, name, true, flags['tickets'] ?? null, {
+    home: world.home,
+    files: world.files,
+    history: world.history,
+  })
+  if ('refused' in ticketsAnswer) return { refused: ticketsAnswer.refused }
+  const kindsAnswer = await askKinds(world, name, flags['kinds'] ?? null, { home: world.home, files: world.files })
+  if ('refused' in kindsAnswer) return { refused: kindsAnswer.refused }
+
+  // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
+  // — a brand-new file needs it or it will not resolve at all, and nothing a
+  // directory offers answers it. Written only when there is no file yet: an
+  // existing one already has it, possibly edited since, and a re-run must
+  // not overwrite that silently. `source.kinds` has no schema default
+  // either, but `askKinds` above already writes it unconditionally for a
+  // brand-new file (`resolvedRecipe` reads null there), so it needs no
+  // second seed here.
   const changes = [
     { path: ['repo', 'base'], value: base },
     { path: ['repo', 'remote'], value: remote },
-    ...(existingText === null
-      ? [
-          { path: ['source', 'kinds'], value: [...PROPOSED_KINDS] },
-          { path: ['env', 'plantAt'], value: '.env.local' },
-        ]
-      : []),
+    ...ticketsAnswer.changes,
+    ...kindsAnswer.changes,
+    ...(existingText === null ? [{ path: ['env', 'plantAt'], value: '.env.local' }] : []),
   ]
   try {
     await setRecipe(name, changes, { home: world.home, files: world.files })
@@ -630,6 +646,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
         payload.resolved,
         options.log,
       ),
+    history: liveHistory,
     github: {
       app: checkApp,
       boardUrl: () => boardAt(boardPort()),
