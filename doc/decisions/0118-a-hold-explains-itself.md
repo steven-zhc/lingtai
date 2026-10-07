@@ -1,6 +1,6 @@
 # 0118 — Waiting on you: every hold says what kind it is, what is asked, and what each answer does
 
-**Status** proposed · 2026-10-06
+**Status** accepted · 2026-10-07
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (Problem, Want and Watch out, taken
@@ -17,7 +17,7 @@ later attempt is sure to read. Triage advises; it never moves the item.
 
 What reaches a person today is whatever the holder said, written for the
 machine: the judge's `why`, cut to 400 characters
-(`packages/conductor/src/conduct.ts:3149`), above a collapsed raw block. Every
+(`packages/conductor/src/conduct.ts:3134-3138`), above a collapsed raw block. Every
 sentence of it can be true and still leave the reader unable to act. #377's and
 #390's holds were each answered in a terminal session that read the branch and
 the code around it, because the card could not be acted on as written.
@@ -55,7 +55,7 @@ route, and they want different moves:
   `RunFailed` put a card in the lane with `blocked` false, so the card carries
   no move at all (`packages/projector/src/task-view.ts:447-566`).
 - **Unpushed work.** It can come on top of any of the above: the branch did not
-  reach origin (`conduct.ts:3015-3016`), and the worktree that holds it is
+  reach origin (`conduct.ts:3071-3072`), and the worktree that holds it is
   removed when the pass ends.
 
 ## Decision

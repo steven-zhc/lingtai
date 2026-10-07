@@ -100,7 +100,7 @@ replaces.
 | [0115](decisions/0115-unit-gates-integration-follows.md) | **Tests** — unit tests gate the diff, integration tests run apart, and the test side gets a store of its own | accepted; part not yet built |
 | [0116](decisions/0116-the-project-is-lingtai.md) | **The name** — the project, its commands and every name it owns are Lingtai | accepted |
 | [0117](decisions/0117-configuration-is-config-yml-and-the-environment.md) | **Configuration** — `~/.lingtai/config.yml` and the exported environment, the environment overriding, and no env file | accepted |
-| [0118](decisions/0118-a-hold-explains-itself.md) | **Waiting on you** — every hold says what kind it is, what is asked and what each answer does; triage's advice is an event, the person's move is the decision, and an answer is written into the body | proposed |
+| [0118](decisions/0118-a-hold-explains-itself.md) | **Waiting on you** — every hold says what kind it is, what is asked and what each answer does; triage's advice is an event, the person's move is the decision, and an answer is written into the body | accepted; not yet built |
 
 ## Experiments
 

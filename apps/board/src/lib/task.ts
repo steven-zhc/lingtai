@@ -32,7 +32,7 @@ import {
  * So: `runs`, oldest first, each carrying its own money, its own prompt, its own
  * files and its own verdicts; and a history still whole, still in order, but
  * grouped the way the log already divides it
- * ([the settled design](../../../../doc/design/task-detail-page.md) §1).
+ * ([the task page's design](../../../../doc/design/task-detail-page.md) §1).
  *
  * It reads the item's stream and every run's. They are separate aggregates on
  * purpose (design.md §4), and joining them is a reader's job rather than a

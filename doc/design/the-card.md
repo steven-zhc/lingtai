@@ -331,8 +331,8 @@ is the one this design already got wrong once.
 - [`the-bar.md`](the-bar.md) — the same disease one surface along, and the rule
   it left behind: *a chip is not free, and the row is the unit*.
 - [`task-detail-page.md`](task-detail-page.md) — the other place a run is
-  described. Its ranks are `#132`'s and `#152`'s; `#189` put the rail inside
-  rank 2 of a running item, above the log, and added no rank.
+  described. The rail is its second section, *where it is*, with one line under
+  it ([0118](../decisions/0118-a-hold-explains-itself.md) §2).
 - [0016 §4](../decisions-archive/0016-the-settled-model.md) — a configured step that
   silently does not run is Lingtai's bug.
 - [0058 §3](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) — the ten

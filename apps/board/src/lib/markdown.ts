@@ -1,7 +1,7 @@
 /**
  * Whether a document is markdown, decided by **where it came from**.
  *
- * The rule, from [the settled design](../../../../doc/design/task-detail-page.md)
+ * The rule, from [the task page's design](../../../../doc/design/task-detail-page.md)
  * §6:
  *
  * | source | render |
