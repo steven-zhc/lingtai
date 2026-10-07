@@ -115,7 +115,7 @@ import {
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
-import { diskFiles, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
+import { diskFiles, readRecipeKey, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -344,7 +344,20 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     const registered = await world.projects()
     if (registered.length > 0) {
       for (const p of registered) {
-        world.log(p.owner !== null ? `  ${p.owner}/${p.project} — github` : `  ${p.project} — local`)
+        if (p.owner !== null) {
+          world.log(`  ${p.owner}/${p.project} — github`)
+          continue
+        }
+        // `owner: null` is a local project, and also a GitHub one registered
+        // before `ProjectConfigured` carried an owner (#352's `unrecorded`):
+        // only the remote a local registration writes tells the two apart.
+        const remote =
+          p.project === null ? null : await readRecipeKey(p.project, ['repo', 'remote'], { home, files: world.files })
+        world.log(
+          typeof remote === 'string'
+            ? `  ${p.project} — local, ${remote}`
+            : `  ${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
+        )
       }
       world.log(
         paint.muted(

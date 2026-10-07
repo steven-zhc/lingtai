@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import type { ProjectState } from '@lingtai/domain'
 import { SQLITE_MACHINE, describeStore, storeChoice } from '@lingtai/env'
-import type { RecipeFiles } from '@lingtai/recipe'
+import { recipePath, type RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import type { GitResult } from '../src/first-project.ts'
@@ -265,9 +265,14 @@ describe('lingtai init (#186)', () => {
       version: 1,
       lastSeq: 1n,
     }
-    const second = world(home, { projects: [registered] })
+    // Each world keeps its own files, so the recipe the first run wrote is
+    // handed on: its `repo.remote` is what marks the project local (#394's review).
+    const second = world(home, {
+      projects: [registered],
+      files: { [recipePath('repo', home)]: 'repo:\n  remote: git@github.com:acme/repo.git\n' },
+    })
     expect(await initCommand([], second.world)).toBe(0)
-    expect(second.seen.lines.join('\n')).toContain('repo — local')
+    expect(second.seen.lines.join('\n')).toContain('repo — local, git@github.com:acme/repo.git')
     expect(second.seen.lines.join('\n')).toContain('lingtai add asks GitHub-or-directory')
     expect(second.seen.asked).toEqual([])
   })
@@ -287,7 +292,7 @@ describe('lingtai init (#186)', () => {
     const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
     expect(await initCommand(['--port', '17900'], w)).toBe(0)
     expect(seen.boards).toBe(1)
-    expect(seen.lines.join('\n')).toContain('widget — local')
+    expect(seen.lines.join('\n')).toContain('widget — owner not recorded')
   })
 
   it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {

@@ -605,4 +605,23 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
     const result = await chooseFirstProject(world, { github: 'acme/widget', project: 'local' })
     expect(result).toEqual({ refused: expect.stringContaining('--project local names the other kind') })
   })
+  /**
+   * `lingtai add --local --base main` parses `--local` as '' — and `git` run in
+   * '' runs in this process's own directory, so this registered whatever
+   * repository the shell sat in (#394's review).
+   */
+  it('--local with no directory is refused before git is asked anything', async () => {
+    // No git planned: `fakeGit` throws on any call, so a refusal is proof none was made.
+    const { world, registered, files } = harness({})
+    const result = await chooseFirstProject(world, { local: '', base: 'main' })
+    expect(result).toEqual({ refused: expect.stringContaining('--local needs the directory') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('--github with no repository is refused', async () => {
+    const { world } = harness({})
+    const result = await chooseFirstProject(world, { github: '' })
+    expect(result).toEqual({ refused: expect.stringContaining('--github needs the repository') })
+  })
 })

@@ -133,6 +133,15 @@ export type FirstProjectOutcome =
 function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
   const local = flags['local']
   const github = flags['github']
+  // A valueless flag parses as '' (`lingtai.ts`'s `parseFlags`), and `git` run
+  // in '' runs in this process's own directory — so `--local` alone would
+  // register whatever repository the shell sits in (#394's review).
+  if (local !== undefined && local.trim() === '') {
+    return `--local needs the directory: --local <dir>. ${kept}`
+  }
+  if (github !== undefined && github.trim() === '') {
+    return `--github needs the repository: --github <owner>/<repo>. ${kept}`
+  }
   if (local !== undefined && github !== undefined) {
     return `--local ${local} and --github ${github} name two different projects. Pass one or the other. ${kept}`
   }
@@ -283,6 +292,7 @@ async function runLocalBranch(
     given: givenDir,
     prompt: 'the directory of the repository on this machine',
     kept: world.kept,
+    validate: async (answer) => (answer.trim() === '' ? 'a directory is needed' : null),
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
   const dir = dirAnswer.answer
@@ -583,25 +593,20 @@ async function livePicker(): Promise<Picker> {
 export interface LiveFirstProjectOptions {
   ask: (prompt: string) => Promise<string | null>
   log: (line: string) => void
-  /** Known already — the board `init` just started. Discovered via `boardAt(boardPort())` when absent (`lingtai add`). */
-  boardUrl?: string
-  appWait?: Pick<AppWaitWorld, 'open' | 'appeared' | 'pressed'>
 }
 
 /**
- * The live seam for both `lingtai init` and `lingtai add` — everything
- * `chooseFirstProject` asks of the world, built for real: a real `git`, the
- * real log (`loadAllProjects`, `addLocal`), the real recipe files, and the
- * real GitHub App.
+ * `lingtai add`'s live seam — everything `chooseFirstProject` asks of the
+ * world, built for real: a real `git`, the real log (`loadAllProjects`,
+ * `addLocal`), the real recipe files, and the real GitHub App. `init` builds
+ * its own from `InitWorld` and does not call this.
  *
- * `appWait` lets `init` hand in its own `open`/`appeared`/`pressed` — it
- * already has a browser opener and a keypress-skip wired to its own
- * `InitWorld` — and defaults to the same real keypress wait for `add`, which
- * has no raw-mode terminal wait of its own (`waitForKeypress`, pulled out of
- * `init.ts` into `keypress.ts` for exactly this).
+ * The board is found with `boardAt(boardPort())`, since `add` starts none of
+ * its own, and the App wait skips on a keypress (`waitForKeypress`, in
+ * `keypress.ts` so `init` and `add` share one).
  */
 export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstProjectWorld {
-  const appWait: Pick<AppWaitWorld, 'open' | 'appeared' | 'pressed'> = options.appWait ?? {
+  const appWait: Pick<AppWaitWorld, 'open' | 'appeared' | 'pressed'> = {
     open: liveOpen,
     appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal, 'running the same command again continues from here'),
@@ -627,7 +632,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
       ),
     github: {
       app: checkApp,
-      boardUrl: async () => options.boardUrl ?? (await boardAt(boardPort())),
+      boardUrl: () => boardAt(boardPort()),
       waitForApp: (boardUrl) => waitForApp({ log: options.log, ...appWait }, boardUrl, { waitMs: APP_WAIT_MS }),
       picker: livePicker,
       add: (opts: AddOptions, log) => add(opts, log),
