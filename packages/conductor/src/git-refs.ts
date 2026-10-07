@@ -4,11 +4,15 @@
  *
  * `tell.ts`'s own docstring is the reason this exists at all rather than
  * being skipped: *"a channel that silently cannot delete is a recipe that
- * resolved an effect nothing ran"*. Nothing else will ever sweep these refs
- * for an owner-less project — `convergeIssues` only ever asks GitHub, and the
- * daemon skips an owner-less project outright — so `agent/*` arms would pile
- * up on the remote with nothing converging them if this answered a skip
- * instead of a channel.
+ * resolved an effect nothing ran"*. Before `#355`, nothing else would ever
+ * have swept these refs for an owner-less project — `convergeIssues` only
+ * ever asked GitHub, and the daemon skipped an owner-less project outright —
+ * so `agent/*` arms would have piled up on the remote with nothing converging
+ * them if this answered a skip instead of a channel. **Since `#355`,
+ * `convergeIssues` sweeps them too**, over this same channel rather than
+ * GitHub's API: `clientsForProjects` hands it a `RefChannel` built from this
+ * function for every registered owner-less project, not only the one
+ * `lingtai run` happens to be working.
  *
  * Both calls run with no token: `apps/cli/src/run.ts`'s owner-less branch
  * mints none, so a remote that needs one has to be one this machine's own git
