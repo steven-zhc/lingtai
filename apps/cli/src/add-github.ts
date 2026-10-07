@@ -13,8 +13,6 @@
  * registration, or the exit code to stop with. A local project, and a GitHub
  * one picked on the board, reach none of this yet.
  */
-import { existsSync } from 'node:fs'
-
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
@@ -165,8 +163,12 @@ export async function askBeforeGithubAdd(
 
   // The questions are asked before add() runs, and only when the recipe is
   // already there — an absent one is add()'s own refusal to speak, and
-  // nothing here seeds a file that cannot resolve on its own (#395).
-  if (existsSync(path)) {
+  // nothing here seeds a file that cannot resolve on its own (#395). `existing`
+  // rather than `existsSync(path)`: both agree on the real filesystem (where
+  // `deps.read` defaults to `diskFiles.read`, null on ENOENT exactly as
+  // `existsSync` is false), but a test's `deps.read` stub must be able to say
+  // there is no recipe without this function reaching past it to the disk.
+  if (existing !== null) {
     // #396's two questions, asked and written before `askLanding` — each as
     // soon as it is answered, so a Ctrl+C at either keeps what came before it.
     // `addCommand` hands this same `flags` object to `chooseFirstProject`
