@@ -181,6 +181,7 @@ import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
+import { keptRunPort } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
@@ -2067,6 +2068,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * `keptRun` — the git a `run:` at `implement` needs, in its own module so
+       * a test can reach it (`kept-run-port.ts`, `#390`). Recorded the way
+       * `firstDispatch` records the agent's own commit: `recordDiff` so
+       * `task_view.head_sha` names this commit, and `RunProposedCompletion` so a
+       * later attempt's `headOf` reads the same head.
+       */
+      const { clean, keep: keepRun } = keptRunPort({
+        git: gitAsked,
+        plantAt: recipe.env.plantAt,
+        issue: String(options.issue),
+        recordCompletion: async (head) => {
+          await recordDiff(branch, head)
+          await appendNow(runId, [
+            {
+              type: 'RunProposedCompletion',
+              actor: 'conductor',
+              data: parsePayload('RunProposedCompletion', { headSha: head }),
+            },
+          ])
+        },
+      })
+
+      /**
        * `implement` — the design back off the path a `file:` kept it at (0066 §4,
        * 0069 §4, `#301`), and `keep`'s mirror.
        *
@@ -2185,6 +2209,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
         fileBrief: { read },
+        // The eleventh, and `implement`'s own rather than a field on `file` above:
+        // a `run:` written after the agent there commits what it changed
+        // through this (`#390`), using the same two git calls regardless of
+        // what failed or passed — see `clean` and `keepRun` above for why
+        // neither reads the tree before acting on it. No `defaultsAt` row,
+        // because an unconfigured `implement` runs no command at all.
+        keptRun: { clean, keep: keepRun },
       }
 
       /**

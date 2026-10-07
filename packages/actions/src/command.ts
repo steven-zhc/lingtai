@@ -299,16 +299,33 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     report({ ...outcome, durationMs: (endedAt ?? Date.now()) - started })
   }
 
+  /**
+   * **A timeout is reported once the command itself has exited, and never
+   * later than six seconds after it fired.** A caller that cleans the tree
+   * right after this resolves (`kept-run-action.ts`) relies on the command no
+   * longer writing, and `SIGTERM` alone is not that. So the report waits for
+   * the direct child's `exit`, not for `close`: `close` waits for every holder
+   * of the inherited stdio pipes, and a background process the command left
+   * behind would hold them forever. A child that ignores `SIGTERM` gets
+   * `SIGKILL` at five seconds, and the report goes out a second after that
+   * whatever has happened, so the timeout stays a bound on every `run:`.
+   */
+  let timedOutEvidence: string | null = null
+
   const timer = setTimeout(() => {
+    timedOutEvidence = `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`
+    const evidence = timedOutEvidence
+    const reportTimeout = () => {
+      endedAt ??= Date.now()
+      finish({ ok: false, timedOut: true, exitCode: null, evidence })
+    }
+    child.once('exit', reportTimeout)
     child.kill('SIGTERM')
     // A process that ignores SIGTERM still has to go, or the run leaks it.
-    setTimeout(() => child.kill('SIGKILL'), 5_000).unref?.()
-    finish({
-      ok: false,
-      timedOut: true,
-      exitCode: null,
-      evidence: `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`,
-    })
+    setTimeout(() => {
+      child.kill('SIGKILL')
+      setTimeout(reportTimeout, 1_000)
+    }, 5_000).unref?.()
   }, options.timeoutMs)
 
   const onAbort = () => {
@@ -358,6 +375,10 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     endedAt = Date.now()
     // The clock stops when the process does: a slow disk is not a timeout.
     clearTimeout(timer)
+    if (timedOutEvidence !== null) {
+      finish({ ok: false, timedOut: true, exitCode: null, evidence: timedOutEvidence })
+      return
+    }
     void settleOnExit(code)
   })
 }

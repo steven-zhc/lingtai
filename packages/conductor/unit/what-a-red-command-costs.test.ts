@@ -1,7 +1,7 @@
 /**
  * `doc/plugins/run.md`'s cost table, against the offer it describes.
  *
- * The page tells a person which of the four steps to write a command at by what
+ * The page tells a person which of the five steps to write a command at by what
  * a red one costs there, so the column *is* the advice — and the first version
  * of it had `prepared` buying a fix round, where `AFTER_AN_AGENT` leaves that
  * step off the offer and the pass is held for a person with nothing bought. A
@@ -70,7 +70,7 @@ function costTable(): Row[] {
 
 describe('the run page says what a red command costs at each step it may be written at', () => {
   /** One row per step `runPlugin` serves, in the order it declares them. */
-  it('has a row for each of the four, and for nothing else', () => {
+  it('has a row for each of the five, and for nothing else', () => {
     expect(costTable().map((row) => row.step)).toEqual([...runPlugin.serves])
   })
 
@@ -110,6 +110,6 @@ describe('the run page says what a red command costs at each step it may be writ
       costTable()
         .filter((row) => !row.bought)
         .map((row) => row.step),
-    ).toEqual(['prepared', 'proposed', 'merge'])
+    ).toEqual(['prepared', 'implement', 'proposed', 'merge'])
   })
 })

@@ -1676,6 +1676,48 @@ describe('a visit is judged against the head the walk has reached', () => {
     expect(judged.filter((j) => j.step === 'build').map((j) => j.onSha)).toEqual(['b2b2b2b', 'c3c3c3c'])
     expect(judged.filter((j) => j.step === 'review').map((j) => j.onSha)).toEqual(['c3c3c3c'])
   })
+
+  /**
+   * **`headFrom`'s own rule, since `#390`** (`pass.ts:1840`): *the last action
+   * result that has a head wins*, which is what lets `implement: [agent, run]`
+   * carry two head-producing kinds without a uniqueness rule anywhere else.
+   * Nothing before this exercised the function with more than one head-bearing
+   * result at a step.
+   */
+  it("takes the last head among a step's own actions, not the first", async () => {
+    const { bodies, seen } = watching()
+    const { actionsAt } = watchingActions({
+      implement: [
+        canned('write the change', { verdict: 'passed', evidence: 'committed', findings: [], head: 'b2b2b2b' }),
+        canned('format', { verdict: 'passed', evidence: 'committed', findings: [], head: 'c3c3c3c' }),
+      ],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(result.stoppedAt).toBeNull()
+    expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'c3c3c3c' })
+    expect(seen.find((s) => s.step === 'build')?.context.onSha).toBe('c3c3c3c')
+  })
+
+  /** And the mirror: a `run:` written *before* the agent answers nothing, so the agent's head stands. */
+  it('keeps the only head when a later action in the step answers none', async () => {
+    const { bodies, seen } = watching()
+    const { actionsAt } = watchingActions({
+      implement: [
+        canned('write the change', { verdict: 'passed', evidence: 'committed', findings: [], head: 'b2b2b2b' }),
+        canned('format', { verdict: 'passed', evidence: 'nothing to commit', findings: [] }),
+      ],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(result.stoppedAt).toBeNull()
+    expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'b2b2b2b' })
+    expect(seen.find((s) => s.step === 'build')?.context.onSha).toBe('b2b2b2b')
+  })
 })
 
 describe('a visit is judged in the round the pass is in', () => {

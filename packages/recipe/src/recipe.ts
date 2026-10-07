@@ -140,9 +140,41 @@ export const runPlugin = definePlugin('run', {
    * `review` has nowhere to put the failure until `proposed` has a judge to
    * read it. That judge is `judgePlugin.at.proposed`, open since `#274`, which
    * is where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
+   *
+   * **`implement` is open since `#390`, and a red command there cannot cost
+   * what one at `build` does.** Written after the agent (`implement: [agent,
+   * run]`), it runs after every agent run — the first and each fix round's —
+   * in the agent's own worktree, and **whatever it changed is committed onto
+   * the attempt's branch** before `build` sees it: `createKeptRunAction` in
+   * `@lingtai/actions` is the wrapper, and the commit is the conductor's own —
+   * the same shape `filePlugin`'s `keep` already has at `design`, *`file:`
+   * keeps what the action before it made* (above). A project that wants
+   * `pnpm fmt` applied rather than merely checked writes it here instead of
+   * asking the implementing agent to remember it, or paying a whole fix round
+   * for what a formatter does in a second.
+   *
+   * **The command's own exit code cannot refuse, and that is `implement`'s own
+   * rule and not a weaker one written for this key.** `implement` is not one of
+   * `REFUSING_STEPS` (`pass.ts:108`), so a command that exits non-zero here has
+   * nowhere to put a refusal the way `build`'s copy of the same command does.
+   * The wrapper never turns that exit code into a `failed` verdict: a command
+   * that fails leaves the worktree put back to the agent's own `HEAD`, the step
+   * still passes, and the failure sits first in its evidence — `build`'s own
+   * `pnpm fmt:check` is the backstop that catches it, at the cost of the one
+   * fix round 0057 §2 already prices. Nothing here is a second gate; it is a
+   * second chance for the first one to never fire.
+   *
+   * **A `failed` verdict is still how the wrapper answers when its own git
+   * plumbing cannot put the tree back** — a stale `.git/index.lock`, most
+   * often — because that is not the command's diff failing, it is the step
+   * having no way to tell `build` what tree it is judging. `endingOf` turns
+   * that into `did-not-finish` the same way any other step that may not refuse
+   * would, and the pass stops for a person rather than letting `build` judge a
+   * tree nobody can vouch for.
    */
   at: {
     prepared: notBuiltYet,
+    implement: notBuiltYet,
     build: notBuiltYet,
     proposed: notBuiltYet,
     merge: notBuiltYet,
@@ -2139,12 +2171,13 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (step === 'implement') {
     return (
-      '`implement` is the change itself (0058 §3), so the only plugin it carries is the one that ' +
-      'writes one — `agent:`, which is the key `agentPlugin` declares there, and at this step it ' +
-      "implements rather than reads. The step's own receipt is a commit (0057 §2), which is what " +
-      'none of the other three can leave: a command that checks what was written is `build`, a ' +
-      'cold read of it is `review`, a glob over its file list and a hold on it are questions about ' +
-      'a change already made, which is `proposed`'
+      '`implement` is the change itself (0058 §3), so the plugins it carries are the one that writes ' +
+      'it — `agent:`, which is the key `agentPlugin` declares there, and at this step it implements ' +
+      'rather than reads — and the one that may run a mechanical fix-up after it, `run:` (`#390`), ' +
+      "which commits what it changed rather than judging it. The step's own receipt is a commit " +
+      '(0057 §2), which is what a glob and a hold cannot leave: a cold read of the change is `review`, ' +
+      'and a glob over its file list and a hold on it are questions about a change already made, ' +
+      'which is `proposed`'
     )
   }
   if (kind === 'agent') {
@@ -2268,6 +2301,10 @@ function actionsAt(step: Step) {
       const takes: number[] = []
       /** Where an accepted `merge:` was written, if one has been — the refusal below. */
       let landsAt: number | null = null
+      /** Where each accepted `implement:` `run:` was written, for the refusal below. */
+      const implementRuns: number[] = []
+      /** Whether `implement:` accepted an `agent:` — the refusal below asks only this. */
+      let implementHasAgent = false
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS)
         const plugin = pluginNaming(action, PLUGINS)
@@ -2402,6 +2439,8 @@ function actionsAt(step: Step) {
         if (kind === 'worktree') cuts.push(i)
         if (kind === 'queue') takes.push(i)
         if (kind === 'merge') landsAt = i
+        if (step === 'implement' && kind === 'run') implementRuns.push(i)
+        if (step === 'implement' && kind === 'agent') implementHasAgent = true
         resolved.push(read.value as StepAction)
       })
       /**
@@ -2528,6 +2567,46 @@ function actionsAt(step: Step) {
             'conductor reads it as the omitted key, so the default lane runs and the branch merges ' +
             '(0065 §6 decides otherwise and is not built yet). To hold a pass before anything ' +
             'lands, declare a `human:` action at `proposed:`. ' +
+            REFUSED_WHEN_IT_RESOLVED,
+        })
+      }
+      /**
+       * **A written `implement:` that carries a `run:` and no `agent:` is
+       * refused** (`#390`), the mirror of the rule above for a written `merge:`
+       * carrying checks and no lane.
+       *
+       * `run:` at `implement` is a mechanical fix-up *after* the agent
+       * (`whyThatPair` above) — it is never a substitute for one. But
+       * `actionsAt`'s substitution rule (`conduct.ts`) only replaces the default
+       * implementing agent when the step resolves with *no* declared actions:
+       * `implement: [{ name: format, run: pnpm fmt }]` resolves with one, so the
+       * default agent is never built and nothing is dispatched at all. `pnpm
+       * fmt` then finds nothing to commit, `implement` passes carrying no head,
+       * `build` passes on the base, the cold reviewer at `review` is paid a turn
+       * to read an empty diff, and the lane refuses `no-commits` with nothing in
+       * the refusal naming the agent that never ran — on every pass.
+       *
+       * Asked only where every entry resolved, for `landsAt`'s reason: a refused
+       * entry may have been the agent, and *is one present* is not answerable
+       * about a list Lingtai could not fully read.
+       */
+      if (
+        step === 'implement' &&
+        written.length > 0 &&
+        resolved.length === written.length &&
+        implementRuns.length > 0 &&
+        !implementHasAgent
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [],
+          message:
+            `the "implement" step is written with ${written.length} action` +
+            `${written.length === 1 ? '' : 's'} and none of them is an agent, so the step would ` +
+            'pass having dispatched nobody: `run:` there is a fix-up after the agent and never a ' +
+            'substitute for one, but a written `implement:` replaces the default implementing agent ' +
+            'whether or not it declares one. Write the agent in this list too, or write nothing and ' +
+            'let the default run it. ' +
             REFUSED_WHEN_IT_RESOLVED,
         })
       }
