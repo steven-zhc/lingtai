@@ -628,9 +628,16 @@ move with that store, and `lingtai projection rebuild` never touches them.
 pnpm lingtai add steven-zhc/nextloom-ai-admin
 ```
 
-It checks the installation and its permissions **before** it writes anything, so
-a half-onboarded project is not a state that exists. Then it reads the recipe,
-hashes it, and records `ProjectConfigured`.
+It checks the installation and its permissions **before it asks or writes
+anything** (`#402`), so a half-onboarded project is not a state that exists.
+Only then does it ask its setup questions and write each answer; only then does
+it read the recipe, hash it, and record `ProjectConfigured`.
+
+**With no GitHub App configured on this machine at all, there is nothing yet to
+check.** `lingtai add` asks nothing and writes nothing, and says so — the App
+is created next (through the board, or `lingtai init --project github`), and
+the setup questions are asked the next time `lingtai add` runs, once the App
+exists.
 
 **Or from the board, in any state it is in.** The `+` at the end of the project
 list on the bar goes to `/setup/repository` once the App exists and to
@@ -639,10 +646,15 @@ can do, and not only the first one (`#216`). Until then the slot was an entry
 with no projects, a caption with one and a filter with two, and the only route
 left was this command or typing the wizard's path from memory.
 
-There is nothing else to write. The tier, the gates, the priority order **and the
-base** are all the recipe's, in `~/.lingtai/<project>/recipe.yml` — which is why
-this command takes a slug and nothing more, and why it reads nothing from the
-repository to do it.
+The tier, the gates, the priority order **and the base** are all the recipe's,
+in `~/.lingtai/<project>/recipe.yml` — which is why this command reads nothing
+from the repository to decide them. It does ask, once a recipe already exists:
+the writer and its model (`--agent`, `--model`, #398), the cold reviewer and its
+model (`--reviewer`, `--reviewer-model`, #398), where tickets come from and
+which labels are work (`--tickets`, `--kinds`, #396), the landing branch
+(`--land`), and the limits (`--rounds`, `--wall`, `--budget`, #399). Each
+answer is written as soon as it is given, never collected for one write at the
+end.
 
 `--base` is a **bootstrap hint, and it is not a second way of saying what the
 base is.** The file's own `repo.base` decides, and that is what gets recorded:

@@ -10,7 +10,14 @@ import { type Installation, NotInstalledError } from '@lingtai/github'
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { type AddOptions, governing, recheck, registrationLine, resumeOnboarding } from '../src/onboard.ts'
+import {
+  type AddOptions,
+  checkInstallation,
+  governing,
+  recheck,
+  registrationLine,
+  resumeOnboarding,
+} from '../src/onboard.ts'
 
 const recipe = (base: string) => `
 version: 2
@@ -240,6 +247,44 @@ describe('Recheck', () => {
         },
         register: async () => 0,
       }),
+    ).rejects.toThrow('502')
+  })
+})
+
+/**
+ * Steps 1 and 2 on their own (#402) — lifted out of `add` so `lingtai add`'s
+ * `askBeforeGithubAdd` (`apps/cli/src/add-github.ts`) can run them before it
+ * asks a single question or writes a single answer. `add`'s own behaviour is
+ * unchanged and covered above; these pin `checkInstallation` directly.
+ */
+describe('checkInstallation', () => {
+  const INSTALLED: Installation = {
+    id: 7,
+    permissions: { issues: 'read', contents: 'write', pull_requests: 'write', metadata: 'read' },
+    account: 'steven-zhc',
+    repositorySelection: 'selected',
+    htmlUrl: null,
+  }
+
+  it('returns null and logs the gap when a known installation is missing a permission', async () => {
+    const said: string[] = []
+    const result = await checkInstallation(SLUG, (line) => said.push(line), INSTALLED)
+
+    expect(result).toBeNull()
+    expect(said.join('\n')).toContain('the installation is missing permissions:')
+    expect(said.join('\n')).toContain('issues: have read, need write')
+  })
+
+  it('rethrows a failure that is not NotInstalledError rather than reading it as "not installed"', async () => {
+    await expect(
+      checkInstallation(
+        SLUG,
+        () => {},
+        undefined,
+        async () => {
+          throw new Error('502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway')
+        },
+      ),
     ).rejects.toThrow('502')
   })
 })
