@@ -186,6 +186,23 @@ export type Choice =
     }
 
 /**
+ * A refused `Choice`'s own sentence, its gaps named one by one, then the fix
+ * link — the whole of what a person is told, never just `why` on its own
+ * (`add()`'s gap listing never runs on this path, so this is where that detail
+ * has to live). Both of `choose()`'s callers print the same three parts in the
+ * same order, so this is the one place that order is written down.
+ */
+export function refusalLines(choice: { why: string; fix: Fix | null; gaps: PermissionGap[] }): string[] {
+  const lines = [choice.why]
+  if (choice.gaps.length > 0) {
+    lines.push('the installation is missing permissions:')
+    for (const g of choice.gaps) lines.push(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
+  }
+  if (choice.fix !== null) lines.push(`${choice.fix.label}: ${choice.fix.href}`)
+  return lines
+}
+
+/**
  * A repository, named by a click or by a pasted link, checked against the list.
  *
  * **The list decides, not the input.** A pasted slug is `parseSlug`'s — every

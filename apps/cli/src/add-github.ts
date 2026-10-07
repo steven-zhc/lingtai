@@ -17,11 +17,13 @@
  * project, and a GitHub one picked on the board, reach none of this yet.
  */
 import { checkInstallation } from '@lingtai/conductor/onboard'
+import { choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
 
 import { askAgents } from './agents.ts'
+import { livePicker } from './first-project.ts'
 import { askLanding, askLimits } from './landing.ts'
 import { liveAsk, type QuestionWorld } from './question.ts'
 import { askRuntimes } from './runtimes.ts'
@@ -50,6 +52,14 @@ async function defaultBranchOf(owner: string, repo: string, installation?: Insta
 
 export interface AskBeforeGithubAddDeps {
   check: typeof checkInstallation
+  /**
+   * `choose()`'s own picker — asked only once `deps.check` has already
+   * refused, to turn that refusal into the sentence and deep link
+   * `runGithubBranch`'s slug path would have given it (#402 fix round 3,
+   * `pick-repository.ts:199`). Never asked on the path that succeeds, so a
+   * successful add costs no second request.
+   */
+  picker: () => Promise<Picker>
   read: (path: string) => Promise<string | null>
   write: typeof setRecipe
   ask: (prompt: string) => Promise<string | null>
@@ -57,6 +67,7 @@ export interface AskBeforeGithubAddDeps {
 
 const liveDeps: AskBeforeGithubAddDeps = {
   check: checkInstallation,
+  picker: livePicker,
   read: diskFiles.read,
   write: setRecipe,
   ask: liveAsk,
@@ -107,7 +118,24 @@ export async function askBeforeGithubAdd(
     try {
       const found = await deps.check(slug, (line) => checked.push(line))
       if (found === null) {
-        console.error(checked.filter((l) => l.trim() !== '').join('\n'))
+        // `deps.check` only ever says *not installed* or *a gap*, never which
+        // repository the App can see instead, or where to fix it — that is
+        // `choose()`'s (`pick-repository.ts:199`), and `runGithubBranch`'s
+        // slug path would have reached it had this check not refused first
+        // (#402 fix round 3). Asked only here, on the refusal, so a
+        // successful add still costs the one request `deps.check` already
+        // made and nothing more.
+        let picked: Choice | null = null
+        try {
+          picked = choose(await deps.picker(), slug)
+        } catch {
+          picked = null
+        }
+        console.error(
+          picked !== null && !picked.ok
+            ? refusalLines(picked).join('\n')
+            : checked.filter((l) => l.trim() !== '').join('\n'),
+        )
         return 1
       }
       installation = found
@@ -116,8 +144,10 @@ export async function askBeforeGithubAdd(
       // is not `NotInstalledError` — a malformed key, a revoked key (401), an
       // unreachable GitHub. `runGithubBranch`'s own `app.configured &&
       // !app.ok` guard named this the same way before #402 moved the check
-      // ahead of it; that guard is never reached now, so this is the only
-      // place left to name it.
+      // ahead of it on `lingtai add`'s path; `lingtai init` still reaches
+      // that guard through `chooseFirstProject` (`init.ts:461`), which never
+      // calls this function, so this is only the place *this* command
+      // names it.
       console.error(
         `the GitHub App configured here does not answer — ${(err as Error).message}. Fix its credentials, or ` +
           'remove them, and run this again. Nothing was written',

@@ -57,10 +57,20 @@ interface Counted {
   asks: number
 }
 
-function countedDeps(lookup: (owner: string, repo: string) => Promise<Installation>): Counted {
+function countedDeps(
+  lookup: (owner: string, repo: string) => Promise<Installation>,
+  // Most tests never reach `deps.picker` — it is asked only once `deps.check`
+  // has refused (#402 fix round 3) — so the default throws, which the code
+  // under test catches and falls back on, same as a picker that failed for a
+  // real reason would.
+  picker: AskBeforeGithubAddDeps['picker'] = async () => {
+    throw new Error('no picker in this test')
+  },
+): Counted {
   const counted: Counted = { deps: null as unknown as AskBeforeGithubAddDeps, reads: [], writes: 0, asks: 0 }
   counted.deps = {
     check: (slug, log) => checkInstallation(slug, log, undefined, lookup),
+    picker,
     read: async (path) => {
       counted.reads.push(path)
       return null
@@ -97,6 +107,50 @@ describe('askBeforeGithubAdd (#402)', () => {
     const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
 
     expect(code).toBe(1)
+    expect(counted.reads).toEqual([])
+    expect(counted.writes).toBe(0)
+    expect(counted.asks).toBe(0)
+  })
+
+  it('names the repository and the installation page, through choose(), when the App is installed on the owner but not this repository (#402 fix round 3)', async () => {
+    const installation: Installation = {
+      id: 7,
+      permissions: { issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' },
+      account: 'someowner',
+      repositorySelection: 'selected',
+      htmlUrl: 'https://github.com/organizations/someowner/settings/installations/7',
+    }
+    const counted = countedDeps(
+      async (owner, repo) => {
+        throw new NotInstalledError(owner, repo)
+      },
+      async () => ({
+        installations: [
+          {
+            installation,
+            unanswered: null,
+            gaps: [],
+            repositories: [
+              { owner: 'someowner', repo: 'other-repo', private: true, slug: 'someowner/other-repo', onboarded: null },
+            ],
+          },
+        ],
+        installUrl: null,
+      }),
+    )
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
+      errors.push(String(msg))
+    })
+
+    const code = await askBeforeGithubAdd('someowner/somerepo', {}, counted.deps)
+    spy.mockRestore()
+
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain(
+      'The App is installed on someowner for selected repositories, and someowner/somerepo is not one of them.',
+    )
+    expect(errors.join('\n')).toContain(`Add somerepo on the installation's page: ${installation.htmlUrl}`)
     expect(counted.reads).toEqual([])
     expect(counted.writes).toBe(0)
     expect(counted.asks).toBe(0)

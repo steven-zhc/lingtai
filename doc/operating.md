@@ -629,15 +629,21 @@ pnpm lingtai add steven-zhc/nextloom-ai-admin
 ```
 
 It checks the installation and its permissions **before it asks or writes
-anything** (`#402`), so a half-onboarded project is not a state that exists.
-Only then does it ask its setup questions and write each answer; only then does
-it read the recipe, hash it, and record `ProjectConfigured`.
+anything** (`#402`), so a half-onboarded project is not a state that exists —
+when there is an App on this machine to check against. Only then does it ask
+its setup questions and write each answer; only then does it read the recipe,
+hash it, and record `ProjectConfigured`.
 
 **With no GitHub App configured on this machine at all, there is nothing yet to
-check** — so this command skips straight to its setup questions, exactly as it
-did before `#402`. The App is created next (through the board, or
-`lingtai init --project github`), and `chooseFirstProject` registers the
-project once it exists.
+check, so this command skips straight to its setup questions** — exactly as it
+did before `#402` — **and still writes each answer as it is given.** That part
+is not guarded: this run can still end refused after those answers are on
+disk and nothing registered, same as it always could on this path — no board
+running to create the App on, or `--github-app skip`. The App is created next
+(through the board, or `lingtai init --project github`), and
+`chooseFirstProject` registers the project only once it exists and `add()`
+runs — until then, this is a recipe written for a project GitHub does not
+know about yet.
 
 **Or from the board, in any state it is in.** The `+` at the end of the project
 list on the bar goes to `/setup/repository` once the App exists and to
