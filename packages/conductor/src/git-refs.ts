@@ -14,7 +14,15 @@
  * mints none, so a remote that needs one has to be one this machine's own git
  * credentials already reach — the ticket's "pushes with this machine's own
  * git credentials".
+ *
+ * **`git push` refuses outright with no `cwd` naming a repository** — unlike
+ * `git ls-remote`, which answers an explicit URL from anywhere. `cwd` is
+ * `repoRoot()`, Lingtai's own checkout, which 0010 runs unbuilt and so is
+ * always present and always a repository regardless of where `lingtai run`
+ * itself was invoked from; nothing about it reaches the mirror or the remote
+ * being swept.
  */
+import { repoRoot } from '@lingtai/env'
 import { git } from '@lingtai/repo'
 
 import type { RefChannel } from './tell.ts'
@@ -32,7 +40,7 @@ function refOf(line: string): string | null {
 }
 
 export function gitRefChannel(options: GitRefChannelOptions): RefChannel {
-  const run = { env: options.gitEnv }
+  const run = { cwd: repoRoot(), env: options.gitEnv }
 
   return {
     async matchingRefs(prefix) {

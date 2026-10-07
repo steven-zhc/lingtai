@@ -330,9 +330,12 @@ export function agentRefusal(
  *
  * **`owner` is null for a project with no GitHub owner** (`#352`) — one
  * registered from a local directory rather than `lingtai add <owner>/<repo>`.
- * `provision` and `integrate` read it only to build a `github.com` URL they
- * never reach when `remote` is already set, so the two call sites below pass
- * `owner ?? ''` rather than this type growing a branch of its own.
+ * `provision` reads it only to build a `github.com` URL it never reaches when
+ * `remote` is already set (`worktree.ts:102`); `integrate` declares the same
+ * field and never reads it at all (`IntegrateOptions`, `integrate.ts:71-93`
+ * — it pushes from the mirror `ensureMirror` already pointed at `remote`).
+ * Either way the two call sites below pass `owner ?? ''` rather than this
+ * type growing a branch of its own.
  */
 export type PassClient = Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }
 
@@ -574,7 +577,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // decisions, and nothing here repairs a recorded decision silently (0024 §3).
     const divergence = baseDivergence(
       resolved,
-      options.client.owner === null ? options.client.repo : `${options.client.owner}/${options.client.repo}`,
+      // `baseDivergence` splices this straight after `lingtai add ` in its
+      // own "Re-register:" sentence. A bare repo name there sets `--github`
+      // (`addCommand`, `apps/cli/src/lingtai.ts:538-540`), which is wrong for
+      // a project with no owner — and `ProjectState` never recorded the local
+      // directory `--local` needs, so `<dir>` names what the operator must
+      // fill in rather than a value this pass has (`#352`).
+      options.client.owner === null ? `--local <dir>` : `${options.client.owner}/${options.client.repo}`,
     )
     if (divergence) {
       return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: divergence }
