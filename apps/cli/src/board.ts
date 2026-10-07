@@ -27,6 +27,24 @@ export function boardEntry(dir: string): string {
 }
 
 /**
+ * A Lingtai board already answering on `port` — this machine's own, from
+ * `lingtai init`, `lingtai board` or the service — as its URL, or null.
+ *
+ * Checked by the board's own title, so a port some other server holds is not
+ * mistaken for it (#394 reuses this for `lingtai add`, which starts no board
+ * of its own and must find one already running or refuse by name).
+ */
+export async function boardAt(port: number): Promise<string | null> {
+  const url = `http://127.0.0.1:${port}`
+  try {
+    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
+    return (await res.text()).includes('<title>Lingtai</title>') ? url : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Where `pnpm build` put the board — **two places, because there are two ways
  * to be running**.
  *

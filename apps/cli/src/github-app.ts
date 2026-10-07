@@ -20,12 +20,19 @@ export type FirstProject = { project: 'local' } | { project: 'github'; app: 'cre
  * At most two seam questions, asked through `question()` (#392) and writing
  * nothing. Call this only when no App is configured yet — a configured App
  * already says the project is GitHub, and nothing here is asked about it.
+ *
+ * `kept` defaults to `init.ts`'s own sentence, since that was this function's
+ * only caller before #394: it is called once the store is already written, so
+ * a refusal here cannot say "Nothing was written" — that line is
+ * `question()`'s default, written for a question asked before any write
+ * exists. `lingtai add` (`first-project.ts`) has no store to report kept, and
+ * passes its own `'Nothing was written'` instead (#394 finding 5).
  */
-export async function askFirstProject(world: QuestionWorld, flags: Record<string, string>): Promise<FirstProject> {
-  // Called only once the store is already written (init.ts's call site), so a
-  // refusal here cannot say "Nothing was written" — that line is `question()`'s
-  // default, written for a question asked before any write exists.
-  const kept = 'the store chosen above is kept'
+export async function askFirstProject(
+  world: QuestionWorld,
+  flags: Record<string, string>,
+  kept = 'the store chosen above is kept',
+): Promise<FirstProject> {
   const kind = await question(world, {
     name: 'the project',
     flag: '--project github, or --project local',
