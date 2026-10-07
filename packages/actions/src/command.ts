@@ -299,16 +299,21 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     report({ ...outcome, durationMs: (endedAt ?? Date.now()) - started })
   }
 
+  /**
+   * **Set, not reported, here** — a caller that cleans up the tree right after
+   * this resolves (`kept-run-action.ts`) is relying on the process actually
+   * being gone, and `SIGTERM` is not that: the timer fires `finish` before the
+   * `close` below did, and the command carries on running past it. So the
+   * timer only kills and records what happened; `close` is what reports it,
+   * once the process is the one thing that is actually true again.
+   */
+  let timedOutEvidence: string | null = null
+
   const timer = setTimeout(() => {
+    timedOutEvidence = `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`
     child.kill('SIGTERM')
     // A process that ignores SIGTERM still has to go, or the run leaks it.
     setTimeout(() => child.kill('SIGKILL'), 5_000).unref?.()
-    finish({
-      ok: false,
-      timedOut: true,
-      exitCode: null,
-      evidence: `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`,
-    })
   }, options.timeoutMs)
 
   const onAbort = () => {
@@ -358,6 +363,10 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     endedAt = Date.now()
     // The clock stops when the process does: a slow disk is not a timeout.
     clearTimeout(timer)
+    if (timedOutEvidence !== null) {
+      finish({ ok: false, timedOut: true, exitCode: null, evidence: timedOutEvidence })
+      return
+    }
     void settleOnExit(code)
   })
 }

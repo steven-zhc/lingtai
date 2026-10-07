@@ -2115,6 +2115,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * itself planted. `clean` above is what makes `-A` safe to write: by the
        * time this runs, nothing is in the tree but what `HEAD` already held and
        * what the command just did to it.
+       *
+       * **Recorded the way `firstDispatch` records the agent's own commit**
+       * (`doc/design/390.md`'s step 5): `recordDiff` so `task_view.head_sha` and
+       * its file/insertion counts name this commit rather than the agent's, and
+       * `RunProposedCompletion` so a later attempt's `headOf` and a discussion's
+       * brief read the same head. Without this, `head` was true but nothing on
+       * the log agreed with it (`#390`).
        */
       const keepRun = async (name: string): Promise<KeptRunAnswer> => {
         const plant = `:(exclude)${recipe.env.plantAt}`
@@ -2126,6 +2133,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (Either.isLeft(committed)) return { failed: `git commit refused it: ${committed.left.detail}` }
         const head = await gitAsked(['rev-parse', 'HEAD'])
         if (Either.isLeft(head)) return { failed: `git rev-parse refused it: ${head.left.detail}` }
+        await recordDiff(branch, head.right)
+        await appendNow(runId, [
+          {
+            type: 'RunProposedCompletion',
+            actor: 'conductor',
+            data: parsePayload('RunProposedCompletion', { headSha: head.right }),
+          },
+        ])
         return { committed: head.right }
       }
 
@@ -2248,7 +2263,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
         fileBrief: { read },
-        // The tenth, and `implement`'s own rather than a field on `file` above:
+        // The eleventh, and `implement`'s own rather than a field on `file` above:
         // a `run:` written after the agent there commits what it changed
         // through this (`#390`), using the same two git calls regardless of
         // what failed or passed — see `clean` and `keepRun` above for why

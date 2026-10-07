@@ -3,6 +3,7 @@ import {
   NO_DESIGN,
   createAgentAction,
   createDraftAction,
+  createKeptRunAction,
   createMergeAction,
   createQueueAction,
   createWorkAction,
@@ -1054,6 +1055,117 @@ describe('implement dispatches the one agent, and reports what it committed', ()
       printed: null,
     })
     expect(asked.dispatch[1]?.context.round).toBe(1)
+    expect(outcomeOf(result)).toBe('landed')
+  })
+})
+
+/**
+ * **`implement` may also carry a `run:` after the agent, wrapped in the git
+ * port `createKeptRunAction`** (`#390`) — real actions rather than canned
+ * ones, so `headFrom`'s *last head wins* rule and the fix round's re-dispatch
+ * of both actions are exercised through the pipeline and not asserted against
+ * a wrapper called by hand.
+ */
+describe('implement may also carry a run: after the agent, since #390', () => {
+  const RUN_HEAD = '4444444444444444444444444444444444444444'
+  const RUN_HEAD_2 = '5555555555555555555555555555555555555555'
+  const AGENT_HEAD_2 = '6666666666666666666666666666666666666666'
+
+  const fakeInner: Action = { name: 'format', kind: 'run', run: async () => PASSED }
+
+  it("commits over the agent's own head when the run: finds something to commit", async () => {
+    const agent = createWorkAction(
+      { name: 'write the change', prompt: '' },
+      { work: async () => ({ committed: COMMITTED }) },
+    )
+    const kept = createKeptRunAction('format', fakeInner, {
+      clean: async () => ({ ok: true }),
+      keep: async () => ({ committed: RUN_HEAD }),
+    })
+    const { result } = await pass({ actions: { implement: [agent, kept] } })
+
+    expect(result.steps.find((v) => v.step === 'implement')?.ending).toEqual({ ending: 'passed', head: RUN_HEAD })
+    expect(outcomeOf(result)).toBe('landed')
+  })
+
+  it("the agent's own head stands when the run: finds nothing to commit", async () => {
+    const agent = createWorkAction(
+      { name: 'write the change', prompt: '' },
+      { work: async () => ({ committed: COMMITTED }) },
+    )
+    const kept = createKeptRunAction('format', fakeInner, {
+      clean: async () => ({ ok: true }),
+      keep: async () => ({ nothing: true }),
+    })
+    const { result } = await pass({ actions: { implement: [agent, kept] } })
+
+    expect(result.steps.find((v) => v.step === 'implement')?.ending).toEqual({ ending: 'passed', head: COMMITTED })
+    expect(outcomeOf(result)).toBe('landed')
+  })
+
+  /**
+   * **The route back to `implement` carries both actions, and the second
+   * `build` is judged against the second run's commit** — `#390`'s Done when
+   * items 2 and 3. Modelled on "sends a red build back to `implement`" above,
+   * with a `run:` written after the agent.
+   */
+  it('runs the agent and the run: again on a fix round, and the next build sees the second commit', async () => {
+    let red = true
+    let runCalls = 0
+    let agentCalls = 0
+    const runHeads = [RUN_HEAD, RUN_HEAD_2]
+    const agentHeads = [COMMITTED, AGENT_HEAD_2]
+    const buildSaw: string[] = []
+
+    const agent = createWorkAction(
+      { name: 'write the change', prompt: '' },
+      { work: async () => ({ committed: agentHeads[agentCalls++] ?? AGENT_HEAD_2 }) },
+    )
+    const kept = createKeptRunAction('format', fakeInner, {
+      clean: async () => ({ ok: true }),
+      keep: async () => ({ committed: runHeads[runCalls++] ?? RUN_HEAD_2 }),
+    })
+
+    const { result } = await pass({
+      actions: {
+        implement: [agent, kept],
+        build: [
+          {
+            name: 'typecheck',
+            kind: 'run',
+            run: async (ctx) => {
+              buildSaw.push(ctx.onSha)
+              const answer = red ? RED : PASSED
+              red = false
+              return answer
+            },
+          },
+        ],
+      },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    })
+
+    expect(walk(result).slice(5)).toEqual([
+      'build:refused',
+      'proposed:routed',
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
+    // Both actions ran a second time — `actionsAt` is resolved fresh on the
+    // fix round's visit, and every declared action at a step runs.
+    expect(agentCalls).toBe(2)
+    expect(runCalls).toBe(2)
+    expect(result.steps.filter((v) => v.step === 'implement').map((v) => v.ending)).toEqual([
+      { ending: 'passed', head: RUN_HEAD },
+      { ending: 'passed', head: RUN_HEAD_2 },
+    ])
+    // The build that follows each round is judged against that round's `run:`
+    // commit, not the agent's own and not the other round's.
+    expect(buildSaw).toEqual([RUN_HEAD, RUN_HEAD_2])
     expect(outcomeOf(result)).toBe('landed')
   })
 })

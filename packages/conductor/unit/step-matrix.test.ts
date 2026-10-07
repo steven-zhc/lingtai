@@ -223,7 +223,7 @@ const EVERY_DEP: ActionDeps = {
   work: { work: async () => ({ committed: '0'.repeat(40) }) },
   file: { keep: async () => ({ at: 'doc/design/x.md' }), issue: async () => ({ ref: '310' }) },
   fileBrief: { read: async () => ({ document: 'the shape' }) },
-  // The tenth, and `implement`'s own: a `run:` there commits through this
+  // The eleventh, and `implement`'s own: a `run:` there commits through this
   // rather than merely judging (`#390`). Built, never run — same as every
   // other entry in this object.
   keptRun: { clean: async () => ({ ok: true }), keep: async () => ({ nothing: true }) },
@@ -307,6 +307,13 @@ function runsAt(step: Step, kind: ActionKind): boolean {
  * trip it and read here as *the `implement` step refuses a `file-brief:`*, which
  * is false. So the probe puts the agent it briefs behind it, which is the
  * smallest list that rule accepts.
+ *
+ * **And the agent beside a `run:` at `implement`** (`#390`). The fifth rule is a
+ * written `implement:` with a `run:` and no `agent:` in it — legal for every
+ * other kind at every other step, and refused only here. A lone `run:` at
+ * `implement` would trip it and read here as *the `implement` step refuses a
+ * `run:`*, which is false — the probe puts the agent beside it, which is the
+ * smallest list that rule accepts.
  */
 function accepted(step: Step, kind: ActionKind): string | null {
   const lands = whyNoKindAt(step, 'merge') === null
@@ -317,7 +324,9 @@ function accepted(step: Step, kind: ActionKind): string | null {
       ? [ACTION.agent, ACTION[kind]]
       : briefs && kind === 'file-brief'
         ? [ACTION[kind], ACTION.agent]
-        : [ACTION[kind]]
+        : step === 'implement' && kind === 'run'
+          ? [ACTION[kind], ACTION.agent]
+          : [ACTION[kind]]
   const written = !lands || kind === 'merge' ? probe : [...probe, ACTION.merge]
   const parsed = StepMap.safeParse({ [step]: written })
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? 'refused with no message')

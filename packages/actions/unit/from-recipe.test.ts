@@ -83,7 +83,7 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
 })
 
 /**
- * **`implement` wraps a `run:` and the other three steps do not** (`#390`).
+ * **`implement` wraps a `run:` and the other four steps do not** (`#390`).
  *
  * `env` alone is what a plain `run:` needs; `implement`'s copy needs a git
  * port too, and the refusal names what is missing by name rather than falling

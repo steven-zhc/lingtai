@@ -271,7 +271,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
       })
-      // **`implement` wraps and the other three do not** (`#390`): a `run:`
+      // **`implement` wraps and the other four do not** (`#390`): a `run:`
       // there may not refuse (`REFUSING_STEPS`, `packages/conductor/src/pass.ts`),
       // and what commits what it changed is `createKeptRunAction`, not the
       // plain process action every other step runs unwrapped.

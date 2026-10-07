@@ -2301,6 +2301,10 @@ function actionsAt(step: Step) {
       const takes: number[] = []
       /** Where an accepted `merge:` was written, if one has been — the refusal below. */
       let landsAt: number | null = null
+      /** Where each accepted `implement:` `run:` was written, for the refusal below. */
+      const implementRuns: number[] = []
+      /** Whether `implement:` accepted an `agent:` — the refusal below asks only this. */
+      let implementHasAgent = false
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS)
         const plugin = pluginNaming(action, PLUGINS)
@@ -2435,6 +2439,8 @@ function actionsAt(step: Step) {
         if (kind === 'worktree') cuts.push(i)
         if (kind === 'queue') takes.push(i)
         if (kind === 'merge') landsAt = i
+        if (step === 'implement' && kind === 'run') implementRuns.push(i)
+        if (step === 'implement' && kind === 'agent') implementHasAgent = true
         resolved.push(read.value as StepAction)
       })
       /**
@@ -2561,6 +2567,46 @@ function actionsAt(step: Step) {
             'conductor reads it as the omitted key, so the default lane runs and the branch merges ' +
             '(0065 §6 decides otherwise and is not built yet). To hold a pass before anything ' +
             'lands, declare a `human:` action at `proposed:`. ' +
+            REFUSED_WHEN_IT_RESOLVED,
+        })
+      }
+      /**
+       * **A written `implement:` that carries a `run:` and no `agent:` is
+       * refused** (`#390`), the mirror of the rule above for a written `merge:`
+       * carrying checks and no lane.
+       *
+       * `run:` at `implement` is a mechanical fix-up *after* the agent
+       * (`whyThatPair` above) — it is never a substitute for one. But
+       * `actionsAt`'s substitution rule (`conduct.ts`) only replaces the default
+       * implementing agent when the step resolves with *no* declared actions:
+       * `implement: [{ name: format, run: pnpm fmt }]` resolves with one, so the
+       * default agent is never built and nothing is dispatched at all. `pnpm
+       * fmt` then finds nothing to commit, `implement` passes carrying no head,
+       * `build` passes on the base, the cold reviewer at `review` is paid a turn
+       * to read an empty diff, and the lane refuses `no-commits` with nothing in
+       * the refusal naming the agent that never ran — on every pass.
+       *
+       * Asked only where every entry resolved, for `landsAt`'s reason: a refused
+       * entry may have been the agent, and *is one present* is not answerable
+       * about a list Lingtai could not fully read.
+       */
+      if (
+        step === 'implement' &&
+        written.length > 0 &&
+        resolved.length === written.length &&
+        implementRuns.length > 0 &&
+        !implementHasAgent
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [],
+          message:
+            `the "implement" step is written with ${written.length} action` +
+            `${written.length === 1 ? '' : 's'} and none of them is an agent, so the step would ` +
+            'pass having dispatched nobody: `run:` there is a fix-up after the agent and never a ' +
+            'substitute for one, but a written `implement:` replaces the default implementing agent ' +
+            'whether or not it declares one. Write the agent in this list too, or write nothing and ' +
+            'let the default run it. ' +
             REFUSED_WHEN_IT_RESOLVED,
         })
       }
