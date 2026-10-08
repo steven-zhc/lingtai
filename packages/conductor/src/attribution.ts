@@ -340,14 +340,12 @@ export function diagnoseRefusal(input: {
   const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,
-    // What was *done* about it, which for a conflict is more than nothing: the
-    // integrator merges the base in before it merges out, so by the time this
-    // is written the mechanical fix has already been tried and exhausted
-    // (0025 §4). Then the sentence saying no agent is coming — a card must be
-    // able to say why nothing was bought, not only that nothing was.
-    done:
-      (input.reason === 'conflict' ? `${input.base} was merged in first and it still would not merge. ` : '') +
-      `${OWNER_SAYS[owner]}.`,
+    // Archived 0025 §4 describes a remedy — merge the base in, verify, merge
+    // out — that the lane does not perform; whether a move should merge the
+    // base into the branch is #426's open question. So there is nothing to
+    // say here about what was tried, only the sentence saying no agent is
+    // coming.
+    done: `${OWNER_SAYS[owner]}.`,
     raw: input.detail,
     recommendation: reading?.move ?? null,
   }

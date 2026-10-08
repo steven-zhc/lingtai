@@ -222,7 +222,7 @@ describe('a refusal, read for a person', () => {
   it('recommends the queue for a conflict, and says the remedy is spent', () => {
     const d = read('conflict')
     expect(d.what).toBe('agent/112 does not merge into develop.')
-    expect(d.done).toContain('develop was merged in first')
+    expect(d.done).not.toContain('was merged in first')
     expect(d.recommendation).toEqual({
       action: 'requeue',
       why:
