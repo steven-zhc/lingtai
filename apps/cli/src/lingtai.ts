@@ -47,7 +47,7 @@ import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 
-import { ADD_KEPT, askBeforeGithubAdd } from './add-github.ts'
+import { askBeforeGithubAdd } from './add-github.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -73,6 +73,7 @@ import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
 import { liveAsk } from './question.ts'
+import { ADD_KEPT } from './recipe-flow.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -373,24 +374,39 @@ async function doctor(): Promise<number> {
  * stayed on while the command line said to turn it off — a flag that reads as
  * ignored is the one kind that is worse than a flag that errors.
  */
-function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string> } {
+/**
+ * `flags` is last-wins, as every caller here already reads it; `repeated`
+ * carries every occurrence of every flag, in order, for the one caller that
+ * needs more than the last — `--build <cmd>` is repeatable (`setup-build.ts`'s
+ * own refusal says so), and `flags['build']` alone cannot say that back (#431
+ * fix round, finding 3).
+ */
+function parseFlags(args: string[]): {
+  positional: string[]
+  flags: Record<string, string>
+  repeated: Record<string, string[]>
+} {
   const positional: string[] = []
   const flags: Record<string, string> = {}
+  const repeated: Record<string, string[]> = {}
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!
     if (a.startsWith('--')) {
       const next = args[i + 1]
+      const name = a.slice(2)
       if (next === undefined || next.startsWith('--')) {
-        flags[a.slice(2)] = ''
+        flags[name] = ''
+        ;(repeated[name] ??= []).push('')
       } else {
-        flags[a.slice(2)] = next
+        flags[name] = next
+        ;(repeated[name] ??= []).push(next)
         i++
       }
     } else {
       positional.push(a)
     }
   }
-  return { positional, flags }
+  return { positional, flags, repeated }
 }
 
 /**
@@ -406,7 +422,8 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
  * recipe disagrees (#75).
  */
 async function addCommand(args: string[]): Promise<number> {
-  const { positional, flags } = parseFlags(args)
+  const { positional, flags, repeated } = parseFlags(args)
+  const buildFlags = repeated['build'] ?? []
   // A positional beside either flag names a second project, and neither one
   // may be dropped without a word (#394's review).
   for (const flag of ['local', 'github'] as const) {
@@ -424,7 +441,7 @@ async function addCommand(args: string[]): Promise<number> {
 
   const slug = flags['github']
   if (slug !== undefined && slug !== '') {
-    const stopped = await askBeforeGithubAdd(slug, flags)
+    const stopped = await askBeforeGithubAdd(slug, flags, undefined, buildFlags)
     if (stopped !== null) return stopped
   }
 
@@ -435,7 +452,7 @@ async function addCommand(args: string[]): Promise<number> {
     // given, so a refusal from here on keeps them rather than undoing them.
     ...(slug !== undefined && slug !== '' ? { kept: ADD_KEPT } : {}),
   })
-  const result = await chooseFirstProject(world, flags)
+  const result = await chooseFirstProject(world, flags, buildFlags)
   if ('refused' in result) {
     console.error(result.refused)
     return 1

@@ -7,33 +7,40 @@
  * In order: `--land` against `--base`; then — before a single question is
  * asked or a single answer written, and only where there is an App on this
  * machine to ask — whether it is installed here and grants what Lingtai
- * needs (#402); then the writer and reviewer; then, once a recipe is already
- * there, the ticket source and the kinds (#396), the landing branch and the
- * limits. Each answer is written as soon as it is given, not collected for
- * one write at the end. With no App configured at all, every question below
- * still runs: a recipe written for a project whose App does not exist yet is
- * what lets `chooseFirstProject` offer to create it next, in the same run.
- * Null to go on to the registration, or the exit code to stop with. A local
- * project, and a GitHub one picked on the board, reach none of this yet.
+ * needs (#402); then, once a recipe is already there, one `askRecipe` call
+ * (#431) asks the writer and reviewer, the install and build commands, the
+ * ticket source and the kinds (#396), the landing branch and the limits, in
+ * that order. Each answer is written as soon as it is given, not collected
+ * for one write at the end. With no App configured at all, every question
+ * below still runs: a recipe written for a project whose App does not exist
+ * yet is what lets `chooseFirstProject` offer to create it next, in the same
+ * run. Null to go on to the registration, or the exit code to stop with. A
+ * local project, and a GitHub one picked on the board, reach none of this
+ * yet.
  */
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
-import { createGitHubClient, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
+import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
+import { diskFiles, readRecipeKey, recipePath, type RecipeFiles } from '@lingtai/recipe'
 
-import { askAgents } from './agents.ts'
+import { EMPTY_SETUP_READER, type SetupReader } from './detect-setup.ts'
 import { livePicker } from './first-project.ts'
-import { askLanding, askLimits } from './landing.ts'
 import { liveAsk, type QuestionWorld } from './question.ts'
+import { ADD_KEPT, askRecipe } from './recipe-flow.ts'
 import { askRuntimes } from './runtimes.ts'
-import { askKinds, askTickets, liveHistory } from './source.ts'
+import { liveHistory } from './source.ts'
 
 /**
  * The repository's default branch, through the same calls `checkInstallation`
- * and `add()` make to read it — asked here only as a fallback for the land
- * question's own default, and answered null on any failure, since a
- * question's `detected` is just one more thing a person can type past (#399).
+ * and `add()` make to read it. Two callers read it: the fallback for the land
+ * question's own default, where a failure is harmless, since a question's
+ * `detected` is just one more thing a person can type past (#399); and the
+ * ref `liveGithubReader` reads the repository's files at, where a failure is
+ * not harmless — `null` there means nothing is read, and `detectSetup`
+ * suggests no install or build command at all (see the comment above
+ * `liveGithubReader`). Answered null on any failure either way; the two
+ * callers differ in what null costs them.
  *
  * `installation`, when the caller already asked GitHub for it — the early
  * check below has, and a second request would ask the same question again
@@ -51,11 +58,55 @@ async function defaultBranchOf(owner: string, repo: string, installation?: Insta
 }
 
 /**
- * What a refusal after `askBeforeGithubAdd` says was kept. By then each answer
- * it was given is already in the recipe, written as it was answered, and none
- * of it is undone; what has not happened is the registration.
+ * `askRecipe`'s `reader`, over a GitHub ref — `has` through the raw contents
+ * endpoint rather than `fileAt`, for `detect-setup.ts`'s own reason: the
+ * contents API leaves `content` empty for a file between 1 and 100 MB, and a
+ * `has` built on `fileAt` alone would call the biggest lockfiles absent.
+ *
+ * With no installation, no ref, or any failure building the client, every
+ * question still runs — an empty reader's `has` rejects rather than
+ * resolving `false`, so `detectSetup` reads it as "could not tell" rather
+ * than a confirmed absence (#431 fix round, finding 2); a detection
+ * suggestion is never worth failing the whole setup over, and
+ * `detectInstall`/`detectSetup` catch that rejection rather than letting it
+ * reach this function's own caller.
  */
-export const ADD_KEPT = 'The answers given above are kept in the recipe, and nothing was registered'
+async function liveGithubReader(
+  owner: string,
+  repo: string,
+  installation: Installation | undefined,
+  ref: string | null,
+): Promise<SetupReader> {
+  if (installation === undefined || ref === null) return EMPTY_SETUP_READER
+  try {
+    const auth = githubApp()
+    const client = await createGitHubClient({ auth, owner, repo, installation })
+    return {
+      has: async (path) => {
+        try {
+          await client.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`)
+          return true
+        } catch (err) {
+          // A missing file is an answer; anything else (a 403, a 500) is not
+          // one — `fileAt` draws the same line at `client.ts:420`, and
+          // swallowing both the same way read a transient failure as a
+          // confirmed absence (#431 fix round, finding 2).
+          if (err instanceof GitHubError && err.status === 404) return false
+          throw err
+        }
+      },
+      read: async (path) => {
+        try {
+          return await client.fileAt(path, ref)
+        } catch {
+          return null
+        }
+      },
+    }
+  } catch {
+    return EMPTY_SETUP_READER
+  }
+}
 
 export interface AskBeforeGithubAddDeps {
   check: typeof checkInstallation
@@ -67,16 +118,21 @@ export interface AskBeforeGithubAddDeps {
    * successful add costs no second request.
    */
   picker: () => Promise<Picker>
-  read: (path: string) => Promise<string | null>
-  write: typeof setRecipe
+  files: RecipeFiles
+  reader: (
+    owner: string,
+    repo: string,
+    installation: Installation | undefined,
+    ref: string | null,
+  ) => Promise<SetupReader>
   ask: (prompt: string) => Promise<string | null>
 }
 
 const liveDeps: AskBeforeGithubAddDeps = {
   check: checkInstallation,
   picker: livePicker,
-  read: diskFiles.read,
-  write: setRecipe,
+  files: diskFiles,
+  reader: liveGithubReader,
   ask: liveAsk,
 }
 
@@ -84,6 +140,8 @@ export async function askBeforeGithubAdd(
   slug: string,
   flags: Record<string, string>,
   deps: AskBeforeGithubAddDeps = liveDeps,
+  /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
+  buildFlags: readonly string[] = [],
 ): Promise<number | null> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
@@ -178,7 +236,7 @@ export async function askBeforeGithubAdd(
   // `RecipeMissingError` as it always has, except a flag naming an agent is
   // refused by name rather than silently ignored.
   const path = recipePath(repo)
-  const existing = await deps.read(path)
+  const existing = await deps.files.read(path)
   const agentFlags = {
     agent: flags['agent'],
     model: flags['model'],
@@ -191,88 +249,68 @@ export async function askBeforeGithubAdd(
       console.error(`--agent needs a recipe to write into; there is none at ${path}. Nothing was written`)
       return 1
     }
-  } else {
-    // A file that `extends:` a preset and writes no `steps:` of its own
-    // inherits every step from the preset — the first `steps.*` answer below
-    // pins that preset's steps into the file for good (`write.ts`'s
-    // `widenStepsIfNeeded`). Named here, before the writer question, because
-    // showing that to a person is this caller's line to print, not
-    // `agents.ts`'s.
-    const extendsPreset = await readRecipeKey(repo, ['extends'])
-    const stepsWritten = await readRecipeKey(repo, ['steps'])
-    if (typeof extendsPreset === 'string' && stepsWritten === null) {
-      console.log(
-        `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
-          "preset's steps into the file, so a later change to the preset no longer reaches this project",
-      )
-    }
-
-    const runtimes = await askRuntimes()
-    const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
-    if ('refused' in asked) {
-      console.error(asked.refused)
-      return 1
-    }
-    // `changes` sets an action's `agent:` (or creates it) and `modelChanges`
-    // that same action's `model:`, written one after the other.
-    await deps.write(repo, asked.changes)
-    await deps.write(repo, asked.modelChanges)
+    return null
   }
 
-  // The questions are asked before add() runs, and only when the recipe is
-  // already there — an absent one is add()'s own refusal to speak, and
-  // nothing here seeds a file that cannot resolve on its own (#395). `existing`
-  // rather than `existsSync(path)`: both agree on the real filesystem (where
-  // `deps.read` defaults to `diskFiles.read`, null on ENOENT exactly as
-  // `existsSync` is false), but a test's `deps.read` stub must be able to say
-  // there is no recipe without this function reaching past it to the disk.
-  if (existing !== null) {
-    // #396's two questions, asked and written before `askLanding` — each as
-    // soon as it is answered, so a Ctrl+C at either keeps what came before it.
-    // `addCommand` hands this same `flags` object to `chooseFirstProject`
-    // once this function returns — deleted as soon as each is read, so that
-    // call's `runGithubBranch` does not see them again and refuse what this
-    // function already asked and wrote (#396 fix round, finding 1).
-    const givenTickets = flags['tickets'] ?? null
-    delete flags['tickets']
-    const tickets = await askTickets(world, repo, false, givenTickets, {
-      history: liveHistory,
-      kept: 'the writer and reviewer chosen above are kept',
-    })
-    if ('refused' in tickets) {
-      console.error(tickets.refused)
-      return 1
-    }
-    if (tickets.changes.length > 0) await deps.write(repo, tickets.changes)
-
-    const givenKinds = flags['kinds'] ?? null
-    delete flags['kinds']
-    const kinds = await askKinds(world, repo, givenKinds, {
-      kept: 'the writer, reviewer and ticket source chosen above are kept',
-    })
-    if ('refused' in kinds) {
-      console.error(kinds.refused)
-      return 1
-    }
-    if (kinds.changes.length > 0) await deps.write(repo, kinds.changes)
-
-    const landed = await askLanding(world, repo, land ?? null, {
-      defaultBranch: () => defaultBranchOf(owner, repo, installation),
-    })
-    if ('refused' in landed) {
-      console.error(landed.refused)
-      return 1
-    }
-    const limited = await askLimits(
-      world,
-      repo,
-      { rounds: flags['rounds'], wall: flags['wall'], budget: flags['budget'] },
-      {},
+  // A file that `extends:` a preset and writes no `steps:` of its own
+  // inherits every step from the preset — the first `steps.*` answer below
+  // pins that preset's steps into the file for good (`write.ts`'s
+  // `widenStepsIfNeeded`). Named here, before `askRecipe`'s first question,
+  // because showing that to a person is this caller's line to print, not
+  // `agents.ts`'s.
+  const extendsPreset = await readRecipeKey(repo, ['extends'])
+  const stepsWritten = await readRecipeKey(repo, ['steps'])
+  if (typeof extendsPreset === 'string' && stepsWritten === null) {
+    console.log(
+      `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
+        "preset's steps into the file, so a later change to the preset no longer reaches this project",
     )
-    if ('refused' in limited) {
-      console.error(limited.refused)
-      return 1
-    }
+  }
+
+  const runtimes = await askRuntimes()
+  // Memoized, and shared with `askLanding`'s own `detected`, inside
+  // `askRecipe` — asking GitHub for the default branch twice for one run is
+  // one request nobody needed.
+  let cachedDefaultBranch: Promise<string | null> | null = null
+  const defaultBranch = () => (cachedDefaultBranch ??= defaultBranchOf(owner, repo, installation))
+  const ref = base ?? (await defaultBranch())
+  const reader = await deps.reader(owner, repo, installation, ref)
+
+  const recipeResult = await askRecipe(world, {
+    project: repo,
+    local: false,
+    runtimes,
+    reader,
+    flags,
+    buildFlags,
+    defaultBranch,
+    history: liveHistory,
+    kept: ADD_KEPT,
+    files: deps.files,
+  })
+  // `addCommand` hands this same `flags` object to `chooseFirstProject` once
+  // this function returns — deleted here, so that call's `runGithubBranch`
+  // does not see them again and refuse what `askRecipe` already asked and
+  // wrote (#396 fix round, finding 1; #431 fix round, finding 2).
+  for (const name of [
+    'tickets',
+    'kinds',
+    'agent',
+    'model',
+    'reviewer',
+    'reviewer-model',
+    'install',
+    'build',
+    'land',
+    'rounds',
+    'wall',
+    'budget',
+  ]) {
+    delete flags[name]
+  }
+  if ('refused' in recipeResult) {
+    console.error(recipeResult.refused)
+    return 1
   }
 
   return null

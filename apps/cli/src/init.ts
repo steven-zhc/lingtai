@@ -120,11 +120,13 @@ import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
+import type { SetupReader } from './detect-setup.ts'
 import {
   chooseFirstProject,
   type FirstProjectWorld,
   type GitResult,
   liveGit,
+  liveSetupReader,
   type RegisterLocalPayload,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
@@ -155,6 +157,8 @@ export interface InitWorld {
   git: () => Promise<string | null>
   /** Every runtime, asked whether it is installed and signed in. */
   runtimes: () => Promise<RuntimeFound[]>
+  /** `FirstProjectWorld.setupReader` (#431) — a real directory, over `node:fs`. */
+  setupReader: (dir: string) => SetupReader
   /** Connect, and create the tables where there are none. */
   database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
@@ -194,7 +198,9 @@ export interface InitWorld {
 const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
   '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
-  '[--tickets github|db] [--kinds <a,b,c>]'
+  '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
+  '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
+  '[--wall <duration>] [--budget <amount>]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -240,8 +246,11 @@ export { redactUrl as redact } from '@lingtai/env'
 
 // ------------------------------------------------------------ the command --
 
-function parseArgs(argv: readonly string[]): { flags: Record<string, string> } | { refused: string } {
+function parseArgs(
+  argv: readonly string[],
+): { flags: Record<string, string>; repeated: Record<string, string[]> } | { refused: string } {
   const flags: Record<string, string> = {}
+  const repeated: Record<string, string[]> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
     if (
@@ -253,17 +262,28 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
         '--local',
         '--base',
         '--github-app',
+        '--agent',
+        '--model',
+        '--reviewer',
+        '--reviewer-model',
+        '--install',
+        '--build',
         '--tickets',
         '--kinds',
+        '--land',
+        '--rounds',
+        '--wall',
+        '--budget',
       ].includes(name)
     )
       return { refused: `${USAGE} — no ${name}` }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
     flags[name.slice(2)] = value
+    ;(repeated[name.slice(2)] ??= []).push(value)
     i++
   }
-  return { flags }
+  return { flags, repeated }
 }
 
 function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
@@ -274,7 +294,8 @@ function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
 export async function initCommand(argv: readonly string[], world: InitWorld): Promise<number> {
   const parsed = parseArgs(argv)
   if ('refused' in parsed) return refuse(world, parsed.refused, 2)
-  const { flags } = parsed
+  const { flags, repeated } = parsed
+  const buildFlags = repeated['build'] ?? []
   const asked = flags['port'] === undefined ? null : Number(flags['port'])
   if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
     return refuse(world, `${USAGE} — --port takes a port number`, 2)
@@ -381,17 +402,32 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
             'the GitHub App on a machine that has only local projects',
         ),
       )
-      // Nothing below here reaches `chooseFirstProject`, so nothing reads
-      // either flag — refused by name instead of silently discarded, the
+      // Nothing below here reaches `chooseFirstProject`, so nothing reads any
+      // of these flags — refused by name instead of silently discarded, the
       // same reason `runGithubBranch`'s own guard exists (#396 fix round,
-      // finding 3).
-      if (flags['tickets'] !== undefined || flags['kinds'] !== undefined) {
-        const named = flags['tickets'] !== undefined ? `--tickets ${flags['tickets']}` : `--kinds ${flags['kinds']}`
+      // finding 3; #431 fix round, finding 1 — the ten `askRecipe` flags got
+      // no equivalent guard here, and this path never reaches
+      // `runGithubBranch`'s own).
+      const discardedFlag = [
+        'tickets',
+        'kinds',
+        'agent',
+        'model',
+        'reviewer',
+        'reviewer-model',
+        'install',
+        'build',
+        'land',
+        'rounds',
+        'wall',
+        'budget',
+      ].find((name) => flags[name] !== undefined)
+      if (discardedFlag !== undefined) {
         return refuse(
           world,
-          `${named}, but this machine already has a project and none is named to set up here — pass --project ` +
-            'github, --project local, or --local <dir>, or use lingtai add for one that already exists. ' +
-            'The store chosen above is kept',
+          `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +
+            'to set up here — pass --project github, --project local, or --local <dir>, or use lingtai add for ' +
+            'one that already exists. The store chosen above is kept',
         )
       }
       askProject = false
@@ -427,6 +463,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       files: world.files,
       home,
       signedIn: world.signedIn,
+      // Already probed above, for the "look" lines — a second probe for the
+      // same run would ask every runtime whether it is signed in twice.
+      runtimes: async () => runtimes,
+      setupReader: world.setupReader,
       register: world.registerLocal,
       history: world.history,
       // The store above is already written by the time this runs — the same
@@ -458,7 +498,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         },
       },
     }
-    const chosen = await chooseFirstProject(firstProjectWorld, flags)
+    const chosen = await chooseFirstProject(firstProjectWorld, flags, buildFlags)
     if ('refused' in chosen) return refuse(world, chosen.refused)
 
     if (chosen.project === 'local') {
@@ -824,6 +864,7 @@ export function liveInitWorld(): InitWorld {
       return said.status === 0 ? said.stdout.trim() : null
     },
     runtimes: askRuntimes,
+    setupReader: liveSetupReader,
     database: async (url) => {
       const pg = (await import('pg')).default
       const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })

@@ -44,6 +44,8 @@ export interface AskInstallAndBuildInput {
   tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
   home?: string
   files?: RecipeFiles
+  /** `question.ts`'s `kept` — what a refusal below says is already written. */
+  kept?: string
 }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
@@ -195,6 +197,7 @@ async function askInstall(
     detected: detected.install?.run ?? null,
     fallback: '',
     validate: async (a) => (a === '' ? 'type a command, or none' : null),
+    kept: input.kept,
   })
   if ('refused' in answer) return { run: null, refused: answer.refused }
   return { run: answer.answer === 'none' ? null : answer.answer }
@@ -223,6 +226,7 @@ async function tryTheBuild(
     prompt: 'run these once against the base before writing them?',
     choices: ['yes', 'no'],
     fallback: 'yes',
+    kept: input.kept,
   })
   if ('refused' in check) return { refused: check.refused }
   if (check.answer === 'no') return { ok: true }
@@ -244,6 +248,7 @@ async function tryTheBuild(
     prompt: 'write them anyway, or edit the list?',
     choices: ['write', 'edit'],
     fallback: 'edit',
+    kept: input.kept,
   })
   if ('refused' in decide) return { refused: decide.refused }
   if (decide.answer === 'edit') {
@@ -265,6 +270,16 @@ async function askBuild(
     if (input.given.build.includes('none') && input.given.build.length > 1) {
       return { refused: '--build none cannot be combined with another --build value' }
     }
+    // `--build` with no value right after it — forgotten before another flag,
+    // or last on the line — parses to `''` rather than being dropped (both
+    // `lingtai.ts`'s `parseFlags` and `init.ts`'s `parseArgs` do this
+    // deliberately, so a forgotten value is seen rather than silently
+    // absorbed). `''` is not a command: refuse by name instead of writing a
+    // `run: ""` that `command.ts` would execute as `sh -c ''`, exiting 0
+    // having checked nothing (#431 fix round, finding 2).
+    if (input.given.build.includes('')) {
+      return { refused: '--build takes a command, or none — not empty' }
+    }
     const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build)
     if (build.length === 0) world.log('nothing will check a diff before review')
     return { build }
@@ -280,6 +295,7 @@ async function askBuild(
       prompt: 'run these before review? yes, or no to write your own',
       choices: ['yes', 'no'],
       fallback: 'yes',
+      kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }
     if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
@@ -293,6 +309,7 @@ async function askBuild(
       given: null,
       prompt: 'a command that must pass before review — empty when done',
       fallback: '',
+      kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }
     if (answer.answer === '') break

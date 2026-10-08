@@ -19,6 +19,33 @@ import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initComma
 
 const URL_ = 'postgresql://me:secret@db.example:5432/lingtai'
 
+/**
+ * Every `askRecipe` (#431) question on the local branch, answered by flag
+ * rather than scripted through `ask()` — this suite's own `ask` only
+ * recognises the project, App, database and kinds questions (#431 fix
+ * round, finding 1), and base is `main` in every test that uses this.
+ */
+const RECIPE_FLOW_FLAGS = [
+  '--agent',
+  'claude-code',
+  '--model',
+  '',
+  '--reviewer',
+  'none',
+  '--install',
+  'none',
+  '--build',
+  'none',
+  '--land',
+  'main',
+  '--rounds',
+  '0',
+  '--wall',
+  '30m',
+  '--budget',
+  'none',
+]
+
 /** A step a Ctrl+C can land in. Each is a call into the world that has not returned. */
 const STEPS = ['git', 'runtimes', 'ask:database', 'database', 'app', 'board', 'open', 'appeared'] as const
 type Step = (typeof STEPS)[number]
@@ -133,6 +160,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         step('runtimes')
         return script.runtimes ?? [signedIn('claude-code'), notInstalled('codex')]
       },
+      // `askRecipe`'s own questions (#431) are answered by flag instead —
+      // `RECIPE_FLOW_FLAGS` — rather than scripted here: this suite's `ask`
+      // only recognises the project, App, database and kinds questions.
+      setupReader: () => ({ has: async () => false, read: async () => null }),
       database: async (url) => {
         seen.connected.push(url)
         if (!(script.answering ?? [URL_]).includes(url)) return { ok: false, why: 'connection refused' }
@@ -237,7 +268,7 @@ describe('lingtai init (#186)', () => {
         '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
       },
     })
-    expect(await initCommand(['--local', '/repo', '--base', 'main'], w)).toBe(0)
+    expect(await initCommand(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS], w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
     expect(seen.lines.join('\n')).toContain('project      local — repo, registered with its own origin as repo.remote')
@@ -252,7 +283,7 @@ describe('lingtai init (#186)', () => {
       '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
     }
     const first = world(home, { answers: [URL_], gitPlan: git })
-    expect(await initCommand(['--local', '/repo', '--base', 'main'], first.world)).toBe(0)
+    expect(await initCommand(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS], first.world)).toBe(0)
 
     // The first run actually registered the directory — not just printed a
     // line claiming to (#394 finding 10): `registerLocal` is the record, and
@@ -322,6 +353,24 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand(['--tickets', 'db'], withTickets)).toBe(1)
     expect(seenTickets.lines.join('\n')).toContain('--tickets db')
     expect(seenTickets.boards).toBe(0)
+  })
+
+  it("askRecipe's own flags on a machine with a project already registered are refused rather than silently discarded (#431 fix round, finding 1)", async () => {
+    const home = freshHome()
+    const registered: ProjectState = {
+      project: 'widget',
+      owner: null,
+      base: 'main',
+      configHash: 'hash',
+      fromSha: 'sha',
+      refused: null,
+      version: 1,
+      lastSeq: 1n,
+    }
+    const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
+    expect(await initCommand(['--rounds', '3', '--agent', 'claude-code', '--budget', '9'], w)).toBe(1)
+    expect(seen.lines.join('\n')).toContain('--agent claude-code')
+    expect(seen.boards).toBe(0)
   })
 
   it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
@@ -759,7 +808,9 @@ describe('--store answers the store question without a terminal (#345)', () => {
         '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
       },
     })
-    expect(await initCommand(['--store', 'sqlite', '--local', '/repo', '--base', 'main'], w)).toBe(0)
+    expect(
+      await initCommand(['--store', 'sqlite', '--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS], w),
+    ).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
     expect(config(home)).toBe('database:\n  store: sqlite\n')

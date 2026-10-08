@@ -33,6 +33,19 @@ function whyMissing(r: RuntimeFound): string {
   return r.installed ? `${r.id} is installed and not signed in (${r.detail})` : `${r.id} is not installed`
 }
 
+/**
+ * Nothing signed in at all — shared with `first-project.ts`'s own pre-write
+ * check (#431), so the two name the same gap the same way rather than two
+ * sentences that drift. `askAgents` refuses with this before its first
+ * question; the local branch refuses with it before writing anything at all.
+ */
+export function noRuntimesSignedInRefusal(runtimes: readonly RuntimeFound[]): string {
+  return (
+    `no agent runtime is signed in on this machine — ${runtimes.map(whyMissing).join('; ')}. ` +
+    'Sign in to one and try again; whether it is paid for is between you and its provider'
+  )
+}
+
 function asRuntime(value: unknown): RuntimeName | null {
   if (typeof value !== 'string') return null
   const parsed = RuntimeId.safeParse(value)
@@ -110,6 +123,8 @@ export interface AskAgentsAt {
   flags: { agent?: string; model?: string; reviewer?: string; reviewerModel?: string }
   home?: string
   files?: RecipeFiles
+  /** `question.ts`'s `kept` — what a refusal below says is already written. */
+  kept?: string
 }
 
 /**
@@ -132,11 +147,7 @@ export async function askAgents(
     if (!r.signedIn) world.log(whyMissing(r))
   }
   if (signedInIds.length === 0) {
-    return {
-      refused:
-        `no agent runtime is signed in on this machine — ${at.runtimes.map(whyMissing).join('; ')}. ` +
-        'Sign in to one and try again; whether it is paid for is between you and its provider',
-    }
+    return { refused: noRuntimesSignedInRefusal(at.runtimes) }
   }
 
   const choiceList = signedInIds.join(', ')
@@ -169,6 +180,7 @@ export async function askAgents(
     current: currentAgent,
     detected: signedInIds.length === 1 ? signedInIds[0]! : null,
     validate: refuseUnlessOffered(),
+    kept: at.kept,
   })
   if ('refused' in agentAnswer) return agentAnswer
   const writer = agentAnswer.answer as RuntimeName
@@ -188,6 +200,7 @@ export async function askAgents(
     prompt: "which model (empty for the runtime's own default)",
     current: currentModel,
     fallback: '',
+    kept: at.kept,
   })
   if ('refused' in modelAnswer) return modelAnswer
   const writerModel = modelAnswer.answer
@@ -220,6 +233,7 @@ export async function askAgents(
     current: currentReviewer,
     detected: defaultReviewer,
     validate: async (answer) => (answer === 'none' ? null : refuseUnlessOffered(', or none')(answer)),
+    kept: at.kept,
   })
   if ('refused' in reviewerAnswer) return reviewerAnswer
   const reviewer = reviewerAnswer.answer
@@ -265,6 +279,7 @@ export async function askAgents(
       prompt: "on which model (empty for the runtime's own default)",
       current: currentReviewerModel,
       fallback: '',
+      kept: at.kept,
     })
     if ('refused' in reviewerModelAnswer) return reviewerModelAnswer
     reviewerModel = reviewerModelAnswer.answer

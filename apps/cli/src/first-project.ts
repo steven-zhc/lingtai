@@ -19,9 +19,15 @@
  * directory is a git repository, it has an `origin` (the merge lane pushes
  * there — `packages/actions/src/merge-action.ts:47`), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
- * then does `setRecipe` write `repo.base` and `repo.remote`, `resolveLocalRecipe`
- * reads the file back for its `configHash`, and `register` (`addLocal` in
- * `@lingtai/conductor/onboard`) appends `ProjectConfigured` with `owner: null`.
+ * then does `setRecipe` seed `repo.base`, `repo.remote`, `env.plantAt` and
+ * `source.kinds`, and `askRecipe` (#431) ask the rest of the recipe's
+ * questions. **That seed's `base` is not necessarily final**: `askLanding`,
+ * inside `askRecipe`, can still move `repo.base` — so what follows the seed
+ * write is a re-read of the file for its actual `repo.base`, a second
+ * `git rev-parse` for that base's sha when it moved, `resolveLocalRecipe`
+ * reading the file back for its `configHash`, and `register` (`addLocal` in
+ * `@lingtai/conductor/onboard`) appending `ProjectConfigured` with
+ * `owner: null` against that final base, not the one the seed wrote.
  *
  * **The GitHub branch is #393's App step, unchanged, plus the picker.** No App
  * configured runs `askFirstProject`'s App question and `waitForApp`; a slug
@@ -31,7 +37,9 @@
  * today.
  */
 import { execFile, spawn } from 'node:child_process'
-import { basename, resolve as resolvePath } from 'node:path'
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
 import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
@@ -47,21 +55,23 @@ import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, stateDir } from '@lingtai/env'
 import { createAppReader, type Installation } from '@lingtai/github'
 import {
-  AgentUnresolvedError,
+  baseOf,
   diskFiles,
   readRecipeKey,
   recipePath,
-  resolveAgent,
   resolveLocalRecipe,
+  resolveSource,
   setRecipe,
-  writtenAgent,
+  SETUP_KINDS,
   type RecipeFiles,
   type ResolvedRecipe,
   type SignedIn,
 } from '@lingtai/recipe'
 
+import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt } from './board.ts'
+import type { SetupReader } from './detect-setup.ts'
 import {
   APP_WAIT_MS,
   appComeBackLine,
@@ -72,7 +82,9 @@ import {
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
 import { question, type QuestionWorld } from './question.ts'
-import { askKinds, askTickets, liveHistory } from './source.ts'
+import { ADD_KEPT, askRecipe } from './recipe-flow.ts'
+import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import { liveHistory } from './source.ts'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
 export interface GitResult {
@@ -99,6 +111,10 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** `stateDir()` unless a test says otherwise. */
   home: string
   signedIn: SignedIn
+  /** Every runtime, asked whether it is installed and signed in — never probed twice (`AskAgentsAt`'s own rule). */
+  runtimes: () => Promise<readonly RuntimeFound[]>
+  /** `askRecipe`'s `reader`, for the local branch's `askInstallAndBuild` (#431) — a real directory, over `node:fs`. */
+  setupReader: (dir: string) => SetupReader
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
   /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
@@ -165,6 +181,17 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   if (github !== undefined && flags['project'] === 'local') {
     return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. ${kept}`
   }
+  const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`). Checked here, before
+  // anything is written, rather than inside `askRecipe`, where `askLanding`
+  // would otherwise overwrite the base question's own answer silently.
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    return `--land ${land} and --base ${base} name two different branches, and this command will not pick one silently. ${kept}`
+  }
   return null
 }
 
@@ -207,6 +234,8 @@ async function askProjectKind(
 export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
+  /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
+  buildFlags: readonly string[] = [],
 ): Promise<FirstProjectOutcome> {
   const conflict = conflictingFlags(flags, world.kept)
   if (conflict !== null) return { refused: conflict }
@@ -275,7 +304,7 @@ export async function chooseFirstProject(
   }
 
   return kind === 'local'
-    ? runLocalBranch(world, flags, flags['local'] ?? null)
+    ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
     : runGithubBranch(world, flags, flags['github'] ?? null, askedApp, appCheck)
 }
 
@@ -292,6 +321,7 @@ function resolveRemote(remote: string, top: string): string {
 async function runLocalBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
+  buildFlags: readonly string[],
   givenDir: string | null,
 ): Promise<FirstProjectOutcome> {
   const dirAnswer = await question(world, {
@@ -388,51 +418,32 @@ async function runLocalBranch(
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 
-  const path = recipePath(name, world.home)
-  const existingText = await world.files.read(path)
-  const written = existingText === null ? 'absent' : writtenAgent(existingText)
-  if (written !== 'not a runtime') {
-    try {
-      await resolveAgent(written === 'absent' ? null : { agent: written, from: path }, world.signedIn, path)
-    } catch (err) {
-      if (!(err instanceof AgentUnresolvedError)) throw err
-      return { refused: err.message }
-    }
+  // Probed once, before anything is written — an agent signed out of
+  // nowhere is refused by name rather than discovered partway through
+  // `askRecipe`'s own first question (#431).
+  const runtimes = await world.runtimes()
+  if (!runtimes.some((r) => r.signedIn)) {
+    return { refused: noRuntimesSignedInRefusal(runtimes) }
   }
 
-  // #396's two questions — where tickets come from, and which labels are
-  // work. Asked once the directory, base and agent are all settled, so a
-  // refusal from either of these still reaches a person before this one
-  // does; their own `changes` fold into the one write below rather than
-  // writing on their own (`setup-build.ts`'s "this writes nothing").
-  const ticketsAnswer = await askTickets(world, name, true, flags['tickets'] ?? null, {
-    home: world.home,
-    files: world.files,
-    history: world.history,
-    kept: world.kept,
-  })
-  if ('refused' in ticketsAnswer) return { refused: ticketsAnswer.refused }
-  const kindsAnswer = await askKinds(world, name, flags['kinds'] ?? null, {
-    home: world.home,
-    files: world.files,
-    kept: world.kept,
-  })
-  if ('refused' in kindsAnswer) return { refused: kindsAnswer.refused }
+  const path = recipePath(name, world.home)
+  const existingText = await world.files.read(path)
 
-  // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
-  // — a brand-new file needs it or it will not resolve at all, and nothing a
-  // directory offers answers it. Written only when there is no file yet: an
-  // existing one already has it, possibly edited since, and a re-run must
-  // not overwrite that silently. `source.kinds` has no schema default
-  // either, but `askKinds` above already writes it unconditionally for a
-  // brand-new file (`resolvedRecipe` reads null there), so it needs no
-  // second seed here.
+  // `env.plantAt` and `source.kinds` have no schema default (`recipe.ts`'s
+  // `plantAt: z.string()`, `source.kinds: z.array(z.string()).min(1)`) — a
+  // brand-new file needs both or it will not resolve at all, and nothing a
+  // directory offers answers either. Written only when there is no file yet:
+  // an existing one already has them, possibly edited since, and a re-run
+  // must not overwrite that silently.
   const changes = [
     { path: ['repo', 'base'], value: base },
     { path: ['repo', 'remote'], value: remote },
-    ...ticketsAnswer.changes,
-    ...kindsAnswer.changes,
-    ...(existingText === null ? [{ path: ['env', 'plantAt'], value: '.env.local' }] : []),
+    ...(existingText === null
+      ? [
+          { path: ['env', 'plantAt'], value: '.env.local' },
+          { path: ['source', 'kinds'], value: [...SETUP_KINDS] },
+        ]
+      : []),
   ]
   try {
     await setRecipe(name, changes, { home: world.home, files: world.files })
@@ -440,10 +451,49 @@ async function runLocalBranch(
     return { refused: (err as Error).message }
   }
 
+  // Not `world.kept`: that described the state before the write just above,
+  // and a refusal inside `askRecipe` is after it — `question.ts:43-50`'s rule
+  // that a caller placed after its own write must say what that write left
+  // behind (#431 fix round, finding 3).
+  const seededKept = `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered`
+
+  const recipeResult = await askRecipe(world, {
+    project: name,
+    local: true,
+    runtimes,
+    reader: world.setupReader(toplevel),
+    flags,
+    buildFlags,
+    defaultBranch: async () => detected,
+    history: world.history,
+    kept: seededKept,
+    home: world.home,
+    files: world.files,
+  })
+  if ('refused' in recipeResult) return { refused: recipeResult.refused }
+
+  // `askLanding`, inside `askRecipe`, can move `repo.base` on a local
+  // project (#431's Watch out) — re-read the file it left behind rather than
+  // trust the `base` this function's own question settled.
+  const finalText = await world.files.read(path)
+  const finalRecipe = resolveSource(finalText!, path, path).recipe
+  const final = baseOf(finalRecipe)
+
+  let finalFromSha = fromSha
+  if (final !== base) {
+    const check = await world.git(toplevel, ['rev-parse', '--verify', `${final}^{commit}`])
+    if (!check.ok) {
+      return {
+        refused: `${final} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}. ${ADD_KEPT}`,
+      }
+    }
+    finalFromSha = check.stdout.trim()
+  }
+
   const resolved = await resolveLocalRecipe(name, {
     home: world.home,
     signedIn: world.signedIn,
-    base,
+    base: final,
     read: world.files.read,
   })
 
@@ -452,12 +502,12 @@ async function runLocalBranch(
   await world.register({
     project: name,
     owner: null,
-    base,
+    base: final,
     configHash: resolved.configHash,
-    fromSha,
+    fromSha: finalFromSha,
     resolved,
   })
-  return { ok: true, project: 'local', name, remote, base }
+  return { ok: true, project: 'local', name, remote, base: final }
 }
 
 async function runGithubBranch(
@@ -478,6 +528,31 @@ async function runGithubBranch(
       refused:
         `${named}, but a GitHub project asks neither question here — lingtai add asks both once its recipe ` +
         `exists. Leave it out. ${world.kept}`,
+    }
+  }
+
+  // `askRecipe`'s own flags (#431) are asked only once `lingtai add` already
+  // has a recipe to write them into, same reason as `--tickets`/`--kinds`
+  // above — `init`'s GitHub branch never calls `askRecipe` at all. Refused
+  // by name instead of silently discarded (#431 fix round, finding 2).
+  const recipeFlagNames = [
+    'agent',
+    'model',
+    'reviewer',
+    'reviewer-model',
+    'install',
+    'build',
+    'land',
+    'rounds',
+    'wall',
+    'budget',
+  ]
+  const namedRecipeFlag = recipeFlagNames.find((name) => flags[name] !== undefined)
+  if (namedRecipeFlag !== undefined) {
+    return {
+      refused:
+        `--${namedRecipeFlag} ${flags[namedRecipeFlag]}, but a GitHub project asks none of askRecipe's questions ` +
+        `here — lingtai add asks them once its recipe exists. Leave it out. ${world.kept}`,
     }
   }
 
@@ -622,6 +697,28 @@ export async function livePicker(): Promise<Picker> {
   return listRepositories({ reader, projects, installUrl })
 }
 
+/**
+ * `askRecipe`'s `reader`, for a local directory: `has` over `node:fs`'s
+ * `existsSync` (never `read`-then-check — a file that cannot be read for some
+ * other reason must not read as "not here" the way `read` returning null
+ * would make it), `read` returning null on anything that is not ENOENT too,
+ * since a detection suggestion is never worth throwing over.
+ *
+ * Exported for `init.ts`'s `liveInitWorld()` — one real reader, not two.
+ */
+export function liveSetupReader(dir: string): SetupReader {
+  return {
+    has: async (path) => existsSync(join(dir, path)),
+    read: async (path) => {
+      try {
+        return await readFile(join(dir, path), 'utf8')
+      } catch {
+        return null
+      }
+    },
+  }
+}
+
 export interface LiveFirstProjectOptions {
   ask: (prompt: string) => Promise<string | null>
   log: (line: string) => void
@@ -660,6 +757,8 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     files: diskFiles,
     home,
     signedIn: signedInHere,
+    runtimes: askRuntimes,
+    setupReader: liveSetupReader,
     // `lingtai add` is the only caller. With a slug, `askBeforeGithubAdd`
     // has already written its answers, and `addCommand` says so (#402).
     kept: options.kept ?? 'Nothing was written',
