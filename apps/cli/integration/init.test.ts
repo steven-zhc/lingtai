@@ -86,6 +86,8 @@ interface Script {
   gitPlan?: Record<string, GitResult>
   files?: Record<string, string>
   registerLocal?: (payload: { project: string; base: string }) => Promise<string>
+  /** `InitWorld.doctor` (#434) — a fixed report unless a test names its own. */
+  doctor?: string
 }
 
 interface Recorded {
@@ -222,6 +224,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         })
       },
       history: async () => [],
+      doctor: async () => script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
     },
   }
 }

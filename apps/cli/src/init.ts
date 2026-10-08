@@ -8,9 +8,18 @@
  *   project    github or local — github asks for the App (#393); local does not
  *   App        one already configured is verified by a real call; a new one
  *              waits with a deadline and a way to skip, never forever
- *   board      started here; a browser is opened on the wizard's next screen —
- *              creating the App, or picking a repository once one answers — and
- *              a local project or a skipped App leaves one line printed instead
+ *   board      started only once the wizard needs one — creating the App, or
+ *              picking a repository once one answers — never for a local
+ *              project, which prints that `lingtai board` starts one instead
+ *
+ * **Nothing opens a browser or binds a port until the wizard asks for one**
+ * (#434): `board` above is started inside `github.boardUrl()`'s first call, or
+ * at the end for a path that opens the wizard on an App already configured —
+ * never for a local project, and never merely because this ran with no
+ * terminal behind it (`install.sh`), which must still exit. **The run ends by
+ * printing what it decided**: the project's recipe, exactly as written, then
+ * `doctor`'s report — which is printed and never sets the exit code — then one
+ * line saying whether a board is running.
  *
  * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
  * the moment it is made and verified, and every run begins by reading what is
@@ -115,7 +124,7 @@ import {
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
-import { diskFiles, readRecipeKey, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
+import { diskFiles, readRecipeKey, recipePath, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -193,6 +202,13 @@ export interface InitWorld {
   registerLocal: (payload: RegisterLocalPayload) => Promise<string>
   /** `FirstProjectWorld.history` (#396) — `wi-<project>-*` streams already in the log for this project. */
   history: (project: string) => Promise<readonly string[]>
+  /**
+   * The report `lingtai doctor` would print, formatted — printed at the end
+   * and never allowed to set the exit code (#434). The live one imports
+   * `./doctor.ts` dynamically; this file's header warns why an eager one would
+   * break a fresh machine.
+   */
+  doctor: () => Promise<string>
 }
 
 const USAGE =
@@ -445,20 +461,46 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     }
   }
 
-  // ---- the board, on the wizard ---------------------------------------------
+  // ---- the board, started lazily --------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
   // the same file `readConfig` above refuses by name, and a file that does not
   // parse should say so once, in its own words, rather than through the port.
+  //
+  // **Started only once the wizard asks for a URL** (#434): a board started
+  // unconditionally here, as it used to be, keeps a process with no terminal
+  // behind it (`install.sh`) alive forever once it serves one. `startBoard`
+  // is memoised, so `boardUrl()` below calls it at most once per run, and a
+  // local project never calls it at all.
   const port = asked ?? boardPort(world.env)
-  // A board already up is this machine's, and the wizard is on it: a re-run uses it rather than failing on its port.
-  const running = await world.boardAt(port)
-  const board = running !== null ? { url: running } : await world.board(port)
-  if ('refused' in board) {
-    return refuse(
-      world,
-      `the board did not start — ${board.refused}. Everything chosen above is kept, and lingtai init again continues from here`,
-    )
+  type BoardStart = { url: string; started: boolean } | { refused: string }
+  // A settled value, not a cached promise: every call here is already
+  // awaited before the next one starts, so there is no race to memoise
+  // against — only the repeat call `startBoard` exists to avoid.
+  let boardResult: BoardStart | null = null
+  const startBoard = async (): Promise<BoardStart> => {
+    if (boardResult !== null) return boardResult
+    // A board already up is this machine's, and the wizard is on it: a
+    // re-run uses it rather than failing on its port.
+    const running = await world.boardAt(port)
+    if (running !== null) {
+      boardResult = { url: running, started: false }
+      return boardResult
+    }
+    const started = await world.board(port)
+    boardResult = 'refused' in started ? { refused: started.refused } : { url: started.url, started: true }
+    return boardResult
   }
+  // A function, not a bare read of `boardResult`: TypeScript does not narrow
+  // a `let` this far from its declaration once a nested closure (`startBoard`
+  // above) assigns to it, and reports every later `boardResult !== null`
+  // check against `null` alone rather than `BoardStart`. Going through a
+  // function with its own return type annotation sidesteps that.
+  const boardSoFar = (): BoardStart | null => boardResult
+  const boardRefused = (why: string): number =>
+    refuse(
+      world,
+      `the board did not start — ${why}. Everything chosen above is kept, and lingtai init again continues from here`,
+    )
 
   if (askProject) {
     // Built from `world` directly rather than through a live default (#394's
@@ -491,7 +533,15 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         // Already fetched above, for the "the App" line — a second real call
         // (`GET /app`) for the same run would answer the same question twice.
         app: async () => app,
-        boardUrl: async () => board.url,
+        // The trap: a refused start answers null here, same as no board
+        // running at all — `runGithubBranch` turns that into its own
+        // sentence, written for `lingtai add`, absurd inside `init`. The
+        // check below, after `chooseFirstProject` returns, replaces it with
+        // the board's own refusal whenever this was the reason.
+        boardUrl: async () => {
+          const started = await startBoard()
+          return 'url' in started ? started.url : null
+        },
         waitForApp: (boardUrl) =>
           waitForApp({ log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed }, boardUrl, {
             waitMs: APP_WAIT_MS,
@@ -510,27 +560,56 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       },
     }
     const chosen = await chooseFirstProject(firstProjectWorld, flags, buildFlags)
-    if ('refused' in chosen) return refuse(world, chosen.refused)
+    if ('refused' in chosen) {
+      // `boardUrl()` above is the only caller of `startBoard` on this path —
+      // if it was ever asked for, a refusal it hit is the real reason, over
+      // the GitHub-add sentence `chosen.refused` carries for a null URL.
+      const soFar = boardSoFar()
+      if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
+      return refuse(world, chosen.refused)
+    }
 
     if (chosen.project === 'local') {
       world.log(paint.pass(`project      local — ${chosen.name}, registered with its own origin as repo.remote`))
-    } else if (chosen.app === 'already') {
-      const wizard = `${board.url}/setup/repository`
+      const path = recipePath(chosen.name, home)
+      const text = await world.files.read(path)
+      world.log(path)
+      world.log(text === null ? paint.fail('the recipe could not be read back') : text)
+    } else {
+      if (chosen.app === 'already') {
+        // Nothing upstream asked for a URL on this path — `app.configured` was
+        // already true, so `boardUrl()` above was never called.
+        const started = await startBoard()
+        if ('refused' in started) return boardRefused(started.refused)
+        const wizard = `${started.url}/setup/repository`
+        world.log(
+          (await world.open(wizard))
+            ? paint.pass(`opened ${wizard}`)
+            : paint.signal(`no browser could be opened here — open ${wizard}`),
+        )
+      } else if ('made' in chosen.app) {
+        // Already started, successfully, to hand `waitForApp` its URL above —
+        // this reads the same memo rather than starting a second one.
+        const started = await startBoard()
+        const url = 'url' in started ? started.url : ''
+        world.log(`next, install it and pick a repository: ${url}/setup/repository`)
+      }
+      // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
+      // own call to `waitForApp` (`appComeBackLine`).
+      //
+      // `init`'s GitHub branch never has a slug, so there is no recipe file
+      // to print here — it exists once a repository is picked.
       world.log(
-        (await world.open(wizard))
-          ? paint.pass(`opened ${wizard}`)
-          : paint.signal(`no browser could be opened here — open ${wizard}`),
+        'the recipe is written once a repository is picked — lingtai add <owner>/<repo> asks its questions at the terminal',
       )
-    } else if ('made' in chosen.app) {
-      world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
     }
-    // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s own
-    // call to `waitForApp` (`appComeBackLine`).
   } else if (app.configured) {
     // Nothing new was asked — the machine already has projects, told above —
     // but a configured App still has its one remaining screen: the wizard
-    // that picks a repository for it.
-    const wizard = `${board.url}/setup/repository`
+    // that picks a repository for it. Nothing upstream asked for a board yet.
+    const started = await startBoard()
+    if ('refused' in started) return boardRefused(started.refused)
+    const wizard = `${started.url}/setup/repository`
     world.log(
       (await world.open(wizard))
         ? paint.pass(`opened ${wizard}`)
@@ -538,11 +617,26 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     )
   }
 
-  world.log(
-    running !== null
-      ? paint.muted(`the board was already running at ${running} — this started none`)
-      : paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again'),
-  )
+  let doctorText: string
+  try {
+    doctorText = await world.doctor()
+  } catch (err) {
+    doctorText = `doctor did not finish — ${(err as Error).message || String(err)}`
+  }
+  world.log(doctorText)
+
+  const started = boardSoFar()
+  if (started === null) {
+    world.log(paint.muted('no board was started — lingtai board starts it'))
+  } else {
+    world.log(
+      'refused' in started
+        ? paint.fail(`the board did not start — ${started.refused}`)
+        : started.started
+          ? paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again')
+          : paint.muted(`the board was already running at ${started.url} — this started none`),
+    )
+  }
   return 0
 }
 
@@ -936,5 +1030,12 @@ export function liveInitWorld(): InitWorld {
         (line) => console.log(line),
       ),
     history: liveHistory,
+    // Dynamic, never a static import of `./doctor.ts` — this file's header
+    // warns that an eager log read breaks a fresh machine. Never `releaseCheck`:
+    // that outbound request is `doctor` and `upgrade`'s alone to make.
+    doctor: async () => {
+      const { doctorReport, formatReport } = await import('./doctor.ts')
+      return formatReport(await doctorReport())
+    },
   }
 }
