@@ -97,7 +97,7 @@ export interface Failure {
 /**
  * Every refusal the integrator can make, and whose it is.
  *
- * A total record rather than a `switch` with a default: a ninth
+ * A total record rather than a `switch` with a default: a tenth
  * `RefusalReason` will not compile until somebody decides who owns it, which is
  * the property that keeps a new failure from silently reaching a person with
  * the wrong sentence on it.
@@ -207,7 +207,7 @@ export function whoseFailure(failure: Failure): FailureOwner {
  * anything could have acted on it. It simply never said any of it in words.
  *
  * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
- * one: a ninth reason will not compile until somebody writes the sentence and
+ * one: a tenth reason will not compile until somebody writes the sentence and
  * decides whether it has a move. A reason with no move is the normal case and
  * not an oversight — `verify-failed` is a red diff, which is a judgement, and
  * `dirty-base` is Lingtai's own checkout, which requeueing walks straight back

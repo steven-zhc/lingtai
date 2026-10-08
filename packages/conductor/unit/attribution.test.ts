@@ -84,7 +84,7 @@ describe('whose failure it is', () => {
   })
 
   /**
-   * The map is total over `RefusalReason`, which is what stops a ninth reason
+   * The map is total over `RefusalReason`, which is what stops a tenth reason
    * silently defaulting into either answer. Asserted here as well as by the
    * compiler, because the compiler's version disappears if anyone reaches for
    * an index signature.

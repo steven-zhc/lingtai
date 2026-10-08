@@ -208,9 +208,15 @@ describe('IntegrationRefused payload', () => {
   })
 
   it('parses a conflict carrying paths, baseSha and headSha', () => {
-    expect(() =>
-      parsePayload('IntegrationRefused', { ...base, paths: ['src/a.ts'], baseSha: 'base-sha', headSha: 'head-sha' }),
-    ).not.toThrow()
+    const parsed = parsePayload('IntegrationRefused', {
+      ...base,
+      paths: ['src/a.ts'],
+      baseSha: 'base-sha',
+      headSha: 'head-sha',
+    })
+    expect(parsed.paths).toEqual(['src/a.ts'])
+    expect(parsed.baseSha).toBe('base-sha')
+    expect(parsed.headSha).toBe('head-sha')
   })
 
   it('parses a defect as `unexpected`, with none of the three fields', () => {

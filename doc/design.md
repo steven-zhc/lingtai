@@ -147,8 +147,8 @@ may still be in flight, and which names whichever attempted last while two are
 Every arrow is an event. Every arrow that used to produce silence — the six
 `return 1` paths in `integrate()` — is now `IntegrationRefused` with a typed
 reason: `conflict`, `dirty-base`, `unpushed-base`, `pending-migration`,
-`verify-failed`, `no-commits`, `push-rejected` — and `lane-busy`, which is read
-and never written since #194 took the merge lane's lock away.
+`verify-failed`, `no-commits`, `push-rejected`, `unexpected` — and `lane-busy`,
+which is read and never written since #194 took the merge lane's lock away.
 
 **That diagram spans all three aggregates, and no single reducer produces it.**
 A work item's own stream carries discovery, claims, blocks and the landing;

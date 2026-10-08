@@ -1605,12 +1605,12 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
-## integration refusal reason — 8
+## integration refusal reason — 9
 
 Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
-`verify-failed` · `no-commits` · `push-rejected` · `lane-busy`
+`verify-failed` · `no-commits` · `push-rejected` · `lane-busy` · `unexpected`
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about

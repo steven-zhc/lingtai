@@ -404,17 +404,18 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // halfway through writing to the base branch.
       const mergedIn = yield* Effect.either(at(['merge', '--no-edit', options.branch], cwd))
       if (Either.isLeft(mergedIn)) {
-        const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U'], cwd).pipe(
+        // `-z`: git's own quoting of a path with a non-ASCII, backslash,
+        // quote or control character (`core.quotePath`, on by default) turns
+        // the name-only `\n`-joined form into a C-quoted string rather than
+        // the path. NUL-terminated records are never quoted.
+        const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U', '-z'], cwd).pipe(
           Effect.orElseSucceed(() => ''),
         )
         yield* at(['merge', '--abort'], cwd).pipe(
           // Nothing to abort; the merge failed before it started one.
           Effect.ignore,
         )
-        const paths = conflicts
-          .split('\n')
-          .map((p) => p.trim())
-          .filter((p) => p.length > 0)
+        const paths = conflicts.split('\0').filter((p) => p.length > 0)
         // A failed merge with no unmerged path is git failing, not the branch
         // conflicting — in a worktree this lane just cut, there is nothing for
         // triage to read back, so it is `unexpected` rather than `conflict`.
@@ -425,11 +426,11 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           )
         }
         const headSha = yield* at(['rev-parse', options.branch], mirror)
-        return yield* refuse('conflict', `${options.branch} does not merge into ${options.base}:\n${conflicts}`, {
-          paths,
-          baseSha: localBase,
-          headSha,
-        })
+        return yield* refuse(
+          'conflict',
+          `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
+          { paths, baseSha: localBase, headSha },
+        )
       }
 
       if (options.verify) {
