@@ -270,6 +270,16 @@ async function askBuild(
     if (input.given.build.includes('none') && input.given.build.length > 1) {
       return { refused: '--build none cannot be combined with another --build value' }
     }
+    // `--build` with no value right after it — forgotten before another flag,
+    // or last on the line — parses to `''` rather than being dropped (both
+    // `lingtai.ts`'s `parseFlags` and `init.ts`'s `parseArgs` do this
+    // deliberately, so a forgotten value is seen rather than silently
+    // absorbed). `''` is not a command: refuse by name instead of writing a
+    // `run: ""` that `command.ts` would execute as `sh -c ''`, exiting 0
+    // having checked nothing (#431 fix round, finding 2).
+    if (input.given.build.includes('')) {
+      return { refused: '--build takes a command, or none — not empty' }
+    }
     const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build)
     if (build.length === 0) world.log('nothing will check a diff before review')
     return { build }

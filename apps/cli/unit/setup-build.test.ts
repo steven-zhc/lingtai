@@ -151,6 +151,14 @@ steps:
     expect(resolved.recipe.steps.build).toEqual([])
   })
 
+  it('a --build with its value swallowed by the next flag (`""`) is refused rather than writing run: "" (#431 fix round, finding 2)', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(w, input({ given: { install: 'none', build: [''], check: null }, files }))
+    expect(result).toEqual({ refused: expect.stringContaining('--build') })
+    expect(files.replaced).toEqual([])
+  })
+
   it('no TTY and no flags refuses by name, naming --install', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w } = world([])

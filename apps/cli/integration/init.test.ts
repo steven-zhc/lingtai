@@ -355,6 +355,24 @@ describe('lingtai init (#186)', () => {
     expect(seenTickets.boards).toBe(0)
   })
 
+  it("askRecipe's own flags on a machine with a project already registered are refused rather than silently discarded (#431 fix round, finding 1)", async () => {
+    const home = freshHome()
+    const registered: ProjectState = {
+      project: 'widget',
+      owner: null,
+      base: 'main',
+      configHash: 'hash',
+      fromSha: 'sha',
+      refused: null,
+      version: 1,
+      lastSeq: 1n,
+    }
+    const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
+    expect(await initCommand(['--rounds', '3', '--agent', 'claude-code', '--budget', '9'], w)).toBe(1)
+    expect(seen.lines.join('\n')).toContain('--agent claude-code')
+    expect(seen.boards).toBe(0)
+  })
+
   it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
