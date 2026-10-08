@@ -156,6 +156,44 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(counted.asks).toBe(0)
   })
 
+  it("prints checkInstallation's gap list, not choose()'s onboarded sentence, for a project Lingtai already has (#402 review)", async () => {
+    const counted = countedDeps(
+      async () => GAPPY,
+      async () => ({
+        installations: [
+          {
+            installation: GAPPY,
+            unanswered: null,
+            gaps: [],
+            repositories: [
+              {
+                owner: 'steven-zhc',
+                repo: 'nextloom-ai-admin',
+                private: true,
+                slug: SLUG,
+                onboarded: 'registered',
+              },
+            ],
+          },
+        ],
+        installUrl: null,
+      }),
+    )
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
+      errors.push(String(msg))
+    })
+
+    const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
+    spy.mockRestore()
+
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('the installation is missing permissions:')
+    expect(errors.join('\n')).toContain('issues: have read, need write')
+    expect(errors.join('\n')).not.toContain('already onboarded')
+    expect(counted.writes).toBe(0)
+  })
+
   it('reaches read once the installation is good, showing the order is not just "always return"', async () => {
     const counted = countedDeps(async () => FULLY_PERMISSIONED)
 

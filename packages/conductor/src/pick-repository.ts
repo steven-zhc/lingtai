@@ -189,8 +189,11 @@ export type Choice =
  * A refused `Choice`'s own sentence, its gaps named one by one, then the fix
  * link — the whole of what a person is told, never just `why` on its own
  * (`add()`'s gap listing never runs on this path, so this is where that detail
- * has to live). Both of `choose()`'s callers print the same three parts in the
- * same order, so this is the one place that order is written down.
+ * has to live). `choose()` has three callers: the two in the CLI
+ * (`first-project.ts` and `add-github.ts`) print through this, and the board's
+ * repository page renders the same three parts in the same order as JSX of its
+ * own (`apps/board/src/app/setup/repository/page.tsx`). A change to the order
+ * here is a change there too.
  */
 export function refusalLines(choice: { why: string; fix: Fix | null; gaps: PermissionGap[] }): string[] {
   const lines = [choice.why]
@@ -200,6 +203,30 @@ export function refusalLines(choice: { why: string; fix: Fix | null; gaps: Permi
   }
   if (choice.fix !== null) lines.push(`${choice.fix.label}: ${choice.fix.href}`)
   return lines
+}
+
+/**
+ * Whether the App's list already has this repository as one of Lingtai's
+ * projects — registered, pending, or recorded under another owner.
+ *
+ * `choose()`'s *already onboarded* is written for the picker's offer-it-once
+ * screen, not for re-running `lingtai add` on a project this is (the
+ * `registrationLine` "updated" path, #163). So both CLI callers ask this first
+ * and skip `choose()` when it is: `first-project.ts`, because `add()` resolves
+ * the installation itself, and `add-github.ts`, because there the real reason
+ * for the refusal is `checkInstallation`'s own gap list, which `choose()`'s
+ * sentence would replace (#402).
+ */
+export function alreadyOnboarded(picker: Picker, slug: string): boolean {
+  const { owner, repo } = parseSlug(slug)
+  return picker.installations
+    .flatMap((listed) => listed.repositories)
+    .some(
+      (r) =>
+        r.owner.toLowerCase() === owner.toLowerCase() &&
+        r.repo.toLowerCase() === repo.toLowerCase() &&
+        (r.onboarded === 'registered' || r.onboarded === 'pending' || r.onboarded === 'unrecorded'),
+    )
 }
 
 /**

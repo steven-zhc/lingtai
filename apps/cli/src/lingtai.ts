@@ -47,7 +47,7 @@ import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 
-import { askBeforeGithubAdd } from './add-github.ts'
+import { ADD_KEPT, askBeforeGithubAdd } from './add-github.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -428,7 +428,13 @@ async function addCommand(args: string[]): Promise<number> {
     if (stopped !== null) return stopped
   }
 
-  const world = liveFirstProjectWorld({ ask: liveAsk, log: (line) => console.log(line) })
+  const world = liveFirstProjectWorld({
+    ask: liveAsk,
+    log: (line) => console.log(line),
+    // With a slug, `askBeforeGithubAdd` above has written each answer it was
+    // given, so a refusal from here on keeps them rather than undoing them.
+    ...(slug !== undefined && slug !== '' ? { kept: ADD_KEPT } : {}),
+  })
   const result = await chooseFirstProject(world, flags)
   if ('refused' in result) {
     console.error(result.refused)

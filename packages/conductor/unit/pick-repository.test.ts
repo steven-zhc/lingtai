@@ -9,7 +9,15 @@ import { GitHubError } from '@lingtai/github'
  */
 import { describe, expect, it } from 'vitest'
 
-import { choose, installLink, listRepositories, setupReturn, verifiedInstallation } from '../src/pick-repository.ts'
+import {
+  alreadyOnboarded,
+  choose,
+  installLink,
+  listRepositories,
+  type Picker,
+  setupReturn,
+  verifiedInstallation,
+} from '../src/pick-repository.ts'
 
 const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' }
 
@@ -259,6 +267,38 @@ describe('choose', () => {
 
   it('says what is wrong with something that is not a repository', async () => {
     expect(choose(await picker(), 'lingtai')).toMatchObject({ ok: false, why: /is not owner\/repo/, fix: null })
+  })
+})
+
+describe('alreadyOnboarded', () => {
+  const listing = (onboarded: 'registered' | 'pending' | 'unrecorded' | 'taken' | null): Picker => ({
+    installations: [
+      {
+        installation: {
+          id: 7,
+          permissions: {},
+          account: 'steven-zhc',
+          repositorySelection: 'selected',
+          htmlUrl: null,
+        },
+        unanswered: null,
+        gaps: [],
+        repositories: [{ owner: 'steven-zhc', repo: 'lingtai', private: true, slug: 'steven-zhc/lingtai', onboarded }],
+      },
+    ],
+    installUrl: null,
+  })
+
+  it('is true for a repository Lingtai has registered, pending or recorded, in any case', () => {
+    for (const state of ['registered', 'pending', 'unrecorded'] as const) {
+      expect(alreadyOnboarded(listing(state), 'Steven-ZHC/Lingtai')).toBe(true)
+    }
+  })
+
+  it('is false for one nobody onboarded, one another project took, and one not on the list', () => {
+    expect(alreadyOnboarded(listing(null), 'steven-zhc/lingtai')).toBe(false)
+    expect(alreadyOnboarded(listing('taken'), 'steven-zhc/lingtai')).toBe(false)
+    expect(alreadyOnboarded(listing('registered'), 'steven-zhc/other')).toBe(false)
   })
 })
 

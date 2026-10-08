@@ -17,7 +17,7 @@
  * project, and a GitHub one picked on the board, reach none of this yet.
  */
 import { checkInstallation } from '@lingtai/conductor/onboard'
-import { choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
+import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
@@ -49,6 +49,13 @@ async function defaultBranchOf(owner: string, repo: string, installation?: Insta
     return null
   }
 }
+
+/**
+ * What a refusal after `askBeforeGithubAdd` says was kept. By then each answer
+ * it was given is already in the recipe, written as it was answered, and none
+ * of it is undone; what has not happened is the registration.
+ */
+export const ADD_KEPT = 'The answers given above are kept in the recipe, and nothing was registered'
 
 export interface AskBeforeGithubAddDeps {
   check: typeof checkInstallation
@@ -125,9 +132,16 @@ export async function askBeforeGithubAdd(
         // (#402 fix round 3). Asked only here, on the refusal, so a
         // successful add still costs the one request `deps.check` already
         // made and nothing more.
+        //
+        // **Not for a project Lingtai already has.** There `choose()` answers
+        // *already onboarded*, a sentence for the picker's offer-it-once
+        // screen, and it would replace `checkInstallation`'s gap list, which
+        // is the real reason for the exit 1 (#402 review, the guard
+        // `first-project.ts` has for the same reason).
         let picked: Choice | null = null
         try {
-          picked = choose(await deps.picker(), slug)
+          const picker = await deps.picker()
+          picked = alreadyOnboarded(picker, slug) ? null : choose(picker, slug)
         } catch {
           picked = null
         }

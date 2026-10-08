@@ -12,7 +12,7 @@ import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
-import { chooseFirstProject } from '../src/first-project.ts'
+import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -678,5 +678,20 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
     const { world } = harness({})
     const result = await chooseFirstProject(world, { github: '' })
     expect(result).toEqual({ refused: expect.stringContaining('--github needs the repository') })
+  })
+})
+
+describe('liveFirstProjectWorld kept (#402 review)', () => {
+  const ask = async () => null
+  const log = () => {}
+
+  it('says nothing was written when the caller wrote nothing', () => {
+    expect(liveFirstProjectWorld({ ask, log }).kept).toBe('Nothing was written')
+  })
+
+  it("carries the caller's sentence when the caller already wrote answers", () => {
+    expect(liveFirstProjectWorld({ ask, log, kept: 'The answers given above are kept' }).kept).toBe(
+      'The answers given above are kept',
+    )
   })
 })

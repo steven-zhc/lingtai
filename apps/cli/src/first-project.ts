@@ -35,11 +35,17 @@ import { basename, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
 import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
-import { choose, listRepositories, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
+import {
+  alreadyOnboarded,
+  choose,
+  listRepositories,
+  type Picker,
+  refusalLines,
+} from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, stateDir } from '@lingtai/env'
-import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
+import { createAppReader, type Installation } from '@lingtai/github'
 import {
   AgentUnresolvedError,
   diskFiles,
@@ -536,17 +542,8 @@ async function runGithubBranch(
   // to run exactly this command for the owner it names. `add()` resolves the
   // installation itself (`installationForRepo`), so the given owner is the
   // disambiguation rather than something `choose()` has to confirm first.
-  const { owner, repo } = parseSlug(givenSlug)
-  const alreadyOnboarded = picker.installations
-    .flatMap((listed) => listed.repositories)
-    .some(
-      (r) =>
-        r.owner.toLowerCase() === owner.toLowerCase() &&
-        r.repo.toLowerCase() === repo.toLowerCase() &&
-        (r.onboarded === 'registered' || r.onboarded === 'pending' || r.onboarded === 'unrecorded'),
-    )
   let installation: Installation | undefined
-  if (!alreadyOnboarded) {
+  if (!alreadyOnboarded(picker, givenSlug)) {
     const picked = choose(picker, givenSlug)
     if (!picked.ok) {
       // `add()`'s own gap listing (`onboard.ts:267-271`) never runs on this
@@ -628,6 +625,13 @@ export async function livePicker(): Promise<Picker> {
 export interface LiveFirstProjectOptions {
   ask: (prompt: string) => Promise<string | null>
   log: (line: string) => void
+  /**
+   * What a refusal says was kept. `Nothing was written` unless the caller
+   * already wrote something: `lingtai add <owner>/<repo>` runs
+   * `askBeforeGithubAdd` first, which writes each answer as it is given
+   * (#396–#399), so a refusal here must not tell the operator nothing was.
+   */
+  kept?: string
 }
 
 /**
@@ -656,9 +660,9 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     files: diskFiles,
     home,
     signedIn: signedInHere,
-    // `lingtai add`'s only caller of this: nothing precedes it with a write to
-    // report kept, unlike `init`'s own `chooseStore` (#394 finding 2).
-    kept: 'Nothing was written',
+    // `lingtai add` is the only caller. With a slug, `askBeforeGithubAdd`
+    // has already written its answers, and `addCommand` says so (#402).
+    kept: options.kept ?? 'Nothing was written',
     register: (payload) =>
       addLocal(
         { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },

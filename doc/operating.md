@@ -628,11 +628,14 @@ move with that store, and `lingtai projection rebuild` never touches them.
 pnpm lingtai add steven-zhc/nextloom-ai-admin
 ```
 
-It checks the installation and its permissions **before it asks or writes
-anything** (`#402`), so a half-onboarded project is not a state that exists —
-when there is an App on this machine to check against. Only then does it ask
-its setup questions and write each answer; only then does it read the recipe,
-hash it, and record `ProjectConfigured`.
+When there is an App on this machine, it checks the installation and its
+permissions **before it asks or writes anything** (`#402`): a project the App
+cannot reach, or reaches without the permissions Lingtai needs, gets nothing
+written. Only then does it ask its setup questions, writing each answer as it is
+given, and only then does it read the recipe, hash it, and record
+`ProjectConfigured`. **A question refused after the first answer leaves the
+answers before it in the recipe**, and the refusal says so; checking the
+installation first does not cover that.
 
 **With no GitHub App configured on this machine at all, there is nothing yet to
 check, so this command skips straight to its setup questions** — exactly as it
