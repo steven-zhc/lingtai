@@ -40,15 +40,14 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT, boardPort, githubApp } from '@lingtai/env'
+import { BOARD_PORT, boardPort } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
-import { createGitHubClient, installationForRepo, parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { diskFiles, parseDuration, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
+import { parseDuration } from '@lingtai/recipe'
 
-import { askAgents } from './agents.ts'
+import { askBeforeGithubAdd } from './add-github.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -72,9 +71,8 @@ import { envCommand } from './env.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from './first-project.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
-import { askLanding, askLimits, liveQuestionWorld } from './landing.ts'
 import { pauseCommand } from './pause.ts'
-import { liveAsk, type QuestionWorld } from './question.ts'
+import { liveAsk } from './question.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -85,9 +83,7 @@ import {
   restartSupervised,
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
-import { askRuntimes } from './runtimes.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
-import { askKinds, askTickets, liveHistory } from './source.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
@@ -395,160 +391,6 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
     }
   }
   return { positional, flags }
-}
-
-/**
- * The repository's default branch, through the same three calls `add()` makes
- * to read it (`onboard.ts:251-276`) — asked here only as a fallback for the
- * land question's own default, and answered null on any failure, since a
- * question's `detected` is just one more thing a person can type past (#399).
- */
-async function defaultBranchOf(owner: string, repo: string): Promise<string | null> {
-  try {
-    const auth = githubApp()
-    const installation = await installationForRepo(auth, owner, repo)
-    const client = await createGitHubClient({ auth, owner, repo, installation })
-    return await client.defaultBranch()
-  } catch {
-    return null
-  }
-}
-
-/**
- * What `lingtai add` asks and checks before a GitHub project is registered,
- * once a slug is known (#398, #399): `--land` against `--base`, then the
- * writer and reviewer, then — once a recipe is already there — the ticket
- * source and the kinds (#396), the landing branch and the limits. Each
- * answer is written as soon as it is given, not collected for one write at
- * the end. Null to go on to the registration, or the exit code to stop with.
- * A local project, and a GitHub one picked on the board, reach none of this
- * yet.
- */
-async function askBeforeGithubAdd(slug: string, flags: Record<string, string>): Promise<number | null> {
-  // Tier, gates and the base are the recipe's, in the managed repository, which
-  // is why this takes a slug and — at most — the branch to find the file on.
-  // `named`, because a person typed it here: a recipe that contradicts `--base`
-  // is refused rather than adopted (#75), which is a refusal only a typed flag
-  // may earn.
-  const base = flags['base']
-  const land = flags['land']
-  // `--land <branch>` and `--base` are different questions — where to read the
-  // recipe from, and what it should land on — and a person who named both must
-  // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--base` against the recipe's own `repo.base`).
-  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
-    console.error(
-      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
-        'silently. Nothing was written',
-    )
-    return 2
-  }
-
-  // Which agent writes the change, and which cold-reviews it, is asked here —
-  // before `add()` resolves the recipe — because `resolveLocalRecipe` throws
-  // `AgentUnresolvedError` on a file naming no `runtime.agent` the moment more
-  // than one runtime is signed in (`#398`). An absent recipe is not created
-  // here (`doc/design/398.md`): with no file, `add()` still refuses with
-  // `RecipeMissingError` as it always has, except a flag naming an agent is
-  // refused by name rather than silently ignored.
-  const { owner, repo } = parseSlug(slug)
-  const path = recipePath(repo)
-  const existing = await diskFiles.read(path)
-  const agentFlags = {
-    agent: flags['agent'],
-    model: flags['model'],
-    reviewer: flags['reviewer'],
-    reviewerModel: flags['reviewer-model'],
-  }
-  if (existing === null) {
-    if (Object.values(agentFlags).some((v) => v !== undefined)) {
-      console.error(`--agent needs a recipe to write into; there is none at ${path}. Nothing was written`)
-      return 1
-    }
-  } else {
-    // A file that `extends:` a preset and writes no `steps:` of its own
-    // inherits every step from the preset — the first `steps.*` answer below
-    // pins that preset's steps into the file for good (`write.ts`'s
-    // `widenStepsIfNeeded`). Named here, before the writer question, because
-    // showing that to a person is this caller's line to print, not
-    // `agents.ts`'s.
-    const extendsPreset = await readRecipeKey(repo, ['extends'])
-    const stepsWritten = await readRecipeKey(repo, ['steps'])
-    if (typeof extendsPreset === 'string' && stepsWritten === null) {
-      console.log(
-        `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
-          "preset's steps into the file, so a later change to the preset no longer reaches this project",
-      )
-    }
-
-    const runtimes = await askRuntimes()
-    const world: QuestionWorld = { ask: liveAsk, log: (line) => console.log(line) }
-    const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
-    if ('refused' in asked) {
-      console.error(asked.refused)
-      return 1
-    }
-    // `changes` sets an action's `agent:` (or creates it) and `modelChanges`
-    // that same action's `model:`, written one after the other.
-    await setRecipe(repo, asked.changes)
-    await setRecipe(repo, asked.modelChanges)
-  }
-
-  // The questions are asked before add() runs, and only when the recipe is
-  // already there — an absent one is add()'s own refusal to speak, and
-  // nothing here seeds a file that cannot resolve on its own (#395).
-  if (existsSync(path)) {
-    const world = liveQuestionWorld()
-
-    // #396's two questions, asked and written before `askLanding` — each as
-    // soon as it is answered, so a Ctrl+C at either keeps what came before it.
-    // `addCommand` hands this same `flags` object to `chooseFirstProject`
-    // once this function returns — deleted as soon as each is read, so that
-    // call's `runGithubBranch` does not see them again and refuse what this
-    // function already asked and wrote (#396 fix round, finding 1).
-    const givenTickets = flags['tickets'] ?? null
-    delete flags['tickets']
-    const tickets = await askTickets(world, repo, false, givenTickets, {
-      history: liveHistory,
-      kept: 'the writer and reviewer chosen above are kept',
-    })
-    if ('refused' in tickets) {
-      console.error(tickets.refused)
-      return 1
-    }
-    if (tickets.changes.length > 0) await setRecipe(repo, tickets.changes)
-
-    const givenKinds = flags['kinds'] ?? null
-    delete flags['kinds']
-    const kinds = await askKinds(world, repo, givenKinds, {
-      kept: 'the writer, reviewer and ticket source chosen above are kept',
-    })
-    if ('refused' in kinds) {
-      console.error(kinds.refused)
-      return 1
-    }
-    if (kinds.changes.length > 0) await setRecipe(repo, kinds.changes)
-
-    const landed = await askLanding(world, repo, land ?? null, {
-      defaultBranch: () => defaultBranchOf(owner, repo),
-    })
-    if ('refused' in landed) {
-      console.error(landed.refused)
-      return 1
-    }
-    const limited = await askLimits(
-      world,
-      repo,
-      { rounds: flags['rounds'], wall: flags['wall'], budget: flags['budget'] },
-      {},
-    )
-    if ('refused' in limited) {
-      console.error(limited.refused)
-      return 1
-    }
-  }
-
-  return null
 }
 
 /**

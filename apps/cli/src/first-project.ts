@@ -35,7 +35,7 @@ import { basename, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
 import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
-import { choose, listRepositories, type Picker } from '@lingtai/conductor/pick-repository'
+import { choose, listRepositories, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, stateDir } from '@lingtai/env'
@@ -553,13 +553,7 @@ async function runGithubBranch(
       // path — `choose` refused before `add` was ever called — so the detail
       // it would have printed is folded into the refusal here instead (#394
       // finding: a scope gap must not come back as one bare sentence).
-      const lines = [picked.why]
-      if (picked.gaps.length > 0) {
-        lines.push('the installation is missing permissions:')
-        for (const g of picked.gaps) lines.push(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
-      }
-      if (picked.fix !== null) lines.push(`${picked.fix.label}: ${picked.fix.href}`)
-      return { refused: lines.join('\n') }
+      return { refused: refusalLines(picked).join('\n') }
     }
     installation = picked.installation
   }
@@ -617,8 +611,14 @@ async function liveInstallUrl(): Promise<string | null> {
   return app.configured && app.ok ? `https://github.com/apps/${app.slug}/installations/new` : null
 }
 
-/** `lingtai add`'s own — `init` never gives `chooseFirstProject` a slug, so it never reaches this (#394). */
-async function livePicker(): Promise<Picker> {
+/**
+ * `lingtai add`'s own — `init` never gives `chooseFirstProject` a slug, so it
+ * never reaches this (#394). Exported for `add-github.ts`'s early check,
+ * which calls `choose()` on the same picker to name a refused slug by the
+ * same sentence and deep link this module's own `runGithubBranch` would have
+ * (#402 fix round 3).
+ */
+export async function livePicker(): Promise<Picker> {
   const credentials = githubApp()
   const reader = createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
   const [projects, installUrl] = await Promise.all([loadAllProjects(), liveInstallUrl()])

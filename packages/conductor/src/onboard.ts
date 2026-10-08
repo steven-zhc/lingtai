@@ -11,10 +11,13 @@
  * recipe from a branch. Nothing depends on it; it is not a thing to extend.
  *
  * The order matters. Permissions are checked *before* anything is written, so a
- * half-onboarded project is not a state that exists. The failure this guards
- * against is specific: a fine-grained PAT that covered the admin repository's
- * submodule but not the repository itself produced a day of 403s on CI, and
- * nothing anywhere said "wrong scope".
+ * half-onboarded project is not a state that exists. Checked twice, by two
+ * callers: `lingtai add` checks before it asks a single question, through
+ * `checkInstallation` (#402, `apps/cli/src/add-github.ts`); `add` below checks
+ * again before it registers, which is what `recheck` relies on. The failure
+ * this guards against is specific: a fine-grained PAT that covered the admin
+ * repository's submodule but not the repository itself produced a day of 403s
+ * on CI, and nothing anywhere said "wrong scope".
  *
  * The base is not this command's to decide, and `--base` is not a second way of
  * deciding it (#75). The recipe's own `repo.base` says what the base *is*.
@@ -244,19 +247,45 @@ export async function governing(
   return { ok: true, resolved: atDeclared, adoptedFrom: from.ref }
 }
 
-export async function add(options: AddOptions, log = console.log): Promise<number> {
-  const { owner, repo } = parseSlug(options.slug)
-  const auth = githubApp()
+/**
+ * Steps 1 and 2 of onboarding, and the whole of what a check needs before a
+ * recipe can be asked about or written: is the App installed on this
+ * repository, and does it grant what Lingtai needs. Lifted out of `add` so
+ * `askBeforeGithubAdd` (`apps/cli/src/add-github.ts`) can run it before it
+ * asks a single question or writes a single answer (#402) — not just before
+ * `add` reads or registers a recipe, which is as far as `add` alone ever
+ * reached.
+ *
+ * `known` skips the lookup, exactly as `options.installation` does in `add`
+ * below, but never the permission check: a `Recheck` or an early check that
+ * already asked GitHub for the installation must not be allowed to also skip
+ * asking whether it grants what Lingtai needs.
+ *
+ * Returns the installation on success, or null having already logged the same
+ * lines `add` always has — `NotInstalledError`'s message, or the gap list
+ * ending "Fix them in the App's settings, then re-run." Any other error is
+ * rethrown rather than read as "not installed": a 502 is not a missing
+ * installation, and swallowing it here would hide an outage behind onboarding
+ * advice that does not apply.
+ */
+export async function checkInstallation(
+  slug: string,
+  log: (line: string) => void,
+  known?: Installation,
+  lookup: (owner: string, repo: string) => Promise<Installation> = (owner, repo) =>
+    installationForRepo(githubApp(), owner, repo),
+): Promise<Installation | null> {
+  const { owner, repo } = parseSlug(slug)
 
   // 1. Is the App installed here at all? This is the question a PAT cannot be
   //    asked, and the reason 0006 chose an App.
-  let installation = options.installation
+  let installation = known
   try {
-    installation ??= await installationForRepo(auth, owner, repo)
+    installation ??= await lookup(owner, repo)
   } catch (err) {
     if (err instanceof NotInstalledError) {
       log(err.message)
-      return 1
+      return null
     }
     throw err
   }
@@ -269,9 +298,19 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     log('the installation is missing permissions:')
     for (const g of gaps) log(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
     log("Fix them in the App's settings, then re-run.")
-    return 1
+    return null
   }
   log('permissions: issues, contents, pull requests write; metadata read')
+
+  return installation
+}
+
+export async function add(options: AddOptions, log = console.log): Promise<number> {
+  const { owner, repo } = parseSlug(options.slug)
+  const auth = githubApp()
+
+  const installation = await checkInstallation(options.slug, log, options.installation)
+  if (installation === null) return 1
 
   const client = await createGitHubClient({ auth, owner, repo, installation })
   log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`)

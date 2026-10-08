@@ -14,8 +14,6 @@
  * `answers.ts`, so the conductor's own test can apply the same change set and
  * prove it holds or lands a pass, not only that it resolves.
  */
-import { createInterface } from 'node:readline/promises'
-
 import { passCeiling } from '@lingtai/conductor/ceiling'
 import { paint } from '@lingtai/env/colour'
 import {
@@ -40,22 +38,6 @@ import {
 } from '@lingtai/recipe'
 
 import { type QuestionWorld, question } from './question.ts'
-
-/** `console` and `stdin`, for `addCommand` — no TTY answers every question null (#392). */
-export function liveQuestionWorld(): QuestionWorld {
-  return {
-    log: (line) => console.log(line),
-    ask: async (prompt) => {
-      if (!process.stdin.isTTY) return null
-      const rl = createInterface({ input: process.stdin, output: process.stdout })
-      try {
-        return await rl.question(prompt)
-      } finally {
-        rl.close()
-      }
-    },
-  }
-}
 
 export interface LandingDeps {
   home?: string
