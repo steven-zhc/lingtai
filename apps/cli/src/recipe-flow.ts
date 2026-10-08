@@ -53,8 +53,21 @@ export const ENV_PLANT_AT = '.env.local'
  * printed as that section's heading before its questions, on both the
  * existing-file and the absent-file paths, and written as the comment above
  * the same block when a file is created (`write.ts`'s `setRecipe`, `said`).
- * Every key here exists once `Recipe.parse` has filled the schema's
- * defaults — `emitRecipe` throws otherwise (`emit.ts:83`).
+ *
+ * **Not every key here is guaranteed to exist, and this list does not claim
+ * it is.** `source.tickets` is `TicketSource.optional()` with no schema
+ * default (`recipe.ts:1108`) — only the explicit fallback below guarantees it
+ * on the absent-file path. `repo` and `env` are required fields with no
+ * default either; they exist only because both callers of `askRecipe` seed
+ * them before asking anything. The rest — `runtime`, both `steps.implement`
+ * and `steps.review`, `steps.prepared`, `steps.build` and `source.kinds` —
+ * are written unconditionally by their own question on an absent file, for
+ * reasons local to each (`agents.ts`, `setup-build.ts`, `askKinds` above).
+ * `steps.proposed` and `runtime.limits` may genuinely be missing when
+ * `write.ts`'s creation write runs — `askLanding`/`askLimits` have not asked
+ * yet — and `write.ts`'s `commentWritten` leaves a block it is not there to
+ * comment rather than inventing a value nobody chose (#432 fix round,
+ * findings 2 and 3).
  */
 export const SAID: Said = {
   runtime: "which agent's pass this is",
@@ -217,13 +230,16 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
 
   if (absent) {
     const all = [...at.seeds, ...collected]
-    // `source.tickets` has no schema default (`recipe.ts:1108`) — a GitHub
-    // project that pressed enter on `askTickets`'s own current answer wrote
-    // no change at all, and `emitRecipe` throws on a `said` key the recipe
-    // does not have (#432's Watch out).
+    // `source.tickets` has no schema default (`recipe.ts:1108`) — a project
+    // that pressed enter on `askTickets`'s own current answer wrote no change
+    // at all. Fall back to `tickets.current` — the source `askTickets`
+    // actually decided, history included, never a bare `'github'` literal:
+    // a project read off an absent file whose log already has `db`-sourced
+    // work items must keep that source, not have it silently overridden
+    // (#432 fix round, finding 1).
     const changes = all.some((c) => c.path.join('.') === 'source.tickets')
       ? all
-      : [...all, { path: ['source', 'tickets'], value: 'github' }]
+      : [...all, { path: ['source', 'tickets'], value: tickets.current }]
     announce(world, ['env'])
     const wrote = await writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
     if ('refused' in wrote) return wrote

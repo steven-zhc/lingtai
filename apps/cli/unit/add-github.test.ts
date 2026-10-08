@@ -280,16 +280,35 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(resolved.source.tickets).toBe('github')
     expect(resolved.runtime.agent).toBe('claude-code')
 
+    // `steps.proposed` and `runtime.limits` are not yet decided at the point
+    // this write happens — `askLanding`/`askLimits` have not asked — so they
+    // alone may be missing rather than carry a comment (#432 fix round,
+    // finding 2).
     const doc = parseDocument(text)
     for (const [dotted, sentence] of Object.entries(SAID)) {
       const keyPath = dotted.split('.')
       const parent = (keyPath.length === 1 ? doc.contents : doc.getIn(keyPath.slice(0, -1), true)) as YAMLMap
       expect(isMap(parent), dotted).toBe(true)
       const pair = parent.items.find((p) => isScalar(p.key) && p.key.value === keyPath[keyPath.length - 1])
-      expect(pair, dotted).toBeDefined()
-      const comment = (pair!.key as Node).commentBefore ?? (parent.items[0] === pair ? parent.commentBefore : '') ?? ''
+      if (!pair) {
+        expect(['steps.proposed', 'runtime.limits'], dotted).toContain(dotted)
+        continue
+      }
+      const comment = (pair.key as Node).commentBefore ?? (parent.items[0] === pair ? parent.commentBefore : '') ?? ''
       expect(comment.replace(/\s+/g, ' ').trim(), dotted).toBe(sentence)
     }
+
+    // The file carries only what was asked — no schema or plugin-schema
+    // default spelled out as though it had been chosen (#432 fix round,
+    // finding 2's own failure scenario).
+    expect(doc.getIn(['runtime', 'limits'])).toBeUndefined()
+    expect(doc.getIn(['runtime', 'tier'])).toBeUndefined()
+    expect(doc.getIn(['runtime', 'budget'])).toBeUndefined()
+    expect(doc.getIn(['discuss'])).toBeUndefined()
+    expect(doc.getIn(['source', 'backoff'])).toBeUndefined()
+    expect(doc.getIn(['repo', 'submodules'])).toBeUndefined()
+    expect(doc.getIn(['env', 'deny'])).toBeUndefined()
+    expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
   })
 
   it('refuses by name, before asking a runtime whether it is signed in, when there is no --base and no default branch to seed an absent file (#432)', async () => {

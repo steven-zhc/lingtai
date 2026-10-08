@@ -98,9 +98,30 @@ describe('askRecipe — an absent file (#432)', () => {
     expect(resolved.source.kinds).toEqual(['bug', 'feature', 'documentation'])
     expect(resolved.runtime.agent).toBe('claude-code')
 
+    // `steps.proposed` and `runtime.limits` are not yet decided at the point
+    // this write happens — `askLanding`/`askLimits` have not asked — so they
+    // alone may carry no comment; every other block does (#432 fix round,
+    // finding 2).
     for (const [dotted, sentence] of Object.entries(SAID)) {
-      expect(commentAbove(text, dotted), dotted).toBe(sentence)
+      const comment = commentAbove(text, dotted)
+      if (comment === '') expect(['steps.proposed', 'runtime.limits'], dotted).toContain(dotted)
+      else expect(comment, dotted).toBe(sentence)
     }
+
+    // The file carries only what was asked — no schema or plugin-schema
+    // default spelled out as though it had been chosen (#432 fix round,
+    // finding 2's own failure scenario).
+    const doc = parseDocument(text)
+    expect(doc.getIn(['runtime', 'limits'])).toBeUndefined()
+    expect(doc.getIn(['runtime', 'tier'])).toBeUndefined()
+    expect(doc.getIn(['runtime', 'budget'])).toBeUndefined()
+    expect(doc.getIn(['discuss'])).toBeUndefined()
+    expect(doc.getIn(['source', 'backoff'])).toBeUndefined()
+    expect(doc.getIn(['repo', 'submodules'])).toBeUndefined()
+    expect(doc.getIn(['env', 'deny'])).toBeUndefined()
+    expect(doc.getIn(['env', 'required'])).toBeUndefined()
+    expect(doc.getIn(['env', 'refuseHosts'])).toBeUndefined()
+    expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
   })
 
   it('creates a GitHub project once, falling back to source.tickets: github when the question took its own default', async () => {

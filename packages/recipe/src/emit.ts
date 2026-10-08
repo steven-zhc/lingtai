@@ -69,9 +69,22 @@ export interface RecipeChange {
 const RENDER = { lineWidth: 0, flowCollectionPadding: false } as const
 const COMMENT_WIDTH = 78
 
-/** A new recipe file, with a comment above every block in `said`. */
-export function emitRecipe(recipe: Recipe, said: Said = {}): string {
-  const doc = new Document(Recipe.parse(recipe))
+/**
+ * The comment-adding sweep both `emitRecipe` and `commentWritten` share: a
+ * blank line between every top-level block, then a comment above whichever
+ * of `said`'s blocks the document actually has.
+ *
+ * `strict` is the one way the two callers differ. `emitRecipe` builds `doc`
+ * from a whole, schema-filled `Recipe`, so every block `said` could legally
+ * name is there, and a sentence with nowhere to go is a reason the file
+ * silently lost — a typo'd path, say. `commentWritten` builds `doc` from
+ * exactly what was written and nothing more (`write.ts`'s reason for
+ * existing, #432 fix round finding 2), so a block not yet decided — `--land`
+ * and `--rounds` not asked yet, at the point `write.ts`'s creation write
+ * runs — is routine, not a bug, and is left without a comment instead of
+ * thrown on.
+ */
+function commentBlocks(doc: Document, said: Said, strict: boolean): void {
   const root = doc.contents as YAMLMap
   root.items.forEach((pair, i) => {
     if (i > 0) (pair.key as Node).spaceBefore = true
@@ -80,13 +93,34 @@ export function emitRecipe(recipe: Recipe, said: Said = {}): string {
     const path = dotted.split('.')
     const parent = path.length === 1 ? root : doc.getIn(path.slice(0, -1), true)
     const pair = isMap(parent) ? findPair(parent, path[path.length - 1]!) : undefined
-    // A sentence with nowhere to go is a reason the file silently lost.
-    if (!pair) throw new Error(`said names "${dotted}", which the recipe does not have`)
+    if (!pair) {
+      if (strict) throw new Error(`said names "${dotted}", which the recipe does not have`)
+      continue
+    }
     const indent = 2 * (path.length - 1)
     ;(pair.key as Node).commentBefore = wrap(sentence, COMMENT_WIDTH - indent - 2)
       .map((line) => (line === '' ? '' : ` ${line}`))
       .join('\n')
   }
+}
+
+/** A new recipe file, with a comment above every block in `said`. */
+export function emitRecipe(recipe: Recipe, said: Said = {}): string {
+  const doc = new Document(Recipe.parse(recipe))
+  commentBlocks(doc, said, true)
+  return doc.toString(RENDER)
+}
+
+/**
+ * `text`, with a comment above whichever of `said`'s blocks it already
+ * writes — never filling in the rest with a schema or plugin-schema default,
+ * unlike `emitRecipe`. `write.ts`'s creation write calls this because that
+ * text is exactly what the wizard's first-run answers set, nothing a person
+ * never chose (#432 fix round, finding 2).
+ */
+export function commentWritten(text: string, said: Said): string {
+  const doc = parseDocument(text)
+  commentBlocks(doc, said, false)
   return doc.toString(RENDER)
 }
 

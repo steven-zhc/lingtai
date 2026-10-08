@@ -30,6 +30,16 @@ import { type QuestionWorld, question } from './question.ts'
 
 export type SourceAnswer = { changes: RecipeChange[] } | { refused: string }
 
+/**
+ * `askTickets`'s own answer, plus `current` — the source it decided holds,
+ * whether or not a change was written for it. `recipe-flow.ts`'s absent-file
+ * path needs this to write `source.tickets` explicitly (it has no schema
+ * default, `recipe.ts:1108`): without it, that fallback had only a bare
+ * `'github'` literal to reach for, which overrode a project's real,
+ * history-evidenced source on an absent file (#432 fix round, finding 1).
+ */
+export type TicketsAnswer = { changes: RecipeChange[]; current: TicketSource } | { refused: string }
+
 export interface SourceDeps {
   home?: string
   files?: RecipeFiles
@@ -78,7 +88,7 @@ export async function askTickets(
   local: boolean,
   given: string | null,
   deps: TicketsDeps,
-): Promise<SourceAnswer> {
+): Promise<TicketsAnswer> {
   if (given !== null && given !== 'github' && given !== 'db') {
     return { refused: `${given} is not one of github, db` }
   }
@@ -90,9 +100,16 @@ export async function askTickets(
   // missing, say — still has a `source.tickets` worth reading, and
   // `resolvedRecipe`'s null answers "unknown" for that file the same as for
   // one that is absent. `ticketSourceOf`'s own default applies the same way
-  // either side of that: an absent key, like an absent file, reads as `github`.
+  // either side of that: an absent key, like an absent file, reads as `github`
+  // — unless `history` already proves otherwise. A `db ticket #<n>` entry is
+  // only ever written by `dbTickets.createIssue` (`liveHistory`'s own
+  // comment), so it is decisive even where there is no file at all: a project
+  // re-read on a second machine or a re-provisioned `~/.lingtai` must not read
+  // as `github` merely because the file naming its real source is not here
+  // (#432 fix round, finding 1).
   const rawTickets = await readRecipeKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
-  const current: TicketSource = rawTickets === 'db' ? 'db' : 'github'
+  const current: TicketSource =
+    rawTickets === 'db' || (rawTickets === null && history.some((h) => h.startsWith('db ticket #'))) ? 'db' : 'github'
 
   if (history.length > 0) {
     if (given !== null && given !== current) {
@@ -109,7 +126,7 @@ export async function askTickets(
           'and a different source would number its tickets into those same streams (#381)',
       ),
     )
-    return { changes: [] }
+    return { changes: [], current }
   }
 
   if (local) {
@@ -121,7 +138,7 @@ export async function askTickets(
       }
     }
     world.log(paint.pass('tickets       db — a local project has no GitHub issues to read'))
-    return current === 'db' ? { changes: [] } : { changes: [ticketsChange('db')] }
+    return current === 'db' ? { changes: [], current: 'db' } : { changes: [ticketsChange('db')], current: 'db' }
   }
 
   const result = await question(world, {
@@ -135,7 +152,10 @@ export async function askTickets(
   })
   if ('refused' in result) return result
   world.log(paint.pass(`tickets       ${result.answer}`))
-  return result.answer === current ? { changes: [] } : { changes: [ticketsChange(result.answer as TicketSource)] }
+  const decided = result.answer as TicketSource
+  return decided === current
+    ? { changes: [], current: decided }
+    : { changes: [ticketsChange(decided)], current: decided }
 }
 
 function parseKinds(answer: string): string[] | string {
