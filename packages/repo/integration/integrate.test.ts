@@ -192,7 +192,7 @@ describe('integrate', () => {
     expect(log.stdout).not.toContain('work on agent/5')
   })
 
-  it('refuses when verification after merging the base in fails', async () => {
+  it('refuses when verification after merging the branch into the base fails', async () => {
     await branchWith('agent/6', { 'src/c.ts': 'export const c = 1;\n' })
 
     const result = await integrate({
@@ -231,8 +231,8 @@ describe('integrate', () => {
    * whole run of pushes is one attempt and one terminal, and this asserts the
    * count of each.
    *
-   * **The interleaving is made, not waited for.** `verify` runs after the base
-   * has been fetched and merged in and before the push, so the first
+   * **The interleaving is made, not waited for.** `verify` runs after the branch
+   * has been merged into the fetched base and before the push, so the first
    * integration announcing that it is there is the proof both were computed
    * against the same base. This used to be a 1.5s sleep, which on a loaded
    * `test:db` run let the two serialise and failed a tree with nothing wrong
@@ -296,7 +296,7 @@ describe('integrate', () => {
    *
    * A base that wins the race every time is a person's to hear about, and the
    * card's move — requeue — is the honest one for it. `verify` runs after the
-   * base is merged in and before the push, so pushing a commit from there makes
+   * branch is merged into the base and before the push, so pushing a commit from there makes
    * every one of this integration's pushes a lost race, with no timing in it.
    *
    * **One refusal, not four.** Four pushes were lost and a person is told once,

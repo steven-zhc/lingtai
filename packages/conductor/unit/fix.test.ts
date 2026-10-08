@@ -1474,13 +1474,14 @@ describe('what a conflict tells the fixer', () => {
 
   it('tells the agent to run the merge itself, not that one is already in progress', () => {
     expect(brief).toContain('git merge `main`')
-    expect(brief).not.toMatch(/middle of that merge/i)
+    expect(brief).toMatch(/this branch does\s+not merge into it cleanly/i)
+    expect(brief).toMatch(/worktree that\s+is already gone/i)
     expect(brief).not.toContain('origin/main')
   })
 
   it('does not promise a clean tree nothing has verified, and gives an account if it is not', () => {
-    expect(brief).not.toMatch(/tree is clean/i)
-    expect(brief).not.toMatch(/nothing is mid-merge/i)
+    expect(brief).not.toMatch(/arrive at a clean tree/i)
+    expect(brief).not.toMatch(/no merge in progress/i)
     expect(brief).toMatch(/already holds changes it has not seen/i)
   })
 

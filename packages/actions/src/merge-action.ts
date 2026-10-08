@@ -27,7 +27,7 @@
  * to prevent.
  *
  * **It wraps and does not reimplement.** The lane itself is `integrate` in
- * `packages/repo/src/integrate.ts` — the base in, verify, the base out — and the
+ * `packages/repo/src/integrate.ts` — the branch into the base, verify, push — and the
  * caller hands it over as `MergeActionDeps.land` for the reason `worktree:` is
  * handed the cut: only a caller with a machine under it can build one, and an
  * action built without one is refused by name rather than quietly not landing

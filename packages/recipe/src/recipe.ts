@@ -888,7 +888,7 @@ export const worktreePlugin = definePlugin('worktree', {
 
 /**
  * **The same branch, landed** — a name for the integrator,
- * `packages/repo/src/integrate.ts`: the base in, verify, the base out.
+ * `packages/repo/src/integrate.ts`: the branch into the base, verify, push.
  *
  * **It declares no `base:`, and that is deliberate rather than an omission**
  * (0061 §4). `base` is one value that flows: `worktree.ts:133` and
@@ -1712,8 +1712,9 @@ const ONLY_THE_LANE_LANDS =
   'so a `merge:` is read there and a pass lands once: every step before it has passed by the time ' +
   'it runs, which is what makes the merge the one the review was of, and a lane declared earlier on ' +
   'the spine would put a change on `main` while the steps after it were still deciding about it. ' +
-  'Written at `merge` it is read — `integrate` in `packages/repo/src/integrate.ts` merges the base ' +
-  'in, re-verifies against what landed in the meantime, merges out and pushes — and **it reports a ' +
+  'Written at `merge` it is read — `integrate` in `packages/repo/src/integrate.ts` merges the branch ' +
+  'into the base in a throwaway worktree, re-verifies against what landed in the meantime, and ' +
+  'pushes — and **it reports a ' +
   "reason and decides nothing** (0058 §3c): a refusal carries the lane's own `conflict` or " +
   '`verify-failed` to `proposed`, which is where a round is bought for it. It declares no `base:` ' +
   'either, and that is deliberate rather than missing (0061 §4): the base is one value that flows, ' +

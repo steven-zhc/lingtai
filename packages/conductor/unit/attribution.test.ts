@@ -227,7 +227,9 @@ describe('a refusal, read for a person', () => {
   it('recommends the queue for a conflict, and names no merge already tried', () => {
     const d = read('conflict')
     expect(d.what).toBe('agent/112 does not merge into develop.')
-    expect(d.done).not.toContain('was merged in first')
+    expect(d.done).toBe(
+      'No further agent is coming. Re-implementing a branch that already exists is the expensive wrong answer (0039).',
+    )
     expect(d.recommendation?.why).not.toContain('mechanical remedy')
     expect(d.recommendation).toEqual({
       action: 'requeue',

@@ -326,7 +326,7 @@ Depends on {{rt-cc}}.
 **Phase 1** · Where the old loop failed silently six different ways.
 
 ## What
-Merge base in, verify, then merge out — in a worktree the integrator owns, under
+Merge the branch into the base, verify, then push — in a worktree the integrator owns, under
 `pg_advisory_lock('merge:' || project || ':' || base)`. **Never in your checkout.**
 
 ## Done when

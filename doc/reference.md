@@ -825,9 +825,9 @@ types costs nothing against a store with no rows in it. So, in one commit:
 - **`verify-failed`** is the `RefusalReason` the merge lane records, and what
   `judge:`'s `when:` reads. `gate-failed` was 0058 §3c's own complaint about
   itself — *nothing conflicted, and no gate the recipe declared is what failed* —
-  and what does fail there is the lane's own verify after merging the base in.
+  and what does fail there is the lane's own verify after merging the branch in.
   **`conflict` stays, and that is the other half of the same decision**: the two
-  are one thing at two depths — the base came in, and either git could not merge
+  are one thing at two depths — the branch went into the base, and either git could not merge
   it or it merged and the result no longer holds — and `conflict` was already
   saying what the lane found. It was the other one that named a machine part.
 - **`verifying`** is the `LabelState` and `task_view.state` value, and the key
@@ -1615,10 +1615,10 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/even
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about
 itself — *nothing conflicted, and no gate the recipe declared is what failed* —
-because what fails there is the lane's own verify after merging the base in.
+because what fails there is the lane's own verify after merging the branch in.
 Renaming one of a pair and leaving the other is half an enum, so the pair was
-the unit: `conflict` and `verify-failed` are one thing at two depths — the base
-came in, and either git could not merge it or it merged and the result no longer
+the unit: `conflict` and `verify-failed` are one thing at two depths — the branch
+went into the base, and either git could not merge it or it merged and the result no longer
 holds — and `conflict` was already saying what the lane found. It was the other
 one that named a machine part. Over the log before the reset, `merge` refused 32
 times: **26 of them this reason, 6 `conflict`**

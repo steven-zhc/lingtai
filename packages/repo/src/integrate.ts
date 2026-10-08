@@ -3,7 +3,7 @@ import { rm, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 
 /**
- * The integrator: merge base in, verify, merge out.
+ * The integrator: merge the branch into the base in a throwaway worktree, verify, push.
  *
  * This is the file that exists because of a specific, expensive silence. The old
  * loop's `integrate()` had six `return 1` paths and not one of them emitted a
@@ -85,7 +85,7 @@ export interface IntegrateOptions {
   gitEnv?: NodeJS.ProcessEnv
   store?: EventStore
   /**
-   * Re-run after merging the base in, before merging out. The gates already ran
+   * Re-run after the branch is merged into the base, before the push. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
    * in the meantime" question, which is a different one.
    */
@@ -445,7 +445,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           // question of whether it still works beside what landed since.
           return yield* refuse(
             'verify-failed',
-            `verification after merging ${options.base} in failed:\n${verified.evidence}`,
+            `verification after merging ${options.branch} into ${options.base} failed:\n${verified.evidence}`,
           )
         }
       }
