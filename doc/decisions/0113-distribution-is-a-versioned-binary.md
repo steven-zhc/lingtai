@@ -42,8 +42,8 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
    builds of one commit have one layout.
 4. **The binary is a SEA built with `node --build-sea`.** `pnpm binary`
    (`apps/release/src/binary.ts`) writes `dist/lingtai` beside the bundle; it
-   needs Node 25.5 or later to build, while the script runs on `engines`
-   (`>=22.13`). Code cache and snapshot are off. Inside a SEA the bundle treats
+   needs Node 25.5 or later to build, and runs on the repository's own Node
+   (0101 §1). Code cache and snapshot are off. Inside a SEA the bundle treats
    `process.execPath` as its own location, so `board/` is found beside the
    binary.
 5. **Four platforms, each built and run on itself.** `macos-arm64`,
@@ -123,8 +123,8 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
   rollback offline and safe under a running daemon.
 - A domain that moves breaks new installs only; installed copies talk to GitHub
   Releases directly.
-- The Node version must agree in three places: `.node-version`, `release.yml`
-  and the machine building binaries.
+- The Node version is written once, in `.node-version`, and `engines`, every
+  workflow and the machine building binaries agree with it (0101 §1).
 
 ## Not built yet
 

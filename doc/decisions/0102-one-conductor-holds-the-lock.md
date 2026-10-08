@@ -181,7 +181,7 @@ say what code it is running and who started it.
 - `ConductorStarted.handoff` and `ConductorShutdownWithdrawn.handoff` stay in the
   schema so that older events still parse. Nothing writes them, and the fold reads
   them as nothing.
-- The lock depends on `node:sqlite`, which is why Node `>=22.13` is required. The
+- The lock depends on `node:sqlite`, on the Node 0101 names. The
   lock's tests run on Linux and macOS both.
 
 ---

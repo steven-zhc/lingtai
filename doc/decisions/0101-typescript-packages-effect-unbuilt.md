@@ -27,7 +27,10 @@ turn limit, so every idiom it adopts is paid for again on every run.
 
 ## Decision
 
-1. **TypeScript throughout, on Node `>=22.13`, in one pnpm workspace.** The
+1. **TypeScript throughout, on Node `>=26`, in one pnpm workspace.** The
+   version is written once, in `.node-version`: `engines`, every workflow and
+   the machine building binaries read it from there, because a floor below the
+   Node the repository is actually run on is a floor nothing tests (#430). The
    workspace is `packages/*` and `apps/*` (`pnpm-workspace.yaml`), with one
    `tsconfig.base.json`: `strict`, `noUncheckedIndexedAccess`,
    `verbatimModuleSyntax`, `isolatedModules`, `noEmit`. Events are zod schemas in

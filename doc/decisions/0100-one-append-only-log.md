@@ -95,7 +95,7 @@ same URL can be visible from a checkout and invisible to a daemon started from
    dual-write or migration between them. The contract has to agree from now on,
    not about every byte ever written.
 
-10. **SQLite: one file, polled.** `node:sqlite` (Node 22.13 or later), in WAL
+10. **SQLite: one file, polled.** `node:sqlite` (on the Node 0101 names), in WAL
     mode, with a 5 s busy timeout for appends. The projections and `checkpoints`
     live in the same file as `events`, so projection lag is one read. A waker
     polls `max(seq)` every 100 ms (`POLL_MS`). Nothing in the file itself forbids
