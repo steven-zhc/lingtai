@@ -223,13 +223,18 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     throw new Error(`could not record ${type} on ${stream} after 8 attempts`)
   }
 
-  const refuse = (reason: RefusalReason, detail: string): Effect.Effect<IntegrateResult> =>
+  const refuse = (
+    reason: RefusalReason,
+    detail: string,
+    conflict?: { paths: string[]; baseSha: string; headSha: string },
+  ): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
       await append('IntegrationRefused', {
         workItemId: options.workItemId,
         branch: options.branch,
         reason,
         detail: detail.slice(0, 2_000),
+        ...conflict,
       })
       return { ok: false, reason, detail } as IntegrateResult
     })
@@ -266,8 +271,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    */
   const unexpected = (defect: unknown): Effect.Effect<IntegrateResult> => {
     const detail = `the integration failed unexpectedly: ${defect instanceof Error ? defect.message : String(defect)}`
-    return refuse('conflict', detail).pipe(
-      Effect.catchAllDefect(() => Effect.succeed({ ok: false, reason: 'conflict', detail } as IntegrateResult)),
+    return refuse('unexpected', detail).pipe(
+      Effect.catchAllDefect(() => Effect.succeed({ ok: false, reason: 'unexpected', detail } as IntegrateResult)),
     )
   }
 
@@ -406,10 +411,25 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           // Nothing to abort; the merge failed before it started one.
           Effect.ignore,
         )
-        return yield* refuse(
-          'conflict',
-          `${options.branch} does not merge into ${options.base}:\n${conflicts || mergedIn.left.detail}`,
-        )
+        const paths = conflicts
+          .split('\n')
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0)
+        // A failed merge with no unmerged path is git failing, not the branch
+        // conflicting — in a worktree this lane just cut, there is nothing for
+        // triage to read back, so it is `unexpected` rather than `conflict`.
+        if (paths.length === 0) {
+          return yield* refuse(
+            'unexpected',
+            `${options.branch} does not merge into ${options.base}:\n${mergedIn.left.detail}`,
+          )
+        }
+        const headSha = yield* at(['rev-parse', options.branch], mirror)
+        return yield* refuse('conflict', `${options.branch} does not merge into ${options.base}:\n${conflicts}`, {
+          paths,
+          baseSha: localBase,
+          headSha,
+        })
       }
 
       if (options.verify) {
@@ -457,7 +477,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // refused anywhere above still leaves an event behind — which is the
       // entire difference from six silent `return 1`s — and now the compiler
       // knows that is the only thing it has to answer for.
-      Effect.catchTag('RepoFailed', (err) => refuse('conflict', `the integration failed unexpectedly: ${err.detail}`)),
+      Effect.catchTag('RepoFailed', (err) =>
+        refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
+      ),
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
       // system can see has already been handled one line up.

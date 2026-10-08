@@ -131,6 +131,8 @@ describe('integrate', () => {
     await g(['add', '-A'], work)
     await g(['commit', '-qm', 'base moved'], work)
     await g(['push', '-q', 'origin', 'develop'], work)
+    const developSha = (await g(['rev-parse', 'develop'], work)).stdout.trim()
+    const agent2Sha = (await g(['rev-parse', 'agent/2'], work)).stdout.trim()
 
     const before = (await lane()).length
     const result = await integrate({ ...base(), branch: 'agent/2' })
@@ -142,6 +144,9 @@ describe('integrate', () => {
 
     const refusal = (await lane()).slice(before).find((e) => e.type === 'IntegrationRefused')
     expect(refusal?.data['reason']).toBe('conflict')
+    expect(refusal?.data['paths']).toEqual(['README.md'])
+    expect(refusal?.data['baseSha']).toBe(developSha)
+    expect(refusal?.data['headSha']).toBe(agent2Sha)
   })
 
   it('refuses a branch with nothing to merge', async () => {
@@ -426,7 +431,7 @@ describe('integrate', () => {
 
     expect(result.ok, JSON.stringify(result)).toBe(false)
     if (result.ok) return
-    expect(result.reason).toBe('conflict')
+    expect(result.reason).toBe('unexpected')
     expect(result.detail).toContain('Connection terminated unexpectedly')
 
     // And it never got near the base: the attempt could not be recorded, so no

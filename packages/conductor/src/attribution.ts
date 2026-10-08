@@ -133,6 +133,11 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    * events on the log carry it. Nothing writes it; everything still reads it.
    */
   'lane-busy': 'lingtai',
+  /**
+   * A dropped store connection, a failed fetch or a failed push that is not
+   * `push-rejected` — the lane's own machinery, never the branch.
+   */
+  unexpected: 'lingtai',
 }
 
 /**
@@ -277,6 +282,12 @@ const REFUSAL_READING: Record<
       action: 'requeue',
       why: 'the lane was busy rather than wrong — the next pass merges it',
     },
+  },
+  unexpected: {
+    says: ({ branch }) => `the merge lane failed in a way it does not handle, and nothing about ${branch} was judged.`,
+    // Nothing is recommended: a defect is not a question about the diff, and
+    // requeueing would walk straight back into whatever broke.
+    move: null,
   },
 }
 

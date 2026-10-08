@@ -158,6 +158,15 @@ export const RefusalReason = z.enum([
    * has a sentence and a move for it.
    */
   'lane-busy',
+  /**
+   * The merge failed in a way that is not a conflict — a dropped store
+   * connection, a failed fetch, a failed push for a reason that is not
+   * `push-rejected`, or any other defect the integrator caught rather than
+   * reported. Carries none of `IntegrationRefused`'s `paths`, `baseSha` or
+   * `headSha`: nothing about the branch was judged, so there is nothing to
+   * read back for triage.
+   */
+  'unexpected',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 
@@ -1142,6 +1151,12 @@ export const IntegrationRefused = z.object({
   branch: z.string(),
   reason: RefusalReason,
   detail: z.string(),
+  /** The paths git found unmerged. Set only when `reason` is `conflict`. */
+  paths: z.array(z.string()).optional(),
+  /** The base this attempt merged against. Set only when `reason` is `conflict`. */
+  baseSha: z.string().optional(),
+  /** The side git merged — `options.branch`'s tip at the fetch. Set only when `reason` is `conflict`. */
+  headSha: z.string().optional(),
 })
 export const IntegrationSucceeded = z.object({
   workItemId: z.string(),

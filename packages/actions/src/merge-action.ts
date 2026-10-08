@@ -60,8 +60,8 @@ export type MergeStrategy = 'merge-commit'
  * What the lane answered — `IntegrateResult`'s two cases, and no third.
  *
  * `reason` is `RefusalReason` because those are the lane's own words and they
- * are already on the log. Two of the seven — `conflict` and `verify-failed` —
- * are also `JudgeWhen` values; the other five stop the lane before the diff is
+ * are already on the log. Two of the eight — `conflict` and `verify-failed` —
+ * are also `JudgeWhen` values; the other six stop the lane before the diff is
  * what is in doubt, so no judge is offered them and a person is next.
  */
 export type LandAnswer =

@@ -49,7 +49,7 @@ describe('whose failure it is', () => {
    * that pointed a person at the branch would point them at the wrong thing.
    */
   it("calls the integrator's own worktree, mirror and lane Lingtai's", () => {
-    for (const reason of ['dirty-base', 'unpushed-base', 'push-rejected', 'lane-busy'] as const) {
+    for (const reason of ['dirty-base', 'unpushed-base', 'push-rejected', 'lane-busy', 'unexpected'] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe('lingtai')
     }
   })
@@ -99,6 +99,7 @@ describe('whose failure it is', () => {
       'no-commits',
       'push-rejected',
       'lane-busy',
+      'unexpected',
     ]
     for (const reason of every) {
       expect(['repository', 'lingtai', 'person'], reason).toContain(whoseFailure({ ...conflict, reason }))
@@ -165,6 +166,7 @@ describe('a refusal, read for a person', () => {
     // is on the log, and a build that could not read it could not read this
     // repository's own history.
     'lane-busy',
+    'unexpected',
   ]
 
   const read = (reason: string) =>
@@ -237,7 +239,7 @@ describe('a refusal, read for a person', () => {
    * checkout is not something requeueing walks past.
    */
   it('recommends nothing where nothing can honestly be recommended', () => {
-    for (const reason of ['verify-failed', 'pending-migration', 'dirty-base', 'unpushed-base']) {
+    for (const reason of ['verify-failed', 'pending-migration', 'dirty-base', 'unpushed-base', 'unexpected']) {
       expect(read(reason).recommendation, reason).toBeNull()
     }
   })

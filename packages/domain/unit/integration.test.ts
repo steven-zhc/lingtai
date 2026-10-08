@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyIntegration, laneIsBusy, reduceIntegration } from '../src/index.ts'
+import { emptyIntegration, laneIsBusy, parsePayload, reduceIntegration } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const LANE = 'int-nextloom-ai-admin-develop'
@@ -192,5 +192,32 @@ describe('reduceIntegration', () => {
 
     expect(laneIsBusy(s)).toBe(true)
     expect(s.version).toBe(2)
+  })
+})
+
+/**
+ * `#408`: a conflict's paths, base sha and branch head, carried as fields
+ * rather than parsed out of `detail`'s prose — and optional, so every
+ * `IntegrationRefused` already on the log still parses.
+ */
+describe('IntegrationRefused payload', () => {
+  const base = { workItemId: 'wi-a', branch: 'agent/58', reason: 'conflict' as const, detail: 'src/a.ts' }
+
+  it('parses a refusal from before #408, with none of the three fields', () => {
+    expect(() => parsePayload('IntegrationRefused', base)).not.toThrow()
+  })
+
+  it('parses a conflict carrying paths, baseSha and headSha', () => {
+    expect(() =>
+      parsePayload('IntegrationRefused', { ...base, paths: ['src/a.ts'], baseSha: 'base-sha', headSha: 'head-sha' }),
+    ).not.toThrow()
+  })
+
+  it('parses a defect as `unexpected`, with none of the three fields', () => {
+    expect(() => parsePayload('IntegrationRefused', { ...base, reason: 'unexpected' })).not.toThrow()
+  })
+
+  it('rejects `paths` given as a string rather than an array', () => {
+    expect(() => parsePayload('IntegrationRefused', { ...base, paths: 'src/a.ts' })).toThrow()
   })
 })

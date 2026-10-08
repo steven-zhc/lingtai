@@ -1278,10 +1278,11 @@ export const queuePlugin = definePlugin('queue', {
  * stopped to ask, which is 0057's class rather than a refusal.
  *
  * **Not `RefusalReason` itself**, though it holds two of the five. That enum is
- * the *integration*'s list — `dirty-base`, `unpushed-base`, `push-rejected` —
- * and a judge is never asked about those: they stop the lane before the diff is
- * what is in doubt, and offering a judge a direction nothing can arrive by is
- * the same mistake as offering it a step nothing can run.
+ * the *integration*'s list — `dirty-base`, `unpushed-base`, `push-rejected`,
+ * `unexpected` — and a judge is never asked about those: they stop the lane
+ * before the diff is what is in doubt, and offering a judge a direction
+ * nothing can arrive by is the same mistake as offering it a step nothing can
+ * run.
  */
 export const JudgeWhen = z.enum(['red', 'verify-failed', 'conflict', 'needs-input', 'findings'])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
