@@ -298,9 +298,9 @@ describe('sqlite: on a Node without node:sqlite', () => {
       .spyOn(process, 'getBuiltinModule')
       .mockImplementation(((id: string) => (id === 'node:sqlite' ? undefined : real.call(process, id))) as typeof real)
     try {
-      expect(() => openSqliteLog(freshLog())).toThrow(/needs node:sqlite.*Node 22\.13 or later/)
+      expect(() => openSqliteLog(freshLog())).toThrow(/needs node:sqlite.*Node 26 or later/)
       const session = createPollingWaker({ path: freshLog() }).open({ nudge: () => {}, lost: () => {} })
-      await expect(session.ready).rejects.toThrow(/Node 22\.13 or later/)
+      await expect(session.ready).rejects.toThrow(/Node 26 or later/)
       session.close()
     } finally {
       spy.mockRestore()
@@ -354,7 +354,7 @@ describe('sqlite: on a Node without node:sqlite', () => {
     const lines = out.trim().split('\n')
     expect(lines[0]).toBe('imported')
     expect(lines[1]).toMatch(
-      /^the SQLite store needs node:sqlite, which Node v[\d.]+ does not have without a flag — Node 22\.13 or later has it$/,
+      /^the SQLite store needs node:sqlite, which Node v[\d.]+ does not have without a flag — Node 26 or later has it$/,
     )
   }, 40_000)
 })

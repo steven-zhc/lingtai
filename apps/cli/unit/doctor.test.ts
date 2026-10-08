@@ -21,7 +21,7 @@ import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { Projection } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { type DoctorReach, postgresOnlyRows, recipeRow, runDoctor, unconvergedRow } from '../src/doctor.ts'
+import { type DoctorReach, nodeRow, postgresOnlyRows, recipeRow, runDoctor, unconvergedRow } from '../src/doctor.ts'
 
 /** `database.store: sqlite`, as `storeChoice()` reads it off a written `config.yml`. */
 const wroteSqlite = (): StoreChoice => ({
@@ -197,5 +197,34 @@ describe('recipeRow, a recipe that will not resolve', () => {
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('nothing will be taken from this project')
     expect(row.detail).toContain('reconcile cannot converge its labels, closes or leftover arms either')
+  })
+})
+
+/**
+ * Called directly with strings rather than through `runDoctor` (#430): its
+ * first rows would make the assertion depend on `process.version`, which on
+ * the conducting machine is 26 and would never take the failing branch.
+ */
+describe('nodeRow, running below or at the floor .node-version names', () => {
+  it('fails, naming the floor and the remedy, when running below it', () => {
+    const row = nodeRow('22.13.0', '26')
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('26')
+    expect(row.detail).toContain('install node 26 and rerun')
+    expect(row.restartAnswers).toBeUndefined()
+  })
+
+  it('is ok on the floor itself', () => {
+    expect(nodeRow('26.5.0', '26').status).toBe('ok')
+  })
+
+  it('is ok above the floor', () => {
+    expect(nodeRow('27.0.0', '26').status).toBe('ok')
+  })
+
+  it('fails, naming .node-version, when the file could not be read', () => {
+    const row = nodeRow('26.0.0', undefined)
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('.node-version')
   })
 })

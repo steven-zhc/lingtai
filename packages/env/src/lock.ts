@@ -167,13 +167,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  * file is imported. The CLI imports this at startup — `lingtai doctor` reads the
  * holder — so on a Node without the module a static import would take every
  * command down with it, where this fails only the lock, by name. It is
- * unflagged from 22.13, which is why `engines` says so.
+ * unflagged from 22.13, below the floor 0101 §1 sets — `node:sqlite` is below
+ * that floor.
  */
 function sqlite(): typeof import('node:sqlite') {
   const mod = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite') | undefined
   if (mod === undefined) {
     throw new Error(
-      `the lock needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`,
+      `the lock needs node:sqlite, which Node ${process.version} does not have without a flag — Node 26 or later has it`,
     )
   }
   return mod

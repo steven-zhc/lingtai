@@ -2,6 +2,7 @@ import { createPublicKey } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { isSea } from 'node:sea'
 
 import {
   RUN_LIMITS,
@@ -73,6 +74,7 @@ import {
   hasGitHubApp,
   machineDatabaseUrl,
   postgresUrlIfSet,
+  repoRoot,
   storeChoice,
 } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
@@ -2168,6 +2170,56 @@ export async function recipeGovernsItsBase(
 }
 
 /**
+ * Is the Node running this command at or above `.node-version`'s major — the
+ * floor `check.yml` actually tests since #430, where the floor `engines`
+ * named until then was not.
+ *
+ * `running` is `process.versions.node`; `declared` is `.node-version`'s
+ * trimmed text, or `undefined` where the file could not be read. Compares
+ * majors only, by taking the leading integer of each — `26`, `v26.5.0` and
+ * `26.5` all parse the same.
+ *
+ * **The read stays outside this function.** `runDoctor` does it, because
+ * under 0060 §1 a test that reads a file is an integration test, and handing
+ * `nodeRow` two strings keeps this a unit test that can call it directly.
+ *
+ * **Not the whole guarantee.** `pnpm lingtai` is `node apps/cli/src/entry.ts`
+ * (`package.json`'s `lingtai` script), and a Node that cannot strip types
+ * unflagged dies on that `.ts` before this command loads — 22.13 is one of
+ * those. This row speaks for the Nodes between that point and the floor;
+ * below it, only `engines` speaks.
+ */
+export function nodeRow(running: string, declared: string | undefined): CheckResult {
+  const name = 'node: at or above the floor'
+  const major = (v: string): number | undefined => {
+    const found = /\d+/.exec(v)
+    return found ? Number(found[0]) : undefined
+  }
+  const declaredMajor = declared === undefined ? undefined : major(declared)
+  if (declaredMajor === undefined) {
+    return {
+      name,
+      status: 'fail',
+      detail: `.node-version could not be read or did not name a version — running node ${running}`,
+    }
+  }
+  const runningMajor = major(running)
+  if (runningMajor === undefined || runningMajor < declaredMajor) {
+    return {
+      name,
+      status: 'fail',
+      // No `restartAnswers`: a daemon started on this Node is a daemon on a
+      // version CI no longer tests, so this should gate `lingtai restart`
+      // rather than let it through (`gatingFailures`, 0042).
+      detail:
+        `running node ${running}, below the floor .node-version names (${declared}) — ` +
+        `install node ${declared} and rerun`,
+    }
+  }
+  return { name, status: 'ok', detail: `running node ${running}, at or above .node-version's ${declared}` }
+}
+
+/**
  * `machine` reads `database.url` from `~/.lingtai/config.yml`. Asked only when
  * `LINGTAI_DATABASE_URL` is unset — the order `postgresUrl` reads them in — and
  * only where the caller hands it in: `doctorReport` does, and a test's own
@@ -2197,6 +2249,25 @@ export async function runDoctor(
   reach: Partial<DoctorReach> = {},
 ): Promise<DoctorReport> {
   const results: CheckResult[] = []
+
+  if (isSea()) {
+    // A binary has no checkout beside it to read `.node-version` from, and it
+    // carries the Node that built it — `release.yml` reads that file too, so
+    // the two cannot disagree.
+    results.push({
+      name: 'node: at or above the floor',
+      status: 'ok',
+      detail: `node ${process.version} — the binary carries the Node it was built with`,
+    })
+  } else {
+    let declaredNode: string | undefined
+    try {
+      declaredNode = (await readFile(join(repoRoot(), '.node-version'), 'utf8')).trim()
+    } catch {
+      declaredNode = undefined
+    }
+    results.push(nodeRow(process.versions.node, declaredNode))
+  }
 
   results.push({
     name: 'packages load under Node',

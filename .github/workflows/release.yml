@@ -37,7 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # `node --build-sea` is 25.5 and later; the binary carries this Node.
-          node-version: 26
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 

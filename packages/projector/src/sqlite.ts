@@ -59,7 +59,7 @@ function sqlite(): typeof import('node:sqlite') {
   const mod = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite') | undefined
   if (mod === undefined) {
     throw new Error(
-      `the SQLite projection store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`,
+      `the SQLite projection store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 26 or later has it`,
     )
   }
   return mod

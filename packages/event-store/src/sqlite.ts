@@ -77,13 +77,14 @@ const SQLITE_LOCKED = 6
  * stronger here. Every `lingtai` command imports `@lingtai/event-store`, so on
  * a Node without the module a static import would take a Postgres install down
  * with it, where this fails only the SQLite store, by name. It is unflagged
- * from 22.13, which is why `engines` says so.
+ * from 22.13, below the floor 0101 §1 sets — `node:sqlite` is below that
+ * floor.
  */
 function sqlite(): typeof import('node:sqlite') {
   const mod = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite') | undefined
   if (mod === undefined) {
     throw new Error(
-      `the SQLite store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`,
+      `the SQLite store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 26 or later has it`,
     )
   }
   return mod
