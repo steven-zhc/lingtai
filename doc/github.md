@@ -52,7 +52,25 @@ App JWT ──→ GET /repos/{owner}/{repo}/installation ──→ installation 
 installation token             ← expires in one hour
 ```
 
-Two names, both `LINGTAI_`-prefixed because [#63](https://github.com/steven-zhc/lingtai/issues/63)
+## Where the App's credentials live
+
+In `~/.lingtai/config.yml`:
+
+```yaml
+github:
+  app_id: '123456'
+  app_private_key_path: ~/.lingtai-app.pem
+```
+
+Where only a single-line value can be carried, `app_private_key` takes the PEM
+itself instead of a path. A relative `app_private_key_path` is resolved against
+`~/.lingtai`, never against the directory a command happens to run in
+(`electGithubApp`, `packages/env/src/index.ts:1135`, which calls
+`resolvePath(values.privateKeyPath, home)`). `webhook_secret` belongs to the
+same section (`config.example.yml:61-65`).
+
+The same three names can be exported instead, as the override — both
+`LINGTAI_`-prefixed because [#63](https://github.com/steven-zhc/lingtai/issues/63)
 made every name Lingtai reads for itself carry the prefix:
 
 ```bash
@@ -62,15 +80,48 @@ LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.ssh/lingtai-agent.private-key.pem
 #LINGTAI_GITHUB_APP_PRIVATE_KEY=-----BEGIN...\n...
 ```
 
-`packages/env/src/index.ts:289` recognises the un-prefixed name and says so by
+`packages/env/src/index.ts:1198` recognises the un-prefixed name and says so by
 name rather than reporting the variable as unset — because for a while this
 document told you to write it that way.
 
-**The key is re-read on every call.** `readFileSync` sits inside `githubApp()`,
-not at module scope, so a key that appears at that path later is picked up by a
-process already running. **The App ID is not** — it comes from `process.env` and
-is fixed when the process starts. That asymmetry is
-[creating-the-app.md](design/creating-the-app.md)'s subject.
+**One source answers for the App, and it answers every name.**
+`electGithubApp`'s own comment (`packages/env/src/index.ts:1113-1129`):
+
+> The environment overrides the file — but as a whole section, never name by
+> name. The id, the key and the webhook secret belong to one App, and asked one
+> at a time they pair App 222's id from one source with App 111's key or secret
+> from the other … So whichever source names the id is asked for the rest, and a
+> name it does not carry is absent rather than borrowed.
+
+The code is `:1130-1139`: an exported `app_id` wins outright — `:1132` returns
+before the file's `github:` section is ever consulted; otherwise that section
+answers, if it names one.
+
+## What is read when
+
+Three different facts, not one asymmetry:
+
+- **`config.yml` is read on every call.** `githubApp()` calls
+  `githubAppValues()` (`packages/env/src/index.ts:1142`), which reads the file
+  afresh each time rather than once at start. `config.example.yml:12`: *"The
+  file is read per call, so what the setup page writes is seen at once by a
+  board and a daemon that are already running."*
+- **The key file is read on every call too, whichever source named its path.**
+  `readFileSync` (`packages/env/src/index.ts:1206`) sits inside `githubApp()`,
+  not at module scope, so a key that appears at that path later is picked up by
+  a process already running.
+- **An exported variable is fixed when the process starts.** That covers the
+  id, an inline key and the secret — `process.env` is read once, at import.
+
+Combine them and there is a trap worth stating plainly. Once
+`LINGTAI_GITHUB_APP_ID` is exported, the whole `github:` section of
+`config.yml` is ignored, not just its `app_id` (`:1132` again) — an App that the
+setup page or `lingtai init` writes into the file stays invisible to that
+process until the variable is unexported and the process restarted. The
+override is a source, not a name-by-name merge: expecting it to fill in only
+the id and let the file answer for the key is exactly backwards.
+[creating-the-app.md](design/creating-the-app.md) carries the reasoning behind
+reading the file per call and guarding the write.
 
 ## `token()` is a function, and that is the point
 
