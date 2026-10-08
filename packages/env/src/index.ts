@@ -947,6 +947,41 @@ export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * Where a locker that was not handed a `dir` of its own takes its files (#273).
+ *
+ * **An environment that names its own `LINGTAI_HOME` reads that one**, exactly
+ * as `machineFilePath` does: `join(stateDir(from), 'locks')`, so a test that
+ * already redirects `LINGTAI_HOME` — `doctor.test.ts`, `doctor-recipe.test.ts`,
+ * the children `world.test.ts` spawns — keeps locking inside the directory it
+ * redirected everything else to, and needs no second variable.
+ *
+ * **Otherwise, under test, `LINGTAI_TEST_LOCK_DIR`** — a directory
+ * `test-support/teardown.ts`'s `setup()` makes fresh for the run, never a fixed
+ * name under `tmpdir()`, which two worktrees running the suite at once would
+ * share. Unset there, this **throws** rather than falling back: that fallback
+ * is exactly how the integration suite came to leave 4567 files in the
+ * operator's own `~/.lingtai/locks/` (#273) — a locker that could not tell it
+ * was under test from one that could not find its directory.
+ *
+ * Outside a test, `join(stateDir(from), 'locks')`, as it always was.
+ */
+export function lockDir(from: NodeJS.ProcessEnv = process.env): string {
+  if (from['LINGTAI_HOME']) return join(stateDir(from), 'locks')
+  if (inTest(from)) {
+    const dir = from['LINGTAI_TEST_LOCK_DIR']
+    if (!dir) {
+      throw new Error(
+        'LINGTAI_TEST_LOCK_DIR is not set, and this process is a test run — the integration suite’s ' +
+          'globalSetup (test-support/teardown.ts) makes one fresh per run; a lock taken without it would land in ' +
+          'the operator’s own ~/.lingtai/locks (#273)',
+      )
+    }
+    return dir
+  }
+  return join(stateDir(from), 'locks')
+}
+
+/**
  * A path from configuration, made absolute.
  *
  * `~` is expanded, because configuration is exactly where someone writes it and

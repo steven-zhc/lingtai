@@ -86,6 +86,11 @@ export interface Daemon {
 
 export type StopReason = 'asked' | 'projection-failed'
 
+/** Stands in for `locker` where `acquire` is replaced and never reads it. */
+const NO_LOCKER: Locker = {
+  tryLock: () => Promise.reject(new Error('no locker configured: this daemon was started with acquire replaced')),
+}
+
 export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
   const log = options.log ?? (() => {})
 
@@ -106,7 +111,13 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
     // Named, so that a `lingtai run` turned away by this lock — and
     // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
     name: 'lingtai daemon',
-    locker: options.locker ?? createFileLocker(),
+    // `createFileLocker()` is this machine's lock file, and a test that
+    // replaces `acquire` never reads it — so it is built only for the default
+    // `acquireDaemonLock`, which does. Built unconditionally, a unit test that
+    // replaces `acquire` and names no `locker` of its own (`unit/start.test.ts`)
+    // would construct this machine's real locker for nothing, which under test
+    // has nowhere of its own to resolve to (`lockDir()`, #273).
+    locker: options.locker ?? (options.acquire ? NO_LOCKER : createFileLocker()),
     ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
   })
   if (!held.ok) return { ok: false, reason: 'already-running', holder: held.holder }

@@ -64,7 +64,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 
-import { stateDir } from './index.ts'
+import { lockDir } from './index.ts'
 
 export interface HeldLock {
   /** Gives the lock up. Safe to call twice; the kernel does it too if the process dies first. */
@@ -136,7 +136,11 @@ export interface FileLocker extends Locker {
 }
 
 export interface FileLockerOptions {
-  /** Where the lock files live. `~/.lingtai/locks`, or `$LINGTAI_HOME/locks`. */
+  /**
+   * Where the lock files live. `~/.lingtai/locks`, or `$LINGTAI_HOME/locks` —
+   * outside a test. Under test with no `dir` given, `lockDir()` (`./index.ts`)
+   * answers a directory this run made for itself, never the operator's (#273).
+   */
   dir?: string
 }
 
@@ -242,7 +246,7 @@ function raisedNow(path: string): boolean {
 }
 
 export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
-  const dir = options.dir ?? join(stateDir(), 'locks')
+  const dir = options.dir ?? lockDir()
 
   const paths = (key: string) => {
     mkdirSync(dir, { recursive: true })

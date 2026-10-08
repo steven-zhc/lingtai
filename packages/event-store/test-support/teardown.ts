@@ -49,6 +49,15 @@
  * the SQLite cleanup — there is no residue sweep, because there is no shared
  * table.
  *
+ * **Since #273, `setup()` also makes a directory for the suite's locks,
+ * unconditionally** — needed with either store, so it is made before the
+ * `LINGTAI_TEST_DATABASE_URL` check above returns early. It is exported as
+ * `LINGTAI_TEST_LOCK_DIR`, which `lockDir()` (`@lingtai/env`) answers for any
+ * `createFileLocker()` call under test that was not handed a `dir` of its own.
+ * Removing it in `teardown()` is not the prune `lock.ts:43` rules out: nothing
+ * outside this run's own environment ever names this path, so once the run's
+ * workers are gone nothing will ever open it again.
+ *
  * Vitest 4's default pool is `forks`, forked *after* `globalSetup` runs, so the
  * workers inherit `process.env` as `setup()` leaves it, and a CLI child a test
  * spawns inherits it from its worker in turn. `vitest.config.ts`'s
@@ -107,14 +116,21 @@ const THROWAWAY = String.raw`(esctest|test-[0-9a-f]{8}$)`
  * which cleanup is its to do.
  */
 let sqliteDir: string | null = null
+/** The directory made for this run's locks — see the module comment. */
+let lockDir: string | null = null
 
 export async function setup(): Promise<void> {
+  lockDir = await mkdtemp(join(tmpdir(), 'lingtai-test-locks-'))
+  process.env['LINGTAI_TEST_LOCK_DIR'] = lockDir
+
   if (process.env['LINGTAI_TEST_DATABASE_URL']) return
   sqliteDir = await mkdtemp(join(tmpdir(), 'lingtai-test-'))
   process.env['LINGTAI_TEST_SQLITE_PATH'] = join(sqliteDir, 'lingtai.db')
 }
 
 export async function teardown(): Promise<void> {
+  if (lockDir) await rm(lockDir, { recursive: true, force: true })
+
   if (process.env['LINGTAI_KEEP_TEST_DATA']) return
 
   if (sqliteDir) {
