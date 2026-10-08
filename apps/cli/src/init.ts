@@ -200,7 +200,7 @@ const USAGE =
   '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
   '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
   '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
-  '[--wall <duration>] [--budget <amount>]'
+  '[--wall <duration>] [--budget <amount>] [--defaults]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -274,9 +274,17 @@ function parseArgs(
         '--rounds',
         '--wall',
         '--budget',
+        '--defaults',
       ].includes(name)
     )
       return { refused: `${USAGE} — no ${name}` }
+    // The one boolean flag here: it names no value and consumes nothing
+    // after it, so `--defaults` beside a positional does not eat it (#433).
+    if (name === '--defaults') {
+      flags['defaults'] = ''
+      ;(repeated['defaults'] ??= []).push('')
+      continue
+    }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
     flags[name.slice(2)] = value

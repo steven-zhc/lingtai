@@ -206,3 +206,101 @@ steps:
     }
   })
 })
+
+describe('askRecipe — --defaults (#433)', () => {
+  const TWO_RUNTIMES: readonly RuntimeFound[] = [
+    { id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' },
+    { id: 'codex', installed: true, signedIn: true, detail: 'signed in' },
+  ]
+
+  it('asks no recipe question, and a flag given beside it still wins', async () => {
+    const files = mapFiles()
+    const asked: string[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        asked.push(prompt)
+        throw new Error(`a terminal was asked: ${prompt}`)
+      },
+      log: () => {},
+    }
+    const seeds = [
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+    ]
+
+    const result = await askRecipe(world, {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      flags: { ...BASE_AT.flags, defaults: '', rounds: '5' },
+      seeds,
+      kept: 'the seeded recipe is kept',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies RecipeAt)
+
+    expect(result).toEqual({ ok: true })
+    expect(asked).toEqual([])
+
+    const path = recipePath('widget', HOME)
+    const text = files.replaced.at(-1)!.text
+    const resolved = resolveSource(text, path, path).recipe
+    expect(resolved.runtime.limits.rounds).toBe(5)
+  })
+
+  it('a default that fails validation refuses by name rather than looping', async () => {
+    const files = mapFiles()
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        throw new Error(`a terminal was asked: ${prompt}`)
+      },
+      log: () => {},
+    }
+    const seeds = [
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+    ]
+
+    const result = await askRecipe(world, {
+      ...BASE_AT,
+      runtimes: TWO_RUNTIMES,
+      project: 'widget',
+      local: true,
+      flags: { ...BASE_AT.flags, defaults: '' },
+      seeds,
+      kept: 'the seeded recipe is kept',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies RecipeAt)
+
+    expect(result).toEqual({
+      refused: 'which agent writes the change needs an answer: pass --agent <claude-code, codex>. Nothing was written',
+    })
+    expect(files.replaced).toHaveLength(0)
+  })
+
+  it('with no terminal and no --defaults, the run refuses and names --defaults', async () => {
+    const files = mapFiles()
+    const world: QuestionWorld = { ask: async () => null, log: () => {} }
+    const seeds = [
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+    ]
+
+    const result = await askRecipe(world, {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      seeds,
+      kept: 'the seeded recipe is kept',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies RecipeAt)
+
+    expect(result).toEqual({ refused: 'every default needs an answer: pass --defaults. Nothing was written' })
+    expect(files.replaced).toHaveLength(0)
+  })
+})

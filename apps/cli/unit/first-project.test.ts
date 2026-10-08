@@ -143,6 +143,12 @@ function harness(options: {
  * landing, rounds, wall, budget. `''` takes each question's own default;
  * `install` has none, so it must be answered `none` or the question refuses
  * and asks again.
+ *
+ * `askRecipe`'s own first question, "use every default?", is not part of
+ * this list — a test that wants every question asked individually scripts
+ * it `'no'` itself, right ahead of this array; a test that does not care how
+ * each one answers passes `--defaults` instead and drops this array
+ * entirely (#433).
  */
 const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', ''] as const
 
@@ -157,12 +163,13 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       },
       projects: [],
       // The base question has no --base flag: an empty line at the terminal
-      // takes the detected default ("main", from symbolic-ref above). Every
-      // answer after it is `askRecipe`'s own, in order (#431).
-      answers: ['', ...RECIPE_FLOW_DEFAULTS],
+      // takes the detected default ("main", from symbolic-ref above).
+      // `--defaults` answers every one of `askRecipe`'s own questions —
+      // nothing here is about what any of them says (#433).
+      answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
     expect(result).toEqual({
       ok: true,
@@ -192,10 +199,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/home/me/repos/widget::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/home/me/repos/widget::rev-parse --verify main^{commit}': ok('deadbee\n'),
       },
-      answers: ['', ...RECIPE_FLOW_DEFAULTS],
+      answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/home/me/repos/widget' })
+    const result = await chooseFirstProject(world, { local: '/home/me/repos/widget', defaults: '', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, remote: '/home/me/repos/bare/widget.git' })
     const path = `${HOME}/widget/recipe.yml`
@@ -328,12 +335,12 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
       },
-      // --base answers the base question itself; every answer after it is
-      // `askRecipe`'s own, in order (#431).
-      answers: [...RECIPE_FLOW_DEFAULTS],
+      // --base answers the base question itself; --defaults answers every
+      // one `askRecipe` asks after it (#433).
+      answers: [],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', base: 'develop' })
+    const result = await chooseFirstProject(world, { local: '/repo', base: 'develop', defaults: '', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafefee' })
@@ -381,10 +388,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
       },
-      answers: ['', ...RECIPE_FLOW_DEFAULTS],
+      answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
     expect(result).toMatchObject({ ok: true })
 
     const path = recipePath('repo', HOME)
@@ -401,7 +408,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
       },
-      answers: ['', ...RECIPE_FLOW_DEFAULTS],
+      // 'no' at the question under test's own first question, "use every
+      // default?" (#433) — this test proves each later question is still
+      // asked at a terminal, in order, which `--defaults` would skip.
+      answers: ['', 'no', ...RECIPE_FLOW_DEFAULTS],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo' })
@@ -442,9 +452,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   })
 
   it('two --build flags both reach steps.build, not just the last (#431 fix round, finding 3)', async () => {
-    // Same order as `RECIPE_FLOW_DEFAULTS`, minus the build question — given
-    // two `--build` flags directly, below, `askBuild` never asks it.
-    const answers = ['', '', '', '', '', 'none', '', '', '', '', '']
+    // `--defaults` answers every other question — this is about `--build`
+    // reaching the file, not about what any other question says (#433).
     const { world, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -452,10 +461,13 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
       },
-      answers,
+      answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' }, ['pnpm lint', 'pnpm test'])
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' }, [
+      'pnpm lint',
+      'pnpm test',
+    ])
     expect(result).toMatchObject({ ok: true })
 
     const path = `${HOME}/repo/recipe.yml`
@@ -464,10 +476,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   })
 
   it('a landing answer that moves repo.base registers with the moved base (#431 Watch out)', async () => {
-    const answers = ['', ...RECIPE_FLOW_DEFAULTS]
-    // The landing question is the eighth of `askRecipe`'s own, right after the
-    // base question's own answer at index 0.
-    answers[8] = 'develop'
+    // 'no' at index 1 answers "use every default?" (#433); the landing
+    // question is the eighth of `askRecipe`'s own after it, at index 9.
+    const answers = ['', 'no', ...RECIPE_FLOW_DEFAULTS]
+    answers[9] = 'develop'
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -490,8 +502,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   })
 
   it('a landing answer naming a branch git does not have is refused by name, and nothing is registered (#431 Watch out)', async () => {
-    const answers = ['', ...RECIPE_FLOW_DEFAULTS]
-    answers[8] = 'nope'
+    const answers = ['', 'no', ...RECIPE_FLOW_DEFAULTS]
+    answers[9] = 'nope'
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),

@@ -27,7 +27,7 @@ import { diskFiles, type RecipeChange, type RecipeFiles, recipePath, type Said, 
 import { askAgents } from './agents.ts'
 import type { SetupReader } from './detect-setup.ts'
 import { askLanding, askLimits } from './landing.ts'
-import type { QuestionWorld } from './question.ts'
+import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
 import { askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
@@ -139,6 +139,22 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   const fileOptions = { home: at.home, files: at.files }
   const files = at.files ?? diskFiles
   const path = recipePath(at.project, at.home)
+
+  // Asked first, ahead of the existing-file seed write below — nothing is
+  // written yet on either path, so a refusal here always says
+  // `at.keptBeforeWrite` (#433).
+  const defaults = await question(world, {
+    name: 'every default',
+    flag: '--defaults',
+    given: at.flags['defaults'] !== undefined ? 'yes' : null,
+    prompt: 'use every default?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: at.keptBeforeWrite,
+  })
+  if ('refused' in defaults) return defaults
+  const askWorld = defaults.answer === 'yes' ? acceptingDefaults(world) : world
+
   const existing = await files.read(path)
   const absent = existing === null
 
@@ -153,8 +169,8 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   const askKept = absent ? at.keptBeforeWrite : at.kept
   const collected: RecipeChange[] = []
 
-  announce(world, ['runtime', 'steps.implement', 'steps.review'])
-  const agents = await askAgents(world, {
+  announce(askWorld, ['runtime', 'steps.implement', 'steps.review'])
+  const agents = await askAgents(askWorld, {
     project: at.project,
     runtimes: at.runtimes,
     flags: {
@@ -177,8 +193,8 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteModelChanges) return wroteModelChanges
   }
 
-  announce(world, ['steps.prepared', 'steps.build'])
-  const setup = await askInstallAndBuild(world, {
+  announce(askWorld, ['steps.prepared', 'steps.build'])
+  const setup = await askInstallAndBuild(askWorld, {
     project: at.project,
     reader: at.reader,
     given: {
@@ -199,8 +215,8 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteSetup) return wroteSetup
   }
 
-  announce(world, ['source.tickets'])
-  const tickets = await askTickets(world, at.project, at.local, at.flags['tickets'] ?? null, {
+  announce(askWorld, ['source.tickets'])
+  const tickets = await askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
     home: at.home,
     files: at.files,
     history: at.history,
@@ -214,8 +230,8 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteTickets) return wroteTickets
   }
 
-  announce(world, ['source.kinds'])
-  const kinds = await askKinds(world, at.project, at.flags['kinds'] ?? null, {
+  announce(askWorld, ['source.kinds'])
+  const kinds = await askKinds(askWorld, at.project, at.flags['kinds'] ?? null, {
     home: at.home,
     files: at.files,
     kept: askKept,
@@ -240,13 +256,13 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     const changes = all.some((c) => c.path.join('.') === 'source.tickets')
       ? all
       : [...all, { path: ['source', 'tickets'], value: tickets.current }]
-    announce(world, ['env'])
+    announce(askWorld, ['env'])
     const wrote = await writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
     if ('refused' in wrote) return wrote
   }
 
-  announce(world, ['repo', 'steps.proposed'])
-  const landed = await askLanding(world, at.project, at.flags['land'] ?? null, {
+  announce(askWorld, ['repo', 'steps.proposed'])
+  const landed = await askLanding(askWorld, at.project, at.flags['land'] ?? null, {
     home: at.home,
     files: at.files,
     defaultBranch: at.defaultBranch,
@@ -254,9 +270,9 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   })
   if ('refused' in landed) return landed
 
-  announce(world, ['runtime.limits'])
+  announce(askWorld, ['runtime.limits'])
   const limited = await askLimits(
-    world,
+    askWorld,
     at.project,
     { rounds: at.flags['rounds'], wall: at.flags['wall'], budget: at.flags['budget'] },
     { ...fileOptions, kept: at.kept },

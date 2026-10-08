@@ -113,6 +113,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --database-url <url>        instead of being asked
     --port <n>                  the board's port, for this run. default: 17820,
                                 or board.port in ~/.lingtai/config.yml
+    --defaults                  use every default the recipe questions have,
+                                instead of asking. With no terminal, one of
+                                this or an answer to every question is required
   lingtai add [<owner>/<repo>]      onboard a GitHub repository the App is installed
                                 on, or — with no argument, or --local <dir> —
                                 a directory on this machine with its own origin
@@ -151,6 +154,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 being asked
     --budget <usd>              a dollar ceiling per agent run, instead of
                                 being asked
+    --defaults                  use every default the recipe questions have,
+                                instead of asking. With no terminal, one of
+                                this or an answer to every question is required
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -394,7 +400,12 @@ function parseFlags(args: string[]): {
     if (a.startsWith('--')) {
       const next = args[i + 1]
       const name = a.slice(2)
-      if (next === undefined || next.startsWith('--')) {
+      // `--defaults` names no value — unlike every other flag here, whose
+      // boolean reading only fires when the next token looks like a flag
+      // too. Without this, `lingtai add --defaults owner/repo` would read
+      // `owner/repo` as `--defaults`'s value and drop it from `positional`
+      // (#433).
+      if (name === 'defaults' || next === undefined || next.startsWith('--')) {
         flags[name] = ''
         ;(repeated[name] ??= []).push('')
       } else {

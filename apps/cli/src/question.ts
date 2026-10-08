@@ -72,6 +72,31 @@ export async function liveAsk(prompt: string): Promise<string | null> {
   }
 }
 
+/**
+ * `--defaults` (#433): a `QuestionWorld` that takes the default at every
+ * question, by answering `''` — the same thing an empty line at a terminal
+ * means (`question.ts:103`).
+ *
+ * **Guards the loop `question()` forces on a refused answer** (`:97-104`):
+ * asked the same prompt twice in a row, which only happens after `validate`
+ * refused the empty answer, this returns `null` instead of `''` the second
+ * time — turning a bad default into `question()`'s own by-name refusal
+ * rather than asking forever. Never wraps a throwing `ask` into this: the
+ * throw belongs to the world passed in here, and this function never calls
+ * it.
+ */
+export function acceptingDefaults(world: QuestionWorld): QuestionWorld {
+  let lastPrompt: string | null = null
+  return {
+    log: world.log,
+    ask: async (prompt) => {
+      const repeat = prompt === lastPrompt
+      lastPrompt = prompt
+      return repeat ? null : ''
+    },
+  }
+}
+
 async function accept(q: Question, answer: string): Promise<string | null> {
   if (q.choices !== undefined && !q.choices.includes(answer)) {
     return `${answer} is not one of ${q.choices.join(', ')}`

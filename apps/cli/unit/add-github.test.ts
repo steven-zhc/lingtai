@@ -219,13 +219,16 @@ describe('askBeforeGithubAdd (#402)', () => {
 
   it('reaches the recipe check once the installation is good, showing the order is not just "always return"', async () => {
     // No agent runtime signed in (`countedDeps`'s default) — `askRecipe`
-    // refuses at its first question rather than succeeding, but by then it
+    // refuses at its agent question rather than succeeding, but by then it
     // has already read the file twice (once here, once inside `askRecipe`
     // itself), proving the installation check ran first and did not short
-    // the rest of the function out.
+    // the rest of the function out. `--defaults` (#433) answers `askRecipe`'s
+    // own first question, "use every default?" — with no terminal and no
+    // flag that question would refuse before either read, which is not what
+    // this test is about.
     const counted = countedDeps(async () => FULLY_PERMISSIONED)
 
-    const code = await askBeforeGithubAdd(SLUG, { base: 'main' }, counted.deps)
+    const code = await askBeforeGithubAdd(SLUG, { base: 'main', defaults: '' }, counted.deps)
 
     expect(code).toBe(1)
     expect(counted.reads.length).toBe(2)
