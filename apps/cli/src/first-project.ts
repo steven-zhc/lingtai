@@ -181,6 +181,17 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   if (github !== undefined && flags['project'] === 'local') {
     return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. ${kept}`
   }
+  const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`). Checked here, before
+  // anything is written, rather than inside `askRecipe`, where `askLanding`
+  // would otherwise overwrite the base question's own answer silently.
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    return `--land ${land} and --base ${base} name two different branches, and this command will not pick one silently. ${kept}`
+  }
   return null
 }
 

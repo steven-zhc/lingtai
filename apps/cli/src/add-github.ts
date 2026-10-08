@@ -33,9 +33,14 @@ import { liveHistory } from './source.ts'
 
 /**
  * The repository's default branch, through the same calls `checkInstallation`
- * and `add()` make to read it — asked here only as a fallback for the land
- * question's own default, and answered null on any failure, since a
- * question's `detected` is just one more thing a person can type past (#399).
+ * and `add()` make to read it. Two callers read it: the fallback for the land
+ * question's own default, where a failure is harmless, since a question's
+ * `detected` is just one more thing a person can type past (#399); and the
+ * ref `liveGithubReader` reads the repository's files at, where a failure is
+ * not harmless — `null` there means nothing is read, and `detectSetup`
+ * suggests no install or build command at all (see the comment above
+ * `liveGithubReader`). Answered null on any failure either way; the two
+ * callers differ in what null costs them.
  *
  * `installation`, when the caller already asked GitHub for it — the early
  * check below has, and a second request would ask the same question again

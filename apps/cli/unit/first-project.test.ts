@@ -843,6 +843,41 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
     const result = await chooseFirstProject(world, { github: '' })
     expect(result).toEqual({ refused: expect.stringContaining('--github needs the repository') })
   })
+
+  /**
+   * #399: `--land` and `--base` are different questions, and naming both with
+   * different branches must not have one silently overrule the other. On the
+   * local branch, without this, the base question writes `repo.base: main`
+   * and `askLanding` inside `askRecipe` later overwrites it with `develop`
+   * (the second pass's finding 1) — so this has to be refused before the base
+   * question is even asked, and nothing may be registered.
+   */
+  it('--base and --land naming different branches on the local branch is refused before anything is asked', async () => {
+    const { world, asked, registered, files } = harness({})
+    const result = await chooseFirstProject(world, { local: '/repo', base: 'main', land: 'develop' })
+    expect(result).toEqual({
+      refused: expect.stringContaining('--land develop and --base main name two different branches'),
+    })
+    expect(asked).toEqual([])
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('--land hold does not contradict --base, since hold names no branch', async () => {
+    const { world } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      answers: [...RECIPE_FLOW_DEFAULTS],
+    })
+    const result = await chooseFirstProject(world, { local: '/repo', base: 'main', land: 'hold' })
+    expect(result).not.toEqual({
+      refused: expect.stringContaining('name two different branches'),
+    })
+  })
 })
 
 describe('liveFirstProjectWorld kept (#402 review)', () => {
