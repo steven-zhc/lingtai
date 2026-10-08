@@ -458,7 +458,14 @@ export async function requeue(options: {
   project: string
   issue: number
   by: string
-  /** Why, on the record. A person overruling a block is not anonymous either. */
+  /**
+   * Why, on the record — optional (#424). A requeue of a run's block folds into
+   * an `AnswerRecord` only when `runId` is set (`work-item.ts`), and
+   * `answersBrief` keeps only the ones with `runId === null`
+   * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
+   * the fold keeps no answer for. So an optional note here never reaches a
+   * later attempt's prompt, unlike `answer()`'s.
+   */
   note: string
   /**
    * What to do with a question asked before any run: withdraw it (the default,
@@ -521,13 +528,17 @@ async function requeueHolding(
     }
   }
 
+  // Trimmed, so a whitespace-only box lands as the empty string rather than
+  // verbatim (#424) — a blank note is stored as empty, never invented.
+  const note = options.note.trim() ? options.note : ''
+
   await store.append(workItemId, item.version, [
     {
       type: 'WorkItemUnblocked',
       actor: options.by,
       data: parsePayload('WorkItemUnblocked', {
         by: options.by,
-        note: options.note,
+        note,
         ...(withdrawn ? { withdrawn: true } : {}),
       }),
     },

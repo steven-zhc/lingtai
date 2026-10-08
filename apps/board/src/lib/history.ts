@@ -154,7 +154,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     if (rec?.action) said.push(`— recommends ${rec.action}`)
     return said.filter((s) => s !== null).join(' ')
   },
-  WorkItemUnblocked: (d) => `${need(d, 'by')}: ${clip(d['note'])}`,
+  WorkItemUnblocked: (d) => {
+    const by = need(d, 'by')
+    const note = clip(d['note'])
+    return note ? `${by}: ${note}` : by
+  },
   WorkItemLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
   WorkItemLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
   DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,

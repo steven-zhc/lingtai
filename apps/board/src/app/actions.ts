@@ -151,7 +151,6 @@ export async function answerCard(input: {
  */
 export async function requeueCard(input: { project: string; issue: number; note: string }): Promise<ActionResult> {
   try {
-    if (!input.note.trim()) return { ok: false, detail: 'say why, so the log can' }
     const result = await requeue({
       project: input.project,
       issue: input.issue,

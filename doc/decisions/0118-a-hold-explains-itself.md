@@ -142,11 +142,18 @@ route, and they want different moves:
    - A discussion answer can be added to whatever the recommended move will
      write: the body, the list of fixes, a split, or the person's own answer
      box.
-   - The other moves keep their notes, and the notes become optional. This
-     needs the server's refusals changed:
-     - `say why, so the log can`, and `a close needs a reason`
-       (`apps/board/src/app/actions.ts:152-211`);
-     - the CLI's required `--note`.
+   - **A requeue's note is optional, and the CLI's `--note` is no longer
+     required** (#424) — `say why, so the log can`
+     (`apps/board/src/app/actions.ts:154`) and the CLI's refusal
+     (`apps/cli/src/requeue.ts`) are gone, and a blank note is stored as
+     empty, never invented.
+   - **A close keeps its required reason.** Unlike a requeue, nothing lifts a
+     close: it is "the only decision that cannot be revisited, so the sentence
+     explaining it is the last thing anybody will have"
+     (`packages/conductor/src/close.ts:71-73`), and `a close needs a reason`
+     (`close.ts:99-100`) stays on the board, the CLI and the conductor.
+   - Where the hold was triaged, the close box starts filled with triage's
+     one sentence — still a box the person can clear, which still refuses.
 
 7. **A requeue keeps its meaning.** A person's requeue is a new pass cut from
    the base, with the recipe's rounds again. It does not spend a restart and

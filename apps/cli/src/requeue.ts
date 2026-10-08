@@ -29,25 +29,15 @@ export interface RequeueCommandOptions {
   project: string
   issue: number
   /**
-   * Why, on the record. Not optional, and an empty one is refused below rather
-   * than filled in: a person overruling a block is not anonymous and is not
-   * silent, and a note this file invented would be both.
+   * Why, on the record — optional (#424). `--note` left off and `--note` with
+   * nothing after it both arrive as `""`, and `requeue()` stores that verbatim
+   * rather than inventing a reason.
    */
   note: string
   by?: string
 }
 
 export async function requeueCommand(options: RequeueCommandOptions, log = console.log): Promise<number> {
-  // The one rule, and the reason it is here rather than in the argument
-  // parsing: `--note` left off and `--note` with nothing after it are the same
-  // silence, and a default invented at either layer would be a person
-  // overruling a block anonymously. `requeue()` records the note verbatim, so
-  // this is the last place that can refuse an empty one.
-  if (!options.note.trim()) {
-    log('lingtai requeue needs --note <why> — a block is overruled on the record, or not at all')
-    return 2
-  }
-
   // Checked before the stream is read, so a mistyped project says so. Without
   // it the refusal would be `wi-lingati-130 is backlog, not blocked`, which is
   // true, unhelpful, and about the wrong mistake.

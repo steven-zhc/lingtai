@@ -247,7 +247,7 @@ export function Requeue({
   return (
     <div className="decide">
       <label className="reason">
-        <span>{withdrawing ? 'Why withdraw it?' : asked ? 'Your answer' : 'Why?'}</span>
+        <span>{withdrawing ? 'Why withdraw it? (optional)' : asked ? 'Your answer' : 'Why? (optional)'}</span>
         <input
           autoFocus
           value={note}
@@ -264,7 +264,7 @@ export function Requeue({
       <div className="btnrow">
         <button
           className="btn pri"
-          disabled={!note.trim() || pending}
+          disabled={(asked && !withdrawing && !note.trim()) || pending}
           onClick={() => {
             setPending(true)
             setRefusal(null)
@@ -315,12 +315,21 @@ export function Requeue({
  * `Run now`. A ticket you have decided against is one you decide against while
  * it is waiting, which is most of the time it exists.
  */
-export function Close({ project, issue }: { project: string; issue: number }) {
+export function Close({
+  project,
+  issue,
+  prefill,
+}: {
+  project: string
+  issue: number
+  /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
+  prefill?: string | null
+}) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
-  const [reason, setReason] = useState('')
+  const [reason, setReason] = useState(prefill ?? '')
   const [, startTransition] = useTransition()
 
   if (done) return <p className="decided">{done}</p>

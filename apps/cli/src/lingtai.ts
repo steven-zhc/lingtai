@@ -163,13 +163,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --note <text>               recorded with the approval, and required when
                                 a step still refuses the head: approving then
                                 waives each refusing step, with this as why
-  lingtai requeue <project> --issue <n> --note <why>
+  lingtai requeue <project> --issue <n> [--note <why>]
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval
                                 or not — and the next pass cuts a fresh branch
-                                from a base that has since moved. --note is
-                                required — a person overruling a block is not
-                                anonymous
+                                from a base that has since moved. The actor is
+                                still recorded in by, so the requeue is still
+                                not anonymous
   lingtai backlog [project]         the minor findings passing steps raised, open
     --all                       decided ones too, and what was decided
   lingtai backlog accept <project> <key> --kind <kind>
@@ -1320,7 +1320,7 @@ async function main(argv: string[]): Promise<number> {
         // Gone (#150): it appended `ApprovalRevoked` and put the run straight
         // back into `awaiting-approval`, so the wait it seemed to end went on.
         console.error('--reject is gone: it asked the same question again and ended nothing.')
-        console.error(`lingtai requeue ${positional[0]} --issue ${issue} --note <why> ends the wait with a new run`)
+        console.error(`lingtai requeue ${positional[0]} --issue ${issue} ends the wait with a new run`)
         return 2
       }
       return approveCommand({ project: positional[0], issue, note: flags['note'] })
@@ -1331,12 +1331,12 @@ async function main(argv: string[]): Promise<number> {
       const { positional, flags } = parseFlags(rest)
       const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai requeue <project> --issue <n> --note <why>')
+        console.error('lingtai requeue <project> --issue <n> [--note <why>]')
         return 2
       }
-      // `--note` with nothing after it parses as the empty string, which is the
-      // same silence as leaving the flag off — so both arrive as "" and the
-      // command refuses them identically. Not defaulted here or there.
+      // `--note` left off and `--note` with nothing after it both parse as the
+      // empty string, and both are recorded as `""` — not defaulted here or
+      // there (#424).
       return requeueCommand({ project: positional[0], issue, note: flags['note'] ?? '' })
     }
     case 'ask':

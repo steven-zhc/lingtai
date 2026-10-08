@@ -49,6 +49,19 @@ describe('a line of history', () => {
   })
 
   /**
+   * A requeue's note is optional (#424), and `WorkItemUnblocked.note` can be
+   * `""` on the real log now — rendered without a dangling colon, which is
+   * what `${by}: ${note}` would leave behind for an empty one.
+   */
+  it('renders a note-free unblock as just who, with no trailing colon', () => {
+    const said = summarise(e('WorkItemUnblocked', { by: 'human:steven', note: '' }))
+    expect(said).toBe('human:steven')
+
+    const withNote = summarise(e('WorkItemUnblocked', { by: 'human:steven', note: 'main has moved' }))
+    expect(withNote).toBe('human:steven: main has moved')
+  })
+
+  /**
    * **A route that went where it wanted and one that did not read differently**
    * (`#271`).
    *

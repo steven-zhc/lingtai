@@ -28,6 +28,8 @@ const FROM_CLI = 123
 const FROM_BOARD = 124
 /** Claimed, so there is nothing to hand back. */
 const RUNNING = 125
+/** Blocked, requeued with no note. */
+const BLANK_NOTE = 126
 
 const wi = (n: number) => workItemStream(PROJECT, n)
 const run = (n: number) => `run-${PROJECT}-${n}`
@@ -85,6 +87,7 @@ beforeAll(async () => {
   await store.append(wi(FROM_CLI), 0, [discovered(FROM_CLI), claimed(FROM_CLI), blocked(FROM_CLI)])
   await store.append(wi(FROM_BOARD), 0, [discovered(FROM_BOARD), claimed(FROM_BOARD), blocked(FROM_BOARD)])
   await store.append(wi(RUNNING), 0, [discovered(RUNNING), claimed(RUNNING)])
+  await store.append(wi(BLANK_NOTE), 0, [discovered(BLANK_NOTE), claimed(BLANK_NOTE), blocked(BLANK_NOTE)])
 }, 120_000)
 
 describe('lingtai requeue', () => {
@@ -143,15 +146,21 @@ describe('lingtai requeue', () => {
 
   /**
    * `--note` left off and `--note` with nothing after it arrive here the same
-   * way, and both are refused before anything is read. A person overruling a
-   * block is not anonymous and is not silent.
+   * way, and neither is a reason to refuse (#424): a person who answered
+   * through triage already said why, and the note is optional, not anonymous
+   * — the actor is still `by`.
    */
-  it('refuses an empty note rather than defaulting one', async () => {
+  it('records an empty note as "", rather than inventing one', async () => {
     const said: string[] = []
-    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: '  ' }, (l) => said.push(l))
+    const code = await requeueCommand({ project: PROJECT, issue: BLANK_NOTE, note: '  ' }, (l) => said.push(l))
 
-    expect(code).toBe(2)
-    expect(said.join('\n')).toContain('--note')
+    expect(code).toBe(0)
+    expect(said.join('\n')).toContain('back in the queue')
+
+    const events = await store.read(wi(BLANK_NOTE))
+    const last = events[events.length - 1]!
+    expect(last.type).toBe('WorkItemUnblocked')
+    expect(last.data).toEqual({ by: ACTOR, note: '' })
   })
 
   it('says so when the project was never added', async () => {
