@@ -165,8 +165,11 @@ export function Decide({
  * So the card offers what it really has. Putting it back in the queue means the
  * next attempt is cut from a base that has since moved, which for the
  * commonest case — a conflict the pass could not resolve — is the fix. The
- * reason is required for the same reason a waiver's is: a person overruling a
- * block without saying why is how a system stops being able to explain itself.
+ * reason is optional here, unlike a waiver's (#424): a requeue cuts a fresh
+ * pass with the recipe's own rounds again rather than overruling anything, so
+ * there is no decision left for the box to defend. Answer is the one move off
+ * this button that still refuses a blank box — what it writes is read by
+ * every later attempt's prompt, and a blank answer is not an answer.
  *
  * **And this is the move for every refused merge now** (`#143`). A lane refusal
  * used to buy a whole new run for some of them; nothing does, so the button is

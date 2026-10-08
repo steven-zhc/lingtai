@@ -1,7 +1,7 @@
 import { userInfo } from 'node:os'
 
 /**
- * `lingtai requeue <project> --issue <n> --note <why>` — hand a blocked item
+ * `lingtai requeue <project> --issue <n> [--note <why>]` — hand a blocked item
  * back to the queue.
  *
  * The board has had this button since `#84`; the terminal has not. The two are

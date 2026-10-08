@@ -152,8 +152,13 @@ route, and they want different moves:
      explaining it is the last thing anybody will have"
      (`packages/conductor/src/close.ts:71-73`), and `a close needs a reason`
      (`close.ts:99-100`) stays on the board, the CLI and the conductor.
-   - Where the hold was triaged, the close box starts filled with triage's
-     one sentence — still a box the person can clear, which still refuses.
+   - **The seam for a prefill exists and nothing wires it yet** (#424): `Close`
+     takes an optional `prefill` and seeds its box from it
+     (`apps/board/src/app/decide.tsx`), but `HoldTriaged` has no schema,
+     `task_view` has no triage column, and every `<Close>` call site is
+     unchanged. Once triage lands (§3, §10), passing its one sentence in is
+     what makes the close box start filled — still a box the person can
+     clear, which still refuses.
 
 7. **A requeue keeps its meaning.** A person's requeue is a new pass cut from
    the base, with the recipe's rounds again. It does not spend a restart and

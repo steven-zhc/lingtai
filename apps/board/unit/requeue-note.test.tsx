@@ -52,6 +52,11 @@ describe('Close', () => {
     const close = source.slice(source.indexOf('export function Close'))
 
     expect(close).toMatch(/disabled=\{!reason\.trim\(\) \|\| pending\}/)
-    expect(close).toMatch(/useState\(prefill \?\? ''\)/)
+    // Not just that the hook is seeded from `prefill` somewhere in the file,
+    // but that the same `reason` it seeds is what the box renders — so a
+    // later edit that decouples the input from `reason` (a second variable,
+    // or `value={prefill ?? ''}` read straight off the prop) fails this
+    // rather than passing on an unrelated match.
+    expect(close).toMatch(/const \[reason, setReason\] = useState\(prefill \?\? ''\)[\s\S]*?value=\{reason\}/)
   })
 })

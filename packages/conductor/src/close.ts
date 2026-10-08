@@ -68,9 +68,9 @@ export async function close(options: {
   issue: number
   by: string
   /**
-   * Why, on the record. Required for `requeue`'s reason and one more: this is
-   * the only decision that cannot be revisited, so the sentence explaining it
-   * is the last thing anybody will have.
+   * Why, on the record. Required, unlike `requeue`'s note (#424): this is the
+   * only decision that cannot be revisited, so the sentence explaining it is
+   * the last thing anybody will have.
    */
   reason: string
   /**

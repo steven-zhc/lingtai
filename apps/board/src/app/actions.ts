@@ -565,11 +565,10 @@ export async function sendAttempt(input: {
       project: parsed.project,
       issue: Number(parsed.issue),
       by,
-      // The system's own sentence rather than a field to fill in. `requeue`
-      // wants a note because a person overruling a *block* is not anonymous;
-      // here the reason is the document on screen, which is on the log already
-      // — asking again would be asking somebody to restate their prompt in
-      // prose.
+      // The system's own sentence rather than a field to fill in: the reason
+      // is the document on screen, already on the log, and asking again would
+      // be asking somebody to restate their prompt in prose. The actor is
+      // still recorded in `by`, so this is not anonymous either.
       note: `sent as the next attempt by ${by}`,
       // The check above is a read; a question asked since it is refused here
       // rather than withdrawn.
