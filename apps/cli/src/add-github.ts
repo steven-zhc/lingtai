@@ -135,6 +135,8 @@ export async function askBeforeGithubAdd(
   slug: string,
   flags: Record<string, string>,
   deps: AskBeforeGithubAddDeps = liveDeps,
+  /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
+  buildFlags: readonly string[] = [],
 ): Promise<number | null> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
@@ -275,6 +277,7 @@ export async function askBeforeGithubAdd(
     runtimes,
     reader,
     flags,
+    buildFlags,
     defaultBranch,
     history: liveHistory,
     kept: ADD_KEPT,
@@ -283,9 +286,23 @@ export async function askBeforeGithubAdd(
   // `addCommand` hands this same `flags` object to `chooseFirstProject` once
   // this function returns — deleted here, so that call's `runGithubBranch`
   // does not see them again and refuse what `askRecipe` already asked and
-  // wrote (#396 fix round, finding 1).
-  delete flags['tickets']
-  delete flags['kinds']
+  // wrote (#396 fix round, finding 1; #431 fix round, finding 2).
+  for (const name of [
+    'tickets',
+    'kinds',
+    'agent',
+    'model',
+    'reviewer',
+    'reviewer-model',
+    'install',
+    'build',
+    'land',
+    'rounds',
+    'wall',
+    'budget',
+  ]) {
+    delete flags[name]
+  }
   if ('refused' in recipeResult) {
     console.error(recipeResult.refused)
     return 1

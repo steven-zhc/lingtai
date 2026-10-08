@@ -44,6 +44,8 @@ export interface AskInstallAndBuildInput {
   tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
   home?: string
   files?: RecipeFiles
+  /** `question.ts`'s `kept` — what a refusal below says is already written. */
+  kept?: string
 }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
@@ -195,6 +197,7 @@ async function askInstall(
     detected: detected.install?.run ?? null,
     fallback: '',
     validate: async (a) => (a === '' ? 'type a command, or none' : null),
+    kept: input.kept,
   })
   if ('refused' in answer) return { run: null, refused: answer.refused }
   return { run: answer.answer === 'none' ? null : answer.answer }
@@ -223,6 +226,7 @@ async function tryTheBuild(
     prompt: 'run these once against the base before writing them?',
     choices: ['yes', 'no'],
     fallback: 'yes',
+    kept: input.kept,
   })
   if ('refused' in check) return { refused: check.refused }
   if (check.answer === 'no') return { ok: true }
@@ -244,6 +248,7 @@ async function tryTheBuild(
     prompt: 'write them anyway, or edit the list?',
     choices: ['write', 'edit'],
     fallback: 'edit',
+    kept: input.kept,
   })
   if ('refused' in decide) return { refused: decide.refused }
   if (decide.answer === 'edit') {
@@ -280,6 +285,7 @@ async function askBuild(
       prompt: 'run these before review? yes, or no to write your own',
       choices: ['yes', 'no'],
       fallback: 'yes',
+      kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }
     if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
@@ -293,6 +299,7 @@ async function askBuild(
       given: null,
       prompt: 'a command that must pass before review — empty when done',
       fallback: '',
+      kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }
     if (answer.answer === '') break

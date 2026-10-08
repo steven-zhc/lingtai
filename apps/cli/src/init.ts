@@ -246,8 +246,11 @@ export { redactUrl as redact } from '@lingtai/env'
 
 // ------------------------------------------------------------ the command --
 
-function parseArgs(argv: readonly string[]): { flags: Record<string, string> } | { refused: string } {
+function parseArgs(
+  argv: readonly string[],
+): { flags: Record<string, string>; repeated: Record<string, string[]> } | { refused: string } {
   const flags: Record<string, string> = {}
+  const repeated: Record<string, string[]> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
     if (
@@ -277,9 +280,10 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
     flags[name.slice(2)] = value
+    ;(repeated[name.slice(2)] ??= []).push(value)
     i++
   }
-  return { flags }
+  return { flags, repeated }
 }
 
 function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
@@ -290,7 +294,8 @@ function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
 export async function initCommand(argv: readonly string[], world: InitWorld): Promise<number> {
   const parsed = parseArgs(argv)
   if ('refused' in parsed) return refuse(world, parsed.refused, 2)
-  const { flags } = parsed
+  const { flags, repeated } = parsed
+  const buildFlags = repeated['build'] ?? []
   const asked = flags['port'] === undefined ? null : Number(flags['port'])
   if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
     return refuse(world, `${USAGE} — --port takes a port number`, 2)
@@ -478,7 +483,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         },
       },
     }
-    const chosen = await chooseFirstProject(firstProjectWorld, flags)
+    const chosen = await chooseFirstProject(firstProjectWorld, flags, buildFlags)
     if ('refused' in chosen) return refuse(world, chosen.refused)
 
     if (chosen.project === 'local') {

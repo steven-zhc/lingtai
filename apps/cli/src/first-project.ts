@@ -223,6 +223,8 @@ async function askProjectKind(
 export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
+  /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
+  buildFlags: readonly string[] = [],
 ): Promise<FirstProjectOutcome> {
   const conflict = conflictingFlags(flags, world.kept)
   if (conflict !== null) return { refused: conflict }
@@ -291,7 +293,7 @@ export async function chooseFirstProject(
   }
 
   return kind === 'local'
-    ? runLocalBranch(world, flags, flags['local'] ?? null)
+    ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
     : runGithubBranch(world, flags, flags['github'] ?? null, askedApp, appCheck)
 }
 
@@ -308,6 +310,7 @@ function resolveRemote(remote: string, top: string): string {
 async function runLocalBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
+  buildFlags: readonly string[],
   givenDir: string | null,
 ): Promise<FirstProjectOutcome> {
   const dirAnswer = await question(world, {
@@ -449,6 +452,7 @@ async function runLocalBranch(
     runtimes,
     reader: world.setupReader(toplevel),
     flags,
+    buildFlags,
     defaultBranch: async () => detected,
     history: world.history,
     kept: seededKept,
@@ -513,6 +517,31 @@ async function runGithubBranch(
       refused:
         `${named}, but a GitHub project asks neither question here — lingtai add asks both once its recipe ` +
         `exists. Leave it out. ${world.kept}`,
+    }
+  }
+
+  // `askRecipe`'s own flags (#431) are asked only once `lingtai add` already
+  // has a recipe to write them into, same reason as `--tickets`/`--kinds`
+  // above — `init`'s GitHub branch never calls `askRecipe` at all. Refused
+  // by name instead of silently discarded (#431 fix round, finding 2).
+  const recipeFlagNames = [
+    'agent',
+    'model',
+    'reviewer',
+    'reviewer-model',
+    'install',
+    'build',
+    'land',
+    'rounds',
+    'wall',
+    'budget',
+  ]
+  const namedRecipeFlag = recipeFlagNames.find((name) => flags[name] !== undefined)
+  if (namedRecipeFlag !== undefined) {
+    return {
+      refused:
+        `--${namedRecipeFlag} ${flags[namedRecipeFlag]}, but a GitHub project asks none of askRecipe's questions ` +
+        `here — lingtai add asks them once its recipe exists. Leave it out. ${world.kept}`,
     }
   }
 

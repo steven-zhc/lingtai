@@ -48,6 +48,8 @@ export interface LandingDeps {
    * than a real branch.
    */
   defaultBranch: () => Promise<string | null>
+  /** `question.ts`'s `kept` — what a refusal below says is already written. */
+  kept?: string
 }
 
 type Answered = { ok: true } | { refused: string }
@@ -154,6 +156,7 @@ export async function askLanding(
     current,
     detected,
     validate: async (answer) => (answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
+    kept: deps.kept,
   })
   if ('refused' in result) return result
 
@@ -209,7 +212,7 @@ export async function askLimits(
   world: QuestionWorld,
   project: string,
   flags: LimitsFlags,
-  options: { home?: string; files?: RecipeFiles },
+  options: { home?: string; files?: RecipeFiles; kept?: string },
 ): Promise<Answered> {
   const file = await resolvedFile(project, options)
   if ('refused' in file) return file
@@ -222,6 +225,7 @@ export async function askLimits(
     prompt: 'how many times a pass sends the agent back — 0 means every refusal goes straight to you',
     current: String(limits.rounds),
     validate: async (answer) => (/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+    kept: options.kept,
   })
   if ('refused' in rounds) return rounds
   const roundsValue = Number(rounds.answer)
@@ -243,6 +247,7 @@ export async function askLimits(
         return 'that is not a duration like 30s, 15m or 2h'
       }
     },
+    kept: options.kept,
   })
   if ('refused' in wall) return wall
   if (wall.answer !== limits.wall) {
@@ -261,6 +266,7 @@ export async function askLimits(
       const parsed = parseBudget(answer)
       return typeof parsed === 'string' ? parsed : null
     },
+    kept: options.kept,
   })
   if ('refused' in budget) return budget
 

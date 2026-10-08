@@ -441,6 +441,28 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(registered[0]!.configHash).toBe(resolved.configHash)
   })
 
+  it('two --build flags both reach steps.build, not just the last (#431 fix round, finding 3)', async () => {
+    // Same order as `RECIPE_FLOW_DEFAULTS`, minus the build question — given
+    // two `--build` flags directly, below, `askBuild` never asks it.
+    const answers = ['', '', '', '', '', 'none', '', '', '', '', '']
+    const { world, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      answers,
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' }, ['pnpm lint', 'pnpm test'])
+    expect(result).toMatchObject({ ok: true })
+
+    const path = `${HOME}/repo/recipe.yml`
+    const resolved = resolveSource(files.replaced[path]!, path, path)
+    expect(resolved.recipe.steps.build.map((a) => ('run' in a ? a.run : null))).toEqual(['pnpm lint', 'pnpm test'])
+  })
+
   it('a landing answer that moves repo.base registers with the moved base (#431 Watch out)', async () => {
     const answers = ['', ...RECIPE_FLOW_DEFAULTS]
     // The landing question is the eighth of `askRecipe`'s own, right after the
@@ -718,6 +740,27 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     expect(kindsResult).toEqual({
       refused: expect.stringContaining('--kinds bug,documentation, but a GitHub project asks neither question here'),
     })
+  })
+
+  it("askRecipe's own flags against a GitHub project with no slug are refused rather than silently discarded (#431 fix round, finding 2)", async () => {
+    let addCalled = false
+    const { world } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      add: async () => {
+        addCalled = true
+        return 0
+      },
+    })
+    const result = await chooseFirstProject(world, {
+      project: 'github',
+      rounds: '3',
+      agent: 'claude-code',
+      budget: '9',
+    })
+    expect(result).toEqual({
+      refused: expect.stringContaining("--agent claude-code, but a GitHub project asks none of askRecipe's questions"),
+    })
+    expect(addCalled).toBe(false)
   })
 
   it('a registered project is re-registered rather than refused as already onboarded (#394 finding 2)', async () => {

@@ -41,6 +41,8 @@ export interface RecipeAt {
   runtimes: readonly RuntimeFound[]
   reader: SetupReader
   flags: Readonly<Record<string, string>>
+  /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
+  buildFlags: readonly string[]
   defaultBranch: () => Promise<string | null>
   /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
@@ -92,12 +94,13 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     reader: at.reader,
     given: {
       install: at.flags['install'] ?? null,
-      build: at.flags['build'] === undefined ? null : [at.flags['build']],
+      build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
       check: null,
     },
     tryBuild: null,
     home: at.home,
     files: at.files,
+    kept: at.kept,
   })
   if ('refused' in setup) return setup
   const wroteSetup = await writeOrRefuse(at.project, setup.changes, fileOptions)
@@ -126,6 +129,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     home: at.home,
     files: at.files,
     defaultBranch: at.defaultBranch,
+    kept: at.kept,
   })
   if ('refused' in landed) return landed
 
@@ -133,7 +137,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     world,
     at.project,
     { rounds: at.flags['rounds'], wall: at.flags['wall'], budget: at.flags['budget'] },
-    fileOptions,
+    { ...fileOptions, kept: at.kept },
   )
   if ('refused' in limited) return limited
 
