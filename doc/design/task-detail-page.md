@@ -13,8 +13,10 @@ page keeps whatever lane its item is in, which 0118 does not restate.
 
 **The ticket · where it is · triage · the moves · the record** (0118 §2).
 
-- **The ticket** — the Problem, Want and Watch out rows of the body, and a link
-  to the whole of it.
+- **The ticket** — the title, triage's sentence of what the ticket wants when
+  the current block has one (labelled as triage's reading, plain text), and the
+  body's opening lines collapsed, with a link to the whole of it. No structure
+  in the body is assumed.
 - **Where it is** — the ten-step rail ([the-card.md](the-card.md)) and one line
   under it: what refused, the rounds spent, the restarts left. Composed from the
   log on every render, never generated.

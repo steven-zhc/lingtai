@@ -68,8 +68,12 @@ route, and they want different moves:
 
 2. **The page is in this order:** the ticket, where it is, triage, the moves,
    the record.
-   - **The ticket** is the Problem, Want and Watch out rows of the body, and a
-     link to the whole body.
+   - **The ticket** is its title, triage's one sentence of what the ticket
+     wants when there is one, and the opening of the body, collapsed, with a
+     link to the whole of it. A body is not assumed to have any structure: the
+     sentence is labelled as triage's reading, never as the ticket's words, and
+     is plain text. Where triage could not say what the ticket wants, that is
+     itself the hold's question.
    - **Where it is** is the ten-step rail the board already draws, and one line
      under it: what refused, the rounds spent, and the restarts left. It is put
      together from the log every time it is drawn, and never generated.
@@ -90,7 +94,8 @@ route, and they want different moves:
    - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
      It names the block it explains and the head it read. It carries the cause,
      the questions with their answers and the recommended one, any fixes or
-     conflict hunks, the recommended move, one sentence for the card, and its
+     conflict hunks, the recommended move, one sentence for the card, one sentence of what the ticket wants (or
+     none, where the body does not say), and its
      usage ([0110](0110-tokens-on-the-event-money-at-display.md)). A triage
      that fails still appends it, with the failure and the usage and no
      advice.
