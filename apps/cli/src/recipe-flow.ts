@@ -79,6 +79,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     },
     home: at.home,
     files: at.files,
+    kept: at.kept,
   })
   if ('refused' in agents) return agents
   const wroteAgentChanges = await writeOrRefuse(at.project, agents.changes, fileOptions)

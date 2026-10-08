@@ -7,14 +7,16 @@
  * In order: `--land` against `--base`; then — before a single question is
  * asked or a single answer written, and only where there is an App on this
  * machine to ask — whether it is installed here and grants what Lingtai
- * needs (#402); then the writer and reviewer; then, once a recipe is already
- * there, the ticket source and the kinds (#396), the landing branch and the
- * limits. Each answer is written as soon as it is given, not collected for
- * one write at the end. With no App configured at all, every question below
- * still runs: a recipe written for a project whose App does not exist yet is
- * what lets `chooseFirstProject` offer to create it next, in the same run.
- * Null to go on to the registration, or the exit code to stop with. A local
- * project, and a GitHub one picked on the board, reach none of this yet.
+ * needs (#402); then, once a recipe is already there, one `askRecipe` call
+ * (#431) asks the writer and reviewer, the install and build commands, the
+ * ticket source and the kinds (#396), the landing branch and the limits, in
+ * that order. Each answer is written as soon as it is given, not collected
+ * for one write at the end. With no App configured at all, every question
+ * below still runs: a recipe written for a project whose App does not exist
+ * yet is what lets `chooseFirstProject` offer to create it next, in the same
+ * run. Null to go on to the registration, or the exit code to stop with. A
+ * local project, and a GitHub one picked on the board, reach none of this
+ * yet.
  */
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
@@ -57,9 +59,12 @@ async function defaultBranchOf(owner: string, repo: string, installation?: Insta
  * `has` built on `fileAt` alone would call the biggest lockfiles absent.
  *
  * With no installation, no ref, or any failure building the client, every
- * question still runs — an empty reader suggests nothing rather than
- * throwing, since a detection suggestion is never worth failing the whole
- * setup over.
+ * question still runs — an empty reader's `has` rejects rather than
+ * resolving `false`, so `detectSetup` reads it as "could not tell" rather
+ * than a confirmed absence (#431 fix round, finding 2); a detection
+ * suggestion is never worth failing the whole setup over, and
+ * `detectInstall`/`detectSetup` catch that rejection rather than letting it
+ * reach this function's own caller.
  */
 async function liveGithubReader(
   owner: string,
@@ -77,8 +82,12 @@ async function liveGithubReader(
           await client.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`)
           return true
         } catch (err) {
+          // A missing file is an answer; anything else (a 403, a 500) is not
+          // one — `fileAt` draws the same line at `client.ts:420`, and
+          // swallowing both the same way read a transient failure as a
+          // confirmed absence (#431 fix round, finding 2).
           if (err instanceof GitHubError && err.status === 404) return false
-          return false
+          throw err
         }
       },
       read: async (path) => {

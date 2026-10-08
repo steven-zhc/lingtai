@@ -123,6 +123,8 @@ export interface AskAgentsAt {
   flags: { agent?: string; model?: string; reviewer?: string; reviewerModel?: string }
   home?: string
   files?: RecipeFiles
+  /** `question.ts`'s `kept` — what a refusal below says is already written. */
+  kept?: string
 }
 
 /**
@@ -178,6 +180,7 @@ export async function askAgents(
     current: currentAgent,
     detected: signedInIds.length === 1 ? signedInIds[0]! : null,
     validate: refuseUnlessOffered(),
+    kept: at.kept,
   })
   if ('refused' in agentAnswer) return agentAnswer
   const writer = agentAnswer.answer as RuntimeName
@@ -197,6 +200,7 @@ export async function askAgents(
     prompt: "which model (empty for the runtime's own default)",
     current: currentModel,
     fallback: '',
+    kept: at.kept,
   })
   if ('refused' in modelAnswer) return modelAnswer
   const writerModel = modelAnswer.answer
@@ -229,6 +233,7 @@ export async function askAgents(
     current: currentReviewer,
     detected: defaultReviewer,
     validate: async (answer) => (answer === 'none' ? null : refuseUnlessOffered(', or none')(answer)),
+    kept: at.kept,
   })
   if ('refused' in reviewerAnswer) return reviewerAnswer
   const reviewer = reviewerAnswer.answer
@@ -274,6 +279,7 @@ export async function askAgents(
       prompt: "on which model (empty for the runtime's own default)",
       current: currentReviewerModel,
       fallback: '',
+      kept: at.kept,
     })
     if ('refused' in reviewerModelAnswer) return reviewerModelAnswer
     reviewerModel = reviewerModelAnswer.answer

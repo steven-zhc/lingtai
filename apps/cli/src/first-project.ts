@@ -19,9 +19,15 @@
  * directory is a git repository, it has an `origin` (the merge lane pushes
  * there — `packages/actions/src/merge-action.ts:47`), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
- * then does `setRecipe` write `repo.base` and `repo.remote`, `resolveLocalRecipe`
- * reads the file back for its `configHash`, and `register` (`addLocal` in
- * `@lingtai/conductor/onboard`) appends `ProjectConfigured` with `owner: null`.
+ * then does `setRecipe` seed `repo.base`, `repo.remote`, `env.plantAt` and
+ * `source.kinds`, and `askRecipe` (#431) ask the rest of the recipe's
+ * questions. **That seed's `base` is not necessarily final**: `askLanding`,
+ * inside `askRecipe`, can still move `repo.base` — so what follows the seed
+ * write is a re-read of the file for its actual `repo.base`, a second
+ * `git rev-parse` for that base's sha when it moved, `resolveLocalRecipe`
+ * reading the file back for its `configHash`, and `register` (`addLocal` in
+ * `@lingtai/conductor/onboard`) appending `ProjectConfigured` with
+ * `owner: null` against that final base, not the one the seed wrote.
  *
  * **The GitHub branch is #393's App step, unchanged, plus the picker.** No App
  * configured runs `askFirstProject`'s App question and `waitForApp`; a slug
@@ -431,6 +437,12 @@ async function runLocalBranch(
     return { refused: (err as Error).message }
   }
 
+  // Not `world.kept`: that described the state before the write just above,
+  // and a refusal inside `askRecipe` is after it — `question.ts:43-50`'s rule
+  // that a caller placed after its own write must say what that write left
+  // behind (#431 fix round, finding 3).
+  const seededKept = `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered`
+
   const recipeResult = await askRecipe(world, {
     project: name,
     local: true,
@@ -439,7 +451,7 @@ async function runLocalBranch(
     flags,
     defaultBranch: async () => detected,
     history: world.history,
-    kept: world.kept,
+    kept: seededKept,
     home: world.home,
     files: world.files,
   })

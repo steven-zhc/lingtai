@@ -22,8 +22,21 @@ export interface SetupReader {
   read(path: string): Promise<string | null>
 }
 
-/** Suggests nothing — `detectSetup` reads every `notes` entry this leaves absent as "could not tell". */
-export const EMPTY_SETUP_READER: SetupReader = { has: async () => false, read: async () => null }
+/**
+ * Suggests nothing: `has` rejects rather than resolving `false`, so
+ * `detectInstall`/`detectSetup` below read every path through it as "could
+ * not tell" rather than a confirmed absence — resolving `false` the way a
+ * real check's negative does would print a lockfile or a `package.json` as
+ * missing from a repository that has both (#431 fix round, finding 2).
+ * `read` stays `null`, already every reader's "could not get this content"
+ * answer.
+ */
+export const EMPTY_SETUP_READER: SetupReader = {
+  has: async () => {
+    throw new Error('nothing can be read here')
+  },
+  read: async () => null,
+}
 
 export interface DetectedSetup {
   install: { run: string; because: string } | null
@@ -76,11 +89,19 @@ async function detectInstall(
 ): Promise<{ install: DetectedSetup['install']; manager: Manager | null; notes: string[] }> {
   const notes: string[] = []
   const present: typeof LOCKFILES = []
+  // A lockfile whose `has` rejected is neither present nor confirmed absent
+  // — the note below says so instead of claiming the root has none (#431
+  // fix round, finding 2).
+  let uncertain = false
   for (const lockfile of LOCKFILES) {
-    if (await reader.has(lockfile.path)) present.push(lockfile)
+    try {
+      if (await reader.has(lockfile.path)) present.push(lockfile)
+    } catch {
+      uncertain = true
+    }
   }
   if (present.length === 0) {
-    notes.push('no lockfile at the root')
+    notes.push(uncertain ? 'could not tell whether a lockfile is at the root' : 'no lockfile at the root')
     return { install: null, manager: null, notes }
   }
   const [chosen, ...rest] = present
@@ -97,9 +118,16 @@ async function detectInstall(
 export async function detectSetup(reader: SetupReader): Promise<DetectedSetup> {
   const { install, manager, notes } = await detectInstall(reader)
 
-  const hasPackageJson = await reader.has('package.json')
   const build: DetectedSetup['build'] = []
   const skipped: DetectedSetup['skipped'] = []
+
+  let hasPackageJson: boolean
+  try {
+    hasPackageJson = await reader.has('package.json')
+  } catch {
+    notes.push('could not tell whether package.json is at the root')
+    return { install, build, skipped, notes }
+  }
 
   if (!hasPackageJson) {
     notes.push('no package.json at the root')

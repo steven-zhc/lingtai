@@ -198,7 +198,9 @@ export interface InitWorld {
 const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
   '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
-  '[--tickets github|db] [--kinds <a,b,c>]'
+  '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
+  '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
+  '[--wall <duration>] [--budget <amount>]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -257,8 +259,18 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
         '--local',
         '--base',
         '--github-app',
+        '--agent',
+        '--model',
+        '--reviewer',
+        '--reviewer-model',
+        '--install',
+        '--build',
         '--tickets',
         '--kinds',
+        '--land',
+        '--rounds',
+        '--wall',
+        '--budget',
       ].includes(name)
     )
       return { refused: `${USAGE} — no ${name}` }
