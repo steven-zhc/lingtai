@@ -1480,8 +1480,9 @@ describe('what a conflict tells the fixer', () => {
   })
 
   it('does not promise a clean tree nothing has verified, and gives an account if it is not', () => {
-    expect(brief).not.toMatch(/arrive at a clean tree/i)
-    expect(brief).not.toMatch(/no merge in progress/i)
+    expect(brief).toMatch(/is yours to do/i)
+    expect(brief).not.toMatch(/conflicts are (already )?in your working tree/i)
+    expect(brief).not.toMatch(/your tree is clean apart from the markers/i)
     expect(brief).toMatch(/already holds changes it has not seen/i)
   })
 

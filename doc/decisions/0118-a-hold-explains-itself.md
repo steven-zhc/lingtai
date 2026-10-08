@@ -220,9 +220,6 @@ route, and they want different moves:
 
   Each changes what a pass may buy ([0108](0108-a-refusal-buys-a-round.md)),
   and each is its own ticket.
-- **The fix brief for a conflict** tells the agent the merge is in its
-  worktree (`packages/conductor/src/fix.ts:634-636`). No code stages it there.
-  This is a defect, and its own ticket.
 - **The language triage writes in**, and whether the recipe names it.
 - **Whether `lingtai status` and the GitHub comment** carry the cause or only
   link to the page.

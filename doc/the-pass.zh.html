@@ -361,7 +361,16 @@
 
 </head>
 <body>
-<div class="wrap">
+<header class="bar">
+  <a class="brand" href="/" aria-label="灵台首页"><span class="mark" aria-hidden="true"></span>Lingtai</a>
+  <span class="sep" aria-hidden="true"></span>
+  <span class="context">The Pass</span>
+  <span class="spacer"></span>
+  <a href="the-pass.html" lang="en">English</a>
+  <a class="home-link" href="/">← 首页</a>
+  <a href="https://github.com/steven-zhc/lingtai">GitHub</a>
+</header>
+<main class="wrap document">
 
   <header class="mast">
     <p class="eyebrow">Lingtai · 灵台 —— 一张票，从队列到合并 · <a href="the-pass.html">English</a></p>
@@ -440,8 +449,11 @@
     </div>
   </section>
 
-  <footer>由 scripts/the-pass.py 生成 · 灵台</footer>
+  <footer>
+    <p>由 scripts/the-pass.py 生成 · 灵台</p>
+    <a class="footer-home" href="/">回到灵台 ↑</a>
+  </footer>
 
-</div>
+</main>
 </body>
 </html>
