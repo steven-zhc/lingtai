@@ -13,9 +13,12 @@
 import { checkInstallation } from '@lingtai/conductor/onboard'
 import type { Installation } from '@lingtai/github'
 import { NotInstalledError } from '@lingtai/github'
+import { recipePath, resolveSource } from '@lingtai/recipe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
 import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { SAID } from '../src/recipe-flow.ts'
 
 const PREVIOUS_ENV = { ...process.env }
 
@@ -55,6 +58,8 @@ interface Counted {
   reads: string[]
   writes: number
   asks: number
+  /** The latest text written at each path — `files.replace`'s own store. */
+  written: Record<string, string>
 }
 
 function countedDeps(
@@ -66,30 +71,41 @@ function countedDeps(
   picker: AskBeforeGithubAddDeps['picker'] = async () => {
     throw new Error('no picker in this test')
   },
+  // An absent file is now created once this check passes (#432) — overridden
+  // by the tests that reach that far; every earlier-refusing test never
+  // calls either.
+  overrides: { runtimes?: AskBeforeGithubAddDeps['runtimes']; history?: AskBeforeGithubAddDeps['history'] } = {},
 ): Counted {
-  const counted: Counted = { deps: null as unknown as AskBeforeGithubAddDeps, reads: [], writes: 0, asks: 0 }
+  const counted: Counted = {
+    deps: null as unknown as AskBeforeGithubAddDeps,
+    reads: [],
+    writes: 0,
+    asks: 0,
+    written: {},
+  }
   counted.deps = {
     check: (slug, log) => checkInstallation(slug, log, undefined, lookup),
     picker,
     files: {
       read: async (path) => {
         counted.reads.push(path)
-        return null
+        return counted.written[path] ?? null
       },
-      replace: async () => {
+      replace: async (path, text) => {
         counted.writes++
+        counted.written[path] = text
       },
     },
-    // Every test here has `files.read` return null, so `askBeforeGithubAdd`
-    // returns before this is ever reached — there is no recipe for it to ask
-    // GitHub about.
-    reader: async () => {
-      throw new Error('no reader in this test')
-    },
+    // A test that reaches an absent file's creation needs a reader
+    // `askInstallAndBuild` can call without throwing — overridden by any
+    // test that cares what it finds.
+    reader: async () => ({ has: async () => false, read: async () => null }),
     ask: async () => {
       counted.asks++
       return null
     },
+    runtimes: overrides.runtimes ?? (async () => []),
+    history: overrides.history ?? (async () => []),
   }
   return counted
 }
@@ -201,13 +217,19 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(counted.writes).toBe(0)
   })
 
-  it('reaches read once the installation is good, showing the order is not just "always return"', async () => {
+  it('reaches the recipe check once the installation is good, showing the order is not just "always return"', async () => {
+    // No agent runtime signed in (`countedDeps`'s default) — `askRecipe`
+    // refuses at its first question rather than succeeding, but by then it
+    // has already read the file twice (once here, once inside `askRecipe`
+    // itself), proving the installation check ran first and did not short
+    // the rest of the function out.
     const counted = countedDeps(async () => FULLY_PERMISSIONED)
 
-    const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
+    const code = await askBeforeGithubAdd(SLUG, { base: 'main' }, counted.deps)
 
-    expect(code).toBeNull()
-    expect(counted.reads.length).toBe(1)
+    expect(code).toBe(1)
+    expect(counted.reads.length).toBe(2)
+    expect(counted.writes).toBe(0)
   })
 
   it('names the App, rather than rethrowing raw, when the lookup fails for a reason other than "not installed"', async () => {
@@ -230,20 +252,64 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(counted.asks).toBe(0)
   })
 
-  it('refuses --agent by name instead of silently dropping it when no GitHub App is configured yet', async () => {
+  it('creates an absent recipe once, with every first-run answer and a SAID comment above each block, when no GitHub App is configured yet (#432)', async () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
-    const counted = countedDeps(async () => FULLY_PERMISSIONED)
+    const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
+      runtimes: async () => [{ id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' }],
+    })
+    // Every question takes its own default or detected answer; `install` and
+    // `build` are answered directly by flag, since neither has one to take.
+    counted.deps.ask = async () => ''
+
+    const code = await askBeforeGithubAdd(
+      'steven-zhc/nextloom-ai-admin',
+      { base: 'main', install: 'none' },
+      counted.deps,
+      ['none'],
+    )
+
+    expect(code).toBeNull()
+    expect(counted.writes).toBe(1)
+
+    const path = recipePath('nextloom-ai-admin')
+    const text = counted.written[path]!
+    const resolved = resolveSource(text, path, path).recipe
+    expect(resolved.repo.base).toBe('main')
+    expect(resolved.env.plantAt).toBe('.env.local')
+    expect(resolved.source.tickets).toBe('github')
+    expect(resolved.runtime.agent).toBe('claude-code')
+
+    const doc = parseDocument(text)
+    for (const [dotted, sentence] of Object.entries(SAID)) {
+      const keyPath = dotted.split('.')
+      const parent = (keyPath.length === 1 ? doc.contents : doc.getIn(keyPath.slice(0, -1), true)) as YAMLMap
+      expect(isMap(parent), dotted).toBe(true)
+      const pair = parent.items.find((p) => isScalar(p.key) && p.key.value === keyPath[keyPath.length - 1])
+      expect(pair, dotted).toBeDefined()
+      const comment = (pair!.key as Node).commentBefore ?? (parent.items[0] === pair ? parent.commentBefore : '') ?? ''
+      expect(comment.replace(/\s+/g, ' ').trim(), dotted).toBe(sentence)
+    }
+  })
+
+  it('refuses by name, before asking a runtime whether it is signed in, when there is no --base and no default branch to seed an absent file (#432)', async () => {
+    delete process.env['LINGTAI_GITHUB_APP_ID']
+    delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
+    const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
+      runtimes: () => {
+        throw new Error('no runtimes in this test')
+      },
+    })
     const errors: string[] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
       errors.push(String(msg))
     })
 
-    const code = await askBeforeGithubAdd(SLUG, { agent: 'claude-code' }, counted.deps)
+    const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
     spy.mockRestore()
 
     expect(code).toBe(1)
-    expect(errors.join('\n')).toContain('--agent needs a recipe to write into')
+    expect(errors.join('\n')).toContain('pass --base')
     expect(counted.writes).toBe(0)
     expect(counted.asks).toBe(0)
   })

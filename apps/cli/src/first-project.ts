@@ -19,15 +19,17 @@
  * directory is a git repository, it has an `origin` (the merge lane pushes
  * there — `packages/actions/src/merge-action.ts:47`), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
- * then does `setRecipe` seed `repo.base`, `repo.remote`, `env.plantAt` and
- * `source.kinds`, and `askRecipe` (#431) ask the rest of the recipe's
- * questions. **That seed's `base` is not necessarily final**: `askLanding`,
- * inside `askRecipe`, can still move `repo.base` — so what follows the seed
- * write is a re-read of the file for its actual `repo.base`, a second
- * `git rev-parse` for that base's sha when it moved, `resolveLocalRecipe`
- * reading the file back for its `configHash`, and `register` (`addLocal` in
- * `@lingtai/conductor/onboard`) appending `ProjectConfigured` with
- * `owner: null` against that final base, not the one the seed wrote.
+ * then does `askRecipe` (#431) take `repo.base`, `repo.remote` and, on an
+ * absent file, `env.plantAt` as its seeds, and ask the rest of the recipe's
+ * questions — writing all of it, seeds and answers together, in the one
+ * creation write an absent file gets (#432). **That seed's `base` is not
+ * necessarily final**: `askLanding`, inside `askRecipe`, can still move
+ * `repo.base` — so what follows is a re-read of the file for its actual
+ * `repo.base`, a second `git rev-parse` for that base's sha when it moved,
+ * `resolveLocalRecipe` reading the file back for its `configHash`, and
+ * `register` (`addLocal` in `@lingtai/conductor/onboard`) appending
+ * `ProjectConfigured` with `owner: null` against that final base, not the
+ * one the seed wrote.
  *
  * **The GitHub branch is #393's App step, unchanged, plus the picker.** No App
  * configured runs `askFirstProject`'s App question and `waitForApp`; a slug
@@ -61,8 +63,6 @@ import {
   recipePath,
   resolveLocalRecipe,
   resolveSource,
-  setRecipe,
-  SETUP_KINDS,
   type RecipeFiles,
   type ResolvedRecipe,
   type SignedIn,
@@ -82,7 +82,7 @@ import {
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
 import { question, type QuestionWorld } from './question.ts'
-import { ADD_KEPT, askRecipe } from './recipe-flow.ts'
+import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
 
@@ -429,32 +429,21 @@ async function runLocalBranch(
   const path = recipePath(name, world.home)
   const existingText = await world.files.read(path)
 
-  // `env.plantAt` and `source.kinds` have no schema default (`recipe.ts`'s
-  // `plantAt: z.string()`, `source.kinds: z.array(z.string()).min(1)`) — a
-  // brand-new file needs both or it will not resolve at all, and nothing a
-  // directory offers answers either. Written only when there is no file yet:
-  // an existing one already has them, possibly edited since, and a re-run
-  // must not overwrite that silently.
-  const changes = [
+  // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
+  // — a brand-new file needs it or it will not resolve at all, and nothing a
+  // directory offers answers it either. Written only when there is no file
+  // yet: an existing one already has it, possibly edited since, and a re-run
+  // must not overwrite that silently. `source.kinds` is no longer seeded here
+  // — `askRecipe`'s own `askKinds` always answers it on an absent file (#432).
+  const seeds = [
     { path: ['repo', 'base'], value: base },
     { path: ['repo', 'remote'], value: remote },
-    ...(existingText === null
-      ? [
-          { path: ['env', 'plantAt'], value: '.env.local' },
-          { path: ['source', 'kinds'], value: [...SETUP_KINDS] },
-        ]
-      : []),
+    ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
   ]
-  try {
-    await setRecipe(name, changes, { home: world.home, files: world.files })
-  } catch (err) {
-    return { refused: (err as Error).message }
-  }
 
-  // Not `world.kept`: that described the state before the write just above,
-  // and a refusal inside `askRecipe` is after it — `question.ts:43-50`'s rule
-  // that a caller placed after its own write must say what that write left
-  // behind (#431 fix round, finding 3).
+  // Not `world.kept`: that described the state before `askRecipe` writes
+  // anything, and a refusal placed after its write must say what that write
+  // left behind (#431 fix round, finding 3).
   const seededKept = `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered`
 
   const recipeResult = await askRecipe(world, {
@@ -466,6 +455,8 @@ async function runLocalBranch(
     buildFlags,
     defaultBranch: async () => detected,
     history: world.history,
+    seeds,
+    keptBeforeWrite: world.kept,
     kept: seededKept,
     home: world.home,
     files: world.files,

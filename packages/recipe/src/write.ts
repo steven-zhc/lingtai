@@ -15,9 +15,9 @@ import { isDeepStrictEqual } from 'node:util'
 import { isNode, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
 
-import { type RecipeChange, editRecipe } from './emit.ts'
+import { type RecipeChange, type Said, editRecipe, emitRecipe } from './emit.ts'
 import { recipePath } from './local.ts'
-import { RECIPE_VERSION } from './recipe.ts'
+import { Recipe, RECIPE_VERSION } from './recipe.ts'
 import { RecipeInvalidError, resolveSource } from './resolve.ts'
 
 /** The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. */
@@ -170,17 +170,29 @@ function widenStepsIfNeeded(
  *
  * `written` is false when the change set a value the file already had —
  * `editRecipe` returns the same text, and nothing is replaced.
+ *
+ * `said`, given only alongside the file's creation, is the sentence each
+ * block was asked about: the text built from `changes` is parsed and emitted
+ * again through `emitRecipe`, which prints a comment above every block named
+ * in `said` (doc/design/400.md §*A new file is created once, with `said`*).
+ * Ignored once the file exists — 0104 §14 governs an edit to it from then on,
+ * and a comment there is not protected.
  */
 export async function setRecipe(
   project: string,
   changes: readonly RecipeChange[],
-  options?: { home?: string; files?: RecipeFiles },
+  options?: { home?: string; files?: RecipeFiles; said?: Said },
 ): Promise<SetRecipeResult> {
   const files = options?.files ?? diskFiles
   const path = recipePath(project, options?.home)
   const existing = await files.read(path)
   const widened = widenStepsIfNeeded(existing, changes, path)
-  const text = editedText(existing, widened, path)
+  let text = editedText(existing, widened, path)
+
+  if (existing === null && options?.said !== undefined) {
+    const recipe = Recipe.parse({ runtime: {}, ...parseYaml(text) })
+    text = emitRecipe(recipe, options.said)
+  }
 
   resolveSource(text, refFor(text, path), path)
 
