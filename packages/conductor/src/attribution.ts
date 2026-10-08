@@ -104,12 +104,9 @@ export interface Failure {
  */
 const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   /**
-   * Staleness, not a defect — and by the time this is written the mechanical
-   * fix is spent twice over. `integrate()` merges the base in before it merges
-   * out, so a `conflict` is that attempt failing (0025 §4); and since `#142`
-   * the pass then stages the conflict in its own worktree and sends the agent
-   * back into the markers, up to `rounds` times. A conflict that still reaches
-   * a person has had every cheap answer.
+   * Staleness, not a defect. Archived 0025 §4 describes a remedy — merge the
+   * base in, verify, merge out — that the lane does not perform; whether a
+   * move should merge the base into the branch is #426's open question.
    */
   conflict: 'repository',
   /** A gate refused this diff. The gates are the repository's. */
@@ -203,8 +200,8 @@ export function whoseFailure(failure: Failure): FailureOwner {
  * else — a reason code and a git message, in front of an operator who was being
  * asked to work out what to do with them (#83). What went missing between the
  * integrator and that card is not information: this file already knows whose
- * failure each reason is, whether the mechanical remedy is spent, and whether
- * anything could have acted on it. It simply never said any of it in words.
+ * failure each reason is and whether anything could have acted on it. It
+ * simply never said any of it in words.
  *
  * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
  * one: a tenth reason will not compile until somebody writes the sentence and
@@ -225,9 +222,7 @@ const REFUSAL_READING: Record<
     says: ({ branch, base }) => `${branch} does not merge into ${base}.`,
     move: {
       action: 'requeue',
-      why:
-        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
-        'it is cut from a base that has since moved',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
     },
   },
   'verify-failed': {
@@ -292,34 +287,31 @@ const REFUSAL_READING: Record<
 }
 
 /**
- * Why no agent was bought, which since `#143` is one answer per owner rather
- * than one per rule.
+ * Why no further agent is coming, which since `#143` is one answer per owner
+ * rather than one per rule.
  *
  * It used to be `decideRepair`'s sentence, and there were five of them: whose
- * failure it was, whether the recipe repaired at all, and three bounds. A lane
- * refusal buys nothing now, so there is no rule to name and the only thing left
- * to say is *why nothing could have been*. `whoseFailure` is the whole of that,
- * which is the same claim 0039 §Consequences makes about this file.
+ * failure it was, whether the recipe repaired at all, and three bounds.
+ * `whoseFailure` is what is left of that, which is the same claim 0039
+ * §Consequences makes about this file.
  *
  * Said out loud on every card, including the `repository` one where the reason
  * is least obvious: the branch is the repository's and a person may well ask
- * why it did not get another agent. Because a refusal reaches this sentence
- * only from the merge lane or from `approve()`, and **neither is a place a
- * round runs** — a `merge:` gate goes from `integrate()` straight to a block,
- * and an approval that meets a moved base has no pass at all. So the sentence
- * must not point at `runtime.limits.rounds`: raising it buys nothing here, and
- * a card that implied otherwise would send an operator to change a key that
- * the next identical refusal still ignores.
+ * why it did not get another agent. **The sentence cannot say nothing was
+ * bought**: the implement agent that produced the branch always was, and for
+ * `verify-failed` a mechanical fix round (`fixRound` in `conduct.ts`,
+ * `same-worktree` in `judge.ts`) may have run too. What is true at this point
+ * is only that nothing further will — a card naming `runtime.limits.rounds`
+ * would be pointing at a round already spent, not one still open.
  */
 const OWNER_SAYS: Record<FailureOwner, string> = {
   repository:
-    'No agent was bought: a refusal at the merge lane or at approval buys none, and ' +
-    'no fix round runs there, so no recipe key would have changed this. Re-implementing ' +
-    'a branch that already exists is the expensive wrong answer (0039)',
+    'No further agent is coming. Re-implementing a branch that already exists ' +
+    'is the expensive wrong answer (0039)',
   lingtai:
-    "No agent was bought: this is Lingtai's own failure, not the repository's — an " +
+    "No further agent is coming: this is Lingtai's own failure, not the repository's — an " +
     'agent has no access to the thing that is broken and nothing it could change',
-  person: 'No agent was bought: this is a hold somebody meant, not a failure — it is yours to answer',
+  person: 'No further agent is coming: this is a hold somebody meant, not a failure — it is yours to answer',
 }
 
 /**
@@ -351,14 +343,12 @@ export function diagnoseRefusal(input: {
   const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,
-    // What was *done* about it, which for a conflict is more than nothing: the
-    // integrator merges the base in before it merges out, so by the time this
-    // is written the mechanical fix has already been tried and exhausted
-    // (0025 §4). Then the sentence saying no agent is coming — a card must be
-    // able to say why nothing was bought, not only that nothing was.
-    done:
-      (input.reason === 'conflict' ? `${input.base} was merged in first and it still would not merge. ` : '') +
-      `${OWNER_SAYS[owner]}.`,
+    // Archived 0025 §4 describes a remedy — merge the base in, verify, merge
+    // out — that the lane does not perform; whether a move should merge the
+    // base into the branch is #426's open question. So there is nothing to
+    // say here about what was tried, only the sentence saying no further
+    // agent is coming.
+    done: `${OWNER_SAYS[owner]}.`,
     raw: input.detail,
     recommendation: reading?.move ?? null,
   }

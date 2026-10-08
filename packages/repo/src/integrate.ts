@@ -400,8 +400,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         )
       }
 
-      // Merge base in first, so a conflict is discovered here rather than
-      // halfway through writing to the base branch.
+      // Merge the branch into the base, inside this throwaway detached
+      // worktree, so a conflict is found here rather than halfway through
+      // writing to the base branch.
       const mergedIn = yield* Effect.either(at(['merge', '--no-edit', options.branch], cwd))
       if (Either.isLeft(mergedIn)) {
         // `-z`: git's own quoting of a path with a non-ASCII, backslash,

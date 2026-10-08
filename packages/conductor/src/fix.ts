@@ -616,11 +616,15 @@ So:
 /**
  * The merge lane's refusal: the base moved, and the merge does not apply.
  *
- * **The only one of the three where the agent does not arrive at a clean
- * tree.** The conductor has already merged the base in and left the conflict
- * standing, because a description of a conflict is not something anyone can
- * resolve — the markers are. So this half says where the agent is as much as
- * what refused, which the other two never have to.
+ * **The only one of the three whose fix starts with a git command the agent
+ * has to run.** The merge the lane tried happened in its own throwaway
+ * worktree, which is gone by the time this is read; the agent's own tree is
+ * detached at the old base, and the merge into the new one has not been
+ * attempted from here yet. Nothing between rounds checks or cleans that
+ * tree, so an earlier round that resolved markers and never committed would
+ * leave `MERGE_HEAD` standing in it — this half cannot promise the tree is
+ * clean, or even that no merge is already in progress, so it tells the agent
+ * what each of those looks like rather than asserting either.
  *
  * Its acceptance test is the strictest of the three and the only one that is
  * two things: the merge has to complete *and* the point has to stay green.
@@ -630,21 +634,30 @@ So:
 function conflictHalf(base: string, paths: string): { evidence: string; criterion: string } {
   const files = paths.trim()
   return {
-    evidence: `\`${base}\` moved while this change was being worked on, and merging it in
-does not apply cleanly. **You are in the middle of that merge right now** — the
-conflicts are in your working tree, with markers, exactly as \`git merge\` left
-them.
+    evidence: `\`${base}\` moved while this change was being worked on, and this branch does
+not merge into it cleanly. The lane's own attempt happened in a worktree that
+is already gone, so merging it in is yours to do: run git merge \`${base}\`
+and resolve what it gives you.
+
+- If git refuses because a merge is already standing in this tree
+  (\`MERGE_HEAD\` exists — an earlier round that resolved the markers but
+  never committed), finish that one first: \`git add\` the resolved files and
+  \`git commit\`, then run git merge \`${base}\` again if it had not landed
+  yet.
+- If git refuses because your tree already holds changes it has not seen,
+  commit or stash them first, then merge.
 
 ## What conflicts
 
 \`\`\`
-${files === '' ? '(git named no files; use `git status` and `git diff --diff-filter=U`)' : files}
+${files === '' ? `(git named no files; run git merge \`${base}\` first, then \`git status\` and \`git diff --diff-filter=U\` name what it leaves)` : files}
 \`\`\``,
     criterion: `## What counts as done
 
-Resolve the conflict and commit the merge. Then the whole \`proposed\` step runs
-again on what you committed, and the merge is attempted again — **both have to
-pass.** The second is why this is not a matter of picking a side.
+Run git merge \`${base}\`, resolve what it gives you, and commit the merge.
+Then the whole \`proposed\` step runs again on what you committed, and the
+merge is attempted again — **both have to pass.** The second is why this is
+not a matter of picking a side.
 
 So:
 
@@ -654,7 +667,7 @@ So:
 - **\`--ours\` and \`--theirs\` wholesale are not a resolution.** Neither is
   deleting the conflicting hunk. Read what each side was doing.
 - \`git add\` the resolved files and \`git commit\` the merge. Do not
-  \`git merge --abort\`: that throws away the thing you were asked to do.
+  \`git merge --abort\`: that throws away the merge you just ran.
 - Change nothing the conflict did not force you to. The diff is about to be read
   again by a reviewer who last saw it without this merge in it.
 

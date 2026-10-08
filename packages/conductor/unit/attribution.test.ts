@@ -147,8 +147,8 @@ describe('whose failure it is', () => {
  * `#112` sat in *Waiting on you* for four days holding
  * `conflict: agent/112 does not merge into develop: user-lookup-panel.tsx` — a
  * git message with a colon in it — and no action at all. Everything needed to
- * say more was already in this file: whose failure each reason is, whether the
- * mechanical remedy is spent, and whether anything could act on it.
+ * say more was already in this file: whose failure each reason is, and
+ * whether anything could act on it.
  *
  * Pure, and tested here rather than through a run, because it is what the card
  * and `lingtai status` both end up printing.
@@ -190,29 +190,32 @@ describe('a refusal, read for a person', () => {
       // And why no agent is coming, which is what a card could never say —
       // composed here from `whoseFailure` rather than handed in by whichever
       // call site had just asked about money.
-      expect(d.done, reason).toContain('No agent was bought')
+      expect(d.done, reason).toContain('No further agent is coming')
     }
   })
 
   /**
    * **The three sentences are three, and each one answers a different question
-   * a person would actually ask.** A single "no agent was bought" would leave
-   * the reader of a red build wondering whether Lingtai was broken, and the
-   * reader of a migration hold wondering what had gone wrong — which is `#84`'s
-   * *never left with no path forward* failing for the opposite reason.
+   * a person would actually ask.** A single "no further agent is coming" would
+   * leave the reader of a red build wondering whether Lingtai was broken, and
+   * the reader of a migration hold wondering what had gone wrong — which is
+   * `#84`'s *never left with no path forward* failing for the opposite reason.
    */
   it("says why no agent is coming in the owner's own terms", () => {
-    expect(read('verify-failed').done).toContain('at the merge lane or at approval')
+    expect(read('verify-failed').done).toContain('No further agent is coming')
     expect(read('dirty-base').done).toContain("Lingtai's own failure")
     expect(read('pending-migration').done).toContain('yours to answer')
   })
 
   /**
-   * **A refusal that reaches a person reached no round**, and the sentence must
-   * not say otherwise. A `merge:` gate goes from `integrate()` straight to a
-   * block and an approval that conflicts has no pass at all, so a card naming
-   * `runtime.limits.rounds` sends an operator to raise a key the next identical
-   * refusal still ignores.
+   * **The implement agent that produced the branch was always bought, and for
+   * `verify-failed` a mechanical fix round may have run too** — so the
+   * sentence must not claim nothing was bought. What it must not do either is
+   * promise another is still coming: a declared `judge:` at `proposed:` can
+   * buy a round on the *next* identical refusal (`attribution.ts`'s
+   * `OWNER_SAYS`), but that is a different pass. So a card naming
+   * `runtime.limits.rounds`, the ceiling that bound a round already spent,
+   * would be pointing at the wrong key regardless.
    */
   it('never tells a person that raising the rounds would have helped', () => {
     for (const reason of REASONS) {
@@ -221,15 +224,14 @@ describe('a refusal, read for a person', () => {
     }
   })
 
-  it('recommends the queue for a conflict, and says the remedy is spent', () => {
+  it('recommends the queue for a conflict, and names no merge already tried', () => {
     const d = read('conflict')
     expect(d.what).toBe('agent/112 does not merge into develop.')
-    expect(d.done).toContain('develop was merged in first')
+    expect(d.done).not.toContain('was merged in first')
+    expect(d.recommendation?.why).not.toContain('mechanical remedy')
     expect(d.recommendation).toEqual({
       action: 'requeue',
-      why:
-        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
-        'it is cut from a base that has since moved',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
     })
   })
 

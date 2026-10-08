@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Does** | Lands the branch on the base: merge the base in, verify, merge out, push. |
+| **Does** | Lands the branch on the base: merge the branch into the base inside a throwaway worktree, push. |
 | **Write it at** | `merge` — the last action there. |
 | **Needs** | Nothing beyond `name`. `merge.strategy` defaults to `merge-commit`, the only value. |
 | **Refuses** | Any other `strategy`, a `base:` of its own, any step but `merge`. |
@@ -15,10 +15,10 @@ carrying its own reason rather than a half-merged `main`.
 ## What it does
 
 `createMergeAction` in `packages/actions/src/merge-action.ts` drives `integrate`
-(`packages/repo/src/integrate.ts`): merge the base into the branch, re-verify
-against what landed in the meantime, merge out with `git merge --no-edit`, then
-push — a fast-forward where it can be one. **Declaring nothing at `merge` runs the
-same action** off the same base.
+(`packages/repo/src/integrate.ts`): cut a throwaway detached worktree at the
+base, merge the branch into it with `git merge --no-edit`, re-verify the result,
+then push — a fast-forward where it can be one. **Declaring nothing at `merge`
+runs the same action** off the same base.
 
 A refusal carries the lane's own `reason` (`conflict`, `verify-failed`, …) and
 `detail` to `proposed`. `strategy` has one value, `merge-commit`.

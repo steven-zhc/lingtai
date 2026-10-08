@@ -1452,8 +1452,8 @@ describe('what a person is shown when the restarts are over too', () => {
  * crashed process as a judgement and a judgement as a crash.
  */
 /**
- * The third shape, and the only one where the agent does not arrive at a clean
- * tree (0039 §2).
+ * The third shape, and the only one whose fix starts with a git command the
+ * agent has to run.
  *
  * A conflict is the refusal that used to cost the most: the lane aborted, the
  * item went back to the queue, and a whole new run re-implemented a branch that
@@ -1472,10 +1472,21 @@ describe('what a conflict tells the fixer', () => {
     checks: ['pnpm typecheck && pnpm test'],
   })
 
-  it('says the agent is mid-merge, because a description is not resolvable', () => {
-    expect(brief).toMatch(/in the middle of that merge right now/i)
-    expect(brief).toMatch(/conflicts are in your working tree, with markers/i)
-    expect(brief).toContain('`main` moved')
+  it('tells the agent to run the merge itself, not that one is already in progress', () => {
+    expect(brief).toContain('git merge `main`')
+    expect(brief).not.toMatch(/middle of that merge/i)
+    expect(brief).not.toContain('origin/main')
+  })
+
+  it('does not promise a clean tree nothing has verified, and gives an account if it is not', () => {
+    expect(brief).not.toMatch(/tree is clean/i)
+    expect(brief).not.toMatch(/nothing is mid-merge/i)
+    expect(brief).toMatch(/already holds changes it has not seen/i)
+  })
+
+  it('tells the agent what to do if an earlier round left a merge standing, since nothing cleans one between rounds', () => {
+    expect(brief).toMatch(/MERGE_HEAD/)
+    expect(brief).toMatch(/resolved the markers but\s+never committed/i)
   })
 
   it('names the files git named', () => {
