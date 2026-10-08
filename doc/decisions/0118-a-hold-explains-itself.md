@@ -104,11 +104,14 @@ route, and they want different moves:
      - *lines to fix*: specific edits, and the approach is sound;
      - *the approach is wrong*: patching will not converge;
      - *merge by hand*: a conflict;
-     - *try it again, narrower*: the run did not finish, and the body can save
-       the next one what it spent its turns on;
-     - *fix the setup*: the repository or the machine refused before any agent
-       ran, so no edit to the ticket can help, and other tickets are refused
-       the same way.
+     - *try it again, narrower*: the run did not finish, and either the body
+       can save the next one what it spent its turns on, or the ticket asks
+       for more than one pass should do and is split into smaller tickets;
+     - *fix the setup*: the repository or the machine refused before or around
+       any agent's work, so no edit to the ticket can help, and other tickets
+       are refused the same way. Triage says which of two it is: a condition
+       that lifts by itself, such as an account's usage limit, or one a person
+       has to fix, such as a runtime missing the tier the recipe asks for.
    - Rounds and restarts left are facts on the log, shown on the rail line. A
      spent budget changes which moves are offered, never the cause.
    - Advice that will not parse into a cause and its parts is recorded as a
