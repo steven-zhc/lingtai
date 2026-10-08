@@ -287,31 +287,34 @@ const REFUSAL_READING: Record<
 }
 
 /**
- * Why no further agent is coming, which since `#143` is one answer per owner
- * rather than one per rule.
+ * Why no agent was bought, which since `#143` is one answer per owner rather
+ * than one per rule.
  *
  * It used to be `decideRepair`'s sentence, and there were five of them: whose
- * failure it was, whether the recipe repaired at all, and three bounds.
- * `whoseFailure` is what is left of that, which is the same claim 0039
- * §Consequences makes about this file.
+ * failure it was, whether the recipe repaired at all, and three bounds. A lane
+ * refusal buys nothing now, so there is no rule to name and the only thing left
+ * to say is *why nothing could have been*. `whoseFailure` is the whole of that,
+ * which is the same claim 0039 §Consequences makes about this file.
  *
  * Said out loud on every card, including the `repository` one where the reason
  * is least obvious: the branch is the repository's and a person may well ask
- * why it did not get another agent. **The sentence cannot say nothing was
- * bought**: the implement agent that produced the branch always was, and for
- * `verify-failed` a mechanical fix round (`fixRound` in `conduct.ts`,
- * `same-worktree` in `judge.ts`) may have run too. What is true at this point
- * is only that nothing further will — a card naming `runtime.limits.rounds`
- * would be pointing at a round already spent, not one still open.
+ * why it did not get another agent. Because a refusal reaches this sentence
+ * only from the merge lane or from `approve()`, and **neither is a place a
+ * round runs** — a `merge:` gate goes from `integrate()` straight to a block,
+ * and an approval that meets a moved base has no pass at all. So the sentence
+ * must not point at `runtime.limits.rounds`: raising it buys nothing here, and
+ * a card that implied otherwise would send an operator to change a key that
+ * the next identical refusal still ignores.
  */
 const OWNER_SAYS: Record<FailureOwner, string> = {
   repository:
-    'No further agent is coming. Re-implementing a branch that already exists ' +
-    'is the expensive wrong answer (0039)',
+    'No agent was bought: a refusal at the merge lane or at approval buys none, and ' +
+    'no fix round runs there, so no recipe key would have changed this. Re-implementing ' +
+    'a branch that already exists is the expensive wrong answer (0039)',
   lingtai:
-    "No further agent is coming: this is Lingtai's own failure, not the repository's — an " +
+    "No agent was bought: this is Lingtai's own failure, not the repository's — an " +
     'agent has no access to the thing that is broken and nothing it could change',
-  person: 'No further agent is coming: this is a hold somebody meant, not a failure — it is yours to answer',
+  person: 'No agent was bought: this is a hold somebody meant, not a failure — it is yours to answer',
 }
 
 /**
@@ -346,8 +349,7 @@ export function diagnoseRefusal(input: {
     // Archived 0025 §4 describes a remedy — merge the base in, verify, merge
     // out — that the lane does not perform; whether a move should merge the
     // base into the branch is #426's open question. So there is nothing to
-    // say here about what was tried, only the sentence saying no further
-    // agent is coming.
+    // say here about what was tried, only `OWNER_SAYS`'s own sentence.
     done: `${OWNER_SAYS[owner]}.`,
     raw: input.detail,
     recommendation: reading?.move ?? null,
