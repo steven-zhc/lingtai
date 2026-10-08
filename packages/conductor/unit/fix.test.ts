@@ -1478,6 +1478,11 @@ describe('what a conflict tells the fixer', () => {
     expect(brief).not.toContain('origin/main')
   })
 
+  it('does not promise a clean tree nothing has verified, and gives an account if it is not', () => {
+    expect(brief).not.toMatch(/tree is clean/i)
+    expect(brief).toMatch(/already holds changes it has not seen/i)
+  })
+
   it('names the files git named', () => {
     expect(brief).toContain('src/queue.ts')
     expect(brief).toContain('packages/domain/src/events.ts')

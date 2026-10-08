@@ -104,12 +104,9 @@ export interface Failure {
  */
 const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   /**
-   * Staleness, not a defect — and by the time this is written the mechanical
-   * fix is spent twice over. `integrate()` merges the base in before it merges
-   * out, so a `conflict` is that attempt failing (0025 §4); and since `#142`
-   * the pass then stages the conflict in its own worktree and sends the agent
-   * back into the markers, up to `rounds` times. A conflict that still reaches
-   * a person has had every cheap answer.
+   * Staleness, not a defect. Archived 0025 §4 describes a remedy — merge the
+   * base in, verify, merge out — that the lane does not perform; whether a
+   * move should merge the base into the branch is #426's open question.
    */
   conflict: 'repository',
   /** A gate refused this diff. The gates are the repository's. */
@@ -220,9 +217,7 @@ const REFUSAL_READING: Record<
     says: ({ branch, base }) => `${branch} does not merge into ${base}.`,
     move: {
       action: 'requeue',
-      why:
-        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
-        'it is cut from a base that has since moved',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
     },
   },
   'verify-failed': {

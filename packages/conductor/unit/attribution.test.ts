@@ -219,15 +219,14 @@ describe('a refusal, read for a person', () => {
     }
   })
 
-  it('recommends the queue for a conflict, and says the remedy is spent', () => {
+  it('recommends the queue for a conflict, and names no merge already tried', () => {
     const d = read('conflict')
     expect(d.what).toBe('agent/112 does not merge into develop.')
     expect(d.done).not.toContain('was merged in first')
+    expect(d.recommendation?.why).not.toContain('mechanical remedy')
     expect(d.recommendation).toEqual({
       action: 'requeue',
-      why:
-        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
-        'it is cut from a base that has since moved',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
     })
   })
 
