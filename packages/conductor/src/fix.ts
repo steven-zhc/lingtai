@@ -618,12 +618,13 @@ So:
  *
  * **The only one of the three whose fix starts with a git command the agent
  * has to run.** The merge the lane tried happened in its own throwaway
- * worktree, which is gone by the time this is read; nothing is mid-merge in
- * the agent's own tree, detached at the old base, and the merge into the new
- * one has not been attempted yet. That tree may still hold whatever an
- * earlier round left uncommitted — nothing between rounds checks or cleans
- * it — so this half cannot promise it is clean, only that no merge is
- * already standing in it.
+ * worktree, which is gone by the time this is read; the agent's own tree is
+ * detached at the old base, and the merge into the new one has not been
+ * attempted from here yet. Nothing between rounds checks or cleans that
+ * tree, so an earlier round that resolved markers and never committed would
+ * leave `MERGE_HEAD` standing in it — this half cannot promise the tree is
+ * clean, or even that no merge is already in progress, so it tells the agent
+ * what each of those looks like rather than asserting either.
  *
  * Its acceptance test is the strictest of the three and the only one that is
  * two things: the merge has to complete *and* the point has to stay green.
@@ -634,11 +635,17 @@ function conflictHalf(base: string, paths: string): { evidence: string; criterio
   const files = paths.trim()
   return {
     evidence: `\`${base}\` moved while this change was being worked on, and this branch does
-not merge into it cleanly. Nothing is mid-merge in your tree — the lane's own
-attempt happened in a worktree that is already gone — and merging it in is
-yours to do: run git merge \`${base}\` and resolve what it gives you. If git
-refuses because your tree already holds changes it has not seen, commit or
-stash them first, then merge.
+not merge into it cleanly. The lane's own attempt happened in a worktree that
+is already gone, so merging it in is yours to do: run git merge \`${base}\`
+and resolve what it gives you.
+
+- If git refuses because a merge is already standing in this tree
+  (\`MERGE_HEAD\` exists — an earlier round that resolved the markers but
+  never committed), finish that one first: \`git add\` the resolved files and
+  \`git commit\`, then run git merge \`${base}\` again if it had not landed
+  yet.
+- If git refuses because your tree already holds changes it has not seen,
+  commit or stash them first, then merge.
 
 ## What conflicts
 

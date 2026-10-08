@@ -195,8 +195,8 @@ export function whoseFailure(failure: Failure): FailureOwner {
  * else — a reason code and a git message, in front of an operator who was being
  * asked to work out what to do with them (#83). What went missing between the
  * integrator and that card is not information: this file already knows whose
- * failure each reason is, whether the mechanical remedy is spent, and whether
- * anything could have acted on it. It simply never said any of it in words.
+ * failure each reason is and whether anything could have acted on it. It
+ * simply never said any of it in words.
  *
  * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
  * one: a ninth reason will not compile until somebody writes the sentence and
@@ -280,26 +280,24 @@ const REFUSAL_READING: Record<
  * than one per rule.
  *
  * It used to be `decideRepair`'s sentence, and there were five of them: whose
- * failure it was, whether the recipe repaired at all, and three bounds. A lane
- * refusal buys nothing now, so there is no rule to name and the only thing left
- * to say is *why nothing could have been*. `whoseFailure` is the whole of that,
- * which is the same claim 0039 §Consequences makes about this file.
+ * failure it was, whether the recipe repaired at all, and three bounds.
+ * `whoseFailure` is what is left of that, which is the same claim 0039
+ * §Consequences makes about this file.
  *
  * Said out loud on every card, including the `repository` one where the reason
  * is least obvious: the branch is the repository's and a person may well ask
- * why it did not get another agent. Because a refusal reaches this sentence
- * only from the merge lane or from `approve()`, and **neither is a place a
- * round runs** — a `merge:` gate goes from `integrate()` straight to a block,
- * and an approval that meets a moved base has no pass at all. So the sentence
- * must not point at `runtime.limits.rounds`: raising it buys nothing here, and
- * a card that implied otherwise would send an operator to change a key that
- * the next identical refusal still ignores.
+ * why it did not get another agent. This diagnosis is reached only where
+ * nothing was bought on this pass — but that is a fact about this pass, not a
+ * guarantee about the next one. A declared `judge:` at `proposed:` can send
+ * `conflict` back to `implement` (`fixRound` in `conduct.ts`, `MECHANICALLY`
+ * in `pass-steps.ts`), and `verify-failed` already does that mechanically with
+ * no declaration at all. So the sentence says only that nothing was bought
+ * here, never that nothing could have been.
  */
 const OWNER_SAYS: Record<FailureOwner, string> = {
   repository:
-    'No agent was bought: a refusal at the merge lane or at approval buys none, and ' +
-    'no fix round runs there, so no recipe key would have changed this. Re-implementing ' +
-    'a branch that already exists is the expensive wrong answer (0039)',
+    'No agent was bought on this pass. Re-implementing a branch that already exists ' +
+    'is the expensive wrong answer (0039)',
   lingtai:
     "No agent was bought: this is Lingtai's own failure, not the repository's — an " +
     'agent has no access to the thing that is broken and nothing it could change',

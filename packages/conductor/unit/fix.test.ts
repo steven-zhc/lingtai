@@ -1480,7 +1480,13 @@ describe('what a conflict tells the fixer', () => {
 
   it('does not promise a clean tree nothing has verified, and gives an account if it is not', () => {
     expect(brief).not.toMatch(/tree is clean/i)
+    expect(brief).not.toMatch(/nothing is mid-merge/i)
     expect(brief).toMatch(/already holds changes it has not seen/i)
+  })
+
+  it('tells the agent what to do if an earlier round left a merge standing, since nothing cleans one between rounds', () => {
+    expect(brief).toMatch(/MERGE_HEAD/)
+    expect(brief).toMatch(/resolved the markers but\s+never committed/i)
   })
 
   it('names the files git named', () => {

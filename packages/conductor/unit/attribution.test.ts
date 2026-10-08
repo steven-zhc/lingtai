@@ -146,8 +146,8 @@ describe('whose failure it is', () => {
  * `#112` sat in *Waiting on you* for four days holding
  * `conflict: agent/112 does not merge into develop: user-lookup-panel.tsx` — a
  * git message with a colon in it — and no action at all. Everything needed to
- * say more was already in this file: whose failure each reason is, whether the
- * mechanical remedy is spent, and whether anything could act on it.
+ * say more was already in this file: whose failure each reason is, and
+ * whether anything could act on it.
  *
  * Pure, and tested here rather than through a run, because it is what the card
  * and `lingtai status` both end up printing.
@@ -200,17 +200,18 @@ describe('a refusal, read for a person', () => {
    * *never left with no path forward* failing for the opposite reason.
    */
   it("says why no agent is coming in the owner's own terms", () => {
-    expect(read('verify-failed').done).toContain('at the merge lane or at approval')
+    expect(read('verify-failed').done).toContain('No agent was bought on this pass')
     expect(read('dirty-base').done).toContain("Lingtai's own failure")
     expect(read('pending-migration').done).toContain('yours to answer')
   })
 
   /**
-   * **A refusal that reaches a person reached no round**, and the sentence must
-   * not say otherwise. A `merge:` gate goes from `integrate()` straight to a
-   * block and an approval that conflicts has no pass at all, so a card naming
-   * `runtime.limits.rounds` sends an operator to raise a key the next identical
-   * refusal still ignores.
+   * **This diagnosis is reached only where nothing was bought on this pass**,
+   * and the sentence must not say otherwise — but it must not promise the
+   * opposite either, since a declared `judge:` at `proposed:` can buy a round
+   * on the next identical refusal (`attribution.ts`'s `OWNER_SAYS`). So a card
+   * naming `runtime.limits.rounds`, the ceiling that bound a round already
+   * spent, would be pointing at the wrong key regardless.
    */
   it('never tells a person that raising the rounds would have helped', () => {
     for (const reason of REASONS) {
