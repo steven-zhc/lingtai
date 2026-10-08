@@ -281,26 +281,90 @@ describe('askRecipe — --defaults (#433)', () => {
     expect(files.replaced).toHaveLength(0)
   })
 
-  it('with no terminal and no --defaults, the run refuses and names --defaults', async () => {
+  // A CI job with no TTY and no --defaults is not asked "use every default?"
+  // either — `given` for that question is null exactly when `--defaults` is
+  // not on the command line, and with no terminal `world.ask` would return
+  // null for it the same as for any other question. Blocking the run there
+  // would refuse a run every other flag already answers in full, and would
+  // reroute a refusal that belongs to one specific missing flag through
+  // "every default" instead, silently taking every other default along with
+  // it (#433 fix round, findings 1 and 2).
+  const FULLY_FLAGGED = {
+    agent: 'claude-code',
+    model: '',
+    reviewer: 'none',
+    install: 'none',
+    tickets: 'github',
+    kinds: 'bug',
+    land: 'main',
+    rounds: '3',
+    wall: '1h',
+    budget: '5',
+  }
+
+  it('with no terminal and no --defaults, but every question already answered by a flag, the run succeeds without being asked anything beyond "every default?" itself (#433 fix round, finding 1)', async () => {
     const files = mapFiles()
-    const world: QuestionWorld = { ask: async () => null, log: () => {} }
+    const asked: string[] = []
+    // The real no-TTY `ask` (`question.ts`'s `liveAsk`) answers null without
+    // ever printing a prompt — unlike a terminal's own `ask`, calling it is
+    // not itself "asking the operator anything". "Every default?" still
+    // calls it once, harmlessly; a world that threw on any *other* call would
+    // prove no later recipe question reaches it.
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        asked.push(prompt)
+        if (asked.length === 1) return null
+        throw new Error(`a terminal was asked: ${prompt}`)
+      },
+      log: () => {},
+    }
     const seeds = [
       { path: ['repo', 'base'], value: 'main' },
-      { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
     const result = await askRecipe(world, {
       ...BASE_AT,
       project: 'widget',
-      local: true,
+      local: false,
+      flags: FULLY_FLAGGED,
       seeds,
       kept: 'the seeded recipe is kept',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ refused: 'every default needs an answer: pass --defaults. Nothing was written' })
+    expect(result).toEqual({ ok: true })
+    expect(asked).toEqual(['use every default? [yes]: '])
+
+    const path = recipePath('widget', HOME)
+    const text = files.replaced.at(-1)!.text
+    const resolved = resolveSource(text, path, path).recipe
+    expect(resolved.runtime.limits.rounds).toBe(3)
+    expect(resolved.source.kinds).toEqual(['bug'])
+  })
+
+  it('with no terminal and no --defaults, a question whose own flag is missing refuses by its own name, not "every default" (#433 fix round, finding 2)', async () => {
+    const files = mapFiles()
+    const world: QuestionWorld = { ask: async () => null, log: () => {} }
+    const { kinds: _omitted, ...withoutKinds } = FULLY_FLAGGED
+    const seeds = [
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+    ]
+
+    const result = await askRecipe(world, {
+      ...BASE_AT,
+      project: 'widget',
+      local: false,
+      flags: withoutKinds,
+      seeds,
+      kept: 'the seeded recipe is kept',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies RecipeAt)
+
+    expect(result).toEqual({ refused: 'the kinds needs an answer: pass --kinds <a,b,c>. Nothing was written' })
     expect(files.replaced).toHaveLength(0)
   })
 })

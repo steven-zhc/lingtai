@@ -278,8 +278,11 @@ function parseArgs(
       ].includes(name)
     )
       return { refused: `${USAGE} — no ${name}` }
-    // The one boolean flag here: it names no value and consumes nothing
-    // after it, so `--defaults` beside a positional does not eat it (#433).
+    // The one boolean flag here: without this branch, `--defaults` would
+    // read the next token as its own value — another flag, which is then
+    // refused by name instead of parsed (`--defaults --store sqlite` would
+    // refuse "no sqlite"), or nothing, which is refused as `--defaults takes
+    // a value` (#433).
     if (name === '--defaults') {
       flags['defaults'] = ''
       ;(repeated['defaults'] ??= []).push('')

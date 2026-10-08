@@ -152,8 +152,14 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     fallback: 'yes',
     kept: at.keptBeforeWrite,
   })
-  if ('refused' in defaults) return defaults
-  const askWorld = defaults.answer === 'yes' ? acceptingDefaults(world) : world
+  // A refusal here can only mean the question went unanswered — `given` is
+  // either 'yes' or null (`at.flags['defaults']`), and 'yes' always accepts,
+  // so the only way to land in `{refused}` is no `--defaults` flag and no
+  // terminal to ask at. That is not a reason to stop the run: a headless run
+  // whose every later question is already answered by a flag must still
+  // succeed, and one whose own flag is missing must be refused by that
+  // question's own name, not this one's (#433 fix round, findings 1 and 2).
+  const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
 
   const existing = await files.read(path)
   const absent = existing === null
