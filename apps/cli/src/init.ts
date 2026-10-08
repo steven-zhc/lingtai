@@ -120,11 +120,13 @@ import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
+import type { SetupReader } from './detect-setup.ts'
 import {
   chooseFirstProject,
   type FirstProjectWorld,
   type GitResult,
   liveGit,
+  liveSetupReader,
   type RegisterLocalPayload,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
@@ -155,6 +157,8 @@ export interface InitWorld {
   git: () => Promise<string | null>
   /** Every runtime, asked whether it is installed and signed in. */
   runtimes: () => Promise<RuntimeFound[]>
+  /** `FirstProjectWorld.setupReader` (#431) — a real directory, over `node:fs`. */
+  setupReader: (dir: string) => SetupReader
   /** Connect, and create the tables where there are none. */
   database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
@@ -427,6 +431,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       files: world.files,
       home,
       signedIn: world.signedIn,
+      // Already probed above, for the "look" lines — a second probe for the
+      // same run would ask every runtime whether it is signed in twice.
+      runtimes: async () => runtimes,
+      setupReader: world.setupReader,
       register: world.registerLocal,
       history: world.history,
       // The store above is already written by the time this runs — the same
@@ -824,6 +832,7 @@ export function liveInitWorld(): InitWorld {
       return said.status === 0 ? said.stdout.trim() : null
     },
     runtimes: askRuntimes,
+    setupReader: liveSetupReader,
     database: async (url) => {
       const pg = (await import('pg')).default
       const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })

@@ -71,13 +71,20 @@ function countedDeps(
   counted.deps = {
     check: (slug, log) => checkInstallation(slug, log, undefined, lookup),
     picker,
-    read: async (path) => {
-      counted.reads.push(path)
-      return null
+    files: {
+      read: async (path) => {
+        counted.reads.push(path)
+        return null
+      },
+      replace: async () => {
+        counted.writes++
+      },
     },
-    write: async (project) => {
-      counted.writes++
-      return { path: project, text: '', written: true }
+    // Every test here has `files.read` return null, so `askBeforeGithubAdd`
+    // returns before this is ever reached — there is no recipe for it to ask
+    // GitHub about.
+    reader: async () => {
+      throw new Error('no reader in this test')
     },
     ask: async () => {
       counted.asks++

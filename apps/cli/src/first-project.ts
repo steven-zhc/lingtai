@@ -31,7 +31,9 @@
  * today.
  */
 import { execFile, spawn } from 'node:child_process'
-import { basename, resolve as resolvePath } from 'node:path'
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
 import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
@@ -47,21 +49,23 @@ import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, stateDir } from '@lingtai/env'
 import { createAppReader, type Installation } from '@lingtai/github'
 import {
-  AgentUnresolvedError,
+  baseOf,
   diskFiles,
   readRecipeKey,
   recipePath,
-  resolveAgent,
   resolveLocalRecipe,
+  resolveSource,
   setRecipe,
-  writtenAgent,
+  SETUP_KINDS,
   type RecipeFiles,
   type ResolvedRecipe,
   type SignedIn,
 } from '@lingtai/recipe'
 
+import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt } from './board.ts'
+import type { SetupReader } from './detect-setup.ts'
 import {
   APP_WAIT_MS,
   appComeBackLine,
@@ -72,7 +76,9 @@ import {
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
 import { question, type QuestionWorld } from './question.ts'
-import { askKinds, askTickets, liveHistory } from './source.ts'
+import { ADD_KEPT, askRecipe } from './recipe-flow.ts'
+import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import { liveHistory } from './source.ts'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
 export interface GitResult {
@@ -99,6 +105,10 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** `stateDir()` unless a test says otherwise. */
   home: string
   signedIn: SignedIn
+  /** Every runtime, asked whether it is installed and signed in — never probed twice (`AskAgentsAt`'s own rule). */
+  runtimes: () => Promise<readonly RuntimeFound[]>
+  /** `askRecipe`'s `reader`, for the local branch's `askInstallAndBuild` (#431) — a real directory, over `node:fs`. */
+  setupReader: (dir: string) => SetupReader
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
   /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
@@ -388,51 +398,32 @@ async function runLocalBranch(
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 
-  const path = recipePath(name, world.home)
-  const existingText = await world.files.read(path)
-  const written = existingText === null ? 'absent' : writtenAgent(existingText)
-  if (written !== 'not a runtime') {
-    try {
-      await resolveAgent(written === 'absent' ? null : { agent: written, from: path }, world.signedIn, path)
-    } catch (err) {
-      if (!(err instanceof AgentUnresolvedError)) throw err
-      return { refused: err.message }
-    }
+  // Probed once, before anything is written — an agent signed out of
+  // nowhere is refused by name rather than discovered partway through
+  // `askRecipe`'s own first question (#431).
+  const runtimes = await world.runtimes()
+  if (!runtimes.some((r) => r.signedIn)) {
+    return { refused: noRuntimesSignedInRefusal(runtimes) }
   }
 
-  // #396's two questions — where tickets come from, and which labels are
-  // work. Asked once the directory, base and agent are all settled, so a
-  // refusal from either of these still reaches a person before this one
-  // does; their own `changes` fold into the one write below rather than
-  // writing on their own (`setup-build.ts`'s "this writes nothing").
-  const ticketsAnswer = await askTickets(world, name, true, flags['tickets'] ?? null, {
-    home: world.home,
-    files: world.files,
-    history: world.history,
-    kept: world.kept,
-  })
-  if ('refused' in ticketsAnswer) return { refused: ticketsAnswer.refused }
-  const kindsAnswer = await askKinds(world, name, flags['kinds'] ?? null, {
-    home: world.home,
-    files: world.files,
-    kept: world.kept,
-  })
-  if ('refused' in kindsAnswer) return { refused: kindsAnswer.refused }
+  const path = recipePath(name, world.home)
+  const existingText = await world.files.read(path)
 
-  // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
-  // — a brand-new file needs it or it will not resolve at all, and nothing a
-  // directory offers answers it. Written only when there is no file yet: an
-  // existing one already has it, possibly edited since, and a re-run must
-  // not overwrite that silently. `source.kinds` has no schema default
-  // either, but `askKinds` above already writes it unconditionally for a
-  // brand-new file (`resolvedRecipe` reads null there), so it needs no
-  // second seed here.
+  // `env.plantAt` and `source.kinds` have no schema default (`recipe.ts`'s
+  // `plantAt: z.string()`, `source.kinds: z.array(z.string()).min(1)`) — a
+  // brand-new file needs both or it will not resolve at all, and nothing a
+  // directory offers answers either. Written only when there is no file yet:
+  // an existing one already has them, possibly edited since, and a re-run
+  // must not overwrite that silently.
   const changes = [
     { path: ['repo', 'base'], value: base },
     { path: ['repo', 'remote'], value: remote },
-    ...ticketsAnswer.changes,
-    ...kindsAnswer.changes,
-    ...(existingText === null ? [{ path: ['env', 'plantAt'], value: '.env.local' }] : []),
+    ...(existingText === null
+      ? [
+          { path: ['env', 'plantAt'], value: '.env.local' },
+          { path: ['source', 'kinds'], value: [...SETUP_KINDS] },
+        ]
+      : []),
   ]
   try {
     await setRecipe(name, changes, { home: world.home, files: world.files })
@@ -440,10 +431,42 @@ async function runLocalBranch(
     return { refused: (err as Error).message }
   }
 
+  const recipeResult = await askRecipe(world, {
+    project: name,
+    local: true,
+    runtimes,
+    reader: world.setupReader(toplevel),
+    flags,
+    defaultBranch: async () => detected,
+    history: world.history,
+    kept: world.kept,
+    home: world.home,
+    files: world.files,
+  })
+  if ('refused' in recipeResult) return { refused: recipeResult.refused }
+
+  // `askLanding`, inside `askRecipe`, can move `repo.base` on a local
+  // project (#431's Watch out) — re-read the file it left behind rather than
+  // trust the `base` this function's own question settled.
+  const finalText = await world.files.read(path)
+  const finalRecipe = resolveSource(finalText!, path, path).recipe
+  const final = baseOf(finalRecipe)
+
+  let finalFromSha = fromSha
+  if (final !== base) {
+    const check = await world.git(toplevel, ['rev-parse', '--verify', `${final}^{commit}`])
+    if (!check.ok) {
+      return {
+        refused: `${final} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}. ${ADD_KEPT}`,
+      }
+    }
+    finalFromSha = check.stdout.trim()
+  }
+
   const resolved = await resolveLocalRecipe(name, {
     home: world.home,
     signedIn: world.signedIn,
-    base,
+    base: final,
     read: world.files.read,
   })
 
@@ -452,12 +475,12 @@ async function runLocalBranch(
   await world.register({
     project: name,
     owner: null,
-    base,
+    base: final,
     configHash: resolved.configHash,
-    fromSha,
+    fromSha: finalFromSha,
     resolved,
   })
-  return { ok: true, project: 'local', name, remote, base }
+  return { ok: true, project: 'local', name, remote, base: final }
 }
 
 async function runGithubBranch(
@@ -622,6 +645,28 @@ export async function livePicker(): Promise<Picker> {
   return listRepositories({ reader, projects, installUrl })
 }
 
+/**
+ * `askRecipe`'s `reader`, for a local directory: `has` over `node:fs`'s
+ * `existsSync` (never `read`-then-check — a file that cannot be read for some
+ * other reason must not read as "not here" the way `read` returning null
+ * would make it), `read` returning null on anything that is not ENOENT too,
+ * since a detection suggestion is never worth throwing over.
+ *
+ * Exported for `init.ts`'s `liveInitWorld()` — one real reader, not two.
+ */
+export function liveSetupReader(dir: string): SetupReader {
+  return {
+    has: async (path) => existsSync(join(dir, path)),
+    read: async (path) => {
+      try {
+        return await readFile(join(dir, path), 'utf8')
+      } catch {
+        return null
+      }
+    },
+  }
+}
+
 export interface LiveFirstProjectOptions {
   ask: (prompt: string) => Promise<string | null>
   log: (line: string) => void
@@ -660,6 +705,8 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     files: diskFiles,
     home,
     signedIn: signedInHere,
+    runtimes: askRuntimes,
+    setupReader: liveSetupReader,
     // `lingtai add` is the only caller. With a slug, `askBeforeGithubAdd`
     // has already written its answers, and `addCommand` says so (#402).
     kept: options.kept ?? 'Nothing was written',

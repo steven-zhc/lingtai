@@ -22,6 +22,9 @@ export interface SetupReader {
   read(path: string): Promise<string | null>
 }
 
+/** Suggests nothing — `detectSetup` reads every `notes` entry this leaves absent as "could not tell". */
+export const EMPTY_SETUP_READER: SetupReader = { has: async () => false, read: async () => null }
+
 export interface DetectedSetup {
   install: { run: string; because: string } | null
   build: { name: string; run: string; because: string }[]

@@ -8,11 +8,13 @@ import { ownerlessRefusal } from '@lingtai/conductor'
 import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
 import { GitHubError } from '@lingtai/github'
-import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { SetupReader } from '../src/detect-setup.ts'
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
+import type { RuntimeFound } from '../src/runtimes.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -63,6 +65,18 @@ function fakeGit(plan: GitPlan): FirstProjectWorld['git'] {
 const ok = (stdout: string): GitResult => ({ ok: true, stdout, stderr: '' })
 const fail = (stderr: string): GitResult => ({ ok: false, stdout: '', stderr })
 
+/** `FirstProjectWorld.runtimes`, derived from the same ids `signedIn` answers — the two cannot disagree. */
+function runtimesFrom(signedIn: readonly string[]): RuntimeFound[] {
+  return (['claude-code', 'codex'] as const).map((id) => ({
+    id,
+    installed: true,
+    signedIn: signedIn.includes(id),
+    detail: signedIn.includes(id) ? 'signed in' : 'not signed in',
+  }))
+}
+
+const EMPTY_SETUP_READER: SetupReader = { has: async () => false, read: async () => null }
+
 interface Harness {
   world: FirstProjectWorld
   asked: string[]
@@ -77,6 +91,7 @@ function harness(options: {
   projects?: ProjectState[]
   files?: Record<string, string>
   signedIn?: string[]
+  setupReader?: FirstProjectWorld['setupReader']
   app?: FirstProjectWorld['github']['app']
   boardUrl?: string | null
   waitForApp?: FirstProjectWorld['github']['waitForApp']
@@ -90,6 +105,7 @@ function harness(options: {
   const logged: string[] = []
   const registered: RegisterLocalPayload[] = []
   const files = mapFiles(options.files ?? {})
+  const signedIn = options.signedIn ?? ['claude-code']
 
   const world: FirstProjectWorld = {
     ask: async (prompt) => {
@@ -101,7 +117,9 @@ function harness(options: {
     projects: async () => options.projects ?? [],
     files,
     home: HOME,
-    signedIn: async () => (options.signedIn ?? ['claude-code']) as never[],
+    signedIn: async () => signedIn as never[],
+    runtimes: async () => runtimesFrom(signedIn),
+    setupReader: options.setupReader ?? (() => EMPTY_SETUP_READER),
     register: async (payload) => {
       registered.push(payload)
       return `added ${payload.project}`
@@ -119,6 +137,15 @@ function harness(options: {
   return { world, asked, logged, registered, files }
 }
 
+/**
+ * The local branch's recipe-flow answers, in the order `askRecipe` asks them
+ * (#431) — writer, model, reviewer, reviewerModel, install, build, kinds,
+ * landing, rounds, wall, budget. `''` takes each question's own default;
+ * `install` has none, so it must be answered `none` or the question refuses
+ * and asks again.
+ */
+const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', ''] as const
+
 describe('chooseFirstProject — the local branch (#394)', () => {
   it('--local <dir> with an origin registers once, with owner: null and both repo.base and repo.remote written', async () => {
     const { world, registered, files } = harness({
@@ -130,9 +157,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       },
       projects: [],
       // The base question has no --base flag: an empty line at the terminal
-      // takes the detected default ("main", from symbolic-ref above). The
-      // second empty line is the kinds question's own default.
-      answers: ['', ''],
+      // takes the detected default ("main", from symbolic-ref above). Every
+      // answer after it is `askRecipe`'s own, in order (#431).
+      answers: ['', ...RECIPE_FLOW_DEFAULTS],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo' })
@@ -165,7 +192,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/home/me/repos/widget::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/home/me/repos/widget::rev-parse --verify main^{commit}': ok('deadbee\n'),
       },
-      answers: ['', ''],
+      answers: ['', ...RECIPE_FLOW_DEFAULTS],
     })
 
     const result = await chooseFirstProject(world, { local: '/home/me/repos/widget' })
@@ -301,9 +328,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
       },
-      // --base answers the base question itself; the kinds question still has
-      // no --kinds flag, so its own empty line takes its default.
-      answers: [''],
+      // --base answers the base question itself; every answer after it is
+      // `askRecipe`'s own, in order (#431).
+      answers: [...RECIPE_FLOW_DEFAULTS],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo', base: 'develop' })
@@ -354,7 +381,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
         '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
       },
-      answers: ['', ''],
+      answers: ['', ...RECIPE_FLOW_DEFAULTS],
     })
 
     const result = await chooseFirstProject(world, { local: '/repo' })
@@ -364,6 +391,100 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const resolved = resolveSource(files.replaced[path]!, path, path).recipe
     expect(resolved.source.tickets).toBe('db')
     expect(ownerlessRefusal('repo', resolved)).toBeNull()
+  })
+
+  it('the local branch asks the recipe-flow questions in order and registers with the configHash of the file as last written (#431)', async () => {
+    const { world, files, asked, registered } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      answers: ['', ...RECIPE_FLOW_DEFAULTS],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+    expect(result).toMatchObject({ ok: true })
+
+    // `askAgents`, `askInstallAndBuild`, `askTickets` (never asked for a
+    // local project), `askKinds`, `askLanding`, `askLimits`, in that order
+    // (#431's Fix).
+    const order = [
+      "the branch this project's recipe governs and merges into",
+      'which agent writes the change',
+      "which model (empty for the runtime's own default)",
+      'does a cold reviewer read it',
+      'on which model',
+      'the install command',
+      'a command that must pass before review',
+      'which labels are work',
+      'land this on which branch',
+      'how many times a pass sends the agent back',
+      'what one agent run may take',
+      'a dollar ceiling per agent run',
+    ]
+    let last = -1
+    for (const phrase of order) {
+      const index = asked.findIndex((prompt) => prompt.includes(phrase))
+      expect(index).toBeGreaterThan(last)
+      last = index
+    }
+
+    const resolved = await resolveLocalRecipe('repo', {
+      home: HOME,
+      signedIn: async () => ['claude-code'] as never[],
+      base: 'main',
+      read: async (p) => files.replaced[p] ?? null,
+    })
+    expect(registered).toHaveLength(1)
+    expect(registered[0]!.configHash).toBe(resolved.configHash)
+  })
+
+  it('a landing answer that moves repo.base registers with the moved base (#431 Watch out)', async () => {
+    const answers = ['', ...RECIPE_FLOW_DEFAULTS]
+    // The landing question is the eighth of `askRecipe`'s own, right after the
+    // base question's own answer at index 0.
+    answers[8] = 'develop'
+    const { world, registered, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify develop^{commit}': ok('cafef00\n'),
+      },
+      answers,
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toMatchObject({ ok: true, base: 'develop' })
+    expect(registered).toHaveLength(1)
+    expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafef00' })
+
+    const path = `${HOME}/repo/recipe.yml`
+    expect(files.replaced[path]).toContain('base: develop')
+  })
+
+  it('a landing answer naming a branch git does not have is refused by name, and nothing is registered (#431 Watch out)', async () => {
+    const answers = ['', ...RECIPE_FLOW_DEFAULTS]
+    answers[8] = 'nope'
+    const { world, registered } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify nope^{commit}': fail('fatal: Needed a single revision'),
+      },
+      answers,
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('nope is not a branch in /repo') })
+    expect(registered).toEqual([])
   })
 })
 

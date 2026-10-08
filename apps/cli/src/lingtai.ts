@@ -47,7 +47,7 @@ import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 
-import { ADD_KEPT, askBeforeGithubAdd } from './add-github.ts'
+import { askBeforeGithubAdd } from './add-github.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -73,6 +73,7 @@ import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
 import { liveAsk } from './question.ts'
+import { ADD_KEPT } from './recipe-flow.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,

@@ -133,6 +133,11 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         step('runtimes')
         return script.runtimes ?? [signedIn('claude-code'), notInstalled('codex')]
       },
+      // #431's recipe questions are not scripted here — this suite's own
+      // `ask` only knows the project, App and store questions, and these
+      // tests run only after the merge (CLAUDE.md, 803s); the unit tests at
+      // `unit/first-project.test.ts` stand in for the local branch's claims.
+      setupReader: () => ({ has: async () => false, read: async () => null }),
       database: async (url) => {
         seen.connected.push(url)
         if (!(script.answering ?? [URL_]).includes(url)) return { ok: false, why: 'connection refused' }
