@@ -1435,9 +1435,10 @@ that blocked — an integration that conflicted, a gate that failed for a reason
 that was never about the change — goes back to the queue, and the next pass cuts
 a fresh branch from a base that has since moved. It refuses by naming the state
 the item is actually in, so *`wi-lingtai-122` is claimed, not blocked* is the
-answer rather than "not blocked". `--note` is required and is never defaulted: a
-block overruled anonymously is the silent waiver this whole system exists to
-remove. It appends the same `WorkItemUnblocked` the board's button does and
+answer rather than "not blocked". `--note` is optional (`#424`): a requeue cuts
+a fresh pass with the recipe's own rounds again rather than overruling
+anything, and the actor is still recorded in `by`, so it is not anonymous
+either way. It appends the same `WorkItemUnblocked` the board's button does and
 makes no GitHub call — `reconcile` converges the label the block left behind.
 
 `ask` and `answer` are the pair for a decision **before** any run (`#147`):
