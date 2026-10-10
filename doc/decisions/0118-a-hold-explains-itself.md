@@ -104,12 +104,21 @@ which kind a hold is gets inferred again in each place that needs it, from
      representations of one block can disagree, and one cannot. What
      `diagnosis` carried is either in the variant, on the run (*a repair
      produced this diff* is a fact about the run, like `unpushed`), or derived
-     (`needs` is the tag; the mechanical recommendation is `allowedMoves`').
+     (`needs` is the tag; the mechanical recommendation is `recommendedMove`'s).
      **There is no upcaster.** Before 1.0 the log is reset rather than carried
      across a change of shape, as it was in 007 and 010.
-   - **One pure function, `allowedMoves(hold, triage)`, decides the moves.**
-     The board, the CLI and the daemon all ask it; none of them keeps a rule of
-     its own.
+   - **One pure function, `allowedMoves(hold)`, decides the moves**, from the
+     hold alone. The board, the CLI and the daemon all ask it; none of them
+     keeps a rule of its own. **Triage is not an input**: it advises and never
+     moves the item, so whether an agent has finished advising cannot widen or
+     narrow what a person may do.
+   - **A second pure function, `recommendedMove(hold, triage)`, picks at most
+     one of those moves** to draw first and to prefill. An advised move is
+     recommended when `allowedMoves` offers it, and otherwise is not, its
+     words still shown. With no advice (not declared, running or failed) the
+     hold's own default stands: approve at a gate, requeue at a ceiling, and
+     nothing elsewhere. A budget fact enters `allowedMoves` only when a move
+     that depends on one is decided (#426), not before.
 
 2. **The page is in this order:** the ticket, where it is, triage, the moves,
    the record.
