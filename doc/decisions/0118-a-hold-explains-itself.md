@@ -41,8 +41,8 @@ is an analysis Lingtai pays for unasked, and its recommendation is a fact the
 board has to show on a card and the log has to keep. Then *what the agent
 advised* and *what the person chose* sit side by side.
 
-The holds are not one thing. The code reaches `waiting` by five kinds of
-route, and they want different moves:
+The holds are not one thing, and they are not one kind of thing. Three routes
+into `waiting` exclude each other and want different moves:
 
 - **A judgement.** A review that rounds could not satisfy. A step that stopped
   to ask (`StepAsked`). A fixer that declined to change anything. A declared
@@ -51,20 +51,47 @@ route, and they want different moves:
   A merge the lane refused. A turn or dollar ceiling. An agent that did not
   finish. A `prepared` step that refused before any agent ran.
 - **A person's own question.** `lingtai ask`, before any run.
-- **Waiting with no block.** `DispatchRefused`, `RunAwaitingInput` and a bare
-  `RunFailed` put a card in the lane with `blocked` false, so the card carries
-  no move at all (`packages/projector/src/task-view.ts:447-566`).
-- **Unpushed work.** It can come on top of any of the above: the branch did not
-  reach origin (`conduct.ts:3071-3072`), and the worktree that holds it is
-  removed when the pass ends.
+
+Two more things put a card in the lane, and neither is a fourth kind. **Waiting
+with no block** (`DispatchRefused`, `RunAwaitingInput` and a bare `RunFailed`
+leave `blocked` false, `packages/projector/src/task-view.ts:447-566`) is a state
+that should not exist. **Unpushed work** (the branch did not reach origin,
+`conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
+ends) can come on top of any hold that has a run. Today none of this is
+written down: `WorkItemBlocked` carries `needs`, `runId` and `diagnosis`, and
+which kind a hold is gets inferred again in each place that needs it, from
+`runId === null` in one and `needs` in another.
 
 ## Decision
 
-1. **Every item in the Waiting lane has a kind and at least one move.** The
-   kinds are the five above. An item that is waiting without a block is a
-   defect of this decision, not a sixth kind: it gets a block, and with it a
-   move. Unpushed work is shown first, above everything else on the page, with
-   what it takes to rescue it.
+1. **A hold is a value of one type, and the illegal ones cannot be written.**
+   The model is a set of tagged unions, in `@lingtai/domain`, and every reader
+   matches on them exhaustively:
+   - **`Hold`** is exactly one of `Question` (no run: the person's own
+     question and who asked it), `Judgement` (a run, the step it stopped at,
+     and why), or `Failure` (a run, and what failed).
+   - **`Failure`** is itself a union, each variant carrying its own evidence:
+     a check that stayed red, a merge the lane refused (its paths and both
+     shas), a ceiling (which one, and what was spent), a step that did not
+     finish, and a setup that refused before any agent ran (and whether that
+     lifts by itself or needs a person).
+   - **Unpushed work belongs to the run**, as an optional ref on it, so it can
+     sit beside a `Judgement` or a `Failure` and cannot sit beside a
+     `Question`, which has no run. It is shown first, above everything else on
+     the page, with what it takes to rescue it.
+   - **Triage is a second, independent union** (`NotDeclared`, `Running`,
+     `Failed`, `Advised`), and an advised triage carries a `Cause` that is a
+     union too, each cause with its own parts (§4). What Lingtai knows about a
+     hold and what an agent concluded about it are never one field.
+   - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
+     *Waiting with no block* therefore has no value to be. The routes that
+     produced it either block, with a kind, or do not move the card.
+   - **`WorkItemBlocked` records the `Hold` it is**, written by the code that
+     appends it, which knows the route. Older events are read through an
+     upcaster from `needs`, `runId` and `diagnosis`.
+   - **One pure function, `allowedMoves(hold, triage)`, decides the moves.**
+     The board, the CLI and the daemon all ask it; none of them keeps a rule of
+     its own.
 
 2. **The page is in this order:** the ticket, where it is, triage, the moves,
    the record.
