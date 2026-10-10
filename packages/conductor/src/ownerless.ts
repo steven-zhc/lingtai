@@ -22,12 +22,13 @@ import type { Recipe } from '@lingtai/recipe'
 import { remoteOf } from '@lingtai/recipe/settings'
 
 import { ownerlessRefusal } from './filter.ts'
-import { gitRefChannel } from './git-refs.ts'
+import { gitRefChannel, gitRefSha } from './git-refs.ts'
 import type { RefChannel } from './tell.ts'
 import { ticketsFor, type Tickets } from './ticket-store.ts'
 
 export interface OwnerlessClient {
-  client: Tickets & RefChannel & { readonly owner: null; readonly repo: string }
+  client: Tickets &
+    RefChannel & { readonly refSha: (ref: string) => Promise<string>; readonly owner: null; readonly repo: string }
   remote: string
 }
 
@@ -61,7 +62,13 @@ export async function ownerlessClient(
   const tickets = await ticketsOf(state, recipe, undefined as unknown as Tickets)
 
   return {
-    client: { ...tickets, ...gitRefChannel({ remote }), owner: null, repo: project },
+    client: {
+      ...tickets,
+      ...gitRefChannel({ remote }),
+      refSha: (ref: string) => gitRefSha(remote, ref),
+      owner: null,
+      repo: project,
+    },
     remote,
   }
 }

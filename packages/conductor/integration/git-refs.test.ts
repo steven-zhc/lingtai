@@ -21,7 +21,7 @@ import { workItemStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { gitRefChannel } from '../src/git-refs.ts'
+import { gitRefChannel, gitRefSha } from '../src/git-refs.ts'
 import { sweepRefs } from '../src/tell.ts'
 
 const exec = promisify(execFile)
@@ -71,6 +71,17 @@ describe('gitRefChannel', () => {
     // The collision `sweepRefs` exists to filter back out — asked without its
     // own filter on top, `heads/agent/24` answers `heads/agent/240`'s ref too.
     expect(found).toContain('heads/agent/240-attempt-1')
+  })
+})
+
+describe('gitRefSha', () => {
+  it('answers the sha a plain git remote holds for a ref', async () => {
+    const [local] = (await g(['rev-parse', 'refs/heads/agent/24-attempt-1'], work)).stdout.trim().split('\n')
+    await expect(gitRefSha(remote, 'heads/agent/24-attempt-1')).resolves.toBe(local)
+  })
+
+  it('rejects a ref the remote does not have — the same shape a 404 against GitHub answers', async () => {
+    await expect(gitRefSha(remote, 'heads/no-such-branch')).rejects.toThrow()
   })
 })
 

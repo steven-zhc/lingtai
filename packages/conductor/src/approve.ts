@@ -122,9 +122,15 @@ export interface ApproveOptions {
    * call, `owner`/`repo` on `integrate`'s. The same shape `conduct.ts` calls
    * `PassClient`, named out here instead of imported from there so this file
    * does not reach `conduct.ts` for one type. `TicketedClient`
-   * (`ticket-store.ts`) satisfies it.
+   * (`ticket-store.ts`) satisfies it, and so does `OwnerlessClient`'s
+   * (`ownerless.ts`).
+   *
+   * **`owner` is null for a project with no GitHub owner** (`#352`), same as
+   * `PassClient`'s — `integrate` declares the field and never reads it
+   * (`IntegrateOptions`, `integrate.ts`), so the call below passes
+   * `owner ?? ''` rather than `IntegrateOptions` growing a branch of its own.
    */
-  client: Tickets & RefChannel & Pick<GitHubClient, 'refSha' | 'owner' | 'repo'>
+  client: Tickets & RefChannel & Pick<GitHubClient, 'refSha' | 'repo'> & { readonly owner: string | null }
   /** The recipe whose `end` point runs. The machine's file unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
   /** Recorded on the approval. A waiver is never anonymous, and neither is this. */
@@ -329,7 +335,9 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
 
   const merged = await integrate({
     project: options.project,
-    owner: options.client.owner,
+    // '' when there is no owner, for the same reason `conduct.ts`'s two call
+    // sites do: `integrate` declares the field and never reads it.
+    owner: options.client.owner ?? '',
     repo: options.client.repo,
     base: options.base,
     branch,

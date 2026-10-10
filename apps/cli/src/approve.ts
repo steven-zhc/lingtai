@@ -8,9 +8,10 @@ import { userInfo } from 'node:os'
  * the flag, which starts a new run with a new worktree and a new diff — so the
  * thing that merges is not the thing anyone looked at.
  */
-import { approve as approveRun, loadProject } from '@lingtai/conductor'
+import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubApp } from '@lingtai/env'
+import { baseOf } from '@lingtai/recipe/settings'
 
 import { withProjector } from './projector.ts'
 
@@ -22,20 +23,40 @@ export interface ApproveCommandOptions {
 }
 
 export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {
-  if (!hasGitHubApp()) {
-    log(
-      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
-    )
-    return 1
-  }
-
   const project = await loadProject(options.project)
-  if (!project?.owner) {
+  if (!project) {
     log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     return 1
   }
 
-  const { client, resolved } = await projectClient(project)
+  // **A project with no owner has no App to check and no GitHub client to
+  // build** — the same branch `conductWork` takes (`conduct.ts`). Everything
+  // from `approveRun` on is shared; only how the client was built differs.
+  let client: Parameters<typeof approveRun>[0]['client']
+  let resolved: Awaited<ReturnType<typeof projectClient>>['resolved']
+  let base: string
+  let token: (() => Promise<string>) | undefined
+
+  if (project.owner === null) {
+    resolved = await currentRecipe(project)
+    base = project.base ?? baseOf(resolved.recipe)
+    client = (await ownerlessClient(project, resolved.recipe)).client
+    // No token: `ownerlessClient`'s remote pushes with this machine's own git
+    // credentials, the same as every other caller of it.
+    token = undefined
+  } else {
+    if (!hasGitHubApp()) {
+      log(
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
+      return 1
+    }
+    const built = await projectClient(project)
+    client = built.client
+    resolved = built.resolved
+    base = project.base ?? (await built.client.defaultBranch())
+    token = () => built.client.token()
+  }
 
   const by = options.by ?? `human:${userInfo().username}`
 
@@ -46,14 +67,14 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
     const result = await approveRun({
       project: options.project,
       issue: options.issue,
-      base: project.base ?? (await client.defaultBranch()),
+      base,
       client,
       recipe: async () => resolved,
       // An approval is never anonymous. The local account is a weak claim, but it
       // is a true one, and it is what a single-machine deployment has (0007).
       by,
       note: options.note,
-      token: () => client.token(),
+      token,
       log,
     })
 

@@ -177,9 +177,9 @@ export default async function Home() {
                   </div>
                   <p>
                     It looks before it asks: where to keep its data — empty for SQLite, or a Postgres URL if you want
-                    one — then a GitHub repository or one on this machine, then your agent, your checks, and whether a
-                    person approves the merge. It prints the recipe it wrote. Answer &ldquo;hold&rdquo; and every pass
-                    stops for you until you say otherwise.
+                    one — then a repository, on this machine (what the next step uses) or on GitHub, then your agent,
+                    your checks, and whether a person approves the merge. It prints the recipe it wrote. Answer
+                    &ldquo;hold&rdquo; and every pass stops for you until you say otherwise.
                   </p>
                 </div>
               </li>

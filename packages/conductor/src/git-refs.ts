@@ -60,3 +60,18 @@ export function gitRefChannel(options: GitRefChannelOptions): RefChannel {
     },
   }
 }
+
+/**
+ * The sha behind one ref on a plain git remote — `refSha`'s contract
+ * (`@lingtai/github`'s `GitHubClient.refSha`), which `approve()` leans on to
+ * tell a moved branch from a deleted one. Rejects when the remote names no
+ * such ref, the same shape a 404 against GitHub's API answers.
+ */
+export async function gitRefSha(remote: string, ref: string, gitEnv?: NodeJS.ProcessEnv): Promise<string> {
+  const out = await git(['ls-remote', remote, `refs/${ref}`], { cwd: repoRoot(), env: gitEnv })
+  const line = out.split('\n')[0]
+  if (!line) throw new Error(`refs/${ref} not found on ${remote}`)
+  const [sha] = line.split('\t')
+  if (!sha) throw new Error(`refs/${ref} not found on ${remote}`)
+  return sha
+}

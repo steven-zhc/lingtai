@@ -74,16 +74,17 @@ Then, in order:
    to; `yes` is faster once you trust the defaults.
 
 Answering `no` asks the rest of the recipe one question at a time — which
-agent writes the change and which reviews it, an install command and a build
-check (a fresh directory has neither to detect, so it asks you to type one or
-`none`), and which labels count as work (`bug, feature, documentation` by
-default). A local project is never asked where its tickets live — there is
-one legal answer, its own table.
+agent writes the change and which reviews it, an install command (a fresh
+directory has none to detect; type one, or `none`), a build check (press
+enter when done — typing `none` there writes it as a literal command), and
+which labels count as work (`bug, feature, documentation` by default). A
+local project is never asked where its tickets live — there is one legal
+answer, its own table.
 
 Then the one question worth reading closely:
 
 ```text
-land this on which branch, or "hold" to hold every pass for a person: main
+land this on which branch, or "hold" to hold every pass for a person [main]: 
 ```
 
 **Type `hold`.** This is the trap: if you take the default here instead
@@ -99,7 +100,7 @@ A script skips the terminal with the same answers:
 
 ```bash
 lingtai init --store sqlite --project local --local <dir> --base <branch> \
-  --defaults --land hold
+  --install none --defaults --land hold
 ```
 
 `init` ends by registering the project and printing its recipe:
@@ -117,7 +118,7 @@ steps, the limits):
 steps:
   proposed:
     - name: hold every pass
-      human: "Land this? The setup was answered 'hold'."
+      human: Land this? The setup was answered 'hold'.
 ```
 
 ![The recipe feeds three gates between a ticket and a merge: is it work, does it pass, do you approve.](img/recipe.svg)
@@ -192,8 +193,8 @@ says why:
 
 ![Each open ticket passes three filters — a kind label, no hold label, no open blocker — and what fails one is named.](img/queue.svg)
 
-Use `lingtai status` or `lingtai ticket list` for a local project's queue —
-the board's own queue column asks GitHub, which a local project has none of.
+Use `lingtai status` or `lingtai ticket list` to check the queue — the board
+shows it too.
 
 When the queue looks right, start Lingtai:
 
@@ -220,10 +221,10 @@ GitHub issue / ticket  →  Queued  →  Running  →  Waiting on you  →  Land
 
 ![One pass: claim, worktree, agent, checks, approval, merge, end. A red check returns to the agent for a fix round; anything unresolved stops at Waiting on you.](img/pass.svg)
 
-Confirm what stopped it:
+Confirm what stopped it (`--all`, since a hold outside the queue needs it):
 
 ```bash
-lingtai status <project>
+lingtai status <project> --all
 ```
 
 The hold is the one your recipe wrote: *"Land this? The setup was answered
@@ -241,8 +242,8 @@ If the approach is wrong instead, send it back with a note:
 lingtai requeue <project> --issue 1 --note "what should change next time"
 ```
 
-Once approved, the next `lingtai start` pass merges it. Confirm all three: the
-card is in **Landed**, the commit is on your base branch, and you can say
+`approve` merges it immediately — nothing further to run. Confirm all three:
+the card is in **Landed**, the commit is on your base branch, and you can say
 which checks let it through.
 
 For a live run log while a pass is in flight: `lingtai attach <runId>`. The
