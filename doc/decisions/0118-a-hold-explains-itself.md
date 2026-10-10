@@ -166,11 +166,12 @@ which kind a hold is gets inferred again in each place that needs it, from
      editable, and it stops following the answers once it is edited.
    - The requeue's reason is written for the person from those answers. They
      are not asked for one.
-   - **The person's move records what they chose against what was advised.**
-     `WorkItemUnblocked`, `ApprovalGranted` and `WorkItemClosed` gain an
-     optional reference to the `HoldTriaged` they answer and whether the move
-     taken was the one it recommended. How often the advice is taken is then a
-     query, not a guess.
+   - **Which advice a move answered is derived, never written.** The move
+     events stay as they are. A move answers the `HoldTriaged` of the block that
+     was current when it was made, and both are on the item's stream, so a query
+     finds the pair for board and CLI alike. Whether the move matched the
+     advice is decided in that query too, so a change to what counts as
+     matching changes every answer, old ones included.
    - A discussion answer can be added to whatever the recommended move will
      write: the body, the list of fixes, a split, or the person's own answer
      box.
@@ -227,8 +228,11 @@ which kind a hold is gets inferred again in each place that needs it, from
 - **Every hold that is a judgement or a machine failure costs one triage
   run**, whether or not anybody opens it. Its usage is on `HoldTriaged`, so it
   shows in `/spend`, and a recipe that does not want it does not declare it.
-- **The log can answer how good the advice is.** `HoldTriaged` and the move that
-  answered it are both on the item's stream.
+- **The log can answer how often the advice is taken, and that is not how good
+  it is.** Adoption is one query over `HoldTriaged` and the move after it. How
+  good the advice was is a different query, over what followed the move: did
+  the next pass land, or hold again, and for the same cause? Neither is part of
+  this decision's build.
 - **Triage never delays the queue.** It runs beside the next pass, not inside
   this one.
 - **The holder's own text becomes evidence**: the judge's `why`, git's words
