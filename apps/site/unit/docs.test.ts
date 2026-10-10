@@ -102,10 +102,9 @@ describe('the tutorial stays a first-run path', () => {
     ).toEqual([
       'Before you start',
       'Step 1 — Set up this machine',
-      'Step 2 — Add one repository',
+      'Step 2 — Open one ticket',
       'Step 3 — Check the queue, then start',
-      'Step 4 — Label one issue',
-      'Step 5 — Read the result',
+      'Step 4 — Read the result',
       'Next: make it yours',
     ])
   })

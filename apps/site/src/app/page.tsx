@@ -176,20 +176,21 @@ export default async function Home() {
                     <span>$</span> lingtai init
                   </div>
                   <p>
-                    It asks where to keep its data — empty for SQLite, one file on this machine, or a Postgres URL if
-                    you want one — detects your agent runtime, and creates the GitHub App from a manifest in one click.
-                    It ends on the board, ready for a repository.
+                    It looks before it asks: where to keep its data — empty for SQLite, or a Postgres URL if you want
+                    one — then a GitHub repository or one on this machine, then your agent, your checks, and whether a
+                    person approves the merge. It prints the recipe it wrote. Answer &ldquo;hold&rdquo; and every pass
+                    stops for you until you say otherwise.
                   </p>
                 </div>
               </li>
               <li>
                 <span className="step-number">02</span>
                 <div>
-                  <h3>Review the proposed rules</h3>
-                  <p>
-                    The board reads the repository and proposes labels, checks, and limits. You make the two lasting
-                    choices: how far a ticket may run, and whether a person approves the merge.
-                  </p>
+                  <h3>Open one ticket</h3>
+                  <div className="command">
+                    <span>$</span> lingtai ticket new
+                  </div>
+                  <p>A short form: a title, a labels: line carrying one of your recipe&rsquo;s kinds, then the body.</p>
                 </div>
               </li>
               <li>
@@ -202,7 +203,7 @@ export default async function Home() {
                   <div className="command">
                     <span>$</span> lingtai start
                   </div>
-                  <p>Label an issue. Follow the run on the local board.</p>
+                  <p>Follow the run with lingtai status, or on the board.</p>
                 </div>
               </li>
             </ol>
