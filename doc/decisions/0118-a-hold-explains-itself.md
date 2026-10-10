@@ -70,6 +70,17 @@ which kind a hold is gets inferred again in each place that needs it, from
    - **`Hold`** is exactly one of `Question` (no run: the person's own
      question and who asked it), `Judgement` (a run, the step it stopped at,
      and why), or `Failure` (a run, and what failed).
+   - **`Judgement`** is itself a union, one variant for each way a pass reaches a
+     person with a decision, as the pass actually branches
+     (`whatIsWaitingOnYou`): `Asked` (a step stopped to ask, and its question),
+     `Gate` (a `human:` action, declared in the recipe or injected by
+     `--no-merge`, which since #256 are one mechanism), and `Routed` (the
+     `proposed` router sent it to a person, carrying the router's `JudgeWhen`,
+     which is already a closed union, and the why). Which of these a review
+     whose rounds ran out and a fixer that declined to change anything really
+     are is settled by walking the routes (`doc/design/the-waiting-lane.md`),
+     not assumed here: today a step that refused without asking or holding is
+     recorded as needing acknowledgement, which is a `Failure`.
    - **`Failure`** is itself a union, each variant carrying its own evidence:
      a check that stayed red, a merge the lane refused (its paths and both
      shas), a ceiling (which one, and what was spent), a step that did not
@@ -86,9 +97,16 @@ which kind a hold is gets inferred again in each place that needs it, from
    - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
      *Waiting with no block* therefore has no value to be. The routes that
      produced it either block, with a kind, or do not move the card.
-   - **`WorkItemBlocked` records the `Hold` it is**, written by the code that
-     appends it, which knows the route. Older events are read through an
-     upcaster from `needs`, `runId` and `diagnosis`.
+   - **`WorkItemBlocked` records the `Hold` it is, and nothing beside it**,
+     written by the code that appends it, which knows the route. The words a
+     person reads live inside the variant that owns them, so `needs`,
+     `question` and `diagnosis` are gone rather than kept beside `hold`: two
+     representations of one block can disagree, and one cannot. What
+     `diagnosis` carried is either in the variant, on the run (*a repair
+     produced this diff* is a fact about the run, like `unpushed`), or derived
+     (`needs` is the tag; the mechanical recommendation is `allowedMoves`').
+     **There is no upcaster.** Before 1.0 the log is reset rather than carried
+     across a change of shape, as it was in 007 and 010.
    - **One pure function, `allowedMoves(hold, triage)`, decides the moves.**
      The board, the CLI and the daemon all ask it; none of them keeps a rule of
      its own.
@@ -119,13 +137,20 @@ which kind a hold is gets inferred again in each place that needs it, from
    - It runs for judgements and machine failures. It does not run for a
      person's own question, because the person wrote the question.
    - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
-     It names the block it explains and the head it read. It carries the cause,
-     the questions with their answers and the recommended one, any fixes or
-     conflict hunks, the recommended move, one sentence for the card, one sentence of what the ticket wants (or
-     none, where the body does not say), and its
-     usage ([0110](0110-tokens-on-the-event-money-at-display.md)). A triage
-     that fails still appends it, with the failure and the usage and no
-     advice.
+     It names the block it explains and the head it read, which runtime and
+     model answered, and its usage
+     ([0110](0110-tokens-on-the-event-money-at-display.md)). Its result is
+     `Triage`'s own `Failed` or `Advised`, the same type and not a copy of it,
+     so an advised triage with a failure, or a failed one with advice, cannot
+     be written. `Advised` carries the cause, the recommended move, one
+     sentence for the card, and one sentence of what the ticket wants (or
+     none, where the body does not say). **The parts belong to the cause**:
+     the questions, with their answers and the recommended one, exist only in
+     *a decision for you*; the fixes only in *lines to fix*; the conflict
+     hunks only in *merge by hand*. None of them is repeated beside the cause.
+     Where the body does not say what the ticket wants, that question is a
+     decision for you. A triage that fails still appends it, with the
+     failure and the usage.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
