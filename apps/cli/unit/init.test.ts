@@ -150,6 +150,22 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(logged.at(-1)).toContain('no board was started')
   })
 
+  it('a local init exits 0 even when doctor throws, and prints why it did not finish', async () => {
+    const { world, logged } = harness({
+      gitPlan: GIT_PLAN,
+      answers: [''],
+      doctor: async () => {
+        throw new Error('the beacon file does not parse')
+      },
+    })
+
+    const code = await initCommand(['--local', '/repo', '--defaults', '--install', 'none'], world)
+
+    expect(code).toBe(0)
+    expect(logged).toContain('doctor did not finish — the beacon file does not parse')
+    expect(logged.at(-1)).toContain('no board was started')
+  })
+
   it('a local init never starts the board', async () => {
     const { world, calls } = harness({ gitPlan: GIT_PLAN, answers: [''] })
 
