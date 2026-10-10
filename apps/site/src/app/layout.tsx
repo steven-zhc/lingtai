@@ -19,9 +19,10 @@ import './home.css'
 import { SITE_URL } from './chrome'
 
 /**
- * The two faces the product uses, self-hosted, exactly as the board loads them
- * — `next/font` copies the files into the build, so the site renders as
- * designed without asking Google for anything at render.
+ * The two faces the product uses, via `next/font/google` — which still fetches
+ * them from Google at build time. The board stopped doing that (#437, which
+ * showed the resolver failing intermittently under Turbopack) and now loads
+ * the same files from `next/font/local`; this app has not followed yet.
  *
  * No serif, including in the long documentation. It would read a little better
  * and it is the one move that would make this look like every other docs site.
