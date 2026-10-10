@@ -220,8 +220,8 @@ function Created({ outcome }: { outcome: Extract<Offer['outcome'], { ok: true }>
       <p className="note">
         Next, install it —{' '}
         <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>github.com/apps/{outcome.slug}</a> — and
-        pick the repositories it may see. Creating is not installing. GitHub brings you back to{' '}
-        <Link href="/setup/repository">the repository picker</Link>.
+        pick the repositories it may see. Creating is not installing. Once it is installed, choose the repository in the
+        terminal: <code>pnpm lingtai add</code>.
       </p>
     </>
   )
@@ -251,13 +251,13 @@ function Configured({
       {installUrl === null ? (
         <p className="note">
           The App was configured by hand, so Lingtai does not know its name. Install it from{' '}
-          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then pick the
-          repository at <Link href="/setup/repository">/setup/repository</Link>.
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then choose the
+          repository with <code>pnpm lingtai add</code>.
         </p>
       ) : (
         <p className="note">
-          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then pick it at{' '}
-          <Link href="/setup/repository">/setup/repository</Link>.
+          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then choose it with{' '}
+          <code>pnpm lingtai add</code>.
         </p>
       )}
     </>
