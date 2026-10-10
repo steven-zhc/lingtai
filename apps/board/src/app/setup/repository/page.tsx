@@ -16,6 +16,9 @@
  */
 import { TerminalScreen } from '../terminal.tsx'
 
-export default function PickRepository() {
-  return <TerminalScreen />
+export const dynamic = 'force-dynamic'
+
+export default async function PickRepository({ searchParams }: { searchParams: Promise<{ requested?: string }> }) {
+  const params = await searchParams
+  return <TerminalScreen requested={params.requested === '1'} />
 }

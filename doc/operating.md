@@ -650,11 +650,12 @@ know about yet.
 
 **Or from the board, in any state it is in.** The `+` at the end of the project
 list on the bar goes to `/setup/repository` once the App exists and to
-`/setup/github-app` before it — both now one line pointing at this command
-(`#401`), since #391 put every setup decision in the terminal. Until then the
-slot was an entry with no projects, a caption with one and a filter with two,
-and the only route left was this command or typing `/setup/repository` from
-memory.
+`/setup/github-app` before it — the first is now one line pointing at this
+command (`#401`), since #391 put every setup decision in the terminal; the
+second still creates the App itself, the one step the terminal cannot do.
+Until then the slot was an entry with no projects, a caption with one and a
+filter with two, and the only route left was this command or typing
+`/setup/repository` from memory.
 
 The tier, the gates, the priority order **and the base** are all the recipe's,
 in `~/.lingtai/<project>/recipe.yml` — which is why this command reads nothing
