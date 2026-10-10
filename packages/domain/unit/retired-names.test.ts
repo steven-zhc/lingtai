@@ -728,7 +728,20 @@ describe('the retired names in doc/reference.md', () => {
     expect(
       (await everything()).filter((file) => !READS.test(file)),
       'src/ holds a file the rule does not read and doc/reference.md does not name — read it, or name it there',
-    ).toEqual(['packages/event-store/src/prisma/contract.json', 'packages/event-store/src/prisma/contract.prisma'])
+    ).toEqual(
+      [
+        'apps/board/src/app/fonts/OFL.txt',
+        'apps/board/src/app/fonts/ibm-plex-mono-latin-400-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-mono-latin-500-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-mono-latin-600-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-sans-latin-400-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-sans-latin-500-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-sans-latin-600-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-sans-latin-700-normal.woff2',
+        'packages/event-store/src/prisma/contract.json',
+        'packages/event-store/src/prisma/contract.prisma',
+      ].sort(),
+    )
   })
 })
 

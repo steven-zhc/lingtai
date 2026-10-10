@@ -700,13 +700,16 @@ Its declarations are not — `cursor: pointer` and `1080px` are a language nobod
 here renames — and out with them goes every other extension under `src/`, which
 today is `packages/event-store/src/prisma/contract.prisma` and the
 `contract.json` beside it: generated from a schema, renamed with it, and saying
-`checkpoints` and nothing else of ours. The extensions the rule reads are
+`checkpoints` and nothing else of ours. `apps/board/src/app/fonts/` is the same
+boundary from a different direction (#437): seven `.woff2` files and the
+`OFL.txt` licence beside them carry IBM's own words, never ours, and a rename
+here has nothing in that directory to reach. The extensions the rule reads are
 asserted to be exactly those three, so widening or narrowing that is a red test
-too — **and those two files are asserted by name**, which is the other half and
+too — **and those ten files are asserted by name**, which is the other half and
 not the same assertion: an extension the rule does not read is filtered out
-before anything counts it, so a third file arriving here would be as silent as
-`globals.css` was until a `.scss` under `src/` reds this sentence rather than
-slipping under it.
+before anything counts it, so a file arriving outside both directories would be
+as silent as `globals.css` was until a `.scss` under `src/` reds this sentence
+rather than slipping under it.
 
 ### the glued tokens
 

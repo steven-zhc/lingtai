@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google'
+import localFont from 'next/font/local'
 
 import './globals.css'
 
@@ -10,20 +10,29 @@ import './globals.css'
  * it, so every rule fell through to `system-ui` and the board looked like a
  * different design than the one it was written against.
  *
- * `next/font` rather than a `<link>` to Google: it copies the files into the
- * build, so the board still renders as designed on a machine with no network —
- * which is most of what a local operator console is for.
+ * The Google-backed font loader fetched these from Google at dev and build
+ * time, which failed to resolve under Turbopack (#437) and failed
+ * `release.yml`'s build intermittently besides. The files live in `./fonts/`
+ * instead, so there is nothing to fetch and nothing to fail on. `OFL.txt` has
+ * to move with them — it is IBM's licence for the files, not boilerplate.
  */
-const sans = IBM_Plex_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+const sans = localFont({
+  src: [
+    { path: './fonts/ibm-plex-sans-latin-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/ibm-plex-sans-latin-500-normal.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/ibm-plex-sans-latin-600-normal.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/ibm-plex-sans-latin-700-normal.woff2', weight: '700', style: 'normal' },
+  ],
   variable: '--font-sans',
   display: 'swap',
 })
 
-const mono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const mono = localFont({
+  src: [
+    { path: './fonts/ibm-plex-mono-latin-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-latin-500-normal.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-latin-600-normal.woff2', weight: '600', style: 'normal' },
+  ],
   variable: '--font-mono',
   display: 'swap',
 })
