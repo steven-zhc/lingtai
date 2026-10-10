@@ -627,7 +627,15 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
 
   const started = boardSoFar()
   if (started === null) {
-    world.log(paint.muted('no board was started — lingtai board starts it'))
+    // Nothing here asked for a board, but one may already be serving this
+    // machine (#434 fix round) — `lingtai board` refuses by name rather than
+    // confirm that, so the operator is told which is true before reaching for it.
+    const running = await world.boardAt(port)
+    world.log(
+      running !== null
+        ? paint.muted(`the board was already running at ${running} — this started none`)
+        : paint.muted('no board was started — lingtai board starts it'),
+    )
   } else {
     world.log(
       'refused' in started

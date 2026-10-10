@@ -166,12 +166,21 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(logged.at(-1)).toContain('no board was started')
   })
 
-  it('a local init never starts the board', async () => {
+  it('a local init never binds a board, though it probes the port once to say whether one is already running', async () => {
     const { world, calls } = harness({ gitPlan: GIT_PLAN, answers: [''] })
 
     const code = await initCommand(['--local', '/repo', '--defaults', '--install', 'none'], world)
     expect(code).toBe(0)
-    expect(calls).toEqual({ boardAt: 0, board: 0 })
+    expect(calls).toEqual({ boardAt: 1, board: 0 })
+  })
+
+  it('a local init, with a board already running on the port, says so rather than naming a `lingtai board` that would refuse', async () => {
+    const { world, logged, calls } = harness({ gitPlan: GIT_PLAN, answers: [''], boardAt: 'http://127.0.0.1:17820' })
+
+    const code = await initCommand(['--local', '/repo', '--defaults', '--install', 'none'], world)
+    expect(code).toBe(0)
+    expect(calls).toEqual({ boardAt: 1, board: 0 })
+    expect(logged.at(-1)).toContain('the board was already running at http://127.0.0.1:17820 — this started none')
   })
 
   it('the GitHub branch starts the board only when boardUrl() is first asked, and only once', async () => {
