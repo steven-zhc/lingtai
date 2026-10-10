@@ -65,7 +65,7 @@ import { stateDir } from '@lingtai/env'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import { Effect, Either } from 'effect'
 
-import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
+import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -84,6 +84,13 @@ export interface IntegrateOptions {
   home?: string
   gitEnv?: NodeJS.ProcessEnv
   store?: EventStore
+  /**
+   * The git port. Defaults to the real `gitEffect`; a unit test supplies a
+   * fake so it can assert on every command this lane runs without a real git
+   * binary or mirror. Every call in this file goes through `at`, below, which
+   * closes over this.
+   */
+  git?: (args: string[], options: GitRunOptions) => Effect.Effect<string, RepoFailed>
   /**
    * Re-run after the branch is merged into the base, before the push. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
@@ -276,16 +283,25 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     )
   }
 
-  const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd })
+  const gitPort = options.git ?? gitEffect
+  const at = (args: string[], cwd: string) => gitPort(args, { ...run, cwd })
 
   /**
-   * The worktrees of this lane that nothing is coming back for.
+   * The worktrees and lane refs of this lane that nothing is coming back for.
    *
    * Found the way the system itself finds them — registered under the mirror,
    * named for the integrator — and judged by age, which is all that is left to
    * judge them by now that two live ones on one base is ordinary
    * (`WORKTREE_IS_ABANDONED_AFTER`). The directory's mtime is when it was cut,
    * so an integration in flight is minutes old at the outside.
+   *
+   * **A lane ref has no mtime, so its age is judged by the epoch in its own
+   * name.** Judging a ref by whether a worktree is registered for its id would
+   * delete one still in use: the fetch above writes the refs before
+   * `worktree add` runs, so another integration's sweep, running in the window
+   * between the two, would see a fresh id with no worktree yet and take it for
+   * abandoned. Integrations overlap by design (#194), so that window is
+   * ordinary, not rare.
    *
    * Every step swallows its own failure. A sweep that refused a merge would be
    * a worse bug than the one it is here to clear.
@@ -305,6 +321,19 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // And the registrations with no directory left — git's own job, and the
       // other half of what a killed process leaves behind.
       yield* at(['worktree', 'prune'], mirror).pipe(Effect.ignore)
+
+      const laneRefs = yield* at(['for-each-ref', '--format=%(refname)', 'refs/lingtai/lane/'], mirror).pipe(
+        Effect.orElseSucceed(() => ''),
+      )
+      const seen = new Set<string>()
+      for (const ref of laneRefs.split('\n')) {
+        const match = /^(refs\/lingtai\/lane\/(\d+)-[^/]+)\/(?:base|branch)$/.exec(ref)
+        if (!match || seen.has(match[1]!)) continue
+        seen.add(match[1]!)
+        if (Date.now() - Number(match[2]) < WORKTREE_IS_ABANDONED_AFTER) continue
+        yield* at(['update-ref', '-d', `${match[1]}/base`], mirror).pipe(Effect.ignore)
+        yield* at(['update-ref', '-d', `${match[1]}/branch`], mirror).pipe(Effect.ignore)
+      }
     })
 
   /**
@@ -322,30 +351,37 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       }
 
       const mirror = `${home}/repos/${options.project}.git`
+      // One id, shared by the worktree's directory and the lane's own refs
+      // below — the epoch is what lets the sweep judge a lane ref's age with
+      // no mtime to read.
+      const laneId = `${Date.now()}-${randomUUID().slice(0, 8)}`
       // **One worktree per integration, not one per base.** A fixed
       // `integrator-<base>` was safe only because the lock meant one
       // integration on a base at a time. Nothing serialises them before the
       // push now (#194), so two overlap by design and each needs a directory —
       // and a HEAD — that the other cannot be standing in.
-      const cwd = worktreePath(
-        home,
-        options.project,
-        `integrator-${options.base.replace(/\//g, '.')}-${randomUUID().slice(0, 8)}`,
-      )
+      const cwd = worktreePath(home, options.project, `integrator-${options.base.replace(/\//g, '.')}-${laneId}`)
 
-      // Only the two refs this merge is about, rather than `+refs/heads/*`.
-      // A wildcard fetch refuses to update any branch checked out in *some other*
-      // worktree of the same mirror — which the agent's is, holding exactly this
-      // branch. Narrowing it removes the whole class of collision rather than the
-      // one instance.
+      // Fetched into refs this lane alone owns, under `refs/lingtai/lane/`,
+      // rather than `refs/heads/<base>` and `refs/heads/<branch>` in the
+      // mirror. **No worktree of the mirror can hold a ref in that
+      // namespace**, so an agent that checked its own branch out — or `main`
+      // — in its worktree cannot make this fetch refuse (#438). Narrowing the
+      // old fetch to these two refs did not remove that class of collision,
+      // only avoided a wildcard one: one of the two was the branch itself.
+      const laneBase = `refs/lingtai/lane/${laneId}/base`
+      const laneBranch = `refs/lingtai/lane/${laneId}/branch`
+      yield* Effect.acquireRelease(Effect.succeed(laneId), () =>
+        Effect.all(
+          [
+            at(['update-ref', '-d', laneBase], mirror).pipe(Effect.ignore),
+            at(['update-ref', '-d', laneBranch], mirror).pipe(Effect.ignore),
+          ],
+          { discard: true },
+        ),
+      )
       yield* at(
-        [
-          'fetch',
-          '--prune',
-          'origin',
-          `+refs/heads/${options.base}:refs/heads/${options.base}`,
-          `+refs/heads/${options.branch}:refs/heads/${options.branch}`,
-        ],
+        ['fetch', 'origin', `+refs/heads/${options.base}:${laneBase}`, `+refs/heads/${options.branch}:${laneBranch}`],
         mirror,
       )
 
@@ -365,7 +401,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // integration against the same base would collide with the first on it.
       // Nothing here needs the branch — the merge moves HEAD and the push has
       // always been `HEAD:refs/heads/<base>`.
-      yield* Effect.acquireRelease(at(['worktree', 'add', '--force', '--detach', cwd, options.base], mirror), () =>
+      yield* Effect.acquireRelease(at(['worktree', 'add', '--force', '--detach', cwd, laneBase], mirror), () =>
         at(['worktree', 'remove', '--force', cwd], mirror).pipe(Effect.ignore),
       )
 
@@ -378,18 +414,22 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         return yield* refuse('dirty-base', `the integrator's worktree is not clean:\n${dirty}`)
       }
 
-      const localBase = yield* at(['rev-parse', options.base], mirror)
-      const remoteBase = yield* at(['rev-parse', `refs/heads/${options.base}`], mirror)
+      // Both sides read the ref this lane just fetched, so this has never
+      // compared the mirror against anything but itself (#438's design).
+      // Fixing that is a different ticket; this one only moves what the check
+      // reads, not what it means.
+      const localBase = yield* at(['rev-parse', laneBase], mirror)
+      const remoteBase = yield* at(['rev-parse', laneBase], mirror)
       if (localBase !== remoteBase) {
         return yield* refuse('unpushed-base', `${options.base} is ${localBase} locally and ${remoteBase} on origin`)
       }
 
-      const ahead = yield* at(['rev-list', '--count', `${options.base}..${options.branch}`], mirror)
+      const ahead = yield* at(['rev-list', '--count', `${laneBase}..${laneBranch}`], mirror)
       if (Number(ahead) === 0) {
         return yield* refuse('no-commits', `${options.branch} has nothing ${options.base} does not`)
       }
 
-      const changed = yield* at(['diff', '--name-only', `${options.base}...${options.branch}`], mirror)
+      const changed = yield* at(['diff', '--name-only', `${laneBase}...${laneBranch}`], mirror)
       const migrations = changed.split('\n').filter((f) => f && MIGRATION_GLOB.test(f))
       if (migrations.length > 0) {
         // The hold that caught #117, generalised. A migration is applied by a
@@ -402,8 +442,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
 
       // Merge the branch into the base, inside this throwaway detached
       // worktree, so a conflict is found here rather than halfway through
-      // writing to the base branch.
-      const mergedIn = yield* Effect.either(at(['merge', '--no-edit', options.branch], cwd))
+      // writing to the base branch. `-m` names the branch rather than the
+      // lane ref it is fetched to, so `git log --merges` on the base still
+      // reads `Merge branch '<branch>' into HEAD` and never a lane id.
+      const mergedIn = yield* Effect.either(
+        at(['merge', '-m', `Merge branch '${options.branch}' into HEAD`, laneBranch], cwd),
+      )
       if (Either.isLeft(mergedIn)) {
         // `-z`: git's own quoting of a path with a non-ASCII, backslash,
         // quote or control character (`core.quotePath`, on by default) turns
@@ -426,7 +470,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
             `${options.branch} does not merge into ${options.base}:\n${mergedIn.left.detail}`,
           )
         }
-        const headSha = yield* at(['rev-parse', options.branch], mirror)
+        const headSha = yield* at(['rev-parse', laneBranch], mirror)
         return yield* refuse(
           'conflict',
           `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
@@ -469,9 +513,16 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left)
         return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush
       }
-      // The mirror is Lingtai's own copy of the truth; leaving it stale would
-      // make the next integration compute against a base that has moved.
-      yield* at(['fetch', 'origin', `+refs/heads/${options.base}:refs/heads/${options.base}`], mirror)
+      // The mirror's `refs/heads/<base>` is Lingtai's own copy of the truth;
+      // leaving it stale would make a reader of the mirror alone see a base
+      // older than what just landed. A `fetch` into it would refuse exactly
+      // like the one above was refusing (#438) — the branch just pushed to
+      // origin may still be checked out in some other worktree of this
+      // mirror — so this is a compare-and-swap instead: it moves the ref only
+      // if it still holds what this lane fetched, and does nothing otherwise.
+      // Either way a landed merge must never become a refusal here, so every
+      // outcome is ignored.
+      yield* at(['update-ref', `refs/heads/${options.base}`, mergeCommit, localBase], mirror).pipe(Effect.ignore)
 
       return yield* succeed(mergeCommit)
     }).pipe(

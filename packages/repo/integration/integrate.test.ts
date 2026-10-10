@@ -124,6 +124,42 @@ describe('integrate', () => {
     expect(log.stdout).toContain('work on agent/1')
   })
 
+  /**
+   * **#434, and the ticket this test closes (#438).** Worktrees are cut
+   * detached (0039 §1), but a requeue's brief can say "start from `<sha>` on
+   * `<branch>`" (#407, #431), and an agent that reads that as
+   * `git checkout agent/<n>` in its own worktree leaves the mirror with a
+   * second worktree holding the branch. The old fetch narrowed to
+   * `refs/heads/<base>` and `refs/heads/<branch>` still refused on exactly
+   * that worktree — `fatal: refusing to fetch into branch 'refs/heads/agent/13'
+   * checked out at …` — because narrowing it to two refs did not remove the
+   * collision, it only made the one ref that was always going to be checked
+   * out the whole of what was left fetched by name. The lane's fetch now goes
+   * into a ref under `refs/lingtai/lane/` that no worktree can hold.
+   */
+  it('merges a branch even when it is checked out in another worktree of the mirror', async () => {
+    await branchWith('agent/13', { 'src/j.ts': 'export const j = 1;\n' })
+    const mirror = join(home, 'repos', `${PROJECT}.git`)
+
+    // What an agent does by running `git checkout agent/13` after a requeue:
+    // a second worktree of this mirror, holding the branch rather than
+    // detached HEAD.
+    await exec('git', ['fetch', '-q', 'origin', 'agent/13:refs/heads/agent/13'], { cwd: mirror })
+    const agentWorktree = join(home, 'worktrees', PROJECT, 'agent-13')
+    await exec('git', ['worktree', 'add', '-q', agentWorktree, 'agent/13'], { cwd: mirror })
+
+    const result = await integrate({ ...base(), branch: 'agent/13' })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).toContain('work on agent/13')
+
+    // The agent's own worktree and its checked-out branch are exactly as the
+    // agent left them — the lane never touched either.
+    const checkedOutBranch = await exec('git', ['-C', agentWorktree, 'branch', '--show-current'])
+    expect(checkedOutBranch.stdout.trim()).toBe('agent/13')
+  })
+
   it('refuses a conflict with the file that conflicted', async () => {
     await branchWith('agent/2', { 'README.md': 'from the agent\n' })
     // The base moves underneath it, touching the same file.
