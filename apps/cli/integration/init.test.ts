@@ -86,6 +86,8 @@ interface Script {
   gitPlan?: Record<string, GitResult>
   files?: Record<string, string>
   registerLocal?: (payload: { project: string; base: string }) => Promise<string>
+  /** `InitWorld.doctor` (#434) — a fixed report unless a test names its own. */
+  doctor?: string
 }
 
 interface Recorded {
@@ -222,6 +224,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         })
       },
       history: async () => [],
+      doctor: async () => script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
     },
   }
 }
@@ -314,7 +317,7 @@ describe('lingtai init (#186)', () => {
     expect(second.seen.asked).toEqual([])
   })
 
-  it('a machine with a project already registered still starts the board, rather than stopping at the list (#394)', async () => {
+  it('a machine with a project already registered starts no board when the App is not configured, rather than stopping at the list (#394, #434)', async () => {
     const home = freshHome()
     const registered: ProjectState = {
       project: 'widget',
@@ -326,10 +329,13 @@ describe('lingtai init (#186)', () => {
       version: 1,
       lastSeq: 1n,
     }
+    // No App is configured and no wizard follows the listing, so nothing
+    // here ever asks for a board's URL — #434 makes the start lazy.
     const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
     expect(await initCommand(['--port', '17900'], w)).toBe(0)
-    expect(seen.boards).toBe(1)
+    expect(seen.boards).toBe(0)
     expect(seen.lines.join('\n')).toContain('widget — owner not recorded')
+    expect(seen.lines.join('\n')).toContain('no board was started')
   })
 
   it('--kinds or --tickets on a machine with a project already registered is refused rather than silently discarded (#396 fix round, finding 3)', async () => {
@@ -817,7 +823,9 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
     expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
-    expect(seen.boards).toBe(1)
+    // The local branch never asks for a board's URL (#434) — nothing here
+    // opens a wizard, so nothing starts one.
+    expect(seen.boards).toBe(0)
   })
 
   it('--store sqlite alone, with nobody at the project question either, writes the store and refuses there — not the usage line "Nothing was written" (#393)', async () => {
@@ -830,10 +838,9 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(said).not.toContain('Nothing was written')
     // The store it names is kept: this is the claim the message makes good on.
     expect(config(home)).toBe('database:\n  store: sqlite\n')
-    // The board has to be up before the project question can wait for a new
-    // App (`waitForApp` needs `board.url`), so it starts before this question
-    // is asked — a refusal here no longer implies no board.
-    expect(seen.boards).toBe(1)
+    // The project question is refused before anything asks `boardUrl()` for a
+    // URL (#434's lazy start) — a refusal here means no board was ever asked for.
+    expect(seen.boards).toBe(0)
   })
 
   it('writes the same file the empty answer does', async () => {
