@@ -40,7 +40,8 @@ import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
 import { projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
-import { loadAllProjects, loadProject } from '@lingtai/conductor/projects'
+import { ownerlessClient } from '@lingtai/conductor/ownerless'
+import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
@@ -49,7 +50,7 @@ import { isPending, isRegistered } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
-import { kindsOf } from '@lingtai/recipe/settings'
+import { baseOf, kindsOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
 
@@ -73,14 +74,36 @@ export async function approveCard(input: {
   note?: string
 }): Promise<ActionResult> {
   try {
-    if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
-    const state = await project(input.project)
-    const { client, resolved } = await projectClient(state)
+    const state = await loadProject(input.project)
+    if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
+
+    // **A project with no owner has no App to check and no GitHub client to
+    // build** — the same branch `approveCommand` takes (`apps/cli/src/approve.ts`).
+    let client: Parameters<typeof approve>[0]['client']
+    let resolved: Awaited<ReturnType<typeof projectClient>>['resolved']
+    let base: string
+    let token: (() => Promise<string>) | undefined
+
+    if (state.owner === null) {
+      resolved = await currentRecipe(state)
+      base = state.base ?? baseOf(resolved.recipe)
+      client = (await ownerlessClient(state, resolved.recipe)).client
+      // No token: `ownerlessClient`'s remote pushes with this machine's own git
+      // credentials, the same as every other caller of it.
+      token = undefined
+    } else {
+      if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+      const built = await projectClient(state)
+      client = built.client
+      resolved = built.resolved
+      base = state.base ?? (await built.client.defaultBranch())
+      token = () => built.client.token()
+    }
 
     const result = await approve({
       project: input.project,
       issue: input.issue,
-      base: state.base ?? (await client.defaultBranch()),
+      base,
       client,
       recipe: async () => resolved,
       by: actor(),
@@ -92,7 +115,7 @@ export async function approveCard(input: {
       // what the CLI accepts (#92).
       onSha: input.onSha,
       note: input.note,
-      token: () => client.token(),
+      token,
     })
 
     revalidatePath('/')

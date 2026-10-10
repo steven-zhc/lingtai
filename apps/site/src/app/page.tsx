@@ -177,7 +177,9 @@ export default async function Home() {
                   </div>
                   <p>
                     It looks before it asks: where to keep its data — empty for SQLite, or a Postgres URL if you want
-                    one — then a repository, on this machine (what the next step uses) or on GitHub, then your agent,
+                    one — then a repository, on this machine (what the next step uses, so type that) or on GitHub (the
+                    default if you just press Enter, which then creates the GitHub App and has you run{' '}
+                    <code>lingtai add &lt;owner&gt;/&lt;repo&gt;</code> to answer the same questions), then your agent,
                     your checks, and whether a person approves the merge. It prints the recipe it wrote. Answer
                     &ldquo;hold&rdquo; and every pass stops for you until you say otherwise.
                   </p>

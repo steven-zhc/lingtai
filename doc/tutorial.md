@@ -15,16 +15,17 @@ Have these ready:
 
 - **Git**
 - **Claude Code or Codex**, installed and signed in
-- **A repository with an `origin` remote.** The merge lane pushes there, so
-  there has to be one — it does not have to be on GitHub. A bare repository on
-  the same disk works: `git init --bare` somewhere, then `git remote add
-  origin <that path>` in the repository you want Lingtai to run on.
+- **A repository with an `origin` remote carrying your base branch.** The
+  merge lane pushes there — it need not be on GitHub. A bare repository works:
+  `git init --bare` somewhere, `git remote add origin <that path>`, then `git
+  push -u origin <your base branch>` — skip the push and `lingtai start` fails
+  on an empty origin.
 
 There is no database to provision. Lingtai's own log is a SQLite file under
 `~/.lingtai` unless you give `init` a Postgres URL instead.
 
 Choose a small first ticket — a focused bug with an obvious test, not a test
-of the agent's limits.
+of its limits.
 
 Install the CLI:
 
@@ -40,8 +41,8 @@ on this site:
 curl -fsSL https://github.com/steven-zhc/lingtai/releases/latest/download/install.sh | sh
 ```
 
-Running from a source checkout instead? Run `pnpm install`, then use
-`pnpm lingtai` wherever this guide says `lingtai`.
+Running from source instead? Run `pnpm install`, then use `pnpm lingtai`
+wherever this guide says `lingtai`.
 
 ## Step 1 — Set up this machine
 
@@ -100,8 +101,10 @@ A script skips the terminal with the same answers:
 
 ```bash
 lingtai init --store sqlite --project local --local <dir> --base <branch> \
-  --install none --defaults --land hold
+  --agent claude-code --install none --defaults --land hold
 ```
+
+`--agent` names the runtime — omit it with two signed in and the run refuses.
 
 `init` ends by registering the project and printing its recipe:
 
@@ -123,21 +126,21 @@ steps:
 
 ![The recipe feeds three gates between a ticket and a merge: is it work, does it pass, do you approve.](img/recipe.svg)
 
-It is local to this machine; nothing is committed to the repository itself.
-Last, `init` prints `lingtai doctor`'s own report, then:
+It is local to this machine; nothing is committed to the repository. Last,
+`init` prints `lingtai doctor`'s own report, then:
 
 ```text
 no board was started — lingtai board starts it
 ```
 
-Before moving on, confirm doctor is clean on its own:
+Before moving on, confirm doctor is clean:
 
 ```bash
 lingtai doctor
 ```
 
 Do not open a ticket while `doctor` is red. Its output names the failing check
-and the command or setting involved.
+and what to fix.
 
 ## Step 2 — Open one ticket
 
@@ -207,7 +210,7 @@ your checks, and performs allowed merges — nothing, here, since the recipe
 says `hold`.
 
 For a background service on macOS or Linux, use `lingtai service install`
-after you have completed this first run.
+after this first run.
 
 ## Step 4 — Read the result
 
