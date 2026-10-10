@@ -13,6 +13,11 @@
  * 4. a person picks from the list, or pastes a link that is checked against it
  * ```
  *
+ * Since #401 step 4 is `lingtai add`, not a board screen: the board's own
+ * `/setup/repository` only answers GitHub's redirect and names the command,
+ * and this module's two callers for step 3 and 4 are `add-github.ts` and
+ * `first-project.ts`.
+ *
  * **Nothing is written.** Every call here goes through `AppReader`, whose only
  * method is `GET`, and nothing touches the event store: the registered
  * projects are handed in, already folded, so that they can be *shown* as
@@ -22,9 +27,10 @@
  * **Progress is read back from GitHub, never carried in the round trip.**
  * `state` survives only on `/installations/new`, and it does not survive an
  * organisation owner's approval — a member requests, an owner approves minutes
- * or days later, and that return has no `state`. So nothing here depends on it:
- * the screen after any return, with or without `state`, is `listRepositories`,
- * which asks the App what it can see now.
+ * or days later, and that return has no `state`. So nothing here depends on
+ * it: what asks the App what it can see now, with or without `state`, is
+ * `listRepositories`, called from `lingtai add` rather than from the return
+ * itself.
  */
 import { randomBytes } from 'node:crypto'
 
@@ -189,11 +195,10 @@ export type Choice =
  * A refused `Choice`'s own sentence, its gaps named one by one, then the fix
  * link — the whole of what a person is told, never just `why` on its own
  * (`add()`'s gap listing never runs on this path, so this is where that detail
- * has to live). `choose()` has three callers: the two in the CLI
- * (`first-project.ts` and `add-github.ts`) print through this, and the board's
- * repository page renders the same three parts in the same order as JSX of its
- * own (`apps/board/src/app/setup/repository/page.tsx`). A change to the order
- * here is a change there too.
+ * has to live). `choose()`'s two callers, `first-project.ts` and
+ * `add-github.ts`, both print through this. Since #401 the board's own
+ * repository page calls neither `choose()` nor this: it is the terminal's
+ * command that resolves a choice now.
  */
 export function refusalLines(choice: { why: string; fix: Fix | null; gaps: PermissionGap[] }): string[] {
   const lines = [choice.why]
@@ -373,8 +378,9 @@ export async function setupReturn(reader: AppReader, query: URLSearchParams): Pr
     try {
       id = await verifiedInstallation(reader, query.get('installation_id'))
     } catch {
-      // GitHub would not answer. The picker asks it again and says so there;
-      // a hint is not worth failing the return for.
+      // GitHub would not answer. Nothing reads `installed` today but a
+      // future screen that does would ask again anyway; a hint is not worth
+      // failing the return for.
     }
     if (id !== null) target.set('installed', String(id))
   }

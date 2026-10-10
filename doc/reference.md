@@ -96,9 +96,10 @@ automatically, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
 What appends that first event is `startOnboarding`
-(`packages/conductor/src/wizard.ts`, `#165`), called by the wizard page's
-*Write the recipe on this machine* (`apps/board/src/app/setup/wizard/finish.ts`), and it is **the only write the
-wizard makes of its own accord** — and since `#180` it writes nothing to the
+(`packages/conductor/src/wizard.ts`, `#165`). The board's wizard page called it
+from *Write the recipe on this machine* until `#401` removed that page for the
+terminal's `pnpm lingtai add`, and it is **the only write it makes of its own
+accord** — and since `#180` it writes nothing to the
 repository: the recipe is parsed before anything is written, so a file that
 would fail `lingtai add` names its bad field instead; then
 `~/.lingtai/<project>/recipe.yml`, limits and all, with the page's agent under

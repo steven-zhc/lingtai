@@ -124,6 +124,27 @@ describe('an App that already exists', () => {
     expect(out).toContain('configured with app 1234567')
     expect(out).not.toMatch(/restart/i)
   })
+
+  /**
+   * Choosing a repository is the terminal's since #401 — neither branch of
+   * this screen sends anyone to the board's own picker, installUrl known or
+   * not.
+   */
+  it('names lingtai add rather than the repository picker, with an install link known', () => {
+    const out = html(CONFIGURED)
+
+    expect(out).toContain('pnpm lingtai add')
+    expect(out).not.toContain('/setup/wizard')
+    expect(out).not.toContain('/setup/repository')
+  })
+
+  it('names lingtai add rather than the repository picker, with no install link to offer', () => {
+    const out = html({ ...CONFIGURED, installUrl: null })
+
+    expect(out).toContain('pnpm lingtai add')
+    expect(out).not.toContain('/setup/wizard')
+    expect(out).not.toContain('/setup/repository')
+  })
 })
 
 /**
@@ -259,6 +280,14 @@ describe('the ending', () => {
 
     expect(out).toContain('https://github.com/apps/lingtai-steven/installations/new')
     expect(out).toContain('Creating is not installing')
+  })
+
+  /** Choosing the repository is the terminal's since #401, not the board's own picker. */
+  it('names lingtai add as the next step, and not the board setup wizard', () => {
+    const out = html(CREATED)
+
+    expect(out).toContain('pnpm lingtai add')
+    expect(out).not.toContain('/setup/wizard')
   })
 
   it("says a refusal in the server's own words and offers the form again", () => {

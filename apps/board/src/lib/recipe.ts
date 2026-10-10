@@ -416,9 +416,6 @@ export type ProjectRecipe =
  * `runtime.agent`, or by signing a runtime out — so it is the recipe's fault.
  * Each names its own remedy in its message; what a caller must not do is wrap
  * them in a sentence about the other file.
- *
- * `instanceof`, as `setup/wizard/page.tsx` already does across this same
- * boundary.
  */
 function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' } {
   return err instanceof MachineConfigInvalidError
