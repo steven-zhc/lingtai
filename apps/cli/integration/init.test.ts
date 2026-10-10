@@ -8,7 +8,15 @@ import { recipePath, type RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import type { GitResult } from '../src/first-project.ts'
-import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initCommand, redact } from '../src/init.ts'
+import {
+  type AppCheck,
+  type InitWorld,
+  type RuntimeFound,
+  configPath,
+  initCommand,
+  liveMachine,
+  redact,
+} from '../src/init.ts'
 
 /**
  * `lingtai init` (#186), against a world with no database, GitHub, runtime or
@@ -132,6 +140,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
     seen,
     world: {
       env: { LINGTAI_HOME: home, ...script.env },
+      // The real one, over `node:fs` (#435) — `config.yml` is a real file
+      // here (this file's own header), and the test fixture must read and
+      // write the one `initCommand` itself does, not a second implementation.
+      machine: liveMachine(),
       log: (line) => seen.lines.push(line),
       ask: async (question) => {
         // The project and App questions (#393) are answered directly from the

@@ -107,16 +107,18 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { addLocal } from '@lingtai/conductor/onboard'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import { type ProjectState } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
+  type MachineFile,
   type StoreChosen,
   boardPort,
   describeStore,
+  machineFileFrom,
   redactUrl,
   stateDir,
   storeChoice,
@@ -159,6 +161,20 @@ export interface InitWorld {
    * and, where it means the exported variable, a `LINGTAI_DATABASE_URL`.
    */
   env: NodeJS.ProcessEnv
+  /**
+   * `config.yml`, read and written without reaching for `node:fs` directly
+   * (#435) — so a `unit/` test drives the whole of `init` with a `Map`
+   * standing in for the file. The live one is today's fs code, moved
+   * verbatim: `read` is `existsSync`/`readFileSync`, `write` is the mkdir,
+   * the `.partial`, the `chmod 0600` and the rename, and `describeHome`
+   * lists what is under `home` for the "look" line.
+   */
+  machine: {
+    /** Null where the file is not there. */
+    read: (path: string) => string | null
+    write: (path: string, text: string) => void
+    describeHome: (home: string, path: string) => string
+  }
   log: (line: string) => void
   /** One line from the person. Null when nobody is at a terminal to answer. */
   ask: (question: string) => Promise<string | null>
@@ -228,9 +244,10 @@ export function configPath(env: NodeJS.ProcessEnv): string {
 }
 
 /** The machine file as a document, so a write keeps every comment and key it did not choose. */
-function readConfig(path: string): Document | { refused: string } {
-  if (!existsSync(path)) return new Document({})
-  const doc = parseDocument(readFileSync(path, 'utf8'))
+function readConfig(path: string, read: InitWorld['machine']['read']): Document | { refused: string } {
+  const text = read(path)
+  if (text === null) return new Document({})
+  const doc = parseDocument(text)
   if (doc.errors.length > 0) {
     return { refused: `${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it and run lingtai init again` }
   }
@@ -239,17 +256,9 @@ function readConfig(path: string): Document | { refused: string } {
   return doc
 }
 
-/**
- * Beside, then renamed over: an interruption mid-write leaves the old file or
- * the new one, never half of either. `0600`, because a database URL carries its
- * password.
- */
-function writeConfig(path: string, doc: Document, home: string): void {
-  mkdirSync(home, { recursive: true })
-  const partial = `${path}.${process.pid}.partial`
-  writeFileSync(partial, doc.toString(), { mode: 0o600 })
-  chmodSync(partial, 0o600)
-  renameSync(partial, path)
+/** `world.machine`'s file, as `storeChoice`/`boardPort` read it — never `machineFile(env)`'s own fs read (#435). */
+function machineFor(world: Pick<InitWorld, 'machine'>, path: string): MachineFile {
+  return machineFileFrom(path, world.machine.read(path))
 }
 
 /**
@@ -350,7 +359,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     const state = !r.installed ? 'not installed' : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`
     world.log(`  ${r.id.padEnd(12)} ${state}`)
   }
-  world.log(`  ${'home'.padEnd(12)} ${home} — ${describeHome(home, path)}`)
+  world.log(`  ${'home'.padEnd(12)} ${home} — ${world.machine.describeHome(home, path)}`)
   if (!git) {
     return refuse(
       world,
@@ -358,11 +367,11 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     )
   }
 
-  const config = readConfig(path)
+  const config = readConfig(path, world.machine.read)
   if ('refused' in config) return refuse(world, config.refused)
 
   // ---- the store ------------------------------------------------------------
-  const store = await chooseStore(world, config, path, home, flags['database-url'] ?? null, named)
+  const store = await chooseStore(world, config, path, flags['database-url'] ?? null, named)
   if (store !== null) return store
 
   // ---- the agent --------------------------------------------------------
@@ -471,7 +480,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   // behind it (`install.sh`) alive forever once it serves one. `startBoard`
   // is memoised, so `boardUrl()` below calls it at most once per run, and a
   // local project never calls it at all.
-  const port = asked ?? boardPort(world.env)
+  const port = asked ?? boardPort(world.env, machineFor(world, path))
   type BoardStart = { url: string; started: boolean } | { refused: string }
   // A settled value, not a cached promise: every call here is already
   // awaited before the next one starts, so there is no race to memoise
@@ -648,25 +657,6 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   return 0
 }
 
-function describeHome(home: string, path: string): string {
-  if (!existsSync(home)) return 'nothing yet'
-  const said: string[] = [existsSync(path) ? 'config.yml' : 'no config.yml']
-  try {
-    const entries = readdirSync(home, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-    const projects = entries.filter((name) => existsSync(join(home, name, 'recipe.yml')))
-    said.push(projects.length > 0 ? `projects: ${projects.join(', ')}` : 'no projects')
-    if (entries.includes('versions')) {
-      const versions = readdirSync(join(home, 'versions')).filter((v) => !v.startsWith('.'))
-      said.push(`versions: ${versions.join(', ') || 'none'}`)
-    }
-  } catch {
-    // An unreadable home says only what the file check could.
-  }
-  return said.join(' · ')
-}
-
 function describeSchema(schema: SchemaOutcome): string {
   if (schema.created) return `tables created (${schema.applied.length} steps)`
   return schema.repaired.length > 0 ? `tables present; put back ${schema.repaired.join(', ')}` : 'tables present'
@@ -685,7 +675,6 @@ async function chooseStore(
   world: InitWorld,
   config: Document,
   path: string,
-  home: string,
   flag: string | null,
   named: StoreFlag | null,
 ): Promise<number | null> {
@@ -716,7 +705,7 @@ async function chooseStore(
   // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
   // and nothing is written for it: it is the process's answer, not the file's,
   // and this command does not own the process a daemon will be started in.
-  const preset = storeChoice(world.env)
+  const preset = storeChoice(world.env, machineFor(world, path))
   if (!('refused' in preset) && preset.where === 'environment' && preset.store === 'postgres') {
     // `--database-url` naming a database the exported URL does not is a
     // choice this process would not obey — whether or not `--store postgres`
@@ -765,7 +754,7 @@ async function chooseStore(
   if (flag === null) {
     // The settled-store check runs once: a machine already answering is
     // reported and not asked about again (this file's header).
-    const settled = storeChoice(world.env)
+    const settled = storeChoice(world.env, machineFor(world, path))
     if (!('refused' in settled)) {
       if (settled.store === 'sqlite') return sqliteChosen(world, settled)
       const check = await world.database(settled.url)
@@ -798,7 +787,7 @@ async function chooseStore(
         if (check.ok) {
           config.setIn(['database', 'store'], 'postgres')
           config.setIn(['database', 'url'], older)
-          writeConfig(path, config, home)
+          world.machine.write(path, config.toString())
           const read = confirm(world, path, 'postgres')
           if (typeof read === 'number') return read
           world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`))
@@ -839,14 +828,14 @@ async function chooseStore(
     // that had just said SQLite, which is the whole of #215.
     config.setIn(['database', 'store'], 'sqlite')
     config.deleteIn(['database', 'url'])
-    writeConfig(path, config, home)
+    world.machine.write(path, config.toString())
     const read = confirm(world, path, 'sqlite')
     return typeof read === 'number' ? read : sqliteChosen(world, read)
   }
 
   config.setIn(['database', 'store'], 'postgres')
   config.setIn(['database', 'url'], result.answer)
-  writeConfig(path, config, home)
+  world.machine.write(path, config.toString())
   const read = confirm(world, path, 'postgres')
   if (typeof read === 'number') return read
   world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(schema!)}`))
@@ -872,8 +861,8 @@ async function chooseStore(
  * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
  * documented switch leaves, and the empty answer completes it in the same way.
  */
-function sqliteRefused(world: Pick<InitWorld, 'env'>, config: Document, path: string): string | null {
-  const read = storeChoice(world.env)
+function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, config: Document, path: string): string | null {
+  const read = storeChoice(world.env, machineFor(world, path))
   // The way through, and it works with no terminal: the edit leaves the
   // two-keys half-state, which `--store sqlite` completes.
   const edit =
@@ -906,7 +895,7 @@ function sqliteRefused(world: Pick<InitWorld, 'env'>, config: Document, path: st
  * naming both rather than a line nobody would read.
  */
 function confirm(world: InitWorld, path: string, expected: 'postgres' | 'sqlite'): StoreChosen | number {
-  const read = storeChoice(world.env)
+  const read = storeChoice(world.env, machineFor(world, path))
   if ('refused' in read || read.store !== expected) {
     return refuse(
       world,
@@ -967,9 +956,51 @@ export { type RawStdin, waitForKeypress }
 /** The board lock this process holds while `lingtai init` serves one. See `board` below. */
 let kept: HeldLock | null = null
 
+/**
+ * `InitWorld.machine` built for real — `node:fs`, exactly as `readConfig`,
+ * `writeConfig` and `describeHome` did before #435 moved them behind this
+ * seam. Exported so `integration/init.test.ts`'s fixture reads and writes the
+ * same real `config.yml` this live world does, rather than a second
+ * implementation of the same three functions.
+ */
+export function liveMachine(): InitWorld['machine'] {
+  return {
+    read: (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null),
+    // Beside, then renamed over: an interruption mid-write leaves the old
+    // file or the new one, never half of either. `0600`, because a database
+    // URL carries its password.
+    write: (path, text) => {
+      mkdirSync(dirname(path), { recursive: true })
+      const partial = `${path}.${process.pid}.partial`
+      writeFileSync(partial, text, { mode: 0o600 })
+      chmodSync(partial, 0o600)
+      renameSync(partial, path)
+    },
+    describeHome: (home, path) => {
+      if (!existsSync(home)) return 'nothing yet'
+      const said: string[] = [existsSync(path) ? 'config.yml' : 'no config.yml']
+      try {
+        const entries = readdirSync(home, { withFileTypes: true })
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name)
+        const projects = entries.filter((name) => existsSync(join(home, name, 'recipe.yml')))
+        said.push(projects.length > 0 ? `projects: ${projects.join(', ')}` : 'no projects')
+        if (entries.includes('versions')) {
+          const versions = readdirSync(join(home, 'versions')).filter((v) => !v.startsWith('.'))
+          said.push(`versions: ${versions.join(', ') || 'none'}`)
+        }
+      } catch {
+        // An unreadable home says only what the file check could.
+      }
+      return said.join(' · ')
+    },
+  }
+}
+
 export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
+    machine: liveMachine(),
     log: (line) => console.log(line),
     ask: liveAsk,
     git: async () => {

@@ -125,13 +125,26 @@ export function yamlProvider(parsed: unknown): ConfigProvider.ConfigProvider {
 export function machineFile(from: NodeJS.ProcessEnv = process.env): MachineFile {
   const path = machineFilePath(from)
   if (path === null) return { path, provider: yamlProvider({}) }
-  let text: string
+  let text: string | null
   try {
     text = readFileSync(path, 'utf8')
   } catch (err) {
-    if (absent(err)) return { path, provider: yamlProvider({}) }
-    return { path, provider: yamlProvider({}), unreadable: `${path} could not be read: ${(err as Error).message}` }
+    if (absent(err)) text = null
+    else return { path, provider: yamlProvider({}), unreadable: `${path} could not be read: ${(err as Error).message}` }
   }
+  return machineFileFrom(path, text)
+}
+
+/**
+ * The same file, already read — for a caller that reads it through a world of
+ * its own rather than `node:fs` (`lingtai init`'s `InitWorld.machine`, #435).
+ *
+ * `text` null means absent, never *unreadable*: a caller that could not open
+ * the file at all answers its own `unreadable` directly, the way `machineFile`
+ * above does for a read that threw for some reason other than ENOENT.
+ */
+export function machineFileFrom(path: string, text: string | null): MachineFile {
+  if (text === null) return { path, provider: yamlProvider({}) }
   try {
     return { path, provider: yamlProvider(parseYaml(text)) }
   } catch (err) {
@@ -537,8 +550,13 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
  * **What opens the store it names is `chosenStore()` below** (#179): the three
  * factories — the log, the projections and the beacon — each ask that, and no
  * other file in the repository reads a variable or a file to decide.
+ *
+ * `file` defaults to `machineFile(from)`, read fresh through `node:fs` — the
+ * one override is `lingtai init`'s own `InitWorld.machine`, which reads
+ * `config.yml` through its own seam rather than the filesystem directly
+ * (#435), so every other caller is unchanged.
  */
-export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice {
+export function storeChoice(from: NodeJS.ProcessEnv = process.env, file: MachineFile = machineFile(from)): StoreChoice {
   // The test side for a test, as every other read here does — so a suite that
   // exists to assert Postgres can never be answered by the operator's machine.
   const name = dbVar('DATABASE_URL', from)
@@ -553,7 +571,6 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
     }
   }
 
-  const file = machineFile(from)
   const path = file.path
   if (path === null) {
     // **The test side, since #275.** `machineFile` answers null here in the
@@ -742,8 +759,15 @@ export const RESERVED_PORT = 17821
  * The file need not exist. A value that is not a port number is refused by name
  * rather than ignored, which would serve the board on 17820 and say nothing
  * about the number somebody plainly wrote down.
+ *
+ * `file` defaults to `machineFile(from)`, as `storeChoice`'s own does, for the
+ * same one override (#435): `lingtai init`'s `InitWorld.machine`, which reads
+ * `config.yml` through its own seam rather than the filesystem directly.
  */
-export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number | undefined {
+export function machineBoardPort(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): number | undefined {
   const port = Config.option(Config.nested(Config.port('port'), 'board'))
   const exported = readConfig(port, environmentProvider(from))
   if (Either.isLeft(exported)) {
@@ -753,7 +777,6 @@ export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number 
     )
   }
   if (Option.isSome(exported.right)) return exported.right.value
-  const file = machineFile(from)
   if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its board.port could not be read`)
   const written = readConfig(port, file.provider)
   if (Either.isLeft(written)) {
@@ -769,8 +792,8 @@ export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number 
 }
 
 /** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
-export function boardPort(from: NodeJS.ProcessEnv = process.env): number {
-  return machineBoardPort(from) ?? BOARD_PORT
+export function boardPort(from: NodeJS.ProcessEnv = process.env, file?: MachineFile): number {
+  return machineBoardPort(from, file) ?? BOARD_PORT
 }
 
 /** Where the board answers, for a link somebody clicks. Loopback: 0008 gave it no authentication. */
