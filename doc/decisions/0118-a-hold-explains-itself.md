@@ -93,8 +93,7 @@ which kind a hold is gets inferred again in each place that needs it, from
    - **Triage is two more unions, a fact and a view of it.** `TriageResult`
      (`Failed`, `Advised`) is what `HoldTriaged` records. `TriageStatus`
      (`NotDeclared`, `Queued`, `Running`, `Interrupted`, `Done` carrying a
-     `TriageResult`) is derived from the log and never stored, and is what
-     the page and `recommendedMove` match on. An advised triage carries a
+     `TriageResult`) is derived on read and never stored, and is what the page and `recommendedMove` match on. It is derived from the strongest fact first: a result for the current block's latest attempt is `Done`, whatever the recipe says now; an attempt started with no result is `Running`, or `Interrupted` if it started before the running daemon did; a block with neither is `Queued` while `triage:` is declared, and `NotDeclared` otherwise. A recipe that stops declaring triage does not hide a result already paid for. An advised triage carries a
      `Cause` that is a union too, each cause with its own parts (§4). What Lingtai knows about a
      hold and what an agent concluded about it are never one field.
    - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
@@ -151,9 +150,7 @@ which kind a hold is gets inferred again in each place that needs it, from
      variants it runs for is one pure function of the hold, `triageRuns`,
      beside `allowedMoves` and following the same table.
    - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
-     It names the block it explains and the head it read, which runtime and
-     model answered, and its usage
-     ([0110](0110-tokens-on-the-event-money-at-display.md)). Its result is
+     It names the block it explains and the head it read, and who answered: `Agent`, with its runtime, model, reported `costUsd` and usage ([0110](0110-tokens-on-the-event-money-at-display.md)), or `Mechanical`, when Lingtai answered without calling an agent (§8). Only `Agent` carries spend: a mechanical answer cost nothing, and records no cost rather than a zero the runtime never stated. Its result is
      a `TriageResult`, `Failed` or `Advised`, the same type and not a copy of it,
      so an advised triage with a failure, or a failed one with advice, cannot
      be written. `Advised` carries the cause, the recommended move, one
@@ -280,8 +277,7 @@ which kind a hold is gets inferred again in each place that needs it, from
      opens only the ones that need the person.
    - Past 20 hunks it does not resolve them one by one. The hunks are counted
      from the mirror before any agent is called, and past 20 none is: the
-     triage is _merge by hand_ with no hunks and their total, recommending
-     starting over from the new base, and it costs nothing.
+     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing.
 
 9. **Triage belongs to the block it explains.** `HoldTriaged` names the
    `WorkItemBlocked` it answers and the head it read. The page and the card
@@ -292,13 +288,7 @@ which kind a hold is gets inferred again in each place that needs it, from
    and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
-10. **The card reads triage from `task_view`.** The projection folds
-    `HoldTriaged` into three columns: the triage state (running, advised or
-    failed), the cause, and the one sentence. The `TriageStatus` is `Queued` when its block has no `TriageStarted`
-    while `triage:` is declared, `Running` while its latest attempt has no
-    `HoldTriaged`, `Interrupted` when that attempt started before the running
-    daemon did, and `Done` with the latest attempt's result. The full advice is
-    read from the event by the task page. Adding the columns is a rebuild:
+10. **The card reads triage from `task_view`.** The projection keeps the facts for the current block: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from those facts by §1's order, through one pure function, `triageStatus`. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
 ## Consequences
@@ -319,6 +309,12 @@ which kind a hold is gets inferred again in each place that needs it, from
 - **The holder's own text becomes evidence**: the judge's `why`, git's words
   and the step's raw output. It sits in the record and in the side-by-side when
   there is a disagreement. It is no longer the message.
+- **On GitHub, an edit made in the instant between the body's read and its
+  write is lost.** GitHub's issue PATCH takes no precondition, so the write
+  compares and then writes; the read-back after it narrows the window and
+  cannot close it. A `db` tracker's write is conditional and has no window.
+  This is accepted: the page shows the section before the move is made, and
+  the section is found again by its marker.
 - **The body grows a section per answered hold.** That is the point: it is the
   durable, free place a decision is kept, and the place the next attempt reads
   from.

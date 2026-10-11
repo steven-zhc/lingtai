@@ -4,9 +4,7 @@
 
 Every paid call records what it consumed on the event that call ends on. That
 record has two parts: the dollars the runtime itself reported (`costUsd`), and
-the token counts, kept separately rather than summed, together with the model
-and mode needed to price them. Every field is optional. An absent field means
-_this runtime did not say_, never zero. Lingtai never computes money on the way
+the token counts, kept separately rather than summed, together with the model and mode needed to price them. `costUsd` is always written, and `null` when the runtime did not say; every token field is optional, and absent means the same. Neither is ever zero for _not said_. Lingtai never computes money on the way
 into the log and never computes it inside a fold. Money is computed where it is
 displayed, from the event's own counts and occurrence time, using
 [`doc/rate-card.md`](../rate-card.md), a dated table that a person appends to.
@@ -95,7 +93,7 @@ run log is gone by the time anyone asks what the work cost.
    premium speed at the same model id, where a runtime has one. Events take
    one array rather than loose fields, because nobody writes events by hand.
 
-4. **Every field is optional, and none defaults to zero.** A `.default(0)`
+4. **Every token field is optional, and none defaults to zero; `costUsd` is written, and `null` when not said.** A `.default(0)`
    anywhere in these groups would report unknown cost as free. Optional also
    keeps widened event types safe: a constructor that misses the field still
    compiles and still parses, and the event reads as _not said_.
