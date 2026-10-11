@@ -184,6 +184,25 @@ describe('upsertSection', () => {
     expect(result.split(ANSWER_CLOSE_MARKER)).toHaveLength(3)
   })
 
+  /**
+   * A person editing the issue on GitHub deletes `w-1@build`'s close line,
+   * leaving its open marker dangling. The nearest close marker after it is
+   * now `w-1@review`'s own — so the old heuristic read `w-1@review`'s open as
+   * nested inside `w-1@build`'s (still-open) span, ran out of occurrences to
+   * try, and silently appended a second, stale `w-1@review` section (#446's
+   * finding 1). Refusing is the fix, since `w-1@review` is not in fact
+   * absent — the body is ambiguous, and guessing either way is wrong.
+   */
+  it('refuses rather than duplicating when a different key is left open with no close', () => {
+    const dangling =
+      `Problem.\n\n${answerOpenMarker('w-1@build')}\n\nthe build answer\n\n` +
+      `${answerOpenMarker('w-1@review')}\n\nthe review answer\n\n${ANSWER_CLOSE_MARKER}\n`
+
+    expect(() => upsertSection(dangling, 'w-1@review', 'the NEW review answer')).toThrow(
+      /every open marker for "w-1@review" appears nested/,
+    )
+  })
+
   it('replaces only the first of two hand-pasted open markers for one key, leaving the second alone', () => {
     const body =
       `the ticket.\n\n${answerOpenMarker('w-1@review')}\n\nfirst\n\n${ANSWER_CLOSE_MARKER}\n\n` +

@@ -87,11 +87,17 @@ export function upsertSection(body: string, key: string, text: string): string {
   }
   const section = `${open}\n\n${trimmed}\n\n${ANSWER_CLOSE_MARKER}`
 
-  let openIdx = body.indexOf(open)
+  const firstOpenIdx = body.indexOf(open)
+  let openIdx = firstOpenIdx
   while (openIdx !== -1 && isNestedInAnotherSection(body, openIdx)) {
     openIdx = body.indexOf(open, openIdx + 1)
   }
   if (openIdx === -1) {
+    if (firstOpenIdx !== -1) {
+      throw new Error(
+        `upsertSection: every open marker for ${JSON.stringify(key)} appears nested inside another, unclosed section, so the body cannot be trusted`,
+      )
+    }
     return body.trim() === '' ? `${section}\n` : `${body.trimEnd()}\n\n${section}\n`
   }
 
