@@ -106,11 +106,11 @@ describe("the next attempt's prompt", () => {
   it('carries an answer given before any run into every attempt, without the issue body', () => {
     const e = stream('wi-lingtai-51')
     const asked = e('WorkItemBlocked', {
-      question: 'Which of the three designs for the production-credential tripwire?',
-      needsFrom: 'human',
-      runId: null,
-      needs: 'judgement',
-      diagnosis: null,
+      hold: {
+        _tag: 'Question',
+        question: 'Which of the three designs for the production-credential tripwire?',
+        by: 'human:steven',
+      },
     })
     const answered = e('WorkItemUnblocked', { by: 'human:steven', note: 'the second: refuse at the hook' })
 
@@ -156,11 +156,16 @@ describe("the next attempt's prompt", () => {
         e('WorkItemDiscovered', discovered),
         e('WorkItemClaimed', claim('run-a')),
         e('WorkItemBlocked', {
-          question: 'conflict: agent/51 does not merge into main',
-          needsFrom: 'human',
-          runId: 'run-a',
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'MergeRefused',
+            run: { runId: 'run-a' },
+            reason: 'conflict',
+            why: 'agent/51 does not merge into main',
+            raw: 'agent/51 does not merge into main',
+            paths: null,
+            baseSha: null,
+            headSha: null,
+          },
         }),
         e('WorkItemUnblocked', { by: 'human:steven', note: 'the base has moved' }),
       ],

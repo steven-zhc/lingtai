@@ -122,11 +122,16 @@ describe('priorAttempts', () => {
     const [attempt] = priorAttempts([
       e('WorkItemClaimed', claim('run-1')),
       e('WorkItemBlocked', {
-        question: 'conflict: agent/59 does not merge into main',
-        needsFrom: 'human',
-        runId: 'run-1',
-        needs: null,
-        diagnosis: null,
+        hold: {
+          _tag: 'MergeRefused',
+          run: { runId: 'run-1' },
+          reason: 'conflict',
+          why: 'agent/59 does not merge into main',
+          raw: 'agent/59 does not merge into main',
+          paths: null,
+          baseSha: null,
+          headSha: null,
+        },
       }),
     ])
 

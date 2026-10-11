@@ -22,7 +22,7 @@ import {
 } from '@lingtai/actions'
 import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, taggedTrace } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { diagnoseRefusal, type Tier, parsePayload, retiredRepairPending } from '@lingtai/domain'
+import { type Hold, type Tier, legacyColumns, parsePayload, retiredRepairPending } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type RuntimeId,
@@ -173,6 +173,7 @@ import { Effect, Either } from 'effect'
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
 import { agentBranch, armBranch } from './branches.ts'
+import { type CeilingHit, holdOfPass, lastIntegrationRefusal } from './hold-of.ts'
 import { claimWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
@@ -1248,7 +1249,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * so the distinction is kept here rather than pushed into a vocabulary
        * the pass would then have to carry.
        */
-      let ceilingHit: { kind: 'out-of-turns' | 'out-of-usd'; detail: string } | null = null
+      let ceilingHit: CeilingHit | null = null
       /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
@@ -2761,7 +2762,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             }
           }
           if (outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd') {
-            ceilingHit = { kind: outcome.failure.kind, detail: outcome.failure.detail }
+            ceilingHit = {
+              kind: outcome.failure.kind,
+              detail: outcome.failure.detail,
+              turns: outcome.turns,
+              costUsd: outcome.costUsd,
+            }
           }
           return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` }
         }
@@ -3173,138 +3179,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const roundsSpent = pass.routes.filter((route) => route.to !== 'waiting' && route.to !== 'claim').length
 
       /**
-       * The three things a person is owed, in one place.
-       *
-       * `question` is what the card says, `diagnosis` is what is under it, and both
-       * are read off `PassResult` rather than recomposed from a `FixOn` the pass
-       * does not produce. A refused merge is the one case with a written diagnosis
-       * already — `diagnoseRefusal` — and it is used rather than restated.
+       * The `Hold` a person is owed, built by `holdOfPass` from what the pass
+       * reported — today's classification (`hold-of.ts`'s own header), not
+       * 0118 §1's *who sent it*, which is #452's. `legacyColumns` turns it back
+       * into the `question`/`needs`/`diagnosis` every reader below still wants.
        */
-      const blocked = () => {
-        const said_ = whatIsWaitingOnYou()
-        return notPushed === null
-          ? said_
-          : // **Git's own words reach the card, on every shape of the question.**
-            // A rescue starts from knowing whether the commits reached origin, and
-            // the three returns below each compose their own `what` — so the
-            // sentence is appended once, here, rather than three times there.
-            { ...said_, diagnosis: { ...said_.diagnosis, what: `${said_.diagnosis.what}${unpushed}` } }
-      }
-
-      const whatIsWaitingOnYou = () => {
-        const at = stopped?.step ?? 'proposed'
-        const ending = stopped?.ending.ending ?? 'routed'
-        const why = stopped === null ? (lastRoute?.why ?? 'the pass was held for a person') : detailOf(stopped)
-        const question =
-          stopped === null
-            ? `${branch} into ${base} is waiting on you. ${said(why, 400)}`
-            : `the \`${at}\` step ${ending}: ${said(why, 400)}`
-        if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
-          return {
-            question: `${stopped.ending.because}: ${said(why, 400)}`,
-            needs: 'acknowledgement' as const,
-            diagnosis: diagnoseRefusal({
-              reason: stopped.ending.because,
-              detail: why,
-              branch,
-              base,
-            }),
-          }
-        }
-        if (ceilingHit !== null) {
-          const isUsd = ceilingHit.kind === 'out-of-usd'
-          return {
-            question: `${ceilingHit.kind}: ${said(ceilingHit.detail)}`,
-            needs: 'acknowledgement' as const,
-            diagnosis: {
-              what: isUsd
-                ? `the run reached the recipe's dollar ceiling ($${limitsFor(recipe, 'implement').usd}) and was ` +
-                  `stopped: ${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more ` +
-                  'than one run should cost.'
-                : `the run reached the recipe's turn limit (${limitsFor(recipe, 'implement').turns}) and was stopped: ` +
-                  `${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more than ` +
-                  'one run should do.',
-              done: null,
-              raw: ceilingHit.detail,
-              recommendation: {
-                action: 'requeue' as const,
-                why: isUsd
-                  ? 'narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, ' +
-                    'it buys another run to the same limit'
-                  : 'narrow or split the ticket first; requeued as written, it buys another run to ' + 'the same limit',
-              },
-            },
-          }
-        }
-        return {
-          question,
-          /**
-           * A hold and a route to a person are both *decide something*; a step that
-           * reported a machine failure is *look at this*.
-           *
-           * **And a step that stopped to ask is *decide something* too** (`#294`,
-           * the fix round). The line above was written while every
-           * `did-not-finish` reaching a person was a crash or a turn limit, which
-           * is what *acknowledge* is the right word for. `design` asking a question
-           * it cannot design without is the arrival that made it false: a card
-           * reading *a failure needs acknowledging* over a question asks the
-           * operator to tick off something that did not fail, and the thing the
-           * pass is actually waiting for — an answer — is a judgement.
-           * **`asked` is the ending rather than a token on one** (`#296`): this
-           * read was `did-not-finish` plus `because === NEEDS_INPUT` and is now
-           * the same fact the router branches on, so the card and the router
-           * cannot disagree about which arrivals held a question.
-           *
-           * No recommendation goes with it, and that is right rather than
-           * missing: `BlockRecommendation` is `approve`, `reject` or `requeue` —
-           * *a recommendation the board cannot carry out would be a sentence* —
-           * and none of the three answers a question.
-           */
-          needs:
-            stopped === null || stopped.ending.ending === 'held' || stopped.ending.ending === 'asked'
-              ? ('judgement' as const)
-              : ('acknowledgement' as const),
-          diagnosis: {
-            what:
-              `${branch} is at ${headSha.slice(0, 7) || 'the base'} and ` +
-              (stopped === null
-                ? `\`proposed\` held it for a person: ${said(why, 400)}`
-                : `the \`${at}\` step ${ending}: ${said(why, 400)}`) +
-              (roundsSpent > 0 ? ` ${roundsSpent} of ${ceiling.rounds} rounds were spent.` : ''),
-            done: repairOf ? `a repair for ${repairOf.reason} produced this diff` : null,
-            raw: why,
-            /**
-             * **Approve is recommended exactly where every step passed** — and
-             * since `#256` a hold at `merge` is one of those.
-             *
-             * `stopped === null` alone is not the good hold any more. `--no-merge`
-             * and a pre-`#143` repair are `human:` actions injected after
-             * `merge`'s declared list (#20), so the ordinary self-hosted ending —
-             * green run, operator asked it not to merge — now ends `held` at
-             * `merge` with `stoppedAt` set, and the card lost the one
-             * recommendation #83 calls the good hold: `standing.tsx` drew no
-             * recommended move and `page.tsx` passed `recommended={null}`.
-             *
-             * **`merge` and not any held step**, because the walk is what makes
-             * the sentence true: a step only holds once every step before it has
-             * passed, and `merge` is the last of the nine before `end` — so
-             * *every step passed on this diff* is arithmetic there and a false
-             * claim at `build`, where `review` and `proposed` never ran.
-             *
-             * Findings still veto it. A `review` may pass carrying them (0058
-             * §3b), and approving over a live finding is the one judgement
-             * nothing but a person should make.
-             */
-            recommendation:
-              findings.length === 0 &&
-              (stopped === null || (stopped.step === 'merge' && stopped.ending.ending === 'held'))
-                ? {
-                    action: 'approve' as const,
-                    why: 'every step passed on this diff; approving merges what this run produced',
-                  }
-                : null,
-          },
-        }
+      const holdFor = async (): Promise<Hold> => {
+        const integrationRefusal =
+          stopped?.step === 'merge' && stopped.ending.ending === 'refused'
+            ? await lastIntegrationRefusal(store, project, base, workItemId, branch)
+            : null
+        return holdOfPass({
+          stopped,
+          lastRoute,
+          ceilingHit,
+          findings,
+          runId,
+          branch,
+          base,
+          ...(repairOf === null ? {} : { repairOf: repairOf.after }),
+          ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
+          integrationRefusal,
+        })
       }
 
       /**
@@ -3466,7 +3362,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // ---- blocked: a person now holds it -------------------------------------
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
-        const said_ = blocked()
+        const hold = yield* Effect.promise(holdFor)
+        const said_ = legacyColumns(hold)
         /**
          * **Something judged this diff and said no** — the second half of when a
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
@@ -3548,13 +3445,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             {
               type: 'WorkItemBlocked',
               actor: 'conductor',
-              data: parsePayload('WorkItemBlocked', {
-                question: said_.question,
-                needsFrom: 'human',
-                runId,
-                needs: said_.needs,
-                diagnosis: said_.diagnosis,
-              }),
+              data: parsePayload('WorkItemBlocked', { hold }),
             },
             // In the same append as the block, for the landing's reason: a
             // `when: blocked` action recorded as carried out for a block the log

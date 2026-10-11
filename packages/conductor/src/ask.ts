@@ -70,12 +70,7 @@ export async function ask(options: {
         type: 'WorkItemBlocked',
         actor: options.by,
         data: parsePayload('WorkItemBlocked', {
-          question: options.question,
-          needsFrom: 'human',
-          // The null the type always allowed and nothing ever wrote.
-          runId: null,
-          needs: 'judgement',
-          diagnosis: null,
+          hold: { _tag: 'Question', question: options.question, by: options.by },
         }),
       },
     ])
