@@ -433,6 +433,24 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       .join(', ')
     return findings.length > 3 ? `${findings.length} findings: ${said}, …` : said
   },
+
+  // ---------------------------------------------------------------- triage --
+  TriageStarted: (d) => {
+    const by = d['by']
+    if (by === null || typeof by !== 'object') throw new Error('no by')
+    const tagged = by as { _tag?: string; runtime?: string; model?: string }
+    const who = tagged._tag === 'Agent' ? `${need(tagged, 'runtime')}/${need(tagged, 'model')}` : 'mechanical'
+    return `attempt ${need(d, 'attempt')} · ${who}`
+  },
+  HoldTriaged: (d) => {
+    const result = d['result'] as
+      | { _tag: 'Failed'; failure?: string }
+      | { _tag: 'Advised'; cause?: { _tag?: string }; move?: { _tag?: string }; sentence?: string }
+      | undefined
+    if (result?._tag === 'Failed') return `attempt ${need(d, 'attempt')} · failed: ${clip(result.failure)}`
+    if (result?._tag !== 'Advised' || !result.cause?._tag || !result.move?._tag) throw new Error('no result')
+    return `attempt ${need(d, 'attempt')} · ${result.cause._tag} → ${result.move._tag}: ${clip(result.sentence)}`
+  },
 }
 
 /**

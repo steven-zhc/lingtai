@@ -18,6 +18,7 @@
 import { z } from 'zod'
 
 import { Usage } from './spend.ts'
+import { TriageResult } from './triage.ts'
 
 // ---------------------------------------------------------------- shared ----
 
@@ -2126,6 +2127,69 @@ export const GitHubAppCreated = z.object({
   slug: z.string(),
 })
 
+// ---------------------------------------------------------------- triage ----
+
+/**
+ * Who answered a triage attempt, on both `TriageStarted` and `HoldTriaged`
+ * (0118 §3). Named `Triage…` rather than a bare `Agent`/`Mechanical`:
+ * `index.ts` re-exports `events.ts` and `triage.ts` side by side with
+ * `export *`, and `'Mechanical'` is already a hunk `_tag` in `triage.ts`.
+ */
+export const TriageAgent = z.strictObject({
+  _tag: z.literal('Agent'),
+  runtime: z.string(),
+  model: z.string(),
+  /** What the runtime reported was spent, and `null` where it said nothing — never a `0` it did not state. */
+  costUsd: z.number().nullable(),
+  usage: Usage.optional(),
+})
+export type TriageAgent = z.infer<typeof TriageAgent>
+
+/** Lingtai answered without an agent (#414), so there is no spend to record. */
+export const TriageMechanical = z.strictObject({ _tag: z.literal('Mechanical') })
+export type TriageMechanical = z.infer<typeof TriageMechanical>
+
+export const TriageBy = z.discriminatedUnion('_tag', [TriageAgent, TriageMechanical])
+export type TriageBy = z.infer<typeof TriageBy>
+
+/**
+ * Who was dispatched for a `TriageStarted`. Its own `Agent`, carrying no
+ * spend: nothing has been spent yet when this is appended, so being strict
+ * refuses a `costUsd` too.
+ */
+export const TriageStartedAgent = z.strictObject({ _tag: z.literal('Agent'), runtime: z.string(), model: z.string() })
+export type TriageStartedAgent = z.infer<typeof TriageStartedAgent>
+
+export const TriageStartedBy = z.discriminatedUnion('_tag', [TriageStartedAgent, TriageMechanical])
+export type TriageStartedBy = z.infer<typeof TriageStartedBy>
+
+/**
+ * Appended before the agent is dispatched. `blocked` is the position (the
+ * envelope's `version`, from 1 — never a `seq`, since the log may be reset)
+ * of the `WorkItemBlocked` this triage is about, on the work item's own
+ * stream. `attempt` is 1 for the first attempt on that block, then one more
+ * than the last `TriageStarted` for it. The triage key is the work item and
+ * `blocked`; the head and the recipe are not part of it (0118 §3).
+ */
+export const TriageStarted = z.strictObject({
+  blocked: z.number().int().positive(),
+  attempt: z.number().int().positive(),
+  by: TriageStartedBy,
+})
+
+/**
+ * Triage's advice, or its failure, on the work item's stream (0118 §3,
+ * `#409`). `attempt` matches the `TriageStarted` it finishes; a reader takes
+ * only the latest attempt's result. `headSha` is the head triage read.
+ */
+export const HoldTriaged = z.strictObject({
+  attempt: z.number().int().positive(),
+  blocked: z.number().int().positive(),
+  headSha: z.string(),
+  result: TriageResult,
+  by: TriageBy,
+})
+
 // ------------------------------------------------------------- extension ----
 
 /**
@@ -2237,6 +2301,8 @@ export const EVENTS = {
   ProjectRecovered,
   Reconciled,
   GitHubAppCreated,
+  TriageStarted,
+  HoldTriaged,
   PluginFailed,
 } as const
 

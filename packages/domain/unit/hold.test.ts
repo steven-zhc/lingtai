@@ -10,30 +10,32 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 import {
-  Advised,
   Asked,
-  Cause,
   Ceiling,
   CheckRed,
-  Decision,
   DidNotFinish,
-  Failed,
   Hold,
   Human,
-  Hunk,
-  Merge,
   MergeRefused,
-  MERGE_HUNKS_ONE_BY_ONE,
-  Move,
   Question,
   Routed,
   SetupRefused,
-  TriageQuestion,
-  TriageResult,
   type Hold as HoldType,
-  type MechanicalHunk as MechanicalHunkType,
   type Question as QuestionType,
 } from '../src/hold.ts'
+import {
+  Advised,
+  Cause,
+  Decision,
+  Failed,
+  Hunk,
+  Merge,
+  MERGE_HUNKS_ONE_BY_ONE,
+  Move,
+  TriageQuestion,
+  TriageResult,
+  type MechanicalHunk as MechanicalHunkType,
+} from '../src/triage.ts'
 
 const run = { runId: 'run-1' }
 
@@ -193,7 +195,7 @@ describe('Cause, Move and TriageResult round-trip', () => {
   })
 
   it('TriageResult.Failed', () => {
-    const value = { _tag: 'Failed', why: 'could not parse an answer' }
+    const value = { _tag: 'Failed', failure: 'could not parse an answer' }
     expect(TriageResult.parse(value)).toEqual(value)
     expect(Failed.parse(value)).toEqual(value)
   })
@@ -203,8 +205,8 @@ describe('Cause, Move and TriageResult round-trip', () => {
       _tag: 'Advised',
       cause: { _tag: 'Approach' },
       move: { _tag: 'Requeue' },
-      card: 'the approach will not converge',
-      wants: null,
+      sentence: 'the approach will not converge',
+      want: null,
     }
     expect(TriageResult.parse(value)).toEqual(value)
     expect(Advised.parse(value)).toEqual(value)
