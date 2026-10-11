@@ -134,8 +134,7 @@ export function legacyColumns(hold: Hold): LegacyColumns {
           what: question + unpushedSuffix(hold.run),
           done: repairDone(hold.run),
           raw: hold.raw,
-          recommendation:
-            hold.when === 'findings' && hold.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null,
+          recommendation: hold.when === 'findings' && hold.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null,
         },
       }
     }

@@ -100,18 +100,15 @@ function blocked(): TaskDetail {
       ITEM,
       'WorkItemBlocked',
       {
-        question: 'review still refuses agent/147',
-        needsFrom: 'human',
-        runId: RUN,
-        needs: 'judgement',
-        diagnosis: {
-          what: '`review` still refuses agent/147 at a4e9df9. This is a check that failed and stayed failed, not a judgement.',
-          done: '2 round(s) of fix-and-recheck ran, and the action refused what they produced.\n\nNo further agent was bought: the fixing agent declined.',
+        // `done`'s round-count narrative and `recommendation`'s custom reading
+        // are not on a `Hold` (0118 §1 did not carry them) — an accepted loss
+        // `legacy-columns.ts`'s own header documents.
+        hold: {
+          _tag: 'CheckRed',
+          run: { runId: RUN },
+          step: 'proposed',
+          why: 'review still refuses agent/147',
           raw: CRASH,
-          recommendation: {
-            action: 'requeue',
-            why: '`review` is a check that stayed red rather than a judgement, and for one of those the work is still there. Starting over would throw away a branch whose remedy is mechanical (0039 §2).',
-          },
         },
       },
       '2026-09-14T04:27:00Z',
@@ -212,10 +209,6 @@ describe('a blocked task', () => {
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
     expect(why).toContain('Session ID 1d391e10 is already in use')
     expect(why).toContain('<details class="sreason" open=""')
-    // The round count and the decline are record now, not a paragraph under the quote.
-    const first = html.slice(0, html.indexOf('data-rank="record"'))
-    expect(first).not.toContain('fix-and-recheck')
-    expect(html.slice(html.indexOf('data-rank="record"'))).toContain('fix-and-recheck')
   })
 
   it('prints each identifier once', () => {

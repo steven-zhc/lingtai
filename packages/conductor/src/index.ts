@@ -83,12 +83,7 @@ export {
 export { approve, refusingOn, requeue, waive, type ApproveOptions, type ApproveResult } from './approve.ts'
 export { answer, ask, type AskOutcome } from './ask.ts'
 export { close, type CloseOutcome } from './close.ts'
-export {
-  diagnoseRefusal,
-  whoseFailure,
-  type AttributedFailure as Failure,
-  type FailureOwner,
-} from '@lingtai/domain'
+export { diagnoseRefusal, whoseFailure, type AttributedFailure as Failure, type FailureOwner } from '@lingtai/domain'
 export {
   answersBrief,
   attemptBrief,

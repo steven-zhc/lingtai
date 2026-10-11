@@ -158,7 +158,6 @@ import {
   baseDivergence,
   baseOf,
   ceilingOf,
-  limitsFor,
   parseDuration,
   queueOf,
   submodulesOf,
@@ -173,12 +172,12 @@ import { Effect, Either } from 'effect'
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
 import { agentBranch, armBranch } from './branches.ts'
-import { type CeilingHit, holdOfPass, lastIntegrationRefusal } from './hold-of.ts'
 import { claimWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
+import { type CeilingHit, holdOfPass, lastIntegrationRefusal } from './hold-of.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { keptRunPort } from './kept-run-port.ts'

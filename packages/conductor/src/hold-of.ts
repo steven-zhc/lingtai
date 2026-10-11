@@ -19,7 +19,12 @@
  * not this function's.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
-import { diagnoseRefusal, integrationStream, reduceIntegration, RefusalReason as RefusalReasonSchema } from '@lingtai/domain'
+import {
+  diagnoseRefusal,
+  integrationStream,
+  reduceIntegration,
+  RefusalReason as RefusalReasonSchema,
+} from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
 import type { Destination, PassResult } from './pass.ts'
@@ -82,7 +87,12 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     const why = detailOf(stopped.ending)
     const parsedReason = RefusalReasonSchema.safeParse(stopped.ending.because)
     if (parsedReason.success) {
-      const reading = diagnoseRefusal({ reason: parsedReason.data, detail: why, branch: input.branch, base: input.base })
+      const reading = diagnoseRefusal({
+        reason: parsedReason.data,
+        detail: why,
+        branch: input.branch,
+        base: input.base,
+      })
       return {
         _tag: 'MergeRefused',
         run,

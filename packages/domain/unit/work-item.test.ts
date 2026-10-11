@@ -94,7 +94,7 @@ describe('reduceWorkItem', () => {
     // The answer is not dropped with the question (#147).
     expect(unblocked.answers).toEqual([
       {
-        question: 'Which base branch should this target?',
+        question: 'the `proposed` step held: Which base branch should this target?',
         runId: 'run-a',
         answer: 'develop',
         by: 'human:steven',
