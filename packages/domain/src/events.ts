@@ -1240,6 +1240,8 @@ export const FixApplied = z.object({
   costUsd: z.number().nullable(),
   /** The runtime's own ending, when it did not finish. Null when it did. */
   failure: z.string().nullable(),
+  /** What the fixing agent said last, clipped to 500 chars; null or absent when it said nothing. */
+  said: z.string().nullable().optional(),
   /** What the fix round billed, by the runtime's own counts (0110 §3). */
   usage: Usage.optional(),
 })

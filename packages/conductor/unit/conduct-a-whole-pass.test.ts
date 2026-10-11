@@ -734,6 +734,75 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   })
 
   /**
+   * **`FixApplied.said` is the fixing agent's own final message, clipped to the
+   * same bound `claude-code.ts` clips a crash's `detail` to** (`#453`).
+   *
+   * The round above proves a round gets bought at all; this one points the
+   * round's own runtime at a message well past the bound, and reads what landed
+   * on `FixApplied` off the run's own stream.
+   */
+  it('records what the fixing agent said last, clipped to 500 chars', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const longSaid = 'the fixer explains everything it changed and why it believes the build is green now. '.repeat(10)
+
+    const fixerRuntime: Runtime = {
+      ...runtime,
+      run: async (request) =>
+        request.runId.includes(':fix:')
+          ? {
+              exitCode: 0,
+              turns: 2,
+              durationMs: 900,
+              costUsd: 0.1,
+              failure: null,
+              text: longSaid,
+              sessionId: 'sess-fix',
+            }
+          : runtime.run(request),
+    }
+
+    const ports = fakePorts(did, store, true)
+    let lane = 0
+    ports.repo.integrate = () =>
+      Effect.sync(() => {
+        did.push('integrate')
+        lane += 1
+        return lane === 1
+          ? ({ ok: false, reason: 'verify-failed', detail: 'the base moved under it' } as never)
+          : ({ ok: true, mergeCommit: 'c'.repeat(40) } as never)
+      })
+    const git = ports.repo.git
+    ports.repo.git = (args, o) => (args[0] === 'rev-parse' && lane > 0 ? Effect.succeed('d'.repeat(40)) : git(args, o))
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: fixerRuntime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      ports,
+    )
+
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const applied = run.find((e) => e.type === 'FixApplied')
+    if (applied === undefined) throw new Error('no FixApplied on the run stream')
+    const data = applied.data as { said?: string | null }
+
+    expect(data.said).toHaveLength(500)
+    expect(longSaid.startsWith(data.said!)).toBe(true)
+  })
+
+  /**
    * **The cut is a plugin's, and the three shapes a recipe can be in cut the same
    * tree** (`#268`, [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md)
    * §2–4).

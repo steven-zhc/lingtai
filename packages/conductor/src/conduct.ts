@@ -2915,6 +2915,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const after = await gitOrDie(['rev-parse', 'HEAD'])
         const committed = after !== brief.context.onSha
 
+        // A judge or a person reads this verdict, not a transcript — bounded the
+        // same way claude-code.ts clips a crash's `detail`.
+        const FIX_SAID_MAX_CHARS = 500
+        const fixSaid = fixed.text === null ? null : fixed.text.slice(0, FIX_SAID_MAX_CHARS)
+
         await appendNow(runId, [
           {
             type: 'FixApplied',
@@ -2926,6 +2931,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               turns: fixed.turns,
               costUsd: fixed.costUsd,
               failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
+              ...(fixSaid === null ? {} : { said: fixSaid }),
               ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
             }),
           },
