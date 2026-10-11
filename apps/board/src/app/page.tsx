@@ -83,8 +83,9 @@ export const dynamic = 'force-dynamic'
  * `a-hold` is the one #78 added, and it is why a stripe was missing: a run
  * killed from outside fails no gate, so `failed` stayed 0 and a ticket that
  * had burned money and produced nothing came back to Queued looking new. A
- * queued card carrying a note is exactly that card — the note is the release's
- * reason, and the next claim clears it.
+ * queued card carrying a note is that card, or one a dispatch refused before
+ * any run started (`#405`) — the note is the release's reason or the
+ * refusal's, and the next claim clears it either way.
  */
 function accent(card: BoardCard): string {
   if (card.failed > 0) return 'a-fail'
@@ -359,8 +360,8 @@ export function Card({
           base that has since moved — rather than a control that cannot act.
 
           `blocked` and not the column, for the same reason: the lane also holds
-          a refused dispatch and a run that asked a question mid-flight, and
-          neither is an item anybody can hand back.
+          a run that asked a question mid-flight, and it is not an item
+          anybody can hand back.
 
           `awaitingSha` and not `headSha`: a question is open exactly when there
           is a sha it is about, and that sha is the one the controls have to

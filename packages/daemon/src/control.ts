@@ -99,10 +99,26 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * Every other caller — the board, `doctor`, `status` — passes nothing and folds
  * the whole stream, because they are answering *what is standing now* rather
  * than *what am I being told*.
+ *
+ * **One pause ignores `since`** (`#405`, 0102 §3's narrowing). A refusal the
+ * conductor appends over a missing tier is about the setup, not about the
+ * daemon that happened to be running when it found that out — a restart loads
+ * the same setup, so the new daemon must meet the same pause rather than take
+ * work until it refuses the same ticket again. `holdsAcrossStarts` marks
+ * exactly that pause (and only that one; `standDownConductor`'s does not carry
+ * it). The scoped fold is read first, as every other signal is; only when it is
+ * not already paused is the whole stream folded too, and only a holding,
+ * marked pause there changes the answer — a person's own pause written before
+ * the watermark is still invisible here, which is 0102 §3 doing what it has
+ * always done.
  */
 export async function readControl(store: EventStore = eventStore, since = 0): Promise<ControlState> {
   const events = await store.read(CONTROL_STREAM)
-  return reduceControl(since <= 0 ? events : events.filter((e) => e.version > since))
+  const scoped = reduceControl(since <= 0 ? events : events.filter((e) => e.version > since))
+  if (scoped.paused) return scoped
+  const whole = reduceControl(events)
+  if (!whole.paused || !whole.holdsAcrossStarts) return scoped
+  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until }
 }
 
 /**

@@ -55,6 +55,13 @@ export interface ControlState {
    */
   until: Date | null
   /**
+   * Whether this pause holds across a daemon restart, whatever its watermark
+   * (`#405`). Sticky: a person pausing on top of a setup pause does not make
+   * the setup pause forgettable, because the setup is still wrong. Cleared
+   * only by `ConductorResumed`, same as `paused` itself.
+   */
+  holdsAcrossStarts: boolean
+  /**
    * Who asked it to stop and why, when somebody has.
    *
    * Separate from `paused` because they are separate facts: a paused conductor
@@ -98,6 +105,7 @@ export const emptyControl: ControlState = {
   by: null,
   reason: null,
   until: null,
+  holdsAcrossStarts: false,
   shutdown: null,
   requested: [],
   discussions: [],
@@ -131,6 +139,9 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         const until = str('until')
         const at = until === null ? Number.NaN : Date.parse(until)
         state.until = Number.isNaN(at) ? null : new Date(at)
+        // Sticky, and `||=` is why: a person's pause landing on top of a setup
+        // pause must not make the setup pause forgettable.
+        state.holdsAcrossStarts ||= d['holdsAcrossStarts'] === true
         break
       }
       case 'ConductorShutdownRequested': {
@@ -165,6 +176,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         state.by = null
         state.reason = null
         state.until = null
+        state.holdsAcrossStarts = false
         // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
         // lifts only the one request it names, and a person typing `lingtai
         // resume` means all of it. The request is in the stream for ever, so a
@@ -202,6 +214,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
     state.by = null
     state.reason = null
     state.until = null
+    state.holdsAcrossStarts = false
   }
 
   return state

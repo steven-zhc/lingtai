@@ -450,13 +450,22 @@ export const taskViewProjection: Projection = {
           // before anything is claimed, and nothing is appended when an issue
           // is merely seen. An UPDATE would leave the refusal unreadable, which
           // is the failure it exists to report.
+          //
+          // `queued` and not `waiting` (#405): the refusal is about the pass,
+          // not this item — `conduct.ts` pauses the conductor over it rather
+          // than asking a person about this one ticket — so the item is still
+          // what the queue should offer once the pause lifts. `queue.ts`
+          // admits a row that is absent or `queued`, and no `attempt` here
+          // leaves `note` standing and starts no backoff, so a rebuild that
+          // changes nothing else still returns every ticket refused before
+          // this change to `queued`.
           const { project: p, issue: i } = splitTaskId(event.streamId)
           await upsert(ctx, event.streamId, seq, at, {
             project: p,
             issue: i,
             title: null,
             kind: null,
-            state: 'waiting',
+            state: 'queued',
           })
           await set(ctx, event.streamId, seq, at, {
             note: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,

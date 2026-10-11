@@ -36,6 +36,103 @@ import {
   streams,
 } from '../test/one-pass.ts'
 
+/**
+ * **A refused dispatch pauses the conductor, rather than asking a person once
+ * per ticket** (#405, 0031 §5's indefinite pause applied to 0118 §4's *fix the
+ * setup*).
+ *
+ * The refusal is about the *pass* — a step naming a runtime that cannot meet
+ * the recipe's tier is impossible for every item behind this one too — so it
+ * must not read as a problem with this one ticket. `missingForTier` is what
+ * decides it: `runtime`'s fixture `providesTier: 'guarded'`, and `tier:
+ * sandboxed` asks for what it does not have.
+ */
+describe('a refused dispatch pauses the conductor rather than emptying the queue into Waiting', () => {
+  const SANDBOXED = RECIPE.replace('agent: claude-code,', 'agent: claude-code, tier: sandboxed,')
+
+  it('appends DispatchRefused and one ConductorPaused with until: null, holding across a restart, and claims nothing', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, SANDBOXED),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
+
+    const item = await store.read(`wi-${PROJECT}-7`)
+    expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
+    // Still queued, not held for a person: the domain lifecycle is unchanged
+    // by `DispatchRefused`, and nothing here claims it either.
+    expect(item.map((e) => e.type)).not.toContain('WorkItemClaimed')
+
+    const control = await store.read('ctl-conductor')
+    const paused = control.filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    const d = paused[0]!.data as { by: string; until: string | null; reason: string; holdsAcrossStarts: boolean }
+    expect(d.by).toBe('lingtai')
+    // Nothing fixes a missing tier by waiting (0031 §5).
+    expect(d.until).toBeNull()
+    // And a restart loads the same setup, so the pause has to survive one (#405).
+    expect(d.holdsAcrossStarts).toBe(true)
+    expect(d.reason).toContain(PROJECT)
+    expect(d.reason).toContain('sandboxed')
+    expect(d.reason).toContain('filesystem-sandbox')
+
+    // Before the claim, same as every other refusal in this file: nothing
+    // acquired, nothing provisioned.
+    expect(did).toEqual([])
+  })
+
+  it('appends no second pause while paused, and leaves a pause a person made exactly as it was', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const personsPause = { by: 'a person', reason: 'looking at something else', until: null, holdsAcrossStarts: false }
+    await store.append('ctl-conductor', 0, [{ type: 'ConductorPaused', actor: 'a person', data: personsPause }])
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, SANDBOXED),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
+
+    // The refusal itself is still recorded on the item …
+    const item = await store.read(`wi-${PROJECT}-7`)
+    expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
+
+    // … but the control stream is byte-identical: no second `ConductorPaused`,
+    // and the person's own pause untouched.
+    const control = await store.read('ctl-conductor')
+    const paused = control.filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    expect(paused[0]!.data).toEqual(personsPause)
+  })
+})
+
 describe('nothing is claimed and nothing is acquired', () => {
   /**
    * **The refusals come first, deliberately.**

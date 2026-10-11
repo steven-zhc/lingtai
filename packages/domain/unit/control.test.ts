@@ -120,6 +120,68 @@ describe('a pause that ends by itself', () => {
 })
 
 /**
+ * **The one pause a daemon obeys whatever its watermark says** (`#405`).
+ *
+ * `readControl(store, since)` (`packages/daemon/src/control.ts`) is the reader
+ * that cares about this field; `reduceControl` only has to fold it correctly
+ * and clear it with everything else a resume clears.
+ */
+describe('holdsAcrossStarts', () => {
+  it('defaults to false on a pause written without the field', () => {
+    const state = reduceControl(log([{ type: 'ConductorPaused', data: { by: 'lingtai', reason: 'y' } }]), NOW)
+    expect(state.holdsAcrossStarts).toBe(false)
+  })
+
+  it('is false on an ordinary pause and true on one marked for it', () => {
+    const ordinary = reduceControl(
+      log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'thinking', holdsAcrossStarts: false } }]),
+      NOW,
+    )
+    expect(ordinary.holdsAcrossStarts).toBe(false)
+
+    const marked = reduceControl(
+      log([
+        {
+          type: 'ConductorPaused',
+          data: { by: 'lingtai', reason: 'purecheck cannot provide sandboxed', holdsAcrossStarts: true },
+        },
+      ]),
+      NOW,
+    )
+    expect(marked.holdsAcrossStarts).toBe(true)
+  })
+
+  /**
+   * **Sticky.** A person pausing on top of the conductor's own setup pause
+   * must not make the setup pause forgettable — the setup is still wrong, so
+   * a restart still has to meet it.
+   */
+  it('stays true once set, even under a later pause that is not marked', () => {
+    const state = reduceControl(
+      log([
+        { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'setup', holdsAcrossStarts: true } },
+        { type: 'ConductorPaused', data: { by: 'human:steven', reason: 'also looking at this' } },
+      ]),
+      NOW,
+    )
+    expect(state.paused).toBe(true)
+    expect(state.holdsAcrossStarts).toBe(true)
+  })
+
+  it('is cleared by ConductorResumed, like every other fact about the pause', () => {
+    const state = reduceControl(
+      log([
+        { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'setup', holdsAcrossStarts: true } },
+        { type: 'ConductorResumed', data: { by: 'human:steven' } },
+      ]),
+      NOW,
+    )
+    expect(state.paused).toBe(false)
+    expect(state.holdsAcrossStarts).toBe(false)
+  })
+})
+
+/**
  * A question is a control instruction, so it lands where `pause` and `now` do
  * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §3).
  */
@@ -259,6 +321,7 @@ describe('a withdrawal written with a handoff, before #167', () => {
     expect(Object.keys(state).sort()).toEqual([
       'by',
       'discussions',
+      'holdsAcrossStarts',
       'paused',
       'reason',
       'requested',

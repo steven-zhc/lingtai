@@ -53,9 +53,12 @@ into `waiting` exclude each other and want different moves:
 - **A person's own question.** `lingtai ask`, before any run.
 
 Two more things put a card in the lane, and neither is a fourth kind. **Waiting
-with no block** (`DispatchRefused`, `RunAwaitingInput` and a bare `RunFailed`
-leave `blocked` false, `packages/projector/src/task-view.ts:447-566`) is a state
-that should not exist. **Unpushed work** (the branch did not reach origin,
+with no block** (`RunAwaitingInput` and a bare `RunFailed` leave `blocked`
+false, `packages/projector/src/task-view.ts:447-566`) is a state that should
+not exist. `DispatchRefused` no longer reaches this lane at all since `#405`:
+the refusal is the pass's rather than this item's, so the fold leaves the card
+`queued` and the conductor pauses instead. **Unpushed work** (the branch did
+not reach origin,
 `conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
 ends) can come on top of any hold that has a run. Today none of this is
 written down: `WorkItemBlocked` carries `needs`, `runId` and `diagnosis`, and

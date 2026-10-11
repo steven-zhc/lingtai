@@ -1472,7 +1472,9 @@ export const ConductorPaused = z.object({
   reason: z.string(),
   /**
    * When this pause lifts by itself, as an ISO instant — or null, which is
-   * every pause a person makes.
+   * every pause a person makes, **and also the conductor's own pause over a
+   * refused dispatch** (0102 §3's narrowing, `holdsAcrossStarts` below) —
+   * `until === null` alone no longer tells a reader *this is a person's*.
    *
    * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5: a run
    * that never started is an account-wide condition with a *time* attached, and
@@ -1485,6 +1487,19 @@ export const ConductorPaused = z.object({
    * before this field existed still parses as the pause it was.
    */
   until: z.string().nullable().default(null),
+  /**
+   * Obey this pause whatever a daemon's own watermark says (`#405`,
+   * `readControl` in `packages/daemon/src/control.ts`).
+   *
+   * `since`-scoped reads (0102 §3) exist so a signal aimed at one daemon is not
+   * the next one's to obey — true of every pause a person or `standDownConductor`
+   * makes, because a restart starts fresh and that pause's reason no longer
+   * applies. It is false of a refused dispatch: the setup a restart just loaded
+   * is the same setup that could not provide the tier, so the new daemon must
+   * not take work either. Defaulted, so every pause written before this field
+   * existed is read as not holding across a start, which is what it was.
+   */
+  holdsAcrossStarts: z.boolean().default(false),
 })
 
 export const ConductorResumed = z.object({ by: z.string() })

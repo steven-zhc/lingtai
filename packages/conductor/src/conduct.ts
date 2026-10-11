@@ -746,6 +746,63 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       return { ok: false, workItemId: null, runId: null, stage: 'env', detail }
     }
 
+    /**
+     * Append `ConductorPaused`, once, and never over a pause already holding
+     * (0031 §3, §5) — the part of `standDownConductor` (below, past the claim)
+     * that is not about *why*.
+     *
+     * Declared here, above section 3, so a refusal found before the claim can
+     * call it too: `standDownConductor` is a `const` further down this
+     * generator, and a call to it from here would hit its temporal dead zone
+     * before ever reaching the check this lifts out.
+     *
+     * The three-way answer is so a caller can say what happened without a
+     * second read of `CONTROL_STREAM`: `'appended'` is the pause this call
+     * made, `'already-paused'` is a pause — anybody's — already holding, and
+     * `'failed'` is an append this already logged, so nothing else about it is
+     * said twice.
+     *
+     * `holdsAcrossStarts` marks a pause a daemon must obey however far behind
+     * its own watermark it sits (`readControl`'s merge, `packages/daemon/src/
+     * control.ts`) — true below, for the setup refusal a restart does nothing
+     * to fix, and false from `standDownConductor`, whose pause a restart's
+     * fresh watermark is meant to leave behind (0102 §3).
+     */
+    const pauseConductorOnce = (input: {
+      until: string | null
+      reason: string
+      holdsAcrossStarts: boolean
+    }): Effect.Effect<{ kind: 'appended' } | { kind: 'already-paused'; reason: string | null } | { kind: 'failed' }> =>
+      Effect.promise(async () => {
+        const events = await store.read(CONTROL_STREAM)
+        const control = reduceControl(events)
+        if (control.paused) {
+          return { kind: 'already-paused' as const, reason: control.reason }
+        }
+        await store.append(CONTROL_STREAM, events.length, [
+          {
+            type: 'ConductorPaused',
+            actor: 'conductor',
+            data: parsePayload('ConductorPaused', {
+              by: 'lingtai',
+              reason: input.reason,
+              until: input.until,
+              holdsAcrossStarts: input.holdsAcrossStarts,
+            }),
+          },
+        ])
+        return { kind: 'appended' as const }
+      }).pipe(
+        // A pause that would not append must not replace the reason the run
+        // ended with the reason the pause failed.
+        Effect.catchAllDefect((defect) =>
+          Effect.sync(() => {
+            log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`)
+            return { kind: 'failed' as const }
+          }),
+        ),
+      )
+
     // ---- 3. capability matching, before anything is claimed -----------------
     const tier: Tier = resolved.tier
     /**
@@ -782,12 +839,38 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           },
         ]),
       )
+      /**
+       * The project names which recipe is wrong, because the pause below stops
+       * every registered project and an operator reading it may have several
+       * (`#405`'s *Watch out*: "the pause's reason must name the project, the
+       * runtime and the tier it lacks").
+       */
+      const base = `${project}: ${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(', ')}.`
+      /**
+       * **This is `0118 §4`'s *fix the setup*, said once rather than once per
+       * ticket** (#405). The refusal above is about this one item; the pause is
+       * about the pass, which is impossible for every item behind this one too
+       * — so the conductor stops rather than emptying the queue into Waiting
+       * one ticket at a time. `until: null`, because nothing fixes a missing
+       * tier by waiting (0031 §5): the pause holds until a person lifts it with
+       * `lingtai resume`, and `holdsAcrossStarts: true` because a restart loads
+       * the same wrong setup.
+       */
+      const pausedSentence = `${base} Every queued item would meet the same thing, so the conductor is taking no work until the setup is fixed — run \`lingtai resume\` once it is.`
+      const outcome = yield* pauseConductorOnce({ until: null, reason: pausedSentence, holdsAcrossStarts: true })
+      if (outcome.kind === 'appended') {
+        log(`dispatch refused — conductor paused until the setup is fixed: ${pausedSentence}`)
+      } else if (outcome.kind === 'already-paused') {
+        log(`dispatch refused; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`)
+      }
       return {
         ok: false,
         workItemId,
         runId: null,
         stage: 'dispatch',
-        detail: `${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(', ')}`,
+        // `'failed'` means no pause is known to hold, so `detail` must not
+        // claim one does — `base` alone, with nothing said about the queue.
+        detail: outcome.kind === 'failed' ? base : pausedSentence,
       }
     }
 
@@ -1042,45 +1125,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * person's pause has no expiry (0031 §5).
      */
     const standDownConductor = (what: NeverStarted, detail: string): Effect.Effect<void> =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         const it =
           what.of === 'run'
             ? 'a run'
             : what.of === 'step' || what.of === 'draft'
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`
-        const events = await store.read(CONTROL_STREAM)
-        const control = reduceControl(events)
-        if (control.paused) {
-          log(`${it} never started; the conductor is already paused — ${control.reason ?? 'no reason given'}`)
-          return
-        }
         const { until, reason } = standDown({
           detail,
           what,
           backoffMs: parseDuration(backoffOf(recipe)),
         })
-        await store.append(CONTROL_STREAM, events.length, [
-          {
-            type: 'ConductorPaused',
-            actor: 'conductor',
-            data: parsePayload('ConductorPaused', {
-              by: 'lingtai',
-              reason,
-              until: until.toISOString(),
-            }),
-          },
-        ])
-        log(`${it} never started — conductor paused until ${until.toISOString()}`)
-      }).pipe(
-        // A pause that would not append must not replace the reason the run ended
-        // with the reason the pause failed.
-        Effect.catchAllDefect((defect) =>
-          Effect.sync(() =>
-            log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`),
-          ),
-        ),
-      )
+        // `holdsAcrossStarts: false` — a restart's fresh watermark is meant to
+        // leave this pause behind (0102 §3); unlike the setup refusal above,
+        // restarting is itself a reasonable response to a run that never started.
+        const outcome = yield* pauseConductorOnce({ until: until.toISOString(), reason, holdsAcrossStarts: false })
+        if (outcome.kind === 'appended') {
+          log(`${it} never started — conductor paused until ${until.toISOString()}`)
+        } else if (outcome.kind === 'already-paused') {
+          log(`${it} never started; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`)
+        }
+        // 'failed': `pauseConductorOnce` has already logged why.
+      })
 
     /**
      * The outermost scope, and it is the log's (0034 §4).

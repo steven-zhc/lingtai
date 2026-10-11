@@ -36,6 +36,7 @@ const EMPTY_CONTROL: ControlState = {
   by: null,
   reason: null,
   until: null,
+  holdsAcrossStarts: false,
   shutdown: null,
   requested: [],
   discussions: [],

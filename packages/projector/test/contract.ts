@@ -169,6 +169,12 @@ const blocked = (question: string) => ({
   },
 })
 
+const dispatchRefused = () => ({
+  type: 'DispatchRefused',
+  actor: 'conductor',
+  data: { requiredTier: 'sandboxed' as const, runtime: 'claude-code' as const, missing: ['filesystem-sandbox'] },
+})
+
 const minor = {
   file: 'packages/projector/src/store.ts',
   line: 12,
@@ -470,6 +476,46 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(card.needs).toBe('judgement')
         expect(card.diagnosis?.what).toBe('the branch does not merge')
         expect(card.diagnosis?.done).toBeNull()
+      } finally {
+        await f.close()
+      }
+    })
+
+    /**
+     * **A refused dispatch leaves the card `queued`, not `waiting`** (#405).
+     *
+     * The refusal is about the pass, not this item — `conduct.ts` pauses the
+     * conductor over it rather than asking a person about one ticket — so the
+     * card has to say *still in line* rather than *stuck*, or the queue would
+     * never offer it again once the pause lifts.
+     */
+    it('leaves the card queued on a refused dispatch, with the refusal as its note', async () => {
+      const f = await make()
+      const task = f.stream('wi', '44')
+      try {
+        const written = await f.events.append(task, 0, [dispatchRefused()])
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('queued')
+        expect(card.note).toBe('needs sandboxed; claude-code is missing filesystem-sandbox')
+      } finally {
+        await f.close()
+      }
+    })
+
+    it('stays queued across a second refused dispatch on the same item', async () => {
+      const f = await make()
+      const task = f.stream('wi', '45')
+      try {
+        const written = [
+          ...(await f.events.append(task, 0, [dispatchRefused()])),
+          ...(await f.events.append(task, 1, [dispatchRefused()])),
+        ]
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('queued')
       } finally {
         await f.close()
       }

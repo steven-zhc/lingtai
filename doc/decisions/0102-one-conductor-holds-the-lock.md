@@ -54,7 +54,12 @@ say what code it is running and who started it.
    at and never the next one, and `lingtai start` needs nothing lifted first.
    `lingtai run` is the exception: it takes no ticket while a pause stands. The
    board, `doctor` and `status` fold the whole stream, because they report what is
-   standing now.
+   standing now. **One pause narrows this** (`#405`): a `ConductorPaused` the
+   conductor appends over a tier the setup cannot provide carries
+   `holdsAcrossStarts`, and `readControl` obeys it whatever a daemon's own
+   watermark says, because a restart loads the same setup that could not
+   provide the tier. Every other pause — a person's, and the one a run that
+   never started appends — keeps the watermark rule above exactly as it was.
 
 4. **One conductor, enforced by a file lock.** The lock is SQLite's `BEGIN
    IMMEDIATE` on `~/.lingtai/locks/<key>.lock` (`$LINGTAI_HOME/locks` where that
