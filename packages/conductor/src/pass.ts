@@ -1,3 +1,14 @@
+/**
+ * From `@lingtai/actions/action` rather than the package's main entry: that
+ * barrel also re-exports `command.ts`, which this file never calls — pulling
+ * it in only costs every consumer of `PassResult`/`Destination` a dependency
+ * on `node:child_process`'s types for nothing (#445's build fix finds why
+ * that cost is not free: Next's `types/global.d.ts` augmentation of
+ * `NodeJS.WriteStream` collides with `@types/node@26.4.0`'s `spawn`
+ * overloads the moment both are in one `tsc` program, which is exactly what
+ * happens the first time anything reachable from `apps/board` imports this
+ * file).
+ */
 import {
   NEEDS_INPUT,
   NO_DESIGN,
@@ -10,7 +21,7 @@ import {
   type PipelineResult,
   type SentBack,
   type TheDesign,
-} from '@lingtai/actions'
+} from '@lingtai/actions/action'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
