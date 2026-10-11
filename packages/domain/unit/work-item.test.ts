@@ -191,6 +191,7 @@ describe('reduceWorkItem', () => {
           baseSha: 'base123',
           headSha: 'head456',
           raw: 'CONFLICT (content): Merge conflict in apps/web/src/…',
+          afterApproval: false,
         },
       }),
     ])

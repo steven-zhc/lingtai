@@ -131,6 +131,7 @@ describe('priorAttempts', () => {
           paths: null,
           baseSha: null,
           headSha: null,
+          afterApproval: false,
         },
       }),
     ])

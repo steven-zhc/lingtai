@@ -165,6 +165,7 @@ describe("the next attempt's prompt", () => {
             paths: null,
             baseSha: null,
             headSha: null,
+            afterApproval: false,
           },
         }),
         e('WorkItemUnblocked', { by: 'human:steven', note: 'the base has moved' }),

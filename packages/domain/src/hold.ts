@@ -183,6 +183,16 @@ export type CheckRed = z.infer<typeof CheckRed>
  * The merge lane refused. Mirrors `IntegrationRefused`'s own fields: `paths`,
  * `baseSha` and `headSha` are set only when `reason` is `conflict`, and `null`
  * rather than optional, so the page says *none* rather than *unknown*.
+ *
+ * **`afterApproval` tells the pass's refusal from the approval path's.** The
+ * pass's own producer (`conduct.ts`, via `hold-of.ts`) sets it `false`: nobody
+ * has approved this sha yet, so Approve is still a live move. `approve.ts`'s
+ * producer sets it `true`: a person already approved this exact sha —
+ * `ApprovalGranted` was appended and cleared `task_view.awaiting_sha`
+ * (`task-view.ts:703`) — and `integrate` still refused. Offering Approve
+ * there would send a person back into `approveHolding`, which refuses
+ * `not-awaiting-approval` (`approve.ts:201-209`) because there is nothing left
+ * to approve: the dead end `#84` removed.
  */
 export const MergeRefused = z.object({
   _tag: z.literal('MergeRefused'),
@@ -193,6 +203,7 @@ export const MergeRefused = z.object({
   baseSha: z.string().nullable(),
   headSha: z.string().nullable(),
   raw: z.string().nullable(),
+  afterApproval: z.boolean(),
 })
 export type MergeRefused = z.infer<typeof MergeRefused>
 

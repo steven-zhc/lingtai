@@ -168,6 +168,7 @@ describe('a line of history', () => {
           paths: null,
           baseSha: null,
           headSha: null,
+          afterApproval: false,
         },
       }),
     )

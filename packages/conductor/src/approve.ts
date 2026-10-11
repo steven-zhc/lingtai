@@ -392,6 +392,8 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
       _tag: 'MergeRefused',
       // No `unpushed`: the run is bound to `onSha`, already on origin.
       run: { runId },
+      // `ApprovalGranted` was already appended above: this approval is spent.
+      afterApproval: true,
       reason: merged.reason,
       why: diagnoseRefusal({ reason: merged.reason, detail: merged.detail, branch, base: options.base }).what,
       raw: merged.detail,

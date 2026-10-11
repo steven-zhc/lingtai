@@ -96,6 +96,8 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
       return {
         _tag: 'MergeRefused',
         run,
+        // The pass's own refusal: nobody has approved this sha yet.
+        afterApproval: false,
         reason: parsedReason.data,
         why: reading.what,
         raw: why,

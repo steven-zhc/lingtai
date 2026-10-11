@@ -33,6 +33,8 @@ describe('holdOfPass', () => {
       paths: ['a.ts'],
       baseSha: 'a'.repeat(40),
       headSha: 'b'.repeat(40),
+      // The pass's own refusal: nobody has approved this sha yet.
+      afterApproval: false,
     })
   })
 

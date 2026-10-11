@@ -265,7 +265,8 @@ export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
  * stale fields; refusing it by name, at daemon start and in `lingtai doctor`,
  * rather than failing partway through a fold, is #451 and is not done yet.
  * Until it lands, a person resets the log before any daemon restarts onto
- * this commit.
+ * this commit. #441 changed `MergeRefused` in place the same way, adding
+ * `afterApproval` with no upcaster, for the same reason.
  *
  * `needsFrom` is gone rather than moved: every appender wrote `'human'`
  * (`'external'` had no writer), so it carried no information once `hold`
@@ -2271,7 +2272,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // than bumping to 3, because before 1.0 the log is reset rather than
   // carried forward (0118 §1). `upcast.ts` has no entry for this type, so a
   // stored row from either old shape now fails this type's zod parse; refusing
-  // it by name instead is #451.
+  // it by name instead is #451. #441 added `MergeRefused.afterApproval` the
+  // same way, in place and with no upcaster.
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,

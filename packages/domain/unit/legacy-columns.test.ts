@@ -157,6 +157,7 @@ describe('legacyColumns', () => {
       paths: ['a.ts'],
       baseSha: 'a'.repeat(40),
       headSha: 'b'.repeat(40),
+      afterApproval: false,
     }
     const cols = legacyColumns(hold)
     expect(cols.question).toBe('conflict: CONFLICT (content): Merge conflict in a.ts')

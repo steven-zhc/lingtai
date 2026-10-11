@@ -113,9 +113,24 @@ describe('Hold round-trips every variant', () => {
       baseSha: 'abc',
       headSha: 'def',
       raw: 'CONFLICT ...',
+      afterApproval: false,
     }
     expect(Hold.parse(value)).toEqual(value)
     expect(MergeRefused.parse(value)).toEqual(value)
+  })
+
+  it('Failure.MergeRefused refuses a payload with no afterApproval (#441 changed the shape in place)', () => {
+    const value = {
+      _tag: 'MergeRefused',
+      run,
+      reason: 'conflict',
+      why: 'apps/web/foo.ts conflicts',
+      paths: ['apps/web/foo.ts'],
+      baseSha: 'abc',
+      headSha: 'def',
+      raw: 'CONFLICT ...',
+    }
+    expect(() => MergeRefused.parse(value)).toThrow()
   })
 
   it('Failure.Ceiling', () => {
