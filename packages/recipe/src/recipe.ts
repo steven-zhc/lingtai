@@ -1,4 +1,4 @@
-import { SEVERITIES, Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
+import { SEVERITIES, Tier, RuntimeId, JudgeWhen, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
 import { PREFIX } from '@lingtai/env'
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, its
@@ -1258,34 +1258,13 @@ export const queuePlugin = definePlugin('queue', {
 
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
- * entry's `when:` names — and there is **one entry per reason**
- * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
- *
- * **`when:` is one key and its legal values are the step's**, which is
- * [0059](../../../doc/decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md)'s
- * rule a third time: `close:` and `labels:` read the work item's *outcome* at
- * `end` (`WHEN` above — `landed`, `blocked`, `failed`, `closed`, `any`),
- * `refs:` reads the one value of that vocabulary it is safe to delete on, and a
- * judge reads **the reason the last step gave**. Two steps, two vocabularies,
- * and a value one of them does not know is refused by name when the recipe
- * resolves.
- *
- * Two of the five are the merge lane's own words and mean there what they mean
- * here: `conflict` and `verify-failed` are `RefusalReason` in
- * `packages/domain/src/events.ts`. The other three are the reasons the steps
- * 0058 §3 named will report when they are built (0061 §5) — `red` is `build`'s,
- * `findings` is `review`'s, and `needs-input` is an implementing agent that
- * stopped to ask, which is 0057's class rather than a refusal.
- *
- * **Not `RefusalReason` itself**, though it holds two of the five. That enum is
- * the *integration*'s list — `dirty-base`, `unpushed-base`, `push-rejected`,
- * `unexpected` — and a judge is never asked about those: they stop the lane
- * before the diff is what is in doubt, and offering a judge a direction
- * nothing can arrive by is the same mistake as offering it a step nothing can
- * run.
+ * entry's `when:` names. Moved into `@lingtai/domain` by #439 — see
+ * `packages/domain/src/hold.ts` for the type and its doc comment — because
+ * `Judgement.Routed` there is typed over it and `@lingtai/recipe` depends on
+ * `@lingtai/domain`, not the other way round. Re-exported here under the same
+ * name so nothing importing it from `@lingtai/recipe` changes.
  */
-export const JudgeWhen = z.enum(['red', 'verify-failed', 'conflict', 'needs-input', 'findings'])
-export type JudgeWhen = z.infer<typeof JudgeWhen>
+export { JudgeWhen }
 
 /**
  * **The judges that spend nothing**, and the list is shorter than 0061 §3's
