@@ -50,6 +50,7 @@
  * ([#214](https://github.com/steven-zhc/lingtai/issues/214)) instead of
  * vanishing from a report that then printed `0 failed`.
  */
+import type { EventType } from '@lingtai/domain'
 import pg from 'pg'
 
 import { postgresUrl } from './env.ts'
@@ -68,6 +69,18 @@ export interface EndedWithoutEnd {
 export interface TypeCount {
   type: string
   rows: number
+}
+
+/**
+ * One row of a given type, as the store holds it — unparsed and not upcast.
+ * `logPredatesHold` (#451) is the one reader: it has to look at a row
+ * `decodeRow` would throw on, which is the one thing `EventStore` never
+ * hands back.
+ */
+export interface TypeRow {
+  seq: bigint
+  schemaVer: number
+  data: unknown
 }
 
 /** One issue whose last word from Lingtai about one change was a failure. */
@@ -132,6 +145,19 @@ export interface LogQueries {
    * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
    */
   typeCounts(): Promise<TypeCount[]>
+
+  /**
+   * Every row of `type`, in `seq` order, undecoded — `data` as the store
+   * holds it, neither upcast nor validated.
+   *
+   * `EventStore` never hands this back: `read` and `readAll` run every row
+   * through `decodeRow`, which is exactly the thing `logPredatesHold` (#451)
+   * has to look past to find the first row that would throw. Named by type
+   * rather than by stream, for the same reason `typeCounts` is: the guard
+   * does not know which streams hold a `WorkItemBlocked` and asking it to
+   * find out first would be the fold it exists to avoid.
+   */
+  rowsOfType(type: EventType): Promise<TypeRow[]>
 
   /**
    * Every issue whose last word about one change was an `IssueUpdateFailed`
@@ -246,6 +272,17 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
         `select type, count(*)::int as n from events group by type order by type collate "C"`,
       )
       return rows.map((r) => ({ type: r.type, rows: r.n }))
+    },
+
+    async rowsOfType(type) {
+      // `seq` comes back as text: node-postgres leaves `bigint` (OID 20)
+      // unparsed rather than losing precision past 2^53, so this is the one
+      // place in the file that converts it back by hand.
+      const rows = await ask<{ seq: string; schema_ver: number; data: unknown }>(
+        'select seq, schema_ver, data from events where type = $1 order by seq',
+        [type],
+      )
+      return rows.map((r) => ({ seq: BigInt(r.seq), schemaVer: r.schema_ver, data: r.data }))
     },
 
     async unconvergedUpdates() {

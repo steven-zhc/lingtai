@@ -54,6 +54,7 @@
 import {
   Actor,
   type Envelope,
+  type EventType,
   SCHEMA_VER,
   StreamId,
   type ToAppend,
@@ -66,11 +67,25 @@ import {
 // process-wide client at import, so a fake store reached through it would
 // require the database it exists to avoid — the trap this file is the answer
 // to, and one it must not fall into itself.
-import { ConcurrencyError, type EventStore, RetiredEventTypeError, UnknownEventTypeError } from '../src/event-store.ts'
+import {
+  ConcurrencyError,
+  decodeRow,
+  type EventStore,
+  RetiredEventTypeError,
+  UnknownEventTypeError,
+} from '../src/event-store.ts'
+import type { LogQueries, TypeRow } from '../src/queries.ts'
 
-export interface MemoryEventStore extends EventStore {
+export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType'> {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
   all(): Envelope[]
+  /**
+   * Pushes a row this build cannot read, skipping `parsePayload` — the only
+   * way a test can get one into this store at all: `append` validates on the
+   * way in, so a test cannot otherwise hold a pre-#445 `WorkItemBlocked` here.
+   * Test-only, and nothing else may call it.
+   */
+  plant(row: { type: EventType; schemaVer: number; data: unknown; streamId?: string; actor?: string }): void
 }
 
 /**
@@ -84,9 +99,22 @@ export interface MemoryEventStore extends EventStore {
  * reads a clock is not a fold, and a test that asserts on `at` should not have
  * to wait.
  */
+/** A row as the store holds it, before `decodeRow` upcasts and validates it on the way out. */
+interface StoredRow {
+  seq: bigint
+  streamId: string
+  version: number
+  type: string
+  schemaVer: number
+  data: unknown
+  actor: string
+  causation: bigint | null
+  at: Date
+}
+
 export function createMemoryEventStore(options: { now?: () => Date } = {}): MemoryEventStore {
   const now = options.now ?? (() => new Date())
-  const log: Envelope[] = []
+  const log: StoredRow[] = []
   let seq = 0n
 
   const versionOf = (streamId: string): number =>
@@ -132,24 +160,52 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
 
       const written = rows.map((r) => {
         seq += 1n
-        return { ...r, seq, at: now() } as Envelope
+        return { ...r, seq, at: now() }
       })
       log.push(...written)
-      return written
+      // Through `decodeRow`, as the real store's `append` does via `toEnvelope`
+      // — ordinary data round-trips unchanged, and it is the one path `plant`
+      // never takes.
+      return written.map((r) => decodeRow(r, r.at))
+    },
+
+    plant(row) {
+      seq += 1n
+      log.push({
+        seq,
+        streamId: row.streamId ?? `wi-plant-${seq}`,
+        version: 1,
+        type: row.type,
+        schemaVer: row.schemaVer,
+        data: row.data,
+        actor: row.actor ?? 'conductor',
+        causation: null,
+        at: now(),
+      })
+    },
+
+    async rowsOfType(type) {
+      return log
+        .filter((r) => r.type === type)
+        .map((r): TypeRow => ({ seq: r.seq, schemaVer: r.schemaVer, data: r.data }))
     },
 
     async read(streamId, fromVersion = 1) {
       return log
         .filter((e) => e.streamId === streamId && e.version >= fromVersion)
         .sort((a, b) => a.version - b.version)
+        .map((r) => decodeRow(r, r.at))
     },
 
     async readAll(fromSeq, limit) {
-      return log.filter((e) => e.seq > fromSeq).slice(0, limit)
+      return log
+        .filter((e) => e.seq > fromSeq)
+        .slice(0, limit)
+        .map((r) => decodeRow(r, r.at))
     },
 
     all() {
-      return [...log]
+      return log.map((r) => decodeRow(r, r.at))
     },
   }
 }

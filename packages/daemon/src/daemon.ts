@@ -32,6 +32,7 @@
  * that runs until the wrong event arrives (#90).
  */
 import { paint } from '@lingtai/env/colour'
+import { type LogPredatesHoldError, logPredatesHold, processLog } from '@lingtai/event-store'
 import type { Projection, ProjectionRunner } from '@lingtai/projector'
 import { ProjectionShapeError, createProjectionRunner } from '@lingtai/projector'
 
@@ -56,6 +57,11 @@ export interface DaemonOptions {
   acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>
   /** `controlWatermark`. Replaceable for the same reason. */
   watermark?: () => Promise<number>
+  /**
+   * `logPredatesHold` against the process log's own queries. Replaceable so
+   * the order below can be asserted without a database (#451).
+   */
+  predatesHold?: () => Promise<LogPredatesHoldError | null>
 }
 
 export type DaemonStart =
@@ -75,6 +81,12 @@ export type DaemonStart =
    * to say who has it and exit 0.
    */
   | { ok: false; reason: 'already-running'; holder: string | null }
+  /**
+   * The log holds a `WorkItemBlocked` from before #445's reset of its
+   * payload. `detail` is `LogPredatesHoldError`'s own message, naming the
+   * seq and the remedy — reset the log, never upgrade it (0118 §1).
+   */
+  | { ok: false; reason: 'log-predates-hold'; detail: string }
 
 export interface Daemon {
   /** Resolves when the daemon stops, with why. */
@@ -93,6 +105,13 @@ const NO_LOCKER: Locker = {
 
 export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
   const log = options.log ?? (() => {})
+
+  // **Before the watermark and before the lock** (#451). A refusal here takes
+  // no lock and reads no control stream — the two are read by the pattern this
+  // function already follows for `watermark`, and a log too old to fold has to
+  // be caught before either does any work against it.
+  const predates = await (options.predatesHold ?? (async () => logPredatesHold((await processLog()).queries)))()
+  if (predates) return { ok: false, reason: 'log-predates-hold', detail: predates.message }
 
   // **The watermark, then the lock, and never the other way round** (#174). A
   // daemon ignores every control event at or below its watermark, and a holder

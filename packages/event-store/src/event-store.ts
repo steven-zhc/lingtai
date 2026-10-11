@@ -14,6 +14,7 @@
  */
 import {
   Actor,
+  blockPredatesHold,
   type Envelope,
   MissingUpcasterError,
   SCHEMA_VER,
@@ -36,6 +37,7 @@ import {
 // this machine wrote down.
 import type { Db } from './db.ts'
 import type { CodecTypes } from './prisma/contract.d.ts'
+import type { LogQueries } from './queries.ts'
 import { parseTimestamptz } from './timestamptz.ts'
 
 // ----------------------------------------------------------------- errors ----
@@ -141,6 +143,28 @@ export class SchemaVersionUnsupportedError extends Error {
   }
 }
 
+/**
+ * A stored `WorkItemBlocked` predates #445's reset of this type's payload —
+ * either a stored v2 row or a v1 one, neither of which this build can read.
+ * See `blockPredatesHold` in `@lingtai/domain` for which is which.
+ *
+ * **Never *upgrade*.** Before 1.0 the log is reset rather than carried
+ * forward (0118 §1), so the remedy named here is the only one: reset the log,
+ * never a migration this build does not have.
+ */
+export class LogPredatesHoldError extends Error {
+  override readonly name = 'LogPredatesHoldError'
+  readonly seq: bigint
+
+  constructor(seq: bigint) {
+    super(
+      `this log predates the Hold event (WorkItemBlocked at seq ${seq}); reset it — ` +
+        'doc/operating.md, "Resetting the log"',
+    )
+    this.seq = seq
+  }
+}
+
 // --------------------------------------------------------------- internals ----
 
 /** The row shape `db.orm.public.Event` hands back. */
@@ -199,6 +223,13 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
     // exists to end.
     data = parseStoredPayload(row.type, row.schemaVer, row.data)
   } catch (err) {
+    // Checked ahead of `MissingUpcasterError` and not inside it: a stored v1
+    // `WorkItemBlocked` is *equal* to this type's supported version and fails
+    // `parseStoredPayload`'s zod parse instead, which `MissingUpcasterError`
+    // never sees (#451). `blockPredatesHold` catches both the same way.
+    if (row.type === 'WorkItemBlocked' && blockPredatesHold(row.schemaVer, row.data)) {
+      throw new LogPredatesHoldError(row.seq)
+    }
     if (err instanceof MissingUpcasterError) {
       throw new SchemaVersionUnsupportedError(row.type, row.schemaVer, SCHEMA_VER[row.type], row.seq)
     }
@@ -216,6 +247,24 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
     causation: row.causation,
     at,
   }
+}
+
+/**
+ * The first `WorkItemBlocked` row this build cannot read, in `seq` order, or
+ * `null` (#451). Daemon start, `lingtai doctor` and `lingtai projection
+ * rebuild` each call this before they fold the whole log, so a person is told
+ * to reset it instead of watching a parse stack come out of whichever one ran
+ * first — `decodeRow`'s own catch above throws the same error for anything
+ * that folds the log without asking first.
+ *
+ * Returned rather than thrown: doctor wants a row it can show as a failing
+ * check, daemon start wants a result arm, and rebuild wants an exit code —
+ * none of the three wants a `try`/`catch` of their own for this.
+ */
+export async function logPredatesHold(queries: Pick<LogQueries, 'rowsOfType'>): Promise<LogPredatesHoldError | null> {
+  const rows = await queries.rowsOfType('WorkItemBlocked')
+  const bad = rows.find((r) => blockPredatesHold(r.schemaVer, r.data))
+  return bad ? new LogPredatesHoldError(bad.seq) : null
 }
 
 /**

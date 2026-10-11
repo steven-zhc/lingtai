@@ -421,6 +421,8 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
 
   const types = db.prepare('SELECT type, count(*) AS n FROM events GROUP BY type ORDER BY type')
 
+  const byType = bigints(db.prepare('SELECT seq, schema_ver, data FROM events WHERE type = ? ORDER BY seq'))
+
   const unconverged = db.prepare(
     `WITH said AS (
        SELECT type AS type,
@@ -485,6 +487,16 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       return types.all().map((r) => {
         const row = r as { type: string; n: number }
         return { type: row.type, rows: Number(row.n) }
+      })
+    },
+
+    async rowsOfType(type) {
+      return byType.all(type).map((r) => {
+        // `bigints()` reads every integer column as a `bigint`, `schema_ver`
+        // included — narrowed back to a `number` here, the same way `types()`
+        // narrows `n` above.
+        const row = r as { seq: bigint; schema_ver: bigint; data: string }
+        return { seq: row.seq, schemaVer: Number(row.schema_ver), data: JSON.parse(row.data) as unknown }
       })
     },
 

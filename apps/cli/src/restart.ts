@@ -457,6 +457,14 @@ export async function openDaemon(
 ): Promise<{ ok: false; code: number } | { ok: true; started: Extract<DaemonStart, { ok: true }>; code: CodeVersion }> {
   const started = await how.start()
   if (!started.ok) {
+    // Named, and never the quiet `already-running` line below: unlike that
+    // one, this is not known to be fine either way, for a restart or for a
+    // bare `lingtai daemon` — nothing is conducting, and the remedy is a reset
+    // rather than a wait (#451).
+    if (started.reason === 'log-predates-hold') {
+      how.log(paint.fail(started.detail))
+      return { ok: false, code: 1 }
+    }
     if (restart) return { ok: false, code: lostTheLock(started.holder, how.log) }
     // A refusal, and deliberately the quietest line the daemon has. Nothing is
     // wrong — red here would be the error that teaches people to ignore errors

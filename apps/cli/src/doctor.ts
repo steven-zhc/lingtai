@@ -82,7 +82,7 @@ import { paint } from '@lingtai/env/colour'
 // opens nothing until something asks it a question. It is what the rows above
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
-import { log } from '@lingtai/event-store'
+import { log, logPredatesHold } from '@lingtai/event-store'
 // The submodule, not the barrel: these two checks run on the *direct*
 // connection, and the barrel's `log` is the pooled one. Through a pooler is
 // where the suite learned what a dropped connection costs (#157), and an audit
@@ -1263,6 +1263,25 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
   }
 }
 
+/**
+ * Whether the log holds a `WorkItemBlocked` from before #445's reset of its
+ * payload — the same guard daemon start and `lingtai projection rebuild` run
+ * before they fold the log at all (#451). Doctor runs it as a plain check
+ * instead of a refusal: a reset here is the operator's own call, not
+ * something worth holding a report over.
+ */
+async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
+  const name = 'log: predates the Hold event'
+  let found: Awaited<ReturnType<typeof logPredatesHold>>
+  try {
+    found = await logPredatesHold(queries)
+  } catch {
+    return { name, status: 'ok', detail: 'no log to read yet' }
+  }
+  if (found === null) return { name, status: 'ok', detail: 'no WorkItemBlocked row predates it' }
+  return { name, status: 'fail', detail: found.message }
+}
+
 /** What the board calls each issue the two rows below name — `project#issue` to its title. */
 type TitleBook = Map<string, string>
 
@@ -2360,6 +2379,7 @@ export async function runDoctor(
     results.push(await passRefusals(load))
     results.push(await conductorLock(reach.lockHolder))
     results.push(await readableTypes(queries))
+    results.push(await logPredatesHoldRow(queries))
     results.push(await orphans(reach.orphans))
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
@@ -2399,6 +2419,7 @@ export async function runDoctor(
     results.push(await passRefusals(load))
     results.push(await conductorLock())
     results.push(await readableTypes(audit))
+    results.push(await logPredatesHoldRow(audit))
     results.push(await orphans())
     // The projection and not the audit connection: this is what the rows are
     // *called*, not what they assert, so it is read where every other

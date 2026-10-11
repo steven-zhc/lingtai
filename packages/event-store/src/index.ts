@@ -25,11 +25,14 @@ export {
   type PostgresLogQueriesOptions,
   type SubscriberFailures,
   type TypeCount,
+  type TypeRow,
   type UnconvergedUpdate,
 } from './queries.ts'
 export {
   ConcurrencyError,
   createEventStore,
+  LogPredatesHoldError,
+  logPredatesHold,
   SchemaVersionUnsupportedError,
   RetiredEventTypeError,
   UnknownEventTypeError,

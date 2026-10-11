@@ -36,6 +36,7 @@ const emptyLog = {
   projectStreams: async () => [],
   endedWithoutEndActions: async () => [],
   typeCounts: async () => [],
+  rowsOfType: async () => [],
   unconvergedUpdates: async () => [],
   subscriberFailures: async () => [],
 } satisfies LogQueries

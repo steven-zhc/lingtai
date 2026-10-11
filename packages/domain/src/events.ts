@@ -262,11 +262,11 @@ export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
  * diagnosis}` in place: there is no v3 and no upcaster from v2, because
  * before 1.0 the log is reset rather than carried forward (0118 §1,
  * `2bfd7a06`). An old row now fails this zod parse rather than folding with
- * stale fields; refusing it by name, at daemon start and in `lingtai doctor`,
- * rather than failing partway through a fold, is #451 and is not done yet.
- * Until it lands, a person resets the log before any daemon restarts onto
- * this commit. #441 changed `MergeRefused` in place the same way, adding
- * `afterApproval` with no upcaster, for the same reason.
+ * stale fields; refusing it by name, at daemon start, `lingtai doctor` and
+ * `lingtai projection rebuild`, rather than failing partway through a fold,
+ * is what #451 built — `blockPredatesHold` below. #441 changed `MergeRefused`
+ * in place the same way, adding `afterApproval` with no upcaster, for the
+ * same reason.
  *
  * `needsFrom` is gone rather than moved: every appender wrote `'human'`
  * (`'external'` had no writer), so it carried no information once `hold`
@@ -2271,9 +2271,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // is not any more: #445 replaced the payload in place with `{hold}` rather
   // than bumping to 3, because before 1.0 the log is reset rather than
   // carried forward (0118 §1). `upcast.ts` has no entry for this type, so a
-  // stored row from either old shape now fails this type's zod parse; refusing
-  // it by name instead is #451. #441 added `MergeRefused.afterApproval` the
-  // same way, in place and with no upcaster.
+  // stored row from either old shape now fails this type's zod parse, and
+  // `blockPredatesHold` below refuses it by name instead (#451). #441 added
+  // `MergeRefused.afterApproval` the same way, in place and with no upcaster.
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,
@@ -2322,6 +2322,24 @@ const BUMPED: Partial<Record<EventType, number>> = {
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
   (Object.keys(EVENTS) as EventType[]).map((k) => [k, BUMPED[k] ?? 1]),
 ) as Record<EventType, number>
+
+/**
+ * Whether a stored `WorkItemBlocked` row is from before #445's reset of this
+ * type's payload (#451) — either a stored v2 row (`needs`, `diagnosis`) or a
+ * v1 one (`question`, `needsFrom`), neither of which this build can read.
+ *
+ * `!==` rather than `>`: #445 dropped this type's `BUMPED` entry, so the
+ * supported version fell to 1 and a stored v2 row is *greater* than
+ * supported — `upcast`'s `schemaVer > supported` branch would catch that one
+ * alone, with a message that says the opposite of what happened here (*the
+ * writer is newer than the reader*). A stored v1 row is not caught by that
+ * branch at all: it is equal to supported and fails only `WorkItemBlocked`'s
+ * own strict parse, for carrying `question`/`needsFrom` instead of `hold`.
+ * Checking the parse directly catches both the same way.
+ */
+export function blockPredatesHold(schemaVer: number, data: unknown): boolean {
+  return schemaVer !== SCHEMA_VER.WorkItemBlocked || !WorkItemBlocked.safeParse(data).success
+}
 
 /**
  * Types the log holds and nothing appends again.

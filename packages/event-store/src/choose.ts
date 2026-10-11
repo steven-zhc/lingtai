@@ -150,6 +150,7 @@ function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
     projectStreams: async (prefix) => (await resolve()).projectStreams(prefix),
     endedWithoutEndActions: async () => (await resolve()).endedWithoutEndActions(),
     typeCounts: async () => (await resolve()).typeCounts(),
+    rowsOfType: async (type) => (await resolve()).rowsOfType(type),
     unconvergedUpdates: async () => (await resolve()).unconvergedUpdates(),
     subscriberFailures: async (since) => (await resolve()).subscriberFailures(since),
   }

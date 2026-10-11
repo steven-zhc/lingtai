@@ -41,6 +41,7 @@ export type {
   LogQueries,
   SubscriberFailures,
   TypeCount,
+  TypeRow,
   UnconvergedUpdate,
 } from './queries.ts'
 

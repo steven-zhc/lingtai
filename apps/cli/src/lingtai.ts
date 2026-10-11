@@ -43,6 +43,7 @@ import {
 import { BOARD_PORT, boardPort } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import { log } from '@lingtai/event-store'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
@@ -71,6 +72,7 @@ import { envCommand } from './env.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
+import { rebuildProjection } from './projection.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -406,17 +408,15 @@ async function projectionCommand(args: string[]): Promise<number> {
       console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(', ')}`)
       return 2
     }
-    const runner = createProjectionRunner({ projection })
-    try {
-      // Drop the table, reset the checkpoint, replay. This is what makes a
-      // projection's shape free to change: a rebuild, not a migration.
-      await runner.rebuild()
-      const lag = await runner.lag()
-      console.log(`${name} rebuilt — at ${lag.lastSeq}/${lag.headSeq}, ${lag.lag} behind`)
-      return lag.lag === 0n ? 0 : 1
-    } finally {
-      await runner.close()
-    }
+    // Drop the table, reset the checkpoint, replay — which is what makes a
+    // projection's shape free to change, a rebuild rather than a migration.
+    // `rebuildProjection` refuses before any of that if the log predates the
+    // Hold event (#451).
+    return rebuildProjection({
+      name,
+      queries: log.queries,
+      runnerFor: () => createProjectionRunner({ projection }),
+    })
   }
 
   // Gone, and answered by name rather than by falling through to the usage.

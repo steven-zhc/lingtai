@@ -290,6 +290,33 @@ export function describeLogQueriesContract(
       for (const c of counts) expect(Number.isInteger(c.rows)).toBe(true)
     })
 
+    // ---------------------------------------------------------- rowsOfType ----
+
+    it('returns every row of a type, in seq order, with its schemaVer and undecoded data', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 509)
+      h.note?.(item)
+      await h.store.append(item, 0, [landed(), closed()])
+
+      const rows = await h.queries.rowsOfType('WorkItemClosed')
+
+      // A shared database holds other tests' rows of this type too, so the
+      // assertion is on the shape and the order rather than on which rows are
+      // "mine" — `rowsOfType` does not say which stream a row belongs to,
+      // which is exactly what makes it usable by `logPredatesHold` without
+      // knowing which streams hold a `WorkItemBlocked`.
+      expect(rows.length).toBeGreaterThanOrEqual(1)
+      for (let i = 1; i < rows.length; i++) expect(rows[i]!.seq).toBeGreaterThan(rows[i - 1]!.seq)
+      const last = rows.at(-1)!
+      expect(last.schemaVer).toBe(1)
+      expect(last.data).toEqual({ by: 'human:test', reason: 'done elsewhere' })
+      // Never a `WorkItemLanded` row's shape, appended right beside it in the
+      // same batch — the near-miss `typeCounts`'s own test seeds for the same
+      // reason: a query that forgot to filter by type would pass everything
+      // else here too.
+      for (const r of rows) expect(r.data).not.toHaveProperty('mergeCommit')
+    })
+
     // ------------------------------------------------- unconvergedUpdates ----
 
     const said = (type: 'IssueUpdated' | 'IssueUpdateFailed', project: string, issue: string, change: string) => ({

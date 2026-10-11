@@ -8,9 +8,13 @@
  * The order is asserted with nothing but the two calls replaced — no projection,
  * no database — because the order is the whole of the claim.
  */
+import { LogPredatesHoldError } from '@lingtai/event-store'
 import { describe, expect, it } from 'vitest'
 
 import { startDaemon } from '../src/daemon.ts'
+
+/** Every test here replaces `predatesHold` — left to its default, it opens the process log, which no unit test has. */
+const clearToStart = async () => null
 
 describe('startDaemon', () => {
   it('reads the control watermark before it tries for the lock, and hands that watermark back', async () => {
@@ -18,6 +22,7 @@ describe('startDaemon', () => {
     let stream = 7
     const started = await startDaemon({
       projections: [],
+      predatesHold: clearToStart,
       watermark: async () => (order.push(`watermark at ${stream}`), stream),
       acquire: async () => {
         order.push('lock taken')
@@ -43,10 +48,36 @@ describe('startDaemon', () => {
     const order: string[] = []
     const started = await startDaemon({
       projections: [],
+      predatesHold: clearToStart,
       watermark: async () => (order.push('watermark'), 0),
       acquire: async () => (order.push('lock refused'), { ok: false, holder: 'pid 1 on elsewhere' }),
     })
     expect(order).toEqual(['watermark', 'lock refused'])
     expect(started).toEqual({ ok: false, reason: 'already-running', holder: 'pid 1 on elsewhere' })
+  })
+
+  /**
+   * #451. The guard runs ahead of both: a log too old to fold has to be
+   * caught before the watermark is read or the lock is taken, because a
+   * refusal that already holds the lock is a daemon somebody else has to
+   * notice is not conducting.
+   */
+  it('refuses before the watermark or the lock when the log predates the Hold event', async () => {
+    const order: string[] = []
+    const started = await startDaemon({
+      projections: [],
+      predatesHold: async () => (order.push('predates-hold'), new LogPredatesHoldError(5n)),
+      watermark: async () => (order.push('watermark'), 0),
+      acquire: async () => (order.push('lock taken'), { ok: false, holder: null }),
+    })
+
+    expect(order).toEqual(['predates-hold'])
+    expect(started.ok).toBe(false)
+    if (started.ok) return
+    expect(started).toEqual({
+      ok: false,
+      reason: 'log-predates-hold',
+      detail: new LogPredatesHoldError(5n).message,
+    })
   })
 })
