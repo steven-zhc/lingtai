@@ -1,7 +1,15 @@
 /**
- * `holdOfPass` against literals — one case per row of `doc/design/445.md`'s
- * §2 table, which is `doc/design/the-waiting-lane.md`'s own mapping (#404)
- * read as today's classification rather than 0118 §1's *who sent it* (#452).
+ * `holdOfPass` against literals, classified by who sent the item to a
+ * person (0118 §1, `8a669849`, #452) rather than by whether `stopped` is
+ * set.
+ *
+ * `rested: 'waiting'` is the base's default because that is what every real
+ * arrival the router sent on carries — a `refused` or `asked` ending only
+ * ever reaches `stopped` by being routed there (`pass.ts`'s `take`), and
+ * `holdFor` only builds a `Hold` on a blocked outcome, which excludes the
+ * other value `rested` can take (`requeued`). Cases that test what happens
+ * when the router itself never ran — `proposed`'s own plugins refusing —
+ * override it to `null`.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -11,6 +19,8 @@ const BASE_INPUT: HoldOfPassInput = {
   stopped: null,
   lastRoute: null,
   ceilingHit: null,
+  rested: 'waiting',
+  declined: null,
   findings: [],
   runId: 'run-1',
   branch: 'agent/1',
@@ -131,30 +141,78 @@ describe('holdOfPass', () => {
     expect(hold).toMatchObject({ _tag: 'Human', findings: [finding] })
   })
 
-  it('reads a `prepared` refusal as SetupRefused, lifts: person', () => {
+  it('reads a build refusal with the rounds spent as Routed, when: red, carrying the red output', () => {
+    const hold = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
+      lastRoute: { from: 'build', to: 'waiting', why: 'exit 2' },
+    })
+    expect(hold).toMatchObject({
+      _tag: 'Routed',
+      when: 'red',
+      why: 'agent/1 into main is waiting on you. exit 2',
+      raw: 'exit 2',
+      paths: null,
+      baseSha: null,
+      headSha: null,
+    })
+  })
+
+  it('reads a merge conflict refusal with the rounds spent as Routed, when: conflict, carrying the integration evidence', () => {
+    const hold = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'merge', ending: { ending: 'refused', because: 'conflict', at: null, detail: 'CONFLICT' } },
+      lastRoute: { from: 'merge', to: 'waiting', why: 'CONFLICT' },
+      integrationRefusal: { paths: ['a.ts'], baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) },
+    })
+    expect(hold).toMatchObject({
+      _tag: 'Routed',
+      when: 'conflict',
+      paths: ['a.ts'],
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+    })
+  })
+
+  it('reads a `prepared` install refusal with the rounds spent as Routed, when: red — the same evidence one step earlier', () => {
     const hold = holdOfPass({
       ...BASE_INPUT,
       stopped: {
         step: 'prepared',
         ending: { ending: 'refused', because: 'no-settings', at: null, detail: 'ENOSPC' },
       },
+      lastRoute: { from: 'prepared', to: 'waiting', why: 'ENOSPC' },
     })
-    expect(hold).toEqual({
-      _tag: 'SetupRefused',
-      run: { runId: 'run-1' },
-      step: 'prepared',
-      lifts: 'person',
-      why: 'ENOSPC',
-      raw: 'ENOSPC',
-    })
+    expect(hold).toMatchObject({ _tag: 'Routed', when: 'red', raw: 'ENOSPC' })
   })
 
-  it('reads a refusal at any other step as CheckRed', () => {
+  it('reads a `proposed` refusal — the router itself, never routed — as CheckRed', () => {
+    // `rested` stays null here: a step outside `ARRIVE_AT_THE_ROUTER` (`proposed`
+    // is the router) or whose own plugins refused on the arrival visit ends the
+    // pass without ever calling `take()` (`pass.ts:1429-1454`).
     const hold = holdOfPass({
       ...BASE_INPUT,
-      stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
+      rested: null,
+      stopped: { step: 'proposed', ending: { ending: 'refused', because: 'action-refused', at: null, detail: 'boom' } },
     })
-    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'build', why: 'exit 2', raw: 'exit 2' })
+    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'proposed', why: 'boom', raw: 'boom' })
+  })
+
+  it('reads a did-not-finish ending as Declined when a fix round committed nothing and did not fail', () => {
+    const hold = holdOfPass({
+      ...BASE_INPUT,
+      stopped: {
+        step: 'implement',
+        ending: { ending: 'did-not-finish', because: 'nothing-committed', at: null, detail: 'no commits' },
+      },
+      declined: { said: 'the findings describe a tradeoff, not a bug — I am not changing this' },
+    })
+    expect(hold).toEqual({
+      _tag: 'Declined',
+      run: { runId: 'run-1' },
+      step: 'implement',
+      said: 'the findings describe a tradeoff, not a bug — I am not changing this',
+    })
   })
 
   it('reads a did-not-finish ending as DidNotFinish', () => {

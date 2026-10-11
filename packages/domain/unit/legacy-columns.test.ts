@@ -1,5 +1,5 @@
 /**
- * `legacyColumns` against one example of each of `Hold`'s nine variants —
+ * `legacyColumns` against one example of each of `Hold`'s ten variants —
  * the Done-when #445 is held to: *the values the fold wrote before.*
  */
 import { describe, expect, it } from 'vitest'
@@ -69,6 +69,24 @@ describe('legacyColumns', () => {
       findings: [finding],
     }
     expect(legacyColumns(hold).diagnosis?.recommendation).toBeNull()
+  })
+
+  it('composes the step prefix for Declined, with needs judgement and no recommendation', () => {
+    const hold: Hold = {
+      _tag: 'Declined',
+      run: { runId: 'run-1' },
+      step: 'implement',
+      said: 'the findings describe a tradeoff, not a bug',
+    }
+    const cols = legacyColumns(hold)
+    expect(cols.question).toBe('the `implement` step declined: the findings describe a tradeoff, not a bug')
+    expect(cols.needs).toBe('judgement')
+    expect(cols.diagnosis?.recommendation).toBeNull()
+  })
+
+  it('names Declined with a generic line when the fixing agent said nothing', () => {
+    const hold: Hold = { _tag: 'Declined', run: { runId: 'run-1' }, step: 'implement', said: null }
+    expect(legacyColumns(hold).question).toBe('the `implement` step declined: the fixing agent committed nothing')
   })
 
   it('keeps Routed.why as the composed line, since branch/base are not on a Hold', () => {

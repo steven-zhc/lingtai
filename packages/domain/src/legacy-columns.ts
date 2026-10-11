@@ -120,6 +120,23 @@ export function legacyColumns(hold: Hold): LegacyColumns {
       }
     }
 
+    case 'Declined': {
+      const question = stepLine(hold.step, 'declined', hold.said ?? 'the fixing agent committed nothing')
+      return {
+        question,
+        runId: hold.run.runId,
+        asked: false,
+        needs: 'judgement',
+        needsFrom: 'human',
+        diagnosis: {
+          what: question + unpushedSuffix(hold.run),
+          done: repairDone(hold.run),
+          raw: hold.said,
+          recommendation: null,
+        },
+      }
+    }
+
     case 'Routed': {
       // The one variant whose composed line is on the hold itself: `why`
       // already reads "`${branch}` into `${base}` is waiting on you. …",

@@ -1,5 +1,5 @@
 /**
- * 0118 §1's model: a hold is exactly one of nine tagged shapes, and the ones
+ * 0118 §1's model: a hold is exactly one of ten tagged shapes, and the ones
  * 0118 rules out cannot be written at all — the `@ts-expect-error` cases below
  * are checked by `pnpm typecheck`, not by vitest.
  */
@@ -13,6 +13,7 @@ import {
   Asked,
   Ceiling,
   CheckRed,
+  Declined,
   DidNotFinish,
   Hold,
   Human,
@@ -95,6 +96,18 @@ describe('Hold round-trips every variant', () => {
     }
     expect(Hold.parse(value)).toEqual(value)
     expect(Routed.parse(value)).toEqual(value)
+  })
+
+  it('Judgement.Declined', () => {
+    const value = { _tag: 'Declined', run, step: 'implement', said: 'the findings describe a tradeoff' }
+    expect(Hold.parse(value)).toEqual(value)
+    expect(Declined.parse(value)).toEqual(value)
+  })
+
+  it('Judgement.Declined, said: null', () => {
+    const value = { _tag: 'Declined', run, step: 'implement', said: null }
+    expect(Hold.parse(value)).toEqual(value)
+    expect(Declined.parse(value)).toEqual(value)
   })
 
   it('Failure.CheckRed', () => {

@@ -156,17 +156,34 @@ export const Routed = z.object({
 export type Routed = z.infer<typeof Routed>
 
 /**
+ * A fixing agent read the findings or the refusal and committed nothing,
+ * deciding — not crashing — that no change answered them.
+ *
+ * `step` is `implement`, the only step a fix round runs at. `said` is
+ * `FixApplied.said` (#453), the agent's own last words, clipped the same way
+ * there; `null` where it said nothing.
+ */
+export const Declined = z.object({
+  _tag: z.literal('Declined'),
+  run: RunRef,
+  step: Step,
+  said: z.string().nullable(),
+})
+export type Declined = z.infer<typeof Declined>
+
+/**
  * A run reached a person with a decision, as the pass actually branches.
  *
- * **Neither open question is settled here.** `holdOfPass` in
- * `@lingtai/conductor` (#445) is today's classification, not 0118 §1's *who
- * sent it*: a `red`/`verify-failed` refusal with the rounds spent stays
- * `CheckRed`/`MergeRefused` there, not `Routed` — the reclassification by who
- * sent it, which is question 1, is #452's. **Question 4 stays open** too — a
- * declined fixer stays `DidNotFinish` here, which is `Failure` rather than
- * `Judgement`, because nothing has yet given it its own variant.
+ * Classified by **who sent the item to a person** (0118 §1, `8a669849`),
+ * settled by #452: `holdOfPass` in `@lingtai/conductor` reads *did this
+ * arrival reach the `proposed` router and get sent on*, never whether
+ * `stoppedAt` happens to be set — so a `red`/`verify-failed`/`conflict`
+ * refusal with the rounds spent is `Routed`, carrying its direction, the same
+ * as unsatisfied findings. A fixing agent that declined to change anything is
+ * `Declined`, its own variant rather than a `Failure.DidNotFinish` — nobody
+ * crashed, somebody judged.
  */
-export const Judgement = z.discriminatedUnion('_tag', [Asked, Human, Routed])
+export const Judgement = z.discriminatedUnion('_tag', [Asked, Human, Routed, Declined])
 export type Judgement = z.infer<typeof Judgement>
 
 /** A check that stayed red, or went red on a moved base. */
@@ -261,7 +278,7 @@ export const Failure = z.discriminatedUnion('_tag', [CheckRed, MergeRefused, Cei
 export type Failure = z.infer<typeof Failure>
 
 /**
- * A hold is exactly one of these nine. Flattened rather than wrapped —
+ * A hold is exactly one of these ten. Flattened rather than wrapped —
  * `{ _tag: 'Judgement', judgement: … }` would make `Judgement` the name of
  * both a wrapper and a union — spreading `Judgement.options` and
  * `Failure.options` in rather than nesting the two unions as options of this

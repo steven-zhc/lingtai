@@ -1250,6 +1250,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let ceilingHit: CeilingHit | null = null
       /**
+       * **A fix round that read the findings or the refusal and judged, not
+       * crashed** — set exactly when it committed nothing and reported no
+       * failure (`fixRound`, below). `said` is `FixApplied.said`, so the hold
+       * and the event cannot disagree about what the fixer said last.
+       *
+       * Kept here for the reason `ceilingHit` is: the pass cannot tell a
+       * decline from a crash from its own vocabulary, so the distinction is
+       * kept where it is made rather than pushed into one the pass would then
+       * have to carry (0118 §1, #452).
+       */
+      let declined: { said: string | null } | null = null
+      /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
        * The pass has one `implement` step and this file dispatches two different
@@ -2951,6 +2963,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
         }
         if (!committed) {
+          if (!fixed.failure) declined = { said: fixSaid }
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
@@ -3185,9 +3198,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       /**
        * The `Hold` a person is owed, built by `holdOfPass` from what the pass
-       * reported — today's classification (`hold-of.ts`'s own header), not
-       * 0118 §1's *who sent it*, which is #452's. `legacyColumns` turns it back
-       * into the `question`/`needs`/`diagnosis` every reader below still wants.
+       * reported — classified by who sent the item to a person (0118 §1,
+       * `8a669849`, #452). `rested` and `declined` are the two inputs that
+       * reading needs beyond what the pass already reports on `stopped`.
+       * `legacyColumns` turns the result back into the
+       * `question`/`needs`/`diagnosis` every reader below still wants.
        */
       const holdFor = async (): Promise<Hold> => {
         const integrationRefusal =
@@ -3198,6 +3213,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stopped,
           lastRoute,
           ceilingHit,
+          rested: pass.rested,
+          declined,
           findings,
           runId,
           branch,

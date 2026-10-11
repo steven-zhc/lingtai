@@ -46,6 +46,16 @@ describe('allowedMoves', () => {
     expect(allowedMoves(hold)).toEqual([{ _tag: 'Approve' }, { _tag: 'Requeue' }, { _tag: 'Close' }])
   })
 
+  it('Judgement.Declined: Approve, Requeue, BodyAndRequeue, Close', () => {
+    const hold = parse({ _tag: 'Declined', run, step: 'implement', said: 'nothing here answers the finding' })
+    expect(allowedMoves(hold)).toEqual([
+      { _tag: 'Approve' },
+      { _tag: 'Requeue' },
+      { _tag: 'BodyAndRequeue' },
+      { _tag: 'Close' },
+    ])
+  })
+
   it('Judgement.Routed: Requeue, Close, plus Approve when not unpushed', () => {
     const hold = parse({
       _tag: 'Routed',
@@ -208,6 +218,11 @@ describe('triageRuns', () => {
 
   it('Judgement.Human at merge (injected by --no-merge): true', () => {
     const hold = parse({ _tag: 'Human', run, step: 'merge', source: 'injected', question: 'land it?' })
+    expect(triageRuns(hold)).toBe(true)
+  })
+
+  it('Judgement.Declined: true', () => {
+    const hold = parse({ _tag: 'Declined', run, step: 'implement', said: 'nothing here answers the finding' })
     expect(triageRuns(hold)).toBe(true)
   })
 

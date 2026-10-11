@@ -609,8 +609,14 @@ export const END_UNRESOLVED = 'end-unresolved'
  * before the diff is what is in doubt, and *offering a judge a direction
  * nothing can arrive by is the same mistake as offering it a step nothing can
  * run.* A person is next, which is where they go today.
+ *
+ * Exported for `hold-of.ts`'s `holdOfPass` (#452), which needs the same
+ * reading of `PassResult.stoppedAt` the router used to decide whether an
+ * arrival was sent to a person with a direction — a copy in that file would
+ * let the two disagree about it. The parameter is narrowed to the two fields
+ * `stoppedAt` actually carries, which is all `StepReached` `stoppedAt` is.
  */
-function directionOf(arriving: StepReached): JudgeWhen | null {
+export function directionOf(arriving: Pick<StepReached, 'step' | 'ending'>): JudgeWhen | null {
   const ending = arriving.ending
   // The one report with anywhere to go, and its own ending since `#296`: this is
   // the last place `NEEDS_INPUT` is written down in the conductor, and it is a

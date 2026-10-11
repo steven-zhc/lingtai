@@ -3,20 +3,16 @@
  * `conduct.ts`'s closure so the classification can be unit-tested on literals
  * rather than only through a whole pass.
  *
- * **This is today's classification, not 0118 §1's *who sent it*.** The ADR
- * amended by `8a669849` says a `red`/`verify-failed` route with the rounds
- * spent is `Routed`, because the router sent it to a person — but building
- * that is #452's job. Until then this function keeps answering the question
- * the old `whatIsWaitingOnYou` answered: *what did the pass itself report*,
- * branch by branch, in the same order. `doc/design/the-waiting-lane.md`'s
- * table is the spec this follows; its `Judgement` table is explicit that
- * `Routed` can only ever carry `findings` as the code stands today, so that
- * is the only `when` this function ever writes.
- *
- * A `red` or `verify-failed` refusal with rounds spent stays `CheckRed` /
- * `MergeRefused` here — not `Routed` — and a declined fix round stays
- * `DidNotFinish`, not `Judgement, Declined`. Both are #452's reclassification,
- * not this function's.
+ * **Classified by who sent the item to a person** (0118 §1, `8a669849`,
+ * #452) — never by whether `stoppedAt` happens to be set. The test is *did
+ * this pass reach the `proposed` router and get sent on*: `rested ===
+ * 'waiting'` together with either nothing refused (`stopped === null`, the
+ * router judged `review`'s findings on its own way through) or a refusal
+ * `directionOf` can name a direction for. Both become `Routed`, carrying the
+ * direction and its evidence. A refusal the router sent on with no direction
+ * — the merge lane's own six reasons, which stop it before the diff is what
+ * is in doubt — keeps its `Failure` variant, and so does everything
+ * `stoppedAt`/`ceilingHit` say nobody decided.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {
@@ -27,7 +23,8 @@ import {
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
-import type { Destination, PassResult } from './pass.ts'
+import { directionOf } from './pass-steps.ts'
+import type { Destination, PassResult, Rest } from './pass.ts'
 
 export type StoppedAt = PassResult['stoppedAt']
 
@@ -54,6 +51,20 @@ export interface HoldOfPassInput {
   stopped: StoppedAt
   lastRoute: LastRoute | null
   ceilingHit: CeilingHit | null
+  /**
+   * Where the pass came to rest (`PassResult.rested`) — `'waiting'` is the
+   * one value that says the router sent this arrival to a person, which
+   * `stopped` alone cannot: a refusal the router judged and sent on reports
+   * the step that did not pass, not the router that sent it.
+   */
+  rested: Rest | null
+  /**
+   * Set when a fix round committed nothing and did not fail — a fixer that
+   * read the findings and judged, not one that crashed. `said` is
+   * `FixApplied.said`, clipped the same way there. `null` where nothing was
+   * declined this pass.
+   */
+  declined: { said: string | null } | null
   findings: readonly Finding[]
   runId: string
   branch: string
@@ -83,6 +94,34 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     ...(input.repairOf === undefined ? {} : { repairOf: input.repairOf }),
   }
 
+  // 1. The router sent a refusal on with a direction — `red`, `verify-failed`
+  // or `conflict`, the rounds spent either way. Before the merge-refused
+  // check below: a `conflict`/`verify-failed` refusal is also a `merge`
+  // refusal, and it must read as `Routed` rather than `MergeRefused`.
+  if (input.rested === 'waiting' && stopped !== null && stopped.ending.ending === 'refused') {
+    const when = directionOf(stopped)
+    if (when !== null) {
+      const why = detailOf(stopped.ending)
+      const routedWhy = input.lastRoute?.why ?? why
+      const conflict = when === 'conflict' ? input.integrationRefusal : null
+      return {
+        _tag: 'Routed',
+        run,
+        when,
+        why: `${input.branch} into ${input.base} is waiting on you. ${said(routedWhy, 400)}`,
+        raw: why,
+        findings: [...input.findings],
+        paths: conflict?.paths ?? null,
+        baseSha: conflict?.baseSha ?? null,
+        headSha: conflict?.headSha ?? null,
+      }
+    }
+  }
+
+  // 2. The merge lane refused with no direction — it stops the lane before
+  // the diff is what is in doubt, which is `JudgeWhen`'s own reason a
+  // direction cannot name these: dirty-base, unpushed-base,
+  // pending-migration, no-commits, push-rejected, unexpected.
   if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
     const why = detailOf(stopped.ending)
     const parsedReason = RefusalReasonSchema.safeParse(stopped.ending.because)
@@ -109,6 +148,7 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     return { _tag: 'CheckRed', run, step: 'merge', why: said(why, 400), raw: why }
   }
 
+  // 3. Nobody decided; the account did.
   if (input.ceilingHit !== null) {
     return {
       _tag: 'Ceiling',
@@ -120,6 +160,8 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     }
   }
 
+  // 4. The router sent the pass to a person on its own way through — nothing
+  // refused, and what it judged was `review`'s findings.
   if (stopped === null) {
     const why = input.lastRoute?.why ?? 'the pass was held for a person'
     return {
@@ -137,6 +179,9 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
 
   const { step } = stopped
   switch (stopped.ending.ending) {
+    // Goes through the router too (`directionOf`'s `needs-input`), but
+    // `Asked` carries the agent's question in a field `Routed` has none for,
+    // so this is never `Routed{when: 'needs-input'}`.
     case 'asked':
       return { _tag: 'Asked', run, step, question: detailOf(stopped.ending) }
 
@@ -153,15 +198,17 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
         findings: [...input.findings],
       }
 
+    // Only reached when step 1 did not route it on — in practice `proposed`'s
+    // own plugins refusing, which `directionOf` has no direction for.
     case 'refused': {
       const why = detailOf(stopped.ending)
-      if (step === 'prepared') {
-        return { _tag: 'SetupRefused', run, step, lifts: 'person', why: said(why, 400), raw: why }
-      }
       return { _tag: 'CheckRed', run, step, why: said(why, 400), raw: why }
     }
 
     case 'did-not-finish': {
+      if (input.declined !== null) {
+        return { _tag: 'Declined', run, step, said: input.declined.said }
+      }
       const why = detailOf(stopped.ending)
       return { _tag: 'DidNotFinish', run, step, why: said(why, 400), raw: why }
     }

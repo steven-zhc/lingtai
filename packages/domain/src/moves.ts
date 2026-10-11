@@ -1,7 +1,7 @@
 /**
  * Which moves a held card offers, and whether triage runs on it — 0118 §1's
  * one place for a question five callers used to answer each for themselves
- * (#442, #443). Both are exhaustive over `Hold`'s nine tags, following
+ * (#442, #443). Both are exhaustive over `Hold`'s ten tags, following
  * `doc/design/the-waiting-lane.md`'s table.
  *
  * `import type` only: a `Move` value is a bare `{ _tag: '...' }` literal, so
@@ -26,6 +26,10 @@ export function allowedMoves(hold: Hold): Move[] {
       return [{ _tag: 'Requeue' }, { _tag: 'Close' }]
     case 'Human':
       return [{ _tag: 'Approve' }, { _tag: 'Requeue' }, { _tag: 'Close' }]
+    // Approve sides with the fixer that declined, a body edit sides with the
+    // reviewer whose findings it declined to answer.
+    case 'Declined':
+      return [{ _tag: 'Approve' }, { _tag: 'Requeue' }, { _tag: 'BodyAndRequeue' }, { _tag: 'Close' }]
     case 'Routed':
     case 'CheckRed':
       return hold.run.unpushed === undefined
@@ -57,6 +61,7 @@ export function triageRuns(hold: Hold): boolean {
       return false
     case 'Asked':
     case 'Human':
+    case 'Declined':
     case 'Routed':
     case 'MergeRefused':
     case 'Ceiling':

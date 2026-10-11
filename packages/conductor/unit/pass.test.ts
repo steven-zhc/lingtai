@@ -2301,7 +2301,10 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
    */
   it.each([
     { module: 'pass.ts', allowed: ['pass-steps.ts', 'conduct.ts'] },
-    { module: 'pass-steps.ts', allowed: ['conduct.ts'] },
+    // `hold-of.ts` calls `directionOf` (#452) — reading the same direction the
+    // router already computed, never a second routing decision, so this is
+    // not the second engine the rule above is against.
+    { module: 'pass-steps.ts', allowed: ['conduct.ts', 'hold-of.ts'] },
   ])('$module is imported only by $allowed', ({ module, allowed }) => {
     const src = fileURLToPath(new URL('../src', import.meta.url))
     // The span is kept inside one statement by refusing to cross the next
