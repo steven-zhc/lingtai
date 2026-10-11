@@ -40,11 +40,13 @@ describe('a closed work item', () => {
   it('is a terminal that carries who and why', () => {
     const state = reduceWorkItem([
       event(1, 'WorkItemBlocked', {
-        question: 'merge over the refusal?',
-        needsFrom: 'human',
-        runId: 'run-1',
-        needs: 'judgement',
-        diagnosis: null,
+        hold: {
+          _tag: 'Human',
+          run: { runId: 'run-1' },
+          step: 'merge',
+          source: 'injected',
+          question: 'merge over the refusal?',
+        },
       }),
       closed,
     ])

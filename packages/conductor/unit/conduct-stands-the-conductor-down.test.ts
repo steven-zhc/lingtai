@@ -26,6 +26,8 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
+import type { Hold } from '@lingtai/domain'
+import { legacyColumns } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -601,18 +603,14 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(types).toContain('WorkItemBlocked')
     expect(types).not.toContain('WorkItemReleased')
 
-    const blocked = item.find((e) => e.type === 'WorkItemBlocked')!.data as {
-      needs: string
-      question: string
-      diagnosis: { raw: string | null }
-    }
+    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
     // Nothing is being asked of anybody's judgement about the diff: the
     // machinery broke and the log is asking for it to be acknowledged.
     expect(blocked.needs).toBe('acknowledgement')
     expect(blocked.question).toContain('did-not-finish')
     // The reviewer's own ending, verbatim, rather than a sentence about the diff.
-    expect(blocked.diagnosis.raw).toContain('the reviewer did not finish (crash)')
-    expect(blocked.diagnosis.raw).toContain('already in use')
+    expect(blocked.diagnosis?.raw).toContain('the reviewer did not finish (crash)')
+    expect(blocked.diagnosis?.raw).toContain('already in use')
 
     // And no round was bought to answer a judgement nobody made.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!

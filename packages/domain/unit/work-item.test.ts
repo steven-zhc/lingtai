@@ -72,12 +72,15 @@ describe('reduceWorkItem', () => {
     expect(blocked.lifecycle).toEqual({
       status: 'blocked',
       hold,
-      question: 'Which base branch should this target?',
+      // The step prefix is composed by `legacyColumns`, rebuilding the card
+      // line `whatIsWaitingOnYou` wrote before #445 — the bare question is on
+      // `hold.question` itself.
+      question: 'the `proposed` step held: Which base branch should this target?',
       needsFrom: 'human',
       runId: 'run-a',
       needs: 'judgement',
       diagnosis: {
-        what: 'Which base branch should this target?',
+        what: 'the `proposed` step held: Which base branch should this target?',
         done: null,
         raw: 'Which base branch should this target?',
         // Not `merge`, so a `Human` here is never recommended `approve` —

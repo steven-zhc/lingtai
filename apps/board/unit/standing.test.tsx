@@ -64,11 +64,17 @@ describe('the state, and how long it has held', () => {
           ITEM,
           'WorkItemBlocked',
           {
-            question: 'approve the diff for #89?',
-            needsFrom: 'human',
-            runId: RUN_1,
-            needs: 'judgement',
-            diagnosis: null,
+            hold: {
+              _tag: 'Routed',
+              run: { runId: RUN_1 },
+              when: 'findings',
+              why: 'approve the diff for #89?',
+              raw: null,
+              findings: [],
+              paths: null,
+              baseSha: null,
+              headSha: null,
+            },
           },
           '2026-09-08T04:12:15Z',
         ),
@@ -126,11 +132,16 @@ describe('the state, and how long it has held', () => {
         e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'repair' }),
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'conflict: agent/89 does not merge into main',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'MergeRefused',
+            run: { runId: RUN_2 },
+            reason: 'conflict',
+            why: 'agent/89 does not merge into main',
+            raw: 'agent/89 does not merge into main',
+            paths: null,
+            baseSha: null,
+            headSha: null,
+          },
         }),
       ],
       runs,
@@ -153,11 +164,13 @@ describe('the evidence', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'the build refused it',
-          needsFrom: 'human',
-          runId: RUN_1,
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'CheckRed',
+            run: { runId: RUN_1 },
+            step: 'proposed',
+            why: 'the build refused it',
+            raw: null,
+          },
         }),
       ],
       [run],
@@ -361,11 +374,13 @@ describe('the evidence', () => {
         e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'repair' }),
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'the repair could not fix it',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'CheckRed',
+            run: { runId: RUN_2 },
+            step: 'proposed',
+            why: 'the repair could not fix it',
+            raw: null,
+          },
         }),
       ],
       [first, repair],
@@ -400,11 +415,17 @@ describe('the question', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: LOG,
-          needsFrom: 'human',
-          runId: RUN_1,
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'Routed',
+            run: { runId: RUN_1 },
+            when: 'findings',
+            why: LOG,
+            raw: null,
+            findings: [],
+            paths: null,
+            baseSha: null,
+            headSha: null,
+          },
         }),
       ],
       [],
@@ -422,11 +443,17 @@ describe('the question', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: `x${'y'.repeat(400)}`,
-          needsFrom: 'human',
-          runId: RUN_1,
-          needs: 'acknowledgement',
-          diagnosis: null,
+          hold: {
+            _tag: 'Routed',
+            run: { runId: RUN_1 },
+            when: 'findings',
+            why: `x${'y'.repeat(400)}`,
+            raw: null,
+            findings: [],
+            paths: null,
+            baseSha: null,
+            headSha: null,
+          },
         }),
       ],
       [],
@@ -440,11 +467,13 @@ describe('the question', () => {
 describe('the move the block ends in', () => {
   const blocked = (runId: string) =>
     e(ITEM, 'WorkItemBlocked', {
-      question: 'approve?',
-      needsFrom: 'human',
-      runId,
-      needs: 'judgement',
-      diagnosis: null,
+      hold: {
+        _tag: 'Human',
+        run: { runId },
+        step: 'merge',
+        source: 'injected',
+        question: 'approve?',
+      },
     })
 
   it('sends the sha the run is asking about, not the one it produced', () => {
@@ -604,15 +633,15 @@ describe('the block, rendered', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'conflict: agent/112 does not merge into develop',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'acknowledgement',
-          diagnosis: {
-            what: 'the branch does not merge into develop',
-            done: null,
+          hold: {
+            _tag: 'MergeRefused',
+            run: { runId: RUN_2 },
+            reason: 'conflict',
+            why: 'the branch does not merge into develop',
             raw: 'CONFLICT (content): Merge conflict in apps/web/page.tsx',
-            recommendation: null,
+            paths: null,
+            baseSha: null,
+            headSha: null,
           },
         }),
       ],
@@ -648,11 +677,13 @@ describe('the block, rendered', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'build refused',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'judgement',
-          diagnosis: { what: 'the proposed:build step refused it', done: null, raw: TAIL, recommendation: null },
+          hold: {
+            _tag: 'CheckRed',
+            run: { runId: RUN_2 },
+            step: 'proposed',
+            why: 'build refused',
+            raw: TAIL,
+          },
         }),
       ],
       [
@@ -683,16 +714,17 @@ describe('the block, rendered', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'two agents disagreed',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'judgement',
-          diagnosis: {
-            what: 'Two agents disagreed.',
-            done: null,
+          hold: {
+            _tag: 'Routed',
+            run: { runId: RUN_2 },
+            when: 'findings',
+            why: 'Two agents disagreed.',
             // `quoteFindings([finding])`, verbatim.
             raw: '[major] src/x.ts:4 — claim\n\nscenario',
-            recommendation: null,
+            findings: [finding],
+            paths: null,
+            baseSha: null,
+            headSha: null,
           },
         }),
       ],
@@ -737,15 +769,12 @@ describe('the block, rendered', () => {
       [
         e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
-          question: 'test still refuses agent/112 into develop after 2 fix round(s)',
-          needsFrom: 'human',
-          runId: RUN_2,
-          needs: 'judgement',
-          diagnosis: {
-            what: '`test` still refuses agent/112 at aaaaaaa.',
-            done: '2 round(s) of fix-and-recheck ran.',
+          hold: {
+            _tag: 'CheckRed',
+            run: { runId: RUN_2 },
+            step: 'proposed',
+            why: 'test still refuses agent/112 into develop after 2 fix round(s)',
             raw: null,
-            recommendation: null,
           },
         }),
       ],

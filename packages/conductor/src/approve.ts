@@ -1,4 +1,12 @@
-import { diagnoseRefusal, parsePayload, reduceRun, reduceWorkItem, type RunState } from '@lingtai/domain'
+import {
+  diagnoseRefusal,
+  type Hold,
+  legacyColumns,
+  parsePayload,
+  reduceRun,
+  reduceWorkItem,
+  type RunState,
+} from '@lingtai/domain'
 import { workItemStream } from '@lingtai/domain'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
@@ -27,6 +35,7 @@ import { integrate, type TokenSource } from '@lingtai/repo'
 
 import { agentBranch } from './branches.ts'
 import { resolveEndActions } from './end-step.ts'
+import { lastIntegrationRefusal } from './hold-of.ts'
 import { labelsFor } from './labels.ts'
 import { signedInHere } from './projects.ts'
 import { tellGitHubAbout, type RefChannel } from './tell.ts'
@@ -375,31 +384,28 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
      * takes, from here or from a pass.
      */
     const blocked = await store.read(workItemId)
-    const question = `${merged.reason}: ${merged.detail.slice(0, 400)}`
-    // Beside the question, the same reading of the refusal `conduct.ts`'s own
-    // blocked ending writes — from the one function, so an approval that failed and a pass
-    // that failed cannot describe the same conflict differently (#83).
-    const diagnosis = diagnoseRefusal({
+    // The same reading of the refusal `conduct.ts`'s own blocked ending builds
+    // a `Hold` from — from the one function, so an approval that failed and a
+    // pass that failed cannot describe the same conflict differently (#83).
+    const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, workItemId, branch)
+    const hold: Hold = {
+      _tag: 'MergeRefused',
+      // No `unpushed`: the run is bound to `onSha`, already on origin.
+      run: { runId },
       reason: merged.reason,
-      detail: merged.detail,
-      branch,
-      base: options.base,
-    })
+      why: diagnoseRefusal({ reason: merged.reason, detail: merged.detail, branch, base: options.base }).what,
+      raw: merged.detail,
+      paths: integrationRefusal?.paths ?? null,
+      baseSha: integrationRefusal?.baseSha ?? null,
+      headSha: integrationRefusal?.headSha ?? null,
+    }
+    const question = legacyColumns(hold).question
     const ended = resolveEndActions(blocked, end, 'blocked')
     await store.append(workItemId, blocked.length, [
       {
         type: 'WorkItemBlocked',
         actor: 'conductor',
-        data: parsePayload('WorkItemBlocked', {
-          question,
-          needsFrom: 'human',
-          runId,
-          // The approval was spent and the merge still failed. Nothing is being
-          // asked of anybody's judgement — this is a failure to acknowledge,
-          // and the diagnosis carries the move that is left.
-          needs: 'acknowledgement',
-          diagnosis,
-        }),
+        data: parsePayload('WorkItemBlocked', { hold }),
       },
       ...ended,
     ])

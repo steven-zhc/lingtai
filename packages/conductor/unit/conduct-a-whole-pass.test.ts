@@ -21,8 +21,8 @@
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Envelope, ToAppend } from '@lingtai/domain'
-import { STEPS } from '@lingtai/domain'
+import type { Envelope, Hold, ToAppend } from '@lingtai/domain'
+import { legacyColumns, STEPS } from '@lingtai/domain'
 import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, resolveSource, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -110,13 +110,10 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      * one. A step only holds once every step before it passed, and `merge` is
      * the last before `end`, so the sentence is arithmetic here.
      */
-    const asked = events.find((e) => e.type === 'WorkItemBlocked')!.data as {
-      needs: string
-      diagnosis: { recommendation: { action: string; why: string } | null }
-    }
+    const asked = legacyColumns((events.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
     expect(asked.needs).toBe('judgement')
-    expect(asked.diagnosis.recommendation?.action).toBe('approve')
-    expect(asked.diagnosis.recommendation?.why).toContain('every step passed')
+    expect(asked.diagnosis?.recommendation?.action).toBe('approve')
+    expect(asked.diagnosis?.recommendation?.why).toContain('every step passed')
 
     // `working` at the claim, `waiting` once a person is the thing being waited
     // on — and in that order, which is the whole of `#71`. `bug` survives both,
@@ -1115,12 +1112,11 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // **And a person has it.** `WorkItemBlocked` is what the card reads, and
     // `raw` is the arriving step's own detail — the question, whole.
-    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
-      needs: string
-      question: string
-      diagnosis: { raw: string }
+    const blockedHold = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+      hold: Hold
     }
-    expect(blocked.diagnosis.raw).toBe(asked)
+    const blocked = legacyColumns(blockedHold.hold)
+    expect(blocked.diagnosis?.raw).toBe(asked)
     expect(blocked.question).toContain(asked)
     // **And what it needs is a judgement, not an acknowledgement** (the fix
     // round). `describeHold` renders this field as the hold's first line, and
@@ -1182,12 +1178,12 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // than released: 0057 §2's class buys no round and asks a person, and there is
     // nothing about the account here for the conductor to stand down over.
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
-      needs: string
-      diagnosis: { raw: string }
+    const blockedHold2 = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+      hold: Hold
     }
+    const blocked = legacyColumns(blockedHold2.hold)
     expect(blocked.needs).toBe('acknowledgement')
-    expect(blocked.diagnosis.raw).toContain('produced no commits')
+    expect(blocked.diagnosis?.raw).toContain('produced no commits')
     // The claim that would have been false: nothing proposes the drafting agent's
     // commit as this run's completion, and nothing lands.
     expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')

@@ -27,6 +27,8 @@
  * no socket, no network.
  */
 import type { Runtime } from '@lingtai/agent'
+import type { Hold } from '@lingtai/domain'
+import { legacyColumns } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -171,14 +173,14 @@ describe('when the agent meets the wall', () => {
 
     const blocked = item.find((e) => e.type === 'WorkItemBlocked')
     expect(blocked).toBeDefined()
-    expect(blocked!.data).toMatchObject({ needsFrom: 'human', needs: 'acknowledgement' })
-    const question = (blocked!.data as { question: string }).question
-    expect(question).toContain('out-of-turns')
+    const cols = legacyColumns((blocked!.data as { hold: Hold }).hold)
+    expect(cols.needsFrom).toBe('human')
+    expect(cols.needs).toBe('acknowledgement')
+    expect(cols.question).toContain('out-of-turns')
     // The recommendation is *narrow or split the ticket*, which is the whole of
     // why the turn limit keeps a diagnosis of its own.
-    const diagnosis = (blocked!.data as { diagnosis: { what: string; recommendation: unknown } }).diagnosis
-    expect(diagnosis.what).toContain('scope alarm')
-    expect(diagnosis.recommendation).toMatchObject({ action: 'requeue' })
+    expect(cols.diagnosis?.what).toContain('scope alarm')
+    expect(cols.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
   })
 
   it('publishes the commits it made, and names them for the next attempt', async () => {
@@ -266,11 +268,9 @@ describe('when the agent meets the wall', () => {
         `nothing judged this diff, so there is nothing to approve (committed: ${committed})`,
       ).toBe(false)
       // Still a person's, and still with the move that is actually left on it.
-      const blocked = item.find((e) => e.type === 'WorkItemBlocked')!
-      expect(blocked.data).toMatchObject({ needs: 'acknowledgement' })
-      expect(
-        (blocked.data as { diagnosis: { recommendation: { action: string } | null } }).diagnosis.recommendation,
-      ).toMatchObject({ action: 'requeue' })
+      const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+      expect(blocked.needs).toBe('acknowledgement')
+      expect(blocked.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
     }
 
     // And the refs still went on the arm that committed, which is what the next
@@ -345,7 +345,10 @@ describe('when the agent meets the wall', () => {
     // from knowing whether the commits reached origin.
     const blocked = item.find((e) => e.type === 'WorkItemBlocked')
     expect(blocked).toBeDefined()
-    expect(JSON.stringify(blocked!.data)).toContain('was not pushed')
+    // `was not pushed` is composed by `legacyColumns`, onto `diagnosis.what`
+    // — the event itself carries git's bare words on `hold.run.unpushed.said`.
+    const cols = legacyColumns((blocked!.data as { hold: Hold }).hold)
+    expect(cols.diagnosis?.what).toContain('was not pushed')
   })
 
   /**
