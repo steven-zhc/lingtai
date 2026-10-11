@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyWorkItem, reduceWorkItem, retiredRepairPending } from '../src/index.ts'
+import { emptyWorkItem, reduceWorkItem, retiredRepairPending, WorkItemBlocked } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const discovered = {
@@ -477,5 +477,40 @@ describe('reduceWorkItem', () => {
       e('PromptEdited', { text: '  \n ', hash: null, by: 'human:steven', basedOn: null, chatId: null }),
     ])
     expect(state.pendingPrompt).toBeNull()
+  })
+})
+
+/**
+ * #445's own Done-when: a payload carrying an old field beside `hold` must be
+ * refused, not silently stripped. `WorkItemBlocked` is `z.strictObject`, so
+ * asserting `safeParse(...).success === false` is the only check that proves
+ * it — asserting the *parsed output* lacks the field would also pass for a
+ * plain `z.object`, which strips unknown keys without complaint.
+ */
+describe('WorkItemBlocked is strict about what rides beside hold', () => {
+  const hold = { _tag: 'Question' as const, question: 'which design?', by: 'steven' }
+
+  it('accepts hold alone', () => {
+    expect(WorkItemBlocked.safeParse({ hold }).success).toBe(true)
+  })
+
+  it.each([
+    ['needs', { hold, needs: ['design'] }],
+    ['question', { hold, question: 'which design?' }],
+    ['runId', { hold, runId: 'run-1' }],
+    ['diagnosis', { hold, diagnosis: { what: 'merge conflict', done: null, raw: null, recommendation: null } }],
+  ])('refuses a payload carrying %s beside hold', (_name, payload) => {
+    expect(WorkItemBlocked.safeParse(payload).success).toBe(false)
+  })
+
+  it('refuses the old v2 payload, which carries no hold at all', () => {
+    const v2 = {
+      question: 'which design?',
+      needsFrom: 'human',
+      runId: null,
+      needs: ['design'],
+      diagnosis: null,
+    }
+    expect(WorkItemBlocked.safeParse(v2).success).toBe(false)
   })
 })

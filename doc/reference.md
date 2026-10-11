@@ -176,10 +176,12 @@ reader comes to believe four rows are stale and deletable.
 **`WorkItemBlocked` had a `1 → 2` row here and does not any more.** #445
 replaced its payload in place with `{hold}` rather than bumping to a third
 version, because before 1.0 the log is reset rather than carried forward
-(0118 §1) — there is no upcaster from either the v1 or the v2 shape, and
-`logPredatesHold` in `@lingtai/event-store` is what refuses a stored row of
-either one, by name, rather than this table growing a third row for a type
-whose history the reset is about to spend.
+(0118 §1) — there is no upcaster from either the v1 or the v2 shape, so a
+stored row of either one now fails this type's own zod parse rather than
+growing this table a third row for a history the reset is about to spend.
+Refusing such a row by name, at daemon start and in `lingtai doctor`, rather
+than failing partway through a fold, is #451 and is not done yet; until it
+lands, a person resets the log before any daemon restarts onto this commit.
 
 **The nine `1 → 2` steps went when the log went**, on 2026-09-27 (`#247`).
 [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 said this history would

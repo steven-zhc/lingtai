@@ -261,9 +261,11 @@ export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
  * **Reset, not upcast.** This replaced `{question, needsFrom, runId, needs,
  * diagnosis}` in place: there is no v3 and no upcaster from v2, because
  * before 1.0 the log is reset rather than carried forward (0118 §1,
- * `2bfd7a06`). `logPredatesHold` in `@lingtai/event-store` is what refuses a
- * log written before this change, by name, rather than failing a zod parse
- * three steps into a fold.
+ * `2bfd7a06`). An old row now fails this zod parse rather than folding with
+ * stale fields; refusing it by name, at daemon start and in `lingtai doctor`,
+ * rather than failing partway through a fold, is #451 and is not done yet.
+ * Until it lands, a person resets the log before any daemon restarts onto
+ * this commit.
  *
  * `needsFrom` is gone rather than moved: every appender wrote `'human'`
  * (`'external'` had no writer), so it carried no information once `hold`
@@ -2267,8 +2269,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // WorkItemBlocked was here at 2 (`needs` and `diagnosis`, added for #83) and
   // is not any more: #445 replaced the payload in place with `{hold}` rather
   // than bumping to 3, because before 1.0 the log is reset rather than
-  // carried forward (0118 §1). `upcast.ts` has no entry for this type and
-  // `logPredatesHold` refuses a stored row from either shape by name.
+  // carried forward (0118 §1). `upcast.ts` has no entry for this type, so a
+  // stored row from either old shape now fails this type's zod parse; refusing
+  // it by name instead is #451.
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,
