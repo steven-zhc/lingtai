@@ -19,7 +19,7 @@ import { PREFIX } from '@lingtai/env'
  */
 import { z } from 'zod'
 
-import { parseDuration } from './duration.ts'
+import { formatDuration, parseDuration } from './duration.ts'
 import {
   type Plugin,
   type PluginFields,
@@ -2891,6 +2891,83 @@ export function callFor(discuss: Discuss): { model?: string; turns: number; wall
   }
 }
 
+/**
+ * How long the daemon's subscriber waits for anything it was told about
+ * before giving up — `SUBSCRIBER_TIMEOUT_MS` in
+ * `packages/daemon/src/work-loop.ts:135`, ten minutes, in milliseconds rather
+ * than a duration string so it can be compared against with `<` instead of
+ * parsed a second time.
+ *
+ * **Triage's own wall must stay under it, not merely under ten minutes.** The
+ * subscriber that will eventually run a triage agent (#388) is the same one
+ * `SUBSCRIBER_TIMEOUT_MS` bounds end to end, so a `triage.limits.wall` at or
+ * past that number would leave the subscriber no time of its own to start up,
+ * read the hold and append the result once the agent returns. #413 pins that
+ * the two stay in this order.
+ */
+export const TRIAGE_WALL_MAX = 8 * 60_000
+
+/**
+ * `triage:`, a top-level node beside `discuss:` (0118 §3, `#411`), shaped like
+ * it for the same reason: one agent, one model, one optional prompt, one
+ * `limits` block bounding what a single run may spend. Where `discuss:` is a
+ * conversation a person starts, a triage run is started by the daemon's own
+ * subscriber over a hold it was told about — nothing calls it yet, and #388
+ * is the rest of that wiring.
+ *
+ * See `Recipe.triage` below for why this is optional with no default, unlike
+ * `discuss:`.
+ */
+export const Triage = z.strictObject({
+  /** Which runtime answers. `DiscussAgent`, not a second enum — see its doc. */
+  agent: DiscussAgent.default('claude-code'),
+  /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
+  model: DISPATCH.model,
+  /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
+  prompt: DISPATCH.prompt.optional(),
+  /** What one triage run may spend. */
+  limits: z
+    .strictObject({
+      turns: z.number().int().positive().default(40),
+      wall: z
+        .string()
+        .default('5m')
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' })
+        // The shape check runs first so `parseDuration` never throws here on
+        // text this refine would refuse anyway for a different reason.
+        .refine((text) => !positiveDuration(text) || parseDuration(text) < TRIAGE_WALL_MAX, {
+          message: `must be under ${formatDuration(TRIAGE_WALL_MAX)} — the daemon gives a subscriber 10m`,
+        }),
+      /**
+       * A dollar ceiling, defaulted — unlike `runtime.limits.usd`, which is
+       * absent on purpose so that "no ceiling" is never assumed. Here, writing
+       * `triage:` at all is what turns the spend on, so the key needs a
+       * number to mean anything the day someone writes it with nothing else
+       * underneath. 0.50 is #427's measurement of a hold triaged without
+       * reading any files; the real step reads them, so this leaves room
+       * rather than pinning the measured number exactly.
+       */
+      usd: z.number().positive().default(0.5),
+    })
+    .default({ turns: 40, wall: '5m', usd: 0.5 }),
+})
+export type Triage = z.infer<typeof Triage>
+
+/**
+ * `triage:`, resolved into what one triage run may spend — `callFor`'s twin,
+ * built the same way for the reason given there. Nothing calls a triage agent
+ * yet (#388); this is the shape a future caller hands to `@lingtai/agent`'s
+ * `limits`.
+ */
+export function triageCallFor(triage: Triage): { model?: string; turns: number; wallMs: number; usd?: number } {
+  return {
+    ...(triage.model === undefined ? {} : { model: triage.model }),
+    turns: triage.limits.turns,
+    wallMs: parseDuration(triage.limits.wall),
+    usd: triage.limits.usd,
+  }
+}
+
 export const Recipe = z
   .object({
     version: Version,
@@ -3079,6 +3156,19 @@ export const Recipe = z
      * thing `lingtai add` and the board can read, rather than an absence.
      */
     discuss: Discuss.default(DISCUSS_DEFAULTS),
+
+    /**
+     * `triage:` — see `Triage` above. **Optional, with no default, unlike
+     * `discuss:`.** `discuss: Discuss.default(DISCUSS_DEFAULTS)` says a recipe
+     * silent about discussions has *declared the defaults*; `triage:` says
+     * the opposite on purpose — where it is not declared, nothing runs
+     * (0118 §3). A `.default(...)` here would put the key into every parsed
+     * recipe whether a file wrote it or not, which is exactly the
+     * `configHash` change `repo.remote`'s comment above warns against: every
+     * project's hash would move the moment a restarted daemon loaded this
+     * code, with no edit to any recipe file.
+     */
+    triage: Triage.optional(),
 
     /**
      * Who is told what happened, and about which events.

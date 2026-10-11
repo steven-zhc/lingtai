@@ -854,5 +854,22 @@ export function readRecipe(recipe: Recipe): Reading[] {
         `up to ${MAX_READ_ROUNDS + 1} rounds per question`,
       keys: ['discuss.agent', 'discuss.model', 'discuss.limits.turns', 'discuss.limits.wall'],
     },
+    // Shown whether or not it is declared, as the rail draws an empty step
+    // (0016 §4): a `triage:` that is merely absent should not read as one
+    // that was configured and silently did not run.
+    recipe.triage === undefined
+      ? {
+          name: 'triage',
+          says: 'not declared — no hold is triaged',
+          keys: ['triage'],
+        }
+      : {
+          name: 'triage',
+          says:
+            `${recipe.triage.agent}, ${recipe.triage.model ?? 'its default model'}, ` +
+            `${recipe.triage.limits.turns} turns, ${recipe.triage.limits.wall} and ` +
+            `$${recipe.triage.limits.usd} per hold`,
+          keys: ['triage.agent', 'triage.model', 'triage.limits.turns', 'triage.limits.wall', 'triage.limits.usd'],
+        },
   ]
 }

@@ -419,6 +419,18 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   recipeValues['discuss.model'] = recipe.discuss.model ?? '(none)'
   recipeValues['discuss.limits.turns'] = String(recipe.discuss.limits.turns)
   recipeValues['discuss.limits.wall'] = recipe.discuss.limits.wall
+  // `triage:` is optional with no default (recipe.ts), unlike `discuss:` —
+  // absent means nothing runs, and that is a fact worth a row of its own
+  // rather than five rows reading as though the schema had defaulted them.
+  if (recipe.triage === undefined) {
+    recipeValues['triage'] = '(not declared)'
+  } else {
+    recipeValues['triage.agent'] = recipe.triage.agent
+    recipeValues['triage.model'] = recipe.triage.model ?? '(none)'
+    recipeValues['triage.limits.turns'] = String(recipe.triage.limits.turns)
+    recipeValues['triage.limits.wall'] = recipe.triage.limits.wall
+    recipeValues['triage.limits.usd'] = String(recipe.triage.limits.usd)
+  }
   for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`
 
   // `assignee` is the recipe's now (`#373`), under either spelling — read
