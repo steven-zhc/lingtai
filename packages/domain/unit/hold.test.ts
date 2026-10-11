@@ -82,7 +82,17 @@ describe('Hold round-trips every variant', () => {
   })
 
   it('Judgement.Routed', () => {
-    const value = { _tag: 'Routed', run, when: 'findings', why: 'the cold review found something' }
+    const value = {
+      _tag: 'Routed',
+      run,
+      when: 'findings',
+      why: 'the cold review found something',
+      raw: null,
+      findings: [],
+      paths: null,
+      baseSha: null,
+      headSha: null,
+    }
     expect(Hold.parse(value)).toEqual(value)
     expect(Routed.parse(value)).toEqual(value)
   })

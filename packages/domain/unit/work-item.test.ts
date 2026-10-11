@@ -59,28 +59,31 @@ describe('reduceWorkItem', () => {
 
   it('carries the question when blocked, and drops it when unblocked', () => {
     const e = makeStream('wi-p-1')
-    const events = [
-      e('WorkItemDiscovered', discovered),
-      e('WorkItemBlocked', {
-        question: 'Which base branch should this target?',
-        needsFrom: 'human' as const,
-        runId: 'run-a',
-        needs: null,
-        diagnosis: null,
-      }),
-    ]
+    const hold = {
+      _tag: 'Human' as const,
+      run: { runId: 'run-a' },
+      step: 'proposed' as const,
+      source: 'declared' as const,
+      question: 'Which base branch should this target?',
+    }
+    const events = [e('WorkItemDiscovered', discovered), e('WorkItemBlocked', { hold })]
 
     const blocked = reduceWorkItem(events)
     expect(blocked.lifecycle).toEqual({
       status: 'blocked',
+      hold,
       question: 'Which base branch should this target?',
       needsFrom: 'human',
       runId: 'run-a',
-      // A block that carries only a question. Every one on the log at the time
-      // #83 was written is this shape, and the fold says so rather than
-      // inventing a kind for it.
-      needs: null,
-      diagnosis: null,
+      needs: 'judgement',
+      diagnosis: {
+        what: 'Which base branch should this target?',
+        done: null,
+        raw: 'Which base branch should this target?',
+        // Not `merge`, so a `Human` here is never recommended `approve` —
+        // `legacyColumns` cannot see a findings veto on this variant either way.
+        recommendation: null,
+      },
     })
 
     const unblocked = reduceWorkItem([...events, e('WorkItemUnblocked', { by: 'human:steven', note: 'develop' })])
@@ -107,23 +110,22 @@ describe('reduceWorkItem', () => {
    */
   it('accepts a block that belongs to no run, and keeps the answer that ends it', () => {
     const e = makeStream('wi-lingtai-51')
-    const asked = [
-      e('WorkItemBlocked', {
-        question: 'Which of the three designs for the production-credential tripwire?',
-        needsFrom: 'human' as const,
-        runId: null,
-        needs: 'judgement' as const,
-        diagnosis: null,
-      }),
-    ]
+    const hold = {
+      _tag: 'Question' as const,
+      question: 'Which of the three designs for the production-credential tripwire?',
+      by: 'steven',
+    }
+    const asked = [e('WorkItemBlocked', { hold })]
 
     const waiting = reduceWorkItem(asked)
     expect(waiting.lifecycle).toEqual({
       status: 'blocked',
+      hold,
       question: 'Which of the three designs for the production-credential tripwire?',
       needsFrom: 'human',
       runId: null,
       needs: 'judgement',
+      // `lingtai ask`'s own question carries no diagnosis, same as before #445.
       diagnosis: null,
     })
     expect(waiting.runs).toEqual([])
@@ -166,29 +168,26 @@ describe('reduceWorkItem', () => {
     const e = makeStream('wi-nextloom-ai-admin-112')
     const judgement = reduceWorkItem([
       e('WorkItemBlocked', {
-        question: 'held at the merge step: agent/112 into develop',
-        needsFrom: 'human' as const,
-        runId: 'run-a',
-        needs: 'judgement' as const,
-        diagnosis: {
-          what: 'agent/112 is at 6bf1c02 and every gate passed.',
-          done: null,
-          raw: null,
-          recommendation: { action: 'approve' as const, why: 'every gate passed on this diff' },
+        hold: {
+          _tag: 'Human' as const,
+          run: { runId: 'run-a' },
+          step: 'merge' as const,
+          source: 'injected' as const,
+          question: 'held at the merge step: agent/112 into develop',
         },
       }),
     ])
     const failure = reduceWorkItem([
       e('WorkItemBlocked', {
-        question: 'conflict: agent/112 does not merge into develop: user-lookup-panel.tsx',
-        needsFrom: 'human' as const,
-        runId: 'run-b',
-        needs: 'acknowledgement' as const,
-        diagnosis: {
-          what: 'agent/112 does not merge into develop.',
-          done: 'develop was merged in first and it still would not merge.',
+        hold: {
+          _tag: 'MergeRefused' as const,
+          run: { runId: 'run-b' },
+          reason: 'conflict' as const,
+          why: 'agent/112 does not merge into develop.',
+          paths: ['apps/web/src/user-lookup-panel.tsx'],
+          baseSha: 'base123',
+          headSha: 'head456',
           raw: 'CONFLICT (content): Merge conflict in apps/web/src/…',
-          recommendation: { action: 'requeue' as const, why: 'the next attempt is cut from a base that has moved' },
         },
       }),
     ])
@@ -197,9 +196,17 @@ describe('reduceWorkItem', () => {
     expect(failure.lifecycle).toMatchObject({ status: 'blocked', needs: 'acknowledgement' })
     // And the recommendation is a value, not a sentence to parse: `approve` is a
     // legitimate one, which is what makes the board's default action possible.
+    // A `Human` at `merge` is recommended `approve` regardless of findings —
+    // the variant carries none, unlike `Routed` (#445's design).
     expect(judgement.lifecycle.status === 'blocked' && judgement.lifecycle.diagnosis?.recommendation).toEqual({
       action: 'approve',
-      why: 'every gate passed on this diff',
+      why: 'every step passed on this diff; approving merges what this run produced',
+    })
+    // A conflict recommends a requeue — the next attempt is cut from a base
+    // that has moved — which is `REFUSAL_READING.conflict.move` in `attribution.ts`.
+    expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.recommendation).toEqual({
+      action: 'requeue',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
     })
     // The raw failure survives the summary. A sentence that hides the git
     // output would be worse than the git output.
@@ -216,13 +223,7 @@ describe('reduceWorkItem', () => {
     const e = makeStream('wi-nextloom-ai-admin-35')
     const s = reduceWorkItem([
       e('WorkItemDiscovered', discovered),
-      e('WorkItemBlocked', {
-        question: '?',
-        needsFrom: 'human' as const,
-        runId: null,
-        needs: null,
-        diagnosis: null,
-      }),
+      e('WorkItemBlocked', { hold: { _tag: 'Question' as const, question: '?', by: 'steven' } }),
       e('WorkItemClaimed', { runId: 'run-b', worker: 'w', title: null, kind: null }),
     ])
 

@@ -36,8 +36,16 @@
  * outlived the spending it was written for: a rule a card's only sentence comes
  * out of, living inside an `if` in a 1,000-line file, is a rule nobody can
  * check.
+ *
+ * **Moved here from `@lingtai/conductor` by #445**, so `legacy-columns.ts`
+ * can reach `whoseFailure` and `REFUSAL_READING`'s own move without a second
+ * copy of either — `@lingtai/conductor`'s index re-exports everything below
+ * under the same names, so no importer of that package changes. `Failure` is
+ * `AttributedFailure` here, because `hold.ts`'s own `Failure` union already
+ * owns that name once both are re-exported from this package's index.
  */
-import type { BlockDiagnosis, BlockRecommendation, RefusalReason, RunFailureKind } from '@lingtai/domain'
+import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
+import type { RefusalReason, RunFailureKind } from './vocabulary.ts'
 
 /**
  * Who owns a failure — and so what a card can honestly say about it.
@@ -84,7 +92,7 @@ export type FailureOwner = 'repository' | 'lingtai' | 'person'
  * tickets is Lingtai's account and not the repository's code, and that is what
  * a card has to say.
  */
-export interface Failure {
+export interface AttributedFailure {
   source: 'integration' | 'project' | 'run'
   /**
    * A `RefusalReason` for `integration`, a `RunFailed.kind` for `run`; free
@@ -185,7 +193,7 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
  * claim to have read, and the honest sentence for that is *something here is
  * wrong and it is not the diff*.
  */
-export function whoseFailure(failure: Failure): FailureOwner {
+export function whoseFailure(failure: AttributedFailure): FailureOwner {
   if (failure.source === 'project') return 'lingtai'
   if (failure.source === 'run') return RUN_OWNER[failure.reason as RunFailureKind] ?? 'lingtai'
   return INTEGRATION_OWNER[failure.reason as RefusalReason] ?? 'lingtai'

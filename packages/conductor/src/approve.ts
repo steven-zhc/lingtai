@@ -1,4 +1,4 @@
-import { parsePayload, reduceRun, reduceWorkItem, type RunState } from '@lingtai/domain'
+import { diagnoseRefusal, parsePayload, reduceRun, reduceWorkItem, type RunState } from '@lingtai/domain'
 import { workItemStream } from '@lingtai/domain'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
@@ -25,7 +25,6 @@ import type { GitHubClient } from '@lingtai/github'
 import { type StepAction, type ResolvedRecipe, resolveLocalRecipe } from '@lingtai/recipe'
 import { integrate, type TokenSource } from '@lingtai/repo'
 
-import { diagnoseRefusal } from './attribution.ts'
 import { agentBranch } from './branches.ts'
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'

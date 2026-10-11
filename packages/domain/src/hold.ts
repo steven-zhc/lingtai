@@ -9,12 +9,18 @@
  * `packages/agent/src/hook-config.ts`), so a later move to `Data.TaggedEnum`
  * would not change a value already on the log.
  *
- * Types only — there is no event, no appender, no projection here. The event
- * is #445's, which waits for this.
+ * Types only — the event, the appenders and the projection are #445's, built
+ * from these.
+ *
+ * Imports from `vocabulary.ts` rather than from `events.ts`: `events.ts`'s
+ * `WorkItemBlocked` carries a `Hold` since #445, so a `hold.ts` that imported
+ * `events.ts` back would be an ESM cycle. `events.ts` re-exports every name
+ * this file needs under the same names, so this is the one file in the
+ * package that reaches past it to the leaf module.
  */
 import { z } from 'zod'
 
-import { RefusalReason, RunFailed, Step } from './events.ts'
+import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
@@ -116,23 +122,38 @@ export const Human = z.object({
 })
 export type Human = z.infer<typeof Human>
 
-/** The `proposed` router sent it to a person, naming the direction and why. */
+/**
+ * The `proposed` router sent it to a person, naming the direction and why.
+ *
+ * `raw`, `findings`, `paths`, `baseSha` and `headSha` are the evidence the
+ * router's own direction carries: `raw` is a red check's output, `findings` is
+ * what a `review` raised, and the three merge-shaped fields are set only when
+ * `when === 'conflict'`, mirroring `MergeRefused` below — `null` rather than
+ * optional, so the page says *none* rather than *unknown*.
+ */
 export const Routed = z.object({
   _tag: z.literal('Routed'),
   run: RunRef,
   when: JudgeWhen,
   why: z.string(),
+  raw: z.string().nullable(),
+  findings: z.array(Finding),
+  paths: z.array(z.string()).nullable(),
+  baseSha: z.string().nullable(),
+  headSha: z.string().nullable(),
 })
 export type Routed = z.infer<typeof Routed>
 
 /**
  * A run reached a person with a decision, as the pass actually branches.
  *
- * **Open per #404, not settled here** (the ticket's Watch out): whether a
- * `red`/`verify-failed` route with rounds spent belongs here as `Routed`
- * rather than as a `Failure` (question 1), and whether a declined fixer earns
- * its own variant here rather than staying `DidNotFinish` (question 4). Both
- * stay as 0118 §1 first wrote them until a producer settles the question.
+ * **Question 1 is settled by #445's producer** (`holdOf` in
+ * `@lingtai/conductor`): a `red`/`verify-failed` route with the rounds spent
+ * is `Routed`, because it is the router that sent it to a person and the
+ * classification is by who sent it rather than by whether anything refused
+ * (0118 §1 amended, `8a669849`). **Question 4 stays open** — a declined fixer
+ * stays `DidNotFinish` here, which is `Failure` rather than `Judgement`,
+ * because nothing has yet given it its own variant.
  */
 export const Judgement = z.discriminatedUnion('_tag', [Asked, Human, Routed])
 export type Judgement = z.infer<typeof Judgement>
@@ -166,10 +187,10 @@ export type MergeRefused = z.infer<typeof MergeRefused>
 
 /**
  * The two `RunFailureKind`s that are a ceiling rather than a crash, tied to
- * `RunFailed`'s own enum so the two cannot drift apart: dropping one from
- * `RUN_FAILURE_KINDS` fails this `.extract` at the type level.
+ * `RUN_FAILURE_KINDS` so the two cannot drift apart: dropping one of these two
+ * values from that list fails this `.extract` at the type level.
  */
-export const CeilingKind = RunFailed.shape.kind.extract(['out-of-turns', 'out-of-usd'])
+export const CeilingKind = z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd'])
 export type CeilingKind = z.infer<typeof CeilingKind>
 
 /**

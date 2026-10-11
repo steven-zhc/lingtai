@@ -21,6 +21,8 @@
  */
 import type { Envelope } from './envelope.ts'
 import type { BlockDiagnosis, PayloadOf, Tier } from './events.ts'
+import type { Hold } from './hold.ts'
+import { legacyColumns } from './legacy-columns.ts'
 
 export type WorkItemLifecycle =
   | { status: 'backlog' }
@@ -34,9 +36,11 @@ export type WorkItemLifecycle =
   | { status: 'claimed'; runId: string; worker: string }
   | {
       status: 'blocked'
+      /** The `Hold` this block is, since #445 — what the event actually carries. */
+      hold: Hold
       /** The question, not just the fact. `agent:blocked` carried no question. */
       question: string
-      /** `schema` was here and never written; see `WorkItemBlocked.needsFrom`. */
+      /** `schema` was here and never written; see `legacyColumns`. */
       needsFrom: 'human' | 'external'
       /**
        * The run that asked, or null for a question asked before any run
@@ -326,16 +330,18 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
 
     case 'WorkItemBlocked': {
       const d = event.data as PayloadOf<'WorkItemBlocked'>
+      const legacy = legacyColumns(d.hold)
       return {
         ...state,
         ...at,
         lifecycle: {
           status: 'blocked',
-          question: d.question,
-          needsFrom: d.needsFrom,
-          runId: d.runId,
-          needs: d.needs,
-          diagnosis: d.diagnosis,
+          hold: d.hold,
+          question: legacy.question,
+          needsFrom: legacy.needsFrom,
+          runId: legacy.runId,
+          needs: legacy.needs,
+          diagnosis: legacy.diagnosis,
         },
       }
     }

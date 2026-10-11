@@ -17,8 +17,21 @@
  */
 import { z } from 'zod'
 
+import { Hold } from './hold.ts'
 import { Usage } from './spend.ts'
 import { TriageResult } from './triage.ts'
+import {
+  Finding,
+  RefusalReason,
+  RUN_FAILURE_KINDS,
+  type RunFailureKind,
+  SEVERITIES,
+  type Severity,
+  Step,
+  STEPS,
+} from './vocabulary.ts'
+
+export { Finding, RefusalReason, RUN_FAILURE_KINDS, type RunFailureKind, SEVERITIES, type Severity, Step, STEPS }
 
 // ---------------------------------------------------------------- shared ----
 
@@ -54,7 +67,9 @@ export const Tier = z.enum(['open', 'guarded', 'sandboxed'])
 export type Tier = z.infer<typeof Tier>
 
 /**
- * The ten steps a pass goes through, in the order it reaches them.
+ * The ten steps a pass goes through, in the order it reaches them. Moved to
+ * `vocabulary.ts` by #445, to break an import cycle with `hold.ts`; re-exported
+ * above under the same name, so no importer of this module changes.
  *
  * **Closed forever** ([ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §3, widened by [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
@@ -100,76 +115,49 @@ export type Tier = z.infer<typeof Tier>
  * the log (`the-pipeline.md`'s T5), which has not happened, so the step that
  * walks it is still load-bearing.
  */
-export const Step = z.enum([
-  'claim',
-  'admit',
-  'prepared',
-  'design',
-  'implement',
-  'build',
-  'review',
-  'proposed',
-  'merge',
-  'end',
-])
-export type Step = z.infer<typeof Step>
-
-/**
- * The ten, in the order the loop reaches them.
- *
- * Exported as a tuple because "every step, in order" is a thing several places
- * need to iterate — `StepsResolved`, the board, `lingtai add` — and each writing
- * its own list is how one of them ends up missing a step and nobody notices.
- */
-export const STEPS = Step.options
 
 export const RuntimeId = z.enum(['claude-code', 'codex'])
 export type RuntimeId = z.infer<typeof RuntimeId>
 
 /**
- * Why an integration did not happen. Every one of these was a silent
- * `return 1` in the old loop's `integrate()` — no log line, no comment, no
- * label, and five re-runs of the same ticket before anyone noticed.
+ * Why an integration did not happen. Moved to `vocabulary.ts` by #445, for the
+ * same reason `Step` was; re-exported above under the same name.
+ *
+ * Every one of these was a silent `return 1` in the old loop's `integrate()`
+ * — no log line, no comment, no label, and five re-runs of the same ticket
+ * before anyone noticed.
+ *
+ * Two of the nine values carry their own history, kept here rather than moved
+ * onto the bare enum member in `vocabulary.ts`, which cannot hold a doc
+ * comment per value the way this list once did:
+ *
+ *   `push-rejected`  two integrations computed against one base, found where
+ *                    git finds it: the ref update is atomic, one push lands
+ *                    and the other is rejected as not a fast-forward. It is
+ *                    what `lane-busy` below was, discovered one step later and
+ *                    by the thing that was always the guarantee (#194).
+ *
+ *   `lane-busy`      **never written since #194, and never removable.** The
+ *                    merge lane used to take a lock and tell the loser this
+ *                    before it cut a worktree. Git's ref update was the
+ *                    guarantee all along, on one machine and across them, so
+ *                    the lock went and the loser is now told `push-rejected`.
+ *                    The value stays in the enum because events on this log
+ *                    carry it: a reader that can no longer parse it cannot
+ *                    read this repository's own history. There is no
+ *                    `RETIRED` set for a refusal reason as there is for an
+ *                    event type — this comment is the whole of the marking,
+ *                    and `attribution.ts` still has a sentence and a move for
+ *                    it.
+ *
+ *   `unexpected`     the merge failed in a way that is not a conflict — a
+ *                    dropped store connection, a failed fetch, a failed push
+ *                    for a reason that is not `push-rejected`, or any other
+ *                    defect the integrator caught rather than reported.
+ *                    Carries none of `IntegrationRefused`'s `paths`,
+ *                    `baseSha` or `headSha`: nothing about the branch was
+ *                    judged, so there is nothing to read back for triage.
  */
-export const RefusalReason = z.enum([
-  'conflict',
-  'dirty-base',
-  'unpushed-base',
-  'pending-migration',
-  'verify-failed',
-  'no-commits',
-  /**
-   * Two integrations computed against one base, found where git finds it: the
-   * ref update is atomic, one push lands and the other is rejected as not a
-   * fast-forward. It is what `lane-busy` below was, discovered one step later
-   * and by the thing that was always the guarantee (#194).
-   */
-  'push-rejected',
-  /**
-   * **Never written since #194, and never removable.**
-   *
-   * The merge lane used to take a lock and tell the loser this before it cut a
-   * worktree. Git's ref update was the guarantee all along, on one machine and
-   * across them, so the lock went and the loser is now told `push-rejected`.
-   *
-   * The value stays in the enum because events on this log carry it: a reader
-   * that can no longer parse it cannot read this repository's own history.
-   * There is no `RETIRED` set for a refusal reason as there is for an event
-   * type — this comment is the whole of the marking, and `attribution.ts` still
-   * has a sentence and a move for it.
-   */
-  'lane-busy',
-  /**
-   * The merge failed in a way that is not a conflict — a dropped store
-   * connection, a failed fetch, a failed push for a reason that is not
-   * `push-rejected`, or any other defect the integrator caught rather than
-   * reported. Carries none of `IntegrationRefused`'s `paths`, `baseSha` or
-   * `headSha`: nothing about the branch was judged, so there is nothing to
-   * read back for triage.
-   */
-  'unexpected',
-])
-export type RefusalReason = z.infer<typeof RefusalReason>
 
 // ------------------------------------------------------------- work item ----
 
@@ -260,47 +248,30 @@ export const BlockDiagnosis = z.object({
 })
 export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
 
-export const WorkItemBlocked = z.object({
-  /** The question, not just the fact. The old `agent:blocked` label carried no question. */
-  question: z.string(),
-  /**
-   * Who has to answer. `needs` says *what* of them.
-   *
-   * **`schema` was deleted (#147)**, having never been written. It was the
-   * model's half of `agent:needs-schema-approval`, a label that appeared once in
-   * the repository — in an excludes list — and that nothing applied or removed.
-   * A schema approval is not a third audience: it is a person's judgement,
-   * asked before a run (`lingtai ask`) or held at the merge lane for a
-   * migration, and both of those are `human`. An enum value with no writer is
-   * a legal state nobody can reach, which is how the need went unmet for as
-   * long as it did.
-   */
-  needsFrom: z.enum(['human', 'external']),
-  /**
-   * The run that asked, or null for a question asked **before any run** — by
-   * `lingtai ask`, which is the one appender that has no run to name (#147).
-   * Null is what a queue pass and the prompt both read as *this was asked of a
-   * person about the ticket, not about an attempt at it*.
-   */
-  runId: z.string().nullable(),
-  /**
-   * Which kind of block this is — the distinction #83 found the log could not
-   * make. Both of these were `WorkItemBlocked` with a string, and they are
-   * opposite kinds of thing:
-   *
-   *   `judgement`       a decision that is genuinely a person's, as a `human:`
-   *                     gate asks for. *held at the merge gate: agent/112 into
-   *                     develop.*
-   *   `acknowledgement` something failed and nobody has decided what to do.
-   *                     *conflict: agent/112 does not merge into develop.*
-   *
-   * One wants judgement; the other wants a diagnosis nobody has written yet.
-   * Null on a v1 event, which recorded neither — and guessing which of the two
-   * a historical block was would be worse than saying so.
-   */
-  needs: z.enum(['judgement', 'acknowledgement']).nullable(),
-  /** Null when nobody has diagnosed it, which is every block written before #83. */
-  diagnosis: BlockDiagnosis.nullable(),
+/**
+ * What happened, carried as the `Hold` it is and nothing beside it (#445,
+ * 0118 §1).
+ *
+ * **Strict, deliberately.** zod 4 strips unknown keys from a plain
+ * `z.object`, so a payload carrying `needsFrom`, `question`, `needs` or
+ * `diagnosis` beside `hold` would parse silently and the Done-when's own
+ * claim — *refuses a payload carrying `needs`, `question` or `diagnosis`
+ * beside it* — would pass while proving nothing.
+ *
+ * **Reset, not upcast.** This replaced `{question, needsFrom, runId, needs,
+ * diagnosis}` in place: there is no v3 and no upcaster from v2, because
+ * before 1.0 the log is reset rather than carried forward (0118 §1,
+ * `2bfd7a06`). `logPredatesHold` in `@lingtai/event-store` is what refuses a
+ * log written before this change, by name, rather than failing a zod parse
+ * three steps into a fold.
+ *
+ * `needsFrom` is gone rather than moved: every appender wrote `'human'`
+ * (`'external'` had no writer), so it carried no information once `hold`
+ * exists — a reader that still wants it reads `legacyColumns(hold).needsFrom`,
+ * which is `'human'` for every variant.
+ */
+export const WorkItemBlocked = z.strictObject({
+  hold: Hold,
 })
 
 /**
@@ -611,19 +582,11 @@ export const RunFinished = z.object({
  *
  * Additive to the enum. No stored event is rewritten and no version is bumped —
  * every payload a previous build wrote still parses against this.
+ *
+ * Moved to `vocabulary.ts` by #445, for the same reason `Step` was —
+ * `hold.ts`'s `CeilingKind` is built from this list and `hold.ts` cannot
+ * import `events.ts` without a cycle. Re-exported above under the same name.
  */
-export const RUN_FAILURE_KINDS = [
-  'timeout',
-  'crash',
-  'no-commits',
-  'aborted',
-  'never-started',
-  'out-of-turns',
-  'no-structured-answer',
-  'out-of-usd',
-] as const
-
-export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number]
 
 export const RunFailed = z.object({
   kind: z.enum(RUN_FAILURE_KINDS),
@@ -796,30 +759,11 @@ export const StepStarted = z.object(stepBase)
  * what is filed. `decideBacklog` in `packages/conductor/src/backlog.ts` is
  * that one comparison as a function, and the `backlog:` plugin's schema in
  * `packages/recipe/src/recipe.ts` is this array again.
- */
-export const SEVERITIES = ['blocker', 'major', 'minor'] as const
-export type Severity = (typeof SEVERITIES)[number]
-
-/**
- * One finding, as a reviewer reported it.
  *
- * Named and shared because a finding now travels: it is the evidence on a
- * `StepFailed`, it is what a fixing agent is handed verbatim, and it is what the
- * re-review is asked to re-check
- * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
- * Three copies of the shape would be three places for `failureScenario` to be
- * summarised away, and the whole mechanism is that it is not.
+ * Moved to `vocabulary.ts` by #445, along with `Finding` below, for the same
+ * reason `Step` was — `hold.ts`'s `Routed` carries `Finding[]`. Re-exported
+ * above under the same names.
  */
-const Finding = z.object({
-  file: z.string(),
-  line: z.number().int().nullable(),
-  claim: z.string(),
-  /** No failure scenario, no finding. An observation without one is an opinion. */
-  failureScenario: z.string(),
-  severity: z.enum(SEVERITIES),
-})
-
-export type Finding = z.infer<typeof Finding>
 
 /**
  * A pass carries its findings too (`#135`).
@@ -2320,10 +2264,11 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // `leaseUntilMs` — the lease is deleted (0027). The field is still in every
   // historical row and the upcaster drops it on read; no event is rewritten.
   WorkItemClaimed: 3,
-  // 2: added `needs` and `diagnosis`. A block could say only *what is your
-  // question*, so a conflict and a `human:` gate reached a person as the same
-  // event with a string on it (#83).
-  WorkItemBlocked: 2,
+  // WorkItemBlocked was here at 2 (`needs` and `diagnosis`, added for #83) and
+  // is not any more: #445 replaced the payload in place with `{hold}` rather
+  // than bumping to 3, because before 1.0 the log is reset rather than
+  // carried forward (0118 §1). `upcast.ts` has no entry for this type and
+  // `logPredatesHold` refuses a stored row from either shape by name.
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,

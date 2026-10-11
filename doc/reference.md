@@ -147,7 +147,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 10 chains, 12 steps
+## upcaster — 9 chains, 11 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -159,7 +159,6 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
 | `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
-| `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
@@ -168,11 +167,19 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `StepPassed` | 1 → 2 | `findings`, the shape `StepFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v1 pass gets `[]`, not a parse of that prose, which is untouched. It was `2 → 3` until `#247`: the rename beneath it went and this step moved down rather than out |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **ten** chains below is its own row since `#247`; ADR 0018's nine types
+of the **nine** chains below is its own row since `#247`; ADR 0018's nine types
 were one row, because they moved together and read as one fact. It read
 *15 chains, 17 steps* while `PromptEdited` and `FixRequested` were missing
 rows — a heading that is arithmetic on a number nobody re-derived is how a
 reader comes to believe four rows are stale and deletable.
+
+**`WorkItemBlocked` had a `1 → 2` row here and does not any more.** #445
+replaced its payload in place with `{hold}` rather than bumping to a third
+version, because before 1.0 the log is reset rather than carried forward
+(0118 §1) — there is no upcaster from either the v1 or the v2 shape, and
+`logPredatesHold` in `@lingtai/event-store` is what refuses a stored row of
+either one, by name, rather than this table growing a third row for a type
+whose history the reset is about to spend.
 
 **The nine `1 → 2` steps went when the log went**, on 2026-09-27 (`#247`).
 [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 said this history would
@@ -199,7 +206,7 @@ party.
 **The mechanism is untouched, and that is the point**
 ([0001](decisions-archive/0001-event-sourcing.md)): it was built before it was needed,
 because the first upcaster is written under time pressure against real history,
-and a Lingtai whose log nobody may reset will want it. Ten chains still stand
+and a Lingtai whose log nobody may reset will want it. Nine chains still stand
 here for the types the rename never touched.
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
@@ -1849,9 +1856,9 @@ went missing — and the count here was two short again, `service` and `restart`
 having joined the switch without it moving.
 
 `ask` and `answer` are the one decision taken before any attempt (`#147`) — a
-`WorkItemBlocked` with `runId: null`, and a `WorkItemUnblocked` whose `note` the
-fold keeps and every later prompt carries. The board answers too; only the CLI
-asks.
+`WorkItemBlocked` carrying a `Question` hold, the one variant with no `run`
+(#445), and a `WorkItemUnblocked` whose `note` the fold keeps and every later
+prompt carries. The board answers too; only the CLI asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
