@@ -115,6 +115,10 @@ export function Standing({
   queued,
   unknown,
   progress = null,
+  // Renamed on the way in: the component already has a `held` of its own —
+  // `describeHold`'s lines, rank 2 and 3's words — and this is a different
+  // fact entirely, the rail's own budget (`#415`).
+  held: budget = null,
 }: {
   standing: StandingView
   /**
@@ -166,6 +170,14 @@ export function Standing({
    * (#172). Null for a run with nothing on its stream yet.
    */
   progress?: RunProgress | null
+  /**
+   * The budget line the rail carries beside its sentence — rounds spent
+   * against their ceiling, restarts left against theirs (`#415`), composed by
+   * `loadTask` so the page and the board's card cannot word one ticket's hold
+   * two ways. `Rail` itself only ever prints it in the two non-live readings,
+   * so passing it on a running item costs nothing extra there.
+   */
+  held?: string | null
 }) {
   const held = describeHold(standing)
   const acting = project !== null && issue !== null
@@ -290,8 +302,17 @@ export function Standing({
               *proposed, build 2m34s / 20m* is read in a glance, and the tail
               under it is what that build is printing. `live`, because the
               state is `running` — the lane's word, which is what `Rail` asks
-              for rather than its own guess. */}
-          {standing.state === 'running' && progress !== null ? <Rail progress={progress} live /> : null}
+              for rather than its own guess.
+
+              **And a blocked item too, since `#415`.** A held item's rail was
+              drawn only while a run was in flight, so the one line a reader
+              came here for — what refused, what is left to spend — was
+              missing on every card that actually needed it. `live` stays tied
+              to `running` alone: a blocked item's pass is not in flight,
+              whatever its last phase was. */}
+          {(standing.state === 'running' || standing.state === 'blocked') && progress !== null ? (
+            <Rail progress={progress} live={standing.state === 'running'} held={budget} />
+          ) : null}
           {/* The run in flight, following (#152). The `RunLog` the attempt row
               had, moved and not changed — latched open, tailing, pinned to its
               last line — and told so by its class, which is the slot's size and

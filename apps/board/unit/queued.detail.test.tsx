@@ -399,6 +399,8 @@ const NEVER_RUN: StandingView = {
   failed: [],
   saidBy: null,
   deciding: null,
+  restarts: 0,
+  restartsOf: 0,
 }
 
 // The block and the bar's coordinates, which is where *never run* and *offered

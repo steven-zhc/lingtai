@@ -505,6 +505,8 @@ const HELD: StandingView = {
   failed: [],
   saidBy: null,
   deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …' },
+  restarts: 0,
+  restartsOf: 0,
 }
 
 describe('the block, rendered', () => {

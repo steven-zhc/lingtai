@@ -230,6 +230,7 @@ function refusedAt(steps: readonly StepProgress[]): string | null {
 export function Rail({
   progress,
   live,
+  held = null,
 }: {
   progress: RunProgress
   /**
@@ -239,6 +240,17 @@ export function Rail({
    * indistinguishable here from one a second between two points.
    */
   live: boolean
+  /**
+   * The resolved budget — `describeHeld`'s sentence — or null, for a held
+   * item's own line (`#415`).
+   *
+   * **Appended only in the two non-live readings**, after `{refused} refused`
+   * and after `nothing running`: a running phase's own line already says its
+   * depth (`fixing round 2 of 3`), and a budget beside it would say the same
+   * fact twice in two words. Composed by the caller from the log and the
+   * recipe — this component only places the sentence it is handed.
+   */
+  held?: string | null
 }) {
   const now = progress.now
   // The point half of `proposed:build`, which is what the label highlights.
@@ -287,6 +299,7 @@ export function Rail({
           title="the pipeline stops at the first refusal and waits for a person, so nothing is running (0041 §4)"
         >
           {refused} refused
+          {held !== null ? <span className="shold"> — {held}</span> : null}
         </p>
       ) : live ? (
         /* **`point` and not `step`, and the whole of the operator's copy says
@@ -316,6 +329,7 @@ export function Rail({
           title="nothing on this run's stream is running and nothing on it refused — what the pass is stopped on is not on it, and the note says what"
         >
           nothing running
+          {held !== null ? <span className="shold"> — {held}</span> : null}
         </p>
       )}
     </div>

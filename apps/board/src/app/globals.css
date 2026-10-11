@@ -506,6 +506,10 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   font-variant-numeric: tabular-nums;
 }
 .snow.quiet { color: var(--muted); }
+/* The held line's own budget — rounds spent, restarts left — beside the
+   sentence naming what refused, muted so the refusal stays the one thing read
+   first. */
+.shold { color: var(--muted); }
 
 /* The same rail on a landed row, at the width one line can give it and with no
    labels — the row is one line by #81's decision, and what is scanned for here

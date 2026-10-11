@@ -354,11 +354,24 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
   }
 }
 
-const card = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN, over = false) =>
-  toCard(task(t), null, foldProgress(events, plan, over))
+const card = (
+  t: Partial<TaskCard>,
+  events: Envelope[],
+  plan = PLAN,
+  over = false,
+  limits: { rounds: number; restarts: number } | null = null,
+) => toCard(task(t), null, foldProgress(events, plan, over), null, limits)
 
-const render = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN, over = false) =>
-  renderToStaticMarkup(<Card card={card(t, events, plan, over)} showProject={false} issue={null} paused={false} />)
+const render = (
+  t: Partial<TaskCard>,
+  events: Envelope[],
+  plan = PLAN,
+  over = false,
+  limits: { rounds: number; restarts: number } | null = null,
+) =>
+  renderToStaticMarkup(
+    <Card card={card(t, events, plan, over, limits)} showProject={false} issue={null} paused={false} />,
+  )
 
 /**
  * The card as the *board* builds it, with `railCandidates` supplying `over`
@@ -623,7 +636,9 @@ describe('a card stopped on a person', () => {
   it('says what refused it, under the segment that says so', () => {
     const html = blocked()
 
-    expect(sentence(html)).toBe('proposed:build refused')
+    // The budget line is appended here too — `task()`'s own fixture carries
+    // `restarts: 1, restartsOf: 1` — and is its own describe block below.
+    expect(sentence(html)).toBe('proposed:build refused — no rounds · 0 restarts left')
     // And not the bare action name, which is also a label on the same bar.
     expect(labels(html).map(([, name]) => name)).toContain('build')
     expect(html).not.toContain('between steps')
@@ -651,7 +666,7 @@ describe('a card stopped on a person', () => {
       refusedByTheLane(),
     )
 
-    expect(sentence(html)).toBe('nothing running')
+    expect(sentence(html)).toBe('nothing running — no rounds · 0 restarts left')
     expect(html).not.toContain('between steps')
     expect(html).not.toContain('the agent has finished and no step has started yet')
     // The rail itself is unchanged and honest: the gates it drew all passed.
@@ -729,7 +744,70 @@ describe('a card answering a refusal', () => {
   it('goes back to the refusal when the round is spent', () => {
     const html = render({ state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent())
 
-    expect(sentence(html)).toBe('proposed:build refused')
+    // The round `fixSpent()` bought is now on the budget line too.
+    expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 0 restarts left')
+  })
+})
+
+// --- a held item's budget ---------------------------------------------------
+
+/**
+ * What refused, the rounds spent, the restarts left (`#415`) — one line,
+ * composed from the run's own stream and `task_view`'s columns, with the
+ * recipe as the fallback for whichever ceiling the log never named.
+ */
+describe("a held item's budget", () => {
+  it('reads the rounds a bought round named, and the restarts the card itself carries', () => {
+    const html = render(
+      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
+      fixSpent(),
+    )
+
+    expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 1 restart left')
+  })
+
+  /**
+   * **The event where the log has one, the recipe only where it does not.** A
+   * run that never bought a round has nothing of its own to say what the
+   * ceiling was, and a ticket on its first approach has nothing of its own
+   * either — both read the project's `PassLimitsView` instead.
+   */
+  it("falls back to the recipe's own ceiling when the run never bought one", () => {
+    const html = render(
+      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
+      refused(),
+      PLAN,
+      false,
+      { rounds: 2, restarts: 1 },
+    )
+
+    expect(sentence(html)).toBe('proposed:build refused — 0 of 2 rounds · 1 restart left')
+  })
+
+  /**
+   * **The pill said it until the rail did too.** A waiting card draws `held`
+   * under its rail, and `card.arm`'s own `restart 1 of 1` beside `attempt N`
+   * would be the same fact twice — so the pill drops it wherever the rail
+   * carries it, and keeps it on a queued card, which draws no rail at all.
+   */
+  it('drops the arm from the pill wherever the rail carries it, and keeps it on a queued card', () => {
+    const waiting = render(
+      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
+      refused(),
+    )
+    // Not the arm's own words — the held line beside it says "restarts left"
+    // in a different sentence, which is not what this drops.
+    expect(waiting).not.toContain('restart 1 of 1')
+
+    const queuedHtml = renderToStaticMarkup(
+      <Card
+        card={toCard(task({ state: 'queued', restarts: 1, restartsOf: 1 }))}
+        showProject={false}
+        issue={null}
+        paused={false}
+      />,
+    )
+    expect(queuedHtml).toContain('restart 1 of 1')
   })
 })
 

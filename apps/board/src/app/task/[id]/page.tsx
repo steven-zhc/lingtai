@@ -727,6 +727,9 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // The attempt the state names, which for a running item is the run
           // in flight — the one `loadTask` folded with the recipe's bounds.
           progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
+          // The same budget line the board's card draws under its own rail —
+          // `loadTask`'s, so the two cannot word one ticket's hold two ways.
+          held={task.held}
           // The one thing a 404 used to be standing in for: nothing in the log
           // and no answer from GitHub is *I cannot tell*, and a page that said
           // "it does not exist" was making a claim Lingtai is not in a position

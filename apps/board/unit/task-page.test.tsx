@@ -80,6 +80,7 @@ const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}):
   discussions: [],
   outgoing: null,
   queued: null,
+  held: null,
   totals: totalsOf(runs),
   history: [],
   ...rest,
@@ -376,8 +377,37 @@ describe('the rail on the task page', () => {
     expect(read('../src/app/rail.tsx')).toMatch(/export function Rail\b/)
   })
 
-  it('is not drawn at rank 2 when the item is not running', () => {
-    expect(why(page(blocked()))).not.toContain('class="seq"')
+  /**
+   * **A held item draws the rail too, since `#415`.** It used to be drawn
+   * only while a run was in flight, so the one line a reader came here for —
+   * what refused, what is left to spend — was missing on the state this page
+   * exists to explain.
+   */
+  it('is drawn at rank 2 for a blocked item, not just a running one', () => {
+    const rank = why(page(blocked()))
+    expect(rank).toContain('class="seq"')
+    expect(rank).toContain('proposed:review refused')
+  })
+
+  /**
+   * **And not for a landed item.** `over` stays `landed` there (0041 §4's
+   * later points correctly recorded nothing), and `planFor` is never asked
+   * for one — the same line `RailCandidate.over` draws on the board.
+   */
+  it('is not drawn at rank 2 for a landed item', () => {
+    const events = [
+      e(RUN, 'RunStarted', { baseSha: BASE }),
+      resolved,
+      e(RUN, 'StepPassed', { step: 'prepared', action: 'install' }),
+      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+    ]
+    const own = [
+      e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
+      e(ITEM, 'WorkItemLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
+    ]
+    const landed = task(own, [foldRun(claim, 1, events, { over: true })])
+    expect(landed.standing.state).toBe('landed')
+    expect(why(page(landed))).not.toContain('class="seq"')
   })
 
   it('draws a configured point that never ran as never-ran on a landed item, apart from pending', () => {

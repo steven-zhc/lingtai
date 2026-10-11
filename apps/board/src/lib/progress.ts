@@ -194,6 +194,19 @@ export interface RunProgress {
   now: Phase | null
   /** All ten, in pass order. */
   steps: readonly StepProgress[]
+  /**
+   * What a bought round has spent against its ceiling, for a held item's
+   * budget line (`describeHeld`, `#415`).
+   *
+   * `spent` is the highest `round` any `FixRequested` or `FixDeclined`
+   * recorded — `FixDeclined.round` is "rounds already spent when this was
+   * decided", so it is read the same way a request's is. `of` is the last
+   * `FixRequested.of` that was above zero, or null where nothing on this
+   * stream named a ceiling — every event written before the field existed,
+   * and every run that never bought a round — in which case the recipe is
+   * this budget's only source for one.
+   */
+  rounds: { spent: number; of: number | null }
 }
 
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
@@ -373,6 +386,9 @@ export function foldProgress(
   let wallMs: number | null = null
   /** The round in flight, if the pass bought one and it has not come back. */
   let fixing: string | null = null
+  /** The highest round spent, and the last ceiling named above zero. See `RunProgress.rounds`. */
+  let roundsSpent = 0
+  let roundsOf: number | null = null
 
   const close = (data: Record<string, unknown>, state: StepState) => {
     const key = keyOf(data)
@@ -412,8 +428,11 @@ export function foldProgress(
         // reading of zero is *not recorded* — the same reading, and the same
         // sentence, as the note `task_view` writes from it.
         const of = Number(data['of'] ?? 0)
-        fixing = `${FIXING} round ${String(data['round'])}${of > 0 ? ` of ${of}` : ''}`
+        const round = Number(data['round'])
+        fixing = `${FIXING} round ${String(round)}${of > 0 ? ` of ${of}` : ''}`
         now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
+        roundsSpent = Math.max(roundsSpent, round)
+        if (of > 0) roundsOf = of
         break
       }
 
@@ -422,6 +441,14 @@ export function foldProgress(
         // this event is about. What follows is the point being asked again, or
         // the refusal standing — both announce themselves.
         if (fixing !== null && now?.label === fixing) now = null
+        break
+
+      case 'FixDeclined':
+        // No phase to clear: a decline is appended instead of a round being
+        // bought, never after one — the pass asks a person rather than going
+        // round again. `round` is "rounds already spent", the same reading
+        // `RunProgress.rounds` documents.
+        roundsSpent = Math.max(roundsSpent, Number(data['round']))
         break
 
       case 'RunFinished':
@@ -540,5 +567,44 @@ export function foldProgress(
     return { step, planned, state, actions }
   })
 
-  return { since: first.at.toISOString(), now, steps }
+  return { since: first.at.toISOString(), now, steps, rounds: { spent: roundsSpent, of: roundsOf } }
+}
+
+/**
+ * The budget line a held item's rail carries (`#415`): the rounds a pass has
+ * spent against its ceiling, and the restarts this ticket has left against
+ * its own.
+ *
+ * **One function, so the card and the task page cannot word one hold's
+ * budget two ways** — the argument `describeArm` and `describeWait` already
+ * make, moved here rather than beside them because the ceilings this reads
+ * come off `RunProgress`, not off `task_view`'s columns.
+ *
+ * Both ceilings are the caller's to resolve — **the event where the log has
+ * one, the recipe only where it does not** (`roundsOf`, `restartsOf`): the
+ * event records what the pass actually ran under, and a recipe read now may
+ * have moved since. A zero ceiling reads `no rounds` or `no restarts left`
+ * rather than `0 of 0`, because a ceiling nothing bought and a ceiling
+ * nothing configured are one fact — *nothing is bought here* — and `0 of 0`
+ * reads as a typo of it instead.
+ */
+export function describeHeld({
+  spent,
+  roundsOf,
+  restarts,
+  restartsOf,
+}: {
+  /** The highest round this run's stream has spent. */
+  spent: number
+  /** The resolved rounds ceiling, already event-then-recipe. Zero means none. */
+  roundsOf: number
+  /** How many approaches this ticket has abandoned so far. */
+  restarts: number
+  /** The resolved restarts ceiling, already event-then-recipe. Zero means none. */
+  restartsOf: number
+}): string {
+  const rounds = roundsOf > 0 ? `${spent} of ${roundsOf} rounds` : 'no rounds'
+  const left = restartsOf > 0 ? Math.max(0, restartsOf - restarts) : 0
+  const restartsLine = restartsOf > 0 ? `${left} restart${left === 1 ? '' : 's'} left` : 'no restarts left'
+  return `${rounds} · ${restartsLine}`
 }

@@ -40,7 +40,7 @@ import {
 } from '@lingtai/projector/task-view'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
-import { foldProgress, type RunProgress } from './progress.ts'
+import { describeHeld, foldProgress, type RunProgress } from './progress.ts'
 
 /**
  * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
@@ -138,6 +138,13 @@ export interface BoardCard {
    * backoff and after an approach was thrown away all read as `attempt 3`.
    */
   arm: string | null
+  /**
+   * The budget line a held item's rail carries — rounds spent against their
+   * ceiling, restarts left against theirs (`describeHeld`, `#415`). Null
+   * wherever there is no rail: the rail's own non-live readings are the only
+   * place it is drawn (`rail.tsx`).
+   */
+  held: string | null
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a refused dispatch and a run that asked something mid-flight, and neither
@@ -461,6 +468,12 @@ export function toCard(
   runnableAt: Date | null = null,
   progress: RunProgress | null = null,
   kindColor: string | null = null,
+  /**
+   * The project's own ceilings, for `held`'s fallback when the run's stream
+   * named none of its own — a round never bought, a restart never spent. Null
+   * where the recipe could not be read; `held` then reads the log alone.
+   */
+  limits: Pick<PassLimitsView, 'rounds' | 'restarts'> | null = null,
 ): BoardCard {
   return {
     taskId: t.taskId,
@@ -484,6 +497,15 @@ export function toCard(
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t),
+    held:
+      progress === null
+        ? null
+        : describeHeld({
+            spent: progress.rounds.spent,
+            roundsOf: progress.rounds.of ?? limits?.rounds ?? 0,
+            restarts: t.restarts,
+            restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? 0),
+          }),
     blocked: t.blocked,
     asked: t.asked,
     wait: describeWait(t),
@@ -695,6 +717,8 @@ export async function queuedCards(
         attempts: 0,
         // Nothing has run, so no approach has been abandoned.
         arm: null,
+        // Nothing has run, so there is no rail and nothing held on it.
+        held: null,
         blocked: false,
         // Never, and by construction rather than by luck: these cards are the
         // queue's own answer — what GitHub offers *minus* what the log says
@@ -841,6 +865,10 @@ export async function loadBoard(project?: string): Promise<Board> {
   // denominator a running card measures against, and it is in the recipe this
   // just read.
   const progress = await laneProgress(tasks, queued.plans)
+  // Keyed by project, for `held`'s fallback when a run's own stream named no
+  // ceiling of its own — this loop already resolved every recipe, and reading
+  // one twice is how a render gets expensive (`queued.limits`'s own doc).
+  const limitsByProject = new Map(queued.limits.map((l) => [l.project, l]))
   const now = Date.now()
   const fromLog = tasks.map((t) =>
     toCard(
@@ -851,6 +879,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       // two projects can both have a `bug` and colour it differently, and the
       // cards say which repository they are from for the same reason.
       queued.kindColors.get(t.project)?.[t.kind] ?? null,
+      limitsByProject.get(t.project) ?? null,
     ),
   )
   // A task released back to the queue has a row *and* is offered by GitHub, so

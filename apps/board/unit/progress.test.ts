@@ -11,7 +11,7 @@ import { STEPS, type Envelope, type Step } from '@lingtai/domain'
  */
 import { describe, expect, it } from 'vitest'
 
-import { AGENT, elapsed, foldProgress, type StepState } from '../src/lib/progress.ts'
+import { AGENT, describeHeld, elapsed, foldProgress, type StepState } from '../src/lib/progress.ts'
 
 let seq = 0n
 
@@ -228,6 +228,94 @@ describe('where a run has got to', () => {
     expect(progress?.now?.budgetMs).toBeNull()
     // The plan the log recorded is still the plan.
     expect(stateOf(progress?.steps ?? [], 'prepared')).toBe('passed')
+  })
+})
+
+/**
+ * What a held item's budget line reads off (`#415`): the highest round a
+ * bought fix spent, against the ceiling the log itself named.
+ */
+describe('rounds spent against the ceiling', () => {
+  it('reads the round a FixRequested named, and its ceiling', () => {
+    const withRound = [
+      ...timeline(),
+      at('2026-09-04T17:34:00Z', 'StepFailed', {
+        ...step('proposed', 'build'),
+        evidence: '2 tests failed',
+        findings: [],
+      }),
+      at('2026-09-04T17:34:01Z', 'FixRequested', {
+        runId: 'run-59',
+        round: 1,
+        of: 3,
+        action: 'build',
+        onSha: 'b1b8694',
+        findings: [],
+      }),
+    ]
+
+    expect(foldProgress(withRound, PLAN)?.rounds).toEqual({ spent: 1, of: 3 })
+  })
+
+  /** `FixDeclined.round` is "rounds already spent when this was decided" — read the same way. */
+  it('reads FixDeclined as rounds already spent, when no later round bought a ceiling', () => {
+    const declined = [
+      ...timeline(),
+      at('2026-09-04T17:34:00Z', 'StepFailed', {
+        ...step('proposed', 'build'),
+        evidence: '2 tests failed',
+        findings: [],
+      }),
+      at('2026-09-04T17:34:01Z', 'FixRequested', {
+        runId: 'run-59',
+        round: 1,
+        of: 3,
+        action: 'build',
+        onSha: 'b1b8694',
+        findings: [],
+      }),
+      at('2026-09-04T17:48:00Z', 'FixApplied', {
+        runId: 'run-59',
+        round: 1,
+        headSha: null,
+        turns: 9,
+        costUsd: 0.91,
+        failure: null,
+      }),
+      at('2026-09-04T17:48:01Z', 'StepFailed', {
+        ...step('proposed', 'build'),
+        evidence: 'still 2 tests failed',
+        findings: [],
+      }),
+      at('2026-09-04T17:48:02Z', 'FixDeclined', {
+        runId: 'run-59',
+        round: 1,
+        action: 'build',
+        why: 'two agents disagreed',
+        findings: [],
+      }),
+    ]
+
+    expect(foldProgress(declined, PLAN)?.rounds).toEqual({ spent: 1, of: 3 })
+  })
+
+  it('is zero and names no ceiling on a run that never bought a round', () => {
+    expect(foldProgress(timeline(), PLAN)?.rounds).toEqual({ spent: 0, of: null })
+  })
+})
+
+describe('describeHeld', () => {
+  it('says the rounds spent against their ceiling, and the restarts left against theirs', () => {
+    expect(describeHeld({ spent: 2, roundsOf: 3, restarts: 1, restartsOf: 2 })).toBe('2 of 3 rounds · 1 restart left')
+  })
+
+  /** A ceiling nothing bought and a ceiling nothing configured are one fact, and `0 of 0` reads as a typo of it. */
+  it('reads a zero ceiling as none, never as 0 of 0', () => {
+    expect(describeHeld({ spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe('no rounds · no restarts left')
+  })
+
+  it('never reads restarts left below zero', () => {
+    expect(describeHeld({ spent: 0, roundsOf: 0, restarts: 3, restartsOf: 2 })).toBe('no rounds · 0 restarts left')
   })
 })
 

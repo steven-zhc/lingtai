@@ -162,6 +162,10 @@ export function Card({
   paused: boolean
 }) {
   const standing = queuedStanding(card, paused)
+  // Dropped wherever the rail draws `held` instead (`#415`): a card with a
+  // rail outside the Running lane says the same approach-abandoned fact under
+  // the bar, and two places saying it is the drift #100 already named.
+  const arm = card.progress !== null && card.column !== 'running' ? null : card.arm
   return (
     <article className={`card ${accent(card)}`}>
       {/* Reference and kind are one fact — which ticket — so they are one line.
@@ -283,15 +287,20 @@ export function Card({
 
             The arm's sentence is `describeArm`'s, so this and `lingtai status`
             cannot drift apart (#100). Null on every card whose recipe leaves
-            `restarts` at zero, which is all of them today. */}
-        {card.attempts > 1 || card.arm ? (
+            `restarts` at zero, which is all of them today.
+
+            **Moved off this pill wherever the rail says it instead** (`#415`).
+            A card with a rail in a lane that is not Running draws `held`'s
+            line under it — rounds spent, restarts left — and the arm here
+            would be the same fact in a second place, which is the drift #100
+            already named. `attempt N` stays: it counts claims, which `held`
+            does not say anything about. */}
+        {card.attempts > 1 || arm ? (
           <li
             className="pill sig"
-            title={
-              card.arm ? "attempts so far, and approaches abandoned against the recipe's ceiling" : 'attempts so far'
-            }
+            title={arm ? "attempts so far, and approaches abandoned against the recipe's ceiling" : 'attempts so far'}
           >
-            {[card.attempts > 1 ? `attempt ${card.attempts}` : null, card.arm]
+            {[card.attempts > 1 ? `attempt ${card.attempts}` : null, arm]
               .filter((s): s is string => s !== null)
               .join(' · ')}
           </li>
@@ -332,7 +341,7 @@ export function Card({
           The lane's own word goes with it, for the reason the elapsed pill
           above takes it: *this run is in flight* is a fact about the column and
           not one the fold can reach. */}
-      {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} /> : null}
+      {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} held={card.held} /> : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
 

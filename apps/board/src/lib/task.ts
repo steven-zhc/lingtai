@@ -55,9 +55,9 @@ import { eventStore } from '@lingtai/event-store'
 import { GitHubError } from '@lingtai/github'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 
-import { issueUrl } from './board.ts'
+import { issueUrl, type PassLimitsView } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
-import { elapsed, foldProgress, type RunProgress } from './progress.ts'
+import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
@@ -452,6 +452,18 @@ export interface StandingView {
    */
   saidBy: string | null
   deciding: Deciding | null
+  /**
+   * How many approaches this ticket has abandoned, and the ceiling of the
+   * arm that bought it — `item.restarts.length` and the last record's `of`,
+   * read off `applyWorkItem` rather than refolded here (`#415`).
+   *
+   * The same two numbers `TaskCard.restarts`/`.restartsOf` carry, so the
+   * page's own `held` line and the board's cannot word one ticket's budget
+   * two ways. `restartsOf` is zero exactly when `restarts` is: there is no
+   * record to read a ceiling off.
+   */
+  restarts: number
+  restartsOf: number
 }
 
 /**
@@ -700,6 +712,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
         ? null
         : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
     deciding: decidingOf(runs, run),
+    restarts: item.restarts.length,
+    restartsOf: item.restarts.at(-1)?.of ?? 0,
   }
 }
 
@@ -759,6 +773,12 @@ export interface TaskDetail {
    * queued is a fact about GitHub (0012). See `queued.ts`.
    */
   queued: QueuedView | null
+  /**
+   * The budget line the standing's own rail carries — rounds spent against
+   * their ceiling, restarts left against theirs (`describeHeld`, `#415`).
+   * Null wherever the state names no run to read it off.
+   */
+  held: string | null
   totals: Totals
   /**
    * Everything, in order, for the question a summary did not anticipate — and
@@ -1377,12 +1397,22 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
  * this page measure one gate against one number. Never throws: a recipe that
  * will not read costs the page its `/ 20m` and nothing else, and no bound is
  * drawn as no denominator rather than as zero.
+ *
+ * **`limits` rides beside the plan rather than being its own call** (`#415`):
+ * both come off the one `projectFilter` read, and asking twice would be a
+ * second recipe fetch for a number that arrived with the first. It is
+ * `held`'s fallback ceiling — the recipe only where the run's own stream
+ * named none of its own.
  */
-async function planFor(project: string): Promise<StepPlan | undefined> {
+async function planFor(
+  project: string,
+): Promise<{ plan: StepPlan; limits: Pick<PassLimitsView, 'rounds' | 'restarts'> } | undefined> {
   const state = await loadProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
-  return filter.ok ? filter.plan : undefined
+  return filter.ok
+    ? { plan: filter.plan, limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts } }
+    : undefined
 }
 
 /**
@@ -1480,18 +1510,25 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // landed item will never be handed another (0032 §5). `queued` where the item
   // is queued, which is the one state that is not in the log at all.
   //
-  // `plan` where the item is running: a gate's bound is the recipe's, and only
-  // a phase in flight has a denominator to draw. See `planFor`.
+  // `plan` where the item is running or blocked: a gate's bound is the
+  // recipe's, and a phase in flight or one that stopped mid-gate are the two
+  // readings with a denominator to draw — and the second is also `held`'s
+  // only source for a ceiling the run's own stream never named (`#415`). See
+  // `planFor`.
   //
   // `recipes` wherever there is an attempt to hang an action's command off.
-  const [outgoing, queued, plan, recipes] = await Promise.all([
+  const [outgoing, queued, planAndLimits, recipes] = await Promise.all([
     standing.state === 'blocked' || standing.state === 'queued' ? outgoingFor({ own, streams, ticket }) : null,
     standing.state === 'queued' && ticket !== null
       ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
       : null,
-    standing.state === 'running' && ticket !== null ? planFor(ticket.project) : undefined,
+    (standing.state === 'running' || standing.state === 'blocked') && ticket !== null
+      ? planFor(ticket.project)
+      : undefined,
     ticket !== null ? recipesFor(ticket.project, folded) : new Map<string, RunRecipe>(),
   ])
+  const plan = planAndLimits?.plan
+  const limits = planAndLimits?.limits ?? null
 
   // The last attempt folded again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
@@ -1509,6 +1546,20 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     return recipe ? { ...r, recipe } : r
   })
 
+  // The run the state names, folded with the recipe's bounds above — the same
+  // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
+  // is nothing to spend yet, or the run that is running will not say.
+  const named = runs.find((r) => r.runId === standing.runId)?.progress ?? null
+  const held =
+    named === null
+      ? null
+      : describeHeld({
+          spent: named.rounds.spent,
+          roundsOf: named.rounds.of ?? limits?.rounds ?? 0,
+          restarts: standing.restarts,
+          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? 0),
+        })
+
   return {
     taskId,
     standing,
@@ -1517,6 +1568,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     discussions,
     outgoing,
     queued,
+    held,
     totals: totalsOf(runs, discussions),
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is
