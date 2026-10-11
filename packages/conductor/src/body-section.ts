@@ -33,7 +33,12 @@ export const ANSWER_CLOSE_MARKER = '<!-- /lingtai:answer -->'
  * carrying `-->` or a newline could close its own marker early, and an open
  * marker with no close could only be treated as absent (appending a second
  * copy, the bug this exists to prevent) or as running to the end of the body
- * (deleting a person's text after it) — both wrong.
+ * (deleting a person's text after it) — both wrong. The same reasoning
+ * applies to `text`: a close marker or another key's open marker embedded in
+ * it would be read back as *the* boundary on the very next call, splicing a
+ * retry into an unbounded grow or deleting a neighbouring key's section
+ * entirely — so `text` containing `-->` is refused for the same reason a key
+ * containing it is.
  *
  * **A second, hand-pasted open marker for the same key is left alone.** Only
  * the first pair is replaced.
@@ -45,6 +50,11 @@ export function upsertSection(body: string, key: string, text: string): string {
 
   const open = answerOpenMarker(key)
   const trimmed = text.trim()
+  if (trimmed.includes('-->')) {
+    throw new Error(
+      `upsertSection: text for key ${JSON.stringify(key)} cannot contain "-->", which would be read back as a marker`,
+    )
+  }
   const section = `${open}\n\n${trimmed}\n\n${ANSWER_CLOSE_MARKER}`
 
   const openIdx = body.indexOf(open)

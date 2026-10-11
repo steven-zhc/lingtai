@@ -84,6 +84,28 @@ describe('upsertSection', () => {
     expect(() => upsertSection('the ticket.', 'w-1\n@review', 'x')).toThrow(/newline/)
   })
 
+  /**
+   * Without this, a retry with identical arguments reads the embedded close
+   * as *the* section end, decides the text differs from what it finds before
+   * that embedded marker, and splices — growing the body on every retry
+   * rather than returning it unchanged.
+   */
+  it('refuses text containing the close marker, rather than growing the body on every retry', () => {
+    const text = 'the close marker is `<!-- /lingtai:answer -->` and it ends the section'
+    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/-->/)
+  })
+
+  /**
+   * Without this, writing `w-1@build` after `w-1@review`'s section embeds an
+   * open marker places `w-1@build`'s section *inside* `w-1@review`'s span, so
+   * a later rewrite of `w-1@review` deletes `w-1@build`'s answer along with
+   * it.
+   */
+  it('refuses text containing another key’s open marker, rather than letting it nest inside this section', () => {
+    const text = 'quoting the build answer: <!-- lingtai:answer w-1@build -->'
+    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/-->/)
+  })
+
   it('refuses an open marker with no close marker, rather than appending a second copy or eating the rest of the body', () => {
     const body = `the ticket.\n\n${answerOpenMarker('w-1@review')}\n\nan answer with no close marker after it`
     expect(() => upsertSection(body, 'w-1@review', 'x')).toThrow(/no matching close marker/)

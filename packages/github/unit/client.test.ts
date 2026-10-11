@@ -17,7 +17,7 @@ import { generateKeyPairSync } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createGitHubClient, type AppAuth, type Installation } from '../src/index.ts'
+import { BodyChanged, createGitHubClient, type AppAuth, type Installation } from '../src/index.ts'
 
 // A real key, because the client signs a JWT before it asks for a token —
 // nothing here is about the signing, but it has to succeed for the call to
@@ -230,5 +230,58 @@ describe('the refs a landed ticket leaves', () => {
     )
 
     await expect((await client()).matchingRefs('heads/agent/240')).rejects.toThrow(/404|Not Found/)
+  })
+})
+
+/**
+ * `updateBody`'s `ifUnchanged`: a read, a compare, then the write (`#446`).
+ * Stubbed, not live — the one behaviour this buys over a bare PATCH is
+ * exactly the thing a stub can pin: that the compare runs *before* the write,
+ * and that a mismatch throws instead of reaching it.
+ */
+describe('updateBody with ifUnchanged', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function stubIssue(currentBody: string) {
+    const sent: { method: string; url: string }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/access_tokens')) {
+        return new Response(
+          JSON.stringify({ token: 'ghs_x', expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      const method = init?.method ?? 'GET'
+      sent.push({ method, url: String(url) })
+      if (method === 'GET')
+        return new Response(JSON.stringify(raw({ body: currentBody })), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      return new Response(null, { status: 204 })
+    })
+    return sent
+  }
+
+  async function client() {
+    return createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+  }
+
+  it('refuses with BodyChanged and sends no PATCH when the read-back body differs from ifUnchanged', async () => {
+    const sent = stubIssue('changed on GitHub since this caller read it')
+    const gh = await client()
+
+    await expect(gh.updateBody(1, 'new body', { ifUnchanged: 'what this caller read' })).rejects.toThrow(BodyChanged)
+
+    expect(sent.some((s) => s.method === 'PATCH')).toBe(false)
+  })
+
+  it('sends the PATCH when the read-back body matches ifUnchanged', async () => {
+    const sent = stubIssue('what this caller read')
+    const gh = await client()
+
+    await gh.updateBody(1, 'new body', { ifUnchanged: 'what this caller read' })
+
+    expect(sent.at(-1)).toMatchObject({ method: 'PATCH' })
   })
 })
