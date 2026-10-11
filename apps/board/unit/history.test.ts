@@ -159,32 +159,36 @@ describe('a line of history', () => {
   it('says which kind of block it was, and what it recommends', () => {
     const said = summarise(
       e('WorkItemBlocked', {
-        question: 'conflict: agent/112 does not merge into develop',
-        needsFrom: 'human',
-        runId: 'run-1',
-        needs: 'acknowledgement',
-        diagnosis: {
-          what: 'agent/112 does not merge into develop.',
-          done: null,
+        hold: {
+          _tag: 'MergeRefused',
+          run: { runId: 'run-1' },
+          reason: 'conflict',
+          why: 'agent/112 does not merge into develop.',
           raw: 'CONFLICT (content): …',
-          recommendation: { action: 'requeue', why: 'the base has moved' },
+          paths: null,
+          baseSha: null,
+          headSha: null,
         },
       }),
     )
     expect(said).toContain('acknowledgement:')
-    expect(said).toContain('conflict: agent/112 does not merge into develop')
+    expect(said).toContain('conflict: CONFLICT (content): …')
     expect(said).toContain('recommends requeue')
   })
 
-  it('prints a v1 block as the question alone, which is all it carries', () => {
+  it('prints the bare question when nothing is recommended', () => {
     const said = summarise(
       e('WorkItemBlocked', {
-        question: 'held at the merge gate: agent/112 into develop',
-        needsFrom: 'human',
-        runId: null,
+        hold: { _tag: 'Question', question: 'held at the merge gate: agent/112 into develop', by: 'human:steven' },
       }),
     )
-    expect(said).toBe('held at the merge gate: agent/112 into develop')
+    expect(said).toContain('held at the merge gate: agent/112 into develop')
+    expect(said).not.toContain('recommends')
+  })
+
+  it('falls to the raw payload when hold does not parse — an old or unrecognised shape', () => {
+    const said = summarise(e('WorkItemBlocked', { hold: { _tag: 'SomethingElse' } }))
+    expect(said).toContain('SomethingElse')
   })
 
   it('names the action on a gate row, not only the point', () => {

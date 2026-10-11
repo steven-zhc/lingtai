@@ -173,11 +173,7 @@ const blocked = (question: string) => ({
   type: 'WorkItemBlocked',
   actor: 'conductor',
   data: {
-    question,
-    needsFrom: 'human' as const,
-    runId: null,
-    needs: 'judgement' as const,
-    diagnosis: { what: 'the branch does not merge', done: null, raw: null, recommendation: null },
+    hold: { _tag: 'Asked' as const, run: { runId: 'run-0' }, step: 'proposed' as const, question },
   },
 })
 
@@ -482,11 +478,11 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.note).toBe('which base branch?')
+        expect(card.note).toBe('the `proposed` step asked: which base branch?')
         expect(card.blocked).toBe(true)
-        expect(card.asked).toBe(true)
+        expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
-        expect(card.diagnosis?.what).toBe('the branch does not merge')
+        expect(card.diagnosis?.what).toBe('the `proposed` step asked: which base branch?')
         expect(card.diagnosis?.done).toBeNull()
       } finally {
         await f.close()
@@ -561,9 +557,9 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.note).toBe('which base branch?')
+        expect(card.note).toBe('the `proposed` step asked: which base branch?')
         expect(card.blocked).toBe(true)
-        expect(card.asked).toBe(true)
+        expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
         expect(card.diagnosis).not.toBeNull()
       } finally {
@@ -641,7 +637,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.blocked).toBe(true)
-        expect(card.note).toBe('why did this crash?')
+        expect(card.note).toBe('the `proposed` step asked: why did this crash?')
       } finally {
         await f.close()
       }

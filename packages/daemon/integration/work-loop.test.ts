@@ -71,7 +71,7 @@ describe('the work loop', () => {
         {
           type: 'WorkItemBlocked',
           actor: 'conductor',
-          data: { question: '?', needsFrom: 'human', runId: null, needs: null, diagnosis: null },
+          data: { hold: { _tag: 'Question', question: '?', by: 'conductor' } },
         },
       ])
       await until(() => reasons.length >= 2)

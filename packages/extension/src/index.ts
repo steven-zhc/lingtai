@@ -78,6 +78,23 @@ export interface NotifyPayload {
  * deliberately does not interrupt you with. Which of these a channel hears is
  * its `on:` line, never this function.
  */
+/**
+ * The question a `Hold` carries, read untyped — this package may not import
+ * `@lingtai/domain` (`unit/imports.test.ts`), so `tsc` cannot see `WorkItemBlocked`
+ * carries `{hold}` rather than `{question}` since #445. `question` and `why` are
+ * where every variant but `Ceiling` puts a person's words; `Ceiling` has
+ * neither, so `kind`/`detail` stand in for it, the same pair `RunFailed` below
+ * reads off a different event.
+ */
+function holdText(hold: unknown): string {
+  if (typeof hold !== 'object' || hold === null) return ''
+  const h = hold as Record<string, unknown>
+  if (typeof h['question'] === 'string') return h['question']
+  if (typeof h['why'] === 'string') return h['why']
+  if (typeof h['kind'] === 'string' && typeof h['detail'] === 'string') return `${h['kind']}: ${h['detail']}`
+  return ''
+}
+
 export function describe(payload: NotifyPayload): Notification {
   const { event, workItem } = payload
   const d = (event.data ?? {}) as Record<string, unknown>
@@ -88,7 +105,7 @@ export function describe(payload: NotifyPayload): Notification {
     case 'ApprovalRequested':
       return { title: `${ref} is waiting on you`, body: String(d['question'] ?? 'Approve the merge?'), url }
     case 'WorkItemBlocked':
-      return { title: `${ref} is blocked`, body: String(d['question'] ?? ''), url }
+      return { title: `${ref} is blocked`, body: holdText(d['hold']), url }
     case 'RunAwaitingInput':
       return { title: `${ref} is asking`, body: String(d['prompt'] ?? ''), url }
     case 'IntegrationRefused':

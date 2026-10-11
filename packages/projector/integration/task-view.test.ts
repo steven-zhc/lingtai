@@ -289,20 +289,18 @@ async function seed(): Promise<void> {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
-        question: 'conflict: agent/9 does not merge into develop: page.tsx',
-        needsFrom: 'human',
-        runId: attempt(9, 'a'),
         // A failure to acknowledge and not a judgement: the approval was spent
         // and the merge still refused, so nothing is being asked of anybody's
-        // opinion — the diagnosis carries the move that is left.
-        needs: 'acknowledgement',
-        diagnosis: {
-          what: 'agent/9 does not merge into develop.',
-          done:
-            'develop was merged in first and it still would not merge. No agent was ' +
-            'bought: a refusal is answered inside the pass it happened in.',
+        // opinion — `legacyColumns` reads the diagnosis off `diagnoseRefusal`.
+        hold: {
+          _tag: 'MergeRefused' as const,
+          run: { runId: attempt(9, 'a') },
+          reason: 'conflict' as const,
+          why: 'agent/9 does not merge into develop.',
           raw: 'agent/9 does not merge into develop: page.tsx',
-          recommendation: { action: 'requeue', why: 'the base has moved since' },
+          paths: null,
+          baseSha: null,
+          headSha: null,
         },
       },
     },
@@ -380,16 +378,17 @@ async function seed(): Promise<void> {
   await store.append(wi(10), 2, [
     {
       type: 'WorkItemBlocked',
-      // Deliberately the shape every block on the log had before #83: a
-      // question and nothing else. The assertions below are what "a block with
-      // no diagnosis still renders exactly as it does today" is checked by.
+      // A `Human` hold, injected by `--no-merge` or a repair — the question
+      // is all it carries itself, and `legacyColumns` composes the rest.
       actor: 'conductor',
       data: {
-        question: 'a repair is waiting on you',
-        needsFrom: 'human',
-        runId: run(10),
-        needs: null,
-        diagnosis: null,
+        hold: {
+          _tag: 'Human' as const,
+          run: { runId: run(10) },
+          step: 'merge' as const,
+          source: 'injected' as const,
+          question: 'a repair is waiting on you',
+        },
       },
     },
   ])
@@ -404,18 +403,15 @@ async function seed(): Promise<void> {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
-        question: 'conflict: agent/11 does not merge into develop: page.tsx',
-        needsFrom: 'human',
-        runId: run(11),
-        needs: 'acknowledgement',
-        diagnosis: {
-          what: 'agent/11 does not merge into develop.',
-          done: 'develop was merged in first and it still would not merge. No agent was bought: the bound is spent',
+        hold: {
+          _tag: 'MergeRefused' as const,
+          run: { runId: run(11) },
+          reason: 'conflict' as const,
+          why: 'agent/11 does not merge into develop.',
           raw: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
-          recommendation: {
-            action: 'requeue',
-            why: 'the next attempt is cut from a base that has since moved',
-          },
+          paths: null,
+          baseSha: null,
+          headSha: null,
         },
       },
     },
@@ -428,15 +424,15 @@ async function seed(): Promise<void> {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
-        question: 'conflict: agent/12 does not merge into develop',
-        needsFrom: 'human',
-        runId: run(12),
-        needs: 'acknowledgement',
-        diagnosis: {
-          what: 'agent/12 does not merge into develop.',
-          done: 'No agent was bought: the bound is spent',
+        hold: {
+          _tag: 'MergeRefused' as const,
+          run: { runId: run(12) },
+          reason: 'conflict' as const,
+          why: 'agent/12 does not merge into develop.',
           raw: 'CONFLICT (content): Merge conflict in apps/web/src/other.tsx',
-          recommendation: { action: 'requeue', why: 'the base has moved' },
+          paths: null,
+          baseSha: null,
+          headSha: null,
         },
       },
     },
@@ -525,11 +521,11 @@ async function seed(): Promise<void> {
       type: 'WorkItemBlocked',
       actor: 'human:steven',
       data: {
-        question: 'Which of the three designs should the tripwire use?',
-        needsFrom: 'human',
-        runId: null,
-        needs: 'judgement',
-        diagnosis: null,
+        hold: {
+          _tag: 'Question' as const,
+          question: 'Which of the three designs should the tripwire use?',
+          by: 'human:steven',
+        },
       },
     },
   ])
@@ -541,11 +537,7 @@ async function seed(): Promise<void> {
       type: 'WorkItemBlocked',
       actor: 'human:steven',
       data: {
-        question: 'Refuse at the hook, or at the claim?',
-        needsFrom: 'human',
-        runId: null,
-        needs: 'judgement',
-        diagnosis: null,
+        hold: { _tag: 'Question' as const, question: 'Refuse at the hook, or at the claim?', by: 'human:steven' },
       },
     },
     { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'at the hook' } },
@@ -822,27 +814,26 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // worse than the git output.
       expect(eleven.diagnosis?.raw).toContain('CONFLICT (content)')
       expect(eleven.diagnosis?.recommendation?.action).toBe('requeue')
-      // And the question is untouched — the widening added to the block rather
-      // than replacing what it always said.
-      expect(eleven.note).toContain('conflict: agent/11 does not merge into develop')
+      // And the note names the reason, with git's own words behind it.
+      expect(eleven.note).toContain('conflict:')
+      expect(eleven.note).toContain('CONFLICT (content)')
       // The same four facts, as the sentences the card and `status` share.
       expect(describeHold(eleven).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
     })
 
     /**
-     * The degradation case, which is most of the log: **every** block written
-     * before #83 carries only a question, and one of those has to render exactly
-     * as it did — no kind, no diagnosis, and the controls it always had.
+     * A `Human` hold carries nothing of its own but the question — the
+     * `--no-merge`/repair case — and `legacyColumns` composes the rest from
+     * the step alone, including the merge recommendation (#445).
      */
-    it('leaves a block that carries only a question exactly as it was', async () => {
+    it('renders a Human hold from its question, with the merge recommendation', async () => {
       const ten = card(await readTasks({ project: PROJECT }), 10)!
 
       expect(ten.blocked).toBe(true)
-      expect(ten.note).toBe('a repair is waiting on you')
-      expect(ten.needs).toBeNull()
-      expect(ten.diagnosis).toBeNull()
-      // Nothing to say about the hold, so nothing is said about it.
-      expect(describeHold(ten)).toEqual([])
+      expect(ten.note).toBe('the `merge` step held: a repair is waiting on you')
+      expect(ten.needs).toBe('judgement')
+      expect(ten.diagnosis?.recommendation?.action).toBe('approve')
+      expect(describeHold(ten).map((l) => l.part)).toEqual(['needs', 'what', 'rec'])
     })
 
     /** And the diagnosis goes when the hold is answered, not one lap later. */

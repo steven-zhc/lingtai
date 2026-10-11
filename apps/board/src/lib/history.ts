@@ -28,6 +28,7 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { Envelope, EventType } from '@lingtai/domain'
+import { Hold, legacyColumns } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -145,12 +146,24 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    *
    * The kind leads because it is what the log could not say (#83): *held at the
    * merge gate* and *conflict: agent/112 does not merge into develop* were both
-   * `WorkItemBlocked` with a string, and they are opposite kinds of thing. A v1
-   * block recorded neither, so it prints the question alone, exactly as before.
+   * `WorkItemBlocked` with a string, and they are opposite kinds of thing.
+   *
+   * Since #445 the event carries `{hold}` rather than the question and the kind
+   * as their own fields, so `Hold.safeParse` and `legacyColumns` rebuild the
+   * columns this row has always printed. A payload whose `hold` does not parse
+   * — a v1 or v2 block, or anything else not yet understood — falls to `need`,
+   * which throws and sends `summarise` to `describePayload`, exactly as a
+   * formatter that does not recognise what it is given always has.
    */
   WorkItemBlocked: (d) => {
-    const said = [d['needs'] ? `${String(d['needs'])}:` : null, clip(need(d, 'question'))]
-    const rec = (d['diagnosis'] as { recommendation?: { action?: string } } | null)?.recommendation
+    const parsed = Hold.safeParse(d['hold'])
+    const cols = parsed.success ? legacyColumns(parsed.data) : null
+    const question = cols ? cols.question : need(d, 'question')
+    const needs = cols ? cols.needs : (d['needs'] as string | null)
+    const rec = cols
+      ? cols.diagnosis?.recommendation
+      : (d['diagnosis'] as { recommendation?: { action?: string } } | null)?.recommendation
+    const said = [needs ? `${needs}:` : null, clip(question)]
     if (rec?.action) said.push(`— recommends ${rec.action}`)
     return said.filter((s) => s !== null).join(' ')
   },

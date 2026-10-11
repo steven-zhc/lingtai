@@ -76,11 +76,7 @@ describe('lingtai ask / answer', () => {
     const events = await store.read(wi(ASKED))
     expect(events.map((e) => e.type)).toEqual(['WorkItemBlocked'])
     expect(events[0]!.data).toEqual({
-      question: QUESTION,
-      needsFrom: 'human',
-      runId: null,
-      needs: 'judgement',
-      diagnosis: null,
+      hold: { _tag: 'Question', question: QUESTION, by: ACTOR },
     })
     expect(reduceWorkItem(events).lifecycle.status).toBe('blocked')
 

@@ -182,11 +182,7 @@ describe('reconciliation', () => {
         type: 'WorkItemBlocked',
         actor: 'conductor',
         data: {
-          question: 'merge it?',
-          needsFrom: 'human',
-          runId: waiting,
-          needs: 'judgement',
-          diagnosis: null,
+          hold: { _tag: 'Asked', run: { runId: waiting }, step: 'merge', question: 'merge it?' },
         },
       },
     ])

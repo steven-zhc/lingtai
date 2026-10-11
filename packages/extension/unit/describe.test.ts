@@ -33,6 +33,29 @@ describe('what a channel that is read later says', () => {
     expect(n.body).toBe('crash: session limit')
     expect(n.url).toBe('http://localhost:3200/task/wi-lingtai-125')
   })
+
+  it('reads the hold a block carries, since #445 — not the question the payload no longer has', () => {
+    const asked = render(
+      payload('WorkItemBlocked', {
+        hold: { _tag: 'Human', run: { runId: 'run-1' }, step: 'merge', question: 'ship it?' },
+      }),
+    )
+    expect(asked.body).toBe('ship it?')
+
+    const red = render(
+      payload('WorkItemBlocked', {
+        hold: { _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'build', why: 'pnpm test exited 2' },
+      }),
+    )
+    expect(red.body).toBe('pnpm test exited 2')
+
+    const ceiling = render(
+      payload('WorkItemBlocked', {
+        hold: { _tag: 'Ceiling', run: { runId: 'run-1' }, kind: 'out-of-turns', detail: '151 turns' },
+      }),
+    )
+    expect(ceiling.body).toBe('out-of-turns: 151 turns')
+  })
 })
 
 describe('isMain', () => {

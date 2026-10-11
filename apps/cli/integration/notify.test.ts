@@ -76,7 +76,7 @@ describe('which channel, and what it does with the link', () => {
   it('uses terminal-notifier when it is installed, and hands it the card to open', async () => {
     const { calls, exec } = recorder()
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { question: 'which base?' })))
+    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'which base?' } })))
 
     expect(channel.name).toBe('terminal-notifier')
     const sent = calls.find((c) => c.bin === 'terminal-notifier')
@@ -92,7 +92,7 @@ describe('which channel, and what it does with the link', () => {
   it('falls back to osascript and writes the link where it can be read', async () => {
     const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { question: 'which base?' })))
+    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'which base?' } })))
 
     expect(channel.name).toBe('osascript')
     const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
@@ -103,7 +103,7 @@ describe('which channel, and what it does with the link', () => {
   it('escapes a body that would otherwise close the AppleScript string', async () => {
     const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { question: 'ok" & (do shell script "id") & "' })))
+    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'ok" & (do shell script "id") & "' } })))
 
     const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
     expect(script).not.toMatch(/[^\\]"\s*&/)
@@ -116,7 +116,7 @@ describe('what the exit code says', () => {
   it('is 0 when the notification went out', async () => {
     const { exec } = recorder()
     const code = await notifyCommand({
-      read: stdin(payload('WorkItemBlocked', { question: 'which base?' })),
+      read: stdin(payload('WorkItemBlocked', { hold: { question: 'which base?' } })),
       channelFor: () => macNotifier(exec),
       log: () => {},
     })
@@ -133,7 +133,7 @@ describe('what the exit code says', () => {
     const said: string[] = []
     const { exec } = recorder((bin) => (bin === 'which' ? 1 : 5))
     const code = await notifyCommand({
-      read: stdin(payload('WorkItemBlocked', { question: 'which base?' })),
+      read: stdin(payload('WorkItemBlocked', { hold: { question: 'which base?' } })),
       channelFor: () => macNotifier(exec),
       log: (line) => said.push(line),
     })

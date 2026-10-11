@@ -3196,7 +3196,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runId,
           branch,
           base,
-          ...(repairOf === null ? {} : { repairOf: repairOf.after }),
+          ...(repairOf === null ? {} : { repairOf: { after: repairOf.after, reason: repairOf.reason } }),
           ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
           integrationRefusal,
         })

@@ -107,6 +107,7 @@ describe('holdOfPass', () => {
       step: 'proposed',
       source: 'declared',
       question: 'go ahead?',
+      findings: [],
     })
   })
 
@@ -116,6 +117,16 @@ describe('holdOfPass', () => {
       stopped: { step: 'merge', ending: { ending: 'held', at: 'human', question: '--no-merge' } },
     })
     expect(hold).toMatchObject({ _tag: 'Human', step: 'merge', source: 'injected' })
+  })
+
+  it('carries a live finding onto a Human at merge, so the merge veto can see it', () => {
+    const finding = { severity: 'major' as const, file: 'x.ts', line: 4, claim: 'claim', failureScenario: 'scenario' }
+    const hold = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'merge', ending: { ending: 'held', at: 'human', question: '--no-merge' } },
+      findings: [finding],
+    })
+    expect(hold).toMatchObject({ _tag: 'Human', findings: [finding] })
   })
 
   it('reads a `prepared` refusal as SetupRefused, lifts: person', () => {
@@ -174,13 +185,13 @@ describe('holdOfPass', () => {
       ...BASE_INPUT,
       stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
       unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: 'run-0',
+      repairOf: { after: 'run-0', reason: 'red' },
     })
     if (hold._tag === 'Question') throw new Error('unreachable: holdOfPass never returns Question')
     expect(hold.run).toEqual({
       runId: 'run-1',
       unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: 'run-0',
+      repairOf: { after: 'run-0', reason: 'red' },
     })
   })
 })

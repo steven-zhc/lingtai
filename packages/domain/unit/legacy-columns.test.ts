@@ -58,6 +58,19 @@ describe('legacyColumns', () => {
     })
   })
 
+  it('vetoes the merge recommendation on a Human carrying a live finding', () => {
+    const finding = { severity: 'major' as const, file: 'x.ts', line: 4, claim: 'claim', failureScenario: 'scenario' }
+    const hold: Hold = {
+      _tag: 'Human',
+      run: { runId: 'run-1' },
+      step: 'merge',
+      source: 'injected',
+      question: '--no-merge',
+      findings: [finding],
+    }
+    expect(legacyColumns(hold).diagnosis?.recommendation).toBeNull()
+  })
+
   it('keeps Routed.why as the composed line, since branch/base are not on a Hold', () => {
     const hold: Hold = {
       _tag: 'Routed',
@@ -182,5 +195,16 @@ describe('legacyColumns', () => {
     expect(cols.diagnosis?.what).toBe(
       'the `build` step refused: pnpm test exited 2 (and agent/1 was not pushed: stale info)',
     )
+  })
+
+  it('names the refusal repairOf answered, not the run id that answered it', () => {
+    const hold: Hold = {
+      _tag: 'CheckRed',
+      run: { runId: 'run-1', repairOf: { after: 'run-1978cb64-abcd', reason: 'red' } },
+      step: 'build',
+      why: 'pnpm test exited 2',
+      raw: null,
+    }
+    expect(legacyColumns(hold).diagnosis?.done).toBe('a repair for red produced this diff')
   })
 })

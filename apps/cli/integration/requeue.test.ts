@@ -63,11 +63,13 @@ const blocked = (n: number) => ({
   type: 'WorkItemBlocked',
   actor: 'conductor',
   data: {
-    question: 'the agent gate returned a refusal instead of findings',
-    needsFrom: 'human' as const,
-    runId: run(n),
-    needs: 'acknowledgement' as const,
-    diagnosis: null,
+    hold: {
+      _tag: 'CheckRed' as const,
+      run: { runId: run(n) },
+      step: 'build' as const,
+      why: 'the agent gate returned a refusal instead of findings',
+      raw: null,
+    },
   },
 })
 

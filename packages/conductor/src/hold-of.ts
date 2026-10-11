@@ -59,7 +59,7 @@ export interface HoldOfPassInput {
   branch: string
   base: string
   unpushed?: { branch: string; said: string }
-  repairOf?: string
+  repairOf?: { after: string; reason: string }
   /** The row `IntegrationRefused` left on this attempt, or null where none did. */
   integrationRefusal: IntegrationRefusalEvidence | null
 }
@@ -145,6 +145,10 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
         step,
         source: step === 'merge' ? 'injected' : 'declared',
         question: detailOf(stopped.ending),
+        // Only `merge`'s recommendation reads this (`legacyColumns`'s findings
+        // veto), but it costs nothing to carry on every `Human` — `findings`
+        // is already on `input` for every arrival here.
+        findings: [...input.findings],
       }
 
     case 'refused': {

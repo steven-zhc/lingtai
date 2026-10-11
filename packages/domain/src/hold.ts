@@ -64,15 +64,18 @@ export type JudgeWhen = z.infer<typeof JudgeWhen>
  *
  * `unpushed` is git's own words, which `conduct.ts` holds today as `notPushed`
  * and turns into a parenthetical: the branch did not reach origin, and the
- * worktree that held it is gone when the pass ends. `repairOf` is the run id
- * `retiredRepairPending` (`work-item.ts`) returns as `after` — a pre-#143
- * repair request still unclaimed on an old stream. Both are optional because
+ * worktree that held it is gone when the pass ends. `repairOf` is a pre-#143
+ * repair request still unclaimed on an old stream — `after` is the run id
+ * `retiredRepairPending` (`work-item.ts`) returns under that name, and
+ * `reason` is the refusal it was bought to answer, so `legacyColumns` can
+ * still write *a repair for `${reason}` produced this diff* rather than the
+ * run id nobody reading the card can act on. Both fields are optional because
  * the ordinary run carries neither.
  */
 export const RunRef = z.object({
   runId: z.string(),
   unpushed: z.object({ branch: z.string(), said: z.string() }).optional(),
-  repairOf: z.string().optional(),
+  repairOf: z.object({ after: z.string(), reason: z.string() }).optional(),
 })
 export type RunRef = z.infer<typeof RunRef>
 
@@ -112,6 +115,13 @@ export type Asked = z.infer<typeof Asked>
  * would reopen without the review that door asks for. The variant is what a
  * `human:` action produces, so `Human` names it after the recipe's own key
  * instead.
+ *
+ * `findings` is what `review` raised on this diff, optional because only a
+ * hold at `merge` ever reads it: `legacyColumns` recommends `approve` there
+ * exactly when every step passed, and a live finding is the one judgement
+ * nothing but a person should make (0058 §3b) — the same veto `Routed` already
+ * carries. Omitted rather than defaulted, so a literal that does not set it
+ * round-trips unchanged through `Hold.parse`.
  */
 export const Human = z.object({
   _tag: z.literal('Human'),
@@ -119,6 +129,7 @@ export const Human = z.object({
   step: Step,
   source: z.enum(['declared', 'injected']),
   question: z.string(),
+  findings: z.array(Finding).optional(),
 })
 export type Human = z.infer<typeof Human>
 
@@ -147,13 +158,13 @@ export type Routed = z.infer<typeof Routed>
 /**
  * A run reached a person with a decision, as the pass actually branches.
  *
- * **Question 1 is settled by #445's producer** (`holdOf` in
- * `@lingtai/conductor`): a `red`/`verify-failed` route with the rounds spent
- * is `Routed`, because it is the router that sent it to a person and the
- * classification is by who sent it rather than by whether anything refused
- * (0118 §1 amended, `8a669849`). **Question 4 stays open** — a declined fixer
- * stays `DidNotFinish` here, which is `Failure` rather than `Judgement`,
- * because nothing has yet given it its own variant.
+ * **Neither open question is settled here.** `holdOfPass` in
+ * `@lingtai/conductor` (#445) is today's classification, not 0118 §1's *who
+ * sent it*: a `red`/`verify-failed` refusal with the rounds spent stays
+ * `CheckRed`/`MergeRefused` there, not `Routed` — the reclassification by who
+ * sent it, which is question 1, is #452's. **Question 4 stays open** too — a
+ * declined fixer stays `DidNotFinish` here, which is `Failure` rather than
+ * `Judgement`, because nothing has yet given it its own variant.
  */
 export const Judgement = z.discriminatedUnion('_tag', [Asked, Human, Routed])
 export type Judgement = z.infer<typeof Judgement>

@@ -88,11 +88,7 @@ beforeAll(async () => {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
-        question: 'which base?',
-        needsFrom: 'human',
-        runId,
-        needs: 'judgement',
-        diagnosis: null,
+        hold: { _tag: 'Asked', run: { runId }, step: 'design', question: 'which base?' },
       },
     },
   ])

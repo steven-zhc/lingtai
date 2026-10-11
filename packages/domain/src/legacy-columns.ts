@@ -57,7 +57,7 @@ function unpushedSuffix(run: RunRef): string {
 }
 
 function repairDone(run: RunRef): string | null {
-  return run.repairOf !== undefined ? `a repair for ${run.repairOf} produced this diff` : null
+  return run.repairOf !== undefined ? `a repair for ${run.repairOf.reason} produced this diff` : null
 }
 
 /** `the \`${step}\` step ${word}: ${text}` — today's card line, rebuilt. */
@@ -110,11 +110,12 @@ export function legacyColumns(hold: Hold): LegacyColumns {
           what: question + unpushedSuffix(hold.run),
           done: repairDone(hold.run),
           raw: hold.question,
-          // A `Human` carries no findings, unlike `Routed` — so unlike the
-          // findings veto below, this cannot see one. 0118 §1's `merge` hold is
-          // recommended `approve` regardless (`#445`'s design, "A `Human`
-          // cannot see the findings veto; name that edge").
-          recommendation: hold.step === 'merge' ? APPROVE_EVERY_STEP_PASSED : null,
+          // The same findings veto `Routed` carries below: approving over a
+          // live finding is the one judgement nothing but a person should
+          // make (0058 §3b), so a `merge` hold only recommends it when review
+          // raised nothing.
+          recommendation:
+            hold.step === 'merge' && (hold.findings?.length ?? 0) === 0 ? APPROVE_EVERY_STEP_PASSED : null,
         },
       }
     }
