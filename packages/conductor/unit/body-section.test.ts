@@ -92,7 +92,7 @@ describe('upsertSection', () => {
    */
   it('refuses text containing the close marker, rather than growing the body on every retry', () => {
     const text = 'the close marker is `<!-- /lingtai:answer -->` and it ends the section'
-    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/-->/)
+    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/lingtai:answer/)
   })
 
   /**
@@ -103,7 +103,7 @@ describe('upsertSection', () => {
    */
   it('refuses text containing another key’s open marker, rather than letting it nest inside this section', () => {
     const text = 'quoting the build answer: <!-- lingtai:answer w-1@build -->'
-    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/-->/)
+    expect(() => upsertSection('Problem.', 'w-1@review', text)).toThrow(/lingtai:answer/)
   })
 
   it('refuses an open marker with no close marker, rather than appending a second copy or eating the rest of the body', () => {
@@ -133,6 +133,30 @@ describe('upsertSection', () => {
     const mangled = `quoting the marker: ${answerOpenMarker('w-1@review')}\n\n${wellFormed}`
 
     expect(() => upsertSection(mangled, 'w-1@review', 'a new review answer')).toThrow(/no matching close marker/)
+  })
+
+  /**
+   * A stray open marker for `K` pasted *inside* `J`'s own well-formed
+   * section is not `J`'s open marker, but the close that follows it still
+   * belongs to `J`'s section, not to `K`'s. Treating that close as `K`'s own
+   * would delete the rest of `J`'s text, consume `J`'s close marker (so a
+   * later rewrite of `J` throws), and leave `K`'s real section behind as a
+   * stale duplicate (#446's finding 1).
+   */
+  it('skips a stray open marker for the key nested inside another section, and finds the real one', () => {
+    const wellFormed = upsertSection(
+      upsertSection('Problem.', 'w-1@build', 'the build answer'),
+      'w-1@review',
+      'the review answer',
+    )
+    const mangled = wellFormed.replace('the build answer', `the build answer ${answerOpenMarker('w-1@review')} oops`)
+
+    const result = upsertSection(mangled, 'w-1@review', 'a new review answer')
+
+    expect(result).toContain(`the build answer ${answerOpenMarker('w-1@review')} oops`)
+    expect(result).toContain('a new review answer')
+    expect(result).not.toContain('the review answer\n')
+    expect(result.split(ANSWER_CLOSE_MARKER)).toHaveLength(3)
   })
 
   it('replaces only the first of two hand-pasted open markers for one key, leaving the second alone', () => {

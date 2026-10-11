@@ -19,6 +19,20 @@ export const ANSWER_CLOSE_MARKER = '<!-- /lingtai:answer -->'
 const OPEN_MARKER_PREFIX = '<!-- lingtai:answer '
 
 /**
+ * True when `openIdx` sits inside a still-open section started by some other
+ * open marker earlier in `body` — i.e. the nearest open marker before it has
+ * no close marker of its own before `openIdx`. A close marker found after
+ * such an `openIdx` belongs to that earlier section, not to the one starting
+ * at `openIdx`, so `openIdx` cannot be trusted as a section boundary.
+ */
+function isNestedInAnotherSection(body: string, openIdx: number): boolean {
+  const precedingOpenIdx = body.lastIndexOf(OPEN_MARKER_PREFIX, openIdx - 1)
+  if (precedingOpenIdx === -1) return false
+  const closeAfterPrecedingOpen = body.indexOf(ANSWER_CLOSE_MARKER, precedingOpenIdx)
+  return closeAfterPrecedingOpen === -1 || closeAfterPrecedingOpen > openIdx
+}
+
+/**
  * Writes `text` into `body` under `key`, replacing whatever that key's
  * section held before.
  *
@@ -48,7 +62,12 @@ const OPEN_MARKER_PREFIX = '<!-- lingtai:answer '
  * altogether-unclosed marker is: if another section's open marker sits
  * between the one found and the first close after it, that close cannot
  * belong to it, so the span is not trusted rather than spliced across
- * whatever that other section holds.
+ * whatever that other section holds. The same is true the other way round:
+ * an occurrence of the key's own open marker that sits *inside* another
+ * section — pasted into that section's own text — is not a section boundary
+ * either, because the close that follows it belongs to the section it is
+ * nested in, not to this key. That occurrence is skipped, and the search
+ * continues for one that is not nested.
  *
  * **A second, hand-pasted open marker for the same key is left alone.** Only
  * the first pair is replaced.
@@ -62,12 +81,15 @@ export function upsertSection(body: string, key: string, text: string): string {
   const trimmed = text.trim()
   if (trimmed.includes('lingtai:answer')) {
     throw new Error(
-      `upsertSection: text for key ${JSON.stringify(key)} cannot contain a lingtai:answer marker ("-->"), which would be read back as a marker`,
+      `upsertSection: text for key ${JSON.stringify(key)} cannot contain a lingtai:answer marker, which would be read back as a marker`,
     )
   }
   const section = `${open}\n\n${trimmed}\n\n${ANSWER_CLOSE_MARKER}`
 
-  const openIdx = body.indexOf(open)
+  let openIdx = body.indexOf(open)
+  while (openIdx !== -1 && isNestedInAnotherSection(body, openIdx)) {
+    openIdx = body.indexOf(open, openIdx + 1)
+  }
   if (openIdx === -1) {
     return body.trim() === '' ? `${section}\n` : `${body.trimEnd()}\n\n${section}\n`
   }
