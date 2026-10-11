@@ -26,6 +26,7 @@ const OPEN_MARKER_PREFIX = '<!-- lingtai:answer '
  * at `openIdx`, so `openIdx` cannot be trusted as a section boundary.
  */
 function isNestedInAnotherSection(body: string, openIdx: number): boolean {
+  if (openIdx === 0) return false
   const precedingOpenIdx = body.lastIndexOf(OPEN_MARKER_PREFIX, openIdx - 1)
   if (precedingOpenIdx === -1) return false
   const closeAfterPrecedingOpen = body.indexOf(ANSWER_CLOSE_MARKER, precedingOpenIdx)

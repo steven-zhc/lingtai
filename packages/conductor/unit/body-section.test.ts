@@ -22,6 +22,31 @@ describe('upsertSection', () => {
     expect(result).toBe(`${answerOpenMarker('chat-1')}\n\nthe answer\n\n${ANSWER_CLOSE_MARKER}\n`)
   })
 
+  /**
+   * The empty-body branch above starts the section's open marker at index 0.
+   * `lastIndexOf(prefix, -1)` clamps to `0` and finds that same open marker as
+   * its own "preceding" one, so without the `openIdx === 0` guard the section
+   * is reported nested in itself, skipped, and a second write appends a
+   * duplicate instead of replacing — stranding the first pair forever (#446).
+   */
+  it('replaces a section that starts the body instead of appending a second', () => {
+    const once = upsertSection('', 'chat-1', 'the first answer')
+    const twice = upsertSection(once, 'chat-1', 'the second answer')
+
+    expect(twice.split(answerOpenMarker('chat-1'))).toHaveLength(2)
+    expect(twice).toContain('the second answer')
+    expect(twice).not.toContain('the first answer')
+  })
+
+  it('replaces a section that is the whole trimmed body, as a tracker returns after trimming', () => {
+    const once = upsertSection('', 'chat-1', 'the first answer').trim()
+    const twice = upsertSection(once, 'chat-1', 'the second answer')
+
+    expect(twice.split(answerOpenMarker('chat-1'))).toHaveLength(2)
+    expect(twice).toContain('the second answer')
+    expect(twice).not.toContain('the first answer')
+  })
+
   it('returns the input string unchanged when the same text is already there', () => {
     const once = upsertSection('the ticket.', 'w-1@review', 'the answer')
     const twice = upsertSection(once, 'w-1@review', 'the answer')
