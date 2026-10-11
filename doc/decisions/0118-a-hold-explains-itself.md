@@ -75,22 +75,30 @@ which kind a hold is gets inferred again in each place that needs it, from
    - **`Hold`** is exactly one of `Question` (no run: the person's own
      question and who asked it), `Judgement` (a run, the step it stopped at,
      and why), or `Failure` (a run, and what failed).
-   - **`Judgement`** is itself a union, one variant for each way a pass reaches a
-     person with a decision, as the pass actually branches
-     (`whatIsWaitingOnYou`): `Asked` (a step stopped to ask, and its question),
-     `Gate` (a `human:` action, declared in the recipe or injected by
-     `--no-merge`, which since #256 are one mechanism), and `Routed` (the
-     `proposed` router sent it to a person, carrying the router's `JudgeWhen`,
-     which is already a closed union, and the why). Which of these a review
-     whose rounds ran out and a fixer that declined to change anything really
-     are is settled by walking the routes (`doc/design/the-waiting-lane.md`),
-     not assumed here: today a step that refused without asking or holding is
-     recorded as needing acknowledgement, which is a `Failure`.
-   - **`Failure`** is itself a union, each variant carrying its own evidence:
-     a check that stayed red, a merge the lane refused (its paths and both
-     shas), a ceiling (which one, and what was spent), a step that did not
-     finish, and a setup that refused before any agent ran (and whether that
-     lifts by itself or needs a person).
+   - **A hold is classified by who sent it to a person**, never by which
+     internal value happened to be set on the way:
+     - **`Judgement`** is itself a union, one variant for each way a pass
+       reaches a person with a decision: `Asked` (a step stopped to ask, and
+       its question), `Human` (a `human:` or `watch:` action held, declared in
+       the recipe or injected by `--no-merge`, which since #256 are one
+       mechanism; not `Gate`, which is a retired word), and `Routed` (the
+       `proposed` router sent it to a person, carrying the arrival that
+       brought it there as a `JudgeWhen`, and the why). **Every arrival the
+       router sends to a person is `Routed`**, whatever it was: a check that
+       stayed red with the rounds spent is `Routed{red}`, a review that
+       stayed unsatisfied is `Routed{findings}`, and likewise
+       `verify-failed`, `conflict` and `needs-input`. The evidence travels
+       inside the variant: the red output, the findings, the conflicted
+       paths. That the pass records some of these with a `stoppedAt` and some
+       without is an implementation detail and does not decide the variant.
+     - **`Failure`** is what reached a person without anyone deciding it:
+       each variant carries its own evidence: a merge the lane refused (its
+       paths and both shas), a ceiling (which one, and what was spent), a step
+       that did not finish, and a setup that refused before any agent ran
+       (and whether that lifts by itself or needs a person). Whether a
+       separate check-stayed-red variant still has a producer once the router
+       routes are `Routed` is settled by the code that writes the hold (#445),
+       not assumed here.
    - **Unpushed work belongs to the run**, as an optional ref on it, so it can
      sit beside a `Judgement` or a `Failure` and cannot sit beside a
      `Question`, which has no run. It is shown first, above everything else on
