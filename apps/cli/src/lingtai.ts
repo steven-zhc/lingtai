@@ -899,9 +899,13 @@ async function daemonCommand(
 
   // **Where the control stream was when this daemon started** (`#159`). Every
   // signal it obeys is read from here, so a pause or a shutdown appended before
-  // it began belongs to the daemon before it and not to this one. That is what
-  // makes `lingtai start` need nothing lifted first: there is no such thing as
-  // a signal standing over a process that did not exist when it was sent.
+  // it began belongs to the daemon before it and not to this one — which is
+  // what makes `lingtai start` need nothing lifted first, for every signal but
+  // one. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
+  // the conductor itself appends over a tier the setup cannot provide carries
+  // `holdsAcrossStarts`, and `readControl` (`packages/daemon/src/control.ts`)
+  // obeys it whatever `since` says, because a restart loads the same setup
+  // that could not provide the tier. `lingtai resume` is what lifts that one.
   //
   // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
   // after the lock and the projections, and a `service shutdown` appended in
@@ -1013,10 +1017,12 @@ async function daemonCommand(
     // existed and then took work anyway — the report and the loop disagreeing
     // about the same question, which is worse than either answer.
     //
-    // A pause this daemon *will* obey is one somebody made after it started,
-    // and that is the only one worth printing here. `lingtai status` keeps the
-    // unscoped read, because it answers *what is standing* rather than *what
-    // will this process do*.
+    // A pause this daemon *will* obey is one somebody made after it started —
+    // or, since `#405`, one the conductor marked `holdsAcrossStarts` before it
+    // started, because `readControl` merges that one in whatever `since` says
+    // — and that is the whole of what is worth printing here. `lingtai status`
+    // keeps the unscoped read, because it answers *what is standing* rather
+    // than *what will this process do*.
     const control = await readControl(undefined, since)
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.

@@ -148,8 +148,10 @@ export interface BoardCard {
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a run that asked something mid-flight, and that is not an item anybody can
-   * hand back. A refused dispatch is not in this lane at all since `#405`: it
-   * is `queued`, because the refusal is the pass's rather than this item's.
+   * hand back. A refused dispatch moves an item that was merely queued
+   * nowhere since `#405` (it was `queued` already, because the refusal is the
+   * pass's rather than this item's) and never disturbs this column on an item
+   * already holding a question — only a person's answer does that.
    */
   blocked: boolean
   /**

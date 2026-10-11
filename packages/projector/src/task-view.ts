@@ -155,9 +155,11 @@ export const taskViewProjection: Projection = {
         -- waiting lane for some other reason. The lane also holds a run that
         -- asked something mid-flight, and that is not an item anybody can hand
         -- back — offering a control that would refuse is the shape #58
-        -- records and #84 must not reintroduce. A refused dispatch is not in
-        -- this lane at all since #405: it is queued, because the refusal is
-        -- the pass's rather than this item's.
+        -- records and #84 must not reintroduce. A refused dispatch moves an
+        -- item that was merely queued nowhere (#405: it was already queued,
+        -- because the refusal is the pass's rather than this item's), and
+        -- never this column: only WorkItemUnblocked may answer a question
+        -- already standing on an item, so a refusal found one leaves it be.
         blocked      boolean not null default false,
 
         -- Whether that question was asked **before any run** — a
@@ -447,43 +449,54 @@ export const taskViewProjection: Projection = {
 
         case 'DispatchRefused': {
           const d = event.data as PayloadOf<'DispatchRefused'>
+          // `queued` and not `waiting` (#405): the refusal is about the pass,
+          // not this item — `conduct.ts` pauses the conductor over it rather
+          // than asking a person about this one ticket — so the item is still
+          // what the queue should offer once the pause lifts.
+          //
+          // **Conditional on the standing hold.** Only `WorkItemUnblocked` may
+          // clear `blocked`, and only a person's answer may replace the
+          // question `note` holds — a dispatch refused on top of a block
+          // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
+          // is not an event about *this item*, so where `blocked` is already
+          // true this leaves state, note and every hold column exactly as
+          // they were. Writing `state: 'queued'` and clearing the hold here
+          // regardless put `task_view` and the domain fold
+          // (`packages/domain/src/work-item.ts`, still `blocked`) in
+          // disagreement forever, and destroyed the question before any
+          // `WorkItemUnblocked` had answered it.
+          //
           // An upsert, because this can be a task's first event: it refuses
           // before anything is claimed, and nothing is appended when an issue
           // is merely seen. An UPDATE would leave the refusal unreadable, which
           // is the failure it exists to report.
-          //
-          // `queued` and not `waiting` (#405): the refusal is about the pass,
-          // not this item — `conduct.ts` pauses the conductor over it rather
-          // than asking a person about this one ticket — so the item is still
-          // what the queue should offer once the pause lifts. `queue.ts`
-          // admits a row that is absent or `queued`, and no `attempt` here
-          // leaves `note` standing and starts no backoff, so a rebuild that
-          // changes nothing else still returns every ticket refused before
-          // this change to `queued`.
           const { project: p, issue: i } = splitTaskId(event.streamId)
-          await upsert(ctx, event.streamId, seq, at, {
-            project: p,
-            issue: i,
-            title: null,
-            kind: null,
-            state: 'queued',
-          })
-          await set(ctx, event.streamId, seq, at, {
-            note: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,
-            // A refused dispatch is the pass's problem, never a hold on this
-            // item — so it must not leave one standing. Without this, a
-            // refusal over an item already `waiting` on a person's question
-            // (`blocked`, `asked`, `needs`, `diagnosis`, `awaiting_sha`) would
-            // flip `state` to `queued` while leaving those columns as they
-            // were, overwriting the question's own note with the refusal's
-            // and surfacing Decide/Requeue on a Queued card for a question the
-            // person never answered.
-            awaiting_sha: null,
-            blocked: false,
-            asked: false,
-            needs: null,
-            diagnosis: null,
-          })
+          await ctx.query(
+            `insert into task_view (task_id, project, issue, title, kind, state, note, updated_at, updated_seq)
+             values ($1, $2, $3, $4, $5, 'queued', $6, $7, $8::bigint)
+             on conflict (task_id) do update
+               set title = coalesce(excluded.title, task_view.title),
+                   kind = coalesce(excluded.kind, task_view.kind),
+                   state = case when task_view.blocked then task_view.state else excluded.state end,
+                   note = case when task_view.blocked then task_view.note else excluded.note end,
+                   awaiting_sha = case when task_view.blocked then task_view.awaiting_sha else null end,
+                   asked = case when task_view.blocked then task_view.asked else false end,
+                   needs = case when task_view.blocked then task_view.needs else null end,
+                   diagnosis = case when task_view.blocked then task_view.diagnosis else null end,
+                   updated_at = excluded.updated_at,
+                   updated_seq = excluded.updated_seq
+             where task_view.updated_seq < excluded.updated_seq`,
+            [
+              event.streamId,
+              p,
+              i,
+              null,
+              null,
+              `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,
+              at,
+              seq,
+            ],
+          )
           break
         }
 

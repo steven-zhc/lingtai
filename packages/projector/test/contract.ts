@@ -523,17 +523,21 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
     /**
      * **A refused dispatch over an item already holding a person's question
-     * must lift the hold, not just the state** (#405).
+     * must leave the hold exactly as it was** (#405).
      *
-     * Before this, the `set` for `DispatchRefused` wrote `note` and nothing
-     * else: a `WorkItemBlocked` row's `blocked`, `asked`, `needs` and
-     * `diagnosis` survived the refusal untouched while `state` flipped to
-     * `queued` — a card the queue would admit (`selectRunnable` takes any
-     * `queued` row) while still carrying `blocked: true` and a question
-     * nobody had answered, with the refusal's sentence sitting where the
-     * person's question used to be.
+     * Only `WorkItemUnblocked` may answer a question `WorkItemBlocked` put on
+     * an item, and only a person's answer may replace it. A build that let
+     * `DispatchRefused` write `state: 'queued'` and clear `blocked`, `asked`,
+     * `needs` and `diagnosis` here put `task_view` and the domain fold
+     * (`packages/domain/src/work-item.ts`, which `WorkItemBlocked` alone
+     * moves to `blocked` and only `WorkItemUnblocked` moves off it) in
+     * disagreement forever — `selectRunnable` would admit the row, the claim
+     * would then refuse it as not-claimable, and a later real
+     * `WorkItemUnblocked` would record `answer.question: null`, because the
+     * question `note` held had already been overwritten by the refusal's
+     * sentence.
      */
-    it('clears a standing hold when a dispatch is refused over it', async () => {
+    it('leaves a standing hold untouched when a dispatch is refused over it', async () => {
       const f = await make()
       const task = f.stream('wi', '46')
       try {
@@ -544,12 +548,12 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         await made(f, taskViewProjection, written)
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
-        expect(card.state).toBe('queued')
-        expect(card.note).toBe('needs sandboxed; claude-code is missing filesystem-sandbox')
-        expect(card.blocked).toBe(false)
-        expect(card.asked).toBe(false)
-        expect(card.needs).toBeNull()
-        expect(card.diagnosis).toBeNull()
+        expect(card.state).toBe('waiting')
+        expect(card.note).toBe('which base branch?')
+        expect(card.blocked).toBe(true)
+        expect(card.asked).toBe(true)
+        expect(card.needs).toBe('judgement')
+        expect(card.diagnosis).not.toBeNull()
       } finally {
         await f.close()
       }

@@ -55,9 +55,11 @@ into `waiting` exclude each other and want different moves:
 Two more things put a card in the lane, and neither is a fourth kind. **Waiting
 with no block** (`RunAwaitingInput` and a bare `RunFailed` leave `blocked`
 false, `packages/projector/src/task-view.ts:447-566`) is a state that should
-not exist. `DispatchRefused` no longer reaches this lane at all since `#405`:
-the refusal is the pass's rather than this item's, so the fold leaves the card
-`queued` and the conductor pauses instead. **Unpushed work** (the branch did
+not exist. `DispatchRefused` moves nothing into this lane since `#405`: the
+refusal is the pass's rather than this item's, so the fold leaves an item that
+was merely queued `queued` and the conductor pauses instead — and leaves an
+item already in this lane on a question exactly as it was, because only a
+person's answer may lift that. **Unpushed work** (the branch did
 not reach origin,
 `conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
 ends) can come on top of any hold that has a run. Today none of this is
