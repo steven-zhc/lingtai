@@ -1,13 +1,14 @@
 /**
  * From `@lingtai/actions/action` rather than the package's main entry: that
- * barrel also re-exports `command.ts`, which this file never calls — pulling
- * it in only costs every consumer of `PassResult`/`Destination` a dependency
- * on `node:child_process`'s types for nothing (#445's build fix finds why
- * that cost is not free: Next's `types/global.d.ts` augmentation of
- * `NodeJS.WriteStream` collides with `@types/node@26.4.0`'s `spawn`
- * overloads the moment both are in one `tsc` program, which is exactly what
- * happens the first time anything reachable from `apps/board` imports this
- * file).
+ * barrel also re-exports `command.ts`, which this file never calls. Staying
+ * narrow here is harmless but no longer avoids anything — the board's own
+ * program already carries the whole barrel unconditionally, through
+ * `apps/board/test/next-globals.ts` (#454), and that program is green with
+ * `command.ts` in it because `command.ts` itself now casts its `spawn` env to
+ * `NodeJS.ProcessEnv` (#454). What #445 found was never `NodeJS.WriteStream`:
+ * Next's `types/global.d.ts` makes `ProcessEnv.NODE_ENV` required, which
+ * `command.ts`'s `Record<string, string>` env lacked — TS2769 on the `spawn`
+ * overload it then matched instead, TS2339 on the `never` that fell out of it.
  */
 import {
   NEEDS_INPUT,

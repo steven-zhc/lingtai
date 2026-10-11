@@ -403,7 +403,11 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
     return spawn(options.run, {
       shell: true,
       cwd: options.cwd,
-      env,
+      // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
+      // board reaches this through the `@lingtai/actions` barrel. This
+      // child's environment is still `options.env` exactly, chosen whole
+      // (the doc comment above): the cast changes nothing it runs with.
+      env: env as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   }
@@ -411,7 +415,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
   const child = spawn(options.run, {
     shell: true,
     cwd: options.cwd,
-    env,
+    env: env as NodeJS.ProcessEnv,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   // A command that never reads stdin closes the pipe under us — that is every
