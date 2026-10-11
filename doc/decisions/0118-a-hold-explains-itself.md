@@ -115,7 +115,7 @@ which kind a hold is gets inferred again in each place that needs it, from
      keeps a rule of its own. **Triage is not an input**: it advises and never
      moves the item, so whether an agent has finished advising cannot widen or
      narrow what a person may do.
-   - **A second pure function, `recommendedMove(hold, triage)`, picks at most
+   - **A second pure function, `recommendedMove(hold, status)`, picks at most
      one of those moves** to draw first and to prefill. An advised move is
      recommended when `allowedMoves` offers it, and otherwise is not, its
      words still shown. With no advice (not declared, running or failed) the
@@ -152,7 +152,7 @@ which kind a hold is gets inferred again in each place that needs it, from
      It names the block it explains and the head it read, which runtime and
      model answered, and its usage
      ([0110](0110-tokens-on-the-event-money-at-display.md)). Its result is
-     `Triage`'s own `Failed` or `Advised`, the same type and not a copy of it,
+     a `TriageResult`, `Failed` or `Advised`, the same type and not a copy of it,
      so an advised triage with a failure, or a failed one with advice, cannot
      be written. `Advised` carries the cause, the recommended move, one
      sentence for the card, and one sentence of what the ticket wants (or
