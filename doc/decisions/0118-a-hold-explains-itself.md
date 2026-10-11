@@ -81,7 +81,10 @@ which kind a hold is gets inferred again in each place that needs it, from
        reaches a person with a decision: `Asked` (a step stopped to ask, and
        its question), `Human` (a `human:` or `watch:` action held, declared in
        the recipe or injected by `--no-merge`, which since #256 are one
-       mechanism; not `Gate`, which is a retired word), and `Routed` (the
+       mechanism; not `Gate`, which is a retired word), `Declined` (a fixing
+       agent was sent the findings, read them, and chose to change nothing:
+       it ran, committed nothing and did not fail, carrying what it said
+       last; two agents disagree and a person is the referee), and `Routed` (the
        `proposed` router sent it to a person, carrying the arrival that
        brought it there as a `JudgeWhen`, and the why). **Every arrival the
        router sends to a person is `Routed`**, whatever it was: a check that
@@ -94,7 +97,8 @@ which kind a hold is gets inferred again in each place that needs it, from
      - **`Failure`** is what reached a person without anyone deciding it:
        each variant carries its own evidence: a merge the lane refused (its
        paths and both shas), a ceiling (which one, and what was spent), a step
-       that did not finish, and a setup that refused before any agent ran
+       that did not finish because it crashed or hit a ceiling (never one
+       that chose to change nothing, which is `Declined`), and a setup that refused before any agent ran
        (and whether that lifts by itself or needs a person). Whether a
        separate check-stayed-red variant still has a producer once the router
        routes are `Routed` is settled by the code that writes the hold (#445),
