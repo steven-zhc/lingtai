@@ -48,7 +48,7 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { parseWorkItemStream } from '@lingtai/domain'
+import { legacyColumns, parseWorkItemStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
@@ -333,17 +333,18 @@ export const taskViewProjection: Projection = {
             kind: null,
             state: 'waiting',
           })
-          // The question is still the card's line, unchanged. What the block
-          // now *may* carry beside it is which kind of hold it is and a
-          // diagnosis; both are null on every block written before #83, and a
-          // null one leaves the row exactly as this case has always left it.
+          // The question is still the card's line, unchanged — now rebuilt
+          // from the `Hold` the event carries rather than read off the
+          // payload directly (#445). `legacyColumns` is the one place that
+          // does the reconstruction.
+          const cols = legacyColumns(d.hold)
           await set(ctx, event.streamId, seq, at, {
             state: 'waiting',
-            note: d.question,
+            note: cols.question,
             blocked: true,
-            asked: d.runId === null,
-            needs: d.needs,
-            diagnosis: d.diagnosis === null ? null : JSON.stringify(d.diagnosis),
+            asked: cols.runId === null,
+            needs: cols.needs,
+            diagnosis: cols.diagnosis === null ? null : JSON.stringify(cols.diagnosis),
           })
           break
         }

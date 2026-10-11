@@ -22,7 +22,7 @@ import {
 } from '@lingtai/actions'
 import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, taggedTrace } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type Tier, parsePayload, retiredRepairPending } from '@lingtai/domain'
+import { diagnoseRefusal, type Tier, parsePayload, retiredRepairPending } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type RuntimeId,
@@ -172,7 +172,6 @@ import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
-import { diagnoseRefusal } from './attribution.ts'
 import { agentBranch, armBranch } from './branches.ts'
 import { claimWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'

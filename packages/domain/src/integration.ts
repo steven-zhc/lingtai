@@ -27,12 +27,12 @@ export type IntegrationLifecycle =
 
 export type IntegrationStatus = IntegrationLifecycle['status']
 
-export interface Refusal {
-  workItemId: string
-  branch: string
-  reason: RefusalReason
-  detail: string
-}
+/**
+ * The whole of `IntegrationRefused`'s payload, not just the four fields this
+ * file used to keep — #445's `MergeRefused` wants `paths`, `baseSha` and
+ * `headSha` too, and they are already on every row the reducer stores.
+ */
+export type Refusal = PayloadOf<'IntegrationRefused'>
 
 export interface Landed {
   workItemId: string

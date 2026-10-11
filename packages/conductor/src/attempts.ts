@@ -38,6 +38,7 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, PayloadOf } from '@lingtai/domain'
+import { legacyColumns } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -153,10 +154,11 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
 
       case 'WorkItemBlocked': {
         const d = event.data as PayloadOf<'WorkItemBlocked'>
-        const attempt = d.runId === null ? undefined : byRun.get(d.runId)
+        const runId = 'run' in d.hold ? d.hold.run.runId : null
+        const attempt = runId === null ? undefined : byRun.get(runId)
         // An attempt that ended by asking a person ended just as much as one
         // that was released, and the question is the reason.
-        if (attempt) attempt.ended = `blocked, asking: ${d.question}`
+        if (attempt) attempt.ended = `blocked, asking: ${legacyColumns(d.hold).question}`
         break
       }
 
