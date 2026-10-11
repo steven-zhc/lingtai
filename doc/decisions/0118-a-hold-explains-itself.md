@@ -90,9 +90,12 @@ which kind a hold is gets inferred again in each place that needs it, from
      sit beside a `Judgement` or a `Failure` and cannot sit beside a
      `Question`, which has no run. It is shown first, above everything else on
      the page, with what it takes to rescue it.
-   - **Triage is a second, independent union** (`NotDeclared`, `Running`,
-     `Failed`, `Advised`), and an advised triage carries a `Cause` that is a
-     union too, each cause with its own parts (§4). What Lingtai knows about a
+   - **Triage is two more unions, a fact and a view of it.** `TriageResult`
+     (`Failed`, `Advised`) is what `HoldTriaged` records. `TriageStatus`
+     (`NotDeclared`, `Queued`, `Running`, `Interrupted`, `Done` carrying a
+     `TriageResult`) is derived from the log and never stored, and is what
+     the page and `recommendedMove` match on. An advised triage carries a
+     `Cause` that is a union too, each cause with its own parts (§4). What Lingtai knows about a
      hold and what an agent concluded about it are never one field.
    - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
      _Waiting with no block_ therefore has no value to be. The routes that
@@ -159,7 +162,11 @@ which kind a hold is gets inferred again in each place that needs it, from
      hunks only in _merge by hand_. None of them is repeated beside the cause.
      Where the body does not say what the ticket wants, that question is a
      decision for you. A triage that fails still appends it, with the
-     failure and the usage.
+     failure and the usage. **What the agent writes is bounded**, because it
+     is kept for good and drawn on the page: a few questions with a few
+     answers each, a bounded number of fixes and hunks, and short text, with
+     the numbers in the schema. An answer past them is refused, and that
+     refusal is a failed triage.
    - **A triage is keyed by its block, and its attempts are on the log.**
      The key is the work item and the block's position on its stream, and
      nothing else: the head is recorded for the audit, and a recipe edit does
@@ -272,16 +279,19 @@ which kind a hold is gets inferred again in each place that needs it, from
 
 9. **Triage belongs to the block it explains.** `HoldTriaged` names the
    `WorkItemBlocked` it answers and the head it read. The page and the card
-   show it only while that block is the current one, so an approve, a requeue
-   or a new head retires it. A triage that finishes after the person has acted
+   show it only while that block is the current one, so an approve or a
+   requeue retires it. A new head arrives only with a new block, so it
+   retires it too. A branch moved by hand while the block stands makes no new
+   block and no new triage; the page shows the triage with the head it read
+   and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
 10. **The card reads triage from `task_view`.** The projection folds
     `HoldTriaged` into three columns: the triage state (running, advised or
-    failed), the cause, and the one sentence. A triage is queued when its
-    block has no `TriageStarted` while `triage:` is declared, running while
-    its latest attempt has no `HoldTriaged`, and interrupted when that attempt
-    started before the running daemon did. The full advice is
+    failed), the cause, and the one sentence. The `TriageStatus` is `Queued` when its block has no `TriageStarted`
+    while `triage:` is declared, `Running` while its latest attempt has no
+    `HoldTriaged`, `Interrupted` when that attempt started before the running
+    daemon did, and `Done` with the latest attempt's result. The full advice is
     read from the event by the task page. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
