@@ -347,9 +347,11 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
  * **The step stopped and asked something** — 0058 §3c, and the one report with a
  * destination.
  *
- * `admit`, `design` and `implement` can reach it: an agent stopped mid-flight
- * through the hook (`RunAwaitingInput`), or answered a question where a document
- * was asked for. It arrives at `proposed`, whose call is `waiting` with the
+ * `admit`, `design` and `implement` can reach it: the agent itself asked a
+ * question instead of finishing, or answered a question where a document was
+ * asked for. (`RunAwaitingInput` is a note on the card and nothing here reads
+ * it — the hook that appends it answers the agent `{ allow: true }` and the
+ * run carries on.) It arrives at `proposed`, whose call is `waiting` with the
  * question or *that step again, stating its assumption* — and nothing but the
  * step that asked knows the question, which is why `onOffer` offers that step
  * and no other from here.

@@ -621,7 +621,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(card(tasks, 1)?.state).toBe('queued')
       expect(card(tasks, 2)?.state).toBe('running')
       expect(card(tasks, 3)?.state).toBe('verifying')
-      expect(card(tasks, 4)?.state).toBe('waiting')
+      expect(card(tasks, 4)?.state).toBe('queued')
       expect(card(tasks, 5)?.state).toBe('landed')
     })
 
@@ -769,9 +769,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(nine.diagnosis?.done).toContain('No agent was bought')
       expect(nine.diagnosis?.recommendation?.action).toBe('requeue')
 
-      // The lane holds more than questions: a refused dispatch is `waiting` and
-      // is not an item anybody can hand back, so the card must not offer to.
-      expect(card(tasks, 4)!.state).toBe('waiting')
+      // The lane holds more than questions: a refused dispatch with no block
+      // after it leaves `state` alone — #406 — so card 4 is whatever
+      // `WorkItemDiscovered` wrote, with the refusal as its note.
+      expect(card(tasks, 4)!.state).toBe('queued')
       expect(card(tasks, 4)!.blocked).toBe(false)
     })
 

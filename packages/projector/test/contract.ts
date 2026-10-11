@@ -157,6 +157,18 @@ const stepPassed = (runId: string, findings: unknown[] = []) => ({
   },
 })
 
+const runAwaitingInput = (prompt: string) => ({
+  type: 'RunAwaitingInput',
+  actor: 'conductor',
+  data: { prompt },
+})
+
+const runFailed = (kind: string, detail: string) => ({
+  type: 'RunFailed',
+  actor: 'conductor',
+  data: { kind, detail },
+})
+
 const blocked = (question: string) => ({
   type: 'WorkItemBlocked',
   actor: 'conductor',
@@ -554,6 +566,82 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(card.asked).toBe(true)
         expect(card.needs).toBe('judgement')
         expect(card.diagnosis).not.toBeNull()
+      } finally {
+        await f.close()
+      }
+    })
+
+    /**
+     * **`RunAwaitingInput` is a note on the card, not a hold** (#406).
+     *
+     * The hook that appends it answers the agent `{ allow: true }` and the run
+     * carries on underneath it — nothing reads the event back — so a card that
+     * moved to `waiting` here stayed stuck in a lane nobody was waiting on.
+     */
+    it('leaves a running card running on RunAwaitingInput, with the prompt as its note', async () => {
+      const f = await make()
+      const task = f.stream('wi', '47')
+      const run = f.stream('run', 'awaiting-input')
+      try {
+        const written = [
+          ...(await f.events.append(task, 0, [claimed(run, 'a run that paused mid-flight')])),
+          ...(await f.events.append(run, 0, [started(task), runAwaitingInput('which base branch?')])),
+        ]
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('running')
+        expect(card.note).toBe('which base branch?')
+        expect(card.blocked).toBe(false)
+      } finally {
+        await f.close()
+      }
+    })
+
+    /**
+     * **`RunFailed` leaves `state` for whichever event follows it** (#406).
+     *
+     * It is always followed by a `WorkItemBlocked` or a release back to
+     * `queued` — never by nothing — so writing `waiting` here was a guess
+     * about which of the two was coming, and the guess was wrong whenever the
+     * release did.
+     */
+    it('leaves a running card running on RunFailed, with the failure as its note', async () => {
+      const f = await make()
+      const task = f.stream('wi', '48')
+      const run = f.stream('run', 'failed-no-block')
+      try {
+        const written = [
+          ...(await f.events.append(task, 0, [claimed(run, 'a run that crashed')])),
+          ...(await f.events.append(run, 0, [started(task), runFailed('crash', 'out of memory')])),
+        ]
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('running')
+        expect(card.note).toBe('crash: out of memory')
+        expect(card.blocked).toBe(false)
+      } finally {
+        await f.close()
+      }
+    })
+
+    it('reaches waiting only through the WorkItemBlocked that follows a RunFailed', async () => {
+      const f = await make()
+      const task = f.stream('wi', '49')
+      const run = f.stream('run', 'failed-then-blocked')
+      try {
+        const written = [
+          ...(await f.events.append(task, 0, [claimed(run, 'a run that crashed and was then held')])),
+          ...(await f.events.append(run, 0, [started(task), runFailed('crash', 'out of memory')])),
+          ...(await f.events.append(task, 1, [blocked('why did this crash?')])),
+        ]
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('waiting')
+        expect(card.blocked).toBe(true)
+        expect(card.note).toBe('why did this crash?')
       } finally {
         await f.close()
       }

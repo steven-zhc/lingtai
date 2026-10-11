@@ -514,8 +514,11 @@ export const taskViewProjection: Projection = {
         }
 
         case 'RunAwaitingInput': {
+          // Claude's `Notification` hook appends this (`hook-socket.ts`), the
+          // hook answers `{ allow: true }`, and the run carries on — nothing
+          // reads the event back. It is a note on the card, never a hold.
           const d = event.data as PayloadOf<'RunAwaitingInput'>
-          await viaRun(ctx, event.streamId, seq, at, { state: 'waiting', note: d.prompt })
+          await viaRun(ctx, event.streamId, seq, at, { note: d.prompt })
           break
         }
 
@@ -594,9 +597,11 @@ export const taskViewProjection: Projection = {
         }
 
         case 'RunFailed': {
+          // Always followed by a `WorkItemBlocked` or a release back to
+          // `queued` (`conduct.ts`) — this is the note for the moment before
+          // either lands, and it leaves `state` for whichever one writes it.
           const d = event.data as PayloadOf<'RunFailed'>
           await viaRun(ctx, event.streamId, seq, at, {
-            state: 'waiting',
             note: `${d.kind}: ${d.detail}`,
           })
           break
@@ -678,8 +683,11 @@ export const taskViewProjection: Projection = {
           const verdict = VERDICT[event.type]
           if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict)
           if (event.type === 'ApprovalRequested') {
+            // A `WorkItemBlocked` always follows — the conductor's own request
+            // sits inside the `if` that guards it, and a plugin's `heldAt`
+            // reaches the same unconditional append (`conduct.ts`, `pass.ts`)
+            // — so `state` is left for that event to write.
             await viaRun(ctx, event.streamId, seq, at, {
-              state: 'waiting',
               note: (event.data as PayloadOf<'ApprovalRequested'>).question,
               // The card may offer Approve, and this is the sha it must send:
               // the one the run is asking about, not the one it produced. A
@@ -704,9 +712,12 @@ export const taskViewProjection: Projection = {
         // ---- the integration lane ----
 
         case 'IntegrationRefused': {
+          // A block does not always follow — the merge lane's own `verify-failed`
+          // path can write a fix round's `running` instead (`conduct.ts`). Every
+          // way out writes its own state, so this leaves `state` alone rather
+          // than guessing which one is coming.
           const d = event.data as PayloadOf<'IntegrationRefused'>
           await set(ctx, d.workItemId, seq, at, {
-            state: 'waiting',
             note: `${d.reason}: ${d.detail}`,
             // The approval, if there was one, has been spent on this attempt.
             // The run is back to `gating` and `approve()` refuses it — so the

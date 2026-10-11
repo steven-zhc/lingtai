@@ -894,13 +894,15 @@ export function parseDraft(text: string | null): Drafted {
  * the shape the step exists to avoid. That is `#61`'s shape — decided, drawn,
  * routed for, and unreachable.
  *
- * **It arrives in the answer and not through the hook**, which is the difference
- * between this step and `implement`. An implementer is a long run that may need to
- * stop mid-flight, so `hook-socket.ts` appends `RunAwaitingInput` and
- * `work-action.ts` turns `asked` into this same token. A design agent is one
- * question and one answer, and it runs `unhookedSettings` — the call the cold
- * reviewer gets — so hooking it would change what the step *is* as well as what it
- * can say. Its shape is `review`'s: an answer the action parses (`parseDraft`).
+ * **It arrives in the answer, same as `implement`'s does.** An implementer's
+ * `asked` is its own answer too — `work-action.ts` turns `{asked}` into this
+ * same token — and nothing about that path runs through the hook: the socket's
+ * `RunAwaitingInput` is a note on the card, and the run carries on under it. What
+ * still tells the two steps apart is `unhookedSettings` — the call the cold
+ * reviewer gets — which a design agent runs and an implementer does not, because
+ * a design agent is one question and one answer and hooking it would change what
+ * the step *is* as well as what it can say. Its shape is `review`'s: an answer
+ * the action parses (`parseDraft`).
  *
  * **The fifth is `unreadable`, and it is the one that must not be quiet**
  * (`#279`). An answer that announced a question and did not carry one is not an
