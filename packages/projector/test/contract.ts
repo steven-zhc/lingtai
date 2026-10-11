@@ -521,6 +521,40 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    /**
+     * **A refused dispatch over an item already holding a person's question
+     * must lift the hold, not just the state** (#405).
+     *
+     * Before this, the `set` for `DispatchRefused` wrote `note` and nothing
+     * else: a `WorkItemBlocked` row's `blocked`, `asked`, `needs` and
+     * `diagnosis` survived the refusal untouched while `state` flipped to
+     * `queued` — a card the queue would admit (`selectRunnable` takes any
+     * `queued` row) while still carrying `blocked: true` and a question
+     * nobody had answered, with the refusal's sentence sitting where the
+     * person's question used to be.
+     */
+    it('clears a standing hold when a dispatch is refused over it', async () => {
+      const f = await make()
+      const task = f.stream('wi', '46')
+      try {
+        const written = [
+          ...(await f.events.append(task, 0, [blocked('which base branch?')])),
+          ...(await f.events.append(task, 1, [dispatchRefused()])),
+        ]
+        await made(f, taskViewProjection, written)
+
+        const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
+        expect(card.state).toBe('queued')
+        expect(card.note).toBe('needs sandboxed; claude-code is missing filesystem-sandbox')
+        expect(card.blocked).toBe(false)
+        expect(card.asked).toBe(false)
+        expect(card.needs).toBeNull()
+        expect(card.diagnosis).toBeNull()
+      } finally {
+        await f.close()
+      }
+    })
+
     it('hands the backlog the minors a passing gate raised, and filters them', async () => {
       const f = await make()
       const task = f.stream('wi', '43')

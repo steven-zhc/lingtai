@@ -152,11 +152,12 @@ export const taskViewProjection: Projection = {
         diagnosis    jsonb,
 
         -- Whether a person is holding a *question*, as opposed to being in the
-        -- waiting lane for some other reason. The lane also holds a dispatch
-        -- that was refused and a run that asked something mid-flight, and
-        -- neither of those is an item anybody can hand back — offering a
-        -- control that would refuse is the shape #58 records and #84 must not
-        -- reintroduce.
+        -- waiting lane for some other reason. The lane also holds a run that
+        -- asked something mid-flight, and that is not an item anybody can hand
+        -- back — offering a control that would refuse is the shape #58
+        -- records and #84 must not reintroduce. A refused dispatch is not in
+        -- this lane at all since #405: it is queued, because the refusal is
+        -- the pass's rather than this item's.
         blocked      boolean not null default false,
 
         -- Whether that question was asked **before any run** — a
@@ -469,6 +470,19 @@ export const taskViewProjection: Projection = {
           })
           await set(ctx, event.streamId, seq, at, {
             note: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,
+            // A refused dispatch is the pass's problem, never a hold on this
+            // item — so it must not leave one standing. Without this, a
+            // refusal over an item already `waiting` on a person's question
+            // (`blocked`, `asked`, `needs`, `diagnosis`, `awaiting_sha`) would
+            // flip `state` to `queued` while leaving those columns as they
+            // were, overwriting the question's own note with the refusal's
+            // and surfacing Decide/Requeue on a Queued card for a question the
+            // person never answered.
+            awaiting_sha: null,
+            blocked: false,
+            asked: false,
+            needs: null,
+            diagnosis: null,
           })
           break
         }
