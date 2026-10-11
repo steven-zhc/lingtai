@@ -13,9 +13,12 @@
  * renders it on the operator's own origin, next to the buttons that approve
  * merges. Four things follow, and none of them is optional:
  *
- * - **No raw HTML.** `react-markdown` drops HTML nodes unless `rehype-raw` is
- *   added, and it is not added here. `rehype-sanitize` runs anyway, because a
- *   plugin somebody adds later must not silently open the door.
+ * - **No raw HTML.** `react-markdown` v10 hands raw HTML to rehype as `raw`
+ *   nodes, and turns any that survive into escaped text — so without a
+ *   sanitiser, `<script>` would render as `&lt;script&gt;`, not vanish.
+ *   `rehype-sanitize` is what drops `raw` nodes outright, and it is load-bearing
+ *   rather than a second line of defence: removing it as "redundant" would
+ *   start printing every tag an issue body carries.
  * - **A library's sanitiser, at its defaults.** `defaultSchema` is GitHub's own
  *   allowlist, including the `user-content-` prefixing that stops a crafted
  *   `id` from clobbering this page's DOM. A hand-rolled subset for untrusted

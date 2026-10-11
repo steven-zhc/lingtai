@@ -1,3 +1,5 @@
+import { ANSWER_CLOSE_MARKER, answerOpenMarker } from '@lingtai/conductor/body-section'
+import { keyMarker } from '@lingtai/conductor/ticket-store'
 import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
@@ -165,5 +167,36 @@ describe('the ticket body, which anyone who can file an issue writes', () => {
     expect(html).not.toContain('tlink')
     expect(html).toContain('rel="noreferrer nofollow ugc"')
     expect(html).toContain('target="_blank"')
+  })
+
+  /**
+   * The regression `rehype-sanitize` guards against (#446): a comment-form
+   * marker, block or inline, leaves no trace through `DocumentBody` — never
+   * escaped into view either, which is what a sanitiser-less render would do.
+   * Goes through `DocumentBody` rather than bare `ReactMarkdown`, because
+   * dropping the sanitiser is exactly the regression this pins.
+   */
+  it('hides every marker a ticket body carries, and keeps the text around it', () => {
+    const html = render(
+      [
+        'Problem text above the answer.',
+        '',
+        answerOpenMarker('w-1@review'),
+        '',
+        'the *answer*, written for a hold',
+        '',
+        ANSWER_CLOSE_MARKER,
+        '',
+        `inline ${keyMarker('finding-9')} marker`,
+      ].join('\n'),
+    )
+
+    expect(html).not.toContain('lingtai:answer')
+    expect(html).not.toContain('lingtai:finding')
+    expect(html).not.toContain('&lt;!--')
+    expect(html).toContain('Problem text above the answer.')
+    expect(html).toContain('the <em>answer</em>, written for a hold')
+    expect(html).toContain('inline')
+    expect(html).toContain('marker')
   })
 })

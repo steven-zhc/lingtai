@@ -1,4 +1,5 @@
 import type { TicketSql } from '@lingtai/event-store'
+import { BodyChanged } from '@lingtai/github'
 
 /**
  * `tickets` and `ticket_comments` — Lingtai's own ticket store, created on
@@ -352,8 +353,24 @@ export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOpt
       if (rows.length === 0) throw noSuchTicket(project, number)
     },
 
-    async updateBody(number, body) {
+    async updateBody(number, body, opts) {
       await ensureReady()
+      if (opts?.ifUnchanged !== undefined) {
+        const rows = await sql.query<{ number: number }>(
+          `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 AND body = $5 RETURNING number`,
+          [project, number, body, now().toISOString(), opts.ifUnchanged],
+        )
+        if (rows.length > 0) return
+        // Zero rows either way — settle which by asking again. This select
+        // plays no part in deciding whether the write landed; the UPDATE
+        // above already did, atomically.
+        const exists = await sql.query<{ number: number }>(
+          `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
+          [project, number],
+        )
+        if (exists.length === 0) throw noSuchTicket(project, number)
+        throw new BodyChanged(number)
+      }
       const rows = await sql.query<{ number: number }>(
         `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
         [project, number, body, now().toISOString()],

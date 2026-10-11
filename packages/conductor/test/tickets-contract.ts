@@ -32,7 +32,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { Tickets } from '../src/ticket-store.ts'
+import { BodyChanged, type Tickets } from '../src/ticket-store.ts'
 
 export function describeTicketsContract<T extends Tickets>(
   name: string,
@@ -105,6 +105,30 @@ export function describeTicketsContract<T extends Tickets>(
       expect(got.title).toBe('x')
       expect(got.labels.map((l) => l.name)).toEqual(['bug'])
       expect(got.state).toBe('open')
+    })
+
+    it('updateBody with ifUnchanged refuses a body that changed since it was read, and leaves the other write standing', async () => {
+      const t = await tickets()
+      const created = await t.createIssue({ title: 'x', body: 'first body', labels: [] })
+      const firstRead = created.body
+
+      // Stands in for another writer landing between this caller's read and its write.
+      await t.updateBody(created.number, 'second body')
+
+      await expect(t.updateBody(created.number, 'third body', { ifUnchanged: firstRead })).rejects.toThrow(BodyChanged)
+
+      const got = await t.getIssue(created.number)
+      expect(got.body).toBe('second body')
+    })
+
+    it('updateBody with ifUnchanged writes when the body still matches what was read', async () => {
+      const t = await tickets()
+      const created = await t.createIssue({ title: 'x', body: 'first body', labels: [] })
+
+      await t.updateBody(created.number, 'second body', { ifUnchanged: created.body })
+
+      const got = await t.getIssue(created.number)
+      expect(got.body).toBe('second body')
     })
 
     it("closeIssue removes it from listOpenIssues; getIssue still answers it, state: 'closed'", async () => {

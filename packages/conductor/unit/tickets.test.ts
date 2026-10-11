@@ -25,6 +25,15 @@ import { describeTicketsContract } from '../test/tickets-contract.ts'
 const _gitHubSatisfiesTickets: Tickets = {} as GitHubClient
 
 /**
+ * The trap `updateBody(…, { ifUnchanged })` has to be checked for: a function
+ * with fewer parameters is assignable to one with more, so the assignment
+ * above still passes even if `GitHubClient.updateBody` never grew this
+ * option — it would silently ignore it. This fails the moment the GitHub side
+ * drops it, because `tsc` refuses an index past a tuple's length.
+ */
+const _gitHubTakesIfUnchanged: Parameters<GitHubClient['updateBody']>[2] = { ifUnchanged: '' }
+
+/**
  * `IssueChannel` is `Tickets` narrowed on `getIssue`'s return — see `tell.ts`'s
  * header. This is the other half of the ticket's type-level requirement: a
  * `Tickets` must still satisfy the write side the way the full `GitHubClient`

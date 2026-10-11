@@ -25,9 +25,17 @@
  */
 import { parseWorkItemStream, type ProjectState } from '@lingtai/domain'
 import type { LogQueries, TicketSql } from '@lingtai/event-store'
-import type { GitHubClient } from '@lingtai/github'
+import { BodyChanged, type GitHubClient } from '@lingtai/github'
 import type { Recipe } from '@lingtai/recipe'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
+
+/**
+ * Re-exported so a conductor caller imports it from where `Tickets` lives,
+ * rather than reaching past `Tickets` into `@lingtai/github` for one class.
+ * Defined there and not here because `@lingtai/github` cannot import
+ * `@lingtai/conductor`, and `GitHubClient.updateBody` throws it too.
+ */
+export { BodyChanged }
 
 import { dbTickets } from './db-tickets.ts'
 import type { TicketDetail, TicketListing } from './discover.ts'
@@ -73,8 +81,15 @@ export interface Tickets {
   /** Replaces the whole label set. */
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
-  /** Replaces the whole body. */
-  updateBody(issue: number, body: string): Promise<void>
+  /**
+   * Replaces the whole body.
+   *
+   * `ifUnchanged`, when given, must be the body as this caller last read it.
+   * Refuses with `BodyChanged` when the tracker can tell the body moved since
+   * then — on `db`, exactly; on GitHub, best-effort (see `BodyChanged`'s own
+   * comment in `@lingtai/github`).
+   */
+  updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
 }
 
 export interface ProposedTicket {

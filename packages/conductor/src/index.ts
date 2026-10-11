@@ -115,6 +115,7 @@ export {
 } from './tell.ts'
 export { acceptFinding, declineFinding, proposalFor, type BacklogDecision, type DecideOptions } from './backlog.ts'
 export {
+  BodyChanged,
   githubTicketStore,
   keyMarker,
   passClientOf,
@@ -127,3 +128,4 @@ export {
   type TicketsForOptions,
   type TicketStore,
 } from './ticket-store.ts'
+export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-section.ts'

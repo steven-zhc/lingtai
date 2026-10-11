@@ -9,7 +9,7 @@
  * one.
  */
 import type { TicketListing } from '../src/discover.ts'
-import type { Ticket, Tickets } from '../src/ticket-store.ts'
+import { BodyChanged, type Ticket, type Tickets } from '../src/ticket-store.ts'
 
 export interface MemoryTicketsOptions {
   /** The clock a created ticket's time is read from. */
@@ -119,8 +119,10 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets
       require(number).state = 'closed'
     },
 
-    async updateBody(number, body) {
-      require(number).body = body
+    async updateBody(number, body, opts) {
+      const t = require(number)
+      if (opts?.ifUnchanged !== undefined && t.body !== opts.ifUnchanged) throw new BodyChanged(number)
+      t.body = body
     },
   }
 }

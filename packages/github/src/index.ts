@@ -30,6 +30,7 @@ export {
   type ManifestOptions,
 } from './manifest.ts'
 export {
+  BodyChanged,
   createGitHubClient,
   parseSlug,
   type CreateClientOptions,

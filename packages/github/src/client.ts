@@ -20,6 +20,26 @@ import {
 } from './app.ts'
 
 /**
+ * `updateBody`'s `ifUnchanged` refused: the body read no longer matches what
+ * is there now.
+ *
+ * **Best-effort on GitHub.** The issue PATCH takes no `If-Match`, so this is a
+ * read and then a write, never a conditional write: an edit landing in the
+ * instant between the two is still lost. 0118 §6 accepts that window; this
+ * narrows it and does not close it. A `db` tracker's write is one conditional
+ * `UPDATE`, with no window at all.
+ */
+export class BodyChanged extends Error {
+  override readonly name = 'BodyChanged'
+  readonly issue: number
+
+  constructor(issue: number) {
+    super(`#${issue}'s body changed since it was read`)
+    this.issue = issue
+  }
+}
+
+/**
  * A label as GitHub holds it: the name a recipe matches on, and the colour the
  * repository's own team chose for it in GitHub's UI.
  *
@@ -225,8 +245,15 @@ export interface GitHubClient {
    * It replaces, as `setLabels` does, because that is what GitHub offers. The
    * caller is therefore the one that has to have read the current body first;
    * `tell.ts` takes the whole new body and does not compose it.
+   *
+   * `ifUnchanged`, when given, must be the body exactly as `getIssue` last
+   * answered it — never one this process composed — because GitHub may
+   * normalise what it stores (line endings from the web editor, for one), and
+   * comparing against a body this process sent would refuse on every call.
+   * Refuses with `BodyChanged` when the issue's body is no longer that; see
+   * the class's own comment for how far that check reaches.
    */
-  updateBody(issue: number, body: string): Promise<void>
+  updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
 
   /**
    * Opens an issue.
@@ -311,7 +338,13 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     })
   }
 
-  async function updateBody(issue: number, body: string): Promise<void> {
+  async function updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void> {
+    if (opts?.ifUnchanged !== undefined) {
+      const current = toIssue(
+        await request<Parameters<typeof toIssue>[0]>('GET', `/repos/${owner}/${repo}/issues/${issue}`),
+      )
+      if (current.body !== opts.ifUnchanged) throw new BodyChanged(issue)
+    }
     await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/${issue}`, { body })
   }
 
