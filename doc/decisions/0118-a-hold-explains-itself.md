@@ -147,7 +147,9 @@ which kind a hold is gets inferred again in each place that needs it, from
      Where it is not declared, nothing runs, and the page shows the ticket,
      where it is, and the holder's own words.
    - It runs for judgements and machine failures. It does not run for a
-     person's own question, because the person wrote the question.
+     person's own question, because the person wrote the question. Which
+     variants it runs for is one pure function of the hold, `triageRuns`,
+     beside `allowedMoves` and following the same table.
    - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
      It names the block it explains and the head it read, which runtime and
      model answered, and its usage
@@ -158,8 +160,9 @@ which kind a hold is gets inferred again in each place that needs it, from
      sentence for the card, and one sentence of what the ticket wants (or
      none, where the body does not say). **The parts belong to the cause**:
      the questions, with their answers and the recommended one, exist only in
-     _a decision for you_; the fixes only in _lines to fix_; the conflict
-     hunks only in _merge by hand_. None of them is repeated beside the cause.
+     _a decision for you_, or inside the conflict hunk they are about; the
+     fixes only in _lines to fix_; the conflict hunks only in _merge by hand_.
+     None of them is repeated beside the cause.
      Where the body does not say what the ticket wants, that question is a
      decision for you. A triage that fails still appends it, with the
      failure and the usage. **What the agent writes is bounded**, because it
@@ -272,10 +275,13 @@ which kind a hold is gets inferred again in each place that needs it, from
      (`packages/repo/src/integrate.ts:401-413`), so triage reads both sides
      from the mirror.
    - It resolves the mechanical hunks, and asks one question for each hunk
-     whose behaviour differs on the two sides. The page lists every hunk with
-     its status and opens only the ones that need the person.
-   - Past 20 hunks it does not resolve them one by one. It recommends starting
-     over from the new base.
+     whose behaviour differs on the two sides; that question is carried by
+     the hunk it is about. The page lists every hunk with its status and
+     opens only the ones that need the person.
+   - Past 20 hunks it does not resolve them one by one. The hunks are counted
+     from the mirror before any agent is called, and past 20 none is: the
+     triage is _merge by hand_ with no hunks and their total, recommending
+     starting over from the new base, and it costs nothing.
 
 9. **Triage belongs to the block it explains.** `HoldTriaged` names the
    `WorkItemBlocked` it answers and the head it read. The page and the card
