@@ -15,6 +15,9 @@ export function answerOpenMarker(key: string): string {
 /** The close marker. Carries no key — a close belongs to whichever open marker precedes it. */
 export const ANSWER_CLOSE_MARKER = '<!-- /lingtai:answer -->'
 
+/** The prefix shared by every key's open marker, so an occurrence of any key's open can be spotted without knowing the key. */
+const OPEN_MARKER_PREFIX = '<!-- lingtai:answer '
+
 /**
  * Writes `text` into `body` under `key`, replacing whatever that key's
  * section held before.
@@ -37,8 +40,15 @@ export const ANSWER_CLOSE_MARKER = '<!-- /lingtai:answer -->'
  * applies to `text`: a close marker or another key's open marker embedded in
  * it would be read back as *the* boundary on the very next call, splicing a
  * retry into an unbounded grow or deleting a neighbouring key's section
- * entirely — so `text` containing `-->` is refused for the same reason a key
- * containing it is.
+ * entirely — so `text` containing either is refused for the same reason a key
+ * containing `-->` is.
+ *
+ * A stray, unpaired open marker for the key — one left by a person quoting it,
+ * or by deleting its close line while editing — is refused the same way an
+ * altogether-unclosed marker is: if another section's open marker sits
+ * between the one found and the first close after it, that close cannot
+ * belong to it, so the span is not trusted rather than spliced across
+ * whatever that other section holds.
  *
  * **A second, hand-pasted open marker for the same key is left alone.** Only
  * the first pair is replaced.
@@ -50,9 +60,9 @@ export function upsertSection(body: string, key: string, text: string): string {
 
   const open = answerOpenMarker(key)
   const trimmed = text.trim()
-  if (trimmed.includes('-->')) {
+  if (trimmed.includes('lingtai:answer')) {
     throw new Error(
-      `upsertSection: text for key ${JSON.stringify(key)} cannot contain "-->", which would be read back as a marker`,
+      `upsertSection: text for key ${JSON.stringify(key)} cannot contain a lingtai:answer marker ("-->"), which would be read back as a marker`,
     )
   }
   const section = `${open}\n\n${trimmed}\n\n${ANSWER_CLOSE_MARKER}`
@@ -66,6 +76,11 @@ export function upsertSection(body: string, key: string, text: string): string {
   const closeIdx = body.indexOf(ANSWER_CLOSE_MARKER, innerStart)
   if (closeIdx === -1) {
     throw new Error(`upsertSection: the open marker for ${JSON.stringify(key)} has no matching close marker`)
+  }
+  if (body.slice(innerStart, closeIdx).includes(OPEN_MARKER_PREFIX)) {
+    throw new Error(
+      `upsertSection: the open marker for ${JSON.stringify(key)} has no matching close marker before another section's open marker`,
+    )
   }
 
   if (body.slice(innerStart, closeIdx).trim() === trimmed) return body

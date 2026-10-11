@@ -111,6 +111,30 @@ describe('upsertSection', () => {
     expect(() => upsertSection(body, 'w-1@review', 'x')).toThrow(/no matching close marker/)
   })
 
+  it('allows text with a bare "-->" that is not a lingtai:answer marker', () => {
+    const result = upsertSection('Problem.', 'w-1@review', 'rename A --> B, then requeue')
+    expect(result).toContain('rename A --> B, then requeue')
+  })
+
+  /**
+   * A person quoting or hand-pasting an open marker above a real, well-formed
+   * pair leaves the key's own open unpaired: the first close `indexOf` finds
+   * after it is actually some *other* section's close, because that other
+   * section's own open sits in between. Treating that close as this key's own
+   * would delete everything from the stray open through that other section —
+   * here, `Problem.` and the whole `w-1@build` answer (#446's finding 1).
+   */
+  it('refuses a stray open marker for the key that precedes another section entirely, rather than splicing across it', () => {
+    const wellFormed = upsertSection(
+      upsertSection('Problem.', 'w-1@build', 'the build answer, which must survive'),
+      'w-1@review',
+      'the review answer',
+    )
+    const mangled = `quoting the marker: ${answerOpenMarker('w-1@review')}\n\n${wellFormed}`
+
+    expect(() => upsertSection(mangled, 'w-1@review', 'a new review answer')).toThrow(/no matching close marker/)
+  })
+
   it('replaces only the first of two hand-pasted open markers for one key, leaving the second alone', () => {
     const body =
       `the ticket.\n\n${answerOpenMarker('w-1@review')}\n\nfirst\n\n${ANSWER_CLOSE_MARKER}\n\n` +
