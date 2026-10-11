@@ -38,8 +38,8 @@ for a person to think with an agent. What comes out of it is the person's own
 move, approve, requeue or close, and that move already has its event. The
 conversation itself decides nothing and needs no fold. Triage is different. It
 is an analysis Lingtai pays for unasked, and its recommendation is a fact the
-board has to show on a card and the log has to keep. Then *what the agent
-advised* and *what the person chose* sit side by side.
+board has to show on a card and the log has to keep. Then _what the agent
+advised_ and _what the person chose_ sit side by side.
 
 The holds are not one thing, and they are not one kind of thing. Three routes
 into `waiting` exclude each other and want different moves:
@@ -95,15 +95,15 @@ which kind a hold is gets inferred again in each place that needs it, from
      union too, each cause with its own parts (§4). What Lingtai knows about a
      hold and what an agent concluded about it are never one field.
    - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
-     *Waiting with no block* therefore has no value to be. The routes that
+     _Waiting with no block_ therefore has no value to be. The routes that
      produced it either block, with a kind, or do not move the card.
    - **`WorkItemBlocked` records the `Hold` it is, and nothing beside it**,
      written by the code that appends it, which knows the route. The words a
      person reads live inside the variant that owns them, so `needs`,
      `question` and `diagnosis` are gone rather than kept beside `hold`: two
      representations of one block can disagree, and one cannot. What
-     `diagnosis` carried is either in the variant, on the run (*a repair
-     produced this diff* is a fact about the run, like `unpushed`), or derived
+     `diagnosis` carried is either in the variant, on the run (_a repair
+     produced this diff_ is a fact about the run, like `unpushed`), or derived
      (`needs` is the tag; the mechanical recommendation is `recommendedMove`'s).
      **There is no upcaster.** Before 1.0 the log is reset rather than carried
      across a change of shape, as it was in 007 and 010.
@@ -155,25 +155,42 @@ which kind a hold is gets inferred again in each place that needs it, from
      sentence for the card, and one sentence of what the ticket wants (or
      none, where the body does not say). **The parts belong to the cause**:
      the questions, with their answers and the recommended one, exist only in
-     *a decision for you*; the fixes only in *lines to fix*; the conflict
-     hunks only in *merge by hand*. None of them is repeated beside the cause.
+     _a decision for you_; the fixes only in _lines to fix_; the conflict
+     hunks only in _merge by hand_. None of them is repeated beside the cause.
      Where the body does not say what the ticket wants, that question is a
      decision for you. A triage that fails still appends it, with the
      failure and the usage.
+   - **A triage is keyed by its block, and its attempts are on the log.**
+     The key is the work item and the block's position on its stream, and
+     nothing else: the head is recorded for the audit, and a recipe edit does
+     not re-triage every waiting card. Before the agent is dispatched,
+     `TriageStarted` names the block and the attempt; `HoldTriaged` carries
+     the same attempt, and only the latest attempt's result is read. The
+     daemon is the only process that triages, under its own lock, so no claim
+     is needed beside it.
+   - **A triage can be stopped, and a stopped one is recorded.** It runs
+     under the recipe's `triage:` wall, which must be shorter than the
+     daemon's subscriber timeout; at the wall the agent is killed and a failed
+     `HoldTriaged` is appended with what was spent.
+   - **On start, the daemon catches up only on blocks still current.** A
+     block with no `TriageStarted` is triaged; one whose last attempt started
+     before this daemon did and never finished was interrupted, and is tried
+     again, at most twice in all. A second interruption appends a failed
+     `HoldTriaged` with no usage and is left to the person.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
 
 4. **Triage names one cause, and the budget is not a cause.**
    - The causes are:
-     - *a decision for you*: questions only a person can answer;
-     - *lines to fix*: specific edits, and the approach is sound;
-     - *the approach is wrong*: patching will not converge;
-     - *merge by hand*: a conflict;
-     - *try it again, narrower*: the run did not finish, and either the body
+     - _a decision for you_: questions only a person can answer;
+     - _lines to fix_: specific edits, and the approach is sound;
+     - _the approach is wrong_: patching will not converge;
+     - _merge by hand_: a conflict;
+     - _try it again, narrower_: the run did not finish, and either the body
        can save the next one what it spent its turns on, or the ticket asks
        for more than one pass should do and is split into smaller tickets;
-     - *fix the setup*: the repository or the machine refused before or around
+     - _fix the setup_: the repository or the machine refused before or around
        any agent's work, so no edit to the ticket can help, and other tickets
        are refused the same way. Triage says which of two it is: a condition
        that lifts by itself, such as an account's usage limit, or one a person
@@ -185,12 +202,21 @@ which kind a hold is gets inferred again in each place that needs it, from
 
 5. **When the judge and triage disagree, both are recorded and the person
    decides.** The page shows the two readings side by side and asks which is
-   right, so the hold becomes *a decision for you*. Neither one is hidden, and
+   right, so the hold becomes _a decision for you_. Neither one is hidden, and
    the log keeps both: the judge's on `PassRouted`, triage's on `HoldTriaged`.
 
 6. **An answer is written into the body.**
-   - *Write it into the body & requeue* is one move. It appends a section to
+   - _Write it into the body & requeue_ is one move. It writes a section to
      the ticket's body through the existing `ticket` outcome, then requeues.
+   - **Each block's answer is one section, found by a marker** naming the
+     work item and the block. Writing it again replaces that section or
+     leaves it, and never adds a second, so a retry is safe. When a write's
+     outcome is unknown, the body is read back: the section as written means
+     it landed. A tracker with a conditional write (Lingtai's own table)
+     refuses a body that changed since it was read; GitHub has none, so there
+     the write is read back after it lands and the section restored if
+     another write removed it, and an edit made in the moment between the
+     read and the write can still be lost.
    - **The body is written first.** If the write fails, nothing is requeued
      and the page keeps the text, so no pass ever starts without the answer.
      If the requeue is refused after the write, the page says what the item's
@@ -252,8 +278,10 @@ which kind a hold is gets inferred again in each place that needs it, from
 
 10. **The card reads triage from `task_view`.** The projection folds
     `HoldTriaged` into three columns: the triage state (running, advised or
-    failed), the cause, and the one sentence. A running triage is the block
-    with no `HoldTriaged` yet, while `triage:` is declared. The full advice is
+    failed), the cause, and the one sentence. A triage is queued when its
+    block has no `TriageStarted` while `triage:` is declared, running while
+    its latest attempt has no `HoldTriaged`, and interrupted when that attempt
+    started before the running daemon did. The full advice is
     read from the event by the task page. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
@@ -262,6 +290,9 @@ which kind a hold is gets inferred again in each place that needs it, from
 - **Every hold that is a judgement or a machine failure costs one triage
   run**, whether or not anybody opens it. Its usage is on `HoldTriaged`, so it
   shows in `/spend`, and a recipe that does not want it does not declare it.
+- **Triage is billed at least once, and at most twice, per block.** The only
+  second payment is a daemon that stopped during the call, whose attempt is
+  tried again on the next start.
 - **The log can answer how often the advice is taken, and that is not how good
   it is.** Adoption is one query over `HoldTriaged` and the move after it. How
   good the advice was is a different query, over what followed the move: did
@@ -285,6 +316,7 @@ which kind a hold is gets inferred again in each place that needs it, from
 
   Each changes what a pass may buy ([0108](0108-a-refusal-buys-a-round.md)),
   and each is its own ticket.
+
 - **The language triage writes in**, and whether the recipe names it.
 - **Whether `lingtai status` and the GitHub comment** carry the cause or only
   link to the page.
@@ -305,4 +337,5 @@ decision and do not extend it: where a mockup and this text differ, this text
 is the decision.
 
 ---
-*New topic; replaces no archived ADR. The design discussion is #388.*
+
+_New topic; replaces no archived ADR. The design discussion is #388._
