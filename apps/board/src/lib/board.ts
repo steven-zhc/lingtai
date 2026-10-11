@@ -502,9 +502,9 @@ export function toCard(
         ? null
         : describeHeld({
             spent: progress.rounds.spent,
-            roundsOf: progress.rounds.of ?? limits?.rounds ?? 0,
+            roundsOf: progress.rounds.of ?? limits?.rounds ?? null,
             restarts: t.restarts,
-            restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? 0),
+            restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? null),
           }),
     blocked: t.blocked,
     asked: t.asked,

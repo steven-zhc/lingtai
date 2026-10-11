@@ -587,6 +587,13 @@ export function foldProgress(
  * rather than `0 of 0`, because a ceiling nothing bought and a ceiling
  * nothing configured are one fact — *nothing is bought here* — and `0 of 0`
  * reads as a typo of it instead.
+ *
+ * **Null is the third ceiling, and it is not zero.** A caller whose recipe
+ * would not resolve has no denominator to hand in at all — not a zero one —
+ * and inventing one would answer a question it cannot: `planFor`'s own doc
+ * draws that as no denominator rather than as zero, which is `Phase.budgetMs`'s
+ * rule read the same way. Null reads as the count alone, with no ceiling
+ * claimed either way.
  */
 export function describeHeld({
   spent,
@@ -596,15 +603,19 @@ export function describeHeld({
 }: {
   /** The highest round this run's stream has spent. */
   spent: number
-  /** The resolved rounds ceiling, already event-then-recipe. Zero means none. */
-  roundsOf: number
+  /** The resolved rounds ceiling, already event-then-recipe. Zero means none; null means unreadable. */
+  roundsOf: number | null
   /** How many approaches this ticket has abandoned so far. */
   restarts: number
-  /** The resolved restarts ceiling, already event-then-recipe. Zero means none. */
-  restartsOf: number
+  /** The resolved restarts ceiling, already event-then-recipe. Zero means none; null means unreadable. */
+  restartsOf: number | null
 }): string {
-  const rounds = roundsOf > 0 ? `${spent} of ${roundsOf} rounds` : 'no rounds'
-  const left = restartsOf > 0 ? Math.max(0, restartsOf - restarts) : 0
-  const restartsLine = restartsOf > 0 ? `${left} restart${left === 1 ? '' : 's'} left` : 'no restarts left'
+  const rounds = roundsOf === null ? `${spent} rounds` : roundsOf > 0 ? `${spent} of ${roundsOf} rounds` : 'no rounds'
+  const restartsLine =
+    restartsOf === null
+      ? `${restarts} restart${restarts === 1 ? '' : 's'}`
+      : restartsOf > 0
+        ? `${Math.max(0, restartsOf - restarts)} restart${Math.max(0, restartsOf - restarts) === 1 ? '' : 's'} left`
+        : 'no restarts left'
   return `${rounds} · ${restartsLine}`
 }

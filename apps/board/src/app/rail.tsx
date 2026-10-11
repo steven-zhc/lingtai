@@ -244,11 +244,15 @@ export function Rail({
    * The resolved budget — `describeHeld`'s sentence — or null, for a held
    * item's own line (`#415`).
    *
-   * **Appended only in the two non-live readings**, after `{refused} refused`
-   * and after `nothing running`: a running phase's own line already says its
-   * depth (`fixing round 2 of 3`), and a budget beside it would say the same
-   * fact twice in two words. Composed by the caller from the log and the
-   * recipe — this component only places the sentence it is handed.
+   * **Appended in every non-live reading**: after `{refused} refused`, after
+   * `nothing running`, and after a phase that is itself a hold rather than
+   * work in flight — an approval, whose `now` persists with no clock on it
+   * (`progress.ts`'s `ApprovalRequested` case) for as long as nobody has
+   * answered it. Never where `live` is true: a running phase's own line
+   * already says its depth (`fixing round 2 of 3`, `build 2m34s / 20m`), and a
+   * budget beside it would say the same fact twice in two words. Composed by
+   * the caller from the log and the recipe — this component only places the
+   * sentence it is handed.
    */
   held?: string | null
 }) {
@@ -282,6 +286,7 @@ export function Rail({
               no timeout. */}
           {at === null ? now.label : now.label.slice(at.length + 1)} {elapsed(Date.now() - Date.parse(now.since))}
           {now.budgetMs === null ? '' : ` / ${inWords(now.budgetMs)}`}
+          {!live && held !== null ? <span className="shold"> — {held}</span> : null}
         </p>
       ) : refused ? (
         /* The action and what came of it, the same shape as the line above —

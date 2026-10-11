@@ -317,6 +317,16 @@ describe('describeHeld', () => {
   it('never reads restarts left below zero', () => {
     expect(describeHeld({ spent: 0, roundsOf: 0, restarts: 3, restartsOf: 2 })).toBe('no rounds · 0 restarts left')
   })
+
+  /**
+   * A ceiling that could not be read (a recipe that will not resolve) is a
+   * different fact from a ceiling that was read as zero, and the two must not
+   * print the same sentence (`#415`): the first says nothing about what was
+   * bought, the second says there was never anything to buy.
+   */
+  it('reads a null ceiling as unknown, never as zero', () => {
+    expect(describeHeld({ spent: 1, roundsOf: null, restarts: 1, restartsOf: null })).toBe('1 rounds · 1 restart')
+  })
 })
 
 /**

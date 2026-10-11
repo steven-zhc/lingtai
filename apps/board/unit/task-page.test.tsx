@@ -390,6 +390,18 @@ describe('the rail on the task page', () => {
   })
 
   /**
+   * **`loadTask`'s own `held`, not just the board's.** Nothing else on this
+   * page composes the budget line, so a test that never sets `task.held`
+   * cannot tell the prop apart from a deleted one — every fixture above
+   * leaves it at the `task()` helper's default of `null` (`#415`).
+   */
+  it("carries loadTask's held line down through Standing into the rail", () => {
+    const rank = why(page({ ...blocked(), held: '1 of 3 rounds · 0 restarts left' }))
+    expect(rank).toContain('proposed:review refused')
+    expect(rank).toContain('<span class="shold"> — 1 of 3 rounds · 0 restarts left</span>')
+  })
+
+  /**
    * **And not for a landed item.** `over` stays `landed` there (0041 §4's
    * later points correctly recorded nothing), and `planFor` is never asked
    * for one — the same line `RailCandidate.over` draws on the board.

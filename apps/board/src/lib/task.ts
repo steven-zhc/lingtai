@@ -1555,9 +1555,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       ? null
       : describeHeld({
           spent: named.rounds.spent,
-          roundsOf: named.rounds.of ?? limits?.rounds ?? 0,
+          roundsOf: named.rounds.of ?? limits?.rounds ?? null,
           restarts: standing.restarts,
-          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? 0),
+          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? null),
         })
 
   return {

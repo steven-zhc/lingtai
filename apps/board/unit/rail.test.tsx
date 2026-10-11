@@ -637,8 +637,10 @@ describe('a card stopped on a person', () => {
     const html = blocked()
 
     // The budget line is appended here too — `task()`'s own fixture carries
-    // `restarts: 1, restartsOf: 1` — and is its own describe block below.
-    expect(sentence(html)).toBe('proposed:build refused — no rounds · 0 restarts left')
+    // `restarts: 1, restartsOf: 1`, and no project limits are given here, so
+    // the rounds ceiling is unknown rather than zero (`#415`'s own distinction
+    // — see `describeHeld`). The budget line is its own describe block below.
+    expect(sentence(html)).toBe('proposed:build refused — 0 rounds · 0 restarts left')
     // And not the bare action name, which is also a label on the same bar.
     expect(labels(html).map(([, name]) => name)).toContain('build')
     expect(html).not.toContain('between steps')
@@ -666,7 +668,9 @@ describe('a card stopped on a person', () => {
       refusedByTheLane(),
     )
 
-    expect(sentence(html)).toBe('nothing running — no rounds · 0 restarts left')
+    // No project limits are given here either, so the rounds ceiling is
+    // unknown rather than zero (`#415`'s `describeHeld`).
+    expect(sentence(html)).toBe('nothing running — 0 rounds · 0 restarts left')
     expect(html).not.toContain('between steps')
     expect(html).not.toContain('the agent has finished and no step has started yet')
     // The rail itself is unchanged and honest: the gates it drew all passed.
@@ -808,6 +812,35 @@ describe("a held item's budget", () => {
       />,
     )
     expect(queuedHtml).toContain('restart 1 of 1')
+  })
+
+  /**
+   * **An open approval is a hold too, and it is the common one** (`#415`). A
+   * waiting card whose run stream ends with `ApprovalRequested` and no
+   * `ApprovalGranted` has a phase still in `now` — nothing clears it while
+   * nobody has answered (`progress.ts`'s `ApprovalRequested` case) — so `Rail`
+   * takes its first branch rather than `refused`'s. That branch carries the
+   * budget line too, because the card is not `live`: an open approval is a
+   * person being waited on, not work in flight.
+   */
+  it('carries the budget line on an open approval, not just a refusal', () => {
+    const html = render(
+      { state: 'waiting', blocked: true, restarts: 1, restartsOf: 1 },
+      [
+        ...refusedByTheLane(),
+        at('2026-09-15T17:23:00Z', 'ApprovalRequested', {
+          ...step('proposed', 'human'),
+          question: 'does this change belong?',
+          artifacts: [],
+        }),
+      ],
+      PLAN,
+      false,
+      { rounds: 3, restarts: 1 },
+    )
+
+    expect(sentence(html)).toContain('— 0 of 3 rounds · 0 restarts left')
+    expect(html).not.toContain('restart 1 of 1')
   })
 })
 
