@@ -2,18 +2,18 @@ import { inWords } from '@lingtai/conductor/queue'
 import { describeHold } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import type { ReactNode } from 'react'
 
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
 
-import { Evidence } from '../../evidence.tsx'
+import { Evidence, RunDiff } from '../../evidence.tsx'
 import { HistoryRow } from '../../history-row.tsx'
 import { Latch, Reveal } from '../../latch.tsx'
 import { Follow, Following } from '../../live.tsx'
 import { DocumentBody } from '../../markdown.tsx'
 import { Segs } from '../../rail.tsx'
+import { RecordTabs, type RecordTab } from '../../record-tabs.tsx'
 import { RunLog } from '../../run-log.tsx'
 import { Coords, Standing } from '../../standing.tsx'
 
@@ -32,20 +32,21 @@ import { Coords, Standing } from '../../standing.tsx'
  * what that means, the moves, and the prompt and discussion beside each other.
  * Every identifier is in the bar, once (`Coords`).
  *
- * **Everything else is a record, and a record is consulted, not read**: four
- * collapsed rows, always these four, always in this order — findings, files,
- * attempts, prompt — so the shape is learned once. A page that rearranged
- * itself by state was read from the top every time.
+ * **Everything else is a record, and a record is consulted, not read**: five
+ * tabs, always these five, always in this order — History, Diff, Findings,
+ * Attempts and Ticket (0118 §2, #417) — so the shape is learned once. A page
+ * that rearranged itself by state was read from the top every time.
  *
  * It used to be three sections under the block — the ticket, the attempts, the
  * history — each at display size, and each attempt carried its own prompt,
- * files and findings. They are the same facts in fewer places: the findings,
- * files and prompt rows list every attempt's, newest first, and the attempts
- * row keeps the ledger — the attempt is still the skeleton (#102) — and the
- * history under it. The history is still the point of an event-sourced system
- * being legible: every summary above it is an interpretation, and that list is
- * what actually happened, in order, with who did it. Every row of it opens on
- * the payload; see `history-row.tsx`.
+ * files and findings. They are the same facts in fewer places: the Diff,
+ * Findings and Ticket tabs list every attempt's, newest first, the Attempts
+ * tab keeps the ledger — the attempt is still the skeleton (#102) — and
+ * History is its own tab rather than nested under the ledger. The history is
+ * still the point of an event-sourced system being legible: every summary
+ * above it is an interpretation, and that list is what actually happened, in
+ * order, with who did it. Every row of it opens on the payload; see
+ * `history-row.tsx`.
  */
 export const dynamic = 'force-dynamic'
 
@@ -458,43 +459,20 @@ function FromHeadSays({ from }: { from: FromHead }) {
 }
 
 /**
- * The names of the record's rows, in their order. **Always these four, always
- * this order, whatever the state** (#152): a record is consulted rather than
- * read, and a shape that is the same every time is learned once.
- */
-/**
- * The record's rows, in order.
+ * The names of the record's tabs, in their order. **Always these five, always
+ * this order, whatever the state** (#152, 0118 §2, #417): a record is
+ * consulted rather than read, and a shape that is the same every time is
+ * learned once.
  *
- * **`ticket` and not `prompt`.** The row opens with the ticket — its title, its
- * labels, its link and its body — and only then the document each attempt was
- * handed. It was labelled by the second of those two, so the one place on the
- * page holding *what was asked* announced itself as the agent's input, and
- * #87's work sat behind a word that did not name it.
+ * **`ticket` and not `prompt`.** The tab opens with the ticket — its title,
+ * its labels, its link and its body — and only then the document each
+ * attempt was handed. It was labelled by the second of those two, so the one
+ * place on the page holding *what was asked* announced itself as the agent's
+ * input, and #87's work sat behind a word that did not name it.
  */
-export const RECORD_ROWS = ['findings', 'files', 'attempts', 'ticket'] as const
+export const RECORD_TABS = ['history', 'diff', 'findings', 'attempts', 'ticket'] as const
 
-/** One row of the record: a name, its one fact, and closed until asked. */
-function Row({
-  name,
-  fact,
-  children,
-}: {
-  name: (typeof RECORD_ROWS)[number]
-  fact: string | null
-  children: ReactNode
-}) {
-  return (
-    <details className="rrow" id={`record-${name}`}>
-      <summary>
-        <span className="rname">{name}</span>
-        {fact ? <span className="rfact">{fact}</span> : null}
-      </summary>
-      <div className="rbody">{children}</div>
-    </details>
-  )
-}
-
-/** `attempt 2`, above an attempt's share of a row — only where there is more than one to tell apart. */
+/** `attempt 2`, above an attempt's share of a tab — only where there is more than one to tell apart. */
 function Of({ run, many }: { run: RunView; many: boolean }) {
   return many ? <p className="rof">attempt {run.attempt}</p> : null
 }
@@ -504,10 +482,11 @@ function plural(n: number, word: string): string {
 }
 
 /**
- * Rank 7: everything the first screen does not need, as four collapsed rows.
- *
- * Each row lists every attempt's share of it, newest first — the newest is the
- * one a decision is about, and an older one is still one line down.
+ * Rank 7: everything the first screen does not need, as five tabs (0118 §2,
+ * #417): History, Diff, Findings, Attempts and Ticket. `RecordTabs` holds the
+ * selection; this builds the five panels, server-side, the way it built four
+ * collapsed rows before — Diff, Findings and Ticket still list every
+ * attempt's share, newest first.
  */
 export function Record({ task }: { task: TaskDetail }) {
   const newest = [...task.runs].reverse()
@@ -518,6 +497,11 @@ export function Record({ task }: { task: TaskDetail }) {
   const findings = task.runs.reduce((n, r) => n + r.steps.reduce((m, g) => m + g.findings.length, 0), 0)
   const paths = new Set(task.runs.flatMap((r) => r.files.map((f) => f.path))).size
   const events = task.history.reduce((n, g) => n + g.lines.length, 0)
+  // Did a run propose anything to diff against? `headSha` is set only by
+  // `RunProposedCompletion`; a run that never reached it has nothing to show
+  // a button for (the files line, or its own empty sentence, still can).
+  const proposed = (run: RunView): run is RunView & { baseSha: string; headSha: string } =>
+    run.baseSha !== null && run.headSha !== null
 
   // What the diagnosis said beyond rank 3's sentence: what was already done, and
   // the recommendation with the whole of its why. These were the block's rank 3
@@ -526,148 +510,175 @@ export function Record({ task }: { task: TaskDetail }) {
     (line) => line.part === 'did' || line.part === 'rec',
   )
 
+  const tabs: RecordTab[] = [
+    {
+      name: 'history',
+      fact: events === 0 ? null : plural(events, 'event'),
+      panel: (
+        <>
+          {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a list
+              that renders nothing looks exactly like a list whose events
+              failed to load, and only one of those is our bug. A ticket
+              nothing has run has an empty log *and that is the whole of its
+              story* (#113). */}
+          {task.history.length === 0 ? (
+            <p className="empty">
+              Nothing yet — this ticket has no events, and this is where the log will record what happens to it.
+            </p>
+          ) : null}
+          {task.history.map((group) => (
+            <div key={group.streamId} className="hgroup">
+              {/* Dropped when there is only one stream to name: an item with
+                  nothing but its own events does not need to be told which
+                  events these are. */}
+              {task.history.length > 1 ? (
+                <p className="hglabel">
+                  <span className="hgname">{group.label}</span>
+                  <span className="mono">{group.streamId}</span>
+                  <span className="hgseq">
+                    seq {group.from}–{group.to} · {group.lines.length} events
+                  </span>
+                </p>
+              ) : null}
+              <ol className="history">
+                {group.lines.map((h) => (
+                  // Keyed by seq, which the store assigns and nothing reuses.
+                  <li key={h.seq}>
+                    <HistoryRow line={h} />
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </>
+      ),
+    },
+    {
+      name: 'diff',
+      fact: paths === 0 ? 'none touched' : plural(paths, 'path'),
+      panel: (
+        <>
+          {newest.length === 0 ? (
+            <p className="empty">No agent has been dispatched for this ticket yet.</p>
+          ) : (
+            newest.map((run) => (
+              <div key={run.runId} className="rpart">
+                <Of run={run} many={many} />
+                {run.files.length > 0 ? (
+                  <ul className="flist">
+                    {run.files.map((f) => (
+                      <li key={f.path}>
+                        <span className="pill">{f.op}</span>
+                        <span className="fpath">{f.path}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty">This attempt touched no files.</p>
+                )}
+                {/* Never `headSha ?? ''`: a run that never proposed anything
+                    has no commit to diff against, and asking for one used to
+                    ask git for `base...` against an empty head (#417). */}
+                {proposed(run) ? <RunDiff project={project} baseSha={run.baseSha} headSha={run.headSha} /> : null}
+              </div>
+            ))
+          )}
+        </>
+      ),
+    },
+    {
+      name: 'findings',
+      fact: verdicts === 0 ? 'no step reported' : `${plural(verdicts, 'verdict')} · ${plural(findings, 'finding')}`,
+      panel: (
+        <>
+          {/* The gate that refused, what it said, and the findings with their
+              failure scenarios. If you have to open GitHub to decide, nothing
+              changed. */}
+          {verdicts === 0 ? (
+            <p className="empty">No step has reported on any attempt.</p>
+          ) : (
+            newest
+              .filter((run) => run.steps.length > 0)
+              .map((run) => (
+                <div key={run.runId} className="rpart">
+                  <Of run={run} many={many} />
+                  <Evidence steps={run.steps} />
+                </div>
+              ))
+          )}
+        </>
+      ),
+    },
+    {
+      name: 'attempts',
+      fact: totalsFact(task.totals),
+      panel: (
+        <>
+          {beyond.map((line) => (
+            <p key={line.part} className="rhow">
+              {line.text}
+            </p>
+          ))}
+
+          {task.runs.length === 0 ? (
+            <p className="empty">No agent has been dispatched for this ticket yet.</p>
+          ) : (
+            <div className="ledger">
+              {task.runs.map((run) => (
+                <Attempt
+                  key={run.runId}
+                  run={run}
+                  alone={task.runs.length === 1}
+                  deciding={task.standing.deciding?.attempt === run.attempt}
+                  followed={task.standing.state === 'running' && task.standing.runId === run.runId}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      name: 'ticket',
+      fact: task.ticket?.title ?? null,
+      panel: (
+        <>
+          {/* What was asked, then what each attempt was handed for it. */}
+          {task.ticket ? (
+            <Ticket ticket={task.ticket} />
+          ) : (
+            <p className="empty">This id is not a work item, so there is no ticket behind it.</p>
+          )}
+          {newest
+            .filter((run) => run.prompt !== null)
+            .map((run) => (
+              // Raw, always. #88's justification is that the log holds the
+              // exact document the agent was given; `markdown.tsx` offers the
+              // reading.
+              <details key={run.runId} className="aprompt">
+                <summary>
+                  <span className="hdocname">{many ? `attempt ${run.attempt}'s prompt` : 'prompt'}</span>
+                  <span className="hdocsize">
+                    {run.prompt!.version} · {run.prompt!.bytes} bytes
+                  </span>
+                </summary>
+                {run.prompt!.text === null ? (
+                  <p className="empty">
+                    This run predates the prompt being recorded, so the log has its length and not the document (#88).
+                  </p>
+                ) : (
+                  <DocumentBody source="prompt" text={run.prompt!.text} rawClass="hdoctext" />
+                )}
+              </details>
+            ))}
+        </>
+      ),
+    },
+  ]
+
   return (
     <section className="record" data-rank="record">
-      <Row
-        name="findings"
-        fact={verdicts === 0 ? 'no step reported' : `${plural(verdicts, 'verdict')} · ${plural(findings, 'finding')}`}
-      >
-        {/* The gate that refused, what it said, the findings with their failure
-            scenarios, and that attempt's diff. If you have to open GitHub to
-            decide, nothing changed. */}
-        {verdicts === 0 ? (
-          <p className="empty">No step has reported on any attempt.</p>
-        ) : (
-          newest
-            .filter((run) => run.steps.length > 0)
-            .map((run) => (
-              <div key={run.runId} className="rpart">
-                <Of run={run} many={many} />
-                <Evidence
-                  // The ticket already parsed the id. A fifth copy of that split
-                  // is what `parseWorkItemStream` exists to stop.
-                  project={project}
-                  baseSha={run.baseSha}
-                  headSha={run.headSha ?? ''}
-                  steps={run.steps}
-                />
-              </div>
-            ))
-        )}
-      </Row>
-
-      <Row name="files" fact={paths === 0 ? 'none touched' : plural(paths, 'path')}>
-        {paths === 0 ? (
-          <p className="empty">No attempt has touched a file.</p>
-        ) : (
-          newest
-            .filter((run) => run.files.length > 0)
-            .map((run) => (
-              <div key={run.runId} className="rpart">
-                <Of run={run} many={many} />
-                <ul className="flist">
-                  {run.files.map((f) => (
-                    <li key={f.path}>
-                      <span className="pill">{f.op}</span>
-                      <span className="fpath">{f.path}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
-        )}
-      </Row>
-
-      <Row name="attempts" fact={totalsFact(task.totals)}>
-        {beyond.map((line) => (
-          <p key={line.part} className="rhow">
-            {line.text}
-          </p>
-        ))}
-
-        {task.runs.length === 0 ? (
-          <p className="empty">No agent has been dispatched for this ticket yet.</p>
-        ) : (
-          <div className="ledger">
-            {task.runs.map((run) => (
-              <Attempt
-                key={run.runId}
-                run={run}
-                alone={task.runs.length === 1}
-                deciding={task.standing.deciding?.attempt === run.attempt}
-                followed={task.standing.state === 'running' && task.standing.runId === run.runId}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* The history, under the ledger it is the whole of. Still the question
-            a summary did not anticipate, and still last. */}
-        <p className="rof">{events === 0 ? 'history' : `history · ${events} events · grouped by run`}</p>
-        {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a list that
-            renders nothing looks exactly like a list whose events failed to
-            load, and only one of those is our bug. A ticket nothing has run has
-            an empty log *and that is the whole of its story* (#113). */}
-        {task.history.length === 0 ? (
-          <p className="empty">
-            Nothing yet — this ticket has no events, and this is where the log will record what happens to it.
-          </p>
-        ) : null}
-        {task.history.map((group) => (
-          <div key={group.streamId} className="hgroup">
-            {/* Dropped when there is only one stream to name: an item with
-                nothing but its own events does not need to be told which
-                events these are. */}
-            {task.history.length > 1 ? (
-              <p className="hglabel">
-                <span className="hgname">{group.label}</span>
-                <span className="mono">{group.streamId}</span>
-                <span className="hgseq">
-                  seq {group.from}–{group.to} · {group.lines.length} events
-                </span>
-              </p>
-            ) : null}
-            <ol className="history">
-              {group.lines.map((h) => (
-                // Keyed by seq, which the store assigns and nothing reuses.
-                <li key={h.seq}>
-                  <HistoryRow line={h} />
-                </li>
-              ))}
-            </ol>
-          </div>
-        ))}
-      </Row>
-
-      <Row name="ticket" fact={task.ticket?.title ?? null}>
-        {/* What was asked, then what each attempt was handed for it. */}
-        {task.ticket ? (
-          <Ticket ticket={task.ticket} />
-        ) : (
-          <p className="empty">This id is not a work item, so there is no ticket behind it.</p>
-        )}
-        {newest
-          .filter((run) => run.prompt !== null)
-          .map((run) => (
-            // Raw, always. #88's justification is that the log holds the exact
-            // document the agent was given; `markdown.tsx` offers the reading.
-            <details key={run.runId} className="aprompt">
-              <summary>
-                <span className="hdocname">{many ? `attempt ${run.attempt}'s prompt` : 'prompt'}</span>
-                <span className="hdocsize">
-                  {run.prompt!.version} · {run.prompt!.bytes} bytes
-                </span>
-              </summary>
-              {run.prompt!.text === null ? (
-                <p className="empty">
-                  This run predates the prompt being recorded, so the log has its length and not the document (#88).
-                </p>
-              ) : (
-                <DocumentBody source="prompt" text={run.prompt!.text} rawClass="hdoctext" />
-              )}
-            </details>
-          ))}
-      </Row>
+      <RecordTabs tabs={tabs} />
     </section>
   )
 }
@@ -695,8 +706,10 @@ export function TaskBody({ task }: { task: TaskDetail }) {
         <Following />
       </div>
 
-      {/* Every `#attempt-N` on this page points into the record's closed
-          attempts row; this opens the row on the way there. See `openTo`. */}
+      {/* Every `#attempt-N` on this page points into an attempt's own
+          `<details>`, inside the record's Attempts tab; this opens it on the
+          way there. `RecordTabs`, below the record, reads the same hash to
+          select that tab — see `openTo` here, and `panelOf` there. */}
       <Reveal />
 
       <div className="detail-body">

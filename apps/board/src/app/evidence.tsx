@@ -97,21 +97,7 @@ function lineClass(line: string): string {
   return ''
 }
 
-export function Evidence({
-  project,
-  baseSha,
-  headSha,
-  steps,
-}: {
-  project: string
-  baseSha: string | null
-  headSha: string
-  steps: StepEvidence[]
-}) {
-  const [diff, setDiff] = useState<{ files: DiffFile[]; truncated: boolean } | null>(null)
-  const [diffError, setDiffError] = useState<string | null>(null)
-  const [, startTransition] = useTransition()
-
+export function Evidence({ steps }: { steps: StepEvidence[] }) {
   const interesting = steps.filter((g) => g.evidence || g.findings.length > 0)
 
   return (
@@ -143,28 +129,37 @@ export function Evidence({
           {g.evidence ? <pre className="gevidence">{g.evidence}</pre> : null}
         </details>
       ))}
+    </div>
+  )
+}
 
-      {baseSha ? (
-        diff ? (
-          <DiffView files={diff.files} truncated={diff.truncated} />
-        ) : (
-          <div>
-            <button
-              className="btn"
-              onClick={() =>
-                startTransition(async () => {
-                  const result = await loadDiff({ project, baseSha, headSha })
-                  if (result.ok) setDiff({ files: result.files, truncated: result.truncated })
-                  else setDiffError(result.detail)
-                })
-              }
-            >
-              Show the diff
-            </button>
-            {diffError ? <p className="refusal">{diffError}</p> : null}
-          </div>
-        )
-      ) : null}
+/**
+ * One attempt's diff, behind its button — split out of `Evidence` for the
+ * Diff tab (#417). `baseSha` and `headSha` are both required: offer this only
+ * where the run actually proposed something, which is the caller's to know.
+ */
+export function RunDiff({ project, baseSha, headSha }: { project: string; baseSha: string; headSha: string }) {
+  const [diff, setDiff] = useState<{ files: DiffFile[]; truncated: boolean } | null>(null)
+  const [diffError, setDiffError] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  if (diff) return <DiffView files={diff.files} truncated={diff.truncated} />
+
+  return (
+    <div>
+      <button
+        className="btn"
+        onClick={() =>
+          startTransition(async () => {
+            const result = await loadDiff({ project, baseSha, headSha })
+            if (result.ok) setDiff({ files: result.files, truncated: result.truncated })
+            else setDiffError(result.detail)
+          })
+        }
+      >
+        Show the diff
+      </button>
+      {diffError ? <p className="refusal">{diffError}</p> : null}
     </div>
   )
 }

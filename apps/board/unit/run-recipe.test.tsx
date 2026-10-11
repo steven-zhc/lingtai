@@ -14,7 +14,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { Attempt, RECORD_ROWS } from '../src/app/task/[id]/page.tsx'
+import { Attempt, RECORD_TABS } from '../src/app/task/[id]/page.tsx'
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from '../src/lib/recipe.ts'
 import { foldRun, type Claim, type RunView } from '../src/lib/task.ts'
 
@@ -212,8 +212,8 @@ describe("the recipe beside an attempt's actions", () => {
     expect(heads()).toBe(2)
   })
 
-  it('does not grow the record a fifth row', () => {
-    expect(RECORD_ROWS).toEqual(['findings', 'files', 'attempts', 'ticket'])
+  it('does not grow the record a sixth tab', () => {
+    expect(RECORD_TABS).toEqual(['history', 'diff', 'findings', 'attempts', 'ticket'])
   })
 })
 

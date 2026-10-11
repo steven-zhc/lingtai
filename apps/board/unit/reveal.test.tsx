@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { fragmentId, openTo, type Disclosing } from '../src/app/latch.tsx'
+import { fragmentId, openTo, panelOf, type Disclosing, type Paneled } from '../src/app/latch.tsx'
 import { FollowedLog, heldRun, logBelow } from '../src/app/run-log.tsx'
 
 /** A chain of elements, innermost first; `details` marks which are disclosures. */
@@ -60,6 +60,26 @@ describe('following a pointer into the record', () => {
     expect(() => fragmentId('#100%')).not.toThrow()
     expect(fragmentId('#100%')).toBe('100%')
     expect(fragmentId('#%E0')).toBe('%E0')
+  })
+})
+
+describe('panelOf: which tab a hash target sits inside', () => {
+  /** A target whose `closest('[role="tabpanel"]')` answers with `panel`, structurally. */
+  function node(panel: { dataset: { tab?: string } } | null): Paneled {
+    return { closest: () => panel }
+  }
+
+  it('names the tab of the panel the target is inside, or is itself', () => {
+    // `Element.closest` includes the element itself, so a target that is the
+    // panel — `#record-diff` — answers the same as one nested inside it, such
+    // as `#attempt-2` inside the Attempts panel.
+    expect(panelOf(node({ dataset: { tab: 'attempts' } }))).toBe('attempts')
+    expect(panelOf(node({ dataset: { tab: 'diff' } }))).toBe('diff')
+  })
+
+  it('answers null outside every panel, or inside one with no tab recorded', () => {
+    expect(panelOf(node(null))).toBeNull()
+    expect(panelOf(node({ dataset: {} }))).toBeNull()
   })
 })
 

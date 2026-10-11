@@ -78,12 +78,15 @@ export interface Disclosing {
 /**
  * Opens every `<details>` a fragment's target is inside, and says how many.
  *
- * **A pointer into a collapsed row has to land on something readable** (#152).
- * The attempts row of the task page's record is closed on load, and `#attempt-N`
- * — the bar's `from attempt N of M ↓` and rank 2's `in attempt N ↓` — is inside
- * it. Some browsers open a closed ancestor on fragment navigation and some do
- * not, and none does anything when the hash is already the one clicked, so it
- * is not left to the browser.
+ * **A pointer into a nested disclosure has to land on something readable**
+ * (#152). `#attempt-N` — the bar's `from attempt N of M ↓` and rank 2's `in
+ * attempt N ↓` — points at an attempt's own `<details>`, closed unless that
+ * attempt is the one running or deciding (since #417, no longer inside a
+ * collapsed row of its own — the record's rows are tabs, and `RecordTabs`
+ * selects the tab a target sits in with `panelOf`, below). Some browsers open
+ * a closed ancestor on fragment navigation and some do not, and none does
+ * anything when the hash is already the one clicked, so it is not left to the
+ * browser.
  */
 export function openTo(target: Disclosing): number {
   let opened = 0
@@ -94,6 +97,24 @@ export function openTo(target: Disclosing): number {
     }
   }
   return opened
+}
+
+/**
+ * Which tab's panel a fragment's target sits inside, or null outside of one.
+ * Structural, like `Disclosing` above.
+ *
+ * **Selected, not opened** (#417). The record's four collapsed rows became
+ * five tabs — History, Diff, Findings, Attempts, Ticket (0118 §2) — so a
+ * pointer into one is no longer a `<details>` to open but a `[role="tabpanel"]`
+ * to pick; `RecordTabs` reads the hash the same way `Reveal` does and calls
+ * this instead of `openTo` to decide which tab that is.
+ */
+export interface Paneled {
+  closest(selector: string): { dataset: { tab?: string } } | null
+}
+
+export function panelOf(target: Paneled): string | null {
+  return target.closest('[role="tabpanel"]')?.dataset.tab ?? null
 }
 
 /**

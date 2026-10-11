@@ -8,7 +8,7 @@ why: claim admit prepared design implement build review proposed merge end propo
 so-what: your judgement is needed — recommends requeue, because \`review\` is a check that stayed red rather than a judgement, and for one of those the work is still there
 moves: Send attempt 2 Leave blocked Close
 pair: will be sent attempt 2 only 74 bytes ticket@1924 #147 — the reviewer crashes on a reused session id The reviewer crashed. Edit discussion this conversation $0.12 · 2 messages · no limit human:steven did the reviewer run at all? assistant No — it crashed on start. read no files $0.12 human:steven so is requeue safe? assistant waiting for the daemon to answer Ask
-record: findings · files · attempts · ticket"
+record: history · diff · findings · attempts · ticket"
 `;
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
@@ -18,5 +18,5 @@ subject: #147 ↗ the reviewer crashes on a reused session id
 why: claim admit prepared design implement build review proposed merge end agent 4h33m run log not reading
 so-what: an agent is working
 pair: discussion reads the log, the ticket and the code — it cannot run anything Ask
-record: findings · files · attempts · ticket"
+record: history · diff · findings · attempts · ticket"
 `;

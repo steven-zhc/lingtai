@@ -23,7 +23,7 @@ import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { RECORD_ROWS, TaskBody } from '../src/app/task/[id]/page.tsx'
+import { RECORD_TABS, TaskBody } from '../src/app/task/[id]/page.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   foldRun,
@@ -450,8 +450,8 @@ describe('the rail on the task page', () => {
 })
 
 describe('the record', () => {
-  /** Always the same four, in the same order, whatever the state (#152). */
-  it('is four collapsed rows in a fixed order, the same four in every state', () => {
+  /** Always the same five, in the same order, whatever the state (0118 §2, #417). */
+  it('is five tabs in a fixed order, the same five in every state, open on history', () => {
     const run = foldRun(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
@@ -483,15 +483,26 @@ describe('the record', () => {
     expect(page(queuedTask)).toContain('offered by GitHub')
     for (const t of [blocked(), running(), landed, queuedTask]) {
       const html = page(t)
-      const rows = [...html.matchAll(/<details class="rrow" id="record-([a-z]+)"( open="")?/g)]
-      expect(rows.map((r) => r[1])).toEqual([...RECORD_ROWS])
-      expect(rows.every((r) => r[2] === undefined)).toBe(true)
+      const tabs = [
+        ...html.matchAll(/<button type="button" role="tab" id="rtab-([a-z]+)" aria-selected="(true|false)"/g),
+      ]
+      expect(tabs.map((r) => r[1])).toEqual([...RECORD_TABS])
+      // History, and only history, is selected — whatever the state: a page
+      // that picked the opening tab by state was read from the top every time.
+      expect(tabs.map((r) => r[2])).toEqual(['true', 'false', 'false', 'false', 'false'])
+      // Every panel is in the markup the server sent, so a reader with no
+      // JavaScript — and this suite, with no DOM to click a tab in — still
+      // gets the whole record.
+      const panels = [...html.matchAll(/<div role="tabpanel" id="record-([a-z]+)"/g)]
+      expect(panels.map((r) => r[1])).toEqual([...RECORD_TABS])
     }
-    // `ticket`, and it was `prompt`: the row opens with the ticket and only
+    // `ticket`, and it was `prompt`: the tab opens with the ticket and only
     // then the document each attempt was handed, so it was labelled by the
     // second thing in it — and the one place holding *what was asked*
-    // announced itself as the agent's input.
-    expect([...RECORD_ROWS]).toEqual(['findings', 'files', 'attempts', 'ticket'])
+    // announced itself as the agent's input. `history`, first, and not nested
+    // under `attempts`: the log is the point of an event-sourced system being
+    // legible and belongs beside the other four, not a scroll under the ledger.
+    expect([...RECORD_TABS]).toEqual(['history', 'diff', 'findings', 'attempts', 'ticket'])
   })
 })
 

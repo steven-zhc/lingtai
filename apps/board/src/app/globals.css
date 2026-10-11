@@ -1555,35 +1555,48 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* --- the record -----------------------------------------------------------
-   Rank 7 (#152). Everything the first screen does not need, as four collapsed
-   rows — findings, files, attempts, prompt — always those, in that order, so
-   the shape is learned once. One frame and hairlines, the ledger's rule: rows
-   of one table rather than four cards. */
+   Rank 7 (#152, 0118 §2, #417). Everything the first screen does not need, as
+   five tabs — History, Diff, Findings, Attempts, Ticket — always those, in
+   that order, so the shape is learned once. One frame and a hairline under
+   the tab strip; every panel renders, and `[hidden]` is what keeps four of
+   them off screen rather than an unmount. */
 .record {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 3px;
 }
-.rrow + .rrow { border-top: 1px solid var(--rule); }
-.rrow { scroll-margin-top: 1rem; }
-.rrow > summary {
+.rtabs {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule);
+}
+.rtab {
   display: flex;
   align-items: baseline;
-  gap: 0.8rem;
+  gap: 0.6rem;
   padding: 0.55rem 0.85rem;
   font-family: var(--mono);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
+.rtab:hover { color: var(--ink); }
+/* The selected tab, read off the same attribute a screen reader does rather
+   than a class a click could forget to also set. */
+.rtab[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--accent); }
 .rname {
   font-size: 0.78rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink);
 }
-/* The row's one fact, at the right. A ticket title is the longest of them and
-   is clipped here rather than wrapping the row into two. */
+/* The tab's one fact, at the right of its own button. A ticket title is the
+   longest of them and is clipped here rather than widening the tab strip. */
 .rfact {
   margin-left: auto;
   min-width: 0;
+  max-width: 24ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1591,7 +1604,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.rbody { display: grid; gap: 0.6rem; padding: 0 0.85rem 0.85rem; }
+.rbody { display: grid; gap: 0.6rem; padding: 0.85rem; scroll-margin-top: 1rem; }
+.rbody[hidden] { display: none; }
 .rpart { display: grid; gap: 0.3rem; }
 /* `attempt 2` over an attempt's share of a row, and `history` over the log. */
 .rof {
