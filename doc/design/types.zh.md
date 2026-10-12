@@ -20,7 +20,7 @@ flowchart LR
   C --> D["PassNext<br/>下一步"]
   A --> D
   D --> E["WaitReason<br/>为什么等人"]
-  E --> F["Move<br/>人能做什么"]
+  E --> F["Resolution<br/>这次等待怎么了结"]
   E --> G["Triage<br/>agent 的分析"]
 ```
 
@@ -169,31 +169,31 @@ const waitKind: (reason: WaitReason) => 'decision' | 'fault' // 派生，不存
 
 **审视：三处调整。**
 
-1. **拍平成一层。** 现在是 `WaitReason = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedMoves`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `waitKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。
+1. **拍平成一层。** 现在是 `WaitReason = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedResolutions`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `waitKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。
 2. **删掉 `CheckRed`。** 按方案 B，build 红了、轮次用完归 `RouterEscalated{BuildRed}`；合并时的检查红了归 `MergeRefused{reason: 'verify-failed'}`。剩下没有地方会产生它，由 #452 确认后删除。
 3. **`DidNotFinish` 拆开。** 现在一个变体装了崩溃和撞上限两种情况。两者的处理不同：崩溃一般重跑，撞上限要先把票拆小。所以撞上限归 `BudgetExhausted`，崩溃归 `AgentCrashed`，"选择不改"归 `FixerDisagrees`。
 
 ---
 
-## 6. `Move`：人能做什么
+## 6. `Resolution`：这次等待怎么了结
 
-**目的**：卡片上的按钮。由 `allowedMoves(reason)` 决定有哪些，`recommendedMove` 决定先推荐哪个。
+**目的**：卡片上的按钮。由 `allowedResolutions(reason)` 决定有哪些，`recommendedResolution` 决定先推荐哪个。
 
 ```ts
-type Move =
+type Resolution =
   | { _tag: 'Approve' } // 合进 main
   | { _tag: 'Requeue' } // 从 base 重新做
   | { _tag: 'EditBodyAndRequeue' } // 先改正文，再重新做
-  | { _tag: 'Answer'; choice: string }
+  | { _tag: 'AnswerQuestion'; choice: string } // 只对 OwnQuestion 有效
   | { _tag: 'Close' }
 
-const allowedMoves: (reason: WaitReason) => Move[]
-const recommendedMove: (reason: WaitReason, triage: TriageStatus) => Move | null
+const allowedResolutions: (reason: WaitReason) => Resolution[]
+const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution | null
 ```
 
 **例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
 
-**审视：保留**，只把 `BodyAndRequeue` 改名为 `EditBodyAndRequeue`，让名字说清先做什么。
+**审视：改名为 `Resolution`。** `Move` 只说"走一步"，看不出谁走、往哪走，还和 Route、看板拖卡片撞词。`Resolution` 说的是这次等待怎么了结，每个变体都是结束等待的一种方式。另外 `BodyAndRequeue` 改为 `EditBodyAndRequeue`，让名字说清先做什么；`Answer` 改为 `AnswerQuestion`，它只对 `OwnQuestion` 有效。`Approve`、`Requeue`、`Close` 不变，和 CLI 命令、看板按钮同名。
 
 ---
 
@@ -211,7 +211,8 @@ type RootCause =
   | { _tag: 'SetupBroken' }
 
 type TriageResult =
-  { _tag: 'TriageFailed'; why: string } | { _tag: 'TriageAdvised'; cause: RootCause; move: Move; summary: string }
+  | { _tag: 'TriageFailed'; why: string }
+  | { _tag: 'TriageAdvised'; cause: RootCause; resolution: Resolution; summary: string }
 
 type TriageStatus =
   // 读取时推导，不存
@@ -224,7 +225,7 @@ type TriageStatus =
 const triageRuns: (reason: WaitReason) => boolean
 ```
 
-**例子**：`MergeRefused{reason: 'conflict'}` 有 3 个冲突块，triage 返回 `TriageAdvised{cause: ConflictingHunks{hunks, total: 3}, move: Requeue}`。
+**例子**：`MergeRefused{reason: 'conflict'}` 有 3 个冲突块，triage 返回 `TriageAdvised{cause: ConflictingHunks{hunks, total: 3}, resolution: Requeue}`。
 
 **审视：保留，只改名。** `Cause` 的变体现在叫 `Decision`、`Lines`、`Narrower`，单独看不出意思，按原则 4 改成上面的名字。
 
@@ -232,18 +233,19 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ## 第一性审视：结论
 
-| 类型                                   | 结论                                                             | 理由                                                       |
-| -------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`            | **合并**为 `StepOutcome`                                         | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
-| `Arrival` / `Arrived`                  | 保留，改名为 `ArrivalReason` / `RouterVisit`，并加 `ReviewEmpty` | 路由需要知道来源；"没话说"和"弄丢了"要分开                 |
-| `Route` + `RouteDecision`              | 保留，改名为 `Route` / `RouteBasis`                              | 日志要分清是 judge 的选择，还是被上限拦下                  |
-| `transitionOf` 的结果                  | **替换**为 `PassNext`                                            | 和 `Route` 共用 `GoToStep`、`RestartFromBase`              |
-| `Hold` / `HoldTriaged` / `Held`        | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold` |
-| `WaitReason` 的中间层                  | **删除**，由 `waitKind` 派生                                     | 没有代码按中间层分支                                       |
-| `CheckRed`                             | **删除**（等 #452 确认）                                         | 方案 B 之后没有地方会产生它                                |
-| `DidNotFinish`                         | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` | 三种情况，三种不同的处理                                   |
-| `Move`、`TriageResult`、`TriageStatus` | 保留                                                             | 已经是该有的形状                                           |
-| `Cause`                                | 保留，改名为 `RootCause`，变体也改名                             | 现在的名字单独看不出意思                                   |
+| 类型                            | 结论                                                                 | 理由                                                       |
+| ------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `StepEnding` + `FixOutcome`     | **合并**为 `StepOutcome`                                             | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
+| `Arrival` / `Arrived`           | 保留，改名为 `ArrivalReason` / `RouterVisit`，并加 `ReviewEmpty`     | 路由需要知道来源；"没话说"和"弄丢了"要分开                 |
+| `Route` + `RouteDecision`       | 保留，改名为 `Route` / `RouteBasis`                                  | 日志要分清是 judge 的选择，还是被上限拦下                  |
+| `transitionOf` 的结果           | **替换**为 `PassNext`                                                | 和 `Route` 共用 `GoToStep`、`RestartFromBase`              |
+| `Hold` / `HoldTriaged` / `Held` | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                  | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold` |
+| `WaitReason` 的中间层           | **删除**，由 `waitKind` 派生                                         | 没有代码按中间层分支                                       |
+| `CheckRed`                      | **删除**（等 #452 确认）                                             | 方案 B 之后没有地方会产生它                                |
+| `DidNotFinish`                  | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`     | 三种情况，三种不同的处理                                   |
+| `Move`                          | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion` | 名字要说清是"等待怎么了结"，不和 Route 撞词                |
+| `TriageResult`、`TriageStatus`  | 保留                                                                 | 已经是该有的形状                                           |
+| `Cause`                         | 保留，改名为 `RootCause`，变体也改名                                 | 现在的名字单独看不出意思                                   |
 
 ## 待你决定
 
