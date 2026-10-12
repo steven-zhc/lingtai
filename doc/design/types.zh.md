@@ -26,9 +26,9 @@ flowchart LR
 
 ---
 
-## 1. `StepOutcome`：一步怎么结束
+## 1. `StepOutcome`：一步跑一次的结果
 
-**目的**：pass 跑完一步，要知道接下来是继续、找路由器，还是停下。
+**目的**：pass 跑完一步，要知道接下来是继续、找路由器，还是停下。一个 step 在一个 pass 里可以跑好几次（implement 每个修复轮次再跑一次，build 跟着再跑），**每跑一次产生一个 `StepOutcome`**。它不是 step 的状态，只说刚跑完的这一次怎么结束。
 
 ```ts
 type StepOutcome =
@@ -42,7 +42,37 @@ type StepOutcome =
   | { _tag: 'NeverStarted'; why: string } // 账号额度、环境不满足
 ```
 
-**例子**：#500 第二轮修复，agent 读完 reviewer 的意见，认为要求不对，没有提交就结束了，结果是 `AgentChangedNothing{said: "ticket 写明只支持 ISO"}`。
+**例子**：#500 的一个 pass。
+
+| 第几次 | step                     | `StepOutcome`                                        |
+| ------ | ------------------------ | ---------------------------------------------------- |
+| 1      | implement                | `AgentCommitted{sha: a1}`                            |
+| 2      | build                    | `ChecksRefused{evidence: 红的测试}`                  |
+| 3      | implement（第 1 轮修复） | `AgentCommitted{sha: b2}`                            |
+| 4      | build                    | `Passed`                                             |
+| 5      | review                   | `ChecksRefused{evidence: findings}`                  |
+| 6      | implement（第 2 轮修复） | `AgentChangedNothing{said: "ticket 写明只支持 ISO"}` |
+
+**每个 step 能产生哪些结果，是一张表加一条测试，不是类型。** 一个联合类型挡不住 `review` 产生 `AgentCommitted`。按 step 分类型（`OutcomeOf<'implement'>`）能让编译器挡住，但 `nextOf` 的签名要变成泛型，十个固定的 step 不值这层类型体操。所以 `OUTCOMES_AT: Record<Step, StepOutcome['_tag'][]>` 写在 domain 里，一条单元测试要求 conductor 每次产生的结果都在表里：
+
+| step                  | 能产生                                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| design、implement     | `AgentCommitted`、`AgentChangedNothing`、`AgentAsked`、`RunEndedEarly`、`NeverStarted`（没有 `Passed`：implement 的通过就是 `AgentCommitted`） |
+| build、review、verify | `Passed`、`ChecksRefused`、`RunEndedEarly`、`NeverStarted`                                                                                     |
+| proposed              | `Passed`、`AwaitingSignoff`（`human:`、`watch:`）                                                                                              |
+| 其余 step             | `Passed`、`ChecksRefused`、`NeverStarted`                                                                                                      |
+
+实现时这张表以 `packages/recipe/src/recipe.ts` 里各插件的 `at` 和 `step-matrix.test.ts` 为准，上表是起点，不是定稿。
+
+**日志里是一个事件 `StepEnded`，outcome 原样存进去。**
+
+```ts
+StepEnded { runId, step, attempt, round, outcome: StepOutcome, usage?: Usage, costUsd: number | null }
+```
+
+证据在 outcome 的变体里（原则 2），事件上不再另放 `evidence`。它替换现在的五个结束事件（`StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`）、`FixApplied` 和 `RunFailed{kind: 'no-commits'}`。`StepWaived` 保留：那是人推翻一次结果，不是一步结束。事件名不加 `Event` 后缀：日志里约 70 个事件（`EVENTS`，`events.ts:2185`）都是过去时、都不带后缀（`WorkItemBlocked`、`FixApplied`），只给一个加会不一致，全加是一次全日志改名，过去时本身就说明它是事件，`StepEnded` 和 `StepOutcome` 一个是动词过去式、一个是名词，读的时候分得开。改形状要重置日志，所以属于 0120 第二期。
+
+**事件和 `StepOutcome` 的区别**：事件在日志里，只追加，给投影和重放读；`StepOutcome` 是纯函数（`nextOf`、`arrivalOf`）的输入。`StepEnded` 之后两者一一对应，投影和决策读同一个值。今天对不上：普通 step 有自己的 `Step*` 事件；implement 第一次派发的成功要从 `RunFinished` 加 `RunProducedDiff` 推出来；人签字没有 Step 事件，直接写进 `WorkItemBlocked`；`proposed` 的决定写成 `PassRouted`。
 
 **审视：合并。** 现在有两个类型描述同一件事：conductor 的 `StepEnding`，以及 0120 草稿里的 `FixOutcome`。"agent 跑完但没提交"在第一次派发时记成 `RunFailed{kind: 'no-commits'}`，在修复轮次里记成 `FixApplied{headSha: null, failure: null}`，两种写法表达同一个事实。所以并成一个 `StepOutcome`，修复轮次就是 implement 这一步又跑了一次，不需要单独的 `FixOutcome`。
 
@@ -235,7 +265,7 @@ const triageRuns: (reason: WaitReason) => boolean
 
 | 类型                            | 结论                                                                 | 理由                                                       |
 | ------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`     | **合并**为 `StepOutcome`                                             | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
+| `StepEnding` + `FixOutcome`     | **合并**为 `StepOutcome`，日志里是 `StepEnded`                       | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
 | `Arrival` / `Arrived`           | 保留，改名为 `ArrivalReason` / `RouterVisit`，并加 `ReviewEmpty`     | 路由需要知道来源；"没话说"和"弄丢了"要分开                 |
 | `Route` + `RouteDecision`       | 保留，改名为 `Route` / `RouteBasis`                                  | 日志要分清是 judge 的选择，还是被上限拦下                  |
 | `transitionOf` 的结果           | **替换**为 `PassNext`                                                | 和 `Route` 共用 `GoToStep`、`RestartFromBase`              |
@@ -249,6 +279,5 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ## 待你决定
 
-1. `StepOutcome` 的合并会改 conductor 内部的 `StepEnding` 和事件 `FixApplied`，属于 0120 第二期。同意合并吗？
-2. `WaitReason` 拍平后，`_tag` 会写进日志（`WorkItemBlocked`），同样要等第二期的日志重置。拍平和改名一起做，还是先做拍平？
-3. `waitKind` 只分 `decision` 和 `fault` 两类，`OwnQuestion` 也算 `decision`。还是要单独列一类 `question`？
+1. `WaitReason` 拍平后，`_tag` 会写进日志（`WorkItemBlocked`），同样要等第二期的日志重置。拍平和改名一起做，还是先做拍平？
+2. `waitKind` 只分 `decision` 和 `fault` 两类，`OwnQuestion` 也算 `decision`。还是要单独列一类 `question`？
