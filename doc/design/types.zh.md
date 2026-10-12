@@ -8,7 +8,8 @@
 2. **证据跟着变体走。** `BuildRed` 带红的输出，`MergeConflict` 带冲突路径。不存在"某个字段只在某种情况下有值"。
 3. **存事实，派生类别。** 类别（"要人拍板"还是"机器坏了"）由函数从事实算出来，不另外存。
 4. **一个名字只表示一件事。** 看到变体名就知道它属于哪一层、说的是什么。不单独用 Held、Failure、Continue 这类通用词。
-5. **决策是纯函数，副作用在外层。** 纯函数不读数据库、时钟、git 或进程；外层调用纯函数，再按结果行动。
+5. **页面词 = 列 id = 类型名。** 看板的列叫 _Waiting on you_，id 是 `waiting`，所以类型是 `WaitReason`、`WaitOnPerson`，事件是 `WaitTriaged`。_you_ 只留在页面上，日志和 CLI 没有固定的读者。**hold 只指 `agent:hold`**：人在领取前按住一张票，票还在 Queued。方向相反，是人让机器等。代码里现在的 `Hold`、`HoldTriaged`、`Held` 由 #450 改名。
+6. **决策是纯函数，副作用在外层。** 纯函数不读数据库、时钟、git 或进程；外层调用纯函数，再按结果行动。
 
 ## 一张票的流程
 
@@ -18,7 +19,7 @@ flowchart LR
   B --> C["Route<br/>去哪里"]
   C --> D["PassNext<br/>下一步"]
   A --> D
-  D --> E["Hold<br/>为什么等人"]
+  D --> E["WaitReason<br/>为什么等人"]
   E --> F["Move<br/>人能做什么"]
   E --> G["Triage<br/>agent 的分析"]
 ```
@@ -105,31 +106,31 @@ const decideRoute: (visit: RouterVisit, offer: RouteOffer, reply: JudgeReply) =>
 
 ## 4. `PassNext`：下一步
 
-**目的**：把"往哪走"和"一步怎么结束"统一成 pass 的下一个动作。只有这里能产生 hold。
+**目的**：把"往哪走"和"一步怎么结束"统一成 pass 的下一个动作。只有这里能让票进入 Waiting。
 
 ```ts
 type PassNext =
   | { _tag: 'GoToStep'; to: Step } // 与 Route 共用同一个定义
   | { _tag: 'RestartFromBase' } // 同上
-  | { _tag: 'PutOnHold'; hold: Hold }
+  | { _tag: 'WaitOnPerson'; reason: WaitReason }
 
 type RunContext = { run: RunRef; step: Step; visit: RouterVisit | null; spent: Spent }
 
 const nextOf: (input: Route | StepOutcome, ctx: RunContext) => PassNext
 ```
 
-**例子**：`Route.HandToPerson` 加上 `ctx.visit = {from: 'build', reason: BuildRed}`，得到 `PutOnHold{hold: RouterEscalated{visit, why}}`。
+**例子**：`Route.HandToPerson` 加上 `ctx.visit = {from: 'build', reason: BuildRed}`，得到 `WaitOnPerson{reason: RouterEscalated{visit, why}}`。
 
 **审视：保留，替代 0120 草稿里的 `transitionOf`。** 原来的结果 `Continue | Restart | Held` 和 `Route` 重复定义了 Continue，现在共用。分类规则（"谁把票交给人"）只写在 `nextOf` 里，由它的穷举测试固定下来。
 
 ---
 
-## 5. `Hold`：为什么等人
+## 5. `WaitReason`：为什么等你
 
 **目的**：卡片、允许的处理、默认推荐、要不要跑 triage，全都由它决定。
 
 ```ts
-type Hold =
+type WaitReason =
   // 要人拍板
   | { _tag: 'OwnQuestion'; question: string; by: string } // 人自己用 lingtai ask 提的
   | { _tag: 'AgentQuestion'; run: RunRef; step: Step; question: string }
@@ -157,7 +158,7 @@ type Hold =
   | { _tag: 'AgentCrashed'; run: RunRef; step: Step; kind: 'crash' | 'timeout'; detail: string }
   | { _tag: 'SetupRefused'; run: RunRef; step: Step; lifts: 'by-itself' | 'person'; why: string }
 
-const holdKind: (hold: Hold) => 'decision' | 'fault' // 派生，不存
+const waitKind: (reason: WaitReason) => 'decision' | 'fault' // 派生，不存
 ```
 
 **例子**：
@@ -168,7 +169,7 @@ const holdKind: (hold: Hold) => 'decision' | 'fault' // 派生，不存
 
 **审视：三处调整。**
 
-1. **拍平成一层。** 现在是 `Hold = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedMoves`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `holdKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。
+1. **拍平成一层。** 现在是 `WaitReason = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedMoves`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `waitKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。
 2. **删掉 `CheckRed`。** 按方案 B，build 红了、轮次用完归 `RouterEscalated{BuildRed}`；合并时的检查红了归 `MergeRefused{reason: 'verify-failed'}`。剩下没有地方会产生它，由 #452 确认后删除。
 3. **`DidNotFinish` 拆开。** 现在一个变体装了崩溃和撞上限两种情况。两者的处理不同：崩溃一般重跑，撞上限要先把票拆小。所以撞上限归 `BudgetExhausted`，崩溃归 `AgentCrashed`，"选择不改"归 `FixerDisagrees`。
 
@@ -176,7 +177,7 @@ const holdKind: (hold: Hold) => 'decision' | 'fault' // 派生，不存
 
 ## 6. `Move`：人能做什么
 
-**目的**：卡片上的按钮。由 `allowedMoves(hold)` 决定有哪些，`recommendedMove` 决定先推荐哪个。
+**目的**：卡片上的按钮。由 `allowedMoves(reason)` 决定有哪些，`recommendedMove` 决定先推荐哪个。
 
 ```ts
 type Move =
@@ -186,8 +187,8 @@ type Move =
   | { _tag: 'Answer'; choice: string }
   | { _tag: 'Close' }
 
-const allowedMoves: (hold: Hold) => Move[]
-const recommendedMove: (hold: Hold, triage: TriageStatus) => Move | null
+const allowedMoves: (reason: WaitReason) => Move[]
+const recommendedMove: (reason: WaitReason, triage: TriageStatus) => Move | null
 ```
 
 **例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
@@ -196,9 +197,9 @@ const recommendedMove: (hold: Hold, triage: TriageStatus) => Move | null
 
 ---
 
-## 7. Triage：agent 对 hold 的分析
+## 7. Triage：agent 对等待原因的分析
 
-**目的**：花钱请 agent 读 hold，指出根本原因，推荐一个处理。它只给建议，不会移动票。
+**目的**：花钱请 agent 读等待原因，指出根本原因，推荐一个处理。它只给建议，不会移动票。
 
 ```ts
 type RootCause =
@@ -220,7 +221,7 @@ type TriageStatus =
   | { _tag: 'Interrupted' }
   | { _tag: 'Done'; result: TriageResult }
 
-const triageRuns: (hold: Hold) => boolean
+const triageRuns: (reason: WaitReason) => boolean
 ```
 
 **例子**：`MergeRefused{reason: 'conflict'}` 有 3 个冲突块，triage 返回 `TriageAdvised{cause: ConflictingHunks{hunks, total: 3}, move: Requeue}`。
@@ -231,20 +232,21 @@ const triageRuns: (hold: Hold) => boolean
 
 ## 第一性审视：结论
 
-| 类型                                   | 结论                                                             | 理由                                                    |
-| -------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`            | **合并**为 `StepOutcome`                                         | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法 |
-| `Arrival` / `Arrived`                  | 保留，改名为 `ArrivalReason` / `RouterVisit`，并加 `ReviewEmpty` | 路由需要知道来源；"没话说"和"弄丢了"要分开              |
-| `Route` + `RouteDecision`              | 保留，改名为 `Route` / `RouteBasis`                              | 日志要分清是 judge 的选择，还是被上限拦下               |
-| `transitionOf` 的结果                  | **替换**为 `PassNext`                                            | 和 `Route` 共用 `GoToStep`、`RestartFromBase`           |
-| `Hold` 的中间层                        | **删除**，由 `holdKind` 派生                                     | 没有代码按中间层分支                                    |
-| `CheckRed`                             | **删除**（等 #452 确认）                                         | 方案 B 之后没有地方会产生它                             |
-| `DidNotFinish`                         | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` | 三种情况，三种不同的处理                                |
-| `Move`、`TriageResult`、`TriageStatus` | 保留                                                             | 已经是该有的形状                                        |
-| `Cause`                                | 保留，改名为 `RootCause`，变体也改名                             | 现在的名字单独看不出意思                                |
+| 类型                                   | 结论                                                             | 理由                                                       |
+| -------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| `StepEnding` + `FixOutcome`            | **合并**为 `StepOutcome`                                         | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
+| `Arrival` / `Arrived`                  | 保留，改名为 `ArrivalReason` / `RouterVisit`，并加 `ReviewEmpty` | 路由需要知道来源；"没话说"和"弄丢了"要分开                 |
+| `Route` + `RouteDecision`              | 保留，改名为 `Route` / `RouteBasis`                              | 日志要分清是 judge 的选择，还是被上限拦下                  |
+| `transitionOf` 的结果                  | **替换**为 `PassNext`                                            | 和 `Route` 共用 `GoToStep`、`RestartFromBase`              |
+| `Hold` / `HoldTriaged` / `Held`        | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold` |
+| `WaitReason` 的中间层                  | **删除**，由 `waitKind` 派生                                     | 没有代码按中间层分支                                       |
+| `CheckRed`                             | **删除**（等 #452 确认）                                         | 方案 B 之后没有地方会产生它                                |
+| `DidNotFinish`                         | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` | 三种情况，三种不同的处理                                   |
+| `Move`、`TriageResult`、`TriageStatus` | 保留                                                             | 已经是该有的形状                                           |
+| `Cause`                                | 保留，改名为 `RootCause`，变体也改名                             | 现在的名字单独看不出意思                                   |
 
 ## 待你决定
 
 1. `StepOutcome` 的合并会改 conductor 内部的 `StepEnding` 和事件 `FixApplied`，属于 0120 第二期。同意合并吗？
-2. `Hold` 拍平后，`_tag` 会写进日志（`WorkItemBlocked`），同样要等第二期的日志重置。拍平和改名一起做，还是先做拍平？
-3. `holdKind` 只分 `decision` 和 `fault` 两类，`OwnQuestion` 也算 `decision`。还是要单独列一类 `question`？
+2. `WaitReason` 拍平后，`_tag` 会写进日志（`WorkItemBlocked`），同样要等第二期的日志重置。拍平和改名一起做，还是先做拍平？
+3. `waitKind` 只分 `decision` 和 `fault` 两类，`OwnQuestion` 也算 `decision`。还是要单独列一类 `question`？
