@@ -17,7 +17,7 @@
 ```mermaid
 flowchart LR
   X["Action<br/>一次与外界的操作<br/>execution + products"] -->|"一步的所有 action"| A["StepOutcome<br/>这一步怎么结束<br/>（日志：StepEnded）"]
-  A -->|proposalOf| B["Proposal<br/>为什么到 proposed"]
+  A -->|"nextOf：Propose"| B["Proposal<br/>为什么到 proposed"]
   B -->|offerFor| O["RouteOffer<br/>候选去向"]
   O -->|"route（decideRoute）"| R["RouteDecision<br/>（日志：PassRouted）"]
   R --> D["PassNext<br/>下一步"]
@@ -75,7 +75,7 @@ StepEnded { runId, outcome: StepOutcome }
 
 **"没通过"是派生的**：一个 action 通过，当且仅当 `execution` 是 `Completed`，并且 `products` 里没有 `Assessment{refused}`、`QuestionAsked`、`SignoffRequested`、`IntegrationRefused`。`passed(action)` 是一个纯函数，不存。
 
-**一步最多一个没通过，不用挑。** 同一个 step 里，一个 action 没通过，后面的就不再跑（`pass-steps.ts:719`："pipeline stops at the first action that did not pass"），后面的都记成 `NotReached`。所以让这一步停下的就是最后一个不是 `NotReached` 的 action；全部通过时这一步就是通过；这一步没有声明任何 action 时 `actions` 为空，按通过处理。fold 和 `nextOf`、`proposalOf` 都直接读，不需要另存一个 `decisive` 字段。声明了几个、跑了几个、哪个没通过，都能从 `actions` 直接数出来。
+**一步最多一个没通过，不用挑。** 同一个 step 里，一个 action 没通过，后面的就不再跑（`pass-steps.ts:719`："pipeline stops at the first action that did not pass"），后面的都记成 `NotReached`。所以让这一步停下的就是最后一个不是 `NotReached` 的 action；全部通过时这一步就是通过；这一步没有声明任何 action 时 `actions` 为空，按通过处理。fold 和 `nextOf` 都直接读，不需要另存一个 `decisive` 字段。声明了几个、跑了几个、哪个没通过，都能从 `actions` 直接数出来。
 
 **"没改东西"不是事实，是解读**：fix 轮次里 agent 跑完了但没有提交，记成 `Completed{said}` 加空的 `products`。"fix agent 不同意 reviewer"是 `nextOf` 对 implement 这个操作的解读，它据此给出 `FixerDisagrees`，日志里不另造一个 `AgentChangedNothing`。
 
@@ -98,7 +98,7 @@ StepEnded { runId, outcome: StepOutcome }
 
 另一个 pass：agent 提交了一半改动，然后对剩下的部分提问：`implement` `Completed` + `[TreeAdvanced{c1→c2}, QuestionAsked{…}]`。旧的 `ActionOutcome` 只能在 `AgentCommitted` 和 `AgentAsked` 里选一个，丢掉另一个。
 
-**每种 action 能产出什么，是一张表加一条测试，不是类型。** 按插件分类型能让编译器挡住 reviewer 产出 `TreeAdvanced`，但 `nextOf`、`proposalOf` 的签名都要变成泛型，不值。所以 `PRODUCTS_OF: Record<PluginKind, Product['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `Action` 的 products 都在它插件的那一行里。按插件而不是按 step 列，因为能产出什么由 action 是什么决定：
+**每种 action 能产出什么，是一张表加一条测试，不是类型。** 按插件分类型能让编译器挡住 reviewer 产出 `TreeAdvanced`，但 `nextOf` 的签名要变成泛型，不值。所以 `PRODUCTS_OF: Record<PluginKind, Product['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `Action` 的 products 都在它插件的那一行里。按插件而不是按 step 列，因为能产出什么由 action 是什么决定：
 
 | 插件                 | 能产出                             | 能有的 `execution`（除 `NotReached` 外，它由 conductor 写） |
 | -------------------- | ---------------------------------- | ----------------------------------------------------------- |
@@ -132,13 +132,24 @@ type Proposal =
   | { _tag: 'InputNeeded'; from: 'design' | 'implement'; question: string }
   | { _tag: 'MergeConflict'; from: 'merge'; paths: string[]; baseSha: string; headSha: string }
   | { _tag: 'VerifyRed'; from: 'merge'; output: string } // base 动了，在新 base 上重跑检查红了
-
-const proposalOf: (outcome: StepOutcome) => Option<Proposal>
 ```
 
 五个 `JudgeWhen`（`hold.ts:58`）与它对应：`red` 是 `BuildRed`，`verify-failed` 是 `VerifyRed`，`conflict` 是 `MergeConflict`，`needs-input` 是 `InputNeeded`，`findings` 是三个 `Review*`。
 
-**`proposalOf` 的构造后条件**（不是类型保证）：给出 `ReviewFindings` 时，`findings` 里至少一条带失败场景；一条都没有的拒绝给出 `ReviewEmpty`。这条由 `proposalOf` 的单元测试固定。
+**一步怎么得到 Proposal**：没有单独的 `proposalOf`，是 `nextOf` 的 `Propose` 那一支（第 4 节）。先找出让这一步停下的 action（最后一个不是 `NotReached` 的）；它通过了就没有 Proposal。没通过时按"哪一步、执行怎么结束、产出了什么"对表：
+
+| step               | 停下的 action                                                         | Proposal                                                                    |
+| ------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| build              | `Completed` + `Assessment{refused}`                                   | `BuildRed{output: evidence}`                                                |
+| review             | `Completed` + `Assessment{refused}`，至少一条 finding 带失败场景      | `ReviewFindings`                                                            |
+| review             | `Completed` + `Assessment{refused}`，一条都不带                       | `ReviewEmpty{said}`                                                         |
+| review             | `AnswerUnreadable`                                                    | `ReviewUnreadable{raw}`                                                     |
+| design / implement | `Completed`，products 里有 `QuestionAsked`                            | `InputNeeded{question}`（同时有 `TreeAdvanced` 也一样，提交照样留在分支上） |
+| merge              | `Completed` + `IntegrationRefused{conflict}`                          | `MergeConflict`                                                             |
+| merge              | `Completed` + `IntegrationRefused{verify-failed}`                     | `VerifyRed`                                                                 |
+| 其余               | `Interrupted`、`NeverStarted`、fix 轮次里没有提交、`SignoffRequested` | 没有 Proposal：`nextOf` 直接给出 `WaitOnPerson` 或 `Requeued`               |
+
+"至少一条带失败场景"这条分界由 `nextOf` 的单元测试固定，不是类型保证。
 
 **实现时核对**：`ARRIVE_AT_THE_ROUTER`（`pass.ts:1012`）里还有 `admit` 和 `prepared`。上表没有给它们 Proposal 变体：prepared 的拒绝现在按 `SetupRefused` 直接交给人。如果它们确实会到 proposed，要补变体，而不是放宽 `from`。
 
@@ -208,7 +219,8 @@ const decideRoute: (offer: RouteOffer, reply: JudgeReply) => RouteDecision
 
 ```ts
 type PassNext =
-  | { _tag: 'Advance'; to: Step } // 沿主线往前，不花预算：去下一步、去 proposed、去 merge
+  | { _tag: 'Advance'; to: Step } // 沿主线往前，不花预算，不带原因：去下一步、去 merge，或通过 review 后经过 proposed
+  | { _tag: 'Propose'; proposal: Proposal } // 带着原因去 proposed，由它 route
   | { _tag: 'FixRound'; round: number } // 回 implement，花掉第 round 轮修复
   | { _tag: 'Requeued'; cause: RequeueCause } // 释放领取，票回队列：终态
   | { _tag: 'WaitOnPerson'; reason: WaitReason } // 票进 Waiting：终态
@@ -221,11 +233,13 @@ type RequeueCause =
 const nextOf: (
   outcome: StepOutcome,
   run: RunRef,
-) => Extract<PassNext, { _tag: 'Advance' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
+) => Extract<PassNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
 const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued{Restart} 各加一，其余不变
 ```
 
-**`nextOf` 收窄**：普通 step 结束后不会直接花预算。build 红了是 `Advance{to: 'proposed'}`，回 implement 修是 `proposed` 选出来的。所以 `FixRound` 和 `Requeued{Restart}` 只由 `decideRoute` 产出（经由 offer 里的候选），`nextOf` 的返回类型不含 `FixRound`，由类型保证。
+**`nextOf` 收窄**：普通 step 结束后不会直接花预算。build 红了是 `Propose{BuildRed}`，回 implement 修是 `proposed` 选出来的。所以 `FixRound` 和 `Requeued{Restart}` 只由 `decideRoute` 产出（经由 offer 里的候选），`nextOf` 的返回类型不含 `FixRound`，由类型保证。
+
+**去 proposed 有两种，`Advance` 和 `Propose`**：`proposed` 在主线上，通过 review 的 pass 都会经过它，跑它声明的 action（比如 `human:` 签字），再往 merge 走，这是 `Advance{to: 'proposed'}`，没有原因要 route。因为某一步没通过而来的是 `Propose{proposal}`，原因随值带过去，`offerFor` 直接读 `Propose.proposal`。"去 proposed route 却不说为什么"在类型上不可能；上一版把这件事拆成 `nextOf` 给目的地、`proposalOf` 给原因，两个函数读同一个 `StepOutcome`，可能一个说去、一个给出 None。
 
 **重开就是重新排队**：现在的 restart 会释放领取、把票放回队列，和"没开始就撞上账号额度"走的是同一个终态（`pass.ts:1245` 的 `outcomeOf`：`rested === 'requeued'` 和 `never-ran` 都是 `failed`）。所以上一版的 `RestartFromBase` 并进 `Requeued`，重开次数写在 `cause` 里。
 
@@ -239,10 +253,11 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 **例子**：
 
 - build 结束，全部通过：`Advance{to: 'review'}`。
-- build 结束，`pnpm test` 红了：`Advance{to: 'proposed'}`，由 `proposed` 去 route。
+- build 结束，`pnpm test` 红了：`Propose{proposal: BuildRed{from: 'build', output}}`，由 `proposed` 去 route。
+- review 通过：`Advance{to: 'proposed'}`，跑 `proposed:` 下声明的 action，没有要 route 的。
 - `proposed` 决定再修一轮，这是第 2 轮：`FixRound{round: 2}`。
 - `proposed` 决定思路错了要重来：`Requeued{cause: Restart{restart: 1}}`。
-- implement 里 agent 提问：`Advance{to: 'proposed'}`，`Proposal` 是 `InputNeeded`；没有 judge 时 route 给出 `WaitOnPerson{reason: AgentQuestion{…}}`。
+- implement 里 agent 提问：`Propose{proposal: InputNeeded{…}}`；没有 judge 时 route 给出 `WaitOnPerson{reason: AgentQuestion{…}}`。
 - fix 轮次里 agent 跑完没提交：`WaitOnPerson{reason: FixerDisagrees{said}}`。
 - merge 产出 `Integrated{mergeSha: m1}`：`Landed{integrated: m1}`。
 
@@ -433,7 +448,7 @@ const resolveWait: (command: {
 }) => Effect<ResolveResult>
 ```
 
-**`runPass` 返回时，终态已经落盘。** 调用方不再调 `proposalOf`、`offerFor`、`decideRoute`、`nextOf`、`spentAfter`，也不再用 `outcomeOf` 把结果翻译一遍，`PassEnd` 本身就是终态。这些函数是 `runPass` 内部的纯函数，单元测试直接测它们；它们的类型写在本文，是因为它们产出的值会写进日志。
+**`runPass` 返回时，终态已经落盘。** 调用方不再调 `offerFor`、`decideRoute`、`nextOf`、`spentAfter`，也不再用 `outcomeOf` 把结果翻译一遍，`PassEnd` 本身就是终态。这些函数是 `runPass` 内部的纯函数，单元测试直接测它们；它们的类型写在本文，是因为它们产出的值会写进日志。
 
 **这个 seam 已经大体存在**：`conduct.ts` 解析 recipe、环境和 tier，然后把其余的交给 `runPass`，后者返回 `PassResult`，再由 `outcomeOf`（`pass.ts:1245`）映射成 landed / failed / blocked。要改的是返回值：`PassResult.stoppedAt` 加 `rested` 加 `outcomeOf` 三样，换成一个 `PassEnd`。
 
