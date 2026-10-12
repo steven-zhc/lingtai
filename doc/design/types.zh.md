@@ -8,7 +8,7 @@
 2. **证据跟着变体走。** `BuildRed` 带红的输出，`MergeConflict` 带冲突路径。不存在"某个字段只在某种情况下有值"。
 3. **存事实，派生类别。** 类别（"要人拍板"还是"机器坏了"）由函数从事实算出来，不另外存。
 4. **一个名字只表示一件事。** 看到变体名就知道它属于哪一层、说的是什么。不单独用 Held、Failure、Continue 这类通用词。
-5. **页面词 = 列 id = 类型名。** 看板的列叫 _Waiting on you_，id 是 `waiting`，所以类型是 `WaitReason`、`WaitOnPerson`，事件是 `WaitTriaged`。_you_ 只留在页面上，日志和 CLI 没有固定的读者。**hold 只指 `agent:hold`**：人在领取前按住一张票，票还在 Queued。方向相反，是人让机器等。代码里现在的 `Hold`、`HoldTriaged`、`Held` 由 #450 改名。同理，`proposed` 这一步只叫 `proposed`，不再叫 router：到达它的是 `Proposal`，它给出的是 `Route`。地方和决定是两个词。
+5. **页面词 = 列 id = 类型名。** 看板的列叫 _Waiting on you_，id 是 `waiting`，所以类型是 `WaitReason`、`WaitOnPerson`，事件是 `WaitTriaged`。_you_ 只留在页面上，日志和 CLI 没有固定的读者。**hold 只指 `agent:hold`**：人在领取前按住一张票，票还在 Queued。方向相反，是人让机器等。代码里现在的 `Hold`、`HoldTriaged`、`Held` 由 #450 改名。同理，`proposed` 这一步只叫 `proposed`，不再叫 router：到达它的是 `Proposal`。它做的事叫 route（动词），选出的是 `PassNext`，和其他 step 结束后的下一步同一个类型。
 6. **决策是纯函数，副作用在外层。** 纯函数不读数据库、时钟、git 或进程；外层调用纯函数，再按结果行动。
 
 ## 一张票的流程
@@ -16,9 +16,8 @@
 ```mermaid
 flowchart LR
   A["StepOutcome<br/>一步怎么结束"] --> B["Proposal<br/>为什么到 proposed"]
-  B --> C["Route<br/>去哪里"]
-  C --> D["PassNext<br/>下一步"]
-  A --> D
+  B -->|"route（decideRoute）"| D["PassNext<br/>下一步"]
+  A -->|nextOf| D
   D --> E["WaitReason<br/>为什么等人"]
   E --> F["Resolution<br/>这次等待怎么了结"]
   E --> G["Triage<br/>agent 的分析"]
@@ -107,17 +106,14 @@ const proposalOf: (step: Step, outcome: StepOutcome, results: StepResults) => Op
 
 ---
 
-## 3. `Route`：proposed 决定去哪里
+## 3. route：proposed 怎么选下一步
 
-**目的**：`proposed` 的决定本身，以及这个决定是怎么来的。日志要分清"judge 选择交给人"和"judge 想再修一轮，被上限拦下"。
+**route 是动词，不是类型**：指 `proposed` 做选择这件事，只在 `proposed` 发生。选出来的结果是 `PassNext`（第 4 节），和其他 step 结束后的下一步是同一个类型。
+
+**目的**：日志要分清"judge 选择交给人"和"judge 想再修一轮，被上限拦下"，所以选择本身之外还要记下它是怎么来的。
 
 ```ts
 type RouteOffer = { reachable: Step[]; affordable: Step[] } // judge 只能看到 affordable
-
-type Route =
-  | { _tag: 'GoToStep'; to: Step } // 回 implement 修，或往前去 merge
-  | { _tag: 'RestartFromBase' } // 从 base 重新开始一个 pass
-  | { _tag: 'HandToPerson' }
 
 type RouteBasis =
   | { _tag: 'JudgeChose' }
@@ -125,35 +121,44 @@ type RouteBasis =
   | { _tag: 'ReplyRejected'; wanted: string } // judge 回答了一个不在选项里的去向
 
 const offerFor: (proposal: Proposal, policy: RoutingPolicy) => RouteOffer
-const decideRoute: (proposal: Proposal, offer: RouteOffer, reply: JudgeReply) => { route: Route; basis: RouteBasis }
+const decideRoute: (
+  proposal: Proposal,
+  offer: RouteOffer,
+  reply: JudgeReply,
+  ctx: RunContext,
+) => { next: PassNext; basis: RouteBasis }
 ```
 
-**例子**：reviewer 提了 major，judge 想回 implement 再修，但 3 轮已经用完，结果是 `{route: HandToPerson, basis: CeilingOverrode{wanted: 'implement', ceiling: 'rounds'}}`，存成事件 `PassRouted`。
+**例子**：reviewer 提了 major，judge 想回 implement 再修，但 3 轮已经用完，结果是 `{next: WaitOnPerson{reason: ProposedEscalated{proposal, why}}, basis: CeilingOverrode{wanted: 'implement', ceiling: 'rounds'}}`，存成事件 `PassRouted`。
 
-**审视：保留。** `RouteOffer` 已经存在（`pass.ts:837`）。`Destination` 现在定义了三遍，统一成 `Route` 一处。`RouteBasis` 替代 `PassRouted` 里 `chose` 和 `to` 两个字段的比较，以及那个可空的 `ceiling` 字段。
+**审视：删掉 `Route` 类型。** 它的三个变体里，`GoToStep`、`RestartFromBase` 和 `PassNext` 是同一个定义，`HandToPerson` 只是还没补上原因的 `WaitOnPerson`。分成两个类型，读代码的人要先弄懂这两个阶段是一回事，`nextOf` 也得同时接 `Route | StepOutcome` 两种互不相关的输入。现在 `decideRoute` 多接一个 `RunContext`，直接给出完整的 `PassNext`，交给人时当场生成 `ProposedEscalated`：在哪里决定交给人，就在哪里说清原因。`RouteOffer` 已经存在（`pass.ts:837`）。`Destination` 现在定义了三遍，统一成 `PassNext` 一处。`RouteBasis` 替代 `PassRouted` 里 `chose` 和 `to` 两个字段的比较，以及那个可空的 `ceiling` 字段。
 
-`JudgeReply` 的来源：内置规则是纯函数；agent 是副作用（要花钱）；没有声明 judge 时，由外层合成一个结果为 `HandToPerson` 的回答。人不是 judge，人是 `HandToPerson` 的去向。
+`JudgeReply` 的来源：内置规则是纯函数；agent 是副作用（要花钱）；没有声明 judge 时，由外层合成一个"交给人"的回答。人不是 judge，人是 `WaitOnPerson` 的去向。
 
 ---
 
 ## 4. `PassNext`：下一步
 
-**目的**：把"往哪走"和"一步怎么结束"统一成 pass 的下一个动作。只有这里能让票进入 Waiting。
+**目的**：pass 接下来做什么，只有这一个类型。普通 step 结束后由 `nextOf` 给出，`proposed` 由 `decideRoute` 给出。只有这两个函数能让票进入 Waiting。
 
 ```ts
 type PassNext =
-  | { _tag: 'GoToStep'; to: Step } // 与 Route 共用同一个定义
-  | { _tag: 'RestartFromBase' } // 同上
+  | { _tag: 'GoToStep'; to: Step } // 往前一步，回 implement 修，或去 proposed
+  | { _tag: 'RestartFromBase' } // 从 base 重新开始一个 pass
   | { _tag: 'WaitOnPerson'; reason: WaitReason }
 
 type RunContext = { run: RunRef; step: Step; proposal: Proposal | null; spent: Spent }
 
-const nextOf: (input: Route | StepOutcome, ctx: RunContext) => PassNext
+const nextOf: (outcome: StepOutcome, ctx: RunContext) => PassNext
 ```
 
-**例子**：`Route.HandToPerson` 加上 `ctx.proposal = {from: 'build', reason: BuildRed}`，得到 `WaitOnPerson{reason: ProposedEscalated{proposal, why}}`。
+**例子**：
 
-**审视：保留，替代 0120 草稿里的 `transitionOf`。** 原来的结果 `Continue | Restart | Held` 和 `Route` 重复定义了 Continue，现在共用。分类规则（"谁把票交给人"）只写在 `nextOf` 里，由它的穷举测试固定下来。
+- build 结束，`Passed`：`GoToStep{to: 'review'}`。
+- build 结束，`ChecksRefused`：`GoToStep{to: 'proposed'}`，由 `proposed` 去 route。
+- implement 里 agent 提问，`AgentAsked`：`WaitOnPerson{reason: AgentQuestion{…}}`。
+
+**审视：保留，替代 0120 草稿里的 `transitionOf`。** "谁把票交给人"这条分类规则分在两处：`ProposedEscalated` 在 `decideRoute` 里生成，其余的在 `nextOf` 里生成。两个函数各有穷举测试，合起来覆盖 `WaitReason` 的每个变体。
 
 ---
 
@@ -225,7 +230,7 @@ const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resol
 
 **例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
 
-**审视：改名为 `Resolution`。** `Move` 只说"走一步"，看不出谁走、往哪走，还和 Route、看板拖卡片撞词。`Resolution` 说的是这次等待怎么了结，每个变体都是结束等待的一种方式。另外 `BodyAndRequeue` 改为 `EditBodyAndRequeue`，让名字说清先做什么；`Answer` 改为 `AnswerQuestion`，它只对 `OwnQuestion` 有效。`Approve`、`Requeue`、`Close` 不变，和 CLI 命令、看板按钮同名。
+**审视：改名为 `Resolution`。** `Move` 只说"走一步"，看不出谁走、往哪走，还和 route、看板拖卡片撞词。`Resolution` 说的是这次等待怎么了结，每个变体都是结束等待的一种方式。另外 `BodyAndRequeue` 改为 `EditBodyAndRequeue`，让名字说清先做什么；`Answer` 改为 `AnswerQuestion`，它只对 `OwnQuestion` 有效。`Approve`、`Requeue`、`Close` 不变，和 CLI 命令、看板按钮同名。
 
 ---
 
@@ -265,19 +270,19 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ## 第一性审视：结论
 
-| 类型                            | 结论                                                                 | 理由                                                       |
-| ------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`     | **合并**为 `StepOutcome`，日志里是 `StepEnded`                       | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法    |
-| `Arrival` / `Arrived`           | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`       | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开          |
-| `Route` + `RouteDecision`       | 保留，改名为 `Route` / `RouteBasis`                                  | 日志要分清是 judge 的选择，还是被上限拦下                  |
-| `transitionOf` 的结果           | **替换**为 `PassNext`                                                | 和 `Route` 共用 `GoToStep`、`RestartFromBase`              |
-| `Hold` / `HoldTriaged` / `Held` | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                  | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold` |
-| `WaitReason` 的中间层           | **删除**，由 `waitKind` 派生                                         | 没有代码按中间层分支                                       |
-| `CheckRed`                      | **删除**（等 #452 确认）                                             | 方案 B 之后没有地方会产生它                                |
-| `DidNotFinish`                  | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`     | 三种情况，三种不同的处理                                   |
-| `Move`                          | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion` | 名字要说清是"等待怎么了结"，不和 Route 撞词                |
-| `TriageResult`、`TriageStatus`  | 保留                                                                 | 已经是该有的形状                                           |
-| `Cause`                         | 保留，改名为 `RootCause`，变体也改名                                 | 现在的名字单独看不出意思                                   |
+| 类型                            | 结论                                                                  | 理由                                                                  |
+| ------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `StepEnding` + `FixOutcome`     | **合并**为 `StepOutcome`，日志里是 `StepEnded`                        | 修复轮次就是 implement 再跑一次；"没提交"现在有两种写法               |
+| `Arrival` / `Arrived`           | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`        | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开                     |
+| `Route` + `RouteDecision`       | **删掉** `Route`，`RouteDecision` 改名为 `RouteBasis`；route 只作动词 | `Route` 和 `PassNext` 重复；日志要分清是 judge 的选择，还是被上限拦下 |
+| `transitionOf` 的结果           | **替换**为 `PassNext`                                                 | pass 的下一步只有这一个类型，`nextOf` 和 `decideRoute` 都给出它       |
+| `Hold` / `HoldTriaged` / `Held` | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                   | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`            |
+| `WaitReason` 的中间层           | **删除**，由 `waitKind` 派生                                          | 没有代码按中间层分支                                                  |
+| `CheckRed`                      | **删除**（等 #452 确认）                                              | 方案 B 之后没有地方会产生它                                           |
+| `DidNotFinish`                  | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`      | 三种情况，三种不同的处理                                              |
+| `Move`                          | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`  | 名字要说清是"等待怎么了结"，不和 route 撞词                           |
+| `TriageResult`、`TriageStatus`  | 保留                                                                  | 已经是该有的形状                                                      |
+| `Cause`                         | 保留，改名为 `RootCause`，变体也改名                                  | 现在的名字单独看不出意思                                              |
 
 ## 待你决定
 
