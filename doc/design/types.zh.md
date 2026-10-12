@@ -48,7 +48,7 @@ type Integration =
 // 任何 kind 都可能有的两种结局
 type NeverStarted = { _tag: 'NeverStarted'; scope: 'conductor' | 'work-item'; why: string } // 账号额度、环境不满足
 type NotReached = { _tag: 'NotReached' } // 前面有 action 没过关，这个没轮到跑
-type Interrupted = { _tag: 'Interrupted'; kind: 'crash' | 'timeout' | 'out-of-turns' | 'out-of-usd'; detail: string }
+type Interrupted = { _tag: 'Interrupted'; cause: 'crash' | 'timeout' | 'out-of-turns' | 'out-of-usd'; detail: string } // 不叫 kind：kind 是 Action 的判别字段（原则 4）
 
 type ActionBase = {
   name: string // recipe 里写的那个：'pnpm test'、'reviewer'、'implement'
@@ -58,7 +58,7 @@ type ActionBase = {
 
 type Action = ActionBase &
   (
-    | { kind: 'run'; result: { _tag: 'Completed'; assessment: Assessment } | (Interrupted & { kind: 'timeout' }) | NeverStarted | NotReached }
+    | { kind: 'run'; result: { _tag: 'Completed'; assessment: Assessment } | (Interrupted & { cause: 'timeout' }) | NeverStarted | NotReached }
     | {
         kind: 'reviewer'
         result:
@@ -89,6 +89,8 @@ type StepOutcome = { step: Step; round: number; actions: Action[] }
 // 日志：一个 step 跑完一次，一条
 StepEnded { runId, outcome: StepOutcome }
 ```
+
+**judge 条目不是 action**：`judge:` 声明在 `proposed:` 下面，但只在 route 时被问（第 3 节），正常经过 proposed 时不跑，也不出现在 `StepOutcome.actions` 里。
 
 kind 和插件的对应：`run:` 是 `run`，`agent:` 在 review 是 `reviewer`、在 implement 是 `implement`、在 design 是 `design`，`human:` 和 `watch:` 是 `signoff`，merge 插件是 `merge`。claim 和 admit 的插件（queue、worktree）实现时按同样的方式补成 kind；以 `packages/recipe/src/recipe.ts` 里的插件定义为准。
 
@@ -163,9 +165,11 @@ type Proposal =
 | design / implement | `Completed`，`question` 不为 null                                        | `InputNeeded{question}`（`advanced` 不为 null 也一样，提交照样留在分支上） |
 | merge              | `Completed{integration: IntegrationRefused{conflict}}`                   | `MergeConflict`                                                            |
 | merge              | `Completed{integration: IntegrationRefused{verify-failed}}`              | `VerifyRed`                                                                |
-| 其余               | `Interrupted`、`NeverStarted`、implement 没有提交、`signoff` 要签字      | 没有 Proposal：`nextOf` 直接给出 `WaitOnPerson` 或 `Requeued`              |
+| 其余               | 见第 4 节"不去 proposed 的那一支"                                        | 没有 Proposal：`nextOf` 直接给出 `WaitOnPerson`、`Requeued` 或 `Landed`    |
 
 "至少一条带失败场景"这条分界由 `nextOf` 的单元测试固定，不是类型保证。
+
+**和现在代码的一处差别**：现在 review 不拒绝任何东西，findings 是在 `proposed` 的正常经过里判的（`pass-steps.ts:602`："`review` refuses nothing, so it never arrives — its findings are judged on `proposed`'s own way through"），重开也只在那条路上提供（`pass.ts` 的 `onOffer`）。本文改成 reviewer 拒绝就 `Propose{ReviewFindings}`，由 offer 提供重开，语义等价，但实现时要把"正常经过 proposed 时判 findings"那段搬过来，不能两处都判。
 
 **实现时核对**：`ARRIVE_AT_THE_ROUTER`（`pass.ts:1012`）里还有 `admit` 和 `prepared`。上表没有给它们 Proposal 变体：prepared 的拒绝现在按 `SetupRefused` 直接交给人。如果它们确实会到 proposed，要补变体，而不是放宽 `from`。
 
@@ -186,12 +190,13 @@ type Proposal =
 ```ts
 type CandidateId = string // 比如 'fix-lines'、'restart'、'hand-to-person'
 
-// route 能选出的去向：再修一轮、从 base 重来、交给人；不含 Advance、Landed 这类主线上的去向
-type RouteNext =
-  | Extract<PassNext, { _tag: 'FixRound' | 'WaitOnPerson' }>
+// 候选能去的地方：再走一轮、从 base 重来、交给人；不含 Advance、Landed 这类主线上的去向
+type CandidateNext =
+  | Extract<PassNext, { _tag: 'FixRound' }>
   | { _tag: 'Requeued'; cause: Extract<RequeueCause, { _tag: 'Restart' }> }
+  | { _tag: 'HandToPerson' } // 占位：offer 在 judge 回答之前算出，这时还没有交给人的原因
 
-type RouteCandidate = { id: CandidateId; next: RouteNext } // next 已经带好要花的那一轮
+type RouteCandidate = { id: CandidateId; next: CandidateNext } // next 已经带好要花的那一轮
 type ExcludedCandidate = { id: CandidateId; because: { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' } } // 只有这两个是 route 的上限（pass.ts:973-974）
 
 type RouteOffer = { proposal: Proposal; available: RouteCandidate[]; unavailable: ExcludedCandidate[] }
@@ -213,24 +218,31 @@ type RouteDecision =
 
 const offerFor: (proposal: Proposal, policy: RoutingPolicy, spent: Spent) => RouteOffer
 const decideRoute: (offer: RouteOffer, reply: JudgeReply) => RouteDecision
-const routeNext: (offer: RouteOffer, decision: RouteDecision) => RouteNext // Selected 查 offer；Escalated 生成 WaitOnPerson
+// Selected 查 offer，HandToPerson 换成带原因的 WaitOnPerson；Escalated 生成 WaitOnPerson
+const routeNext: (
+  offer: RouteOffer,
+  reply: JudgeReply,
+  decision: RouteDecision,
+) => Extract<PassNext, { _tag: 'FixRound' | 'Requeued' | 'WaitOnPerson' }>
 ```
 
 **为什么这样**：
 
 - judge 从候选 id 里选，不返回任意一个 Step。"回答不在选项里"变成 `UnknownCandidate`，不需要拿回答和两个数组比对。
+- **哪些候选**（`pass.ts:925` 起的 `onOffer` 表）：再走一轮回到发问的那一步（`InputNeeded`），回 implement（implement 及之后的 step），从 merge 回 build（agent 解决冲突写的代码是 review 之后写的，要重新过 build 和 review），从 base 重来（只对 `ReviewFindings`），交给人（永远在）。
 - 预算在 `offerFor` 里算完：可用的候选已经带着 `FixRound{round: 3}`，被上限挡掉的进 `unavailable`。`decideRoute` 只需要 offer 和回答，不再需要 `RunContext`，也不会再解释一遍上限。
-- **决定里不存 `next`**：如果 `Selected` 同时存 `candidate` 和 `next`，就能写出 `fix-lines` 配 `Landed` 这种对不上的值。现在 `next` 只有一个来源，就是存下的 offer 里那个候选的 `next`，由 `routeNext` 查出。候选的去向收窄成 `RouteNext`，offer 里放不进 `Advance` 或 `Landed`。
+- **决定里不存 `next`**：如果 `Selected` 同时存 `candidate` 和 `next`，就能写出 `fix-lines` 配 `Landed` 这种对不上的值。现在 `next` 只有一个来源，就是存下的 offer 里那个候选的 `next`，由 `routeNext` 查出。候选的去向收窄成 `CandidateNext`，offer 里放不进 `Advance` 或 `Landed`。
+- **交给人的候选是占位**：offer 在 judge 回答之前算出，`hand-to-person` 这时给不出原因。`routeNext` 拿到 judge 的回答后，把 `HandToPerson` 换成 `WaitOnPerson{reason: ProposedEscalated{proposal, because: JudgeHandedOver{why}}}`。
 - **类型挡不住的一处**：`Selected.candidate` 是不是 `offer.available` 里的 id。id 是数据，这只能由 `decideRoute` 在运行时保证：不在里面就是 `UnknownCandidate`，不会生成 `Selected`。由 `decideRoute` 的穷举测试固定。
-- `Escalated` 一定交给人：`routeNext` 对它只生成 `WaitOnPerson`。原因一般是 `ProposedEscalated{proposal, why}`；`InputNeeded` 没有 judge 时是 `AgentQuestion`，比 `ProposedEscalated` 更具体。
+- `Escalated` 一定交给人：`routeNext` 对它只生成 `WaitOnPerson`，原因是 `ProposedEscalated{proposal, because}`，`because` 就是 `Escalated.because`，类型原样带过去；`InputNeeded` 没有 judge 时是 `AgentQuestion`，比 `ProposedEscalated` 更具体。
 
 **例子**：
 
 - reviewer 提了 major，judge 选 `fix-lines`，还剩轮次：offer 里 `fix-lines` 的 `next` 是 `FixRound{round: 2}`，决定是 `Selected{candidate: 'fix-lines'}`。
-- 3 轮已经用完，judge 仍选 `fix-lines`：`fix-lines` 在 `unavailable` 里，决定是 `Escalated{because: CandidateUnavailable{excluded: {id: 'fix-lines', because: CeilingReached{rounds}}}}`，`routeNext` 给出 `WaitOnPerson{reason: ProposedEscalated{…}}`。
+- 3 轮已经用完，judge 仍选 `fix-lines`：`fix-lines` 在 `unavailable` 里，决定是 `Escalated{because: CandidateUnavailable{excluded: {id: 'fix-lines', because: CeilingReached{rounds}}}}`，`routeNext` 给出 `WaitOnPerson{reason: ProposedEscalated{because: CandidateUnavailable{…}}}`。
 - build 红了，没有声明 judge，内置规则 `same-worktree`（`judge.ts:466`）作为 judge 回答 `Selected{candidate: 'fix-lines'}`。
 
-`JudgeReply` 的来源：内置规则是纯函数；agent 是副作用（要花钱）；没有声明 judge 时，外层合成 `NoJudge`。人不是 judge，人是 `WaitOnPerson` 的去向。offer、回答和决定都是发生过的事实，三者一起存进 `PassRouted`（第 8 节）；`next` 不存，重放时由 `routeNext` 算出。
+`JudgeReply` 的来源：内置规则是纯函数；agent 是副作用（要花钱）；没有声明 judge 时，外层合成 `NoJudge`。人不是 judge，人是 `WaitOnPerson` 的去向。offer、回答和决定都是发生过的事实，三者一起存进 `PassRouted`（第 8 节）；`next` 不存，重放时由 `routeNext(offer, reply, decision)` 算出。
 
 **审视：删掉 `Route` 和 `RouteBasis`。** `Route` 的三个变体里两个和 `PassNext` 重复，`HandToPerson` 只是还没补上原因的 `WaitOnPerson`。`RouteBasis` 和 `next` 组成的笛卡尔积允许非法组合，由 `RouteDecision` 的两个变体取代。`RouteOffer` 已经存在（`pass.ts:837`），这里把它从"两个 Step 数组"改成"带 id 的候选"。
 
@@ -244,7 +256,7 @@ const routeNext: (offer: RouteOffer, decision: RouteDecision) => RouteNext // Se
 type PassNext =
   | { _tag: 'Advance'; to: Step } // 沿主线往前，不花预算，不带原因：去下一步、去 merge，或 review 全部过关后经过 proposed
   | { _tag: 'Propose'; proposal: Proposal } // 带着原因去 proposed，由它 route
-  | { _tag: 'FixRound'; round: number } // 回 implement，花掉第 round 轮修复
+  | { _tag: 'FixRound'; to: 'design' | 'implement' | 'build'; round: number } // 往回走一步再来，花掉本 pass 的第 round 轮
   | { _tag: 'Requeued'; cause: RequeueCause } // 释放领取，票回队列：终态
   | { _tag: 'WaitOnPerson'; reason: WaitReason } // 票进 Waiting：终态
   | { _tag: 'Landed'; integrated: string } // 合进 main：终态；mergeSha 必须来自同一 pass 的 Integrated 产出
@@ -262,25 +274,43 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 
 **`nextOf` 收窄**：普通 step 结束后不会直接花预算。build 红了是 `Propose{BuildRed}`，回 implement 修是 `proposed` 选出来的。所以 `FixRound` 和 `Requeued{Restart}` 只由 route 产出（`routeNext` 从 offer 的候选里查出），`nextOf` 的返回类型不含 `FixRound`，由类型保证。
 
+**不去 proposed 的那一支**：没过关的 action 不在第 2 节那张表里时，`nextOf` 按下表给出。大部分格子照着现在 `hold-of.ts` 的分法（`refused` 在 prepared 是 `SetupRefused`，`did-not-finish` 是 `DidNotFinish`，`never-ran` 由 `outcomeOf` 读成重排），标"核对"的是现在的代码没有直接对应、本文先定的：
+
+| kind / step                   | 没过关的情况                                   | `nextOf` 给出                                                                                                                                                                      |
+| ----------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 任何 kind                     | `NeverStarted{scope}`                          | `Requeued{NeverStarted{scope}}`；scope 为 conductor 时 conductor 同时暂停                                                                                                          |
+| `run` 在 prepared             | `Completed{refused}` 或 `Interrupted{timeout}` | `WaitOnPerson{SetupRefused}`                                                                                                                                                       |
+| `run` 在 build                | `Interrupted{timeout}`                         | `Propose{BuildRed{output: detail}}`（核对：现在命令超时落成哪种）                                                                                                                  |
+| `reviewer`、design、implement | `Interrupted{crash \| timeout}`                | `WaitOnPerson{AgentCrashed}`                                                                                                                                                       |
+| `reviewer`、design、implement | `Interrupted{out-of-turns \| out-of-usd}`      | `WaitOnPerson{BudgetExhausted}`                                                                                                                                                    |
+| implement，round > 0          | `Completed{advanced: null, question: null}`    | `WaitOnPerson{FixerDisagrees{said}}`                                                                                                                                               |
+| implement，round 0            | `Completed{advanced: null, question: null}`    | 待你决定：现在是 `RunFailed{no-commits}`，落成 `crashed`（`fix.ts:187`）                                                                                                           |
+| design                        | `Completed{design: null, question: null}`      | 待你决定：同上，没有产出也没有提问                                                                                                                                                 |
+| `signoff`                     | `Completed{requested: {question}}`             | `WaitOnPerson{SignoffRequired}`                                                                                                                                                    |
+| `merge`                       | `Completed{Integrated}`（过关）                | `Landed{integrated: mergeSha}`                                                                                                                                                     |
+| `merge`                       | `IntegrationRefused` 的另外六种原因            | `WaitOnPerson{MergeRefused}`：`dirty-base`、`unpushed-base`、`pending-migration`、`no-commits`、`push-rejected`、`unexpected`（`pass-steps.ts:606`，它们在 diff 成问题之前就停了） |
+| admit                         | worktree 插件失败                              | 核对：admit 的插件补成 kind 时一起定                                                                                                                                               |
+
 **去 proposed 有两种，`Advance` 和 `Propose`**：`proposed` 在主线上，review 全部过关的 pass 都会经过它，跑它声明的 action（比如 `human:` 签字），再往 merge 走，这是 `Advance{to: 'proposed'}`，没有原因要 route。因为某一步有 action 没过关而来的是 `Propose{proposal}`，原因随值带过去，`offerFor` 直接读 `Propose.proposal`。"去 proposed route 却不说为什么"在类型上不可能；上一版把这件事拆成 `nextOf` 给目的地、`proposalOf` 给原因，两个函数读同一个 `StepOutcome`，可能一个说去、一个给出 None。
 
 **重开就是重新排队**：现在的 restart 会释放领取、把票放回队列，和"没开始就撞上账号额度"走的是同一个终态（`pass.ts:1245` 的 `outcomeOf`：`rested === 'requeued'` 和 `never-ran` 都是 `failed`）。所以上一版的 `RestartFromBase` 并进 `Requeued`，重开次数写在 `cause` 里。
 
 **不变量**（由测试固定，不是类型保证）：
 
-- `Advance.to` 只能是主线上更靠后的 step。往回走只有 `FixRound` 一种。
+- `Advance.to` 只能是主线上更靠后的 step。往回走只有 `FixRound` 一种，`to` 由候选决定：`design` 或 `implement` 只给发问的那一步，`build` 只从 merge 给。
 - `Landed` 只在 merge 的 action 产出 `Integrated` 时给出，`integrated` 就是那个 `mergeSha`，不能从"前面都过关了"推出来。
-- 终态（`Requeued`、`WaitOnPerson`、`Landed`）之后，这个 pass 不再有 `StepStarted`。
+- 终态（`Requeued`、`WaitOnPerson`、`Landed`）之后，这个 pass 只剩 end：end 每种结局都跑（`PassResult.steps` 的 "`end` last, always"），除此之外不再有 `StepStarted`。
 - `round` 和 `restart` 等于已花的数加一，由 `offerFor` 算，写进候选，`spentAfter` 照着值更新，不再判断。
+- **轮次按 pass 算，重开按票算**："`claim` spends the item's restart and each of the others spends one of this pass's rounds"（`pass.ts` 的 `onOffer` 注释）。所以 `Requeued{Restart}` 之后的新 pass 从第 0 轮开始，重开次数跨 pass 累计。
 
 **例子**：
 
 - build 结束，全部过关：`Advance{to: 'review'}`。
 - build 结束，`pnpm test` 红了：`Propose{proposal: BuildRed{from: 'build', output}}`，由 `proposed` 去 route。
 - review 全部过关：`Advance{to: 'proposed'}`，跑 `proposed:` 下声明的 action，没有要 route 的。
-- `proposed` 决定再修一轮，这是第 2 轮：`FixRound{round: 2}`。
+- `proposed` 决定再修一轮，这是第 2 轮：`FixRound{to: 'implement', round: 2}`。
 - `proposed` 决定思路错了要重来：`Requeued{cause: Restart{restart: 1}}`。
-- implement 里 agent 提问：`Propose{proposal: InputNeeded{…}}`；没有 judge 时 route 给出 `WaitOnPerson{reason: AgentQuestion{…}}`。
+- implement 里 agent 提问：`Propose{proposal: InputNeeded{…}}`；judge 选"说明假设再走一轮"是 `FixRound{to: 'implement', round}`，没有 judge 时 route 给出 `WaitOnPerson{reason: AgentQuestion{…}}`。
 - fix 轮次里 agent 跑完没提交：`WaitOnPerson{reason: FixerDisagrees{said}}`。
 - merge 产出 `Integrated{mergeSha: m1}`：`Landed{integrated: m1}`。
 
@@ -296,11 +326,11 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 type WaitReason =
   // 有人在问问题
   | { _tag: 'OwnQuestion'; question: string; by: string } // 人自己用 lingtai ask 提的
-  | { _tag: 'AgentQuestion'; run: RunRef; step: Step; question: string }
+  | { _tag: 'AgentQuestion'; run: RunRef; step: 'design' | 'implement'; question: string }
   // 要人拍板
   | { _tag: 'SignoffRequired'; run: RunRef; step: Step; source: 'declared' | 'injected'; question: string }
   | { _tag: 'FixerDisagrees'; run: RunRef; step: Step; said: string | null }
-  | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; why: string }
+  | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; because: EscalationBecause }
   // 机器出了问题，没有人做过判断
   | {
       _tag: 'MergeRefused'
@@ -315,13 +345,16 @@ type WaitReason =
   | {
       _tag: 'BudgetExhausted'
       run: RunRef
-      kind: 'out-of-turns' | 'out-of-usd'
+      cause: 'out-of-turns' | 'out-of-usd'
       detail: string // runtime 自己说的停止原因，原样保留
-      turns: number | null
-      costUsd: number | null
+      call: CallId | null // 用了多少轮、花了多少钱从这次调用的收据读（#455），不在这里另存一份
     }
-  | { _tag: 'AgentCrashed'; run: RunRef; step: Step; kind: 'crash' | 'timeout'; detail: string }
+  | { _tag: 'AgentCrashed'; run: RunRef; step: Step; cause: 'crash' | 'timeout'; detail: string }
   | { _tag: 'SetupRefused'; run: RunRef; step: Step; why: string } // 只有要人处理的；会自己恢复的账号墙走 Requeued{NeverStarted}
+
+// route 为什么交给人：Escalated 的四种原因，加上 judge 自己选了交给人
+type EscalationBecause =
+  Extract<RouteDecision, { _tag: 'Escalated' }>['because'] | { _tag: 'JudgeHandedOver'; why: string }
 
 type WaitKind = 'question' | 'decision' | 'fault'
 const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
@@ -329,8 +362,8 @@ const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
 
 **例子**：
 
-- 测试修了 3 轮还是红的：`ProposedEscalated{proposal: BuildRed{from: 'build', …}}`
-- agent 撞到 250 轮上限：`BudgetExhausted{kind: 'out-of-turns', turns: 251}`
+- 测试修了 3 轮还是红的：`ProposedEscalated{proposal: BuildRed{from: 'build', …}, because: CandidateUnavailable{…}}`
+- agent 撞到 250 轮上限：`BudgetExhausted{cause: 'out-of-turns', call}`，卡片从收据读出 251 轮
 - 有人批准了合并，合并仍然冲突：`MergeRefused{reason: 'conflict', afterApproval: true}`
 
 **`waitKind` 分三类**，只给卡片文案和看板分组用，没有逻辑按它分支：
@@ -363,8 +396,8 @@ type Resolution =
   | { _tag: 'AnswerQuestion'; choice: string } // 只对 OwnQuestion 有效
   | { _tag: 'Close' }
 
-const allowedResolutions: (reason: WaitReason) => Resolution[]
-const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution | null
+const allowedResolutions: (reason: WaitReason) => Resolution['_tag'][] // 按钮列表；Approve 的 onSha 在点下时由卡片填
+const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution['_tag'] | null
 ```
 
 **例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
@@ -434,7 +467,7 @@ WaitTriaged { … } // 只改名，形状不变
 | `FixRequested`、`PassRestarted`、`FixDeclined`                                                                     | `PassRouted`              | 分别是选中的候选 `next` 为 `FixRound`、`Requeued{Restart}`，以及 `decision` 为 `Escalated{CandidateUnavailable}`；轮次写在 offer 的候选里 |
 | `WorkItemBlocked{hold}`                                                                                            | `WaitStarted`             | 旧名和 GitHub 的 _blocked by_（票之间的依赖）撞词；原则 5                                                                                 |
 | `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved`            | 一个事件，带 `Resolution`，不按了结方式各开一个事件                                                                                       |
-| `ApprovalRequested`                                                                                                | 删除                      | 就是带 `SignoffRequested` 产出的 `StepEnded` 加 `WaitStarted{SignoffRequired}`                                                            |
+| `ApprovalRequested`                                                                                                | 删除                      | 就是 `signoff` 的 `requested` 不为 null 的 `StepEnded`，加 `WaitStarted{SignoffRequired}`                                                 |
 | `ApprovalGranted`                                                                                                  | 删除                      | 就是 `WaitResolved{resolution: Approve}`                                                                                                  |
 | `HoldTriaged`                                                                                                      | `WaitTriaged`             | 原则 5                                                                                                                                    |
 
@@ -445,7 +478,7 @@ WaitTriaged { … } // 只改名，形状不变
 - `StepRequested`：和 `StepStarted` 同形状（`events.ts:735`），没有读者就删。
 - `RepairRequested` / `RepairDeclined`：带旧的 `RefusalReason`，像是更早的修复机制，确认已不再产生就删。
 - `ApprovalRevoked`：确认还有没有用处。
-- `RunAwaitingInput`：和 `QuestionAsked` 产出可能重复。
+- `RunAwaitingInput`：和 implement、design 的 `question` 字段可能重复。
 - `WorkItemUnblocked.withdrawn`：确认它对应哪种 `Resolution`，还是需要保留成单独字段。
 - `WorkItemLanded`、`WorkItemReleased`：确认它们的形状能承载 `Landed{integrated}` 和 `Requeued{cause}`。
 
@@ -489,7 +522,7 @@ const resolveWait: (command: {
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `StepEnding` + `FixOutcome` + `ActionOutcome`                                | **合并并按 kind 收紧**：一步一条 `StepEnded`，带这一步的每个 `Action`；`Action` 按 kind 分成普通联合                             | 修复轮次就是 implement 再跑一次；一步最多一个 action 没过关；能同时发生的是字段，不会发生的组合写不出来 |
 | `Arrival` / `Arrived` / `ProposalReason`                                     | 改成相关联合 `Proposal`，每个变体写死 `from`，并加 `ReviewEmpty`                                                                 | `{from, reason}` 能拼出不可能的组合；"没话说"和"弄丢了"要分开                                           |
-| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出 | 决定里同时存 `next` 会对不上；候选收窄成 `RouteNext`                                                    |
+| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出 | 决定里同时存 `next` 会对不上；候选收窄成 `CandidateNext`                                                    |
 | `transitionOf`、`outcomeOf` 的结果                                           | **替换**为 `PassNext`（`Advance`、`FixRound`、`Requeued`、`WaitOnPerson`、`Landed`）；`nextOf` 不产出 `FixRound`                 | 下一步和终态只有这一个类型，花了什么写在值里；重开就是重新排队                                          |
 | `SetupRefused.lifts`                                                         | **删除**，会自己恢复的走 `Requeued{NeverStarted}`                                                                                | 源码里没有地方构造 `by-itself`（只在 `hold.ts:253`、`triage.ts:117` 的 schema 里）                      |
 | `Hold` / `HoldTriaged` / `Held`                                              | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                                                              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                                              |
@@ -503,4 +536,5 @@ const resolveWait: (command: {
 
 ## 待你决定
 
-暂无。新的问题出现时加在这里。
+1. **`Propose` 要不要改名 `RouteProposal`。** `Advance{to: 'proposed'}` 会跑 proposed 下声明的 action，`Propose` 不跑，直接 route；评审认为叫 `Propose` 会让人以为它也进了 proposed 这一步。只是名字，结构不变。
+2. **agent 跑完但什么都没产出，第一次派发时算什么。** implement 第 0 轮没有提交、design 没有设计也没有提问。现在落成 `crashed`（`fix.ts:187`），但它不是崩溃。可以归 `AgentCrashed`（照现状），也可以新增一个 `WaitReason`，比如 `NothingProduced{run, step, said}`。
