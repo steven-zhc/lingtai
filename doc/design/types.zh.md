@@ -89,7 +89,7 @@ StepEnded { runId, outcome: StepOutcome }
 
 实现时这张表以 `packages/recipe/src/recipe.ts` 里的插件定义为准，上表是起点，不是定稿。
 
-**`StepEnded` 替换哪些事件**：现在的五个结束事件（`StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`）、`FixApplied` 和 `RunFailed{kind: 'no-commits'}`。证据在 outcome 的变体里（原则 2），事件上不再另放 `evidence`。`StepFailed.unreadable` 变成 `AnswerUnreadable` 这个变体，不再是一个"只在某种失败时有值"的字段。`StepWaived` 保留：那是人推翻一次结论，不是一步结束了。`FixDeclined`（没买修复轮次）是 route 的结果，由 `PassRouted` 的 `basis` 记录，实现时核对它是否还需要单独存在。事件名不加 `Event` 后缀：`EVENTS`（`events.ts:2185`）里约 70 个事件都是不带后缀的过去时，只给一个加会不一致，全加是一次全日志改名；过去时本身就说明它是事件。改形状要重置日志，所以属于 0120 第二期。
+**`StepEnded` 替换哪些事件**：现在的五个结束事件（`StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`）、`FixApplied` 和 `RunFailed{kind: 'no-commits'}`。证据在 outcome 的变体里（原则 2），事件上不再另放 `evidence`。`StepFailed.unreadable` 变成 `AnswerUnreadable` 这个变体，不再是一个"只在某种失败时有值"的字段。`StepWaived` 保留：那是人推翻一次结论，不是一步结束了。`FixDeclined`（没买修复轮次）是 route 的结果，由 `PassRouted` 的 `basis` 记录（第 8 节）。事件名不加 `Event` 后缀：`EVENTS`（`events.ts:2185`）里约 70 个事件都是不带后缀的过去时，只给一个加会不一致，全加是一次全日志改名；过去时本身就说明它是事件。改形状要重置日志，所以属于 0120 第二期。
 
 **事件和 `StepOutcome` 的区别**：`StepOutcome` 是值，`StepEnded` 是把这个值写进日志的那条事件，给投影和重放读；纯函数读的是值。今天这一层对不上：implement 第一次派发的成功要从 `RunFinished` 加 `RunProducedDiff` 推出来，人签字没有自己的事件、直接写进 `WorkItemBlocked`，`proposed` 的决定写成 `PassRouted`。
 
@@ -309,21 +309,67 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ---
 
+## 8. 事件：日志里记什么
+
+**目的**：上面的类型定了，记录它们的事件跟着重新定义。原则：**只记从日志算不出来的事实**。纯函数从已有事件能推出的结果不再单独存（原则 3）；取决于外界（命令、agent、judge、人）的结果必须存。
+
+```ts
+// 一步的开始和结束：每步一条，不再每个 action 一条
+StepStarted { runId, step, round }
+StepEnded { runId, outcome: StepOutcome }
+
+// proposed 的选择：结果取决于 judge 的回答，重放时算不出来，所以存
+PassRouted { runId, proposal: Proposal, next: PassNext, basis: RouteBasis }
+
+// 等人和了结
+WaitStarted { reason: WaitReason }
+WaitResolved { by: string; resolution: Resolution; note: string }
+WaitTriaged { … } // 只改名，形状不变
+```
+
+**替换关系**：
+
+| 现在                                                                                                               | 改成                      | 理由                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`、`FixApplied`、`RunFailed{no-commits}` | `StepEnded`               | 第 1 节                                                                                                                |
+| `StepStarted`（每个 action 一条，`events.ts:736`）                                                                 | `StepStarted`（每步一条） | 和 `StepEnded` 同一粒度                                                                                                |
+| `FixRequested`、`PassRestarted`、`FixDeclined`                                                                     | `PassRouted`              | 分别是 `next` 为 `FixRound`、`RestartFromBase`，以及 `basis` 为 `CeilingOverrode`；`round`、`restart` 已写在 `next` 里 |
+| `WorkItemBlocked{hold}`                                                                                            | `WaitStarted`             | 旧名和 GitHub 的 _blocked by_（票之间的依赖）撞词；原则 5                                                              |
+| `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved`            | 一个事件，带 `Resolution`，不按了结方式各开一个事件                                                                    |
+| `ApprovalRequested`                                                                                                | 删除                      | 就是 `AwaitingSignoff` 的 `StepEnded` 加 `WaitStarted{SignoffRequired}`                                                |
+| `ApprovalGranted`                                                                                                  | 删除                      | 就是 `WaitResolved{resolution: Approve}`                                                                               |
+| `HoldTriaged`                                                                                                      | `WaitTriaged`             | 原则 5                                                                                                                 |
+
+**不记的**：`Advance` 不单独成事件，下一步的 `StepStarted` 已经说明走到哪了。普通 step 结束后 `nextOf` 给出的 `FixRound`、`RestartFromBase` 也只在经过 `proposed` 时出现，所以 `PassRouted` 是唯一记录"花了预算"的事件，`spentAfter` 从它折叠。
+
+**实现时核对**（没有逐行验证，不在这里假装定了）：
+
+- `StepRequested`：和 `StepStarted` 同形状（`events.ts:735`），没有读者就删。
+- `RepairRequested` / `RepairDeclined`：带旧的 `RefusalReason`，像是更早的修复机制，确认已不再产生就删。
+- `ApprovalRevoked`：确认还有没有用处。
+- `RunAwaitingInput`：可能和 `AgentAsked` 重复。
+- `WorkItemUnblocked.withdrawn`：确认它对应哪种 `Resolution`，还是需要保留成单独字段。
+
+**不动的**：其余约 50 个事件（WorkItem 的领取、释放和关闭，Run 的遥测，Conductor、Project、Discussion、Finding、Outbox 等）和这些类型无关。改形状要重置日志，所以和 `StepEnded` 一起属于 0120 第二期。
+
+---
+
 ## 第一性审视：结论
 
-| 类型                               | 结论                                                                              | 理由                                                                                |
-| ---------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`        | **合并**：一步一条 `StepEnded`，`StepOutcome` 带这一步的每个 `Action`             | 修复轮次就是 implement 再跑一次；一步最多一个失败，fold 不用挑；`onSha` 跟着 action |
-| `Arrival` / `Arrived`              | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`                    | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开                                   |
-| `Route` + `RouteDecision`          | **删掉** `Route`，`RouteDecision` 改名为 `RouteBasis`；route 只作动词             | `Route` 和 `PassNext` 重复；日志要分清是 judge 的选择，还是被上限拦下               |
-| `transitionOf` 的结果              | **替换**为 `PassNext`（`Advance`、`FixRound`、`RestartFromBase`、`WaitOnPerson`） | 下一步只有这一个类型，花了什么预算写在值里                                          |
-| `Hold` / `HoldTriaged` / `Held`    | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                               | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                          |
-| `Judgement`、`Failure` 分组 schema | **删除**，卡片分类由 `waitKind` 派生                                              | 日志里已经是平的，没有代码按分组分支                                                |
-| `CheckRed`                         | **删除**（等 #452 确认）                                                          | 方案 B 之后没有地方会产生它                                                         |
-| `DidNotFinish`                     | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`                  | 三种情况，三种不同的处理                                                            |
-| `Move`                             | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`              | 名字要说清是"等待怎么了结"，不和 route 撞词                                         |
-| `TriageResult`、`TriageStatus`     | 保留                                                                              | 已经是该有的形状                                                                    |
-| `Cause`                            | 保留，改名为 `RootCause`，变体也改名                                              | 现在的名字单独看不出意思                                                            |
+| 类型                                                                         | 结论                                                                                            | 理由                                                                                |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `StepEnding` + `FixOutcome`                                                  | **合并**：一步一条 `StepEnded`，`StepOutcome` 带这一步的每个 `Action`                           | 修复轮次就是 implement 再跑一次；一步最多一个失败，fold 不用挑；`onSha` 跟着 action |
+| `Arrival` / `Arrived`                                                        | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`                                  | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开                                   |
+| `Route` + `RouteDecision`                                                    | **删掉** `Route`，`RouteDecision` 改名为 `RouteBasis`；route 只作动词                           | `Route` 和 `PassNext` 重复；日志要分清是 judge 的选择，还是被上限拦下               |
+| `transitionOf` 的结果                                                        | **替换**为 `PassNext`（`Advance`、`FixRound`、`RestartFromBase`、`WaitOnPerson`）               | 下一步只有这一个类型，花了什么预算写在值里                                          |
+| `Hold` / `HoldTriaged` / `Held`                                              | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                             | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                          |
+| `Judgement`、`Failure` 分组 schema                                           | **删除**，卡片分类由 `waitKind` 派生                                                            | 日志里已经是平的，没有代码按分组分支                                                |
+| `CheckRed`                                                                   | **删除**（等 #452 确认）                                                                        | 方案 B 之后没有地方会产生它                                                         |
+| `DidNotFinish`                                                               | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`                                | 三种情况，三种不同的处理                                                            |
+| `Move`                                                                       | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`                            | 名字要说清是"等待怎么了结"，不和 route 撞词                                         |
+| `Step*`、`Fix*`、`PassRestarted`、`WorkItemBlocked`/`Unblocked`、`Approval*` | **重新定义**为 `StepStarted`/`StepEnded`、`PassRouted`、`WaitStarted`/`WaitResolved`（第 8 节） | 只记从日志算不出来的事实                                                            |
+| `TriageResult`、`TriageStatus`                                               | 保留                                                                                            | 已经是该有的形状                                                                    |
+| `Cause`                                                                      | 保留，改名为 `RootCause`，变体也改名                                                            | 现在的名字单独看不出意思                                                            |
 
 ## 待你决定
 
