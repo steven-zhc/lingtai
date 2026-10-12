@@ -168,9 +168,10 @@ const nextOf: (outcome: StepOutcome, ctx: RunContext) => PassNext
 
 ```ts
 type WaitReason =
-  // 要人拍板
+  // 有人在问问题
   | { _tag: 'OwnQuestion'; question: string; by: string } // 人自己用 lingtai ask 提的
   | { _tag: 'AgentQuestion'; run: RunRef; step: Step; question: string }
+  // 要人拍板
   | { _tag: 'SignoffRequired'; run: RunRef; step: Step; source: 'declared' | 'injected'; question: string }
   | { _tag: 'FixerDisagrees'; run: RunRef; step: Step; said: string | null }
   | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; why: string }
@@ -195,7 +196,8 @@ type WaitReason =
   | { _tag: 'AgentCrashed'; run: RunRef; step: Step; kind: 'crash' | 'timeout'; detail: string }
   | { _tag: 'SetupRefused'; run: RunRef; step: Step; lifts: 'by-itself' | 'person'; why: string }
 
-const waitKind: (reason: WaitReason) => 'decision' | 'fault' // 派生，不存
+type WaitKind = 'question' | 'decision' | 'fault'
+const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
 ```
 
 **例子**：
@@ -204,9 +206,19 @@ const waitKind: (reason: WaitReason) => 'decision' | 'fault' // 派生，不存
 - agent 撞到 250 轮上限：`BudgetExhausted{kind: 'out-of-turns', turns: 251}`
 - 有人批准了合并，合并仍然冲突：`MergeRefused{reason: 'conflict', afterApproval: true}`
 
+**`waitKind` 分三类**，只给卡片文案和看板分组用，没有逻辑按它分支：
+
+| `WaitKind` | 变体                                                              | 卡片上说     |
+| ---------- | ----------------------------------------------------------------- | ------------ |
+| `question` | `OwnQuestion`、`AgentQuestion`                                    | 有人在问你   |
+| `decision` | `SignoffRequired`、`FixerDisagrees`、`ProposedEscalated`          | 要你拍板     |
+| `fault`    | `MergeRefused`、`BudgetExhausted`、`AgentCrashed`、`SetupRefused` | 机器出了问题 |
+
+`question` 单独一类，因为人面对它要做的是回答，不是在几个去向里选。注意两种问题的回答方式不同：`OwnQuestion` 用 `AnswerQuestion`，`AgentQuestion` 用 `EditBodyAndRequeue`，因为 agent 只读得到正文（`prompt.ts:275`）。所以"能不能 `AnswerQuestion`"由 `allowedResolutions` 按变体决定，不按 `waitKind`。
+
 **审视：三处调整。**
 
-1. **拍平成一层。** 现在是 `WaitReason = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedResolutions`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `waitKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。
+1. **拍平成一层（已定）。** 现在是 `WaitReason = Question | Judgement(…) | Failure(…)` 两层嵌套。没有代码按中间那一层分支：`allowedResolutions`、`triageRuns` 都按叶子变体判断。中间层只用于卡片上的文案，按原则 3 改为由 `waitKind` 派生。拍平后 zod 也简单，不用嵌套判别联合。拍平和改名（`Hold` → `WaitReason`、变体改名）一起做：`_tag` 会写进日志（`WorkItemBlocked`），两件分开做就要重置两次日志，所以都放进 0120 第二期那一次重置。
 2. **删掉 `CheckRed`。** 按方案 B，build 红了、轮次用完归 `ProposedEscalated{BuildRed}`；合并时的检查红了归 `MergeRefused{reason: 'verify-failed'}`。剩下没有地方会产生它，由 #452 确认后删除。
 3. **`DidNotFinish` 拆开。** 现在一个变体装了崩溃和撞上限两种情况。两者的处理不同：崩溃一般重跑，撞上限要先把票拆小。所以撞上限归 `BudgetExhausted`，崩溃归 `AgentCrashed`，"选择不改"归 `FixerDisagrees`。
 
@@ -286,5 +298,4 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ## 待你决定
 
-1. `WaitReason` 拍平后，`_tag` 会写进日志（`WorkItemBlocked`），同样要等第二期的日志重置。拍平和改名一起做，还是先做拍平？
-2. `waitKind` 只分 `decision` 和 `fault` 两类，`OwnQuestion` 也算 `decision`。还是要单独列一类 `question`？
+暂无。新的问题出现时加在这里。
