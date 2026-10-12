@@ -1,6 +1,6 @@
 # Lingtai 的类型：一张票从"一步结束"到"等人处理"
 
-> 草稿，定义中。**主干（第 1–4 节和第 8、9 节）按第四轮评审改成按产出（`yields`）分，并补上 claim、end、approve 之后的合并，待 review**；review 通过后，类型以本文为准：所有类型定完之前，[0118](../decisions/0118-a-hold-explains-itself.md) 和 [0120](../decisions/0120-a-reason-is-a-type.md) 里和本文不一致的地方都按本文读；定完后一次写回这两个 ADR。这里用代码讲清楚每个类型为什么存在。代码用 TypeScript 写成判别联合（`_tag`），实现时用 zod 定义在 `@lingtai/domain`。
+> 草稿，定义中。**主干（第 1–4 节和第 8、9 节）按第五轮评审补上 `Waived`、拆开 `IntegrationRefused`、定下每种等待的处理，待 review**；review 通过后，类型以本文为准：所有类型定完之前，[0118](../decisions/0118-a-hold-explains-itself.md) 和 [0120](../decisions/0120-a-reason-is-a-type.md) 里和本文不一致的地方都按本文读；定完后一次写回这两个 ADR。这里用代码讲清楚每个类型为什么存在。代码用 TypeScript 写成判别联合（`_tag`），实现时用 zod 定义在 `@lingtai/domain`。
 
 ## 原则
 
@@ -44,7 +44,8 @@ type TreeAdvanced = { from: string; to: string } // 分支从 from 走到 to
 type Design = { document: string; locator?: string } // document 和 locator 必须来自同一个 action（action.ts:212）；"" 是"不需要设计"，不是缺失
 type Integration =
   | { _tag: 'Integrated'; mergeSha: string }
-  | { _tag: 'IntegrationRefused'; reason: RefusalReason; paths: string[] | null; baseSha: string; headSha: string }
+  | { _tag: 'IntegrationRefused'; reason: 'conflict'; paths: string[]; baseSha: string; headSha: string } // 只有冲突才有这三个字段（events.ts："Set only when reason is conflict"）
+  | { _tag: 'IntegrationRefused'; reason: Exclude<RefusalReason, 'conflict'> }
 
 // 几种产出共有的结局
 type NeverStarted = { _tag: 'NeverStarted'; scope: 'conductor' | 'work-item' } // 账号额度、环境不满足
@@ -52,6 +53,7 @@ type NotReached = { _tag: 'NotReached' } // 前面有 action 没过关，这个�
 type Interrupted = { _tag: 'Interrupted'; cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd' } // 只有 agent 会有；aborted 是 conductor 主动中止（claude-code.ts:498）
 type AnswerUnreadable = { _tag: 'AnswerUnreadable'; raw: string } // agent 跑完了，回答解析失败，是机器弄丢了
 type NotDone = { _tag: 'NotDone' } // 机器操作没做成：文件没写成、工作区没切出来、没能还原
+type Waived = { _tag: 'Waived'; waitId: WaitId } // 没跑：人在这次等待里批准，覆盖了它（第 9 节）
 
 type ActionBase = {
   plugin: string // 'run'、'agent'、'watch'、'file'……开放，不进类型（原则 8）
@@ -63,8 +65,8 @@ type ActionBase = {
 
 type Action = ActionBase &
   (
-    | { yields: 'verdict'; result: { _tag: 'Completed'; assessment: Assessment } | AnswerUnreadable | Interrupted | NeverStarted | NotReached }
-    | { yields: 'signoff'; source: 'declared' | 'injected'; result: { _tag: 'Completed'; requested: { question: string } | null } | NotReached } // requested 为 null：已经签过或没有触发
+    | { yields: 'verdict'; result: { _tag: 'Completed'; assessment: Assessment } | AnswerUnreadable | Interrupted | NeverStarted | Waived | NotReached }
+    | { yields: 'signoff'; source: 'declared' | 'injected'; result: { _tag: 'Completed'; requested: { question: string } | null } | Waived | NotReached } // requested 为 null：没有触发，比如 watch 没命中
     | {
         yields: 'commit'
         result:
@@ -112,16 +114,16 @@ StepEnded { runId, outcome: StepOutcome }
 
 1. **step × 产出**，属于 pass 本身，封闭：
 
-   | step      | 接受的产出                         |
-   | --------- | ---------------------------------- |
-   | admit     | `worktree`、`nothing`              |
-   | prepared  | `verdict`、`nothing`               |
-   | design    | `design`、`nothing`                |
-   | implement | `commit`、`nothing`                |
-   | build     | `verdict`                          |
-   | review    | `verdict`                          |
-   | proposed  | `verdict`、`signoff`               |
-   | merge     | `verdict`、`merge`（`merge` 最后） |
+   | step      | 接受的产出                                                                                                         |
+   | --------- | ------------------------------------------------------------------------------------------------------------------ |
+   | admit     | `worktree`、`nothing`                                                                                              |
+   | prepared  | `verdict`、`nothing`                                                                                               |
+   | design    | `design`、`nothing`                                                                                                |
+   | implement | `commit`、`nothing`                                                                                                |
+   | build     | `verdict`                                                                                                          |
+   | review    | `verdict`                                                                                                          |
+   | proposed  | `verdict`、`signoff`                                                                                               |
+   | merge     | `verdict`、`signoff`（只有 `--no-merge` 注入的那个，`conduct.ts:2509`，放在合并通道之前）、`merge`（`merge` 最后） |
 
 2. **插件 → 产出**：插件在 `recipe.ts` 自己的 `at` 里声明它在每一步交付哪个产出。现在 `at` 是插件 × step 的表，值从 `notBuiltYet` 换成产出即可，`conductor/unit/step-matrix.test.ts` 照样逐格走。
 
@@ -129,16 +131,18 @@ claim 和 end 不在表里：claim 在 `runPass` 之前由 conductor 做，end �
 
 **"过关"（cleared）是派生的**：`cleared(action)` 是一个纯函数，不存，只按产出判断，不看插件：
 
-| 产出                  | 过关                                              |
-| --------------------- | ------------------------------------------------- |
-| `verdict`             | `Completed` 且 `assessment.verdict` 是 `accepted` |
-| `signoff`             | `Completed` 且 `requested` 为 null                |
-| `commit`              | `Completed` 且 `question` 为 null                 |
-| `design`              | `Drafted`                                         |
-| `worktree`、`nothing` | `Completed`                                       |
-| `merge`               | `Completed` 且 `integration` 是 `Integrated`      |
+| 产出                  | 过关                                                           |
+| --------------------- | -------------------------------------------------------------- |
+| `verdict`             | `Completed` 且 `assessment.verdict` 是 `accepted`，或 `Waived` |
+| `signoff`             | `Completed` 且 `requested` 为 null，或 `Waived`                |
+| `commit`              | `Completed` 且 `question` 为 null                              |
+| `design`              | `Drafted`                                                      |
+| `worktree`、`nothing` | `Completed`                                                    |
+| `merge`               | `Completed` 且 `integration` 是 `Integrated`                   |
 
-其余情况都没过关。不叫 passed：pass 在这里已经是名词，指一张票从 claim 到 end 的一趟（`PassNext`、`PassRouted`、`runPass`），再让 action "passed" 就是一个词两个意思（原则 4）。
+其余情况都没过关。`Waived` 只出现在 `verdict` 和 `signoff` 上，因为人能批准覆盖的只有这两种：一个检查说不行，或一处要人签字。它替代了旧的 `StepWaived` 事件，覆盖这件事记在被覆盖的那个 action 上，带着是哪次等待批准的。
+
+不叫 passed：pass 在这里已经是名词，指一张票从 claim 到 end 的一趟（`PassNext`、`PassRouted`、`runPass`），再让 action "passed" 就是一个词两个意思（原则 4）。
 
 **一步最多一个 action 没过关，不用挑。** 同一个 step 里，一个 action 没过关，后面的就不再跑（`pass-steps.ts:719`："pipeline stops at the first action that did not pass"），后面的都记成 `NotReached`。所以没过关的就是最后一个不是 `NotReached` 的 action；它也过关了，这一步就全部过关；这一步没有声明任何 action 时 `actions` 为空，按全部过关处理。fold 和 `nextOf` 都直接读，不需要另存一个 `decisive` 字段。
 
@@ -319,20 +323,20 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 
 **不去 proposed 的那一支**：没过关的 action 不在第 2 节那张表里时，`nextOf` 按下表给出。表只按产出和 step 写，新插件不加行。大部分格子照着现在 `hold-of.ts` 的分法；现在落成 `DidNotFinish` 的，按原因分到 `AgentCrashed`、`BudgetExhausted`、`SetupRefused`、`AnswerUnreadable`：
 
-| 产出 / step                               | 没过关的情况                                | `nextOf` 给出                                                                                                                                                                      |
-| ----------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 任何产出                                  | `NeverStarted{scope}`                       | `Requeued{NeverStarted{scope}}`；scope 为 conductor 时 conductor 同时暂停                                                                                                          |
-| 任何产出                                  | `Interrupted{crash \| timeout \| aborted}`  | `WaitOnPerson{AgentCrashed}`                                                                                                                                                       |
-| 任何产出                                  | `Interrupted{out-of-turns \| out-of-usd}`   | `WaitOnPerson{BudgetExhausted}`                                                                                                                                                    |
-| `nothing`、`worktree`、`commit`、`design` | `NotDone`                                   | `WaitOnPerson{SetupRefused}`：文件没写成、工作区没切出来或没能还原，都是机器没做成，不是对 diff 的判断                                                                             |
-| `verdict` 在 prepared                     | `Completed{refused}`                        | `WaitOnPerson{SetupRefused}`（命令超时现在就是 refused，`process-action.ts:74`）                                                                                                   |
-| `verdict` 在 proposed、merge              | `Completed{refused}`                        | `WaitOnPerson{CheckRefused}`：proposed 不在 `ARRIVE_AT_THE_ROUTER` 里，merge 的非通道拒绝没有方向（`pass-steps.ts:622`），现在都直接交给人                                         |
-| `verdict` 在 proposed、merge，`design`    | `AnswerUnreadable`                          | `WaitOnPerson{AnswerUnreadable}`（review 的那一种走 `Propose{ReviewUnreadable}`）                                                                                                  |
-| implement，round > 0                      | 每个 action 都过关，但没有一个带 `advanced` | `WaitOnPerson{FixerDisagrees{said}}`，said 是 agent 的 evidence                                                                                                                    |
-| implement，round 0                        | 同上                                        | `WaitOnPerson{NothingProduced{said}}`：现在是 `RunFailed{no-commits}`，落成 `crashed`（`fix.ts:187`），但它不是崩溃                                                                |
-| `signoff`                                 | `Completed{requested: {question}}`          | `WaitOnPerson{SignoffRequired}`                                                                                                                                                    |
-| `merge`                                   | `Completed{Integrated}`（过关）             | `Landed{integrated: mergeSha}`                                                                                                                                                     |
-| `merge`                                   | `IntegrationRefused` 的另外六种原因         | `WaitOnPerson{MergeRefused}`：`dirty-base`、`unpushed-base`、`pending-migration`、`no-commits`、`push-rejected`、`unexpected`（`pass-steps.ts:606`，它们在 diff 成问题之前就停了） |
+| 产出 / step                               | 没过关的情况                                | `nextOf` 给出                                                                                                                                                                                                                                                            |
+| ----------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 任何产出                                  | `NeverStarted{scope}`                       | `Requeued{NeverStarted{scope}}`；scope 为 conductor 时 conductor 同时暂停                                                                                                                                                                                                |
+| 任何产出                                  | `Interrupted{crash \| timeout \| aborted}`  | `WaitOnPerson{AgentCrashed}`                                                                                                                                                                                                                                             |
+| 任何产出                                  | `Interrupted{out-of-turns \| out-of-usd}`   | `WaitOnPerson{BudgetExhausted}`                                                                                                                                                                                                                                          |
+| `nothing`、`worktree`、`commit`、`design` | `NotDone`                                   | `WaitOnPerson{SetupRefused}`：文件没写成、工作区没切出来或没能还原，都是机器没做成，不是对 diff 的判断                                                                                                                                                                   |
+| `verdict` 在 prepared                     | `Completed{refused}`                        | `WaitOnPerson{SetupRefused}`（命令超时现在就是 refused，`process-action.ts:74`）                                                                                                                                                                                         |
+| `verdict` 在 proposed、merge              | `Completed{refused}`                        | `WaitOnPerson{CheckRefused}`：proposed 不在 `ARRIVE_AT_THE_ROUTER` 里，merge 的非通道拒绝没有方向（`pass-steps.ts:622`），现在都直接交给人                                                                                                                               |
+| `verdict` 在 proposed、merge，`design`    | `AnswerUnreadable`                          | `WaitOnPerson{AnswerUnreadable}`（review 的那一种走 `Propose{ReviewUnreadable}`）                                                                                                                                                                                        |
+| implement，round > 0                      | 每个 action 都过关，但没有一个带 `advanced` | `WaitOnPerson{FixerDisagrees{said}}`，said 是 agent 的 evidence                                                                                                                                                                                                          |
+| implement，round 0                        | 同上                                        | `WaitOnPerson{NothingProduced{said}}`：现在是 `RunFailed{no-commits}`，落成 `crashed`（`fix.ts:187`），但它不是崩溃                                                                                                                                                      |
+| `signoff`                                 | `Completed{requested: {question}}`          | `WaitOnPerson{SignoffRequired}`                                                                                                                                                                                                                                          |
+| `merge`                                   | `Completed{Integrated}`（过关）             | `Landed{integrated: mergeSha}`                                                                                                                                                                                                                                           |
+| `merge`                                   | `IntegrationRefused` 的另外六种原因         | `WaitOnPerson{MergeRefused}`：`dirty-base`、`unpushed-base`、`pending-migration`、`no-commits`、`push-rejected`、`unexpected`（`pass-steps.ts:606`，它们在 diff 成问题之前就停了）。`RefusalReason` 里的 `lane-busy` 从 #194 起不再写（`events.ts:140`），日志重置时删掉 |
 
 design 不会"什么都没产出"：draft action 只有三种回答，设计（`""` 是"不需要设计"）、提问、解析失败（`agent-action.ts:964-1031`），`design` 这种产出的类型也写不出第四种。
 
@@ -344,7 +348,7 @@ design 不会"什么都没产出"：draft action 只有三种回答，设计（`
 
 - `Advance.to` 只能是主线上更靠后的 step。往回走只有 `FixRound` 一种，`to` 由候选决定：`design` 或 `implement` 只给发问的那一步，`build` 只从 merge 给。
 - `Landed` 只在 merge 的 action 产出 `Integrated` 时给出，`integrated` 就是那个 `mergeSha`，不能从"前面都过关了"推出来。
-- 终态（`Requeued`、`WaitOnPerson`、`Landed`）之后，这个 pass 只剩 end：end 每种结局都跑（`PassResult.steps` 的 "`end` last, always"），除此之外不再有 `StepStarted`。
+- 终态（`Requeued`、`WaitOnPerson`、`Landed`）是这一次 `runPass` 调用的终态：之后只剩 end（`PassResult.steps` 的 "`end` last, always"），这次调用不再有 `StepStarted`。`WaitOnPerson` 被 Approve 了结后，会用同一个 runId 再调一次 `runPass` 接着跑（第 9 节），已花的轮次照算。
 - `round` 和 `restart` 等于已花的数加一，由 `offerFor` 算，写进候选，`spentAfter` 照着值更新，不再判断。
 - **轮次按 pass 算，重开按票算**："`claim` spends the item's restart and each of the others spends one of this pass's rounds"（`pass.ts` 的 `onOffer` 注释）。所以 `Requeued{Restart}` 之后的新 pass 从第 0 轮开始，重开次数跨 pass 累计。
 
@@ -368,6 +372,8 @@ design 不会"什么都没产出"：draft action 只有三种回答，设计（`
 **目的**：卡片、允许的处理、默认推荐、要不要跑 triage，全都由它决定。
 
 ```ts
+type RunRef = { runId: string; unpushed?: { branch: string; said: string } } // repairOf 随 RepairRequested 删掉（第 8 节）
+
 type WaitReason =
   // 有人在问问题
   | { _tag: 'OwnQuestion'; question: string; by: string } // 人自己用 lingtai ask 提的
@@ -395,11 +401,8 @@ type WaitReason =
   | {
       _tag: 'MergeRefused'
       run: RunRef
-      reason: RefusalReason
-      paths: string[] | null
-      baseSha: string | null
-      headSha: string | null
-      raw: string | null
+      reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'> // 这两种去 route（第 2 节）
+      raw: string
     } // 批准之后才合并失败的，从前一条 WaitResolved{Approve} 派生，不存 afterApproval（第 9 节）
   | {
       _tag: 'BudgetExhausted'
@@ -408,7 +411,13 @@ type WaitReason =
       detail: string // runtime 自己说的停止原因，原样保留
       call: CallId | null // 用了多少轮、花了多少钱从这次调用的收据读（#455），不在这里另存一份
     }
-  | { _tag: 'AgentCrashed'; run: RunRef; step: Step; cause: 'crash' | 'timeout' | 'aborted'; detail: string }
+  | {
+      _tag: 'AgentCrashed'
+      run: RunRef
+      step: 'design' | 'implement' | 'review' | 'proposed' | 'merge' // 会跑 agent 的那几步
+      cause: 'crash' | 'timeout' | 'aborted'
+      detail: string
+    }
   | { _tag: 'SetupRefused'; run: RunRef; step: Step; action: string; why: string } // 机器没做成：prepared 的检查红了，或 NotDone；会自己恢复的账号墙走 Requeued{NeverStarted}
   | { _tag: 'AnswerUnreadable'; run: RunRef; step: 'design' | 'proposed' | 'merge'; action: string; raw: string } // agent 回答了，机器没读懂
 
@@ -424,7 +433,7 @@ const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
 
 - 测试修了 3 轮还是红的：`ProposedEscalated{proposal: BuildRed{from: 'build', …}, because: CandidateUnavailable{…}}`
 - agent 撞到 250 轮上限：`BudgetExhausted{cause: 'out-of-turns', call}`，卡片从收据读出 251 轮
-- 有人批准了合并，合并仍然冲突：`MergeRefused{reason: 'conflict'}`，紧跟在一条 `WaitResolved{Approve}` 之后，卡片据此说"批准之后"
+- 有人批准了合并，合并时 base 是脏的：`MergeRefused{reason: 'dirty-base'}`，紧跟在一条 `WaitResolved{Approve}` 之后，卡片据此说"批准之后"。批准之后遇到冲突不落在这里：和平时一样走 `Propose{MergeConflict}` 去 route，可以花一轮让 agent 解决
 - proposed 下声明的 `watch: then: fail` 命中了迁移文件：`CheckRefused{step: 'proposed', action: 'migrations', evidence: 命中的路径}`
 
 **`waitKind` 分三类**，只给卡片文案和看板分组用，没有逻辑按它分支：
@@ -453,7 +462,7 @@ const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
 
 ```ts
 type Resolution =
-  | { _tag: 'Approve'; onSha: string } // 合进 main；onSha 是卡片上看到的那个，和当前分支头不一致就拒绝（approve.ts:228）
+  | { _tag: 'Approve'; onSha: string } // 批准：从等待发生的那一步接着跑（第 9 节）；onSha 是卡片上看到的那个，和当前分支头不一致就拒绝（approve.ts:228）
   | { _tag: 'Requeue' } // 从 base 重新做
   | { _tag: 'EditBodyAndRequeue' } // 先改正文，再重新做
   | { _tag: 'AnswerQuestion'; choice: string } // 只对 OwnQuestion 有效
@@ -463,7 +472,26 @@ const allowedResolutions: (reason: WaitReason) => Resolution['_tag'][] // 按钮
 const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution['_tag'] | null
 ```
 
-**例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。`NothingProduced` 允许 `[EditBodyAndRequeue, Requeue, Close]`，没有 Approve：分支上没有东西可合；票已经做完就 Close，写得不清楚就改正文。
+**每种等待允许什么**（`allowedResolutions` 的全表；"Approve 后"是批准之后 `runPass` 从哪一步接着跑，见第 9 节）：
+
+| `WaitReason`                                                             | 允许                                                                                  | Approve 后                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------- |
+| `OwnQuestion`                                                            | `AnswerQuestion`、`Requeue`、`Close`                                                  | —                                 |
+| `AgentQuestion`                                                          | `EditBodyAndRequeue`、`Requeue`、`Close`                                              | —                                 |
+| `SignoffRequired`                                                        | `Approve`、`Requeue`、`EditBodyAndRequeue`、`Close`                                   | 等待发生的那一步，签字记 `Waived` |
+| `CheckRefused`                                                           | `Approve`、`Requeue`、`EditBodyAndRequeue`、`Close`                                   | 等待发生的那一步，检查记 `Waived` |
+| `FixerDisagrees`                                                         | `Approve`、`Requeue`、`EditBodyAndRequeue`、`Close`                                   | proposed                          |
+| `ProposedEscalated`                                                      | `proposal` 是 `Review*` 时有 `Approve`；都有 `Requeue`、`EditBodyAndRequeue`、`Close` | proposed                          |
+| `MergeRefused`                                                           | `Approve`（修好 base 之后重试）、`Requeue`、`Close`                                   | merge                             |
+| `NothingProduced`、`BudgetExhausted`、`AgentCrashed`、`AnswerUnreadable` | `EditBodyAndRequeue`、`Requeue`、`Close`                                              | —                                 |
+| `SetupRefused`                                                           | `Requeue`、`Close`                                                                    | —                                 |
+
+- `FixerDisagrees` 的 Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
+- `NothingProduced` 没有 Approve：分支上没有东西可合；票已经做完就 Close，写得不清楚就改正文。
+- `ProposedEscalated` 的 proposal 是 `BuildRed`、`VerifyRed`、`MergeConflict`、`InputNeeded` 时没有 Approve。现在的代码允许写上理由覆盖红的 build，本文收紧：合进一个红的 build 会破坏"进 end 的每条路都过了 build"，冲突合不进去，问题要的是回答。
+- 覆盖拒绝时必须写理由（现在 `lingtai.ts:169` 就要求），理由是 `WaitResolved.note`。
+
+**`Close` 只是了结等待的一种方式**：`lingtai close` 可以关任何一张票，不只是在等人的，那条路照旧写 `WorkItemClosed`；票在等人时被关，同时写一条 `WaitResolved{Close}`。
 
 **审视：改名为 `Resolution`。** `Move` 只说"走一步"，看不出谁走、往哪走，还和 route、看板拖卡片撞词。`Resolution` 说的是这次等待怎么了结，每个变体都是结束等待的一种方式。另外 `BodyAndRequeue` 改为 `EditBodyAndRequeue`，让名字说清先做什么；`Answer` 改为 `AnswerQuestion`，它只对 `OwnQuestion` 有效。`Approve`、`Requeue`、`Close` 不变，和 CLI 命令、看板按钮同名。
 
@@ -513,6 +541,7 @@ StepStarted { runId, step, round }
 StepEnded { runId, outcome: StepOutcome }
 
 // proposed 的选择：offer 取决于当时的 recipe 和已花预算，回答取决于 judge，重放时都算不出来，所以三者都存
+// offer 里的 proposal 其实能从前一条 StepEnded 算出来；这是有意的例外，让这一条事件自己读得懂
 PassRouted { runId, offer: RouteOffer, reply: JudgeReply, decision: RouteDecision } // next 不存，由 routeNext(offer, reply, decision) 算出
 
 // 等人和了结
@@ -523,18 +552,18 @@ WaitTriaged { … } // 只改名，形状不变
 
 **替换关系**：
 
-| 现在                                                                                                               | 改成                      | 理由                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`、`FixApplied`、`RunFailed{no-commits}` | `StepEnded`               | 第 1 节                                                                                                                                   |
-| `StepStarted`（每个 action 一条，`events.ts:736`）                                                                 | `StepStarted`（每步一条） | 和 `StepEnded` 同一粒度                                                                                                                   |
-| `FixRequested`、`PassRestarted`、`FixDeclined`                                                                     | `PassRouted`              | 分别是选中的候选 `next` 为 `FixRound`、`Requeued{Restart}`，以及 `decision` 为 `Escalated{CandidateUnavailable}`；轮次写在 offer 的候选里 |
-| `WorkItemBlocked{hold}`                                                                                            | `WaitStarted`             | 旧名和 GitHub 的 _blocked by_（票之间的依赖）撞词；原则 5                                                                                 |
-| `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved`            | 一个事件，带 `Resolution`，不按了结方式各开一个事件                                                                                       |
-| `ApprovalRequested`                                                                                                | 删除                      | 就是 `signoff` 的 `requested` 不为 null 的 `StepEnded`，加 `WaitStarted{SignoffRequired}`                                                 |
-| `ApprovalGranted`                                                                                                  | 删除                      | 就是 `WaitResolved{resolution: Approve}`                                                                                                  |
-| approve 路径上的 `StepWaived`（每个拒绝过的检查一条，`approve.ts:313`）                                            | 删除                      | 批准本身就是覆盖了那些拒绝；`WaitResolved{Approve}` 加上它所了结的 `WaitStarted` 已经说明覆盖了什么                                       |
-| `RepairRequested`、`RepairDeclined`、`RunRef.repairOf`                                                             | 删除                      | #143 之前的修复机制（`conduct.ts:907` 的 `retiredRepairPending`），已不再产生                                                             |
-| `HoldTriaged`                                                                                                      | `WaitTriaged`             | 原则 5                                                                                                                                    |
+| 现在                                                                                                               | 改成                                | 理由                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`、`FixApplied`、`RunFailed{no-commits}` | `StepEnded`                         | 第 1 节                                                                                                                                   |
+| `StepStarted`（每个 action 一条，`events.ts:736`）                                                                 | `StepStarted`（每步一条）           | 和 `StepEnded` 同一粒度                                                                                                                   |
+| `FixRequested`、`PassRestarted`、`FixDeclined`                                                                     | `PassRouted`                        | 分别是选中的候选 `next` 为 `FixRound`、`Requeued{Restart}`，以及 `decision` 为 `Escalated{CandidateUnavailable}`；轮次写在 offer 的候选里 |
+| `WorkItemBlocked{hold}`                                                                                            | `WaitStarted`                       | 旧名和 GitHub 的 _blocked by_（票之间的依赖）撞词；原则 5                                                                                 |
+| `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved`                      | 一个事件，带 `Resolution`，不按了结方式各开一个事件                                                                                       |
+| `ApprovalRequested`                                                                                                | 删除                                | 就是 `signoff` 的 `requested` 不为 null 的 `StepEnded`，加 `WaitStarted{SignoffRequired}`                                                 |
+| `ApprovalGranted`                                                                                                  | 删除                                | 就是 `WaitResolved{resolution: Approve}`                                                                                                  |
+| approve 路径上的 `StepWaived`（每个拒绝过的检查一条，`approve.ts:313`）                                            | 被覆盖的 action 的 `Waived{waitId}` | 覆盖记在被覆盖的那个 action 上，在续跑那一步的 `StepEnded` 里                                                                             |
+| `RepairRequested`、`RepairDeclined`、`RunRef.repairOf`                                                             | 删除                                | #143 之前的修复机制（`conduct.ts:907` 的 `retiredRepairPending`），已不再产生                                                             |
+| `HoldTriaged`                                                                                                      | `WaitTriaged`                       | 原则 5                                                                                                                                    |
 
 **不记的**：`Advance` 不单独成事件，下一步的 `StepStarted` 已经说明走到哪了。`nextOf` 给出的其余结果（`WaitOnPerson`、`Requeued{NeverStarted}`、`Landed`）是 `StepEnded` 的纯函数，由各自已有的事件落地：`WaitStarted`、`WorkItemReleased`、`WorkItemLanded`。花预算的只有 `FixRound` 和 `Requeued{Restart}`，都只经由 `PassRouted` 出现，所以 `spentAfter` 只从 `PassRouted` 折叠。
 
@@ -560,12 +589,12 @@ WaitTriaged { … } // 只改名，形状不变
 **目的**：上面第 1–4 节的函数都是一个 pass 内部的事，调用方不该一个一个去调。seam 只有两处，各有各的调用方。
 
 ```ts
-// conductor：跑一个已领取的 pass，直到终态；from 默认 admit，批准之后从 merge 接着跑
+// conductor：跑一个已领取的 pass，直到终态；from 默认 admit，批准之后从等待发生的那一步接着跑
 const runPass: (command: {
   run: RunRef
   item: ClaimedItemRef
   recipe: ResolvedRecipe
-  from?: 'admit' | 'merge'
+  from?: { step: 'admit' } | { step: 'proposed' | 'merge'; approved: WaitId }
 }) => Effect<PassEnd>
 type PassEnd = Extract<PassNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
 
@@ -590,7 +619,13 @@ const resolveWait: (command: {
 
 **end 在终态之后，不写 `StepEnded`**：end 不是一串 action（`from-recipe.ts:406`："the `end` step resolves its effects rather than running them as actions"），它留下的事实是 `EndActionsResolved{outcome}`。`outcome` 由 `PassEnd` 派生：`Landed` 是 landed，`Requeued` 是 failed，`WaitOnPerson` 是 blocked；`Close` 了结的等待是 closed（`close.ts` 自己解析 end）。
 
-**批准之后从 merge 接着跑**：现在 `approve.ts:344` 在 pass 外面自己调 `integrate`，写 `StepWaived`、`ApprovalGranted`，再写 `WorkItemLanded` 或 `MergeRefused{afterApproval: true}`，merge 下声明的其他 action 和 end 的一部分都绕过了。改成：`resolveWait` 核对通过后写 `WaitResolved{Approve}`，再 `runPass({…, from: 'merge'})`：merge 下声明的检查和合并通道都跑，写 `StepEnded{merge}`，结局是 `Landed` 或 `WaitOnPerson{MergeRefused}`，end 照常。"批准之后才合并失败"从前一条 `WaitResolved{Approve}` 派生，`MergeRefused` 不再带 `afterApproval`。`onSha` 核对不变：merge 只合卡片上看到的那个 sha。谁来调这次 `runPass`（CLI 当场跑并拿锁，还是交给 daemon）实现时定。
+**批准之后从等待发生的那一步接着跑**：现在 `approve.ts:344` 在 pass 外面自己调 `integrate`，写 `StepWaived`、`ApprovalGranted`，再写 `WorkItemLanded` 或 `MergeRefused{afterApproval: true}`，merge 下声明的其他 action 和 end 的一部分都绕过了。改成：`resolveWait` 核对通过后写 `WaitResolved{Approve}`，再用同一个 runId 调 `runPass({…, from: {step, approved: waitId}})`，`step` 按第 6 节那张表：
+
+- 那一步里，这次等待要人批准的那个 action（拒绝的检查、要的签字）记成 `Waived{waitId}`，算过关，它后面的 action 照常跑。不记的话，同一个检查会在同一个 sha 上再拒绝一次，注入的签字会再要一次，批准就成了死循环。
+- 从 proposed 接着跑时，proposed 下声明的签字照样要问：人批准的是"不改"或"上限之后照样合"，不是那些签字。
+- 之后照常：写 `StepEnded`，结局是 `Landed`、`WaitOnPerson` 或去 route（批准之后冲突也一样走 `Propose{MergeConflict}`），end 照常跑。
+- "批准之后才合并失败"从前一条 `WaitResolved{Approve}` 派生，`MergeRefused` 不再带 `afterApproval`。
+- `onSha` 核对不变：只接着跑卡片上看到的那个 sha。谁来调这次 `runPass`（CLI 当场跑并拿锁，还是交给 daemon）实现时定。
 
 **查询不是 seam**：看板和 CLI 读的是投影（`task_view`），不调这两个函数。
 
@@ -598,22 +633,22 @@ const resolveWait: (command: {
 
 ## 第一性审视：结论
 
-| 类型                                                                                       | 结论                                                                                                                             | 理由                                                                               |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `StepEnding` + `FixOutcome` + `ActionOutcome`                                              | **合并并按产出收紧**：一步一条 `StepEnded`，带这一步的每个 `Action`；`Action` 按产出分（7 种），插件名是字符串                   | 修复轮次就是 implement 再跑一次；不会发生的组合写不出来；新插件不加类型            |
-| `Arrival` / `Arrived` / `ProposalReason`                                                   | 改成相关联合 `Proposal`，每个变体写死 `from`，并加 `ReviewEmpty`                                                                 | `{from, reason}` 能拼出不可能的组合；"没话说"和"弄丢了"要分开                      |
-| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                              | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出 | 决定里同时存 `next` 会对不上；候选收窄成 `CandidateNext`                           |
-| `transitionOf`、`outcomeOf` 的结果                                                         | **替换**为 `PassNext`（`Advance`、`FixRound`、`Requeued`、`WaitOnPerson`、`Landed`）；`nextOf` 不产出 `FixRound`                 | 下一步和终态只有这一个类型，花了什么写在值里；重开就是重新排队                     |
-| `SetupRefused.lifts`                                                                       | **删除**，会自己恢复的走 `Requeued{NeverStarted}`                                                                                | 源码里没有地方构造 `by-itself`（只在 `hold.ts:253`、`triage.ts:117` 的 schema 里） |
-| `Hold` / `HoldTriaged` / `Held`                                                            | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                                                              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                         |
-| `Judgement`、`Failure` 分组 schema                                                         | **删除**，卡片分类由 `waitKind` 派生                                                                                             | 日志里已经是平的，没有代码按分组分支                                               |
-| `CheckRed`                                                                                 | **收窄**为 `CheckRefused{step: 'proposed' \| 'merge'}`                                                                           | build 红了归 `ProposedEscalated`；proposed 和 merge 下声明的检查拒绝仍要有去处     |
-| `DidNotFinish`                                                                             | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` / `NothingProduced` / `SetupRefused` / `AnswerUnreadable`       | 崩溃、撞上限、修复时不改、第一次就没改、机器没做成、回答读不懂，处理各不相同       |
-| `Move`                                                                                     | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`                                                             | 名字要说清是"等待怎么了结"，不和 route 撞词                                        |
-| `Step*`、`Fix*`、`PassRestarted`、`WorkItemBlocked`/`Unblocked`、`Approval*`、`StepWaived` | **重新定义**为 `StepStarted`/`StepEnded`、`PassRouted`、`WaitStarted`/`WaitResolved`（第 8 节）                                  | 只记从日志算不出来的事实                                                           |
-| approve 自己合并                                                                           | **改成**批准之后 `runPass` 从 merge 接着跑（第 9 节）                                                                            | 合并只有一条路，`afterApproval` 可以派生                                           |
-| `TriageResult`、`TriageStatus`                                                             | 保留                                                                                                                             | 已经是该有的形状                                                                   |
-| `Cause`                                                                                    | 保留，改名为 `RootCause`，变体也改名                                                                                             | 现在的名字单独看不出意思                                                           |
+| 类型                                                                                       | 结论                                                                                                                              | 理由                                                                               |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `StepEnding` + `FixOutcome` + `ActionOutcome`                                              | **合并并按产出收紧**：一步一条 `StepEnded`，带这一步的每个 `Action`；`Action` 按产出分（7 种），插件名是字符串；覆盖记成 `Waived` | 修复轮次就是 implement 再跑一次；不会发生的组合写不出来；新插件不加类型            |
+| `Arrival` / `Arrived` / `ProposalReason`                                                   | 改成相关联合 `Proposal`，每个变体写死 `from`，并加 `ReviewEmpty`                                                                  | `{from, reason}` 能拼出不可能的组合；"没话说"和"弄丢了"要分开                      |
+| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                              | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出  | 决定里同时存 `next` 会对不上；候选收窄成 `CandidateNext`                           |
+| `transitionOf`、`outcomeOf` 的结果                                                         | **替换**为 `PassNext`（`Advance`、`FixRound`、`Requeued`、`WaitOnPerson`、`Landed`）；`nextOf` 不产出 `FixRound`                  | 下一步和终态只有这一个类型，花了什么写在值里；重开就是重新排队                     |
+| `SetupRefused.lifts`                                                                       | **删除**，会自己恢复的走 `Requeued{NeverStarted}`                                                                                 | 源码里没有地方构造 `by-itself`（只在 `hold.ts:253`、`triage.ts:117` 的 schema 里） |
+| `Hold` / `HoldTriaged` / `Held`                                                            | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                                                               | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                         |
+| `Judgement`、`Failure` 分组 schema                                                         | **删除**，卡片分类由 `waitKind` 派生                                                                                              | 日志里已经是平的，没有代码按分组分支                                               |
+| `CheckRed`                                                                                 | **收窄**为 `CheckRefused{step: 'proposed' \| 'merge'}`                                                                            | build 红了归 `ProposedEscalated`；proposed 和 merge 下声明的检查拒绝仍要有去处     |
+| `DidNotFinish`                                                                             | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` / `NothingProduced` / `SetupRefused` / `AnswerUnreadable`        | 崩溃、撞上限、修复时不改、第一次就没改、机器没做成、回答读不懂，处理各不相同       |
+| `Move`                                                                                     | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`；`allowedResolutions` 定成全表                               | 名字要说清是"等待怎么了结"，不和 route 撞词                                        |
+| `Step*`、`Fix*`、`PassRestarted`、`WorkItemBlocked`/`Unblocked`、`Approval*`、`StepWaived` | **重新定义**为 `StepStarted`/`StepEnded`、`PassRouted`、`WaitStarted`/`WaitResolved`（第 8 节）；`StepWaived` 变成 `Waived`       | 只记从日志算不出来的事实                                                           |
+| approve 自己合并                                                                           | **改成**批准之后用同一个 runId 从等待发生的那一步接着跑，被批准的 action 记 `Waived`（第 9 节）                                   | 合并只有一条路，`afterApproval` 可以派生，批准不会死循环                           |
+| `TriageResult`、`TriageStatus`                                                             | 保留                                                                                                                              | 已经是该有的形状                                                                   |
+| `Cause`                                                                                    | 保留，改名为 `RootCause`，变体也改名                                                                                              | 现在的名字单独看不出意思                                                           |
 
 ## 待你决定
 
