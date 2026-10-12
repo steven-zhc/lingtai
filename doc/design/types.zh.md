@@ -42,7 +42,6 @@ type ActionOutcome =
   | { _tag: 'RunEndedEarly'; kind: 'crash' | 'timeout' | 'out-of-turns' | 'out-of-usd'; detail: string }
   | { _tag: 'NeverStarted'; why: string } // 账号额度、环境不满足
   | { _tag: 'NotReached' } // 前面的 action 没通过，这个没轮到跑
-  | { _tag: 'Unknown' } // 跑过，但 conductor 中途死了，结果没落到日志（见下文"中途崩溃"）
 
 // 一次与外界的操作：一条 shell 命令、一次 agent 运行、一次人签字
 type Action = {
@@ -66,7 +65,7 @@ StepEnded { runId, outcome: StepOutcome }
 
 **`onSha` 跟着 action 走，不跟着 step 走**：现在的 `Step*` 事件每个 action 一条，带 `{step, action, runId, onSha}`（`events.ts:629`）。`onSha` 说明结论针对哪个 diff，force-push 之后旧结论自动失效，不会被继承。implement 中途会 commit，同一 step 里 sha 可能变，所以每个 `Action` 自己带。
 
-**中途崩溃**：conductor 死在一个 step 中间时，没有进程写 `StepEnded`。下一个 conductor 启动时本来就要杀掉残留的 agent、释放领取，由它替被打断的 step 补写一条 `StepEnded`：被打断的那个记 `RunEndedEarly{kind: 'crash'}`，它后面的记 `NotReached`，它前面已经跑完的记 `Unknown`。**已知代价**：那些已跑完的 action 的结论和花费丢了，`/spend` 和预算上限看不到，重启后整个 step 重跑。可以接受，因为多 action 的 step 只有 build（shell 命令，便宜）和 review；要补这个洞就得回到每个 action 一条事件，那会把"挑哪个 action 说了算"带回 fold 里。
+**中途崩溃不补事件**：conductor 死在一个 step 中间时，这一步没有 `StepEnded`。下一个 conductor 从日志里最后一条 `StepEnded` 接着走，也就是把被打断的这一步整步重跑。已跑完的 action 的结论和花费不进日志，这一点按 action 记事件也一样：死在 action 中间的那一个照样什么都没留下，所以不为它多一种事件或变体。
 
 **例子**：#500 的一个 pass。build 声明了 `pnpm test`、`pnpm typecheck` 两个。
 
@@ -79,7 +78,7 @@ StepEnded { runId, outcome: StepOutcome }
 | 5      | review, round 1：`reviewer` `ChecksRefused{findings}`                                |
 | 6      | implement, round 2：`implement` `AgentChangedNothing{said: "ticket 写明只支持 ISO"}` |
 
-**每种 action 能产生哪些结果，是一张表加一条测试，不是类型。** 一个联合类型挡不住 reviewer 产生 `AgentCommitted`。按插件分类型能让编译器挡住，但 `nextOf`、`proposalOf` 的签名都要变成泛型，不值。所以 `OUTCOMES_OF: Record<PluginKind, ActionOutcome['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `Action` 的 outcome 都在它插件的那一行里。按插件而不是按 step 列，因为能产生什么由 action 是什么决定，一个 step 下可以有不同的插件。`NotReached` 和 `Unknown` 不由插件产生，由 conductor 写，任何插件的 action 都可能是这两个：
+**每种 action 能产生哪些结果，是一张表加一条测试，不是类型。** 一个联合类型挡不住 reviewer 产生 `AgentCommitted`。按插件分类型能让编译器挡住，但 `nextOf`、`proposalOf` 的签名都要变成泛型，不值。所以 `OUTCOMES_OF: Record<PluginKind, ActionOutcome['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `Action` 的 outcome 都在它插件的那一行里。按插件而不是按 step 列，因为能产生什么由 action 是什么决定，一个 step 下可以有不同的插件。`NotReached` 不由插件产生，由 conductor 写，任何插件的 action 都可能是它：
 
 | 插件                 | 能产生                                                                                                                                         |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
