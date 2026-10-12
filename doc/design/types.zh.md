@@ -1,6 +1,6 @@
 # Lingtai 的类型：一张票从"一步结束"到"等人处理"
 
-> 草稿，定义中。**主干（第 1、4 节）刚按评审重写，待 review**；review 通过后，类型以本文为准：所有类型定完之前，[0118](../decisions/0118-a-hold-explains-itself.md) 和 [0120](../decisions/0120-a-reason-is-a-type.md) 里和本文不一致的地方都按本文读；定完后一次写回这两个 ADR。这里用代码讲清楚每个类型为什么存在。代码用 TypeScript 写成判别联合（`_tag`），实现时用 zod 定义在 `@lingtai/domain`。
+> 草稿，定义中。**主干（第 1、4 节）刚重写，待 review**；review 通过后，类型以本文为准：所有类型定完之前，[0118](../decisions/0118-a-hold-explains-itself.md) 和 [0120](../decisions/0120-a-reason-is-a-type.md) 里和本文不一致的地方都按本文读；定完后一次写回这两个 ADR。这里用代码讲清楚每个类型为什么存在。代码用 TypeScript 写成判别联合（`_tag`），实现时用 zod 定义在 `@lingtai/domain`。
 
 ## 原则
 
@@ -15,7 +15,7 @@
 
 ```mermaid
 flowchart LR
-  X["ActionOutcome<br/>一个 action 怎么结束<br/>（日志：ActionEnded）"] -->|stepOutcomeOf| A["StepOutcome<br/>这一步怎么结束"]
+  X["Action<br/>一次与外界的操作"] -->|"一步的所有 action"| A["StepOutcome<br/>这一步怎么结束<br/>（日志：StepEnded）"]
   A --> B["Proposal<br/>为什么到 proposed"]
   B -->|"route（decideRoute）"| D["PassNext<br/>下一步"]
   A -->|nextOf| D
@@ -26,9 +26,9 @@ flowchart LR
 
 ---
 
-## 1. `ActionOutcome` 与 `StepOutcome`：日志记 action，决策读 step
+## 1. `Action` 与 `StepOutcome`：一步结束，一条事件，带上它的每个 action
 
-**目的**：pass 跑完一步，要知道接下来是继续、到 proposed，还是停下。但一个 step 下可以有好几个 action：build 下跑 `pnpm test`、`pnpm typecheck`、`pnpm lint`，每个都有自己的结论和证据。所以分两层：**日志按 action 记，决策按 step 读。**
+**目的**：pass 跑完一步，要知道接下来是继续、到 proposed，还是停下。一个 step 下可以有好几个 action：build 下跑 `pnpm test`、`pnpm typecheck`、`pnpm lint`，每个都是一次与外界的操作，有自己的结论和证据。所以分两个类型：**`Action` 是一次操作，`StepOutcome` 是一步的结束，`StepOutcome` 包含这一步的所有 action**。日志里只有 step 结束的事件，action 不单独成事件。
 
 ```ts
 type ActionOutcome =
@@ -41,31 +41,45 @@ type ActionOutcome =
   | { _tag: 'AwaitingSignoff'; source: 'declared' | 'injected'; question: string } // human: 或 watch:
   | { _tag: 'RunEndedEarly'; kind: 'crash' | 'timeout' | 'out-of-turns' | 'out-of-usd'; detail: string }
   | { _tag: 'NeverStarted'; why: string } // 账号额度、环境不满足
+  | { _tag: 'NotReached' } // 前面的 action 没通过，这个没轮到跑
+  | { _tag: 'Unknown' } // 跑过，但 conductor 中途死了，结果没落到日志（见下文"中途崩溃"）
 
-// 日志：每个 action 跑完一次，一条
-ActionEnded { runId, step, action, onSha, round, outcome: ActionOutcome, usage?: Usage, costUsd: number | null }
+// 一次与外界的操作：一条 shell 命令、一次 agent 运行、一次人签字
+type Action = {
+  name: string // recipe 里写的那个：'pnpm test'、'reviewer'、'implement'
+  onSha: string | null // 这个结论针对哪个 diff；没跑的是 null
+  outcome: ActionOutcome
+  usage?: Usage
+  costUsd: number | null
+}
 
-// 决策：一个 step 跑完一次，一个值，不进日志
-type StepOutcome = { step: Step; decisive: { action: string; outcome: ActionOutcome } | null }
-const stepOutcomeOf: (step: Step, ended: ActionEnded[]) => StepOutcome
+// 一步的结束：这一步声明的每个 action，按声明顺序，没跑的也在
+type StepOutcome = { step: Step; round: number; actions: Action[] }
+
+// 日志：一个 step 跑完一次，一条
+StepEnded { runId, outcome: StepOutcome }
 ```
 
-`decisive` 是让这一步停下的那个 action：第一个不是 `Passed` 的；全部通过时取最后一个；这一步没有声明任何 action 时是 `null`，按通过处理。`nextOf` 和 `proposalOf` 只读 `StepOutcome`，证据从 `decisive` 里拿。
+**一步最多一个失败，不用挑。** 同一个 step 里，一个 action 没通过，后面的就不再跑（`pass-steps.ts:719`："pipeline stops at the first action that did not pass"），后面的都记成 `NotReached`。所以让这一步停下的就是最后一个不是 `NotReached` 的 action；全部通过时它是 `Passed`；这一步没有声明任何 action 时 `actions` 为空，按通过处理。fold 和 `nextOf`、`proposalOf` 都直接读，不需要判断，也不需要另存一个 `decisive` 字段。
 
-**为什么日志要按 action 记**：现在的 `Step*` 事件就是每个 action 一条，带 `{step, action, runId, onSha}`（`events.ts:629`）。`onSha` 说明这个结论是针对哪个 diff 的，force-push 之后旧结论自动失效，不会被继承。每个 action 也有自己的证据。上一版的 `StepEnded{step, outcome}` 每步只有一条，这两样都会丢。
+**如实记录**：声明了几个、跑了几个、哪个失败，都能从 `actions` 直接数出来。build 声明了 3 个、第 2 个红了，就是 `[Passed, ChecksRefused, NotReached]`。
 
-**例子**：#500 的一个 pass。
+**`onSha` 跟着 action 走，不跟着 step 走**：现在的 `Step*` 事件每个 action 一条，带 `{step, action, runId, onSha}`（`events.ts:629`）。`onSha` 说明结论针对哪个 diff，force-push 之后旧结论自动失效，不会被继承。implement 中途会 commit，同一 step 里 sha 可能变，所以每个 `Action` 自己带。
 
-| 第几次 | step                     | action（`ActionEnded`）                                                    | `StepOutcome.decisive`         |
-| ------ | ------------------------ | -------------------------------------------------------------------------- | ------------------------------ |
-| 1      | implement                | `implement`: `AgentCommitted{sha: a1}`                                     | 同左                           |
-| 2      | build                    | `pnpm test`: `ChecksRefused{2 个失败}`                                     | `pnpm test` 的 `ChecksRefused` |
-| 3      | implement（第 1 轮修复） | `implement`, round 1: `AgentCommitted{sha: b2}`                            | 同左                           |
-| 4      | build                    | `pnpm test`: `Passed`；`pnpm typecheck`: `Passed`                          | `pnpm typecheck` 的 `Passed`   |
-| 5      | review                   | `reviewer`: `ChecksRefused{findings}`                                      | 同左                           |
-| 6      | implement（第 2 轮修复） | `implement`, round 2: `AgentChangedNothing{said: "ticket 写明只支持 ISO"}` | 同左                           |
+**中途崩溃**：conductor 死在一个 step 中间时，没有进程写 `StepEnded`。下一个 conductor 启动时本来就要杀掉残留的 agent、释放领取，由它替被打断的 step 补写一条 `StepEnded`：被打断的那个记 `RunEndedEarly{kind: 'crash'}`，它后面的记 `NotReached`，它前面已经跑完的记 `Unknown`。**已知代价**：那些已跑完的 action 的结论和花费丢了，`/spend` 和预算上限看不到，重启后整个 step 重跑。可以接受，因为多 action 的 step 只有 build（shell 命令，便宜）和 review；要补这个洞就得回到每个 action 一条事件，那会把"挑哪个 action 说了算"带回 fold 里。
 
-**每种 action 能产生哪些结果，是一张表加一条测试，不是类型。** 一个联合类型挡不住 reviewer 产生 `AgentCommitted`。按插件分类型能让编译器挡住，但 `stepOutcomeOf`、`nextOf` 的签名都要变成泛型，不值。所以 `OUTCOMES_OF: Record<PluginKind, ActionOutcome['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `ActionEnded` 的 outcome 都在它插件的那一行里。按插件而不是按 step 列，因为能产生什么由 action 是什么决定，一个 step 下可以有不同的插件：
+**例子**：#500 的一个 pass。build 声明了 `pnpm test`、`pnpm typecheck` 两个。
+
+| 第几次 | `StepEnded.outcome`                                                                  |
+| ------ | ------------------------------------------------------------------------------------ |
+| 1      | implement, round 0：`implement` `AgentCommitted{sha: a1}`                            |
+| 2      | build, round 0：`pnpm test` `ChecksRefused{2 个失败}`、`pnpm typecheck` `NotReached` |
+| 3      | implement, round 1：`implement` `AgentCommitted{sha: b2}`                            |
+| 4      | build, round 1：`pnpm test` `Passed`、`pnpm typecheck` `Passed`                      |
+| 5      | review, round 1：`reviewer` `ChecksRefused{findings}`                                |
+| 6      | implement, round 2：`implement` `AgentChangedNothing{said: "ticket 写明只支持 ISO"}` |
+
+**每种 action 能产生哪些结果，是一张表加一条测试，不是类型。** 一个联合类型挡不住 reviewer 产生 `AgentCommitted`。按插件分类型能让编译器挡住，但 `nextOf`、`proposalOf` 的签名都要变成泛型，不值。所以 `OUTCOMES_OF: Record<PluginKind, ActionOutcome['_tag'][]>` 写在 domain 里，一条单元测试要求每个 `Action` 的 outcome 都在它插件的那一行里。按插件而不是按 step 列，因为能产生什么由 action 是什么决定，一个 step 下可以有不同的插件。`NotReached` 和 `Unknown` 不由插件产生，由 conductor 写，任何插件的 action 都可能是这两个：
 
 | 插件                 | 能产生                                                                                                                                         |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -76,11 +90,11 @@ const stepOutcomeOf: (step: Step, ended: ActionEnded[]) => StepOutcome
 
 实现时这张表以 `packages/recipe/src/recipe.ts` 里的插件定义为准，上表是起点，不是定稿。
 
-**`ActionEnded` 替换哪些事件**：现在的五个结束事件（`StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`）、`FixApplied` 和 `RunFailed{kind: 'no-commits'}`。证据在 outcome 的变体里（原则 2），事件上不再另放 `evidence`。`StepFailed.unreadable` 变成 `AnswerUnreadable` 这个变体，不再是一个"只在某种失败时有值"的字段。`StepWaived` 保留：那是人推翻一次结论，不是一个 action 结束了。`FixDeclined`（没买修复轮次）是 route 的结果，由 `PassRouted` 的 `basis` 记录，实现时核对它是否还需要单独存在。事件名不加 `Event` 后缀：`EVENTS`（`events.ts:2185`）里约 70 个事件都是不带后缀的过去时，只给一个加会不一致，全加是一次全日志改名；过去时本身就说明它是事件。改形状要重置日志，所以属于 0120 第二期。
+**`StepEnded` 替换哪些事件**：现在的五个结束事件（`StepPassed`、`StepFailed`、`StepAsked`、`StepDidNotFinish`、`StepNeverRan`）、`FixApplied` 和 `RunFailed{kind: 'no-commits'}`。证据在 outcome 的变体里（原则 2），事件上不再另放 `evidence`。`StepFailed.unreadable` 变成 `AnswerUnreadable` 这个变体，不再是一个"只在某种失败时有值"的字段。`StepWaived` 保留：那是人推翻一次结论，不是一步结束了。`FixDeclined`（没买修复轮次）是 route 的结果，由 `PassRouted` 的 `basis` 记录，实现时核对它是否还需要单独存在。事件名不加 `Event` 后缀：`EVENTS`（`events.ts:2185`）里约 70 个事件都是不带后缀的过去时，只给一个加会不一致，全加是一次全日志改名；过去时本身就说明它是事件。改形状要重置日志，所以属于 0120 第二期。
 
-**事件和 `StepOutcome` 的区别**：事件在日志里，只追加，给投影和重放读；`StepOutcome` 是纯函数的输入，由 `stepOutcomeOf` 从这一步的 `ActionEnded` 折叠出来，不存。今天这一层对不上：implement 第一次派发的成功要从 `RunFinished` 加 `RunProducedDiff` 推出来，人签字没有自己的事件、直接写进 `WorkItemBlocked`，`proposed` 的决定写成 `PassRouted`。
+**事件和 `StepOutcome` 的区别**：`StepOutcome` 是值，`StepEnded` 是把这个值写进日志的那条事件，给投影和重放读；纯函数读的是值。今天这一层对不上：implement 第一次派发的成功要从 `RunFinished` 加 `RunProducedDiff` 推出来，人签字没有自己的事件、直接写进 `WorkItemBlocked`，`proposed` 的决定写成 `PassRouted`。
 
-**审视：合并。** 现在有两个类型描述同一件事：conductor 的 `StepEnding`，以及 0120 草稿里的 `FixOutcome`。"agent 跑完但没提交"在第一次派发时记成 `RunFailed{kind: 'no-commits'}`，在修复轮次里记成 `FixApplied{headSha: null, failure: null}`，两种写法表达同一个事实。现在都是 implement 这个 action 的一次 `ActionEnded`，修复轮次只是 `round` 大于 0，不需要单独的 `FixOutcome`。
+**审视：合并。** 现在有两个类型描述同一件事：conductor 的 `StepEnding`，以及 0120 草稿里的 `FixOutcome`。"agent 跑完但没提交"在第一次派发时记成 `RunFailed{kind: 'no-commits'}`，在修复轮次里记成 `FixApplied{headSha: null, failure: null}`，两种写法表达同一个事实。现在都是 implement 这一步的一条 `StepEnded`，修复轮次只是 `round` 大于 0，不需要单独的 `FixOutcome`。
 
 ---
 
@@ -298,19 +312,19 @@ const triageRuns: (reason: WaitReason) => boolean
 
 ## 第一性审视：结论
 
-| 类型                               | 结论                                                                                  | 理由                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `StepEnding` + `FixOutcome`        | **合并**：日志按 action 记 `ActionEnded`，`StepOutcome` 由 `stepOutcomeOf` 折叠，不存 | 修复轮次就是 implement 再跑一次；`onSha` 和每个 action 的证据要留在日志里 |
-| `Arrival` / `Arrived`              | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`                        | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开                         |
-| `Route` + `RouteDecision`          | **删掉** `Route`，`RouteDecision` 改名为 `RouteBasis`；route 只作动词                 | `Route` 和 `PassNext` 重复；日志要分清是 judge 的选择，还是被上限拦下     |
-| `transitionOf` 的结果              | **替换**为 `PassNext`（`Advance`、`FixRound`、`RestartFromBase`、`WaitOnPerson`）     | 下一步只有这一个类型，花了什么预算写在值里                                |
-| `Hold` / `HoldTriaged` / `Held`    | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                   | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                |
-| `Judgement`、`Failure` 分组 schema | **删除**，卡片分类由 `waitKind` 派生                                                  | 日志里已经是平的，没有代码按分组分支                                      |
-| `CheckRed`                         | **删除**（等 #452 确认）                                                              | 方案 B 之后没有地方会产生它                                               |
-| `DidNotFinish`                     | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`                      | 三种情况，三种不同的处理                                                  |
-| `Move`                             | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`                  | 名字要说清是"等待怎么了结"，不和 route 撞词                               |
-| `TriageResult`、`TriageStatus`     | 保留                                                                                  | 已经是该有的形状                                                          |
-| `Cause`                            | 保留，改名为 `RootCause`，变体也改名                                                  | 现在的名字单独看不出意思                                                  |
+| 类型                               | 结论                                                                              | 理由                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `StepEnding` + `FixOutcome`        | **合并**：一步一条 `StepEnded`，`StepOutcome` 带这一步的每个 `Action`             | 修复轮次就是 implement 再跑一次；一步最多一个失败，fold 不用挑；`onSha` 跟着 action |
+| `Arrival` / `Arrived`              | 保留，改名为 `ProposalReason` / `Proposal`，并加 `ReviewEmpty`                    | `proposed` 需要知道来源；"没话说"和"弄丢了"要分开                                   |
+| `Route` + `RouteDecision`          | **删掉** `Route`，`RouteDecision` 改名为 `RouteBasis`；route 只作动词             | `Route` 和 `PassNext` 重复；日志要分清是 judge 的选择，还是被上限拦下               |
+| `transitionOf` 的结果              | **替换**为 `PassNext`（`Advance`、`FixRound`、`RestartFromBase`、`WaitOnPerson`） | 下一步只有这一个类型，花了什么预算写在值里                                          |
+| `Hold` / `HoldTriaged` / `Held`    | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                               | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                          |
+| `Judgement`、`Failure` 分组 schema | **删除**，卡片分类由 `waitKind` 派生                                              | 日志里已经是平的，没有代码按分组分支                                                |
+| `CheckRed`                         | **删除**（等 #452 确认）                                                          | 方案 B 之后没有地方会产生它                                                         |
+| `DidNotFinish`                     | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees`                  | 三种情况，三种不同的处理                                                            |
+| `Move`                             | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`              | 名字要说清是"等待怎么了结"，不和 route 撞词                                         |
+| `TriageResult`、`TriageStatus`     | 保留                                                                              | 已经是该有的形状                                                                    |
+| `Cause`                            | 保留，改名为 `RootCause`，变体也改名                                              | 现在的名字单独看不出意思                                                            |
 
 ## 待你决定
 
