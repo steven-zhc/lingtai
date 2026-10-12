@@ -230,7 +230,7 @@ const routeNext: (
 
 - judge 从候选 id 里选，不返回任意一个 Step。"回答不在选项里"变成 `UnknownCandidate`，不需要拿回答和两个数组比对。
 - **哪些候选**（`pass.ts:925` 起的 `onOffer` 表）：再走一轮回到发问的那一步（`InputNeeded`），回 implement（implement 及之后的 step），从 merge 回 build（agent 解决冲突写的代码是 review 之后写的，要重新过 build 和 review），从 base 重来（只对 `ReviewFindings`），交给人（永远在）。
-- 预算在 `offerFor` 里算完：可用的候选已经带着 `FixRound{round: 3}`，被上限挡掉的进 `unavailable`。`decideRoute` 只需要 offer 和回答，不再需要 `RunContext`，也不会再解释一遍上限。
+- 预算在 `offerFor` 里算完：可用的候选已经带着 `FixRound{to: 'implement', round: 3}`，被上限挡掉的进 `unavailable`。`decideRoute` 只需要 offer 和回答，不再需要 `RunContext`，也不会再解释一遍上限。
 - **决定里不存 `next`**：如果 `Selected` 同时存 `candidate` 和 `next`，就能写出 `fix-lines` 配 `Landed` 这种对不上的值。现在 `next` 只有一个来源，就是存下的 offer 里那个候选的 `next`，由 `routeNext` 查出。候选的去向收窄成 `CandidateNext`，offer 里放不进 `Advance` 或 `Landed`。
 - **交给人的候选是占位**：offer 在 judge 回答之前算出，`hand-to-person` 这时给不出原因。`routeNext` 拿到 judge 的回答后，把 `HandToPerson` 换成 `WaitOnPerson{reason: ProposedEscalated{proposal, because: JudgeHandedOver{why}}}`。
 - **类型挡不住的一处**：`Selected.candidate` 是不是 `offer.available` 里的 id。id 是数据，这只能由 `decideRoute` 在运行时保证：不在里面就是 `UnknownCandidate`，不会生成 `Selected`。由 `decideRoute` 的穷举测试固定。
@@ -238,13 +238,13 @@ const routeNext: (
 
 **例子**：
 
-- reviewer 提了 major，judge 选 `fix-lines`，还剩轮次：offer 里 `fix-lines` 的 `next` 是 `FixRound{round: 2}`，决定是 `Selected{candidate: 'fix-lines'}`。
+- reviewer 提了 major，judge 选 `fix-lines`，还剩轮次：offer 里 `fix-lines` 的 `next` 是 `FixRound{to: 'implement', round: 2}`，决定是 `Selected{candidate: 'fix-lines'}`。
 - 3 轮已经用完，judge 仍选 `fix-lines`：`fix-lines` 在 `unavailable` 里，决定是 `Escalated{because: CandidateUnavailable{excluded: {id: 'fix-lines', because: CeilingReached{rounds}}}}`，`routeNext` 给出 `WaitOnPerson{reason: ProposedEscalated{because: CandidateUnavailable{…}}}`。
 - build 红了，没有声明 judge，内置规则 `same-worktree`（`judge.ts:466`）作为 judge 回答 `Selected{candidate: 'fix-lines'}`。
 
 `JudgeReply` 的来源：内置规则是纯函数；agent 是副作用（要花钱）；没有声明 judge 时，外层合成 `NoJudge`。人不是 judge，人是 `WaitOnPerson` 的去向。offer、回答和决定都是发生过的事实，三者一起存进 `PassRouted`（第 8 节）；`next` 不存，重放时由 `routeNext(offer, reply, decision)` 算出。
 
-**审视：删掉 `Route` 和 `RouteBasis`。** `Route` 的三个变体里两个和 `PassNext` 重复，`HandToPerson` 只是还没补上原因的 `WaitOnPerson`。`RouteBasis` 和 `next` 组成的笛卡尔积允许非法组合，由 `RouteDecision` 的两个变体取代。`RouteOffer` 已经存在（`pass.ts:837`），这里把它从"两个 Step 数组"改成"带 id 的候选"。
+**审视：删掉 `Route` 和 `RouteBasis`。** `Route` 的三个变体里两个和 `PassNext` 重复，第三个 `HandToPerson` 是还没补上原因的 `WaitOnPerson`，却被当成一种下一步。现在 `HandToPerson` 只出现在 offer 的候选里，是占位，不是 `PassNext`：`routeNext` 拿到 judge 的回答就把它换成带原因的 `WaitOnPerson`，它不会离开第 3 节。`RouteBasis` 和 `next` 组成的笛卡尔积允许非法组合，由 `RouteDecision` 的两个变体取代。`RouteOffer` 已经存在（`pass.ts:837`），这里把它从"两个 Step 数组"改成"带 id 的候选"。
 
 ---
 
@@ -290,6 +290,7 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 | `merge`                       | `Completed{Integrated}`（过关）                | `Landed{integrated: mergeSha}`                                                                                                                                                     |
 | `merge`                       | `IntegrationRefused` 的另外六种原因            | `WaitOnPerson{MergeRefused}`：`dirty-base`、`unpushed-base`、`pending-migration`、`no-commits`、`push-rejected`、`unexpected`（`pass-steps.ts:606`，它们在 diff 成问题之前就停了） |
 | admit                         | worktree 插件失败                              | 核对：admit 的插件补成 kind 时一起定                                                                                                                                               |
+| proposed（`Advance` 经过时）  | 声明在那里的 `run:`、`agent:` 没过关           | 核对：`REFUSING_STEPS`（`pass.ts:120`）包含 proposed，但本文第 1 节只给它列了 `signoff`；要么补 kind 和这一格，要么在 recipe 里不允许                                              |
 
 **去 proposed 有两种，`Advance` 和 `Propose`**：`proposed` 在主线上，review 全部过关的 pass 都会经过它，跑它声明的 action（比如 `human:` 签字），再往 merge 走，这是 `Advance{to: 'proposed'}`，没有原因要 route。因为某一步有 action 没过关而来的是 `Propose{proposal}`，原因随值带过去，`offerFor` 直接读 `Propose.proposal`。"去 proposed route 却不说为什么"在类型上不可能；上一版把这件事拆成 `nextOf` 给目的地、`proposalOf` 给原因，两个函数读同一个 `StepOutcome`，可能一个说去、一个给出 None。
 
@@ -328,8 +329,14 @@ type WaitReason =
   | { _tag: 'OwnQuestion'; question: string; by: string } // 人自己用 lingtai ask 提的
   | { _tag: 'AgentQuestion'; run: RunRef; step: 'design' | 'implement'; question: string }
   // 要人拍板
-  | { _tag: 'SignoffRequired'; run: RunRef; step: Step; source: 'declared' | 'injected'; question: string }
-  | { _tag: 'FixerDisagrees'; run: RunRef; step: Step; said: string | null }
+  | {
+      _tag: 'SignoffRequired'
+      run: RunRef
+      step: 'proposed' | 'merge'
+      source: 'declared' | 'injected'
+      question: string
+    } // hold-of.ts：step 为 merge 时是 injected
+  | { _tag: 'FixerDisagrees'; run: RunRef; step: 'implement'; said: string | null }
   | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; because: EscalationBecause }
   // 机器出了问题，没有人做过判断
   | {
@@ -522,7 +529,7 @@ const resolveWait: (command: {
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `StepEnding` + `FixOutcome` + `ActionOutcome`                                | **合并并按 kind 收紧**：一步一条 `StepEnded`，带这一步的每个 `Action`；`Action` 按 kind 分成普通联合                             | 修复轮次就是 implement 再跑一次；一步最多一个 action 没过关；能同时发生的是字段，不会发生的组合写不出来 |
 | `Arrival` / `Arrived` / `ProposalReason`                                     | 改成相关联合 `Proposal`，每个变体写死 `from`，并加 `ReviewEmpty`                                                                 | `{from, reason}` 能拼出不可能的组合；"没话说"和"弄丢了"要分开                                           |
-| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出 | 决定里同时存 `next` 会对不上；候选收窄成 `CandidateNext`                                                    |
+| `Route` + `RouteDecision`（旧）+ `RouteBasis`                                | **删掉** `Route`、`RouteBasis`；新的 `RouteDecision` = `Selected{candidate}` 或 `Escalated{because}`，`next` 从存下的 offer 查出 | 决定里同时存 `next` 会对不上；候选收窄成 `CandidateNext`                                                |
 | `transitionOf`、`outcomeOf` 的结果                                           | **替换**为 `PassNext`（`Advance`、`FixRound`、`Requeued`、`WaitOnPerson`、`Landed`）；`nextOf` 不产出 `FixRound`                 | 下一步和终态只有这一个类型，花了什么写在值里；重开就是重新排队                                          |
 | `SetupRefused.lifts`                                                         | **删除**，会自己恢复的走 `Requeued{NeverStarted}`                                                                                | 源码里没有地方构造 `by-itself`（只在 `hold.ts:253`、`triage.ts:117` 的 schema 里）                      |
 | `Hold` / `HoldTriaged` / `Held`                                              | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                                                              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                                              |
