@@ -327,7 +327,7 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent // FixRound、Requeued
 | `check` 在 proposed、merge          | `Completed{refused}`                        | `WaitOnPerson{CheckRefused}`：proposed 不在 `ARRIVE_AT_THE_ROUTER` 里，merge 的非通道拒绝没有方向（`pass-steps.ts:622`），现在都直接交给人                                         |
 | `check` 在 proposed、merge，`draft` | `AnswerUnreadable`                          | `WaitOnPerson{AnswerUnreadable}`（review 的那一种走 `Propose{ReviewUnreadable}`）                                                                                                  |
 | implement，round > 0                | 每个 action 都过关，但没有一个带 `advanced` | `WaitOnPerson{FixerDisagrees{said}}`，said 是 agent 的 evidence                                                                                                                    |
-| implement，round 0                  | 同上                                        | 待你决定：现在是 `RunFailed{no-commits}`，落成 `crashed`（`fix.ts:187`）                                                                                                           |
+| implement，round 0                  | 同上                                        | `WaitOnPerson{NothingProduced{said}}`：现在是 `RunFailed{no-commits}`，落成 `crashed`（`fix.ts:187`），但它不是崩溃                                                                |
 | `signoff`                           | `Completed{requested: {question}}`          | `WaitOnPerson{SignoffRequired}`                                                                                                                                                    |
 | `land`                              | `Completed{Integrated}`（过关）             | `Landed{integrated: mergeSha}`                                                                                                                                                     |
 | `land`                              | `IntegrationRefused` 的另外六种原因         | `WaitOnPerson{MergeRefused}`：`dirty-base`、`unpushed-base`、`pending-migration`、`no-commits`、`push-rejected`、`unexpected`（`pass-steps.ts:606`，它们在 diff 成问题之前就停了） |
@@ -379,6 +379,7 @@ type WaitReason =
       question: string
     } // hold-of.ts：step 为 merge 时是 injected
   | { _tag: 'FixerDisagrees'; run: RunRef; step: 'implement'; said: string | null }
+  | { _tag: 'NothingProduced'; run: RunRef; step: 'implement'; said: string | null } // 第一次派发，agent 跑完，整步没改东西
   | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; because: EscalationBecause }
   | {
       _tag: 'CheckRefused'
@@ -426,20 +427,21 @@ const waitKind: (reason: WaitReason) => WaitKind // 派生，不存
 
 **`waitKind` 分三类**，只给卡片文案和看板分组用，没有逻辑按它分支：
 
-| `WaitKind` | 变体                                                                                  | 卡片上说     |
-| ---------- | ------------------------------------------------------------------------------------- | ------------ |
-| `question` | `OwnQuestion`、`AgentQuestion`                                                        | 有人在问你   |
-| `decision` | `SignoffRequired`、`FixerDisagrees`、`ProposedEscalated`、`CheckRefused`              | 要你拍板     |
-| `fault`    | `MergeRefused`、`BudgetExhausted`、`AgentCrashed`、`SetupRefused`、`AnswerUnreadable` | 机器出了问题 |
+| `WaitKind` | 变体                                                                                        | 卡片上说     |
+| ---------- | ------------------------------------------------------------------------------------------- | ------------ |
+| `question` | `OwnQuestion`、`AgentQuestion`                                                              | 有人在问你   |
+| `decision` | `SignoffRequired`、`FixerDisagrees`、`NothingProduced`、`ProposedEscalated`、`CheckRefused` | 要你拍板     |
+| `fault`    | `MergeRefused`、`BudgetExhausted`、`AgentCrashed`、`SetupRefused`、`AnswerUnreadable`       | 机器出了问题 |
 
 `question` 单独一类，因为人面对它要做的是回答，不是在几个去向里选。评审建议在有行为按它分支之前不加；但 `waitKind` 本身只服务卡片文案，`decision` 和 `fault` 同样没有行为按它们分支，按那个标准三类都该删。卡片上"有人在问你"和"要你拍板"是两种不同的提示，所以保留。注意两种问题的回答方式不同：`OwnQuestion` 用 `AnswerQuestion`，`AgentQuestion` 用 `EditBodyAndRequeue`，因为 agent 只读得到正文（`prompt.ts:275`）。所以"能不能 `AnswerQuestion`"由 `allowedResolutions` 按变体决定，不按 `waitKind`。
 
-**审视：四处调整。**
+**审视：五处调整。**
 
 1. **已经是平的，只删分组 schema。** 日志里的 `Hold` 已经是一层 `_tag` 联合：`hold.ts:263` 把 `Judgement.options` 和 `Failure.options` 展开进去，没有 `{_tag: 'Failure', failure: …}` 这层包装。`Judgement`、`Failure` 只是构造时用的分组 schema，没有代码按它们分支，卡片文案改由 `waitKind` 派生（原则 3）。所以要做的只是：`Hold` → `WaitReason`、变体改名、删掉这两个分组 schema。变体名会写进日志（`WorkItemBlocked`），放进 0120 第二期那一次重置一起做。
 2. **`CheckRed` 收窄成 `CheckRefused`，不删。** 现在它有三个来源：build 红了、轮次用完（route 交给人后 `stoppedAt` 是 build，`hold-of.ts:161`）；proposed 下声明的检查拒绝（`hold-of.ts:161`）；merge 下合并通道之前的检查拒绝（`hold-of.ts:109`）。第一个按方案 B 归 `ProposedEscalated{BuildRed}`，合并通道的 verify-failed 归 `VerifyRed`。后两个没有别处可去，所以留下，step 收窄到 `'proposed' | 'merge'`，并带上是哪个 action、findings（reviewer 也能声明在这两步）。
 3. **`DidNotFinish` 拆开。** 现在一个变体装了崩溃和撞上限两种情况。两者的处理不同：崩溃一般重跑，撞上限要先把票拆小。所以撞上限归 `BudgetExhausted`，崩溃归 `AgentCrashed`，"选择不改"归 `FixerDisagrees`。不是 agent 的那些（文件没写成、工作区没切出来或没能还原，现在都落成 did-not-finish，其中一部分是 `failed` 落在不许拒绝的 step 上被改读的，`pass.ts:1816`）归 `SetupRefused`。
 4. **加 `AnswerUnreadable`。** design 的回答解析失败（`agent-action.ts:1019`）和 proposed、merge 下 reviewer 的解析失败（`pass-steps.ts:1263`），现在都交给人，一个落成 `DidNotFinish`，一个落成 `CheckRed`。它们是同一件事：agent 回答了，机器没读懂。人要做的是读 transcript，不是判断 diff，所以单独一个变体。
+5. **加 `NothingProduced`。** 第一次派发 agent 就没改任何东西，和修复轮次里的 `FixerDisagrees` 不是一回事：那里有 reviewer 的意见可以对照，这里只有 ticket。常见的原因是票已经做完了、写得不清楚，或者 agent 认为不该改。它不是崩溃，重跑大概率还是一样，所以不归 `AgentCrashed`。
 
 ---
 
@@ -459,7 +461,7 @@ const allowedResolutions: (reason: WaitReason) => Resolution['_tag'][] // 按钮
 const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution['_tag'] | null
 ```
 
-**例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。
+**例子**：`FixerDisagrees` 允许 `[Approve, Requeue, EditBodyAndRequeue, Close]`。Approve 表示站 fix agent 这边，EditBodyAndRequeue 表示站 reviewer 这边。`NothingProduced` 允许 `[EditBodyAndRequeue, Requeue, Close]`，没有 Approve：分支上没有东西可合；票已经做完就 Close，写得不清楚就改正文。
 
 **审视：改名为 `Resolution`。** `Move` 只说"走一步"，看不出谁走、往哪走，还和 route、看板拖卡片撞词。`Resolution` 说的是这次等待怎么了结，每个变体都是结束等待的一种方式。另外 `BodyAndRequeue` 改为 `EditBodyAndRequeue`，让名字说清先做什么；`Answer` 改为 `AnswerQuestion`，它只对 `OwnQuestion` 有效。`Approve`、`Requeue`、`Close` 不变，和 CLI 命令、看板按钮同名。
 
@@ -529,21 +531,23 @@ WaitTriaged { … } // 只改名，形状不变
 | `ApprovalRequested`                                                                                                | 删除                      | 就是 `signoff` 的 `requested` 不为 null 的 `StepEnded`，加 `WaitStarted{SignoffRequired}`                                                 |
 | `ApprovalGranted`                                                                                                  | 删除                      | 就是 `WaitResolved{resolution: Approve}`                                                                                                  |
 | approve 路径上的 `StepWaived`（每个拒绝过的检查一条，`approve.ts:313`）                                            | 删除                      | 批准本身就是覆盖了那些拒绝；`WaitResolved{Approve}` 加上它所了结的 `WaitStarted` 已经说明覆盖了什么                                       |
-| `IntegrationRefused` 上的 `paths`、`baseSha`、`headSha`                                                            | 只留在 `StepEnded` 里     | 同一个事实记两份（`hold-of.ts:188` 现在从 integration stream 读）；stream 只留合并通道按 base 串行要用的                                  |
 | `RepairRequested`、`RepairDeclined`、`RunRef.repairOf`                                                             | 删除                      | #143 之前的修复机制（`conduct.ts:907` 的 `retiredRepairPending`），已不再产生                                                             |
 | `HoldTriaged`                                                                                                      | `WaitTriaged`             | 原则 5                                                                                                                                    |
 
 **不记的**：`Advance` 不单独成事件，下一步的 `StepStarted` 已经说明走到哪了。`nextOf` 给出的其余结果（`WaitOnPerson`、`Requeued{NeverStarted}`、`Landed`）是 `StepEnded` 的纯函数，由各自已有的事件落地：`WaitStarted`、`WorkItemReleased`、`WorkItemLanded`。花预算的只有 `FixRound` 和 `Requeued{Restart}`，都只经由 `PassRouted` 出现，所以 `spentAfter` 只从 `PassRouted` 折叠。
 
-**实现时核对**（没有逐行验证，不在这里假装定了）：
+**核对过的**（2026-10-12，对照代码）：
 
-- `StepRequested`：和 `StepStarted` 同形状（`events.ts:735`），没有读者就删。
-- `ApprovalRevoked`：确认还有没有用处。
-- `RunAwaitingInput`：和 implement、design 的 `question` 字段可能重复。
-- `WorkItemUnblocked.withdrawn`：确认它对应哪种 `Resolution`，还是需要保留成单独字段。
-- `WorkItemLanded`、`WorkItemReleased`：确认它们的形状能承载 `Landed{integrated}` 和 `Requeued{cause}`。
-- 单独的 `lingtai waive`（`approve.ts` 约 600–660 行，只写 `StepWaived`，不批准）：确认还有没有人用。有就成为一种 `Resolution`，没有就删。
-- integration stream 上的 `IntegrationAttempted` / `Succeeded` / `Refused` 去掉重复字段后还剩什么：合并通道的串行和 `lingtai doctor` 读什么，就留什么。
+| 事件                                             | 结论                         | 依据                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StepRequested`                                  | 删除                         | 每个 action 跑之前一条（`action.ts:615`），看板拿它显示"哪个 action 在排队"。改成每步一条之后，一步里正在跑哪个 action 只在 run log（`lingtai attach`）里看得到，和"中途崩溃不补事件"是同一个取舍                                                                                                             |
+| `ApprovalRevoked`                                | 删除                         | 没有写的人了：看板的 Reject 和 CLI 的对应命令在 #150 删掉（`decide.tsx:50`、`lingtai.ts:1250`），剩下的读者只为读旧行，日志重置后不需要                                                                                                                                                                       |
+| 单独的 `waive()` 和它写的 `StepWaived`           | 删除                         | `approve.ts:584` 导出，但除测试外没有调用方；#150 起覆盖拒绝只在 Approve 里做，并且要求写理由（`lingtai.ts:169`），这条理由就是 `WaitResolved.note`                                                                                                                                                           |
+| `WorkItemUnblocked.withdrawn`                    | 删除，派生                   | 它表示"人自己问的问题被 requeue 收回"（`approve.ts:537`、`events.ts:285`），就是 `reason` 为 `OwnQuestion`、`resolution` 为 `Requeue` 的那条 `WaitResolved`                                                                                                                                                   |
+| `RunAwaitingInput`                               | 不动                         | 不是 agent 的 `question`：是 runtime 自己弹的通知（比如等权限），由 hook 写（`hook-socket.ts:249`），run 照常往下跑（`pass.ts:364`："a note on the card and nothing here reads it"）。属于 Run 的遥测                                                                                                         |
+| `WorkItemLanded`                                 | 不动                         | `{mergeCommit, base}`，`mergeCommit` 就是 `Landed.integrated`                                                                                                                                                                                                                                                 |
+| `WorkItemReleased`                               | 不动，不存 `cause`           | `{runId, reason: string}`。`Requeued.cause` 从这个 run 最后一条 `PassRouted`（`Restart`）或 `StepEnded`（`NeverStarted`）派生；`reason` 只是给人看的一句话，人点 Requeue、claim 没确认时也用它                                                                                                                |
+| `IntegrationAttempted` / `Succeeded` / `Refused` | 保留，`Refused` 去掉三个字段 | 合并通道的串行（`integration.ts` 的 `laneIsBusy`）、daemon 唤醒（`work-loop.ts:98`）、看板（`task-view.ts:715`）读的是 `workItemId`、`branch`、`headSha`（尝试时）、`reason`、`detail`、`base`、`mergeCommit`。冲突时的 `paths`、`baseSha`、`headSha` 只有 `hold-of.ts:188` 读，改从 `StepEnded` 的 `land` 读 |
 
 **不动的**：`StepsResolved`（一个 run 计划跑什么）、`EndActionsResolved`（end 解析出的副作用，`outcome` 由 `PassEnd` 派生，见第 9 节）、`DispatchRefused`（发生在 `runPass` 之前），以及其余约 50 个事件（WorkItem 的领取、释放和关闭，Run 的遥测，Conductor、Project、Discussion、Finding、Outbox 等）和这些类型无关。改形状要重置日志，所以和 `StepEnded` 一起属于 0120 第二期。
 
@@ -602,7 +606,7 @@ const resolveWait: (command: {
 | `Hold` / `HoldTriaged` / `Held`                                                            | **改名**为 `WaitReason` / `WaitTriaged` / `Waiting`                                                                              | 和看板的 _Waiting on you_ 列对上；hold 只留给 `agent:hold`                         |
 | `Judgement`、`Failure` 分组 schema                                                         | **删除**，卡片分类由 `waitKind` 派生                                                                                             | 日志里已经是平的，没有代码按分组分支                                               |
 | `CheckRed`                                                                                 | **收窄**为 `CheckRefused{step: 'proposed' \| 'merge'}`                                                                           | build 红了归 `ProposedEscalated`；proposed 和 merge 下声明的检查拒绝仍要有去处     |
-| `DidNotFinish`                                                                             | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` / `SetupRefused` / `AnswerUnreadable`                           | 崩溃、撞上限、不改、机器没做成、回答读不懂，处理各不相同                           |
+| `DidNotFinish`                                                                             | **拆开**为 `AgentCrashed` / `BudgetExhausted` / `FixerDisagrees` / `NothingProduced` / `SetupRefused` / `AnswerUnreadable`       | 崩溃、撞上限、修复时不改、第一次就没改、机器没做成、回答读不懂，处理各不相同       |
 | `Move`                                                                                     | **改名**为 `Resolution`，变体 `EditBodyAndRequeue`、`AnswerQuestion`                                                             | 名字要说清是"等待怎么了结"，不和 route 撞词                                        |
 | `Step*`、`Fix*`、`PassRestarted`、`WorkItemBlocked`/`Unblocked`、`Approval*`、`StepWaived` | **重新定义**为 `StepStarted`/`StepEnded`、`PassRouted`、`WaitStarted`/`WaitResolved`（第 8 节）                                  | 只记从日志算不出来的事实                                                           |
 | approve 自己合并                                                                           | **改成**批准之后 `runPass` 从 merge 接着跑（第 9 节）                                                                            | 合并只有一条路，`afterApproval` 可以派生                                           |
@@ -612,4 +616,3 @@ const resolveWait: (command: {
 ## 待你决定
 
 1. **`Propose` 要不要改名 `RouteProposal`。** `Advance{to: 'proposed'}` 会跑 proposed 下声明的 action，`Propose` 不跑，直接 route；评审认为叫 `Propose` 会让人以为它也进了 proposed 这一步。只是名字，结构不变。
-2. **implement 第 0 轮整步没改东西算什么。** design 不会出现这种情况（第 4 节）。现在落成 `crashed`（`fix.ts:187`），但它不是崩溃。可以归 `AgentCrashed`（照现状），也可以新增一个 `WaitReason`，比如 `NothingProduced{run, said}`。
