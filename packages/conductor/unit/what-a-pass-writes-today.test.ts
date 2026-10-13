@@ -19,9 +19,13 @@
  *   (`recipe/src/recipe.ts:175–181`), and `run:` spawns a real process
  *   (`actions/src/command.ts:43`) — a subprocess in a worktree this file never
  *   cuts, which is the filesystem and so is integration (0060 §1).
- * - **#8, `prepared` refuses.** `prepared` is served only by `worktree:`'s own
- *   plugin, and its body is `async () => ({ ending: 'passed' })`
- *   (`pass-steps.ts:1088`) — nothing here can make it answer otherwise.
+ * - **#8, `prepared` refuses.** `prepared` is in `REFUSING_STEPS` (`pass.ts:120`)
+ *   and does have its own hold, `SetupRefused` (`hold-of.ts:224`) — it is left
+ *   out only because the one plugin that can make it refuse is `run:`
+ *   (`recipe.ts:175–181`), and `run:` spawns a real process
+ *   (`actions/src/command.ts:43`), the same reason row 3 is left out. Where
+ *   nothing is declared there the body is `async () => ({ ending: 'passed' })`
+ *   (`pass-steps.ts:1088`) and nothing here can make it answer otherwise.
  *
  * **Disagreements with 0120 found by running the rows, not by reading it:**
  *
@@ -81,6 +85,11 @@ import {
 function theRun(store: ReturnType<typeof memoryStore>): Envelope[] | null {
   const found = [...streams(store)].find(([id]) => id.startsWith('run-'))
   return found === undefined ? null : found[1]
+}
+
+/** Every run stream a store holds, oldest first — for a row that calls `once()` more than once. */
+function theRuns(store: ReturnType<typeof memoryStore>): Envelope[][] {
+  return [...streams(store)].filter(([id]) => id.startsWith('run-')).map(([, events]) => events)
 }
 
 function typesOf(events: readonly Envelope[] | null): string[] {
@@ -411,7 +420,9 @@ runtime:
       'IssueUpdated',
       'IssueUpdated',
     ])
-    expect(typesOf(theRun(store))).toEqual([
+    const runs = theRuns(store)
+    expect(runs).toHaveLength(2)
+    expect(typesOf(runs[1] ?? [])).toEqual([
       'StepRequested',
       'StepStarted',
       'StepPassed',
@@ -431,6 +442,7 @@ runtime:
       'StepFailed',
       'PassRouted',
       'RunRefsPublished',
+      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
