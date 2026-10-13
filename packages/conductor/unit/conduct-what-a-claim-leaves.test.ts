@@ -838,6 +838,12 @@ describe('when the agent meets the wall', () => {
             return ''
           })
         }
+        if (args[0] === 'reset') {
+          return Effect.sync(() => {
+            did.push(`git reset ${args.slice(1).join(' ')}`)
+            return ''
+          })
+        }
         if (args.includes('commit')) {
           return Effect.sync(() => {
             did.push('git commit --no-verify')
@@ -868,6 +874,18 @@ describe('when the agent meets the wall', () => {
       // The pathspec excludes the planted file by name — never a bare
       // `git add -A`, which would stage its secrets alongside the real edit.
       expect(did).toContain('git add -A -- . :(exclude).env.local')
+
+      // **`:(exclude)` alone does not unstage a path the agent's own
+      // `git add -A` already staged before it was cut off** (`#468`) — a
+      // pathspec on `add` only decides what that call stages, and does
+      // nothing to an index entry some earlier `add` already made. The
+      // commit below is only ever clean of the planted file because this
+      // call unstages it unconditionally, after the exclude-add and before
+      // the commit — verified against real git in the finding this pins: the
+      // exclusion alone still produced a commit containing `.env.local`.
+      expect(did).toContain('git reset -- .env.local')
+      expect(did.indexOf('git add -A -- . :(exclude).env.local')).toBeLessThan(did.indexOf('git reset -- .env.local'))
+      expect(did.indexOf('git reset -- .env.local')).toBeLessThan(did.indexOf('git commit --no-verify'))
 
       const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')

@@ -1662,6 +1662,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runLog.note('push', wipFailure)
           return
         }
+        // **The exclusion above only stops this call from staging the planted
+        // file — it does not unstage one the agent's own `git add -A` already
+        // staged before it was cut off** (`#468`). `kept-run-port.ts`'s `keep`
+        // gets away with the pathspec alone because its paired `clean` runs
+        // `git reset --hard HEAD` first and empties the index; nothing resets
+        // the index here, so a planted file staged by the agent is still
+        // staged after this call. `git reset -- <plantAt>` unstages it
+        // unconditionally, back to however it stood against `HEAD` — which,
+        // since `provisionWorktree` writes it untracked, is untracked again.
+        const unstaged = await gitAsked(['reset', '--', recipe.env.plantAt])
+        if (Either.isLeft(unstaged)) {
+          wipFailure = `the dirty tree was not kept — the planted env file could not be unstaged: ${unstaged.left.detail}`
+          runLog.note('push', wipFailure)
+          return
+        }
         // The identity is explicit because nothing else configures one in
         // this worktree, and signing is off for the same reason `--no-verify`
         // is: a failed hook or a missing key must not cost this one commit.
