@@ -149,22 +149,50 @@ describe('a line of history', () => {
 
   /**
    * **`published`/`already-published` never name `branch` beside a sha it was
-   * never pushed** (`#468`). `headSha` on these two is the arm's own only
-   * where the branch carries nothing — a stopped agent that committed nothing
-   * of its own, with only `keepUncommittedWork`'s WIP to publish — and
-   * `detail` is what says so, since the sha alone cannot tell a reader which
-   * ref it actually reached.
+   * never pushed** (`#468`). `branchCarries` is the typed field that says so
+   * — never whether `detail` happens to be set, since a failed WIP keep also
+   * writes `detail` on these two outcomes while `branch` was pushed at
+   * exactly `headSha`.
    */
   it('never says branch and arm share a sha the branch never got', () => {
     const row = (data: Record<string, unknown>) =>
       summarise(e('RunRefsPublished', { branch: 'agent/7', arm: 'agent/7-attempt-1', ...data }))
 
-    const detail = "agent/7 carries nothing of this claim's own — only agent/7-attempt-1 does"
-    expect(row({ outcome: 'published', headSha: 'c'.repeat(40), detail })).toBe(
-      `agent/7-attempt-1 at ccccccc — ${detail}`,
+    expect(row({ outcome: 'published', headSha: 'c'.repeat(40), detail: null, branchCarries: false })).toBe(
+      'agent/7-attempt-1 at ccccccc',
     )
-    expect(row({ outcome: 'already-published', headSha: 'c'.repeat(40), detail })).toBe(
-      `already there — agent/7-attempt-1 at ccccccc — ${detail}`,
+    expect(row({ outcome: 'already-published', headSha: 'c'.repeat(40), detail: null, branchCarries: false })).toBe(
+      'already there — agent/7-attempt-1 at ccccccc',
+    )
+  })
+
+  /**
+   * **A failed WIP keep's `detail` on `published`/`already-published` is not
+   * `branch`'s absence** (`#468`) — `branchCarries` stays `true` because
+   * `branch` was pushed at exactly `headSha`, and the row names both refs
+   * alongside the keep's own failure.
+   */
+  it('names both refs when a WIP keep failed but branch still carries the sha', () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e('RunRefsPublished', { branch: 'agent/7', arm: 'agent/7-attempt-1', ...data }))
+
+    const detail = 'the dirty tree was not kept — git commit failed: disk full'
+    expect(row({ outcome: 'published', headSha: 'c'.repeat(40), detail, branchCarries: true })).toBe(
+      `agent/7 and agent/7-attempt-1 at ccccccc — ${detail}`,
+    )
+  })
+
+  /**
+   * **Absent `branchCarries` means carried** (`#468`) — every row written
+   * before this field existed had `branch` at `headSha`, and replaying one
+   * must read exactly as it always did.
+   */
+  it('reads an old row with no branchCarries field as branch carrying the sha', () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e('RunRefsPublished', { branch: 'agent/7', arm: 'agent/7-attempt-1', ...data }))
+
+    expect(row({ outcome: 'published', headSha: 'c'.repeat(40), detail: null })).toBe(
+      'agent/7 and agent/7-attempt-1 at ccccccc',
     )
   })
 

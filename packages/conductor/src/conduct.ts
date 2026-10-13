@@ -1622,6 +1622,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const keepUncommittedWork = async (): Promise<void> => {
         if (stoppedBy === null || wip !== null || wipParent !== null) return
+        // A failed keep leaves `wipParent` null, so a retried call reaches
+        // here too (`#468`) — cleared before this attempt's own outcome
+        // overwrites it, so a keep that fails once and then succeeds does not
+        // go on telling later `RunRefsPublished` rows the tree was not kept.
+        wipFailure = null
         const dirty = await gitAsked(['status', '--porcelain'])
         if (Either.isLeft(dirty)) {
           wipFailure = `the dirty tree could not be checked — ${dirty.left.detail}`
@@ -1629,13 +1634,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return
         }
         if (dirty.right.trim() === '') return
+        // **The planted env file is excluded below, so dirt that is only that
+        // file is not agent work to keep** (`#468`) — `provisionWorktree`
+        // writes it untracked and unignored, and a porcelain line for it alone
+        // must read the same as a clean tree, not send `git add`/`git commit`
+        // at a tree with nothing else for them to touch. Porcelain's own
+        // format is two status characters, a space, then the path.
+        const onlyThePlantedFile = dirty.right
+          .split('\n')
+          .filter((line) => line.trim() !== '')
+          .every((line) => line.slice(3) === recipe.env.plantAt)
+        if (onlyThePlantedFile) return
         const parent = await gitAsked(['rev-parse', 'HEAD'])
         if (Either.isLeft(parent)) {
           wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.left.detail}`
           runLog.note('push', wipFailure)
           return
         }
-        const added = await gitAsked(['add', '-A'])
+        // `:(exclude)` the planted env file, the same exclusion
+        // `kept-run-port.ts`'s own `keep` applies and for the same reason:
+        // `provisionWorktree` writes it untracked and unignored, so a bare
+        // `git add -A` would sweep its secrets into the WIP commit and force-push
+        // them to origin on the arm (`#468`).
+        const added = await gitAsked(['add', '-A', '--', '.', `:(exclude)${recipe.env.plantAt}`])
         if (Either.isLeft(added)) {
           wipFailure = `the dirty tree was not kept — git add failed: ${added.left.detail}`
           runLog.note('push', wipFailure)

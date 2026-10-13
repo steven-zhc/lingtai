@@ -1181,4 +1181,194 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(said).toEqual([])
     expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
   })
+
+  /**
+   * **A restart that keeps a WIP still spends the ceiling** (`#468`).
+   *
+   * The fix round's own agent commits half the fix and then meets the wall —
+   * `after !== brief.context.onSha` (a real commit) *and* `fixed.failure` is
+   * set (a real failure) at once, which is `conduct.ts:3323`'s own case: *a
+   * commit clears `interrupted`, but not a failure that still ended the
+   * round.* `stoppedBy` stays `'out-of-turns'` rather than clearing, and the
+   * worktree is left dirty on top of that commit. `review` refuses the fix
+   * round's head a second time; the round ceiling is now spent (`rounds: 1`),
+   * so `stepsOnOffer` no longer offers `implement` and the agent judge at
+   * `findings` is asked between `claim` and `human` alone. It answers `claim`
+   * — `pass.rested === 'requeued'`.
+   *
+   * **Before the fix this test pins down**, `armIsUp` compared `armPublished`
+   * (the WIP's own sha, once `keepUncommittedWork` has run) against `headSha`
+   * (`headReached(pass.steps)`, the commit `review` judged — the WIP's own
+   * *parent*) directly. Every ending that kept a WIP therefore read the arm as
+   * down though it was on origin and `headSha` was its ancestor: no
+   * `PassRestarted` was appended and `restartsSpent` never advanced. `armIsUp`
+   * now also accepts a WIP whose own parent is `headSha` (`conduct.ts:3719`).
+   */
+  function restartWithAKeptWip(did: string[], store: ReturnType<typeof memoryStore>) {
+    const RESTARTABLE = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: cold reviewer
+      agent: claude-code
+      prompt: look for races
+  proposed:
+    - name: the lines or the approach
+      judge: claude-code
+      when: findings
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 2 }
+`
+    /** The fix round's own commit — half the fix, on top of the implementer's. */
+    const FIX_SHA = 'd'.repeat(40)
+    /** `keepUncommittedWork`'s commit, on top of `FIX_SHA`. */
+    const WIP_SHA = 'e'.repeat(40)
+    let head = 'a'.repeat(40)
+    let dirty = false
+    const judged = { n: 0 }
+    const judging: Runtime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        if (request.runId.includes(':fix:')) {
+          head = FIX_SHA
+          dirty = true
+          return {
+            exitCode: 1,
+            turns: 8,
+            durationMs: 90_000,
+            costUsd: 1.5,
+            failure: { kind: 'out-of-turns', detail: 'spent all 8 turns mid-fix' },
+            text: null,
+            sessionId: 'sess-fix',
+          }
+        }
+        if (request.runId.includes(':judge:')) {
+          judged.n += 1
+          // The first arrival still has a round to spend — buy it. The
+          // second has none left (`stepsOnOffer`), and the point of this
+          // fixture is what the judge says there: start over.
+          const next = judged.n === 1 ? 'implement' : 'claim'
+          return {
+            ...(await refusingRuntime.run(request)),
+            text: `\`\`\`json\n{"next": "${next}", "why": "round ${judged.n}"}\n\`\`\``,
+          }
+        }
+        if (!request.runId.includes(':review:')) return runtime.run(request)
+        return refusingRuntime.run(request)
+      },
+    }
+
+    const ports = fakePorts(did, store, false)
+    // The implementer's own commit — `firstDispatch`'s only call to `wire`.
+    ports.agent.wire = () =>
+      Effect.sync(() => {
+        did.push('wire')
+        head = 'b'.repeat(40)
+        return { settingsPath: '/tmp/fake/settings.json', socketPath: '/tmp/fake/sock', env: {} } as never
+      })
+    const inner = ports.repo.git
+    ports.repo.git = (args, o) => {
+      if (args[0] === 'status') {
+        return Effect.sync(() => {
+          did.push('git status')
+          return dirty ? ' M src/leftover.ts\n' : ''
+        })
+      }
+      if (args[0] === 'rev-parse') {
+        return Effect.sync(() => {
+          did.push('git rev-parse')
+          return head
+        })
+      }
+      if (args[0] === 'add') {
+        return Effect.sync(() => {
+          did.push('git add -A')
+          return ''
+        })
+      }
+      if (args.includes('commit')) {
+        return Effect.sync(() => {
+          did.push('git commit --no-verify')
+          dirty = false
+          head = WIP_SHA
+          return ''
+        })
+      }
+      return inner(args, o)
+    }
+
+    return { recipe: RESTARTABLE, runtime: judging, ports, FIX_SHA, WIP_SHA }
+  }
+
+  it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRestarted` spends the ceiling)', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const fixture = restartWithAKeptWip(did, store)
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], fixture.recipe),
+        runtime: fixture.runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fixture.ports,
+    )
+
+    expect(result).toMatchObject({ ok: false, stage: 'restart' })
+
+    const run = theRun(store)!
+    const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+    expect(kept).toBeDefined()
+    expect(kept!.data).toMatchObject({ sha: fixture.WIP_SHA, parentSha: fixture.FIX_SHA, stoppedBy: 'out-of-turns' })
+
+    // The durable row must never offer the WIP sha as something origin judged.
+    const refs = run.filter((e) => e.type === 'RunRefsPublished')
+    expect(refs.length).toBeGreaterThan(0)
+    for (const row of refs) {
+      expect((row.data as { headSha: string | null }).headSha).not.toBe(fixture.WIP_SHA)
+    }
+
+    const item = await theItem(store)
+    const restarted = item.find((e) => e.type === 'PassRestarted')!
+    // **The restart is bound to the commit `review` judged, never the WIP.**
+    // This is the ceiling actually being spent — the bug this test is against
+    // left `PassRestarted` unappended on this exact ending.
+    expect(restarted.data).toMatchObject({ restart: 1, of: 2, headSha: fixture.FIX_SHA })
+
+    // The same pass, run again on the same store with fresh ports:
+    // `folded.restarts` already carries the first, and a second WIP on a
+    // fresh worktree spends the second.
+    const did2: string[] = []
+    const again = restartWithAKeptWip(did2, store)
+    const result2 = await once(
+      {
+        project,
+        client: fakeGitHub([], again.recipe),
+        runtime: again.runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      again.ports,
+    )
+    expect(result2).toMatchObject({ ok: false, stage: 'restart' })
+
+    const item2 = await theItem(store)
+    const restarts = item2.filter((e) => e.type === 'PassRestarted')
+    expect(restarts).toHaveLength(2)
+    expect(restarts[1]!.data).toMatchObject({ restart: 2, of: 2 })
+  })
 })

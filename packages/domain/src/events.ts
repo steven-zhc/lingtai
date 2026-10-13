@@ -138,7 +138,7 @@ export type RuntimeId = z.infer<typeof RuntimeId>
  * — no log line, no comment, no label, and five re-runs of the same ticket
  * before anyone noticed.
  *
- * Two of the nine values carry their own history, kept here rather than moved
+ * Two of the ten values carry their own history, kept here rather than moved
  * onto the bare enum member in `vocabulary.ts`, which cannot hold a doc
  * comment per value the way this list once did:
  *

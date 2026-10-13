@@ -610,13 +610,12 @@ describe('when the agent meets the wall', () => {
       // inline publish writes `published`, and the finalizer's own call to
       // the same function (the scope closes once `once()` returns) finds the
       // same state and writes `already-published`; both must say `agent/7`
-      // never got this sha rather than leaving `detail` null beside it.
+      // never got this sha, as a typed field rather than a sentence in
+      // `detail` for a reader to infer the same thing from.
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
       expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['published', 'already-published'])
       for (const row of refs) {
-        expect(row.data).toMatchObject({ headSha: WIP_SHA })
-        expect(String((row.data as { detail: string }).detail)).toContain('agent/7')
-        expect(String((row.data as { detail: string }).detail)).toContain('agent/7-attempt-1')
+        expect(row.data).toMatchObject({ headSha: WIP_SHA, branchCarries: false, detail: null })
       }
     })
 
@@ -805,6 +804,214 @@ describe('when the agent meets the wall', () => {
       const refs = run.find((e) => e.type === 'RunRefsPublished')
       expect(refs!.data).toMatchObject({ outcome: 'nothing-committed' })
       expect(String((refs!.data as { detail: string }).detail)).toContain('index corrupt')
+    })
+
+    /**
+     * **A bare `git add -A` would sweep the planted env file's secrets into
+     * the WIP commit and force-push them to the arm** (`#468`) — the same
+     * mistake `kept-run-port.ts`'s own `keep` excludes `recipe.env.plantAt`
+     * to avoid. `keepUncommittedWork` must exclude it the same way.
+     */
+    it('excludes the planted env file from the WIP commit’s staging', async () => {
+      const store = memoryStore()
+      const did: string[] = []
+      const ports = fakePorts(did, store)
+      const inner = ports.repo.git
+      let dirty = true
+      let head = 'b'.repeat(40)
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => {
+            did.push('git status')
+            return dirty ? ' M src/leftover.ts\n?? .env.local\n' : ''
+          })
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => {
+            did.push('git rev-parse')
+            return head
+          })
+        }
+        if (args[0] === 'add') {
+          return Effect.sync(() => {
+            did.push(`git add ${args.slice(1).join(' ')}`)
+            return ''
+          })
+        }
+        if (args.includes('commit')) {
+          return Effect.sync(() => {
+            did.push('git commit --no-verify')
+            dirty = false
+            head = WIP_SHA
+            return ''
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([]),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      // The pathspec excludes the planted file by name — never a bare
+      // `git add -A`, which would stage its secrets alongside the real edit.
+      expect(did).toContain('git add -A -- . :(exclude).env.local')
+
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+      expect(kept!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+    })
+
+    /**
+     * **Dirt that is only the planted env file is not agent work to keep**
+     * (`#468`) — a stopped run that never touched the worktree still shows a
+     * dirty `git status --porcelain` in a repo whose `.gitignore` does not
+     * cover `plantAt`, since `provisionWorktree` writes it untracked. Reading
+     * that as something to commit is the exact scenario the review refused:
+     * `RunKeptUncommitted` would assert a file of the agent's own work was
+     * kept when the agent left nothing at all.
+     */
+    it('treats dirt that is only the planted env file as nothing to keep', async () => {
+      const store = memoryStore()
+      const did: string[] = []
+      const ports = fakePorts(did, store)
+      const inner = ports.repo.git
+      const head = 'a'.repeat(40)
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => {
+            did.push('git status')
+            return '?? .env.local\n'
+          })
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => {
+            did.push('git rev-parse')
+            return head
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([]),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      // Neither `git add` nor `git commit` is ever asked for a tree whose
+      // only dirt is a path no commit may carry.
+      expect(did.some((d) => d.startsWith('git add'))).toBe(false)
+      expect(did.some((d) => d.includes('commit'))).toBe(false)
+
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
+
+      const refs = run.find((e) => e.type === 'RunRefsPublished')
+      expect(refs!.data).toMatchObject({ outcome: 'nothing-committed', detail: null })
+    })
+
+    /**
+     * **A failed keep's own reason must not outlive the attempt that failed**
+     * (`#468`). `wipFailure` used to stay set once a keep failed, and the
+     * finalizer's retry of the same commit found `wipParent` still null (the
+     * guard at `keepUncommittedWork`'s own top only skips a *successful*
+     * keep) and tried again. Where that retry succeeds, the row it writes
+     * must say so — not repeat the first attempt's failure text.
+     */
+    it('clears a stale WIP failure once a retried keep succeeds', async () => {
+      const store = memoryStore()
+      const did: string[] = []
+      const ports = fakePorts(did, store)
+      const inner = ports.repo.git
+      let dirty = true
+      let head = 'a'.repeat(40)
+      let commitAttempts = 0
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => {
+            did.push('git status')
+            return dirty ? ' M src/leftover.ts\n' : ''
+          })
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => {
+            did.push('git rev-parse')
+            return head
+          })
+        }
+        if (args[0] === 'add') {
+          return Effect.sync(() => {
+            did.push('git add -A')
+            return ''
+          })
+        }
+        if (args.includes('commit')) {
+          commitAttempts += 1
+          if (commitAttempts === 1) {
+            return Effect.sync(() => did.push('git commit (failed)')).pipe(
+              Effect.andThen(repoFailedWith('git commit', 'EAGAIN')),
+            )
+          }
+          return Effect.sync(() => {
+            did.push('git commit --no-verify')
+            dirty = false
+            head = WIP_SHA
+            return ''
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([]),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+
+      const refs = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['nothing-committed', 'published'])
+      expect(String((refs[0]!.data as { detail: string }).detail)).toContain('EAGAIN')
+      // **The retry's own row must not repeat the first attempt's stale
+      // failure** — the second keep succeeded, so this row's `detail` says
+      // nothing about a failed commit.
+      expect(refs[1]!.data).toMatchObject({ outcome: 'published', detail: null })
+
+      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+      expect(kept!.data).toMatchObject({ sha: WIP_SHA, stoppedBy: 'out-of-turns' })
     })
   })
 })
