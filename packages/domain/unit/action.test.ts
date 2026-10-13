@@ -112,6 +112,11 @@ describe('cleared', () => {
     expect(cleared(action)).toBe(true)
   })
 
+  it('signoff/NotDone: not cleared', () => {
+    const action = parseAction({ ...base, yields: 'signoff', result: { _tag: 'NotDone' } })
+    expect(cleared(action)).toBe(false)
+  })
+
   it('signoff/NotReached: not cleared', () => {
     const action = parseAction({ ...base, yields: 'signoff', result: { _tag: 'NotReached' } })
     expect(cleared(action)).toBe(false)

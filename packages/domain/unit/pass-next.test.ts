@@ -413,6 +413,24 @@ describe('nextOf: §4 Fell short as table', () => {
     })
   })
 
+  it('signoff, NotDone: WaitOnPerson{SetupRefused}, never SignoffRequired', () => {
+    const result = next(
+      outcome('proposed', [
+        action('signoff', { _tag: 'NotDone' }, { name: 'watch:migrations', evidence: 'the watch action threw' }),
+      ]),
+    )
+    expect(result).toEqual({
+      _tag: 'WaitOnPerson',
+      reason: {
+        _tag: 'SetupRefused',
+        run,
+        step: 'proposed',
+        action: 'watch:migrations',
+        why: 'the watch action threw',
+      },
+    })
+  })
+
   it('merge, Completed{Integrated} (cleared): Landed', () => {
     const integration = { _tag: 'Integrated' as const, mergeSha: 'merge-sha-1' }
     const result = next(outcome('merge', [action('merge', { _tag: 'Completed', integration })]))

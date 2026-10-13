@@ -133,6 +133,9 @@ const SignoffAction = ActionBase.extend({
     // `requested: null` — not triggered.
     z.object({ _tag: z.literal('Completed'), requested: z.object({ question: z.string() }).nullable() }),
     Waived,
+    // A mechanical operation did not happen: the dependency a `watch:`/`human:`
+    // reads before it can even ask (`deps.changedFiles()`, say) threw.
+    NotDone,
     NotReached,
   ]),
 })
@@ -237,6 +240,7 @@ export function cleared(action: Action): boolean {
           return action.result.requested === null
         case 'Waived':
           return true
+        case 'NotDone':
         case 'NotReached':
           return false
       }

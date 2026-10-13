@@ -74,6 +74,7 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  */
 import {
   cleared,
+  diagnoseRefusal,
   type Action as DomainAction,
   type Finding,
   type Hold,
@@ -206,12 +207,17 @@ function signoffResultOf(outcome: ActionOutcomeEntry): ResultOf<'signoff'> {
       // (`watch-action.ts`, `#466`), so a `signoff`-yielding action only
       // reaches here by throwing — `human:` never returns anything but
       // `needs-approval` (`human-action.ts`), and a request-approval `watch:`
-      // never returns anything but `passed`/`needs-approval` either. 0120's
-      // `SignoffAction` union has no arm for a throw, only
-      // `Completed | Waived | NotReached`; it takes the shape a real
-      // `needs-approval` would, the nearest arm for a shape that should not
-      // happen.
-      return { _tag: 'Completed', requested: { question: outcome.evidence } }
+      // never returns anything but `passed`/`needs-approval` either. Every
+      // instance of these three verdicts is `runActionPipeline`'s own catch
+      // (`action.ts:718-726`) and never the action's own answer, so this is
+      // reachable — a `watch:`'s `deps.changedFiles()` throws whenever its
+      // dependency rejects. `NotDone`, the same "a mechanical operation did
+      // not happen" cell `commit`/`design`/`worktree`/`nothing` already carry,
+      // rather than `Completed{requested}`: that shape reads as a genuine ask
+      // and `recommendedResolution` prefills `Approve` for `SignoffRequired`
+      // unconditionally (`wait.ts`'s `defaultResolution`), which would offer
+      // to wave through a check that never ran at all.
+      return { _tag: 'NotDone' }
   }
 }
 
@@ -427,6 +433,8 @@ function signoffEventOf(action: OfYields<'signoff'>, base: Base): ActionEvent {
         : { type: 'ApprovalRequested', data: { ...base, question: action.result.requested.question, artifacts: [] } }
     case 'Waived':
       return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
+    case 'NotDone':
+      return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -585,7 +593,11 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
         _tag: 'MergeRefused',
         run: reason.run,
         reason: reason.reason,
-        why: reason.raw,
+        // `holdOfPass` reads this cell's `why` from `diagnoseRefusal`
+        // (`hold-of.ts:143-155`), not from the lane's own raw detail — one
+        // composed sentence naming the branch and the base, rather than the
+        // raw git output `reason.raw` carries uncapped on `raw` below.
+        why: diagnoseRefusal({ reason: reason.reason, detail: reason.raw, branch: pass.branch, base: pass.base }).what,
         paths: null,
         baseSha: null,
         headSha: null,
@@ -654,6 +666,21 @@ function reasonTextOf(because: EscalationBecause): string {
   }
 }
 
+/**
+ * `MergeConflict` carries no text of its own, only `paths`/`baseSha`/`headSha`
+ * — the fallback `escalatedHold` reaches for when `reasonTextOf` has nothing
+ * either, so a conflict in the default configuration (no `judge:` declared)
+ * still names the files rather than leaving `raw` null.
+ */
+function mergeConflictOwnText(proposal: { paths: readonly string[] }): string | null {
+  return proposal.paths.length === 0 ? null : `both sides touched ${proposal.paths.join(', ')}`
+}
+
+/** The same fallback as {@link mergeConflictOwnText}, off `findings` — `ReviewFindings` carries no text of its own either. */
+function reviewFindingsOwnText(proposal: { findings: readonly Finding[] }): string | null {
+  return proposal.findings.length === 0 ? null : proposal.findings.map((f) => f.claim).join('; ')
+}
+
 function escalatedHold(
   reason: Extract<WaitReason, { _tag: 'ProposedEscalated' }>,
   pass: { branch: string; base: string; findings: readonly Finding[] },
@@ -671,10 +698,10 @@ function escalatedHold(
   // escalation with the rounds spent read no differently from one with
   // nothing to say at all.
   const reasonText = reasonTextOf(reason.because)
-  const why =
-    reasonText === ''
+  const why = (detail: string) =>
+    detail === ''
       ? `${pass.branch} into ${pass.base} is waiting on you.`
-      : `${pass.branch} into ${pass.base} is waiting on you. ${said(reasonText, 400)}`
+      : `${pass.branch} into ${pass.base} is waiting on you. ${said(detail, 400)}`
 
   switch (proposal._tag) {
     case 'BuildRed':
@@ -682,7 +709,7 @@ function escalatedHold(
         _tag: 'Routed',
         run: reason.run,
         when: 'red',
-        why,
+        why: why(reasonText),
         raw: proposal.output,
         findings: [...pass.findings],
         paths: null,
@@ -694,48 +721,56 @@ function escalatedHold(
         _tag: 'Routed',
         run: reason.run,
         when: 'verify-failed',
-        why,
+        why: why(reasonText),
         raw: proposal.output,
         findings: [...pass.findings],
         paths: null,
         baseSha: null,
         headSha: null,
       }
-    case 'MergeConflict':
+    case 'MergeConflict': {
+      // No `evidence` field on a conflict proposal (the header names the
+      // loss of the three merge-shaped fields; this is not that one). When
+      // no judge replied either — `NotAsked`, the default with no `judge:`
+      // declared — fall back to the conflict's own paths rather than leaving
+      // `raw` null and `why` bare: `holdOfPass` never left either bare
+      // (`hold-of.ts:118-126`, `why`/`raw` are always the step's own detail,
+      // judge or not).
+      const detail = reasonText !== '' ? reasonText : mergeConflictOwnText(proposal)
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'conflict',
-        why,
-        // No `evidence` field on a conflict proposal — the escalation's own
-        // reason is the only text this cell has to carry (the header names
-        // the loss of the three merge-shaped fields; this is not that one).
-        raw: reasonText === '' ? null : reasonText,
+        why: why(detail ?? ''),
+        raw: detail,
         findings: [...pass.findings],
         paths: proposal.paths,
         baseSha: proposal.baseSha,
         headSha: proposal.headSha,
       }
-    case 'ReviewFindings':
+    }
+    case 'ReviewFindings': {
+      // Same fallback as `MergeConflict`, off `findings` rather than `paths`
+      // — `findings` is the proposal's own evidence here.
+      const detail = reasonText !== '' ? reasonText : reviewFindingsOwnText(proposal)
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'findings',
-        why,
-        // No `evidence` field here either — `findings` already carries the
-        // detail, and the escalation's own reason is what `raw` has left.
-        raw: reasonText === '' ? null : reasonText,
+        why: why(detail ?? ''),
+        raw: detail,
         findings: [...proposal.findings],
         paths: null,
         baseSha: null,
         headSha: null,
       }
+    }
     case 'ReviewEmpty':
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'findings',
-        why,
+        why: why(reasonText),
         raw: proposal.said,
         findings: [...proposal.findings],
         paths: null,

@@ -66,6 +66,12 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
     expect(roundTrip(fakeAction('watch', 'signoff'), entry('passed'))?.type).toBe('StepPassed')
   })
 
+  it('a `signoff` action whose own dependency threw is `StepDidNotFinish`, never `ApprovalRequested`', () => {
+    expect(roundTrip(fakeAction('watch', 'signoff'), entry('failed'))?.type).toBe('StepDidNotFinish')
+    expect(roundTrip(fakeAction('human', 'signoff'), entry('did-not-finish'))?.type).toBe('StepDidNotFinish')
+    expect(roundTrip(fakeAction('watch', 'signoff'), entry('never-ran'))?.type).toBe('StepDidNotFinish')
+  })
+
   it('a `design` agent that asked a question is `StepAsked`', () => {
     const asking = entry('did-not-finish', { because: NEEDS_INPUT })
     expect(roundTrip(fakeAction('agent', 'design'), asking)?.type).toBe('StepAsked')
@@ -113,6 +119,22 @@ describe('a tamper watch refusal routes as a refused check, never as something a
     const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
     const next = nextOf(outcome, { runId: 'run-1' })
     expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'CheckRefused' } })
+    if (next._tag === 'WaitOnPerson') {
+      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).not.toBe('Approve')
+    }
+  })
+})
+
+describe('a request-approval watch whose own dependency threw never prefills Approve', () => {
+  it('`nextOf` answers `SetupRefused`, never `SignoffRequired`, and offers no `Approve`', () => {
+    const built = actionOf(
+      fakeAction('watch', 'signoff', 'watch:migrations'),
+      entry('failed', { action: 'watch:migrations', evidence: 'the watch:migrations action threw: ECONNRESET' }),
+      ON_SHA,
+    )
+    const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
+    const next = nextOf(outcome, { runId: 'run-1' })
+    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused' } })
     if (next._tag === 'WaitOnPerson') {
       expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).not.toBe('Approve')
     }
@@ -300,6 +322,53 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
       pass,
     )
     expect((hold as { raw: string | null }).raw).toContain('`restarts` is spent')
+  })
+
+  it('a conflict with no `judge:` declared still names the files, rather than a bare `why` and a null `raw`', () => {
+    const hold = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'MergeConflict', paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+        because: { _tag: 'NotAsked' },
+      },
+      pass,
+    )
+    expect((hold as { raw: string | null }).raw).toBe('both sides touched src/fix.ts')
+    expect((hold as { why: string }).why).toContain('both sides touched src/fix.ts')
+  })
+
+  it('a review refusal with no `judge:` declared still names the findings, rather than a bare `why` and a null `raw`', () => {
+    const hold = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: {
+          _tag: 'ReviewFindings',
+          findings: [
+            {
+              file: 'a.ts',
+              line: 3,
+              claim: 'this leaks a handle',
+              failureScenario: 'crashes under load',
+              severity: 'major',
+            },
+          ],
+        },
+        because: { _tag: 'NotAsked' },
+      },
+      pass,
+    )
+    expect((hold as { raw: string | null }).raw).toBe('this leaks a handle')
+    expect((hold as { why: string }).why).toContain('this leaks a handle')
+  })
+
+  it("`MergeRefused`'s `why` is the diagnosed reading, never the lane's raw multi-line output", () => {
+    const raw = 'main moved under it\n\nerror: patch does not apply'
+    const hold = holdOf({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw }, pass)
+    expect((hold as { why: string }).why).not.toBe(raw)
+    expect((hold as { why: string }).why).not.toContain('\n')
+    expect((hold as { raw: string }).raw).toBe(raw)
   })
 
   it('clips a multi-line, over-long raw answer to one short sentence on `why`, and leaves `raw` whole', () => {

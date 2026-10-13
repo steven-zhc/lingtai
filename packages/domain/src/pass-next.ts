@@ -162,6 +162,8 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: RunRef):
   switch (action.result._tag) {
     case 'Completed':
       return signoffRequired(step, action.name, action.result.requested!.question, run)
+    case 'NotDone':
+      return setupRefused(step, action.name, action.evidence, run)
     case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
