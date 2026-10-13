@@ -552,7 +552,15 @@ export const RunRefsPublished = z.object({
   outcome: z.enum(['published', 'nothing-committed', 'already-published', 'arm-only', 'refused', 'unrecorded']),
   /**
    * Git's own words when `refused` or `arm-only`, the store's and the ref they
-   * were about when `unrecorded`, and null otherwise.
+   * were about when `unrecorded`, and null on `nothing-committed` unless a
+   * keep failed — null unless something has to be said, nowhere else.
+   *
+   * **Since `#468`, not null on `published` and `already-published` either**
+   * where `branch` carries nothing of this claim's own: that is the one case
+   * `headSha` there is the arm's own rather than `branch`'s, and `detail` is
+   * what says so rather than leaving a reader to infer it from the sha alone.
+   * A failed WIP keep folds in here too, on whichever outcome the publish
+   * ends up writing — `withWipFailure` in `conduct.ts`.
    */
   detail: z.string().nullable(),
 })

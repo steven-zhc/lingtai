@@ -419,11 +419,15 @@ answers by yield and step:
 | `implement`, round 0                                 | all cleared, no `head`                                                | `WaitOnPerson{NothingProduced}`  |
 | `signoff`                                            | `Completed{requested}`                                                | `WaitOnPerson{SignoffRequired}`  |
 | `merge`                                              | `Completed{Integrated}` (cleared)                                     | `Landed{integrated: mergeSha}`   |
-| `merge`                                              | `IntegrationRefused`, the other six reasons                           | `WaitOnPerson{MergeRefused}`     |
+| `merge`                                              | `IntegrationRefused`, the other seven reasons                         | `WaitOnPerson{MergeRefused}`     |
 
-The six are `dirty-base`, `unpushed-base`, `pending-migration`, `no-commits`,
-`push-rejected` and `unexpected` (`pass-steps.ts:606`): they stop the lane
-before the diff is in doubt. `lane-busy` has not been written since #194
+The seven are `dirty-base`, `unpushed-base`, `pending-migration`,
+`no-commits`, `push-rejected`, `wip-commit` and `unexpected`
+(`pass-steps.ts:606`): they stop the lane before the diff is in doubt.
+`wip-commit` is the lane refusing a branch that carries a WIP commit
+`conduct.ts`'s own `keepUncommittedWork` made for a stopped run (`#468`) —
+never a judgement about the diff either, since the WIP is Lingtai's own
+commit and not the agent's. `lane-busy` has not been written since #194
 (`events.ts:140`) and leaves `RefusalReason` with the reset. A design step
 cannot produce nothing: the drafter answers a document (`""` included), a
 question, or something unreadable (`agent-action.ts:964-1031`).

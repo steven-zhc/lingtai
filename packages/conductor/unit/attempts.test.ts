@@ -350,6 +350,40 @@ describe('attemptBrief', () => {
   })
 
   /**
+   * **`checkout <sha> -- .` is never offered for a kept WIP** (`#468`). That
+   * command writes every path the WIP commit's tree holds into the worktree —
+   * including files unrelated tickets changed on the base since the WIP was
+   * made — which is not "taking its contents" the way a diff applied from the
+   * WIP's own parent is. The brief must name `parentSha`, not just `sha`, so
+   * only the WIP's own edits are offered.
+   */
+  it('offers a kept WIP as a diff from its own parent, never as a checkout', () => {
+    const attempts = priorAttempts(history)
+    const run = stream('run-2')
+    attempts[attempts.length - 1]!.outcome = attemptOutcome(
+      [
+        run('RunFailed', { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' }),
+        run('RunKeptUncommitted', {
+          arm: 'agent/59-attempt-2',
+          sha: 'c'.repeat(40),
+          parentSha: 'a'.repeat(40),
+          stoppedBy: 'out-of-turns',
+          files: 3,
+          insertions: 40,
+          deletions: 2,
+        }),
+      ],
+      BUDGET,
+    )
+
+    const brief = attemptBrief(attempts, BUDGET)
+    expect(brief).toContain('git fetch origin agent/59-attempt-2')
+    expect(brief).toContain('git diff aaaaaaa ccccccc | git apply')
+    expect(brief).not.toContain('checkout')
+    expect(brief).not.toContain('reset --hard')
+  })
+
+  /**
    * Not knowing and knowing there was nothing are different facts, and only one
    * of them is true when the run's stream was never read. Saying "it committed
    * no change" there would be an invention in a prompt.

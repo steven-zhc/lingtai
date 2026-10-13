@@ -91,6 +91,14 @@ export interface AttemptOutcome {
   kept: {
     arm: string
     sha: string
+    /**
+     * What `sha` is a WIP on top of — the agent's own last commit, or the
+     * base. The brief reads it so the next attempt can take the WIP's own
+     * diff (`git diff parentSha sha`) rather than `git checkout sha -- .`,
+     * which would overwrite every path the WIP's tree holds, including
+     * whatever the worktree's base has gained since (#468).
+     */
+    parentSha: string
     stoppedBy: string
     files: number
     insertions: number
@@ -429,18 +437,22 @@ export function attemptBrief(
     } else {
       // **#468.** No commit of its own, but it stopped mid-run with edits
       // still in the worktree, and those were kept rather than lost with it.
-      // The verb is `checkout`, never `reset --hard`: that commit is on the
-      // arm alone and must never become part of `agent/<n>`'s own history
-      // (`integrate.ts`'s own guard refuses one that does).
+      // The verb is a diff applied from the WIP's own parent, never
+      // `checkout` or `reset --hard`: this worktree's base has likely moved
+      // since the WIP was made, and `checkout <sha> -- .` would overwrite
+      // every path the WIP commit's tree holds — including whatever landed
+      // on the base in between — with that commit's stale content, rather
+      // than applying only the edits the WIP itself carries.
       lines.push(
         `Nothing of its own, but it stopped (${kept.stoppedBy}) with ${kept.files} file(s) of`,
         `uncommitted edits, +${kept.insertions} −${kept.deletions}, kept as \`${kept.sha.slice(0, 7)}\` on`,
         `\`${kept.arm}\`. **That commit was never built or reviewed** — it is this file's own`,
         'safety net, not a verdict about the code.',
         '',
-        `To use it: \`git fetch origin ${kept.arm}\`, then \`git checkout ${kept.sha.slice(0, 7)} -- .\``,
-        'from this worktree to take its contents without taking the commit itself. Whether',
-        'any of it is worth keeping is yours to judge.',
+        `To use it: \`git fetch origin ${kept.arm}\`, then \`git diff ${kept.parentSha.slice(0, 7)} ${kept.sha.slice(0, 7)} | git apply\``,
+        'from this worktree to take only the edits it carries, without taking the commit',
+        "itself or overwriting anything this worktree's base has gained since. Whether any",
+        'of it is worth keeping is yours to judge.',
       )
     }
   } else if (produced !== undefined) {
@@ -457,7 +469,8 @@ export function attemptBrief(
         '',
         `It then stopped (${kept.stoppedBy}) with ${kept.files} more file(s) of uncommitted edits, kept`,
         `as \`${kept.sha.slice(0, 7)}\` on \`${kept.arm}\` — also never built or reviewed. \`git fetch origin`,
-        `${kept.arm}\` and \`git checkout ${kept.sha.slice(0, 7)} -- .\` to take those too.`,
+        `${kept.arm}\` and \`git diff ${kept.parentSha.slice(0, 7)} ${kept.sha.slice(0, 7)} | git apply\` to take`,
+        'those edits too, without overwriting anything built on top of the commit above.',
       )
     }
   }

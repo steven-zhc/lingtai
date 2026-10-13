@@ -146,9 +146,14 @@ run.
    **A kept WIP commit is offered the same way, and told apart from one.**
    `attemptBrief` reads `RunKeptUncommitted` off the previous run's stream and
    says how many files, which arm, which sha, and what it stopped on — and
-   that the commit was never built or reviewed. The verb is `git checkout
-   <sha> -- .`, never `git reset --hard`: resetting onto it would put the WIP
-   commit into `agent/<n>`'s own history, which the lane guard above refuses.
+   that the commit was never built or reviewed. The verb is `git diff
+   <parentSha> <sha> | git apply`, never `git checkout <sha> -- .` or `git
+   reset --hard <sha>`: the worktree this brief is read in is cut from a base
+   that may have moved since the WIP was made, and `checkout`/`reset` would
+   overwrite every path the WIP commit's tree holds — including whatever
+   landed on the base in between — rather than applying only the edits the
+   WIP itself carries. Resetting would also put the WIP commit into
+   `agent/<n>`'s own history, which the lane guard above refuses.
 
 9. **The cut does not move.** Every pass starts from the base as the mirror
    has it, never from an earlier attempt's branch. A refused approach does not

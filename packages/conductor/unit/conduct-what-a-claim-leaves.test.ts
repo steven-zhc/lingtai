@@ -472,14 +472,22 @@ describe('when the agent meets the wall', () => {
      * forced arm and rejects `agent/<n>` — the `arm-only` ending, now with a
      * WIP on top of the agent's own commit.
      */
-    const hitTheWallDirty = async (committed: boolean, breaks: { leasedBranch?: string } = {}) => {
+    const hitTheWallDirty = async (
+      committed: boolean,
+      breaks: { leasedBranch?: string; failKeptOnce?: boolean } = {},
+    ) => {
       const store = memoryStore()
       const did: string[] = []
       const said: string[] = []
       const ports = fakePorts(did, store)
       const appended = store.append.bind(store) as EventStore['append']
+      let keptAppends = 0
       store.append = async (stream, at, events) => {
         for (const e of events) did.push(`append ${e.type}`)
+        if (breaks.failKeptOnce && events.some((e) => e.type === 'RunKeptUncommitted')) {
+          keptAppends += 1
+          if (keptAppends === 1) throw new Error('dropped connection')
+        }
         return appended(stream, at, events)
       }
 
@@ -610,6 +618,28 @@ describe('when the agent meets the wall', () => {
         expect(String((row.data as { detail: string }).detail)).toContain('agent/7')
         expect(String((row.data as { detail: string }).detail)).toContain('agent/7-attempt-1')
       }
+    })
+
+    /**
+     * **`noteKept` is retried on the `already-published` call, the same way
+     * `recordDiff` already is** (`#468`, `#251`). The first call's append of
+     * `RunKeptUncommitted` hits a store that is down; the publish still
+     * writes `published` and pushes the WIP, same as the happy path above.
+     * The finalizer's own call then finds `branchHead === published` and
+     * `head === armPublished`, lands on `already-published`, and — because
+     * the store is back by then — must ask `noteKept` again rather than
+     * leaving the WIP's own event unrecorded for good.
+     */
+    it('retries a WIP account the store refused on the first publish call', async () => {
+      const { result, run } = await hitTheWallDirty(false, { failKeptOnce: true })
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      const refs = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['published', 'already-published'])
+
+      const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+      expect(kept).toHaveLength(1)
+      expect(kept[0]!.data).toMatchObject({ arm: 'agent/7-attempt-1', sha: WIP_SHA, stoppedBy: 'out-of-turns' })
     })
 
     /**

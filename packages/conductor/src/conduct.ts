@@ -1823,6 +1823,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // `approve()`/`waive()` through `RunState.headSha`, and a WIP with
             // no commit of the agent's own has nothing there to record.
             if (branchHead !== null) await recordDiff(branch, branchHead)
+            // `noteKept` is asked for again too, and for the same reason as
+            // `recordDiff` above (`#251`, `#468`): `notedKept` is still null
+            // when the earlier attempt's append found the store down, and this
+            // branch is reached on every WIP ending's second call — the one
+            // call left to ask it from.
+            if (wip !== null) await noteKept(wip)
             return null
           }
           const pushed = await gitAsked([

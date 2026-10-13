@@ -19,17 +19,17 @@ reader learns to disbelieve the stamp instead of the table.
 
 ---
 
-## event — 70 types
+## event — 71 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
-**Recounted 2026-10-11** — every group below, against that registry.
+**Recounted 2026-10-13** — every group below, against that registry.
 
 | Group | Types |
 |---|---|
 | work item (8) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` `WorkItemClosed` |
 | dispatch (1) | `DispatchRefused` |
-| run (10) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run |
+| run (11) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunKeptUncommitted` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run. `RunKeptUncommitted` is a stopped run's dirty tree, committed by the conductor and kept on the arm alone rather than lost with the worktree (`#468`) |
 | step (10) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepAsked` `StepWaived` — eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. **Three** of them are the three ways a step's agent ends without judging the diff: it never started ([0041](decisions-archive/0041-a-gate-that-never-ran.md)), it started and produced no receipt ([0057](decisions-archive/0057-a-gate-that-did-not-finish.md)), or it stopped and asked something ([0068](decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md)). `StepAsked` is `#296`'s and came with the log's fourth reset ([014](experiments/014-the-log-before-the-fourth-reset.md)) rather than with an upcaster: it was the half of `StepDidNotFinish` the *workflow* branched on, and the token it branched on — `needs-input`, in a `because` — was never on the event, so no stored row could be told which half it was |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | finding (3) | `FindingAccepted` `FindingProposed` `FindingDeclined` — the minors a passing gate raised, and what a person then did with each one. `finding_backlog` is the projection that folds them (`#137`) |
@@ -1619,12 +1619,13 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
-## integration refusal reason — 9
+## integration refusal reason — 10
 
 Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
-`verify-failed` · `no-commits` · `push-rejected` · `lane-busy` · `unexpected`
+`verify-failed` · `no-commits` · `push-rejected` · `lane-busy` ·
+`wip-commit` · `unexpected`
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about

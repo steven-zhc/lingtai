@@ -613,12 +613,12 @@ export const END_UNRESOLVED = 'end-unresolved'
  *               its findings are judged on `proposed`'s own way through
  * ```
  *
- * **Null is the lane's other six reasons** — `dirty-base`, `unpushed-base`,
- * `pending-migration`, `no-commits`, `push-rejected`, `unexpected` — and
- * `JudgeWhen`'s own doc is why they are not directions: they stop the lane
- * before the diff is what is in doubt, and *offering a judge a direction
- * nothing can arrive by is the same mistake as offering it a step nothing can
- * run.* A person is next, which is where they go today.
+ * **Null is the lane's other seven reasons** — `dirty-base`, `unpushed-base`,
+ * `pending-migration`, `no-commits`, `push-rejected`, `wip-commit`,
+ * `unexpected` — and `JudgeWhen`'s own doc is why they are not directions:
+ * they stop the lane before the diff is what is in doubt, and *offering a
+ * judge a direction nothing can arrive by is the same mistake as offering it
+ * a step nothing can run.* A person is next, which is where they go today.
  *
  * Exported for `hold-of.ts`'s `holdOfPass` (#452), which needs the same
  * reading of `PassResult.stoppedAt` the router used to decide whether an
