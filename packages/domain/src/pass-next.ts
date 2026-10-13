@@ -21,8 +21,8 @@ import { z } from 'zod'
 
 import { Action, CallId, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
 import { Proposal } from './proposal.ts'
-import { RunRef, WaitReason } from './wait.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
+import { RunRef, WaitReason } from './wait.ts'
 
 /**
  * A `StepOutcome` that cannot occur under 0120 §1's legality table plus the
@@ -165,7 +165,10 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: RunRef):
 function commitFellShort(step: Step, action: OfYields<'commit'>, run: RunRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
-      return { _tag: 'Propose', proposal: { _tag: 'InputNeeded', from: 'implement', question: action.result.question! } }
+      return {
+        _tag: 'Propose',
+        proposal: { _tag: 'InputNeeded', from: 'implement', question: action.result.question! },
+      }
     case 'Interrupted':
       return interruptedAs(step, action.result.cause, action.evidence, action.call, run)
     case 'NotDone':
@@ -232,7 +235,13 @@ function nothingFellShort(step: Step, action: OfYields<'nothing'>, run: RunRef):
 }
 
 /** A refusing `verdict`, by step (0120 §2's table). No `default` — `claim`, `end` cannot carry one, and `admit`, `design`, `implement` never legally run a `verdict`. */
-function verdictRefusedAs(step: Step, actionName: string, evidence: string, findings: Finding[], run: RunRef): NextOfResult {
+function verdictRefusedAs(
+  step: Step,
+  actionName: string,
+  evidence: string,
+  findings: Finding[],
+  run: RunRef,
+): NextOfResult {
   switch (step) {
     case 'prepared':
       return setupRefused(step, actionName, evidence, run)
@@ -308,7 +317,13 @@ function setupRefused(step: Step, actionName: string, why: string, run: RunRef):
   return { _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused', run, step, action: actionName, why } }
 }
 
-function checkRefused(step: Step, actionName: string, evidence: string, findings: Finding[], run: RunRef): NextOfResult {
+function checkRefused(
+  step: Step,
+  actionName: string,
+  evidence: string,
+  findings: Finding[],
+  run: RunRef,
+): NextOfResult {
   if (step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'verdict', `CheckRefused cannot happen at ${step}`)
   }
