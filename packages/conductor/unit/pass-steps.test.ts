@@ -172,6 +172,7 @@ const coldReviewerSaying = (text: string | null): Action =>
 const canned = (name: string, result: ActionResult): Action => ({
   name,
   kind: 'run',
+  yields: 'verdict',
   run: async () => result,
 })
 
@@ -596,6 +597,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
     const watching = (step: string): Action => ({
       name: step,
       kind: 'run',
+      yields: 'verdict',
       run: async (ctx) => {
         judged.push({ step, onSha: ctx.onSha })
         return PASSED
@@ -791,7 +793,12 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
   it('runs nothing where the recipe declares nothing, and briefs `implement` from the issue', async () => {
     const { result, asked } = await pass()
 
-    expect(result.steps[3]).toEqual({ step: 'design', ending: { ending: 'passed' }, results: [] })
+    expect(result.steps[3]).toEqual({
+      step: 'design',
+      ending: { ending: 'passed' },
+      results: [],
+      outcome: { step: 'design', round: 0, actions: [] },
+    })
     expect(asked.draft).toEqual([])
     expect(asked.dispatch[0]?.design).toEqual({ document: '' })
     expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body)
@@ -909,6 +916,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
           {
             name: 'test',
             kind: 'run',
+            yields: 'verdict',
             run: async (ctx) => {
               judged.push(ctx.onSha)
               return PASSED
@@ -1071,7 +1079,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
   const RUN_HEAD_2 = '5555555555555555555555555555555555555555'
   const AGENT_HEAD_2 = '6666666666666666666666666666666666666666'
 
-  const fakeInner: Action = { name: 'format', kind: 'run', run: async () => PASSED }
+  const fakeInner: Action = { name: 'format', kind: 'run', yields: 'verdict', run: async () => PASSED }
 
   it("commits over the agent's own head when the run: finds something to commit", async () => {
     const agent = createWorkAction(
@@ -1133,6 +1141,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
           {
             name: 'typecheck',
             kind: 'run',
+            yields: 'verdict',
             run: async (ctx) => {
               buildSaw.push(ctx.onSha)
               const answer = red ? RED : PASSED
@@ -1314,6 +1323,7 @@ describe('proposed is the only step that routes, and one judge answers each when
           {
             name: 'typecheck',
             kind: 'run',
+            yields: 'verdict',
             run: async () => {
               const answer = red ? RED : PASSED
               red = false
@@ -1391,6 +1401,7 @@ describe('proposed is the only step that routes, and one judge answers each when
           {
             name: 'typecheck',
             kind: 'run',
+            yields: 'verdict',
             run: async () => {
               const answer = red ? RED : PASSED
               red = false

@@ -86,7 +86,7 @@ const DESTINATION = { name: 'keep it', agent: 'claude-code', prompt: 'write the 
 
 /** A destination that answers what the row under test says it answers. */
 const answering = (result: ActionResult): PassOptions['actionsAt'] => {
-  const kept: Action = { name: DESTINATION.name, kind: 'agent', run: async () => result }
+  const kept: Action = { name: DESTINATION.name, kind: 'agent', yields: 'design', run: async () => result }
   return (step, actions) => (step === 'design' ? [kept] : actions.map((a) => ({ ...kept, name: a.name })))
 }
 

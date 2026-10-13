@@ -256,6 +256,7 @@ describe('the two halves of one destination, end to end', () => {
   const drafter = (document: string): Action => ({
     name: 'shape it',
     kind: 'agent',
+    yields: 'design',
     run: async () => ({ verdict: 'passed', evidence: 'drafted', findings: [], document }),
   })
 
@@ -264,6 +265,7 @@ describe('the two halves of one destination, end to end', () => {
     return {
       name: 'write the change',
       kind: 'agent',
+      yields: 'commit',
       run: async (given) => {
         briefs.push(given.design)
         return { verdict: 'passed', evidence: 'committed', findings: [], head: 'c'.repeat(40) }

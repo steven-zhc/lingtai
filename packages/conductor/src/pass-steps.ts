@@ -126,7 +126,7 @@
  * and the whole of what the ticket asks for; the effects never decide whether
  * the ending happened, and neither does this file's failure to resolve them.
  */
-import type { ActionContext, ActionFinding, TheDesign } from '@lingtai/actions'
+import type { ActionContext, ActionFinding, InterruptedCause, TheDesign } from '@lingtai/actions'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
@@ -238,9 +238,19 @@ export type { SentBack }
  * is no question in it for anybody to answer and nothing for a judge to route,
  * which is the whole of what separates it from `Asked` — and since `#296` that
  * separation is two endings rather than two values of one `because`.
+ *
+ * `interrupted` and `committedNothing` are `#466`'s, optional and widened
+ * rather than a fifth arm on `Worked`: the dispatch that builds this already
+ * knows the runtime's own failure kind (`firstDispatch`, `fixRound`), or that
+ * the agent ran to the end and left no commit, and carrying either here is
+ * what lets `createWorkAction` set `ActionResult.interrupted`/
+ * `.committedNothing` without a second reading of `stopped`'s sentence
+ * (0031 §1).
  */
 export interface Stopped {
   readonly stopped: string
+  readonly interrupted?: InterruptedCause
+  readonly committedNothing?: true
 }
 
 /**

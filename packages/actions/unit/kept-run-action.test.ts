@@ -16,7 +16,7 @@ import { createKeptRunAction, type KeptRunActionDeps } from '../src/kept-run-act
 const context: ActionContext = { runId: 'run-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 
 function fakeInner(result: ActionResult): Action {
-  return { name: 'format', kind: 'run', run: async () => result }
+  return { name: 'format', kind: 'run', yields: 'verdict', run: async () => result }
 }
 
 const PASSED: ActionResult = { verdict: 'passed', evidence: 'pnpm fmt exited 0', findings: [] }

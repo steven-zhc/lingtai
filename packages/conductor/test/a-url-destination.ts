@@ -176,6 +176,7 @@ const DECLARED = {
 export const keeping = (locator: string): Action => ({
   name: DECLARED.design[0]!.name,
   kind: 'agent',
+  yields: 'design',
   run: async (): Promise<ActionResult> => ({
     verdict: 'passed',
     evidence: 'kept the design at the destination',
@@ -198,6 +199,7 @@ export const keeping = (locator: string): Action => ({
 export const readingBack = (seen: TheDesign[]): Action => ({
   name: DECLARED.implement[0]!.name,
   kind: 'agent',
+  yields: 'nothing',
   run: async (context: ActionContext): Promise<ActionResult> => {
     seen.push(context.design ?? { document: '' })
     return {
@@ -267,7 +269,13 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
     implement: [readingBack(briefed)],
   }
   const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
-    at[step] ?? actions.map((action) => ({ name: action.name, kind: 'run' as const, run: async () => PASSED }))
+    at[step] ??
+    actions.map((action) => ({
+      name: action.name,
+      kind: 'run' as const,
+      yields: 'verdict' as const,
+      run: async () => PASSED,
+    }))
 
   const result = await runPass({
     recipe: { steps: StepMap.parse(DECLARED) },

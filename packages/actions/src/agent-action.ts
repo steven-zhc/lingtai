@@ -431,6 +431,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
   return {
     name: spec.name,
     kind: 'agent',
+    yields: 'verdict',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const diff = await deps.diff()
@@ -573,10 +574,15 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * The runtime's own words stay in it, whole and prefixed, because the
          * prefix is what says they are about the machinery.
          */
+        const cause = outcome.failure.kind
         return {
           verdict: 'did-not-finish',
           evidence: boundedEvidence(`the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`),
           findings: [],
+          // Every kind that reaches here is one of the five `#466` added a
+          // token for, except `no-commits` — a word this action never has
+          // reason to report, since a reviewer commits nothing either way.
+          ...(cause === 'no-commits' ? {} : { interrupted: cause }),
         }
       }
 
@@ -917,6 +923,7 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
   return {
     name: spec.name,
     kind: 'agent',
+    yields: 'design',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const issue = await deps.issue()
@@ -949,12 +956,18 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         if (outcome.failure.kind === 'never-started') {
           return { verdict: 'never-ran', evidence: boundedEvidence(outcome.failure.detail), findings: [] }
         }
+        const cause = outcome.failure.kind
         return {
           verdict: 'did-not-finish',
           evidence: boundedEvidence(
             `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
           ),
           findings: [],
+          // The reviewer above carries the same two exclusions: a drafting
+          // agent commits nothing, so `no-commits` never names what happened
+          // here, and it carries no `outputSchema`, so neither does
+          // `no-structured-answer`.
+          ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
         }
       }
 

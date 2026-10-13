@@ -119,6 +119,7 @@ export function createFileBriefAction(spec: FileBriefActionSpec, deps: FileBrief
   return {
     name: spec.name,
     kind: 'file-brief',
+    yields: 'nothing',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const design = context.design

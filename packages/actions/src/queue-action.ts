@@ -107,6 +107,7 @@ export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps):
   return {
     name,
     kind: 'queue',
+    yields: 'nothing',
 
     async run(_context: ActionContext): Promise<ActionResult> {
       const answer = await deps.take(queue)

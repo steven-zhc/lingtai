@@ -186,6 +186,7 @@ describe("the step's own list hands a document forward", () => {
   const drafting = (result: Partial<ActionResult> & { verdict: ActionResult['verdict'] }): Action => ({
     name: 'shape it',
     kind: 'agent',
+    yields: 'design',
     run: async () => ({ evidence: 'drafted', findings: [], ...result }),
   })
 
@@ -209,6 +210,7 @@ describe("the step's own list hands a document forward", () => {
     await handedToTheSecond(drafting({ verdict: 'passed', document: DOCUMENT }), {
       name: 'keep it',
       kind: 'file',
+      yields: 'design',
       run: async (given) => {
         seen.push(given.design)
         return { verdict: 'passed', evidence: 'kept', findings: [] }
@@ -230,6 +232,7 @@ describe("the step's own list hands a document forward", () => {
     const watching = (name: string, answer: Partial<ActionResult>): Action => ({
       name,
       kind: 'file',
+      yields: 'design',
       run: async (given) => {
         seen.push(given.design)
         return { verdict: 'passed', evidence: 'kept', findings: [], ...answer }
@@ -260,6 +263,7 @@ describe("the step's own list hands a document forward", () => {
     await handedToTheSecond(drafting({ verdict: 'passed', evidence: 'checked something' }), {
       name: 'keep it',
       kind: 'file',
+      yields: 'design',
       run: async (given) => {
         seen.push(given.design)
         return { verdict: 'passed', evidence: 'kept', findings: [] }

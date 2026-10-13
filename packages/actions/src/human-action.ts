@@ -31,6 +31,7 @@ export function createHumanAction(spec: HumanActionSpec): Action {
   return {
     name: spec.name,
     kind: 'human',
+    yields: 'signoff',
 
     async run(context: ActionContext): Promise<ActionResult> {
       return {

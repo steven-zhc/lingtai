@@ -201,6 +201,7 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
   return {
     name: spec.name,
     kind: 'file',
+    yields: 'design',
 
     async run(context: ActionContext): Promise<ActionResult> {
       // **First, so that every sentence below names the path the document

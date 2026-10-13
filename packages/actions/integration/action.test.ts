@@ -279,6 +279,7 @@ describe('the pipeline', () => {
         {
           name: 'review',
           kind: 'agent' as const,
+          yields: 'verdict' as const,
           run: async () => ({ verdict: 'never-ran' as const, evidence: said, findings: [] }),
         },
         processAction({ name: 'test', run: 'exit 0' }),
@@ -330,6 +331,7 @@ describe('the pipeline', () => {
         {
           name: 'review',
           kind: 'agent' as const,
+          yields: 'verdict' as const,
           run: async () => {
             attempts += 1
             return { verdict: 'did-not-finish' as const, evidence: said, findings: [] }
@@ -379,6 +381,7 @@ describe('the pipeline', () => {
         {
           name: 'broken',
           kind: 'run' as const,
+          yields: 'verdict' as const,
           run: () => Promise.reject(new Error('the action itself is broken')),
         },
       ],

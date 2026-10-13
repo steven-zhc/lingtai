@@ -41,7 +41,7 @@
  */
 import type { RuntimeId } from '@lingtai/domain'
 
-import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult } from './action.ts'
+import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult, type InterruptedCause } from './action.ts'
 import { boundedEvidence } from './command.ts'
 
 /**
@@ -56,8 +56,17 @@ export type WorkedAnswer =
   | { readonly asked: string }
   /** 0031 §1's `never-started`: zero turns, zero cost, and about the account. */
   | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
-  /** It started and left no receipt — a crash, a spent turn budget, no commit. */
-  | { readonly stopped: string }
+  /**
+   * It started and left no receipt — a crash, a spent turn budget, no commit.
+   *
+   * `interrupted` is set where the caller can name the runtime's own cause
+   * (`#466`), and `committedNothing` where the agent ran to the end and simply
+   * left nothing on the branch — the two `did-not-finish`es 0120 §1 tells apart
+   * as `Interrupted` and `commit Completed{head: null, question: null}`. Both
+   * absent is a setup that broke before any agent ran (`NotDone`), which is
+   * `conduct.ts`'s own four `the hook …` sentences.
+   */
+  | { readonly stopped: string; readonly interrupted?: InterruptedCause; readonly committedNothing?: true }
 
 /**
  * The dispatch, as the only thing this action needs from its caller.
@@ -121,6 +130,7 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
   return {
     name: spec.name,
     kind: 'agent',
+    yields: 'commit',
 
     async run(context: ActionContext): Promise<ActionResult> {
       // Spread rather than assigned, each of the three, because absent has to
@@ -169,7 +179,13 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
           findings: [],
         }
       }
-      return { verdict: 'did-not-finish', evidence: boundedEvidence(answer.stopped), findings: [] }
+      return {
+        verdict: 'did-not-finish',
+        evidence: boundedEvidence(answer.stopped),
+        findings: [],
+        ...(answer.interrupted === undefined ? {} : { interrupted: answer.interrupted }),
+        ...(answer.committedNothing === undefined ? {} : { committedNothing: answer.committedNothing }),
+      }
     },
   }
 }

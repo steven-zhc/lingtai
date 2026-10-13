@@ -72,6 +72,7 @@ export function createKeptRunAction(name: string, inner: Action, deps: KeptRunAc
   return {
     name,
     kind: 'run',
+    yields: 'commit',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const cleaned = await deps.clean()

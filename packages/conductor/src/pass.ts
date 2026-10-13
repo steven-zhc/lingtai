@@ -96,9 +96,14 @@ import {
  * from a `PipelineResult` to a step's ending, so the five verdicts the pipeline
  * can produce are read in one place rather than at every call site.
  */
-import { STEPS, type Step } from '@lingtai/domain'
+import { STEPS, type Step, type StepOutcome } from '@lingtai/domain'
 import type { Recipe, StepAction } from '@lingtai/recipe'
 
+// Aliased: this file exports its own `outcomeOf`, over `PassResult`'s
+// `stoppedAt`/`rested` rather than over a step's actions — two functions
+// with one name would be exactly the collision #466's own header warns
+// against (`adapters.ts`'s own doc comment).
+import { outcomeOf as stepOutcomeOf } from './adapters.ts'
 import type { TerminalOutcome } from './end-step.ts'
 
 // ------------------------------------------------------- the ten, as data ----
@@ -526,6 +531,15 @@ export interface StepReached {
   readonly step: Step
   readonly ending: StepEnding
   readonly results: readonly ActionOutcome[]
+  /**
+   * **This visit's own `StepOutcome`** (`#466`, 0120 §1) — `adapters.ts`'s
+   * `outcomeOf`, built from the same `results` beside it, and `undefined`
+   * where no pipeline ran: a routing arrival (`StepWork.arriving`) and `end`,
+   * whose plugins are effects rather than verdicts. Nothing reads it yet but
+   * the proof against #461's fixture (`test/one-pass.ts`'s `once()`); #467
+   * is what puts `nextOf` in charge of what a visit carrying one does next.
+   */
+  readonly outcome?: StepOutcome
 }
 
 /**
@@ -1594,6 +1608,15 @@ async function runStep(
   const actions = options.recipe.steps[spec.step]
   let results: readonly ActionOutcome[] = []
   /**
+   * **The step's own `StepOutcome`, kept beside `results`** (`#466`) — set
+   * only where a pipeline ran (`spec.plugins === 'verdicts' && reaching
+   * .arriving === null`), and carried onto every return below it, including a
+   * body that then threw: the plugins' own verdicts do not stop being true
+   * because the step's body failed afterwards. Absent at a routing arrival
+   * and at `end`, whose plugins are never a `runActionPipeline`.
+   */
+  let outcome: StepOutcome | undefined
+  /**
    * **Where the step's plugins left the worktree, kept across the body** (`#268`).
    *
    * A body owns the outcome rules and says which ending an answer is; *the tree
@@ -1619,9 +1642,14 @@ async function runStep(
     // .arriving` is the whole argument, and it is why this is `=== null` rather
     // than an unconditional call.
     if (spec.plugins === 'verdicts' && reaching.arriving === null) {
+      // Hoisted so the same list goes to the pipeline and to `outcomeOf`
+      // (`#466`): `result.results[i]` belongs to `pipelineActions[i]`, and a
+      // second call to `actionsAt` is not a guarantee that it returns the
+      // same actions in the same order twice.
+      const pipelineActions = options.actionsAt(spec.step, actions)
       const result = await runActionPipeline({
         step: spec.step,
-        actions: options.actionsAt(spec.step, actions),
+        actions: pipelineActions,
         /**
          * **The two facts a plugin cannot read off `onSha`** (`#266`).
          *
@@ -1653,11 +1681,12 @@ async function runStep(
       results = result.results
       leftTheTreeAt = headFrom(result)
       wroteTheDesign = designFrom(result)
+      outcome = stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result)
       const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
       if (ending.ending !== 'passed') {
-        return { step: spec.step, ending, results }
+        return { step: spec.step, ending, results, outcome }
       }
     }
 
@@ -1687,9 +1716,10 @@ async function runStep(
       step: spec.step,
       ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }, reaching),
       results,
+      outcome,
     }
   } catch (error) {
-    return { step: spec.step, ending: threw(spec, error), results }
+    return { step: spec.step, ending: threw(spec, error), results, outcome }
   }
 }
 

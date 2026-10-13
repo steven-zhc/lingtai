@@ -94,6 +94,7 @@ export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps):
   return {
     name: spec.name,
     kind: 'merge',
+    yields: 'merge',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const answer = await deps.land({ strategy: spec.strategy, onSha: context.onSha })
@@ -102,6 +103,9 @@ export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps):
           verdict: 'passed',
           evidence: `merged as ${answer.merged.slice(0, 7)}`,
           findings: [],
+          // The same sha `evidence` already names, for `Integration.Integrated
+          // .mergeSha` — carried the way `worktree:`'s `head` is (`#466`).
+          merged: answer.merged,
         }
       }
       return {

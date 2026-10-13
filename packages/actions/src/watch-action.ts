@@ -61,6 +61,7 @@ export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps):
   return {
     name: spec.name,
     kind: 'watch',
+    yields: 'signoff',
 
     async run(_context: ActionContext): Promise<ActionResult> {
       const changed = await deps.changedFiles()

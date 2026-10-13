@@ -397,6 +397,16 @@ export interface RunOnceOptions {
    */
   merge?: boolean
   log?: (line: string) => void
+  /**
+   * **An observer, called with the `PassResult` the moment `runPass` returns
+   * it** (`#466`). It branches on nothing and the pass does not wait for it —
+   * the one caller today is `test/one-pass.ts`'s `once()`, which checks
+   * `adapters.ts`'s `eventOf` against the run stream `conduct.ts` itself is
+   * about to write from the very same `pass.steps`, so a mismatch there is an
+   * adapter bug by #461's own rule rather than a reason for this seam to exist
+   * for production use.
+   */
+  onPass?: (pass: PassResult) => void
 }
 
 export type RunOnceResult =
@@ -2780,7 +2790,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               costUsd: outcome.costUsd,
             }
           }
-          return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` }
+          const cause = outcome.failure.kind
+          return {
+            stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+            // Neither word is one this dispatch's own runtime ever reports
+            // (`no-commits` is `head === startedAt`'s own check, two lines
+            // down; `no-structured-answer` is the reviewer's flag, never
+            // this agent's), so excluding them costs nothing and keeps the
+            // field typed to `#466`'s five.
+            ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
+          }
         }
 
         await appendFrom(runId, version, [
@@ -2805,7 +2824,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // commit of its own cannot stand in for one. An agent that ran and committed
         // nothing left no receipt, and the pass stops rather than buying a round to
         // fix a diff that does not exist.
-        if (head === startedAt) return { stopped: 'the agent produced no commits' }
+        if (head === startedAt) return { stopped: 'the agent produced no commits', committedNothing: true }
         await recordDiff(branch, head)
         await appendNow(runId, [
           {
@@ -2964,11 +2983,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }
         if (!committed) {
           if (!fixed.failure) declined = { said: fixSaid }
+          const cause = fixed.failure?.kind
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                 'so there is nothing new for the review to read'
               : 'the fixing agent committed nothing, so there is nothing new for the review to read',
+            // **`committed` false and no `failure`** is the fixer reading the
+            // findings and declining, not crashing (`declined`, two lines up) —
+            // the `commit Completed{head: null, question: null}` cell rather
+            // than `Interrupted`. `never-started` cannot reach here (handled
+            // above), and `no-commits`/`no-structured-answer` are never this
+            // agent's own failure kind.
+            ...(cause === undefined
+              ? { committedNothing: true }
+              : cause === 'no-commits' || cause === 'no-structured-answer'
+                ? {}
+                : { interrupted: cause }),
           }
         }
         await recordDiff(branch, after)
@@ -3052,6 +3083,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ceilings,
         }),
       )
+      options.onPass?.(pass)
 
       /**
        * **A store that refused an append is not a step's verdict about the

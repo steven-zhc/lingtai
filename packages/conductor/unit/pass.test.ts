@@ -57,6 +57,7 @@ const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [
 const canned = (name: string, result: ActionResult): Action => ({
   name,
   kind: 'run',
+  yields: 'verdict',
   run: async () => result,
 })
 
@@ -162,6 +163,7 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
     {
       name: 'check',
       kind: 'run',
+      yields: 'verdict',
       run: async (seenWith) => {
         const lap = laps.get(step) ?? 0
         laps.set(step, lap + 1)
@@ -329,6 +331,7 @@ describe('a step that was configured is never skipped', () => {
         {
           name: 'install',
           kind: 'run',
+          yields: 'verdict',
           run: async () => {
             entered += 1
             return PASSED
@@ -745,6 +748,7 @@ describe('every step that does not pass arrives at proposed', () => {
             {
               name: 'draft',
               kind: 'agent',
+              yields: 'design',
               run: async (seenWith) => {
                 told.push(seenWith.again)
                 lap += 1
@@ -834,6 +838,7 @@ describe('every step that does not pass arrives at proposed', () => {
           {
             name: 'write it',
             kind: 'agent',
+            yields: 'commit',
             run: async (context) => {
               seen.push(context.design)
               return PASSED
@@ -944,6 +949,7 @@ describe('every step that does not pass arrives at proposed', () => {
           {
             name: 'write it',
             kind: 'agent',
+            yields: 'commit',
             run: async (seenWith) => {
               // A file-reading plugin: it knows repository paths and nothing else.
               const locator = seenWith.design?.locator ?? ''
@@ -983,6 +989,7 @@ describe('every step that does not pass arrives at proposed', () => {
           {
             name: 'write it',
             kind: 'agent',
+            yields: 'commit',
             run: async (seenWith) => {
               seen.push(seenWith.design)
               return PASSED

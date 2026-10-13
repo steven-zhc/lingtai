@@ -78,6 +78,7 @@ export function createWorktreeAction(spec: WorktreeActionSpec, deps: WorktreeAct
   return {
     name: spec.name,
     kind: 'worktree',
+    yields: 'worktree',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const answer = await deps.cut({ base: spec.base, submodules: spec.submodules })

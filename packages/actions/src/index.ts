@@ -8,6 +8,7 @@ export {
   type ActionFinding,
   type ActionResult,
   type ActionVerdict,
+  type InterruptedCause,
   type PipelineOptions,
   type PipelineResult,
   type SentBack,

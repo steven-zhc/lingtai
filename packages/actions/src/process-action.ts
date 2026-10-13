@@ -55,6 +55,7 @@ export function createProcessAction(spec: ProcessActionSpec): Action {
   return {
     name: spec.name,
     kind: 'run',
+    yields: 'verdict',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const outcome = await runCommand({

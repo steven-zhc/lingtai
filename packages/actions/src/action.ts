@@ -35,7 +35,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from '@lingtai/agent/run-log'
-import type { Finding, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
+import type { Action as DomainAction, Finding, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -85,6 +85,15 @@ export type ActionVerdict = 'passed' | 'failed' | 'needs-approval' | 'never-ran'
  * this file reads cannot diverge (`#369`).
  */
 export type ActionFinding = Finding
+
+/**
+ * The five causes an agent action may be cut off by — domain's
+ * `Interrupted['cause']` (`@lingtai/domain`'s `action.ts`), mirrored rather
+ * than imported: this package stays clear of a dependency it needs for one
+ * literal union, and the five words are 0120 §1's own rather than this
+ * file's to redefine.
+ */
+export type InterruptedCause = 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd'
 
 export interface ActionResult {
   verdict: ActionVerdict
@@ -229,6 +238,46 @@ export interface ActionResult {
    * Opaque here and everywhere above here — see `TheDesign.locator`.
    */
   locator?: string
+  /**
+   * **An agent action cut off mid-run, in the runtime's own word** — absent on
+   * every result that is not a `did-not-finish` carrying one, which is every
+   * result today that is not an agent's crash, timeout, abort or ceiling
+   * (`#466`, 0120 §1's `Interrupted`).
+   *
+   * One of the four agent-dispatching actions sets it — the reviewer
+   * (`createAgentAction`), the drafter (`createDraftAction`) and the work
+   * action (`createWorkAction`, threaded through `WorkedAnswer.stopped`) —
+   * each read off the runtime's own `failure.kind` once it has excluded
+   * `never-started` (its own verdict) and, for the reviewer alone,
+   * `no-structured-answer` (`failed`, not `did-not-finish`). A `did-not-finish`
+   * with this absent is a crash the caller did not classify — `@lingtai/conductor`'s
+   * `adapters.ts` reads that as `Interrupted{cause: 'crash'}` rather than
+   * refusing, since every agent action it is asked about today sets this
+   * field and the fallback is for a test literal that does not.
+   */
+  interrupted?: InterruptedCause
+  /**
+   * **The work action ran and left no commit, as a fact rather than a
+   * sentence** (`#466`). Absent everywhere else, including on a kept `run:`'s
+   * own "nothing to commit" — that one is a `passed` verdict already
+   * (`kept-run-action.ts`), and this field exists only to tell apart the two
+   * `did-not-finish`s that string has meant since 0120 §1 was written:
+   * *the hook was never wired* (`NotDone`, nothing ran) and *the agent ran and
+   * committed nothing* (`commit Completed{head: null, question: null}`,
+   * `changedNothing`'s own cell). Reading the sentence to tell them apart is
+   * what 0031 §1 forbids; this is the token instead.
+   */
+  committedNothing?: true
+  /**
+   * **The merge lane's own commit on the base branch** — absent on every
+   * result but the lane's `passed` (`#466`). `evidence` has carried it since
+   * `merge-action.ts` was written (`merged as ${sha.slice(0, 7)}`); this is the
+   * same sha where a program needs it rather than a person, for
+   * `Integration.Integrated.mergeSha`. Never `head`: that field is `headFrom`'s
+   * own seam for `onSha` at `end`, and a merge commit is not where the
+   * worktree the pass is still holding stands.
+   */
+  merged?: string
 }
 
 /**
@@ -462,6 +511,14 @@ export interface Action {
    * `queue`, `merge`, `file` or `file-brief`.
    */
   readonly kind: 'run' | 'agent' | 'watch' | 'human' | 'worktree' | 'queue' | 'merge' | 'file' | 'file-brief'
+  /**
+   * **What this action yields to its step** (`#466`, 0120 §1) — the domain's
+   * own seven, so a factory and `packages/conductor/src/adapters.ts`'s
+   * `actionOf` cannot name two different words for one action. Set once, by
+   * the factory, because the shape an action's result takes does not change
+   * between runs.
+   */
+  readonly yields: DomainAction['yields']
   run(context: ActionContext): Promise<ActionResult>
 }
 
@@ -555,6 +612,12 @@ export interface PipelineResult {
     document?: string
     /** Where it kept that document, where it kept it. `ActionResult.locator`. */
     locator?: string
+    /** How an agent action was cut off, where one was. `ActionResult.interrupted`. */
+    interrupted?: InterruptedCause
+    /** The work action ran and left no commit, where that happened. `ActionResult.committedNothing`. */
+    committedNothing?: true
+    /** The merge lane's own commit, where it landed one. `ActionResult.merged`. */
+    merged?: string
   }[]
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[]
@@ -697,6 +760,18 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // on one result, and `designFrom` reads the pair off one result so that a
       // locator whose document did not survive is a locator nothing carries.
       ...(result.locator === undefined ? {} : { locator: result.locator }),
+      // Spread for `head`'s reason a sixth time, since `#466`: an action that
+      // did not say how it was cut off carries no opinion on the point, and
+      // `adapters.ts`'s `actionOf` falls back to a crash rather than reading
+      // the absence as a second classification.
+      ...(result.interrupted === undefined ? {} : { interrupted: result.interrupted }),
+      // Spread for `head`'s reason a seventh time: *the agent ran and left no
+      // commit* and *nothing ran at all* are different facts and only the
+      // work action's own result can tell them apart (`#466`).
+      ...(result.committedNothing === undefined ? {} : { committedNothing: result.committedNothing }),
+      // Spread for `head`'s reason an eighth time: the merge lane's own commit,
+      // carried the way `worktree:`'s `head` is (`#466`).
+      ...(result.merged === undefined ? {} : { merged: result.merged }),
     })
 
     // And the same pair onto the context the *next* action is handed, so a
