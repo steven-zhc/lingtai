@@ -510,9 +510,9 @@ export const RunRefsPublished = z.object({
    * **On `published` and `already-published` it is `branch`'s own head, never
    * the arm's** (`#468`): a stopped run's WIP commit sits ahead of it on the
    * arm alone, and this row must never read as though `branch` carried that
-   * commit too. It is the arm's own head only where `branch` carries nothing
-   * at all — an agent that committed nothing of its own, with only the WIP to
-   * publish.
+   * commit too. It is the arm's own head only where `branchCarries` below is
+   * `false` — an agent that committed nothing of its own, with only the WIP
+   * to publish.
    */
   headSha: z.string().nullable(),
   /**
@@ -551,16 +551,29 @@ export const RunRefsPublished = z.object({
    */
   outcome: z.enum(['published', 'nothing-committed', 'already-published', 'arm-only', 'refused', 'unrecorded']),
   /**
+   * Whether `branch` points at `headSha` — written only on `published` and
+   * `already-published`, and absent on every other outcome (`#468`).
+   *
+   * **A typed field, never a reader inferring it from `detail`** (0120 §…, *a
+   * reason is a type*): `detail` also carries a failed WIP keep's reason on
+   * these same two outcomes, and a reader who takes "`detail` is set" to mean
+   * "`branch` carries nothing" misreads that case, where `branch` was pushed
+   * at exactly `headSha` and `detail` is only saying the keep failed.
+   *
+   * **Absent means carried.** No event appended before `#468` ever had a WIP,
+   * so every row written before this field existed did put `branch` at
+   * `headSha` — replaying one finds nothing here and reads it as `true`.
+   */
+  branchCarries: z.boolean().optional(),
+  /**
    * Git's own words when `refused` or `arm-only`, the store's and the ref they
    * were about when `unrecorded`, and null on `nothing-committed` unless a
    * keep failed — null unless something has to be said, nowhere else.
    *
    * **Since `#468`, not null on `published` and `already-published` either**
-   * where `branch` carries nothing of this claim's own: that is the one case
-   * `headSha` there is the arm's own rather than `branch`'s, and `detail` is
-   * what says so rather than leaving a reader to infer it from the sha alone.
-   * A failed WIP keep folds in here too, on whichever outcome the publish
-   * ends up writing — `withWipFailure` in `conduct.ts`.
+   * when a WIP keep failed: `branchCarries` above is what says whether
+   * `branch` got `headSha`, and this is only ever the keep's own failure on
+   * those two outcomes now.
    */
   detail: z.string().nullable(),
 })

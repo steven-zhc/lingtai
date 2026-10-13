@@ -228,11 +228,13 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
         ? `${need(d, 'branch')} at ${sha(d, 'headSha')} was not pushed: ${clip(d['detail'])}`
         : `${need(d, 'branch')} was not pushed, and no head was read: ${clip(d['detail'])}`
     const prefix = outcome === 'already-published' ? 'already there — ' : ''
-    // **#468**: a `detail` here means `headSha` is the arm's own and `branch`
-    // never got it — never both at once, and the row says so rather than
-    // naming `branch` beside a sha it was never pushed.
-    if (d['detail']) return `${prefix}${need(d, 'arm')} at ${sha(d, 'headSha')} — ${clip(d['detail'])}`
-    return `${prefix}${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}`
+    // **#468**: `branchCarries === false` is what says `headSha` is the
+    // arm's own and `branch` never got it — a typed field, not whether
+    // `detail` happens to be set, because a failed WIP keep also writes
+    // `detail` here while `branch` was pushed at exactly this sha.
+    const suffix = d['detail'] ? ` — ${clip(d['detail'])}` : ''
+    if (d['branchCarries'] === false) return `${prefix}${need(d, 'arm')} at ${sha(d, 'headSha')}${suffix}`
+    return `${prefix}${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}${suffix}`
   },
   /**
    * **A stopped run's dirty tree, kept rather than lost with the worktree**

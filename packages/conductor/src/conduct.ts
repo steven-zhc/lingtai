@@ -1536,13 +1536,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
         headSha: string | null,
         detail: string | null,
+        branchCarries?: boolean,
       ): Promise<void> => {
         try {
           await appendAt(runId, [
             {
               type: 'RunRefsPublished',
               actor: 'conductor',
-              data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail }),
+              data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail, branchCarries }),
             },
           ])
         } catch (defect) {
@@ -1804,19 +1805,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * forced arm is the whole point of the second trip.
            */
           if (branchHead === published && head === armPublished) {
-            // `headSha` is `head` (the arm's own) only where `branch` carries
-            // nothing at all (`doc/design/468.md`) — and that absence goes in
-            // `detail` rather than being left for the reader to guess at from
-            // a sha that is, on every other row, `branch`'s own (`#468`).
-            // `withWipFailure` folds in a failed keep too, though the two
-            // never coincide: a WIP failure leaves `branchHead` at `head`.
-            await noteRefs(
-              'already-published',
-              branchHead ?? head,
-              withWipFailure(
-                branchHead === null ? `${branch} carries nothing of this claim's own — only ${arm} does` : null,
-              ),
-            )
+            // `headSha` is `head` (the arm's own) only where `branchCarries`
+            // is `false` (`doc/design/468.md`) — a typed field, not a
+            // sentence folded into `detail` for the reader to guess the same
+            // thing from. `withWipFailure` folds in a failed keep too, though
+            // the two never coincide: a WIP failure leaves `branchHead` at
+            // `head`, so `branchCarries` is `true` there.
+            await noteRefs('already-published', branchHead ?? head, withWipFailure(null), branchHead !== null)
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
             // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
@@ -1888,15 +1883,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
           )
           // Same call as the `already-published` branch above, and for the
-          // same reason: `branch`'s absence goes in `detail`, never silently
-          // behind a `headSha` that is actually the arm's own (`#468`).
-          await noteRefs(
-            'published',
-            branchHead ?? head,
-            withWipFailure(
-              branchHead === null ? `${branch} carries nothing of this claim's own — only ${arm} does` : null,
-            ),
-          )
+          // same reason: `branch`'s absence is `branchCarries: false`, never
+          // silently behind a `headSha` that is actually the arm's own
+          // (`#468`).
+          await noteRefs('published', branchHead ?? head, withWipFailure(null), branchHead !== null)
           // Never for the arm alone (`#468`) — see the `already-published`
           // branch above for why.
           if (branchHead !== null) await recordDiff(branch, branchHead)
@@ -3706,8 +3696,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * Where it is not, the pass falls through to the `failed` ending below: no
        * restart is consumed, the reason there already carries `unpushed`, and the
        * item comes back through the backoff with its ceiling intact.
+       *
+       * **A WIP on top of the judged head is still the arm being up** (`#468`).
+       * `armPublished` is the WIP's own sha once `keepUncommittedWork` has run
+       * (`publishWhatIsCommitted` sets `armPublished = head`, and `head` is the
+       * WIP once one exists), while `headSha` stays `headReached(pass.steps)` —
+       * the commit `review` judged, which the WIP sits on top of rather than
+       * replaces. Comparing the two shas directly would read the arm as down on
+       * every ending that kept a WIP, though it is on origin and `headSha` is
+       * its ancestor. Accepted only when the WIP's own parent is `headSha`: a
+       * WIP whose parent is something else carries a tree the restart was never
+       * decided about, and falls through to `failed` same as an unpublished arm.
        */
-      const armIsUp = armPublished !== null && armPublished === headSha
+      // The `as` is load-bearing: `wip` is reassigned only inside
+      // `publishWhatIsCommitted`'s closure above, and TS's control-flow
+      // analysis does not track an assignment made inside a nested function
+      // as reaching this point — left as `const wipNow = wip`, even with an
+      // explicit type annotation, `wipNow`'s flow-narrowed type is `null`,
+      // the only assignment to `wip` this function's own statement sequence
+      // can see.
+      const wipNow = wip as { sha: string; parent: string; stoppedBy: string } | null
+      const armIsUp =
+        armPublished !== null &&
+        (armPublished === headSha || (wipNow !== null && armPublished === wipNow.sha && wipNow.parent === headSha))
       if (pass.rested === 'requeued' && !armIsUp) {
         runLog.note(
           'restart',
