@@ -35,7 +35,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from '@lingtai/agent/run-log'
-import type { Action as DomainAction, Finding, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
+import type { Action as DomainAction, Finding, Interrupted, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -87,13 +87,14 @@ export type ActionVerdict = 'passed' | 'failed' | 'needs-approval' | 'never-ran'
 export type ActionFinding = Finding
 
 /**
- * The five causes an agent action may be cut off by — domain's
- * `Interrupted['cause']` (`@lingtai/domain`'s `action.ts`), mirrored rather
- * than imported: this package stays clear of a dependency it needs for one
- * literal union, and the five words are 0120 §1's own rather than this
- * file's to redefine.
+ * The five causes an agent action may be cut off by — `Interrupted['cause']`
+ * off `@lingtai/domain`'s own type, imported rather than mirrored: `@lingtai/domain`
+ * is already a declared dependency of this package (`package.json`, and
+ * `DomainAction` above is imported from it too), so there is no dependency
+ * this file is avoiding by hand-copying the union. The five words stay 0120
+ * §1's to redefine, and this alias is the only place that says so.
  */
-export type InterruptedCause = 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd'
+export type InterruptedCause = Interrupted['cause']
 
 export interface ActionResult {
   verdict: ActionVerdict

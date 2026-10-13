@@ -67,10 +67,16 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
     expect(roundTrip(fakeAction('watch', 'signoff'), entry('passed'))?.type).toBe('StepPassed')
   })
 
-  it('a `signoff` action whose own dependency threw is `StepDidNotFinish`, never `ApprovalRequested`', () => {
-    expect(roundTrip(fakeAction('watch', 'signoff'), entry('failed'))?.type).toBe('StepDidNotFinish')
-    expect(roundTrip(fakeAction('human', 'signoff'), entry('did-not-finish'))?.type).toBe('StepDidNotFinish')
-    expect(roundTrip(fakeAction('watch', 'signoff'), entry('never-ran'))?.type).toBe('StepDidNotFinish')
+  it('a `signoff` action whose own dependency threw is `StepFailed`, never `ApprovalRequested`', () => {
+    // Every reachable `signoff` `NotDone` is `runActionPipeline`'s own catch
+    // (`signoffResultOf`'s comment: neither `watch:` nor `human:` ever return
+    // `failed`, `did-not-finish` or `never-ran` themselves), and a throw is
+    // always `verdict: 'failed'`, which the real pipeline always answers with
+    // `StepFailed` — never `StepDidNotFinish`, whichever of the three verdicts
+    // a literal happens to carry (`#466` fix round).
+    expect(roundTrip(fakeAction('watch', 'signoff'), entry('failed'))?.type).toBe('StepFailed')
+    expect(roundTrip(fakeAction('human', 'signoff'), entry('did-not-finish'))?.type).toBe('StepFailed')
+    expect(roundTrip(fakeAction('watch', 'signoff'), entry('never-ran'))?.type).toBe('StepFailed')
   })
 
   it('a `design` agent that asked a question is `StepAsked`', () => {
@@ -178,7 +184,7 @@ describe('an implement agent that committed nothing, with a `run:` the recipe de
   })
 })
 
-describe('eventOf reads `plugin` for the three cells one result shape covers two real endings', () => {
+describe('eventOf reads `plugin` for the cell one result shape covers two real endings', () => {
   it("a kept `run:` that found nothing to commit is `StepPassed`, the work action's own is `StepDidNotFinish`", () => {
     const passed = entry('passed')
     expect(roundTrip(fakeAction('run', 'commit'), passed)?.type).toBe('StepPassed')
@@ -187,14 +193,33 @@ describe('eventOf reads `plugin` for the three cells one result shape covers two
     expect(roundTrip(fakeAction('agent', 'commit'), committedNothing)?.type).toBe('StepDidNotFinish')
   })
 
-  it("a kept `run:`'s own clean failure is `StepFailed`, the work action's broken setup is `StepDidNotFinish`", () => {
+  it("a kept `run:`'s own clean failure and the work action's broken setup (no throw) are both `commit`'s `NotDone`/`Interrupted` split, never by `plugin`", () => {
+    // `run:`'s clean failure is `verdict: 'failed'` → `NotDone` → `StepFailed`.
     expect(roundTrip(fakeAction('run', 'commit'), entry('failed'))?.type).toBe('StepFailed')
+    // The work action's own broken setup, no throw, is `did-not-finish` with no
+    // flags → `Interrupted{cause: 'crash'}` → `StepDidNotFinish` — the same
+    // event as before, but no longer because `plugin === 'agent'`.
     expect(roundTrip(fakeAction('agent', 'commit'), entry('did-not-finish'))?.type).toBe('StepDidNotFinish')
+  })
+
+  it('the implement agent action throwing is `StepFailed`, not `StepDidNotFinish` — the bug `plugin`-based guessing produced (`#466` fix round)', () => {
+    // Before this fix, `commitEventOf`'s `NotDone` case answered
+    // `action.plugin === 'run' ? StepFailed : StepDidNotFinish`, so a throw on
+    // the `agent`-plugin work action (`verdict: 'failed'`, same as any throw)
+    // wrongly read as `StepDidNotFinish`. `commitResultOf` no longer reaches
+    // `NotDone` except for `verdict: 'failed'`, so this is unconditional now.
+    const threw = entry('failed', { evidence: 'the write the change action threw: ECONNRESET' })
+    expect(roundTrip(fakeAction('agent', 'commit', 'write the change'), threw)?.type).toBe('StepFailed')
   })
 
   it("`claim`'s own `queue:` decline is `StepFailed`, `implement`'s `file-brief:` is `StepDidNotFinish`", () => {
     expect(roundTrip(fakeAction('queue', 'nothing'), entry('failed'))?.type).toBe('StepFailed')
     expect(roundTrip(fakeAction('file-brief', 'nothing'), entry('did-not-finish'))?.type).toBe('StepDidNotFinish')
+  })
+
+  it("a `file-brief:`'s own dependency throwing is `StepFailed`, not `StepDidNotFinish` — `queue:`'s own guess was never wrong, but `file-brief:`'s was (`#466` fix round)", () => {
+    const threw = entry('failed', { evidence: 'the read it back action threw: ENOENT' })
+    expect(roundTrip(fakeAction('file-brief', 'nothing', 'read it back'), threw)?.type).toBe('StepFailed')
   })
 })
 

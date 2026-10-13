@@ -17,18 +17,47 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  * to know the other exists anywhere else.
  *
  * **`eventOf` reads `plugin`, and `nextOf` (`@lingtai/domain`'s
- * `pass-next.ts`) never does.** Three of 0120's result tags were given one
- * shape for two unlike real endings, because the *next step* for both is the
- * same thing: a `commit`'s `Completed{head: null, question: null}` is a kept
- * `run:` that found nothing to commit (`StepPassed`) from one plugin and the
- * work action's own "produced no commits" (`StepDidNotFinish`) from another;
- * a `commit`'s `NotDone` is a kept `run:`'s clean failure (`StepFailed`) from
- * one and the work action's broken setup (`StepDidNotFinish`) from the other;
- * a `nothing`'s `NotDone` is `claim`'s own decline (`StepFailed`) from
- * `queue:` and `implement`'s unreadable locator (`StepDidNotFinish`) from
- * `file-brief:`. `nextOf` is right to ignore `plugin` — the pass goes the
- * same place either way — and `eventOf` has no choice, because the event it
- * is reproducing is not one `nextOf` ever has to pick between.
+ * `pass-next.ts`) reads it in exactly one place.** One of 0120's result tags
+ * is given one shape for two unlike real endings, because the *next step*
+ * for both is the same thing: a `commit`'s `Completed{head: null, question:
+ * null}` is a kept `run:` that found nothing to commit (`StepPassed`) from
+ * one plugin and the work action's own "produced no commits"
+ * (`StepDidNotFinish`) from another. `nextOf` is right to ignore `plugin`
+ * here — the pass goes the same place either way — and `eventOf` has no
+ * choice, because the event it is reproducing is not one `nextOf` ever has to
+ * pick between. `lastCommitEvidence` (`pass-next.ts:366`) is the one place
+ * `nextOf` reads `plugin` too, skipping a kept `run:`'s own evidence so the
+ * fixer's own words are never overwritten by "nothing to commit" standing in
+ * for them — a forward-direction use, and not one that needs the backward
+ * distinction this file carries.
+ *
+ * **A `commit`'s `NotDone` no longer needs `plugin`.** It used to collapse a
+ * kept `run:`'s clean failure and the work action's own broken-setup
+ * `did-not-finish` onto one tag and guess between `StepFailed` and
+ * `StepDidNotFinish` by plugin — wrongly, for a throw on any commit-yielding
+ * action, since `runActionPipeline`'s catch always answers `verdict: 'failed'`
+ * and the real pipeline always answers that with `StepFailed`, regardless of
+ * plugin (`#466` fix round). `commitResultOf`'s did-not-finish fallback now
+ * answers `Interrupted{cause: outcome.interrupted ?? 'crash'}`, the way
+ * `verdictResultOf`'s own fallback already does, so `NotDone` on `commit` is
+ * only ever `verdict: 'failed'` and `eventOf` answers it `StepFailed`
+ * unconditionally.
+ *
+ * **A `signoff`'s `NotDone` is always a throw, and so always `StepFailed`.**
+ * `watch:`'s `then: 'request-approval'` and `human:` never return `failed`,
+ * `did-not-finish` or `never-ran` from their own code (`signoffResultOf`'s own
+ * comment), so every real `NotDone` here is `runActionPipeline`'s catch —
+ * always `verdict: 'failed'`, never the other two — and `eventOf` answers it
+ * `StepFailed` rather than guessing by plugin.
+ *
+ * **A `nothing`'s `NotDone` still needs `plugin`, and now needs more**: it is
+ * `claim`'s own decline (`StepFailed`) from `queue:` and `implement`'s
+ * `file-brief:` failing to read a design back (`StepDidNotFinish`, from one of
+ * its own three `did-not-finish`s) — but `file-brief:`'s own dependency can
+ * also throw, which is `StepFailed` too, and `nothing`'s union has no spare
+ * arm the way `commit`'s `Interrupted` does to carry that apart. `eventOf`
+ * tells the two cases on `file-brief:` itself apart with
+ * `threwRatherThanAnswered`, below.
  *
  * **What is lost, named rather than papered over:**
  *
@@ -234,13 +263,19 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       if (outcome.committedNothing) {
         return { _tag: 'Completed', head: null, question: null }
       }
-      // A setup broken before any agent ran — `conduct.ts`'s four `the hook …` sentences.
-      return { _tag: 'NotDone' }
+      // A setup broken before any agent ran — `conduct.ts`'s four `the hook …`
+      // sentences — and never a throw: `runActionPipeline`'s catch always
+      // answers `verdict: 'failed'` (the case below), never `did-not-finish`.
+      // `Interrupted` rather than `NotDone`, the way `verdictResultOf`'s own
+      // did-not-finish fallback already reads a missing `interrupted` as a
+      // crash, so this cell and the next no longer share one tag and
+      // `eventOf` can tell them apart without reading `plugin` (`#466`).
+      return { _tag: 'Interrupted', cause: outcome.interrupted ?? 'crash', head: outcome.head ?? null }
     case 'failed':
     case 'needs-approval':
-      // A kept `run:`'s own clean failure (`kept-run-action.ts:80`), or a
-      // throw: a mechanical operation did not happen. No `commit`-yielding
-      // action ever asks.
+      // A kept `run:`'s own clean failure (`kept-run-action.ts:80`), or any
+      // commit-yielding action's dependency throwing: a mechanical operation
+      // did not happen. No `commit`-yielding action ever asks.
       return { _tag: 'NotDone' }
   }
 }
@@ -375,8 +410,8 @@ type Base = { readonly step: Step; readonly action: string; readonly runId: stri
  * `StepOutcome` — `StepRequested` and `StepStarted` for every action that is
  * not `NotReached`, then the terminal event; nothing for one that is.
  *
- * **Reads `plugin`, and only here** — see the header for which three cells
- * need it and why `nextOf` never does.
+ * **Reads `plugin`** — see the header for the cell that still needs it and
+ * the one place `nextOf` reads it too.
  */
 export function eventOf(outcome: StepOutcome, runId: string): ActionEvent[] {
   const events: ActionEvent[] = []
@@ -445,7 +480,12 @@ function signoffEventOf(action: OfYields<'signoff'>, base: Base): ActionEvent {
     case 'Waived':
       return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotDone':
-      return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
+      // Every reachable `signoff` `NotDone` is `runActionPipeline`'s catch —
+      // `watch:`'s `then: 'request-approval'` and `human:` never return
+      // `failed`, `did-not-finish` or `never-ran` from their own code
+      // (`signoffResultOf`'s own comment) — always `verdict: 'failed'`, and
+      // the real pipeline always answers that with `StepFailed` (`#466`).
+      return { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -468,12 +508,12 @@ function commitEventOf(action: OfYields<'commit'>, base: Base): ActionEvent {
     case 'Interrupted':
       return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NotDone':
-      // The header's second cell: a kept `run:`'s own clean failure
-      // (`StepFailed`) against the work action's broken setup
-      // (`StepDidNotFinish`).
-      return action.plugin === 'run'
-        ? { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
-        : { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
+      // Every `commit` `NotDone` is `verdict: 'failed'` now — a kept `run:`'s
+      // own clean failure or any commit-yielding action's dependency throwing
+      // (`commitResultOf`'s did-not-finish fallback answers `Interrupted`
+      // instead, below) — and the real pipeline always answers `StepFailed`
+      // for `failed`, so this no longer reads `plugin` (`#466` fix round).
+      return { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NeverStarted':
       return { type: 'StepNeverRan', data: { ...base, detail: action.evidence } }
     case 'NotReached':
@@ -521,14 +561,33 @@ function mergeEventOf(action: OfYields<'merge'>, base: Base): ActionEvent {
   }
 }
 
+/**
+ * **Whether `runActionPipeline`'s own catch produced this result, not the
+ * action itself** (`#466`). The catch writes `evidence` as exactly `` `the
+ * ${name} action threw: ...` `` in one place (`action.ts:733`) and no action's
+ * own code writes that prefix, so matching it reads the pipeline's own
+ * deterministic wrapper rather than a judgement 0031 §1 reserves for a token.
+ * The one place this is needed: `nothing`'s `NotDone` has no spare arm the
+ * way `commit`'s `Interrupted` does, so a throw on a `file-brief:` and its
+ * own `did-not-finish` collapse onto the same tag and `plugin` alone cannot
+ * tell them apart.
+ */
+function threwRatherThanAnswered(action: { name: string; evidence: string }): boolean {
+  return action.evidence.startsWith(`the ${action.name} action threw: `)
+}
+
 function nothingEventOf(action: OfYields<'nothing'>, base: Base): ActionEvent {
   switch (action.result._tag) {
     case 'Completed':
       return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotDone':
-      // The header's third cell: `claim`'s own `queue:` decline is
-      // `StepFailed`; `implement`'s `file-brief:` is `StepDidNotFinish`.
-      return action.plugin === 'queue'
+      // `claim`'s own `queue:` decline is always `verdict: 'failed'`
+      // (`queue-action.ts`), so its `NotDone` is always `StepFailed` — and so
+      // is any `nothing`-yielding action's dependency throwing, since
+      // `runActionPipeline`'s catch never answers `did-not-finish`.
+      // `implement`'s `file-brief:` is `StepDidNotFinish` for its own three
+      // `did-not-finish`s, and `StepFailed` for a throw on the same plugin.
+      return action.plugin === 'queue' || threwRatherThanAnswered(action)
         ? { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
         : { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NotReached':

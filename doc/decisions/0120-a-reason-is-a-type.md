@@ -143,7 +143,7 @@ type Action = ActionBase &
           | Waived
           | NotReached
       }
-    | { yields: 'signoff'; result: { _tag: 'Completed'; requested: { question: string } | null } | Waived | NotReached } // null: not triggered
+    | { yields: 'signoff'; result: { _tag: 'Completed'; requested: { question: string } | null } | Waived | NotDone | NotReached } // null: not triggered; NotDone: the dependency a watch:/human: reads before it can ask threw (#466)
     | {
         yields: 'commit'
         result:
@@ -156,7 +156,7 @@ type Action = ActionBase &
     | {
         yields: 'design'
         result:
-          | { _tag: 'Drafted'; design: Design }
+          | { _tag: 'Drafted'; design: Design; head?: string | null } // head: a file: destination's own commit; absent for the drafting agent, which never commits (#466)
           | { _tag: 'Asked'; question: string; draft: string | null }
           | AnswerUnreadable
           | Interrupted
@@ -411,7 +411,7 @@ answers by yield and step:
 | any                                                  | `NeverStarted{scope}`                                                 | `Requeued{NeverStarted{scope}}`  |
 | any                                                  | `Interrupted{crash \| timeout \| aborted}`                            | `WaitOnPerson{AgentCrashed}`     |
 | any                                                  | `Interrupted{out-of-turns \| out-of-usd}`                             | `WaitOnPerson{BudgetExhausted}`  |
-| `nothing`, `worktree`, `commit`, `design`            | `NotDone`                                                             | `WaitOnPerson{SetupRefused}`     |
+| `nothing`, `worktree`, `commit`, `design`, `signoff` | `NotDone`                                                             | `WaitOnPerson{SetupRefused}`     |
 | `verdict` at `prepared`                              | `Completed{refused}` (a timeout is a refusal, `process-action.ts:74`) | `WaitOnPerson{SetupRefused}`     |
 | `verdict` at `proposed`, `merge`                     | `Completed{refused}`                                                  | `WaitOnPerson{CheckRefused}`     |
 | `verdict` at `review`, `proposed`, `merge`; `design` | `AnswerUnreadable`                                                    | `WaitOnPerson{AnswerUnreadable}` |
