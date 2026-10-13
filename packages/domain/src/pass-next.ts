@@ -12,10 +12,11 @@
  *
  * **`Landed` is already exported from the root** (`integration.ts:37`), so
  * this file's own `Landed` variant schema stays unexported, like every other
- * variant here — only `PassNext`, `RequeueCause` and their inferred types are
- * exported, following `wait.ts:28-31`'s rule. `#460` takes the `FixRound`
- * and `Requeued{Restart}` schemas it needs from `PassNext.options` and
- * `RequeueCause.options`.
+ * variant here — except `FixRound` and `Restart`, exported beside `PassNext`
+ * and `RequeueCause` so `routing.ts` (#460) can build its `CandidateNext`
+ * from the same two schemas rather than declaring second copies: a
+ * `FixRound` offer reuses this file's `FixRound` outright, and a `restart`
+ * offer wraps this file's `Restart` in `{ _tag: 'Requeued', cause: Restart }`.
  */
 import { z } from 'zod'
 
@@ -44,13 +45,19 @@ export class ImpossibleOutcomeError extends Error {
 
 const Advance = z.object({ _tag: z.literal('Advance'), to: Step })
 const Propose = z.object({ _tag: z.literal('Propose'), proposal: Proposal })
-const FixRound = z.object({
+
+/** A fix round's own shape, reused whole by `routing.ts`'s `CandidateNext` (#460). */
+export const FixRound = z.object({
   _tag: z.literal('FixRound'),
   to: Step.extract(['design', 'implement']),
   round: z.number().int(),
 })
+export type FixRound = z.infer<typeof FixRound>
 
-const Restart = z.object({ _tag: z.literal('Restart'), restart: z.number().int() })
+/** A restart's own shape, reused by `routing.ts`'s `CandidateNext` inside `{ _tag: 'Requeued', cause: Restart }` (#460). */
+export const Restart = z.object({ _tag: z.literal('Restart'), restart: z.number().int() })
+export type Restart = z.infer<typeof Restart>
+
 const NeverStartedCause = z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) })
 
 /** 0120 §4's two reasons `Requeued` ends a pass. */

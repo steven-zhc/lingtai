@@ -1,16 +1,18 @@
 /**
  * 0120 §3's escalation half: why `proposed`'s router could not pick a
  * candidate, exported as `RouteEscalation`. The rest of §3 — `RouteOffer`,
- * `offerFor`, `decideRoute`, `routeNext` — is not built here; this file holds
- * only the four-variant union `wait.ts`'s `EscalationBecause` and #460's
- * `RouteDecision` both need.
+ * `JudgeReply`, `RouteDecision`, `offerFor`, `decideRoute`, `routeNext` — is
+ * built in `routing.ts` (#460), which imports `pass-next.ts` and so cannot be
+ * imported back from here: this file stays a leaf, holding only
+ * `CandidateId`, `ExcludedCandidate` and the four-variant union `wait.ts`'s
+ * `EscalationBecause` and `routing.ts`'s `RouteDecision` both need.
  *
- * `RouteDecision` is `{ _tag: 'Escalated'; because: RouteEscalation }` and is
- * #460's to add — #460 says to reuse #458's `EscalationBecause` variants, and
- * this is the name it should find: `wait.ts`'s `EscalationBecause` is
+ * `routing.ts`'s `RouteDecision.Escalated.because` is written as
+ * `RouteEscalation` — #458's variants, reused rather than copied — which is
+ * what makes `wait.ts`'s claim true by construction: `EscalationBecause` is
  * `RouteEscalation | JudgeHandedOver`, so
- * `Extract<RouteDecision, { _tag: 'Escalated' }>['because']` is true by
- * construction once #460 writes `RouteDecision` this way.
+ * `Extract<RouteDecision, { _tag: 'Escalated' }>['because']` is assignable to
+ * it without `routing.ts` having to say so twice.
  *
  * Zod, not `Data.TaggedEnum`: 0101 §4 keeps `@lingtai/domain`'s only
  * dependency `zod`.
