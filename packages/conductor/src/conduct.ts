@@ -22,7 +22,14 @@ import {
 } from '@lingtai/actions'
 import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, taggedTrace } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type Hold, type Tier, legacyColumns, parsePayload, retiredRepairPending } from '@lingtai/domain'
+import {
+  type Hold,
+  type Tier,
+  WIP_COMMIT_PREFIX,
+  legacyColumns,
+  parsePayload,
+  retiredRepairPending,
+} from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type RuntimeId,
@@ -1261,6 +1268,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let ceilingHit: CeilingHit | null = null
       /**
+       * **Why the agent stopped mid-run, where it did — and null everywhere
+       * else** (`#468`).
+       *
+       * Set by the dispatch's own stop, not by whatever the pass eventually
+       * ends with: `publishWhatIsCommitted` runs on every ending that did not
+       * land, including a red build or a hold at `proposed`, and a dirty tree
+       * on those endings is not an agent's unfinished work — it is this
+       * process's own worktree sitting beside a step that refused on purpose.
+       * So this is `null` on every ending but the one where an agent was
+       * running when the pass stopped: `out-of-turns`, `out-of-usd`, a crash,
+       * a timeout, `no-commits`, or `'interrupted'` while a dispatch is still
+       * in flight (cleared the moment it returns with a commit).
+       *
+       * **Never set at `never-started`.** That agent touched nothing, so
+       * there is nothing in the worktree it could have left dirty.
+       */
+      let stoppedBy: string | null = null
+      /**
        * **A fix round that read the findings or the refusal and judged, not
        * crashed** — set exactly when it committed nothing and reported no
        * failure (`fixRound`, below). `said` is `FixApplied.said`, so the hold
@@ -1406,8 +1431,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       const baseShaOr = (fallback: string) => worktree?.baseSha ?? fallback
 
-      const numstat = async () => {
-        const stat = await gitOrDie(['diff', '--numstat', `${baseShaOr('HEAD')}..HEAD`]).catch(() => '')
+      /**
+       * Both ends default to what every existing caller already meant —
+       * `baseShaOr('HEAD')..HEAD` — so passing neither changes nothing. `to` is
+       * widened for `recordDiff`, below, which may be asked about a `branch`
+       * whose head is not `HEAD` once a WIP commit has moved it on
+       * (`keepUncommittedWork`, `#468`).
+       */
+      const numstat = async (from = baseShaOr('HEAD'), to = 'HEAD') => {
+        const stat = await gitOrDie(['diff', '--numstat', `${from}..${to}`]).catch(() => '')
         const rows = stat
           .split('\n')
           .filter(Boolean)
@@ -1450,6 +1482,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * that is refused must leave no arm on the log.*
        */
       let armPublished: string | null = null
+      /**
+       * **The dirty tree a stopped agent left, kept as its own commit** (`#468`).
+       *
+       * Made at most once per claim, by `keepUncommittedWork` inside
+       * `publishWhatIsCommitted` — the first call makes it (if `stoppedBy` names
+       * a stop and the tree is dirty), and the second finds the tree already
+       * clean and makes nothing. `parent` is `HEAD` as this agent left it before
+       * the commit, which is what the branch ref carries; `sha` is the WIP
+       * commit itself, which is what the arm carries and this never is.
+       */
+      let wip: { sha: string; parent: string; stoppedBy: string } | null = null
       /**
        * What the run's own stream has already been told this claim produced, as
        * `<ref>@<head>`. A key and not a flag, because `arm-only` corrects an
@@ -1503,7 +1546,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const recordDiff = async (ref: string, head: string): Promise<void> => {
         if (recordedDiff === producedKey(ref, head)) return
-        const counted = await numstat()
+        // `head` rather than the implicit `HEAD`: once a WIP commit exists,
+        // `branch`'s own head is the agent's last commit and `HEAD` is the
+        // WIP on top of it (`keepUncommittedWork`, `#468`) — two different
+        // counts, and this one is asked for the ref it is actually about.
+        const counted = await numstat(undefined, head)
         const row: ToAppend = {
           type: 'RunProducedDiff',
           actor: 'conductor',
@@ -1528,6 +1575,100 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * **A stopped agent's dirty tree, kept as its own commit before the
+       * worktree goes** (`#468`). The first thing `publishWhatIsCommitted`
+       * does, and ahead of its own `rev-parse HEAD` — so every read of `HEAD`
+       * below already sees it.
+       *
+       * Fires at most once per claim. `stoppedBy` is null on every ending
+       * nothing stopped mid-agent — a clean implementer, a red `build`, a
+       * `never-started` agent that touched nothing — and the commit this
+       * makes clears the dirty tree, so the second call (`publishWhatIsCommitted`
+       * runs inline and from the finalizer) finds nothing left and the `wip !==
+       * null` guard below is what stops it trying twice anyway.
+       *
+       * **No step of this pass ever sees this commit.** `publishWhatIsCommitted`
+       * is called only after `runPass` has returned (inline, and again from the
+       * finalizer registered after the worktree's own) — `build`, `review` and
+       * the merge lane have already run or been skipped by the time this does.
+       * `integrate.ts`'s own guard is the other half, for a *later* pass that
+       * committed on top of one instead of taking its contents as the brief
+       * asks.
+       *
+       * Every git call here is asked rather than died on
+       * (`gitAsked`, not `gitOrDie`): a failed WIP must never cost the publish
+       * of the real commits below it, which is `noteRefs`' own rule read for
+       * this row.
+       */
+      const keepUncommittedWork = async (): Promise<void> => {
+        if (stoppedBy === null || wip !== null) return
+        const dirty = await gitAsked(['status', '--porcelain'])
+        if (Either.isLeft(dirty) || dirty.right.trim() === '') return
+        const parent = await gitAsked(['rev-parse', 'HEAD'])
+        if (Either.isLeft(parent)) return
+        const added = await gitAsked(['add', '-A'])
+        if (Either.isLeft(added)) {
+          runLog.note('push', `the dirty tree was not kept — git add failed: ${added.left.detail}`)
+          return
+        }
+        // The identity is explicit because nothing else configures one in
+        // this worktree, and signing is off for the same reason `--no-verify`
+        // is: a failed hook or a missing key must not cost this one commit.
+        const committed = await gitAsked([
+          '-c',
+          'user.name=Lingtai',
+          '-c',
+          'user.email=lingtai@users.noreply.github.com',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '--no-verify',
+          '-m',
+          `${WIP_COMMIT_PREFIX}${runId} stopped by ${stoppedBy}`,
+        ])
+        if (Either.isLeft(committed)) {
+          runLog.note('push', `the dirty tree was not kept — git commit failed: ${committed.left.detail}`)
+          return
+        }
+        const after = await gitAsked(['rev-parse', 'HEAD'])
+        if (Either.isLeft(after)) {
+          runLog.note('push', `the dirty tree was committed but its sha could not be read — ${after.left.detail}`)
+          return
+        }
+        wip = { sha: after.right, parent: parent.right, stoppedBy }
+        runLog.note('push', `kept the dirty tree as ${after.right.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`)
+      }
+
+      /**
+       * The WIP's own account, appended once the arm that carries it is
+       * actually on origin — never before, for `RunRefsPublished`'s own reason:
+       * a sha named on the log must be fetchable. Counted `parent..sha`, which
+       * is the WIP alone and not the whole of what the arm carries.
+       */
+      const noteKept = async (made: NonNullable<typeof wip>): Promise<void> => {
+        const counted = await numstat(made.parent, made.sha)
+        try {
+          await appendAt(runId, [
+            {
+              type: 'RunKeptUncommitted',
+              actor: 'conductor',
+              data: parsePayload('RunKeptUncommitted', {
+                arm,
+                sha: made.sha,
+                parentSha: made.parent,
+                stoppedBy: made.stoppedBy,
+                ...counted,
+              }),
+            },
+          ])
+        } catch (defect) {
+          const why = whyOf(defect)
+          runLog.note('push', `${made.sha.slice(0, 7)} is on ${arm} and was not recorded — ${why}`)
+          log(`RunKeptUncommitted was refused by the store: ${why}`)
+        }
+      }
+
+      /**
        * **What this claim leaves behind, whatever ending it had** (0062 §1).
        *
        * A worktree is cut `--force --detach` and removed when this scope closes,
@@ -1540,6 +1681,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (worktree === null) return null
         const tree = worktree
         try {
+          await keepUncommittedWork()
           const at = await gitAsked(['rev-parse', 'HEAD'])
           if (Either.isLeft(at)) {
             runLog.note('push', `${branch} was not pushed — ${at.left.detail}`)
@@ -1547,6 +1689,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return at.left.detail
           }
           const head = at.right
+          /**
+           * **What `branch` carries, as opposed to the arm** (`#468`).
+           *
+           * Unchanged by a WIP when there is no WIP: `wip === null` on every
+           * ending this file already had, so `branchHead` is `head` and
+           * everything below reads exactly as it did. Where a WIP exists it is
+           * never `branch`'s — `wip.parent` is, the agent's own last commit —
+           * and `null` where that parent is the base itself: the agent made no
+           * commit of its own, the WIP is the whole of what this claim has, and
+           * `agent/<n>` is left alone entirely rather than asked to carry it.
+           */
+          const branchHead: string | null = wip === null ? head : wip.parent === tree.baseSha ? null : wip.parent
           if (head === tree.baseSha) {
             runLog.note('push', `nothing to push — ${branch} is still at the base`)
             await noteRefs('nothing-committed', null, null)
@@ -1574,18 +1728,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * branch's refspec is a no-op at a head origin already has, and the
            * forced arm is the whole point of the second trip.
            */
-          if (head === published && head === armPublished) {
+          if (branchHead === published && head === armPublished) {
             await noteRefs('already-published', head, null)
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
-            await recordDiff(branch, head)
+            // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
+            // `approve()`/`waive()` through `RunState.headSha`, and a WIP with
+            // no commit of the agent's own has nothing there to record.
+            if (branchHead !== null) await recordDiff(branch, branchHead)
             return null
           }
           const pushed = await gitAsked([
             'push',
-            `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
+            // No lease at all where there is nothing for `branch` to carry:
+            // a `--force-with-lease` protecting a refspec this push does not
+            // make is a command refused for a ref it was never going to touch.
+            ...(branchHead === null ? [] : [`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`]),
             'origin',
-            `HEAD:refs/heads/${branch}`,
+            // `HEAD` where a WIP never moved it past what `branch` is meant to
+            // carry — every ending this file already had — and the explicit
+            // sha where it did: `HEAD` by then names the WIP, and `branch`
+            // must never.
+            ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
             `+HEAD:refs/heads/${arm}`,
           ])
           if (Either.isLeft(pushed)) {
@@ -1604,19 +1768,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // the whole point of asking it separately.
               armPublished = head
               await noteRefs('arm-only', head, pushed.left.detail)
-              await recordDiff(arm, head)
+              // Only where there is a real commit for the arm to carry —
+              // `RunKeptUncommitted`, not this, is the account of a WIP.
+              if (branchHead !== null) await recordDiff(arm, head)
+              if (wip !== null) await noteKept(wip)
               return pushed.left.detail
             }
             runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
             await noteRefs('refused', head, pushed.left.detail)
             return pushed.left.detail
           }
-          lease = head
-          published = head
+          if (branchHead !== null) {
+            lease = branchHead
+            published = branchHead
+          }
           armPublished = head
-          runLog.note('push', `${branch} and ${arm} at ${head.slice(0, 7)}`)
+          runLog.note(
+            'push',
+            branchHead === null
+              ? `only a WIP was committed — ${arm} at ${head.slice(0, 7)}, ${branch} left alone`
+              : wip === null
+                ? `${branch} and ${arm} at ${head.slice(0, 7)}`
+                : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
+          )
           await noteRefs('published', head, null)
-          await recordDiff(branch, head)
+          // Never for the arm alone (`#468`) — see the `already-published`
+          // branch above for why.
+          if (branchHead !== null) await recordDiff(branch, branchHead)
+          if (wip !== null) await noteKept(wip)
           return null
         } catch (defect) {
           const why = whyOf(defect)
@@ -2702,6 +2881,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   (controller) => Effect.sync(() => controller.abort()),
                 )
 
+                // **An agent is running, and nothing else has judged the tree
+                // it leaves behind** (`#468`). Cleared below the moment this
+                // dispatch returns with a commit; left standing on every other
+                // return so a crash or an interruption between here and there
+                // still keeps a dirty tree rather than losing it with the
+                // worktree.
+                stoppedBy = 'interrupted'
                 const outcome = yield* Effect.promise(() =>
                   dispatched.run({
                     runId,
@@ -2782,6 +2968,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           ])
           if (outcome.failure.kind === 'never-started') {
+            // That agent touched nothing, so there is nothing in the worktree
+            // it could have left dirty — `interrupted` does not stand for it.
+            stoppedBy = null
             return {
               neverStarted: {
                 agent: options.runtime.capabilities.id,
@@ -2789,6 +2978,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               },
             }
           }
+          // Every other failure kind is an agent that was running and stopped
+          // mid-run (`#468`): `interrupted`, set before the dispatch above, is
+          // replaced with the runtime's own word for why.
+          stoppedBy = outcome.failure.kind
           if (outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd') {
             ceilingHit = {
               kind: outcome.failure.kind,
@@ -2831,7 +3024,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // commit of its own cannot stand in for one. An agent that ran and committed
         // nothing left no receipt, and the pass stops rather than buying a round to
         // fix a diff that does not exist.
-        if (head === startedAt) return { stopped: 'the agent produced no commits', committedNothing: true }
+        if (head === startedAt) {
+          // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
+          // ticket's own second case, and the one `#237` was.
+          stoppedBy = 'no-commits'
+          return { stopped: 'the agent produced no commits', committedNothing: true }
+        }
+        // A receipt, so `interrupted` stands for nothing any more.
+        stoppedBy = null
         await recordDiff(branch, head)
         await appendNow(runId, [
           {
@@ -2903,6 +3103,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }
 
         const underReview = await gitOrDie(['diff', `${tree.baseSha}...HEAD`])
+        // The same flag `firstDispatch` sets before its own dispatch, and for
+        // the same reason (`#468`): an agent is running, and nothing has
+        // judged what it leaves in the worktree if it is interrupted here.
+        stoppedBy = 'interrupted'
         const fixed = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
@@ -2984,12 +3188,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (fixed.failure?.kind === 'never-started') {
           // Whose wall it was, for the sentence the pause carries (`fixWall`).
           fixWall = { action: from, round }
+          // That agent touched nothing either, for `firstDispatch`'s own reason.
+          stoppedBy = null
           return {
             neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
           }
         }
         if (!committed) {
           if (!fixed.failure) declined = { said: fixSaid }
+          // A decline judged the findings or the refusal rather than being cut
+          // off mid-run — `declined`, just above — so `interrupted` does not
+          // stand for it either; a crash or a wall does, in the runtime's own
+          // word for it (`#468`).
+          stoppedBy = fixed.failure ? fixed.failure.kind : null
           const cause = fixed.failure?.kind
           return {
             stopped: fixed.failure
@@ -3009,6 +3220,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : { interrupted: cause }),
           }
         }
+        // A commit, so `interrupted` stands for nothing any more.
+        stoppedBy = null
         await recordDiff(branch, after)
         return { committed: after }
       }

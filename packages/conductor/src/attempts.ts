@@ -79,6 +79,24 @@ export interface AttemptOutcome {
     deletions: number
   } | null
   /**
+   * From `RunKeptUncommitted` (`#468`): a stopped agent's dirty tree, kept as
+   * its own commit on the arm alone. Null on every attempt that never stopped
+   * mid-run with uncommitted edits, which is every attempt before this
+   * existed and most since.
+   *
+   * **Never offered as something to build on the way `produced` is** —
+   * `arm` is never `agent/<n>`, and the brief tells the next attempt to take
+   * its *contents*, not reset onto it (see `attemptBrief`).
+   */
+  kept: {
+    arm: string
+    sha: string
+    stoppedBy: string
+    files: number
+    insertions: number
+    deletions: number
+  } | null
+  /**
    * What refused, and what it said.
    *
    * `what` names the gate point and action (`proposed:build`) or the run's own
@@ -195,6 +213,7 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
  */
 export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBudget): AttemptOutcome {
   let produced: AttemptOutcome['produced'] = null
+  let kept: AttemptOutcome['kept'] = null
   let receipt: AttemptOutcome['receipt'] = null
   let evidence: AttemptOutcome['evidence'] = null
   let failed: AttemptOutcome['evidence'] = null
@@ -205,6 +224,12 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
       case 'RunProducedDiff': {
         const d = event.data as PayloadOf<'RunProducedDiff'>
         produced = d
+        break
+      }
+
+      case 'RunKeptUncommitted': {
+        const d = event.data as PayloadOf<'RunKeptUncommitted'>
+        kept = d
         break
       }
 
@@ -308,7 +333,7 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
     }
   }
 
-  return { produced, evidence, receipt }
+  return { produced, kept, evidence, receipt }
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
@@ -391,14 +416,33 @@ export function attemptBrief(
   // not know the attempt produced nothing — it knows nothing — and saying the
   // first would be an invention in a prompt.
   const produced = last.outcome === null ? undefined : last.outcome.produced
+  const kept = last.outcome?.kept ?? null
   if (produced !== undefined) {
     lines.push('', `### What attempt ${last.n} produced`, '')
   }
   if (produced === null) {
-    lines.push(
-      'Nothing. It committed no change, so there is no branch to build on and this',
-      'attempt starts where the first one did.',
-    )
+    if (kept === null) {
+      lines.push(
+        'Nothing. It committed no change, so there is no branch to build on and this',
+        'attempt starts where the first one did.',
+      )
+    } else {
+      // **#468.** No commit of its own, but it stopped mid-run with edits
+      // still in the worktree, and those were kept rather than lost with it.
+      // The verb is `checkout`, never `reset --hard`: that commit is on the
+      // arm alone and must never become part of `agent/<n>`'s own history
+      // (`integrate.ts`'s own guard refuses one that does).
+      lines.push(
+        `Nothing of its own, but it stopped (${kept.stoppedBy}) with ${kept.files} file(s) of`,
+        `uncommitted edits, +${kept.insertions} −${kept.deletions}, kept as \`${kept.sha.slice(0, 7)}\` on`,
+        `\`${kept.arm}\`. **That commit was never built or reviewed** — it is this file's own`,
+        'safety net, not a verdict about the code.',
+        '',
+        `To use it: \`git fetch origin ${kept.arm}\`, then \`git checkout ${kept.sha.slice(0, 7)} -- .\``,
+        'from this worktree to take its contents without taking the commit itself. Whether',
+        'any of it is worth keeping is yours to judge.',
+      )
+    }
   } else if (produced !== undefined) {
     lines.push(
       `${produced.files} file(s), +${produced.insertions} −${produced.deletions}, committed on \`${produced.branch}\` at \`${produced.headSha.slice(0, 7)}\`.`,
@@ -408,6 +452,14 @@ export function attemptBrief(
       `what is worth keeping from \`${produced.headSha.slice(0, 7)}\`; if it does not, ignore them. Either way`,
       'what you push replaces that branch.',
     )
+    if (kept !== null) {
+      lines.push(
+        '',
+        `It then stopped (${kept.stoppedBy}) with ${kept.files} more file(s) of uncommitted edits, kept`,
+        `as \`${kept.sha.slice(0, 7)}\` on \`${kept.arm}\` — also never built or reviewed. \`git fetch origin`,
+        `${kept.arm}\` and \`git checkout ${kept.sha.slice(0, 7)} -- .\` to take those too.`,
+      )
+    }
   }
 
   const receipt = last.outcome?.receipt ?? null

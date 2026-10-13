@@ -60,8 +60,20 @@ export const RefusalReason = z.enum([
   'push-rejected',
   'lane-busy',
   'unexpected',
+  // A commit a stopped run's own conductor made, found on the branch the lane
+  // is about to merge — never a judgement about the branch itself (#468).
+  'wip-commit',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
+
+/**
+ * The subject line a WIP commit carries, and the one thing that marks it as
+ * one — `conduct.ts`'s `keepUncommittedWork` writes it, and `integrate.ts`'s
+ * lane guard refuses anything that starts with it (#468). One constant so the
+ * two can never name it differently; `@lingtai/repo` cannot hold it because
+ * `conduct.ts` imports *types* only from that package (`live.ts`).
+ */
+export const WIP_COMMIT_PREFIX = 'wip: '
 
 /**
  * Additive to the enum. No stored event is rewritten and no version is

@@ -143,6 +143,12 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    * `push-rejected` — the lane's own machinery, never the branch.
    */
   unexpected: 'lingtai',
+  /**
+   * A WIP commit Lingtai's own conductor made for a run it stopped, found on
+   * the branch by a later claim. Lingtai's rule — never land one — and
+   * Lingtai's own commit; nothing about the branch's code is in question.
+   */
+  'wip-commit': 'lingtai',
 }
 
 /**
@@ -290,6 +296,13 @@ const REFUSAL_READING: Record<
     says: ({ branch }) => `the merge lane failed in a way it does not handle, and nothing about ${branch} was judged.`,
     // Nothing is recommended: a defect is not a question about the diff, and
     // requeueing would walk straight back into whatever broke.
+    move: null,
+  },
+  'wip-commit': {
+    says: ({ branch, base }) =>
+      `${branch} carries a commit Lingtai made for a run it stopped, which must never land on ${base}.`,
+    // No move is named: a person decides whether to drop the commit or take
+    // what is worth keeping from it, and either is a diff Lingtai cannot write.
     move: null,
   },
 }

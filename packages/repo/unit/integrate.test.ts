@@ -29,7 +29,7 @@ type Call = { args: string[]; cwd: string }
  * the branch always has something to merge), and everything else succeeds —
  * except what a test asks to fail.
  */
-function fakeGit(opts: { failMerge?: boolean; failCompareAndSwap?: boolean } = {}) {
+function fakeGit(opts: { failMerge?: boolean; failCompareAndSwap?: boolean; subjects?: string[] } = {}) {
   const calls: Call[] = []
   const sha = '1'.repeat(40)
 
@@ -38,6 +38,7 @@ function fakeGit(opts: { failMerge?: boolean; failCompareAndSwap?: boolean } = {
     const [cmd, second] = args
     if (cmd === 'rev-parse') return Effect.succeed(sha)
     if (cmd === 'rev-list') return Effect.succeed('1')
+    if (cmd === 'log') return Effect.succeed((opts.subjects ?? []).join('\n'))
     if (cmd === 'status' || cmd === 'diff' || cmd === 'for-each-ref') return Effect.succeed('')
     if (cmd === 'merge' && second !== '--abort' && opts.failMerge) {
       return Effect.fail(new RepoFailed({ operation: 'git merge', detail: 'CONFLICT (content): Merge conflict' }))
@@ -131,5 +132,33 @@ describe('the merge lane fetches into refs only it uses (#438)', () => {
 
     const cas = fake.calls.find((c) => c.args[0] === 'update-ref' && c.args[1] === `refs/heads/${BASE}`)
     expect(cas).toBeDefined()
+  })
+})
+
+/**
+ * **A `wip:` commit must never land, however it got onto the branch** (`#468`).
+ *
+ * `conduct.ts`'s own `keepUncommittedWork` never pushes one to `agent/<n>` —
+ * only to the arm — so the only way one of these reaches `laneBranch` is a
+ * later agent resetting onto an arm the brief told it to take the *contents*
+ * of instead. This is the lane's own backstop for that mistake.
+ */
+describe('the merge lane refuses a WIP commit (#468)', () => {
+  it('refuses before the merge when a commit subject starts with the WIP prefix', async () => {
+    const fake = fakeGit({ subjects: ['implement the fix', 'wip: run-abc stopped by out-of-turns'] })
+    const result = await integrate(options(fake.git))
+    expect(result.ok, JSON.stringify(result)).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('wip-commit')
+
+    // Before the merge: a WIP commit must never be offered to it at all.
+    const merge = fake.calls.find((c) => c.args[0] === 'merge' && c.args[1] !== '--abort')
+    expect(merge).toBeUndefined()
+  })
+
+  it('merges normally when nothing on the branch carries the prefix', async () => {
+    const fake = fakeGit({ subjects: ['implement the fix', 'fix(lane): tighten the check'] })
+    const result = await integrate(options(fake.git))
+    expect(result.ok, JSON.stringify(result)).toBe(true)
   })
 })

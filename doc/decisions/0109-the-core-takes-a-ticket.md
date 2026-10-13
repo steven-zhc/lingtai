@@ -112,6 +112,21 @@ run.
    (`nothing-committed`, `refused`, `arm-only`, …). A head still at the base
    publishes nothing. A landing pushes `agent/<n>` alone, through the lane.
 
+   **A stopped agent's dirty tree is committed too, on the arm alone.** Where
+   the implementer or a fix round stops mid-run — a ceiling, a crash, a
+   timeout, an agent that committed nothing — `keepUncommittedWork` in
+   `conduct.ts` commits whatever the worktree still holds, as the conductor
+   and not the agent, before either ref is pushed. The commit is recorded on
+   its own event, `RunKeptUncommitted`, never on `RunProducedDiff`:
+   `RunProducedDiff.headSha` is what `approve()` merges and what `waive()`
+   binds a waiver to, and a WIP commit must never be offered to either.
+   `agent/<n>` carries the agent's own last commit, if it made one, and
+   nothing more — the WIP commit itself reaches no ref but the arm. The merge
+   lane refuses a branch that carries one by its subject's prefix
+   (`integrate.ts`, `'wip-commit'`), which is the backstop for a later agent
+   that committed on top of one instead of taking its contents as the brief
+   asks (#468).
+
 7. **The agent commits as the work stands.** `prompts/ticket.md` tells the
    implementer to commit each piece as it lands and not to push. The worktree is
    deleted when the pass ends and there is no warning before the last turn. An
@@ -127,6 +142,13 @@ run.
    attempt's prompt is unchanged and no ref is offered that would not resolve.
    The arm name is derived from `k`, never stored. The brief offers (`git show
    <ref>:<path>`, `git diff HEAD <ref>`) and leaves the judgement to the agent.
+
+   **A kept WIP commit is offered the same way, and told apart from one.**
+   `attemptBrief` reads `RunKeptUncommitted` off the previous run's stream and
+   says how many files, which arm, which sha, and what it stopped on — and
+   that the commit was never built or reviewed. The verb is `git checkout
+   <sha> -- .`, never `git reset --hard`: resetting onto it would put the WIP
+   commit into `agent/<n>`'s own history, which the lane guard above refuses.
 
 9. **The cut does not move.** Every pass starts from the base as the mirror
    has it, never from an earlier attempt's branch. A refused approach does not

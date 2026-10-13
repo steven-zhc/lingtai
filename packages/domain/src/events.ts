@@ -29,9 +29,20 @@ import {
   type Severity,
   Step,
   STEPS,
+  WIP_COMMIT_PREFIX,
 } from './vocabulary.ts'
 
-export { Finding, RefusalReason, RUN_FAILURE_KINDS, type RunFailureKind, SEVERITIES, type Severity, Step, STEPS }
+export {
+  Finding,
+  RefusalReason,
+  RUN_FAILURE_KINDS,
+  type RunFailureKind,
+  SEVERITIES,
+  type Severity,
+  Step,
+  STEPS,
+  WIP_COMMIT_PREFIX,
+}
 
 // ---------------------------------------------------------------- shared ----
 
@@ -537,6 +548,33 @@ export const RunRefsPublished = z.object({
    * were about when `unrecorded`, and null otherwise.
    */
   detail: z.string().nullable(),
+})
+
+/**
+ * **A stopped run's dirty tree, kept as its own commit rather than lost with
+ * the worktree** (`#468`).
+ *
+ * `conduct.ts`'s `keepUncommittedWork` appends this after the push that put
+ * `sha` on `arm` succeeds, never before — a sha named here must be fetchable.
+ * It is deliberately its own type rather than a field on `RunProducedDiff`:
+ * `RunProducedDiff.headSha` is what `approve()` merges and what `waive()`
+ * binds a waiver to, and this commit must never be offered to either. `arm`
+ * (`agent/<n>-attempt-<k>`) is the only ref it is ever on; `agent/<n>` itself
+ * carries `parentSha` at most, through `RunProducedDiff` exactly as it always
+ * has.
+ */
+export const RunKeptUncommitted = z.object({
+  /** `agent/<n>-attempt-<k>` — the one ref this commit is ever pushed to. */
+  arm: z.string(),
+  /** The WIP commit itself. */
+  sha: z.string(),
+  /** What it is a WIP on top of: the agent's own last commit, or the base. */
+  parentSha: z.string(),
+  /** `RunFailed.kind`, `'no-commits'`, or `'interrupted'` — why the agent stopped mid-run. */
+  stoppedBy: z.string(),
+  files: z.number().int(),
+  insertions: z.number().int(),
+  deletions: z.number().int(),
 })
 
 /** The moment the gate pipeline fires. */
@@ -2199,6 +2237,7 @@ export const EVENTS = {
   RunAwaitingInput,
   RunProducedDiff,
   RunRefsPublished,
+  RunKeptUncommitted,
   RunProposedCompletion,
   RunFinished,
   RunFailed,

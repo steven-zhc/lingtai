@@ -435,6 +435,148 @@ describe('when the agent meets the wall', () => {
       headSha: 'b'.repeat(40),
     })
   })
+
+  /**
+   * **A clean tree writes nothing** (`#468`). Every other test in this file
+   * meets the wall with `git status --porcelain` answering empty, the way
+   * `fakePorts`'s own git port does by default — so this is the same ending,
+   * asserted for the property the new behaviour must not disturb.
+   */
+  it('commits nothing and records no RunKeptUncommitted when the tree is clean', async () => {
+    const { did, run } = await hitTheWall(true)
+    expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
+    expect(did.some((d) => d.includes('commit'))).toBe(false)
+  })
+
+  /**
+   * **A stopped agent's dirty tree is kept as its own commit, on the arm and
+   * never on `agent/<n>`** (`#468`). `atTheWall`'s own ending — `out-of-turns`
+   * — is `stoppedBy`'s own case, and `keepUncommittedWork` runs ahead of the
+   * publish's `rev-parse HEAD`, so every read below already sees the commit
+   * it made.
+   */
+  describe('and the worktree is left dirty', () => {
+    const WIP_SHA = 'c'.repeat(40)
+
+    /**
+     * `committed` carries `hitTheWall`'s own meaning — whether `wire` left a
+     * commit of the implementer's in the tree (`'b'*40`) or the tree never
+     * moved off the base (`'a'*40`, `#237`'s shape) — and adds the dirt
+     * `status --porcelain` answers with until the commit this test watches
+     * for is made.
+     */
+    const hitTheWallDirty = async (committed: boolean) => {
+      const store = memoryStore()
+      const did: string[] = []
+      const said: string[] = []
+      const ports = fakePorts(did, store)
+      const appended = store.append.bind(store) as EventStore['append']
+      store.append = async (stream, at, events) => {
+        for (const e of events) did.push(`append ${e.type}`)
+        return appended(stream, at, events)
+      }
+
+      let dirty = true
+      let head = committed ? 'b'.repeat(40) : 'a'.repeat(40)
+      const inner = ports.repo.git
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => {
+            did.push('git status')
+            return dirty ? ' M src/leftover.ts\n' : ''
+          })
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => {
+            did.push('git rev-parse')
+            return head
+          })
+        }
+        if (args[0] === 'add') {
+          return Effect.sync(() => {
+            did.push('git add -A')
+            return ''
+          })
+        }
+        if (args.includes('commit')) {
+          return Effect.sync(() => {
+            did.push('git commit --no-verify')
+            dirty = false
+            head = WIP_SHA
+            return ''
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) }
+    }
+
+    it('keeps it on the arm at the agent’s own commit, and leaves the branch there too', async () => {
+      const { result, did, run } = await hitTheWallDirty(true)
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      // In order: add, commit, then a push whose branch refspec carries the
+      // agent's own commit — never the WIP sha.
+      expect(did.indexOf('git add -A')).toBeLessThan(did.indexOf('git commit --no-verify'))
+      const push = `git push ${'b'.repeat(40)}:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1`
+      expect(did).toContain(push)
+      expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf(push))
+
+      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+      expect(kept).toBeDefined()
+      expect(kept!.data).toMatchObject({
+        arm: 'agent/7-attempt-1',
+        sha: WIP_SHA,
+        parentSha: 'b'.repeat(40),
+        stoppedBy: 'out-of-turns',
+      })
+
+      // The branch's own `RunProducedDiff` names the agent's commit, not the
+      // WIP sha on top of it.
+      const produced = run.find((e) => e.type === 'RunProducedDiff')
+      expect(produced!.data).toMatchObject({ branch: 'agent/7', headSha: 'b'.repeat(40) })
+    })
+
+    it('keeps it on the arm alone when the agent itself committed nothing', async () => {
+      const { result, did, run } = await hitTheWallDirty(false)
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      // The arm, and never `refs/heads/agent/7`.
+      const pushes = did.filter((d) => d.startsWith('git push'))
+      expect(pushes).toEqual(['git push +HEAD:refs/heads/agent/7-attempt-1'])
+
+      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+      expect(kept).toBeDefined()
+      expect(kept!.data).toMatchObject({
+        arm: 'agent/7-attempt-1',
+        sha: WIP_SHA,
+        parentSha: 'a'.repeat(40),
+        stoppedBy: 'out-of-turns',
+      })
+
+      // Nothing was ever this claim's own commit, so there is no
+      // `RunProducedDiff` at all — `RunKeptUncommitted` is the whole account.
+      // `approve()`/`waive()` read the former through `RunState.headSha`, and
+      // a WIP with no commit of the agent's own must never be offered there.
+      expect(run.some((e) => e.type === 'RunProducedDiff')).toBe(false)
+    })
+  })
 })
 
 /**

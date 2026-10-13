@@ -227,6 +227,14 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const where = `${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}`
     return outcome === 'already-published' ? `already there — ${where}` : where
   },
+  /**
+   * **A stopped run's dirty tree, kept rather than lost with the worktree**
+   * (`#468`). `arm` is the only ref it is ever on — never `branch`, and never
+   * `main`.
+   */
+  RunKeptUncommitted: (d) =>
+    `kept ${need(d, 'files')} file(s) +${need(d, 'insertions')} −${need(d, 'deletions')} as ${sha(d, 'sha')} ` +
+    `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
   RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
   RunFinished: (d) => `${need(d, 'turns')} turns, $${Number(d['costUsd'] ?? 0).toFixed(2)}`,
   RunFailed: (d) => `${need(d, 'kind')}: ${clip(d['detail'])}`,
