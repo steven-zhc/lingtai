@@ -142,6 +142,14 @@ export function legacyColumns(hold: Hold): LegacyColumns {
       // already reads "`${branch}` into `${base}` is waiting on you. …",
       // because branch/base are not fields a `Hold` carries.
       const question = hold.why
+      // `conflict`/`verify-failed` are also `RefusalReason`s, and the same
+      // function `MergeRefused` reads below must answer them the same way
+      // here — the owner sentence and the move, not the composed `why` on
+      // top of it, are what `approve.ts`'s "one function" comment is about.
+      const reading =
+        hold.when === 'conflict' || hold.when === 'verify-failed'
+          ? diagnoseRefusal({ reason: hold.when, detail: hold.raw ?? '', branch: '', base: '' })
+          : null
       return {
         question,
         runId: hold.run.runId,
@@ -150,9 +158,11 @@ export function legacyColumns(hold: Hold): LegacyColumns {
         needsFrom: 'human',
         diagnosis: {
           what: question + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
+          done: reading?.done ?? repairDone(hold.run),
           raw: hold.raw,
-          recommendation: hold.when === 'findings' && hold.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null,
+          recommendation:
+            reading?.recommendation ??
+            (hold.when === 'findings' && hold.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null),
         },
       }
     }

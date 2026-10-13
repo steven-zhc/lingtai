@@ -384,9 +384,12 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
      * takes, from here or from a pass.
      */
     const blocked = await store.read(workItemId)
-    // The same reading of the refusal `conduct.ts`'s own blocked ending builds
-    // a `Hold` from — from the one function, so an approval that failed and a
-    // pass that failed cannot describe the same conflict differently (#83).
+    // `diagnoseRefusal` is the one function behind both tags: a pass's own
+    // `conflict`/`verify-failed` refusal is `Routed` rather than `MergeRefused`
+    // since #452 (`hold-of.ts`'s step 1), carrying its own composed `why` —
+    // but `legacyColumns` reads both `Routed` and `MergeRefused` through this
+    // same function, so `done` and `recommendation`, the owner sentence and
+    // the move, cannot describe the same conflict differently (#83).
     const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, workItemId, branch)
     const hold: Hold = {
       _tag: 'MergeRefused',

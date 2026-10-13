@@ -174,7 +174,11 @@ describe('holdOfPass', () => {
     })
   })
 
-  it('reads a `prepared` install refusal with the rounds spent as Routed, when: red — the same evidence one step earlier', () => {
+  it('reads a `prepared` refusal as SetupRefused, lifts: person — excluded from step 1 by name', () => {
+    // `rested` stays `'waiting'` (BASE_INPUT's default — the router does send
+    // this on, same as a `build` red would be) and `directionOf` would answer
+    // `'red'` for it too; `prepared` is excluded by name regardless, per 0120
+    // §2 and the ticket's own variant table.
     const hold = holdOfPass({
       ...BASE_INPUT,
       stopped: {
@@ -183,7 +187,14 @@ describe('holdOfPass', () => {
       },
       lastRoute: { from: 'prepared', to: 'waiting', why: 'ENOSPC' },
     })
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'red', raw: 'ENOSPC' })
+    expect(hold).toEqual({
+      _tag: 'SetupRefused',
+      run: { runId: 'run-1' },
+      step: 'prepared',
+      lifts: 'person',
+      why: 'ENOSPC',
+      raw: 'ENOSPC',
+    })
   })
 
   it('reads a `proposed` refusal — the router itself, never routed — as CheckRed', () => {

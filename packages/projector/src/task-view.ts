@@ -1143,14 +1143,19 @@ export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldL
  *
  * **`needs` is read, and that is what makes the third sentence true** (`#197`).
  * It used to hold by accident: the only blocks written `acknowledgement` — the
- * merge lane's, the out-of-turns one, a spent approval's — left no open
- * `ApprovalRequested`, so `awaitingSha` was null and this returned null without
- * ever asking. A fixer killed mid-round now writes `acknowledgement` on a block
- * that *does* hold a sha, and the chip read *waiting for your review* — whose
- * move is approve or reject what is there — directly beside a headline saying
- * *this is infrastructure and not your call: send it again*. A chip and a
- * headline prescribing opposite moves on one card is the failure #147 split the
- * chip to end, so the rule that was documented is now the rule that runs.
+ * merge lane's own undirected reasons (`dirty-base` and the rest), the
+ * out-of-turns one, a spent approval's — left no open `ApprovalRequested`, so
+ * `awaitingSha` was null and this returned null without ever asking. A fixer
+ * killed mid-round now writes `acknowledgement` on a block that *does* hold a
+ * sha, and the chip read *waiting for your review* — whose move is approve or
+ * reject what is there — directly beside a headline saying *this is
+ * infrastructure and not your call: send it again*. A chip and a headline
+ * prescribing opposite moves on one card is the failure #147 split the chip to
+ * end, so the rule that was documented is now the rule that runs. **Since
+ * #452 a `conflict`/`verify-failed` refusal the router sent on is `Routed`,
+ * writes `judgement` and does hold one** — correctly, because there the chip
+ * and the headline agree: a branch that does not merge is exactly what *your
+ * review* means.
  *
  * Beside `describeHold` for its reason (#83, #100): the card and `lingtai
  * status` both say it, and must say it in the same words.

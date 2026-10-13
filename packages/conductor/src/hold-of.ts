@@ -13,6 +13,13 @@
  * — the merge lane's own six reasons, which stop it before the diff is what
  * is in doubt — keeps its `Failure` variant, and so does everything
  * `stoppedAt`/`ceilingHit` say nobody decided.
+ *
+ * **`prepared` is the one exception, by name.** `directionOf` answers `'red'`
+ * for it exactly as it does for `build`, but 0120 §2 and the ticket's own
+ * variant table keep a `prepared` refusal `SetupRefused` — *nobody decided;
+ * the step itself broke* — rather than routing it, so step 1 below excludes
+ * `stopped.step === 'prepared'` and the `refused` case in the switch is where
+ * it is still produced.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {
@@ -98,7 +105,14 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
   // or `conflict`, the rounds spent either way. Before the merge-refused
   // check below: a `conflict`/`verify-failed` refusal is also a `merge`
   // refusal, and it must read as `Routed` rather than `MergeRefused`.
-  if (input.rested === 'waiting' && stopped !== null && stopped.ending.ending === 'refused') {
+  // `prepared` is excluded by name here — see the header — and stays
+  // `SetupRefused`, produced by the `refused` case in the switch below.
+  if (
+    input.rested === 'waiting' &&
+    stopped !== null &&
+    stopped.ending.ending === 'refused' &&
+    stopped.step !== 'prepared'
+  ) {
     const when = directionOf(stopped)
     if (when !== null) {
       const why = detailOf(stopped.ending)
@@ -198,10 +212,17 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
         findings: [...input.findings],
       }
 
-    // Only reached when step 1 did not route it on — in practice `proposed`'s
-    // own plugins refusing, which `directionOf` has no direction for.
+    // Only reached when step 1 did not route it on: `prepared`, excluded by
+    // name there, or — in practice — `proposed`'s own plugins refusing.
+    // `directionOf` would answer `'red'` for the second one too; what keeps
+    // it out of step 1 is `rested`, not the direction — the router's own
+    // failure never reaches `take()`, so `rested` stays `null`
+    // (`pass.ts:1450-1455`), never `'waiting'`.
     case 'refused': {
       const why = detailOf(stopped.ending)
+      if (step === 'prepared') {
+        return { _tag: 'SetupRefused', run, step, lifts: 'person', why: said(why, 400), raw: why }
+      }
       return { _tag: 'CheckRed', run, step, why: said(why, 400), raw: why }
     }
 

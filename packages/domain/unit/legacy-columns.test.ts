@@ -108,6 +108,43 @@ describe('legacyColumns', () => {
     expect(cols.diagnosis?.recommendation).toBeNull()
   })
 
+  it('reads a Routed conflict through diagnoseRefusal, same as MergeRefused carries for the same reason', () => {
+    const hold: Hold = {
+      _tag: 'Routed',
+      run: { runId: 'run-1' },
+      when: 'conflict',
+      why: 'agent/1 into main is waiting on you. CONFLICT (content): Merge conflict in a.ts',
+      raw: 'CONFLICT (content): Merge conflict in a.ts',
+      findings: [],
+      paths: ['a.ts'],
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+    }
+    const cols = legacyColumns(hold)
+    expect(cols.diagnosis?.recommendation).toEqual({
+      action: 'requeue',
+      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
+    })
+    expect(cols.diagnosis?.done).toContain('No agent was bought')
+  })
+
+  it('reads a Routed verify-failed through diagnoseRefusal, with no recommendation', () => {
+    const hold: Hold = {
+      _tag: 'Routed',
+      run: { runId: 'run-1' },
+      when: 'verify-failed',
+      why: 'agent/1 into main is waiting on you. exit 2',
+      raw: 'exit 2',
+      findings: [],
+      paths: null,
+      baseSha: null,
+      headSha: null,
+    }
+    const cols = legacyColumns(hold)
+    expect(cols.diagnosis?.recommendation).toBeNull()
+    expect(cols.diagnosis?.done).toContain('No agent was bought')
+  })
+
   it('recommends approve on a Routed carrying no findings', () => {
     const hold: Hold = {
       _tag: 'Routed',
