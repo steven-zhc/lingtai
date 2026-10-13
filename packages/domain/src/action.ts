@@ -157,7 +157,9 @@ const CommitAction = ActionBase.extend({
 const DesignAction = ActionBase.extend({
   yields: z.literal('design'),
   result: z.discriminatedUnion('_tag', [
-    z.object({ _tag: z.literal('Drafted'), design: Design }),
+    // `head`: a `file:` destination's own commit, where keeping the design
+    // moved the branch. Absent for the drafting agent, which never commits.
+    z.object({ _tag: z.literal('Drafted'), design: Design, head: z.string().nullable().optional() }),
     z.object({ _tag: z.literal('Asked'), question: z.string(), draft: z.string().nullable() }),
     AnswerUnreadable,
     Interrupted,
@@ -317,8 +319,9 @@ export function stepCleared(outcome: StepOutcome): boolean {
 /**
  * The last `head` in the step, skipping a `null` one — a kept-run that
  * committed nothing after an agent that did commit leaves the agent's head
- * (0120:242-243). Three results carry one: `commit` `Completed`, `commit`
- * `Interrupted`, and `worktree` `Completed`.
+ * (0120:242-243). Four results carry one: `commit` `Completed`, `commit`
+ * `Interrupted`, `worktree` `Completed`, and `design` `Drafted` — the last for
+ * a `file:` destination alone, since the drafting agent never sets it.
  */
 export function headOf(outcome: StepOutcome): string | null {
   let head: string | null = null
@@ -327,6 +330,8 @@ export function headOf(outcome: StepOutcome): string | null {
       if (action.result.head !== null) head = action.result.head
     } else if (action.yields === 'worktree' && action.result._tag === 'Completed') {
       head = action.result.head
+    } else if (action.yields === 'design' && action.result._tag === 'Drafted') {
+      if (action.result.head !== undefined && action.result.head !== null) head = action.result.head
     }
   }
   return head

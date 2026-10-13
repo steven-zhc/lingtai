@@ -8,7 +8,7 @@
  */
 import type { Action, ActionVerdict, InterruptedCause, PipelineResult } from '@lingtai/actions'
 import { NEEDS_INPUT } from '@lingtai/actions'
-import { changedNothing, Hold, nextOf, type StepOutcome, wellFormed } from '@lingtai/domain'
+import { changedNothing, headOf, Hold, nextOf, type StepOutcome, wellFormed } from '@lingtai/domain'
 import { recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
@@ -229,6 +229,40 @@ describe('outcomeOf builds a `wellFormed` StepOutcome', () => {
     expect(wellFormed(built)).toBe(true)
     expect(built.actions[1]!.result._tag).toBe('NotReached')
   })
+
+  it("a `file:` destination's head survives onto the `Drafted` result, so `headOf` agrees with `ending.head`", () => {
+    const actions = [fakeAction('file', 'design', 'keep it')]
+    const result: PipelineResult = {
+      ok: true,
+      failedAt: null,
+      heldAt: null,
+      neverRanAt: null,
+      didNotFinishAt: null,
+      askedAt: null,
+      results: [
+        entry('passed', { action: 'keep it', document: 'the design', locator: 'doc/design/466.md', head: ON_SHA }),
+      ],
+      skipped: [],
+    }
+    const built = outcomeOf('design', 0, ON_SHA, actions, result)
+    expect(wellFormed(built)).toBe(true)
+    expect(headOf(built)).toBe(ON_SHA)
+  })
+
+  it("the drafting agent's own `Drafted` carries no head, since it never commits", () => {
+    const actions = [fakeAction('agent', 'design', 'draft it')]
+    const result: PipelineResult = {
+      ok: true,
+      failedAt: null,
+      heldAt: null,
+      neverRanAt: null,
+      didNotFinishAt: null,
+      askedAt: null,
+      results: [entry('passed', { action: 'draft it', document: 'the design' })],
+      skipped: [],
+    }
+    expect(headOf(outcomeOf('design', 0, ON_SHA, actions, result))).toBeNull()
+  })
 })
 
 describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
@@ -324,7 +358,7 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     expect((hold as { raw: string | null }).raw).toContain('`restarts` is spent')
   })
 
-  it('a conflict with no `judge:` declared still names the files, rather than a bare `why` and a null `raw`', () => {
+  it('a `MergeConflict` proposal that carries real paths and no `judge:` declared still names the files', () => {
     const hold = holdOf(
       {
         _tag: 'ProposedEscalated',
@@ -336,6 +370,25 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     )
     expect((hold as { raw: string | null }).raw).toBe('both sides touched src/fix.ts')
     expect((hold as { why: string }).why).toContain('both sides touched src/fix.ts')
+  })
+
+  it('the only path that builds a `MergeConflict` from a real step never has paths to name, so `raw` stays null', () => {
+    // `actionOf` → `mergeResultOf` answers `Conflicted` with all three fields
+    // empty (the module header's own "what is lost"), so `nextOf` can never
+    // hand `holdOf` a `MergeConflict` with real paths through this path —
+    // unlike the literal above, which is the only way this proposal carries
+    // real data today.
+    const built = actionOf(fakeAction('merge', 'merge', 'land'), entry('failed', { because: 'conflict' }), ON_SHA)
+    const outcome: StepOutcome = { step: 'merge', round: 0, actions: [built] }
+    const next = nextOf(outcome, run)
+    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'MergeConflict', paths: [] } })
+    if (next._tag !== 'Propose') throw new Error('unreachable')
+    const hold = holdOf(
+      { _tag: 'ProposedEscalated', run, proposal: next.proposal, because: { _tag: 'NotAsked' } },
+      pass,
+    )
+    expect((hold as { raw: string | null }).raw).toBeNull()
+    expect((hold as { why: string }).why).not.toContain('touched')
   })
 
   it('a review refusal with no `judge:` declared still names the findings, rather than a bare `why` and a null `raw`', () => {
@@ -361,6 +414,20 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     )
     expect((hold as { raw: string | null }).raw).toBe('this leaks a handle')
     expect((hold as { why: string }).why).toContain('this leaks a handle')
+  })
+
+  it('a `ReviewEmpty` refusal with no `judge:` declared still carries its own words on `why`, not a bare sentence', () => {
+    const hold = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'ReviewEmpty', said: 'nothing in the diff looked wrong', findings: [] },
+        because: { _tag: 'NotAsked' },
+      },
+      pass,
+    )
+    expect((hold as { raw: string | null }).raw).toBe('nothing in the diff looked wrong')
+    expect((hold as { why: string }).why).toContain('nothing in the diff looked wrong')
   })
 
   it("`MergeRefused`'s `why` is the diagnosed reading, never the lane's raw multi-line output", () => {

@@ -259,6 +259,11 @@ function designResultOf(outcome: ActionOutcomeEntry): ResultOf<'design'> {
           document: outcome.document ?? '',
           ...(outcome.locator === undefined ? {} : { locator: outcome.locator }),
         },
+        // A `file:` destination's own commit — absent for the drafting agent,
+        // which never sets `ActionResult.head` (`#466`'s own fix: `headOf`
+        // read only `commit`/`worktree` before this, so a `file:` step and its
+        // own `ending.head` disagreed about where the tree ended up).
+        ...(outcome.head === undefined ? {} : { head: outcome.head }),
       }
     case 'never-ran':
       return { _tag: 'NeverStarted', scope: 'conductor' }
@@ -669,8 +674,16 @@ function reasonTextOf(because: EscalationBecause): string {
 /**
  * `MergeConflict` carries no text of its own, only `paths`/`baseSha`/`headSha`
  * — the fallback `escalatedHold` reaches for when `reasonTextOf` has nothing
- * either, so a conflict in the default configuration (no `judge:` declared)
- * still names the files rather than leaving `raw` null.
+ * either, so a caller that built the proposal with real paths and no `judge:`
+ * declared still names the files rather than leaving `raw` null.
+ *
+ * **Not the path through `mergeResultOf`.** That function answers `Conflicted`
+ * with all three fields empty always (the header's own "what is lost"), so a
+ * `MergeConflict` built from a real step through `actionOf` never has paths
+ * for this to name — `paths`/`baseSha`/`headSha` only live on the real conflict
+ * where `hold-of.ts`'s `lastIntegrationRefusal` reads them, off the integration
+ * stream rather than off the action. This fallback is for whatever else builds
+ * the proposal with real data — a test, or a future caller nearer the event.
  */
 function mergeConflictOwnText(proposal: { paths: readonly string[] }): string | null {
   return proposal.paths.length === 0 ? null : `both sides touched ${proposal.paths.join(', ')}`
@@ -732,10 +745,15 @@ function escalatedHold(
       // No `evidence` field on a conflict proposal (the header names the
       // loss of the three merge-shaped fields; this is not that one). When
       // no judge replied either — `NotAsked`, the default with no `judge:`
-      // declared — fall back to the conflict's own paths rather than leaving
-      // `raw` null and `why` bare: `holdOfPass` never left either bare
-      // (`hold-of.ts:118-126`, `why`/`raw` are always the step's own detail,
-      // judge or not).
+      // declared — fall back to the conflict's own paths where a caller
+      // supplied them. **Through `actionOf` that is never true** —
+      // `mergeResultOf` answers `Conflicted` with all three fields empty, so
+      // `raw`/`why` stay null/bare for a conflict built from a real step,
+      // unlike `holdOfPass` (`hold-of.ts:118-126`), which reads the real paths
+      // off the integration stream rather than off the action. Closing that
+      // gap means carrying `paths`/`baseSha`/`headSha` from `IntegrateResult`
+      // through `LandAnswer` and `ActionResult`, which is `packages/repo`'s
+      // and outside this file.
       const detail = reasonText !== '' ? reasonText : mergeConflictOwnText(proposal)
       return {
         _tag: 'Routed',
@@ -766,11 +784,17 @@ function escalatedHold(
       }
     }
     case 'ReviewEmpty':
+      // `said` is the review's own evidence (`Proposal.ReviewEmpty.said`,
+      // required and never null) — the same fallback `MergeConflict` and
+      // `ReviewFindings` reach for off `paths`/`findings`, missing here before
+      // this fix: with no judge declared (`NotAsked`, the default), `why` fell
+      // back to the bare branch sentence even though `raw` already carried
+      // `said` whole.
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'findings',
-        why: why(reasonText),
+        why: why(reasonText !== '' ? reasonText : proposal.said),
         raw: proposal.said,
         findings: [...proposal.findings],
         paths: null,
