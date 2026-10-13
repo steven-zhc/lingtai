@@ -330,7 +330,13 @@ describe('nextOf: §4 Fell short as table', () => {
     const result = next(
       outcome(
         'implement',
-        [action('commit', { _tag: 'Completed', head: null, question: null }, { evidence: 'nothing to add' })],
+        [
+          action(
+            'commit',
+            { _tag: 'Completed', head: null, question: null },
+            { plugin: 'agent', evidence: 'nothing to add' },
+          ),
+        ],
         1,
       ),
     )
@@ -341,11 +347,46 @@ describe('nextOf: §4 Fell short as table', () => {
     const result = next(
       outcome(
         'implement',
-        [action('commit', { _tag: 'Completed', head: null, question: null }, { evidence: 'nothing to add' })],
+        [
+          action(
+            'commit',
+            { _tag: 'Completed', head: null, question: null },
+            { plugin: 'agent', evidence: 'nothing to add' },
+          ),
+        ],
         0,
       ),
     )
     expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: 'nothing to add' } })
+  })
+
+  it('implement, a kept run after the agent: said is the agent’s own words, not the run’s', () => {
+    const result = next(
+      outcome(
+        'implement',
+        [
+          action(
+            'commit',
+            { _tag: 'Completed', head: null, question: null },
+            { plugin: 'agent', name: 'claude-code', evidence: 'the finding is wrong — the caller already guards this' },
+          ),
+          action(
+            'commit',
+            { _tag: 'Completed', head: null, question: null },
+            {
+              plugin: 'run',
+              name: 'pnpm fmt',
+              evidence: 'All matched files use the correct format. — nothing to commit',
+            },
+          ),
+        ],
+        1,
+      ),
+    )
+    expect(result).toEqual({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'FixerDisagrees', run, said: 'the finding is wrong — the caller already guards this' },
+    })
   })
 
   it('signoff at proposed, Completed{requested}: WaitOnPerson{SignoffRequired}', () => {
@@ -474,23 +515,45 @@ describe('nextOf: the "said" extraction', () => {
     })
   })
 
-  it("the last commit action's evidence is empty: said null, even with an earlier non-empty one", () => {
+  it("the last agent commit action's evidence is empty: said null, even with an earlier non-empty one", () => {
     const result = next(
       outcome('implement', [
-        action('commit', { _tag: 'Completed', head: null, question: null }, { evidence: 'first try output' }),
-        action('commit', { _tag: 'Completed', head: null, question: null }, { evidence: '' }),
+        action(
+          'commit',
+          { _tag: 'Completed', head: null, question: null },
+          { plugin: 'agent', evidence: 'first try output' },
+        ),
+        action('commit', { _tag: 'Completed', head: null, question: null }, { plugin: 'agent', evidence: '' }),
       ]),
     )
     expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: null } })
   })
 
-  it("the last commit action's non-empty evidence: said that evidence", () => {
+  it("the last agent commit action's non-empty evidence: said that evidence", () => {
     const result = next(
       outcome('implement', [
-        action('commit', { _tag: 'Completed', head: null, question: null }, { evidence: 'tried the rename' }),
+        action(
+          'commit',
+          { _tag: 'Completed', head: null, question: null },
+          { plugin: 'agent', evidence: 'tried the rename' },
+        ),
       ]),
     )
     expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: 'tried the rename' } })
+  })
+
+  it("a kept run's evidence is never said, even when the agent's own is empty", () => {
+    const result = next(
+      outcome('implement', [
+        action('commit', { _tag: 'Completed', head: null, question: null }, { plugin: 'agent', evidence: '' }),
+        action(
+          'commit',
+          { _tag: 'Completed', head: null, question: null },
+          { plugin: 'run', name: 'pnpm fmt', evidence: 'nothing to commit' },
+        ),
+      ]),
+    )
+    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: null } })
   })
 })
 
@@ -573,8 +636,12 @@ describe('nextOf never returns FixRound', () => {
     expect(nextTags.size).toBeGreaterThan(0)
   })
 
-  it('by type: FixRound does not extend the return type', () => {
-    expectTypeOf<ReturnType<typeof nextOf>>().not.toExtend<{ _tag: 'FixRound' }>()
+  it('by type: no member of the return type is FixRound', () => {
+    // `not.toExtend` on a union is satisfied as soon as any member fails to
+    // extend the target — true of every union containing `Advance`, so it
+    // cannot catch a later widening. `Extract` picks out the `FixRound`
+    // member by its own `_tag`, which is `never` only while there is none.
+    expectTypeOf<Extract<ReturnType<typeof nextOf>, { _tag: 'FixRound' }>>().toEqualTypeOf<never>()
   })
 })
 

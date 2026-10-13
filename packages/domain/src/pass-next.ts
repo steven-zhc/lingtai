@@ -341,11 +341,19 @@ function requeuedNeverStarted(scope: 'conductor' | 'work-item'): NextOfResult {
   return { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope } }
 }
 
-/** The last `commit`-yield action's evidence, or `null` with none or an empty one. */
+/**
+ * The last `commit`-yield action **run by the agent itself**, or `null` with
+ * none or an empty one. A kept `run:` (`kept-run-action.ts`, `plugin: 'run'`)
+ * also yields `commit` — it commits what the agent left behind — but its
+ * `evidence` is the command's own output, never the agent's words, and
+ * `said` is specifically the agent's last words (`hold.ts`'s `Declined`,
+ * `events.ts`'s `FixApplied`). Skipping it is what keeps a kept run's
+ * `"nothing to commit"` from overwriting what the fixer actually said.
+ */
 function lastCommitEvidence(outcome: StepOutcome): string | null {
   let evidence: string | undefined
   for (const action of outcome.actions) {
-    if (action.yields === 'commit') evidence = action.evidence
+    if (action.yields === 'commit' && action.plugin === 'agent') evidence = action.evidence
   }
   return evidence === undefined || evidence === '' ? null : evidence
 }
