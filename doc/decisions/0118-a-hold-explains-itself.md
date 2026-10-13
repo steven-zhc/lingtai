@@ -1,25 +1,25 @@
-# 0118 — Waiting on you: every hold says what kind it is, what is asked, and what each answer does
+# 0118 — Waiting on you: every wait says what kind it is, what is asked, and what each answer does
 
-**Status** accepted · 2026-10-07
+**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md)
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (Problem, Want and Watch out, taken
 from the body), then where the pass stopped and what is left to spend (taken
-from the log, which costs nothing), then a triage band, then the moves, then
-the record. Triage is an agent the daemon runs when a hold is recorded. It
-names the cause of the hold, asks the questions only a person can answer, and
-recommends one move, and what it advised is recorded as an event. What the
-person then does is the decision, and it is recorded by the move they make. An
+from the log, which costs nothing), then a triage band, then the resolutions, then
+the record. Triage is an agent the daemon runs when a wait is recorded. It
+names the cause of the wait, asks the questions only a person can answer, and
+recommends one resolution, and what it advised is recorded as an event. What the
+person then does is the decision, and it is recorded by the resolution they choose. An
 answer is written into the ticket's body, because that is the only text every
 later attempt is sure to read. Triage advises; it never moves the item.
 
 ## Context
 
-What reaches a person today is whatever the holder said, written for the
+What reaches a person today is whatever the stopping step said, written for the
 machine: the judge's `why`, cut to 400 characters
 (`packages/conductor/src/conduct.ts:3134-3138`), above a collapsed raw block. Every
 sentence of it can be true and still leave the reader unable to act. #377's and
-#390's holds were each answered in a terminal session that read the branch and
+#390's waits were each answered in a terminal session that read the branch and
 the code around it, because the card could not be acted on as written.
 
 The machinery that session used already exists, in Discussion
@@ -35,14 +35,14 @@ attempt verbatim, as `{{body}}` in the brief
 
 Discussion and triage are not the same thing, though. A discussion is a place
 for a person to think with an agent. What comes out of it is the person's own
-move, approve, requeue or close, and that move already has its event. The
+resolution (approve, requeue or close), and that resolution already has its event. The
 conversation itself decides nothing and needs no fold. Triage is different. It
 is an analysis Lingtai pays for unasked, and its recommendation is a fact the
 board has to show on a card and the log has to keep. Then _what the agent
 advised_ and _what the person chose_ sit side by side.
 
-The holds are not one thing, and they are not one kind of thing. Three routes
-into `waiting` exclude each other and want different moves:
+The waits are not one thing, and they are not one kind of thing. Three routes
+into `waiting` exclude each other and want different resolutions:
 
 - **A judgement.** A review that rounds could not satisfy. A step that stopped
   to ask (`StepAsked`). A fixer that declined to change anything. A declared
@@ -62,115 +62,241 @@ item already in this lane on a question exactly as it was, because only a
 person's answer may lift that. **Unpushed work** (the branch did
 not reach origin,
 `conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
-ends) can come on top of any hold that has a run. Today none of this is
+ends) can come on top of any wait that has a run. Today none of this is
 written down: `WorkItemBlocked` carries `needs`, `runId` and `diagnosis`, and
-which kind a hold is gets inferred again in each place that needs it, from
+which kind a wait is gets inferred again in each place that needs it, from
 `runId === null` in one and `needs` in another.
 
 ## Decision
 
-1. **A hold is a value of one type, and the illegal ones cannot be written.**
-   The model is a set of tagged unions, in `@lingtai/domain`, and every reader
-   matches on them exhaustively:
-   - **`Hold`** is exactly one of `Question` (no run: the person's own
-     question and who asked it), `Judgement` (a run, the step it stopped at,
-     and why), or `Failure` (a run, and what failed).
-   - **A hold is classified by who sent it to a person**, never by which
-     internal value happened to be set on the way:
-     - **`Judgement`** is itself a union, one variant for each way a pass
-       reaches a person with a decision: `Asked` (a step stopped to ask, and
-       its question), `Human` (a `human:` or `watch:` action held, declared in
-       the recipe or injected by `--no-merge`, which since #256 are one
-       mechanism; not `Gate`, which is a retired word), `Declined` (a fixing
-       agent was sent the findings, read them, and chose to change nothing:
-       it ran, committed nothing and did not fail, carrying what it said
-       last; two agents disagree and a person is the referee), and `Routed` (the
-       `proposed` router sent it to a person, carrying the arrival that
-       brought it there as a `JudgeWhen`, and the why). **Every arrival the
-       router sends to a person is `Routed`**, whatever it was: a check that
-       stayed red with the rounds spent is `Routed{red}`, a review that
-       stayed unsatisfied is `Routed{findings}`, and likewise
-       `verify-failed`, `conflict` and `needs-input`. The evidence travels
-       inside the variant: the red output, the findings, the conflicted
-       paths. That the pass records some of these with a `stoppedAt` and some
-       without is an implementation detail and does not decide the variant.
-     - **`Failure`** is what reached a person without anyone deciding it:
-       each variant carries its own evidence: a merge the lane refused (its
-       paths and both shas), a ceiling (which one, and what was spent), a step
-       that did not finish because it crashed or hit a ceiling (never one
-       that chose to change nothing, which is `Declined`), and a setup that refused before any agent ran
-       (and whether that lifts by itself or needs a person). Whether a
-       separate check-stayed-red variant still has a producer once the router
-       routes are `Routed` is settled by the code that writes the hold (#445),
-       not assumed here.
-   - **Unpushed work belongs to the run**, as an optional ref on it, so it can
-     sit beside a `Judgement` or a `Failure` and cannot sit beside a
-     `Question`, which has no run. It is shown first, above everything else on
-     the page, with what it takes to rescue it.
-   - **Triage is two more unions, a fact and a view of it.** `TriageResult`
-     (`Failed`, `Advised`) is what `HoldTriaged` records. `TriageStatus`
-     (`NotDeclared`, `Queued`, `Running`, `Interrupted`, `Done` carrying a
-     `TriageResult`) is derived on read and never stored, and is what the page and `recommendedMove` match on. It is derived from the strongest fact first: a result for the current block's latest attempt is `Done`, whatever the recipe says now; an attempt started with no result is `Running`, or `Interrupted` if it started before the running daemon did; a block with neither is `Queued` while `triage:` is declared, and `NotDeclared` otherwise. A recipe that stops declaring triage does not hide a result already paid for. An advised triage carries a
-     `Cause` that is a union too, each cause with its own parts (§4). What Lingtai knows about a
-     hold and what an agent concluded about it are never one field.
-   - **A card in the Waiting lane is `Held`, and `Held` carries a `Hold`.**
-     _Waiting with no block_ therefore has no value to be. The routes that
-     produced it either block, with a kind, or do not move the card.
-   - **`WorkItemBlocked` records the `Hold` it is, and nothing beside it**,
-     written by the code that appends it, which knows the route. The words a
-     person reads live inside the variant that owns them, so `needs`,
-     `question` and `diagnosis` are gone rather than kept beside `hold`: two
-     representations of one block can disagree, and one cannot. What
-     `diagnosis` carried is either in the variant, on the run (_a repair
-     produced this diff_ is a fact about the run, like `unpushed`), or derived
-     (`needs` is the tag; the mechanical recommendation is `recommendedMove`'s).
-     **There is no upcaster.** Before 1.0 the log is reset rather than carried
-     across a change of shape, as it was in 007 and 010.
-   - **One pure function, `allowedMoves(hold)`, decides the moves**, from the
-     hold alone. The board, the CLI and the daemon all ask it; none of them
-     keeps a rule of its own. **Triage is not an input**: it advises and never
-     moves the item, so whether an agent has finished advising cannot widen or
-     narrow what a person may do.
-   - **A second pure function, `recommendedMove(hold, status)`, picks at most
-     one of those moves** to draw first and to prefill. An advised move is
-     recommended when `allowedMoves` offers it, and otherwise is not, its
-     words still shown. With no advice (not declared, running or failed) the
-     hold's own default stands: approve at a gate, requeue at a ceiling, and
-     nothing elsewhere. A budget fact enters `allowedMoves` only when a move
-     that depends on one is decided (#426), not before.
+1. **A wait is a value of one type, and the illegal ones cannot be written.**
+   The model is a set of tagged unions in `@lingtai/domain`, following
+   [0120](0120-a-reason-is-a-type.md)'s principles, and every reader matches
+   on them exhaustively.
 
-2. **The page is in this order:** the ticket, where it is, triage, the moves,
+   ```ts
+   type RunRef = { runId: string; unpushed?: { branch: string; said: string } }
+
+   type WaitReason =
+     // someone is asking
+     | { _tag: 'OwnQuestion'; question: string; by: string } // a person's own, through `lingtai ask`
+     | { _tag: 'AgentQuestion'; run: RunRef; step: 'design' | 'implement'; question: string }
+     // a person decides
+     | { _tag: 'SignoffRequired'; run: RunRef; step: 'proposed' | 'merge'; action: string; question: string }
+     | { _tag: 'FixerDisagrees'; run: RunRef; said: string | null } // a fix round's implement changed nothing
+     | { _tag: 'NothingProduced'; run: RunRef; said: string | null } // a first dispatch's implement changed nothing
+     | { _tag: 'ProposedEscalated'; run: RunRef; proposal: Proposal; because: EscalationBecause }
+     | {
+         _tag: 'CheckRefused'
+         run: RunRef
+         step: 'proposed' | 'merge'
+         action: string
+         evidence: string
+         findings: Finding[]
+       }
+     // the machine fell short, and nobody decided it
+     | { _tag: 'MergeRefused'; run: RunRef; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'>; raw: string }
+     | {
+         _tag: 'BudgetExhausted'
+         run: RunRef
+         cause: 'out-of-turns' | 'out-of-usd'
+         detail: string
+         call: CallId | null
+       }
+     | {
+         _tag: 'AgentCrashed'
+         run: RunRef
+         step: 'design' | 'implement' | 'review' | 'proposed' | 'merge'
+         cause: 'crash' | 'timeout' | 'aborted'
+         detail: string
+       }
+     | { _tag: 'SetupRefused'; run: RunRef; step: Step; action: string; why: string }
+     | {
+         _tag: 'AnswerUnreadable'
+         run: RunRef
+         step: 'design' | 'review' | 'proposed' | 'merge'
+         action: string
+         raw: string
+       }
+
+   type EscalationBecause =
+     | Extract<RouteDecision, { _tag: 'Escalated' }>['because'] // 0120 §3
+     | { _tag: 'JudgeHandedOver'; why: string }
+   ```
+
+   - **The name is the page's.** The lane is _Waiting on you_ and its id is
+     `waiting`, so the card is `Waiting`, the union is `WaitReason`, and the
+     events are `WaitStarted`, `WaitResolved` and `WaitTriaged`. _You_ stays on
+     the page: a log or a CLI has no fixed reader. **_Hold_ means one thing,
+     `agent:hold`**: a person keeping a queued ticket from being claimed, the
+     opposite direction. The code still says `Hold`, `HoldTriaged`, `Held`,
+     `Move`, `BodyAndRequeue` and `Answer`; #450 renames them, and the ones on
+     the log (`WorkItemBlocked`, `WorkItemUnblocked`, `HoldTriaged`, the
+     `blocked` column) change with 0120's phase 2 reset, never alone.
+   - **A wait is classified where the pass decides it**, never by which
+     internal value happened to be set on the way. Two pure functions build a
+     `WaitReason` from a run and nothing else does: `routeNext` for everything
+     `proposed` hands to a person (`ProposedEscalated`, and `AgentQuestion` for
+     a question no judge answers), and `nextOf` for the rest (0120 §4). Their
+     exhaustive tests together cover every variant. `OwnQuestion` is
+     `lingtai ask`'s. Every proposal the route hands over is
+     `ProposedEscalated`, whatever it was: a build that stayed red with the
+     rounds spent is `ProposedEscalated{BuildRed}`, an unsatisfied review
+     `ProposedEscalated{ReviewFindings}`, and the evidence travels inside the
+     proposal.
+   - **Each variant is a different thing to do.** A crash is usually re-run; a
+     spent budget wants the ticket smaller first; a fixer that changed nothing
+     disagrees with the reviewer and a person referees; a first dispatch that
+     changed nothing has only the ticket to argue with (it is done already, or
+     unclear). A setup that refused is the machine's: a check at `prepared`, a
+     file not kept, a tree not cut. A wall that lifts by itself is not a wait
+     at all but a requeue (0120 §4). An unreadable answer is the machinery
+     losing a judgement, a thing to re-run, never _the reviewer had nothing_
+     (`ReviewEmpty`). A check declared at `proposed` or before the lane at
+     `merge` that refuses is `CheckRefused`.
+   - **How the card groups them is the board's.** The comment lines above are
+     for reading; nothing branches on a category, so none is a type.
+   - **Unpushed work belongs to the run**, as an optional ref on `RunRef`, so
+     it can sit beside any wait with a run and cannot sit beside an
+     `OwnQuestion`. It is shown first, above everything else, with what it
+     takes to rescue it.
+   - **The wait's event records the `WaitReason` and nothing beside it**, with
+     the `waitId` that names this wait: `WaitStarted { waitId, reason }` from
+     0120's phase 2, `WorkItemBlocked` until then. The words a person reads
+     live inside the variant that owns them, so `needs`, `question` and
+     `diagnosis` are gone: two representations of one wait can disagree.
+     **There is no upcaster**: before 1.0 the log is reset across a change of
+     shape, as it was in 007 and 010.
+   - **Triage is two more unions, a fact and a view of it.**
+
+     ```ts
+     type RootCause =
+       | { _tag: 'UndecidedQuestion'; questions: Question[] }
+       | { _tag: 'FixableLines'; fixes: LineFix[] }
+       | { _tag: 'WrongApproach' }
+       | { _tag: 'ConflictingHunks'; hunks: Hunk[]; total: number }
+       | { _tag: 'TicketTooBig' }
+       | { _tag: 'SetupBroken' }
+     type TriageResult =
+       | { _tag: 'TriageFailed'; why: string }
+       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: Resolution; summary: string }
+     type TriageStatus =
+       // derived on read, never stored
+       | { _tag: 'NotDeclared' }
+       | { _tag: 'Queued' }
+       | { _tag: 'Running' }
+       | { _tag: 'Interrupted' }
+       | { _tag: 'Done'; result: TriageResult }
+     ```
+
+     `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
+     page and `recommendedResolution` match on, derived from the strongest fact
+     first: a result for the current wait's latest attempt is `Done`, whatever
+     the recipe says now; an attempt started with no result is `Running`, or
+     `Interrupted` if it started before the running daemon did; a wait with
+     neither is `Queued` while `triage:` is declared, and `NotDeclared`
+     otherwise. A recipe that stops declaring triage does not hide a result
+     already paid for. What Lingtai knows about a wait and what an agent
+     concluded about it are never one field.
+
+   - **A card in the Waiting lane is `Waiting`, and `Waiting` carries a
+     `WaitReason`.** _Waiting with no block_ therefore has no value to be.
+   - **What a person does about a wait is a `Resolution`**, how the wait ends:
+
+     ```ts
+     type Resolution =
+       | { _tag: 'Approve'; onSha: string } // continue the run (§11); refused if the branch moved
+       | { _tag: 'Requeue' } // a new pass from the base
+       | { _tag: 'EditBodyAndRequeue' } // write into the body, then requeue
+       | { _tag: 'AnswerQuestion'; choice: string } // an OwnQuestion only
+       | { _tag: 'Close' }
+
+     const allowedResolutions: (reason: WaitReason) => Resolution['_tag'][]
+     const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution['_tag'] | null
+     ```
+
+     `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
+     the board's buttons.
+
+   - **One pure function, `allowedResolutions(reason)`, decides the
+     resolutions**, from the wait alone. The board, the CLI and the daemon all
+     ask it; none keeps a rule of its own. **Triage is not an input**: it
+     advises and never moves the item. The whole table, with where an approval
+     continues (§11):
+
+     | `WaitReason`                                                             | Allowed                                                                                        | `Approve` continues at         |
+     | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------ |
+     | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                                           | —                              |
+     | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                                       | —                              |
+     | `SignoffRequired`                                                        | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                            | its step, the signoff `Waived` |
+     | `CheckRefused`                                                           | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                            | its step, the check `Waived`   |
+     | `FixerDisagrees`                                                         | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                            | `proposed`                     |
+     | `ProposedEscalated`                                                      | `Approve` only for `ReviewFindings` or `ReviewEmpty`; `Requeue`, `EditBodyAndRequeue`, `Close` | `proposed`                     |
+     | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
+     | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Requeue`, `Close`                                                       | —                              |
+     | `SetupRefused`                                                           | `Requeue`, `Close`                                                                             | —                              |
+     - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
+       sides with the reviewer.
+     - `NothingProduced` has no `Approve`: there is nothing on the branch to
+       merge.
+     - `ProposedEscalated` over `BuildRed`, `VerifyRed`, `MergeConflict` or
+       `InputNeeded` has no `Approve`. Merging a red build would break _every
+       path into `end` has been through `build`_; a conflict cannot be merged;
+       a question wants an answer. Today a red build can be approved with a
+       reason; that goes.
+     - An approval over a refusal needs a note (`lingtai.ts:169` already asks
+       for one), kept as `WaitResolved.note`.
+
+   - **A second pure function, `recommendedResolution(reason, status)`, picks
+     at most one of those** to draw first and prefill. An advised resolution is
+     recommended when `allowedResolutions` offers it, and otherwise is not, its
+     words still shown. With no advice (not declared, running or failed) the
+     wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
+     `BudgetExhausted` and `AgentCrashed`, nothing elsewhere. A budget fact
+     enters `allowedResolutions` only when a resolution that depends on one is
+     decided (#426), not before.
+
+2. **The page is in this order:** the ticket, where it is, triage, the resolutions,
    the record.
    - **The ticket** is its title, triage's one sentence of what the ticket
      wants when there is one, and the opening of the body, collapsed, with a
      link to the whole of it. A body is not assumed to have any structure: the
      sentence is labelled as triage's reading, never as the ticket's words, and
      is plain text. Where triage could not say what the ticket wants, that is
-     itself the hold's question.
+     itself the wait's question.
    - **Where it is** is the ten-step rail the board already draws, and one line
      under it: what refused, the rounds spent, and the restarts left. It is put
      together from the log every time it is drawn, and never generated.
    - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
    - **The card** on the board carries only the number, the title, the rail and
-     its line, and triage's cause with one sentence. Everything else, moves
+     its line, and triage's cause with one sentence. Everything else, resolutions
      included, is on the page the card links to.
 
-3. **Triage is its own step, run by the daemon after a block.**
-   - After `WorkItemBlocked`, the daemon runs the triage agent the way it runs
+3. **Triage is its own step, run by the daemon after a wait is recorded.**
+   - **The decisions are pure and the effects are the shell's**, as
+     [0120](0120-a-reason-is-a-type.md) sets out for every reason. Pure,
+     reading no store, clock, git or process: whether triage runs
+     (`triageRuns`), how its state reads (`triageStatus`), which resolution is drawn
+     first (`recommendedResolution`), and what the body becomes with an answer in it
+     (`upsertSection`, #446). The shell's: running the triage agent, writing
+     the body to GitHub (`updateBody`), and appending `TriageStarted` and
+     `WaitTriaged`. A shell step calls the pure function and acts on its
+     answer; a pure function never calls the shell.
+   - After the wait's event, the daemon runs the triage agent the way it runs
      a discussion: off the pass, without the lock, reading the mirror, with no
      tools. It reuses that code, not that conversation.
    - It is declared in the recipe as `triage:` with its runtime and limits.
      Where it is not declared, nothing runs, and the page shows the ticket,
-     where it is, and the holder's own words.
+     where it is, and the stopping step's own words.
    - It runs for judgements and machine failures. It does not run for a
      person's own question, because the person wrote the question. Which
-     variants it runs for is one pure function of the hold, `triageRuns`,
-     beside `allowedMoves` and following the same table.
-   - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
-     It names the block it explains and the head it read, and who answered: `Agent`, with its runtime, model, reported `costUsd` and usage ([0110](0110-tokens-on-the-event-money-at-display.md)), or `Mechanical`, when Lingtai answered without calling an agent (§8). Only `Agent` carries spend: a mechanical answer cost nothing, and records no cost rather than a zero the runtime never stated. Its result is
+     variants it runs for is one pure function of the wait, `triageRuns`,
+     beside `allowedResolutions` and following the same table.
+   - **What it advised is one event, `WaitTriaged`, on the work item's stream.**
+     It names the wait it explains and the head it read, and who answered: `Agent`, with its runtime, model, reported `costUsd` and usage ([0110](0110-tokens-on-the-event-money-at-display.md)), or `Mechanical`, when Lingtai answered without calling an agent (§8). Only `Agent` carries spend: a mechanical answer cost nothing, and records no cost rather than a zero the runtime never stated. Its result is
      a `TriageResult`, `Failed` or `Advised`, the same type and not a copy of it,
      so an advised triage with a failure, or a failed one with advice, cannot
-     be written. `Advised` carries the cause, the recommended move, one
+     be written. `Advised` carries the cause, the recommended resolution, one
      sentence for the card, and one sentence of what the ticket wants (or
      none, where the body does not say). **The parts belong to the cause**:
      the questions, with their answers and the recommended one, exist only in
@@ -184,56 +310,57 @@ which kind a hold is gets inferred again in each place that needs it, from
      answers each, a bounded number of fixes and hunks, and short text, with
      the numbers in the schema. An answer past them is refused, and that
      refusal is a failed triage.
-   - **A triage is keyed by its block, and its attempts are on the log.**
-     The key is the work item and the block's position on its stream, and
+   - **A triage is keyed by its wait, and its attempts are on the log.**
+     The key is the work item and the wait's position on its stream, and
      nothing else: the head is recorded for the audit, and a recipe edit does
      not re-triage every waiting card. Before the agent is dispatched,
-     `TriageStarted` names the block and the attempt; `HoldTriaged` carries
+     `TriageStarted` names the wait and the attempt; `WaitTriaged` carries
      the same attempt, and only the latest attempt's result is read. The
      daemon is the only process that triages, under its own lock, so no claim
      is needed beside it.
    - **A triage can be stopped, and a stopped one is recorded.** It runs
      under the recipe's `triage:` wall, which must be shorter than the
      daemon's subscriber timeout; at the wall the agent is killed and a failed
-     `HoldTriaged` is appended with what was spent.
-   - **On start, the daemon catches up only on blocks still current.** A
-     block with no `TriageStarted` is triaged; one whose last attempt started
+     `WaitTriaged` is appended with what was spent.
+   - **On start, the daemon catches up only on waits still current.** A
+     wait with no `TriageStarted` is triaged; one whose last attempt started
      before this daemon did and never finished was interrupted, and is tried
      again, at most twice in all. A second interruption appends a failed
-     `HoldTriaged` with no usage and is left to the person.
+     `WaitTriaged` with no usage and is left to the person.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
 
 4. **Triage names one cause, and the budget is not a cause.**
    - The causes are:
-     - _a decision for you_: questions only a person can answer;
-     - _lines to fix_: specific edits, and the approach is sound;
-     - _the approach is wrong_: patching will not converge;
-     - _merge by hand_: a conflict;
-     - _try it again, narrower_: the run did not finish, and either the body
-       can save the next one what it spent its turns on, or the ticket asks
-       for more than one pass should do and is split into smaller tickets;
-     - _fix the setup_: the repository or the machine refused before or around
-       any agent's work, so no edit to the ticket can help, and other tickets
-       are refused the same way. Triage says which of two it is: a condition
-       that lifts by itself, such as an account's usage limit, or one a person
-       has to fix, such as a runtime missing the tier the recipe asks for.
+     - _a decision for you_ (`UndecidedQuestion`): questions only a person can answer;
+     - _lines to fix_ (`FixableLines`): specific edits, and the approach is sound;
+     - _the approach is wrong_ (`WrongApproach`): patching will not converge;
+     - _merge by hand_ (`ConflictingHunks`): a conflict;
+     - _try it again, narrower_ (`TicketTooBig`): the run did not finish, and
+       either the body can save the next one what it spent its turns on, or
+       the ticket asks for more than one pass should do and is split into
+       smaller tickets;
+     - _fix the setup_ (`SetupBroken`): the repository or the machine refused
+       before or around any agent's work, so no edit to the ticket can help,
+       and other tickets are refused the same way. A condition that lifts by
+       itself, such as an account's usage limit, never waits: it is a requeue
+       (0120 §4).
    - Rounds and restarts left are facts on the log, shown on the rail line. A
-     spent budget changes which moves are offered, never the cause.
+     spent budget changes which resolutions are offered, never the cause.
    - Advice that will not parse into a cause and its parts is recorded as a
      failed triage, never shown as advice.
 
 5. **When the judge and triage disagree, both are recorded and the person
    decides.** The page shows the two readings side by side and asks which is
-   right, so the hold becomes _a decision for you_. Neither one is hidden, and
-   the log keeps both: the judge's on `PassRouted`, triage's on `HoldTriaged`.
+   right, so the wait becomes _a decision for you_. Neither one is hidden, and
+   the log keeps both: the judge's on `PassRouted`, triage's on `WaitTriaged`.
 
 6. **An answer is written into the body.**
-   - _Write it into the body & requeue_ is one move. It writes a section to
+   - _Write it into the body & requeue_ is one resolution. It writes a section to
      the ticket's body through the existing `ticket` outcome, then requeues.
-   - **Each block's answer is one section, found by a marker** naming the
-     work item and the block. Writing it again replaces that section or
+   - **Each wait's answer is one section, found by a marker** naming the
+     work item and the wait. Writing it again replaces that section or
      leaves it, and never adds a second, so a retry is safe. When a write's
      outcome is unknown, the body is read back: the section as written means
      it landed. A tracker with a conditional write (Lingtai's own table)
@@ -250,13 +377,14 @@ which kind a hold is gets inferred again in each place that needs it, from
      editable, and it stops following the answers once it is edited.
    - The requeue's reason is written for the person from those answers. They
      are not asked for one.
-   - **Which advice a move answered is derived, never written.** The move
-     events stay as they are. A move answers the `HoldTriaged` of the block that
+   - **Which advice a resolution answered is derived, never written.** A
+     resolution is one event, `WaitResolved { waitId, by, resolution, note }`
+     (`WorkItemUnblocked` until 0120's phase 2). A resolution answers the `WaitTriaged` of the wait that
      was current when it was made, and both are on the item's stream, so a query
-     finds the pair for board and CLI alike. Whether the move matched the
+     finds the pair for board and CLI alike. Whether the resolution matched the
      advice is decided in that query too, so a change to what counts as
      matching changes every answer, old ones included.
-   - A discussion answer can be added to whatever the recommended move will
+   - A discussion answer can be added to whatever the recommended resolution will
      write: the body, the list of fixes, a split, or the person's own answer
      box.
    - **A requeue's note is optional, and the CLI's `--note` is no longer
@@ -271,7 +399,7 @@ which kind a hold is gets inferred again in each place that needs it, from
      (`close.ts:99-100`) stays on the board, the CLI and the conductor.
    - **The seam for a prefill exists and nothing wires it yet** (#424): `Close`
      takes an optional `prefill` and seeds its box from it
-     (`apps/board/src/app/decide.tsx`), but `HoldTriaged` has no schema,
+     (`apps/board/src/app/decide.tsx`), but `WaitTriaged` has no schema,
      `task_view` has no triage column, and every `<Close>` call site is
      unchanged. Once triage lands (§3, §10), passing its one sentence in is
      what makes the close box start filled — still a box the person can
@@ -279,10 +407,9 @@ which kind a hold is gets inferred again in each place that needs it, from
 
 7. **A requeue keeps its meaning.** A person's requeue is a new pass cut from
    the base, with the recipe's rounds again. It does not spend a restart and
-   does not refund one: `restarts` grows only on `PassRestarted`
-   (`packages/domain/src/work-item.ts:278-299`), and a requeue appends only
-   `WorkItemUnblocked` (`packages/conductor/src/approve.ts:524-534`). Every
-   cost line on the page says so.
+   does not refund one: restarts are counted from
+   `WorkItemReleased{cause: Restart}` (0120 §5), and a person's requeue
+   releases with `cause: ByPerson`. Every cost line on the page says so.
 
 8. **A merge conflict is triaged.**
    - The lane records only the conflicting paths
@@ -296,49 +423,88 @@ which kind a hold is gets inferred again in each place that needs it, from
      from the mirror before any agent is called, and past 20 none is: the
      triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing.
 
-9. **Triage belongs to the block it explains.** `HoldTriaged` names the
-   `WorkItemBlocked` it answers and the head it read. The page and the card
-   show it only while that block is the current one, so an approve or a
-   requeue retires it. A new head arrives only with a new block, so it
-   retires it too. A branch moved by hand while the block stands makes no new
-   block and no new triage; the page shows the triage with the head it read
+9. **Triage belongs to the wait it explains.** `WaitTriaged` names the
+   wait it answers (its `waitId`) and the head it read. The page and the card
+   show it only while that wait is the current one, so an approve or a
+   requeue retires it. A new head arrives only with a new wait, so it
+   retires it too. A branch moved by hand while the wait stands makes no new
+   wait and no new triage; the page shows the triage with the head it read
    and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
-10. **The card reads triage from `task_view`.** The projection keeps the facts for the current block: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from those facts by §1's order, through one pure function, `triageStatus`. Adding the columns is a rebuild:
+10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from those facts by §1's order, through one pure function, `triageStatus`. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
+
+11. **A wait is resolved by its own id, and an approval continues the run.**
+
+    ```ts
+    const resolveWait: (command: {
+      waitId: WaitId
+      resolution: Resolution
+      by: string
+      note: string
+    }) => Effect<ResolveResult>
+    ```
+
+    - **By the wait, not the ticket.** A ticket may have been requeued into a
+      new wait by the time an old page's approval arrives, so `resolveWait`
+      checks atomically that `waitId` is the item's current wait and refuses,
+      doing nothing, if not. `Approve` also refuses when the branch is no
+      longer at its `onSha`. `approve.ts` makes both checks today, by run
+      (`:216`) and by sha (`:228`), and neither is lost.
+    - It checks the resolution against `allowedResolutions`, appends
+      `WaitResolved`, and acts: a requeue releases the item, a close closes
+      it, an answer is written into the body (§6).
+    - **An approval continues the same run** with
+      `runPass({…, from: {step, approved: waitId}})`, at the step in §1's
+      table. At that step the action this wait asked about, the refusing
+      check or the signoff, is recorded `Waived{waitId}` and counts as
+      cleared, and everything after it runs; otherwise the same check refuses
+      the same sha again and the approval loops. Continuing at `proposed`, the
+      signoffs declared there are still asked: the person approved _no change_
+      or _merge past the ceiling_, not them. From there it is an ordinary
+      pass: a `StepEnded`, then `Landed`, a new wait, or a route (a conflict
+      after an approval routes as any conflict does), and `end` runs.
+    - Today `approve.ts:344` integrates on its own outside the pass, writing
+      `StepWaived` and `ApprovalGranted` and then `WorkItemLanded` or
+      `MergeRefused{afterApproval: true}`, and skips the checks declared at
+      `merge`. Both go: a merge refused after an approval is a `MergeRefused`
+      whose wait follows a `WaitResolved{Approve}`, derived, not stored.
+    - **`Close` here only ends a wait.** `lingtai close` closes any ticket,
+      waiting or not, and still writes `WorkItemClosed`; a waiting ticket
+      closed also gets its `WaitResolved{Close}`.
 
 ## Consequences
 
-- **Every hold that is a judgement or a machine failure costs one triage
-  run**, whether or not anybody opens it. Its usage is on `HoldTriaged`, so it
+- **Every wait that is a judgement or a machine failure costs one triage
+  run**, whether or not anybody opens it. Its usage is on `WaitTriaged`, so it
   shows in `/spend`, and a recipe that does not want it does not declare it.
-- **Triage is billed at least once, and at most twice, per block.** The only
+- **Triage is billed at least once, and at most twice, per wait.** The only
   second payment is a daemon that stopped during the call, whose attempt is
   tried again on the next start.
 - **The log can answer how often the advice is taken, and that is not how good
-  it is.** Adoption is one query over `HoldTriaged` and the move after it. How
-  good the advice was is a different query, over what followed the move: did
-  the next pass land, or hold again, and for the same cause? Neither is part of
+  it is.** Adoption is one query over `WaitTriaged` and the resolution after it. How
+  good the advice was is a different query, over what followed the resolution: did
+  the next pass land, or wait again, and for the same cause? Neither is part of
   this decision's build.
 - **Triage never delays the queue.** It runs beside the next pass, not inside
   this one.
-- **The holder's own text becomes evidence**: the judge's `why`, git's words
+- **The stopping step's own text becomes evidence**: the judge's `why`, git's words
   and the step's raw output. It sits in the record and in the side-by-side when
   there is a disagreement. It is no longer the message.
 - **On GitHub, an edit made in the instant between the body's read and its
   write is lost.** GitHub's issue PATCH takes no precondition, so the write
   compares and then writes; the read-back after it narrows the window and
   cannot close it. A `db` tracker's write is conditional and has no window.
-  This is accepted: the page shows the section before the move is made, and
+  This is accepted: the page shows the section before the resolution is chosen, and
   the section is found again by its marker.
-- **The body grows a section per answered hold.** That is the point: it is the
+- **The body grows a section per answered wait.** That is the point: it is the
   durable, free place a decision is kept, and the place the next attempt reads
   from.
 
 ## Not decided here
 
-- **Three moves the pages need and the board does not have:**
+- **Three resolutions the pages need and the board does not have:**
   - one more round on the current branch, past the recipe's rounds;
   - splitting a ticket into chained tickets;
   - merging the base into the branch with a conflict's resolution.
@@ -353,14 +519,15 @@ which kind a hold is gets inferred again in each place that needs it, from
   on `chat-<id>` streams. A discussion decides nothing, so its text is a trace
   rather than a record, but its usage still needs somewhere to be counted.
   That is Discussion's own decision. Triage depends on none of it.
-- **The per-kind table** of trigger, page, recommended move and whether triage
-  runs. It is design, not decision, and belongs in `doc/design/`.
+- **The per-kind table** of trigger, page and whether triage runs. It is
+  design, not decision, and belongs in `doc/design/`. What each wait allows
+  and recommends is §1's.
 
 ## Mockups
 
 [`0118/`](0118/index.html) holds the pages this decision was drawn against:
 the board's Waiting column, #390's page, and one page for each other cause,
-the merge conflict, the questions, and what follows a move. They open directly
+the merge conflict, the questions, and what follows a resolution. They open directly
 in a browser. `dc-lite.js` beside them is all they run. They illustrate the
 decision and do not extend it: where a mockup and this text differ, this text
 is the decision.
