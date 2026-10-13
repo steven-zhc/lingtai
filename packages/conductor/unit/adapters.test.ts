@@ -109,6 +109,24 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
     expect(roundTrip(fakeAction('merge', 'merge'), entry('failed', { because: 'dirty-base' }))?.type).toBe('StepFailed')
   })
 
+  /**
+   * **`REFUSAL_REASONS` is a hand-written array, so widening `RefusalReason`
+   * does not fail typecheck** (`#468`) — a value missing from it falls
+   * through to `unexpected` silently, indistinguishable in the log from a
+   * genuine lane crash. `wip-commit` is the reason this caught: it reached
+   * `integrate.ts` before `adapters.ts`'s own list was extended to match.
+   */
+  it('carries a merge refusal reason through rather than collapsing it to unexpected', () => {
+    const built = actionOf(fakeAction('merge', 'merge'), entry('failed', { because: 'wip-commit' }), ON_SHA)
+    if (built.yields !== 'merge') throw new Error('unreachable')
+    const { result } = built
+    expect(result).toMatchObject({ _tag: 'Completed', integration: { _tag: 'IntegrationRefused' } })
+    if (result._tag !== 'Completed' || result.integration._tag !== 'IntegrationRefused') {
+      throw new Error('unreachable')
+    }
+    expect(result.integration.reason).toBe('wip-commit')
+  })
+
   it('an unreached action produces no event at all', () => {
     const built = actionOf(fakeAction('run', 'verdict'), undefined, ON_SHA)
     expect(built.result._tag).toBe('NotReached')

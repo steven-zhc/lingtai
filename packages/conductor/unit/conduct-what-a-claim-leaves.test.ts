@@ -463,9 +463,12 @@ describe('when the agent meets the wall', () => {
      * commit of the implementer's in the tree (`'b'*40`) or the tree never
      * moved off the base (`'a'*40`, `#237`'s shape) — and adds the dirt
      * `status --porcelain` answers with until the commit this test watches
-     * for is made.
+     * for is made. `leasedBranch`, same as `hitTheWall`'s own: the half of a
+     * push that carries `--force-with-lease` is refused, so origin takes the
+     * forced arm and rejects `agent/<n>` — the `arm-only` ending, now with a
+     * WIP on top of the agent's own commit.
      */
-    const hitTheWallDirty = async (committed: boolean) => {
+    const hitTheWallDirty = async (committed: boolean, breaks: { leasedBranch?: string } = {}) => {
       const store = memoryStore()
       const did: string[] = []
       const said: string[] = []
@@ -478,7 +481,16 @@ describe('when the agent meets the wall', () => {
 
       let dirty = true
       let head = committed ? 'b'.repeat(40) : 'a'.repeat(40)
-      const inner = ports.repo.git
+      let inner = ports.repo.git
+      if (breaks.leasedBranch !== undefined) {
+        const beforeRefusal = inner
+        inner = (args, o) =>
+          args[0] === 'push' && args.some((a) => a.startsWith('--force-with-lease='))
+            ? Effect.sync(() => {
+                did.push(`git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`)
+              }).pipe(Effect.andThen(pushRefusedWith(breaks.leasedBranch!)))
+            : beforeRefusal(args, o)
+      }
       ports.repo.git = (args, o) => {
         if (args[0] === 'status') {
           return Effect.sync(() => {
@@ -551,6 +563,12 @@ describe('when the agent meets the wall', () => {
       // WIP sha on top of it.
       const produced = run.find((e) => e.type === 'RunProducedDiff')
       expect(produced!.data).toMatchObject({ branch: 'agent/7', headSha: 'b'.repeat(40) })
+
+      // **The durable row must never assert the mergeable branch carries the
+      // WIP commit** (`#468`) — `agent/7` is at the agent's own commit, not
+      // the WIP sha `keepUncommittedWork` moved `HEAD` onto.
+      const refs = run.find((e) => e.type === 'RunRefsPublished')
+      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40) })
     })
 
     it('keeps it on the arm alone when the agent itself committed nothing', async () => {
@@ -575,6 +593,34 @@ describe('when the agent meets the wall', () => {
       // `approve()`/`waive()` read the former through `RunState.headSha`, and
       // a WIP with no commit of the agent's own must never be offered there.
       expect(run.some((e) => e.type === 'RunProducedDiff')).toBe(false)
+    })
+
+    /**
+     * **A half-rejected push on top of a WIP, where two things can go wrong at
+     * once** (`#468`). Origin rejects the leased `agent/<n>` and takes the
+     * forced arm, exactly as the plain `arm-only` case does — but the arm's
+     * own `HEAD` is now the WIP commit, not the agent's last one.
+     */
+    it('counts only the agent’s own commit on arm-only, and keeps the WIP account once', async () => {
+      const stale = '! [remote rejected] agent/7 -> agent/7 (stale info)'
+      const { result, run } = await hitTheWallDirty(true, { leasedBranch: stale })
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      const refs = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['arm-only', 'arm-only'])
+
+      // **Never the WIP sha** (`#468`): the guard asks whether the agent
+      // committed, and the count it buys must be of that commit alone, not of
+      // the uncommitted edits layered on top of it and counted as if reviewed.
+      const produced = run.find((e) => e.type === 'RunProducedDiff')
+      expect(produced!.data).toMatchObject({ branch: 'agent/7-attempt-1', headSha: 'b'.repeat(40) })
+
+      // `publishWhatIsCommitted` runs twice on this ending (inline, then from
+      // the finalizer) and both reach this same branch — one `RunKeptUncommitted`
+      // for the one WIP commit, not two.
+      const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+      expect(kept).toHaveLength(1)
+      expect(kept[0]!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
     })
   })
 })

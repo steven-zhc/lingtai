@@ -1624,7 +1624,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           'commit',
           '--no-verify',
           '-m',
-          `${WIP_COMMIT_PREFIX}${runId} stopped by ${stoppedBy}`,
+          // `runId` always starts `run-` (its one constructor, above), which
+          // `WIP_COMMIT_PREFIX` already carries — sliced off here so the
+          // message reads `wip: run-<uuid> stopped by …` rather than
+          // doubling it.
+          `${WIP_COMMIT_PREFIX}${runId.slice('run-'.length)} stopped by ${stoppedBy}`,
         ])
         if (Either.isLeft(committed)) {
           runLog.note('push', `the dirty tree was not kept — git commit failed: ${committed.left.detail}`)
@@ -1640,12 +1644,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * The sha `noteKept` has already recorded, so a second call for the same
+       * WIP commit writes nothing (`#468`). `publishWhatIsCommitted` runs twice
+       * on most endings — inline, then from the finalizer — and without this,
+       * the second call found the same `wip` still set and appended the same
+       * row again: `recordDiff`'s own `recordedDiff` key, read for this one.
+       */
+      let notedKept: string | null = null
+
+      /**
        * The WIP's own account, appended once the arm that carries it is
        * actually on origin — never before, for `RunRefsPublished`'s own reason:
        * a sha named on the log must be fetchable. Counted `parent..sha`, which
        * is the WIP alone and not the whole of what the arm carries.
        */
       const noteKept = async (made: NonNullable<typeof wip>): Promise<void> => {
+        if (notedKept === made.sha) return
         const counted = await numstat(made.parent, made.sha)
         try {
           await appendAt(runId, [
@@ -1661,6 +1675,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               }),
             },
           ])
+          // After the append and never before it (`#251`'s own rule, read for
+          // this row): a key set in advance marks the answer given by the
+          // append that did not give it.
+          notedKept = made.sha
         } catch (defect) {
           const why = whyOf(defect)
           runLog.note('push', `${made.sha.slice(0, 7)} is on ${arm} and was not recorded — ${why}`)
@@ -1729,7 +1747,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * forced arm is the whole point of the second trip.
            */
           if (branchHead === published && head === armPublished) {
-            await noteRefs('already-published', head, null)
+            // **Never `head`** (`#468`): once a WIP exists, `head` is the WIP
+            // sha and `branch` never carries it — `branchHead` is what
+            // `branch` actually got, and `?? head` is the arm-only-WIP case
+            // where `branchHead` is null and the row has only the arm's own
+            // value to report (`doc/design/468.md`'s own call for that case).
+            await noteRefs('already-published', branchHead ?? head, null)
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
             // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
@@ -1769,8 +1792,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               armPublished = head
               await noteRefs('arm-only', head, pushed.left.detail)
               // Only where there is a real commit for the arm to carry —
-              // `RunKeptUncommitted`, not this, is the account of a WIP.
-              if (branchHead !== null) await recordDiff(arm, head)
+              // `RunKeptUncommitted`, not this, is the account of a WIP — and
+              // `branchHead`, never `head`: once a WIP exists `head` is the WIP
+              // sha, and counting `base..head` would count the uncommitted
+              // edits as though they were reviewed (`#468`).
+              if (branchHead !== null) await recordDiff(arm, branchHead)
               if (wip !== null) await noteKept(wip)
               return pushed.left.detail
             }
@@ -1791,7 +1817,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? `${branch} and ${arm} at ${head.slice(0, 7)}`
                 : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
           )
-          await noteRefs('published', head, null)
+          // **Never `head`**, for the same reason as the `already-published`
+          // branch above: the durable row must never assert that `branch`
+          // carries the WIP sha `keepUncommittedWork` moved `HEAD` onto.
+          await noteRefs('published', branchHead ?? head, null)
           // Never for the arm alone (`#468`) — see the `already-published`
           // branch above for why.
           if (branchHead !== null) await recordDiff(branch, branchHead)

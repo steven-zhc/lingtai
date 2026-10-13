@@ -506,6 +506,13 @@ export const RunRefsPublished = z.object({
   /**
    * The head the refs this outcome names point at, or null when nothing was
    * pushed. On `arm-only` it is the arm's, and `branch` is somebody else's.
+   *
+   * **On `published` and `already-published` it is `branch`'s own head, never
+   * the arm's** (`#468`): a stopped run's WIP commit sits ahead of it on the
+   * arm alone, and this row must never read as though `branch` carried that
+   * commit too. It is the arm's own head only where `branch` carries nothing
+   * at all — an agent that committed nothing of its own, with only the WIP to
+   * publish.
    */
   headSha: z.string().nullable(),
   /**

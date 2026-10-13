@@ -49,7 +49,14 @@ describe('whose failure it is', () => {
    * that pointed a person at the branch would point them at the wrong thing.
    */
   it("calls the integrator's own worktree, mirror and lane Lingtai's", () => {
-    for (const reason of ['dirty-base', 'unpushed-base', 'push-rejected', 'lane-busy', 'unexpected'] as const) {
+    for (const reason of [
+      'dirty-base',
+      'unpushed-base',
+      'push-rejected',
+      'lane-busy',
+      'wip-commit',
+      'unexpected',
+    ] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe('lingtai')
     }
   })
@@ -99,6 +106,7 @@ describe('whose failure it is', () => {
       'no-commits',
       'push-rejected',
       'lane-busy',
+      'wip-commit',
       'unexpected',
     ]
     for (const reason of every) {
@@ -166,6 +174,7 @@ describe('a refusal, read for a person', () => {
     // is on the log, and a build that could not read it could not read this
     // repository's own history.
     'lane-busy',
+    'wip-commit',
     'unexpected',
   ]
 

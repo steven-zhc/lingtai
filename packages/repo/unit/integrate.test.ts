@@ -161,4 +161,16 @@ describe('the merge lane refuses a WIP commit (#468)', () => {
     const result = await integrate(options(fake.git))
     expect(result.ok, JSON.stringify(result)).toBe(true)
   })
+
+  /**
+   * **The prefix is `wip: run-`, not the bare `wip: `, exactly so this does not
+   * happen** (`#468`). An agent or a person setting its own work aside with a
+   * plain `wip: ` commit is never this conductor's own — `keepUncommittedWork`
+   * always embeds a `runId`, which always starts `run-`.
+   */
+  it('does not refuse a human or agent commit that happens to start with "wip: "', async () => {
+    const fake = fakeGit({ subjects: ['implement the fix', 'wip: partial refactor'] })
+    const result = await integrate(options(fake.git))
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
 })

@@ -72,8 +72,14 @@ export type RefusalReason = z.infer<typeof RefusalReason>
  * lane guard refuses anything that starts with it (#468). One constant so the
  * two can never name it differently; `@lingtai/repo` cannot hold it because
  * `conduct.ts` imports *types* only from that package (`live.ts`).
+ *
+ * **`run-` and not the bare `wip: `**, because a human or an agent setting
+ * aside its own work with `git commit -m "wip: partial refactor"` must never
+ * be caught by this: `runId` always starts `run-` (`conduct.ts`'s one
+ * constructor of it), so this prefix matches only a subject this conductor
+ * wrote, never a person's own `wip: `.
  */
-export const WIP_COMMIT_PREFIX = 'wip: '
+export const WIP_COMMIT_PREFIX = 'wip: run-'
 
 /**
  * Additive to the enum. No stored event is rewritten and no version is

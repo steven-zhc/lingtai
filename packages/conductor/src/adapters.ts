@@ -131,6 +131,7 @@ const REFUSAL_REASONS: readonly RefusalReasonNoConflict[] = [
   'no-commits',
   'push-rejected',
   'lane-busy',
+  'wip-commit',
   'unexpected',
 ]
 
