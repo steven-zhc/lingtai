@@ -44,6 +44,10 @@ const inputNeededImplement: Proposal = { _tag: 'InputNeeded', from: 'implement',
 const buildRed: Proposal = { _tag: 'BuildRed', output: 'pnpm test failed' }
 const buildRedEmpty: Proposal = { _tag: 'BuildRed', output: '' }
 const reviewFindings: Proposal = { _tag: 'ReviewFindings', findings: [finding()] }
+const reviewFindingsNoCriterion: Proposal = {
+  _tag: 'ReviewFindings',
+  findings: [finding({ failureScenario: '' })],
+}
 const reviewEmpty: Proposal = {
   _tag: 'ReviewEmpty',
   said: 'nothing actionable',
@@ -59,6 +63,7 @@ const ALL_PROPOSALS = [
   buildRed,
   buildRedEmpty,
   reviewFindings,
+  reviewFindingsNoCriterion,
   reviewEmpty,
   mergeConflict,
   verifyRed,
@@ -148,6 +153,17 @@ describe('offerFor: zero spent', () => {
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
+    })
+  })
+
+  it('ReviewFindings with no finding carrying a failure scenario: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    expect(offerFor(reviewFindingsNoCriterion, policy, zero)).toEqual({
+      proposal: reviewFindingsNoCriterion,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
     })
   })
 

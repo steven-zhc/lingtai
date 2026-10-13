@@ -359,11 +359,12 @@ const routeNext: (
   for "a conflict an agent resolved" (`pass.ts:930`), and nothing resolves
   conflicts: an unchanged branch goes green again and meets the same conflict.
   A conflict-resolving plugin can add it back (principle 8).
-- **No criterion, no judge.** For `ReviewEmpty`, and a `BuildRed` with no
-  output, every paid candidate is `unavailable` with `NoCriterion`. When only
-  a person is left the shell asks no judge: reply and decision are both
-  `NotAsked`. This is `judged`'s order today (`pass-steps.ts:837`): readable
-  first, a criterion second, a judge last.
+- **No criterion, no judge.** For `ReviewEmpty`; for a `ReviewFindings` where
+  no finding carries a failure scenario; and for a `BuildRed` or `VerifyRed`
+  with no output — every paid candidate is `unavailable` with `NoCriterion`.
+  When only a person is left the shell asks no judge: reply and decision are
+  both `NotAsked`. This is `judged`'s order today (`pass-steps.ts:837`):
+  readable first, a criterion second, a judge last.
 - **The budget is spent in `offerFor`.** An available candidate already
   carries `FixRound{to: 'implement', round: 3}`; `decideRoute` needs only the
   offer and the reply and never reinterprets a ceiling.

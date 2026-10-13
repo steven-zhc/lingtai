@@ -95,7 +95,8 @@ const JudgeHandedOver = z.object({ _tag: z.literal('JudgeHandedOver'), why: z.st
 /**
  * Why `ProposedEscalated` happened: `RouteEscalation` (0120 §3,
  * `route.ts`) when the router's own candidates ran out, or `JudgeHandedOver`
- * when the route offered nothing but a person from the start. #460's
+ * when a judge was asked and itself selected `hand-to-person` — never when no
+ * judge was asked at all, which is `RouteEscalation`'s own `NotAsked`. #460's
  * `RouteDecision.Escalated.because` is `RouteEscalation` by construction
  * (`route.ts`'s own header), which is what makes this union true of it.
  */

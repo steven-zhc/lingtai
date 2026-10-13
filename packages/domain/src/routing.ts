@@ -34,7 +34,7 @@ import { RunRef } from './wait.ts'
  */
 export type RoutingPolicy = { rounds: number; restarts: number }
 
-/** `'fix-lines'`, `'restart'`, `'hand-to-person'`, …, matched exactly: routed back the way `decideRoute` was handed it. */
+/** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */
 const HandToPerson = z.object({ _tag: z.literal('HandToPerson') })
 
 /** A candidate's own next, before a person or a judge chose one — `pass-next.ts`'s `FixRound` whole, or its `Restart` wrapped in the `Requeued` a judge's pick becomes. */
@@ -134,7 +134,8 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     })
   }
 
-  // No `default` — a new `Proposal` variant must be given a cell here.
+  // `default` assigns `proposal` to a `never`, so a new `Proposal` variant
+  // left without a cell here is a `tsc` error, not a silent fallthrough.
   switch (proposal._tag) {
     case 'InputNeeded':
       round('state-assumption', proposal.from, true)
@@ -148,14 +149,21 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     case 'MergeConflict':
       round('fix-lines', 'implement', true)
       break
-    case 'ReviewFindings':
-      round('fix-lines', 'implement', true)
-      restart(true)
+    case 'ReviewFindings': {
+      // `fix.ts:375`'s `actionable`: a finding without a failure scenario is an opinion.
+      const hasCriterion = proposal.findings.some((f) => f.failureScenario.trim() !== '')
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
       break
+    }
     case 'ReviewEmpty':
       round('fix-lines', 'implement', false)
       restart(false)
       break
+    default: {
+      const unhandled: never = proposal
+      throw new ImpossibleRouteError(`unhandled proposal: ${JSON.stringify(unhandled)}`)
+    }
   }
 
   available.push({ id: 'hand-to-person', next: { _tag: 'HandToPerson' } })
@@ -193,7 +201,8 @@ export function decideRoute(offer: RouteOffer, reply: JudgeReply): RouteDecision
  * is not a different decision, so it needs no ADR of its own.
  *
  * `HandToPerson` never escapes this function — every `PassNext` it returns
- * is one of `nextOf`'s own six tags — and an unjudged `InputNeeded` (a
+ * is `FixRound`, `Requeued` or `WaitOnPerson`, never `nextOf`'s own
+ * `Advance`, `Propose` or `Landed` — and an unjudged `InputNeeded` (a
  * `NotAsked` reply, never an unreadable or unknown one) is the only case that
  * reaches `AgentQuestion` rather than `ProposedEscalated`.
  */
