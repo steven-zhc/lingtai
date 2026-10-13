@@ -803,6 +803,85 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   })
 
   /**
+   * **A fix round that commits and then hits its own ceiling keeps the rest of
+   * its dirty tree too** (`#468`). The round above proves a clean fix gets
+   * published normally; this one points the same fixer at a failure after it
+   * commits — `out-of-turns`, mid-edit — so `committed` is true but `stoppedBy`
+   * must not be cleared the way a clean round clears it: a fixer that commits
+   * half a fix and is cut off before finishing is not a round `interrupted`
+   * stands for nothing about.
+   *
+   * `JUDGED` buys its one round from the cold reviewer's own findings — the
+   * same findings every time, so the reviewer refuses again on the fix
+   * round's own commit and the round is spent with nothing left to buy
+   * another, which is what ends this pass held rather than landed.
+   * `keepUncommittedWork` only runs from the publish the finalizer calls on
+   * an ending that did not land, never on one that did.
+   */
+  it('keeps a fix round’s own dirty tree when it commits and then hits the ceiling', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+
+    // Set the moment the fix dispatch itself runs, so the git port below can
+    // tell "before the fix round" (the implementer's own commit, `tree.at`'s
+    // usual logic) from "after" (the fix round's own commit) without a lane
+    // counter — there is no merge lane in this fixture to count.
+    let fixRan = false
+    const fixerRuntime: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        if (request.runId.includes(':fix:')) {
+          fixRan = true
+          return {
+            exitCode: 1,
+            turns: 60,
+            durationMs: 900,
+            costUsd: 5,
+            failure: { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' },
+            text: null,
+            sessionId: 'sess-fix',
+          }
+        }
+        return request.runId.includes(':review:') ? refusingRuntime.run(request) : runtime.run(request)
+      },
+    }
+
+    const ports = fakePorts(did, store, true)
+    const git = ports.repo.git
+    ports.repo.git = (args, o) => {
+      if (args[0] === 'rev-parse' && fixRan) return Effect.succeed('d'.repeat(40))
+      if (args[0] === 'status') return Effect.succeed(fixRan ? ' M src/leftover.ts\n' : '')
+      return git(args, o)
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED),
+        runtime: fixerRuntime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      ports,
+    )
+
+    expect(result.ok, JSON.stringify(result)).toBe('held')
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    // **Still reachable before this fix** (`#468`): a commit clears
+    // `interrupted` on its own, but not a failure that still ended the
+    // round, so `keepUncommittedWork` never ran and this row never existed.
+    const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+    if (kept === undefined) throw new Error('no RunKeptUncommitted on the run stream')
+    expect(kept.data).toMatchObject({ stoppedBy: 'out-of-turns' })
+  })
+
+  /**
    * **The cut is a plugin's, and the three shapes a recipe can be in cut the same
    * tree** (`#268`, [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md)
    * §2–4).

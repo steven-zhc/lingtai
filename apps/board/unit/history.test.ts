@@ -147,6 +147,27 @@ describe('a line of history', () => {
     )
   })
 
+  /**
+   * **`published`/`already-published` never name `branch` beside a sha it was
+   * never pushed** (`#468`). `headSha` on these two is the arm's own only
+   * where the branch carries nothing — a stopped agent that committed nothing
+   * of its own, with only `keepUncommittedWork`'s WIP to publish — and
+   * `detail` is what says so, since the sha alone cannot tell a reader which
+   * ref it actually reached.
+   */
+  it('never says branch and arm share a sha the branch never got', () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e('RunRefsPublished', { branch: 'agent/7', arm: 'agent/7-attempt-1', ...data }))
+
+    const detail = "agent/7 carries nothing of this claim's own — only agent/7-attempt-1 does"
+    expect(row({ outcome: 'published', headSha: 'c'.repeat(40), detail })).toBe(
+      `agent/7-attempt-1 at ccccccc — ${detail}`,
+    )
+    expect(row({ outcome: 'already-published', headSha: 'c'.repeat(40), detail })).toBe(
+      `already there — agent/7-attempt-1 at ccccccc — ${detail}`,
+    )
+  })
+
   it('keeps a null in the payload, because a null is a statement', () => {
     expect(describePayload({ prompt: null })).toBe('prompt=null')
   })

@@ -215,7 +215,10 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    */
   RunRefsPublished: (d) => {
     const outcome = need(d, 'outcome')
-    if (outcome === 'nothing-committed') return 'nothing committed, so no ref was left'
+    if (outcome === 'nothing-committed')
+      return d['detail']
+        ? `nothing committed, so no ref was left — ${clip(d['detail'])}`
+        : 'nothing committed, so no ref was left'
     if (outcome === 'unrecorded')
       return `${sha(d, 'headSha')} is on origin and nothing records it: ${clip(d['detail'])}`
     if (outcome === 'arm-only')
@@ -224,8 +227,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       return d['headSha']
         ? `${need(d, 'branch')} at ${sha(d, 'headSha')} was not pushed: ${clip(d['detail'])}`
         : `${need(d, 'branch')} was not pushed, and no head was read: ${clip(d['detail'])}`
-    const where = `${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}`
-    return outcome === 'already-published' ? `already there — ${where}` : where
+    const prefix = outcome === 'already-published' ? 'already there — ' : ''
+    // **#468**: a `detail` here means `headSha` is the arm's own and `branch`
+    // never got it — never both at once, and the row says so rather than
+    // naming `branch` beside a sha it was never pushed.
+    if (d['detail']) return `${prefix}${need(d, 'arm')} at ${sha(d, 'headSha')} — ${clip(d['detail'])}`
+    return `${prefix}${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}`
   },
   /**
    * **A stopped run's dirty tree, kept rather than lost with the worktree**

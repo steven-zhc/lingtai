@@ -1494,6 +1494,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let wip: { sha: string; parent: string; stoppedBy: string } | null = null
       /**
+       * **The commit `keepUncommittedWork` made, before its own sha is known**
+       * (`#468`). Set the moment `git commit` itself succeeds — never the moment
+       * the sha is read back, which is a second git call that can fail on its
+       * own (EAGAIN, a killed process) with `HEAD` already moved. `wip` above
+       * is filled in from this plus `publishWhatIsCommitted`'s own `rev-parse
+       * HEAD`, which already has to succeed for anything below it to run, so it
+       * is the one read `wip.sha` is allowed to trust.
+       */
+      let wipParent: { parent: string; stoppedBy: string } | null = null
+      /**
+       * **Why a keep was attempted and left nothing, when it was** (`#468`).
+       * `null` on the two outcomes that need no account — a clean tree, and a
+       * keep that succeeded — so this is only ever read where a dirty tree's
+       * fate would otherwise go unrecorded anywhere durable: folded into
+       * `RunRefsPublished.detail` by `withWipFailure`, below, never left to the
+       * run log alone (0034 §8: a trace, never a record).
+       */
+      let wipFailure: string | null = null
+      /**
        * What the run's own stream has already been told this claim produced, as
        * `<ref>@<head>`. A key and not a flag, because `arm-only` corrects an
        * answer an earlier call has already given (`#251`).
@@ -1601,14 +1620,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * this row.
        */
       const keepUncommittedWork = async (): Promise<void> => {
-        if (stoppedBy === null || wip !== null) return
+        if (stoppedBy === null || wip !== null || wipParent !== null) return
         const dirty = await gitAsked(['status', '--porcelain'])
-        if (Either.isLeft(dirty) || dirty.right.trim() === '') return
+        if (Either.isLeft(dirty)) {
+          wipFailure = `the dirty tree could not be checked — ${dirty.left.detail}`
+          runLog.note('push', wipFailure)
+          return
+        }
+        if (dirty.right.trim() === '') return
         const parent = await gitAsked(['rev-parse', 'HEAD'])
-        if (Either.isLeft(parent)) return
+        if (Either.isLeft(parent)) {
+          wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.left.detail}`
+          runLog.note('push', wipFailure)
+          return
+        }
         const added = await gitAsked(['add', '-A'])
         if (Either.isLeft(added)) {
-          runLog.note('push', `the dirty tree was not kept — git add failed: ${added.left.detail}`)
+          wipFailure = `the dirty tree was not kept — git add failed: ${added.left.detail}`
+          runLog.note('push', wipFailure)
           return
         }
         // The identity is explicit because nothing else configures one in
@@ -1631,16 +1660,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           `${WIP_COMMIT_PREFIX}${runId.slice('run-'.length)} stopped by ${stoppedBy}`,
         ])
         if (Either.isLeft(committed)) {
-          runLog.note('push', `the dirty tree was not kept — git commit failed: ${committed.left.detail}`)
+          wipFailure = `the dirty tree was not kept — git commit failed: ${committed.left.detail}`
+          runLog.note('push', wipFailure)
           return
         }
+        // The commit moved `HEAD` whether or not the read below can confirm its
+        // own sha, so the WIP's existence is recorded here rather than after
+        // it (`#468`) — `wip` itself is filled in from `wipParent` by
+        // `publishWhatIsCommitted`'s own `rev-parse HEAD`, the read that
+        // already has to succeed for anything past it to run.
+        wipParent = { parent: parent.right, stoppedBy }
         const after = await gitAsked(['rev-parse', 'HEAD'])
-        if (Either.isLeft(after)) {
-          runLog.note('push', `the dirty tree was committed but its sha could not be read — ${after.left.detail}`)
-          return
-        }
-        wip = { sha: after.right, parent: parent.right, stoppedBy }
-        runLog.note('push', `kept the dirty tree as ${after.right.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`)
+        runLog.note(
+          'push',
+          Either.isRight(after)
+            ? `kept the dirty tree as ${after.right.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`
+            : `kept the dirty tree on ${arm}, stopped by ${stoppedBy} — its own sha could not be confirmed: ${after.left.detail}`,
+        )
       }
 
       /**
@@ -1703,10 +1739,31 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const at = await gitAsked(['rev-parse', 'HEAD'])
           if (Either.isLeft(at)) {
             runLog.note('push', `${branch} was not pushed — ${at.left.detail}`)
-            await noteRefs('refused', null, at.left.detail)
+            // `wipFailure`, not `withWipFailure` (not yet in scope — that
+            // closure reads `head`, which this call never got to): the keep
+            // may have failed for its own reason before this read did for a
+            // different one, and both deserve a line on the durable row.
+            await noteRefs('refused', null, wipFailure === null ? at.left.detail : `${at.left.detail}; ${wipFailure}`)
             return at.left.detail
           }
           const head = at.right
+          // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
+          // `wipParent` is set the moment `git commit` succeeds there, before
+          // its own `rev-parse HEAD` is attempted — so a flaky read on that one
+          // extra call can never leave `wip` null with `HEAD` already moved
+          // onto the commit it made. This read already has to succeed for
+          // anything past it to run, which is what makes it the one `wip.sha`
+          // trusts.
+          if (wipParent !== null && wip === null) {
+            wip = { sha: head, parent: wipParent.parent, stoppedBy: wipParent.stoppedBy }
+          }
+          // **Why a keep found nothing to publish, when it did not** (`#468`):
+          // folded into whichever `RunRefsPublished` row this call ends up
+          // writing, so a failed `git add` or `git commit` reaches somewhere
+          // durable and not only `runLog.note` (0034 §8 — a trace, never a
+          // record).
+          const withWipFailure = (detail: string | null): string | null =>
+            wipFailure === null ? detail : detail === null ? wipFailure : `${detail}; ${wipFailure}`
           /**
            * **What `branch` carries, as opposed to the arm** (`#468`).
            *
@@ -1721,7 +1778,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const branchHead: string | null = wip === null ? head : wip.parent === tree.baseSha ? null : wip.parent
           if (head === tree.baseSha) {
             runLog.note('push', `nothing to push — ${branch} is still at the base`)
-            await noteRefs('nothing-committed', null, null)
+            await noteRefs('nothing-committed', null, withWipFailure(null))
             return null
           }
           /**
@@ -1747,12 +1804,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * forced arm is the whole point of the second trip.
            */
           if (branchHead === published && head === armPublished) {
-            // **Never `head`** (`#468`): once a WIP exists, `head` is the WIP
-            // sha and `branch` never carries it — `branchHead` is what
-            // `branch` actually got, and `?? head` is the arm-only-WIP case
-            // where `branchHead` is null and the row has only the arm's own
-            // value to report (`doc/design/468.md`'s own call for that case).
-            await noteRefs('already-published', branchHead ?? head, null)
+            // `headSha` is `head` (the arm's own) only where `branch` carries
+            // nothing at all (`doc/design/468.md`) — and that absence goes in
+            // `detail` rather than being left for the reader to guess at from
+            // a sha that is, on every other row, `branch`'s own (`#468`).
+            // `withWipFailure` folds in a failed keep too, though the two
+            // never coincide: a WIP failure leaves `branchHead` at `head`.
+            await noteRefs(
+              'already-published',
+              branchHead ?? head,
+              withWipFailure(
+                branchHead === null ? `${branch} carries nothing of this claim's own — only ${arm} does` : null,
+              ),
+            )
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
             // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
@@ -1790,7 +1854,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // The arm is up even though the command exited non-zero, which is
               // the whole point of asking it separately.
               armPublished = head
-              await noteRefs('arm-only', head, pushed.left.detail)
+              await noteRefs('arm-only', head, withWipFailure(pushed.left.detail))
               // Only where there is a real commit for the arm to carry —
               // `RunKeptUncommitted`, not this, is the account of a WIP — and
               // `branchHead`, never `head`: once a WIP exists `head` is the WIP
@@ -1801,7 +1865,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return pushed.left.detail
             }
             runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
-            await noteRefs('refused', head, pushed.left.detail)
+            await noteRefs('refused', head, withWipFailure(pushed.left.detail))
             return pushed.left.detail
           }
           if (branchHead !== null) {
@@ -1817,10 +1881,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? `${branch} and ${arm} at ${head.slice(0, 7)}`
                 : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
           )
-          // **Never `head`**, for the same reason as the `already-published`
-          // branch above: the durable row must never assert that `branch`
-          // carries the WIP sha `keepUncommittedWork` moved `HEAD` onto.
-          await noteRefs('published', branchHead ?? head, null)
+          // Same call as the `already-published` branch above, and for the
+          // same reason: `branch`'s absence goes in `detail`, never silently
+          // behind a `headSha` that is actually the arm's own (`#468`).
+          await noteRefs(
+            'published',
+            branchHead ?? head,
+            withWipFailure(
+              branchHead === null ? `${branch} carries nothing of this claim's own — only ${arm} does` : null,
+            ),
+          )
           // Never for the arm alone (`#468`) — see the `already-published`
           // branch above for why.
           if (branchHead !== null) await recordDiff(branch, branchHead)
@@ -3249,8 +3319,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : { interrupted: cause }),
           }
         }
-        // A commit, so `interrupted` stands for nothing any more.
-        stoppedBy = null
+        // A commit clears `interrupted`, but not a failure that still ended
+        // the round (`#468`): a fixer that committed half the fix and then hit
+        // `out-of-turns` left the rest in the worktree, and `stoppedBy` is what
+        // tells `keepUncommittedWork` to look — null only where the dispatch
+        // itself reports none.
+        stoppedBy = fixed.failure ? fixed.failure.kind : null
         await recordDiff(branch, after)
         return { committed: after }
       }

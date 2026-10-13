@@ -63,6 +63,10 @@ describe('when the agent meets the wall', () => {
   const pushRefusedWith = (detail: string) =>
     Effect.fail({ _tag: 'RepoFailed', operation: 'git push', detail } as never)
 
+  /** The same shaping as `pushRefusedWith`, for a git call other than `push`. */
+  const repoFailedWith = (operation: string, detail: string) =>
+    Effect.fail({ _tag: 'RepoFailed', operation, detail } as never)
+
   const hitTheWall = async (
     committed: boolean,
     /**
@@ -593,6 +597,19 @@ describe('when the agent meets the wall', () => {
       // `approve()`/`waive()` read the former through `RunState.headSha`, and
       // a WIP with no commit of the agent's own must never be offered there.
       expect(run.some((e) => e.type === 'RunProducedDiff')).toBe(false)
+
+      // **Neither row leaves `branch`'s absence unsaid** (`#468`) — the
+      // inline publish writes `published`, and the finalizer's own call to
+      // the same function (the scope closes once `once()` returns) finds the
+      // same state and writes `already-published`; both must say `agent/7`
+      // never got this sha rather than leaving `detail` null beside it.
+      const refs = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['published', 'already-published'])
+      for (const row of refs) {
+        expect(row.data).toMatchObject({ headSha: WIP_SHA })
+        expect(String((row.data as { detail: string }).detail)).toContain('agent/7')
+        expect(String((row.data as { detail: string }).detail)).toContain('agent/7-attempt-1')
+      }
     })
 
     /**
@@ -621,6 +638,143 @@ describe('when the agent meets the wall', () => {
       const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toHaveLength(1)
       expect(kept[0]!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+    })
+
+    /**
+     * **The WIP commit's own `rev-parse` can fail with `HEAD` already moved
+     * onto it** (`#468`) — a killed process, `EAGAIN` under memory pressure.
+     * `keepUncommittedWork` must not leave `wip` null on that failure alone:
+     * `publishWhatIsCommitted`'s own `rev-parse HEAD`, right after, already has
+     * to succeed for anything past it to run, and is what fills `wip.sha` in.
+     * Getting this wrong pushes the WIP sha to `agent/7` itself — the one
+     * thing the ticket forbids.
+     */
+    it('keeps the branch at the agent’s own commit even when the WIP’s own sha-read fails', async () => {
+      const { did, run } = await (async () => {
+        const store = memoryStore()
+        const did: string[] = []
+        const ports = fakePorts(did, store)
+        let dirty = true
+        let head = 'b'.repeat(40)
+        let revParses = 0
+        const inner = ports.repo.git
+        ports.repo.git = (args, o) => {
+          if (args[0] === 'status') {
+            return Effect.sync(() => {
+              did.push('git status')
+              return dirty ? ' M src/leftover.ts\n' : ''
+            })
+          }
+          if (args[0] === 'rev-parse') {
+            revParses += 1
+            // The second `rev-parse HEAD` is `keepUncommittedWork`'s own,
+            // right after the commit below — the one this test fails. Every
+            // other call, including `publishWhatIsCommitted`'s, succeeds.
+            if (revParses === 2) {
+              return Effect.sync(() => did.push('git rev-parse (failed)')).pipe(
+                Effect.andThen(repoFailedWith('git rev-parse', 'EAGAIN')),
+              )
+            }
+            return Effect.sync(() => {
+              did.push('git rev-parse')
+              return head
+            })
+          }
+          if (args[0] === 'add') {
+            return Effect.sync(() => {
+              did.push('git add -A')
+              return ''
+            })
+          }
+          if (args.includes('commit')) {
+            return Effect.sync(() => {
+              did.push('git commit --no-verify')
+              dirty = false
+              head = WIP_SHA
+              return ''
+            })
+          }
+          return inner(args, o)
+        }
+
+        const result = await once(
+          {
+            project,
+            client: fakeGitHub([]),
+            runtime: atTheWall,
+            issue: 7,
+            hookBinary: '/tmp/fake/lingtai-hook',
+            prompt: 'fix {{issue}}',
+            merge: false,
+            home: '/tmp/fake-home',
+            store,
+          },
+          ports,
+        )
+        expect(result.ok, JSON.stringify(result)).toBe('held')
+        const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+        return { did, run }
+      })()
+
+      // The branch's refspec carries the agent's own commit, never the WIP
+      // sha the failed read could not confirm.
+      const push = `git push ${'b'.repeat(40)}:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1`
+      expect(did).toContain(push)
+
+      const refs = run.find((e) => e.type === 'RunRefsPublished')
+      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40) })
+
+      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
+      expect(kept!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+    })
+
+    /**
+     * **A keep that could not even check the tree writes something durable**
+     * (`#468`) — `git status --porcelain` itself failing, not the dirty-tree
+     * answer. Before this fix both this and a failed `rev-parse` on the parent
+     * returned with no `runLog.note` and no `detail` anywhere; this pins the
+     * `detail` half, since the run log is a trace and never a record (0034 §8).
+     */
+    it('puts a failed status check into RunRefsPublished.detail, not only the run log', async () => {
+      const store = memoryStore()
+      const did: string[] = []
+      const ports = fakePorts(did, store)
+      const inner = ports.repo.git
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => did.push('git status (failed)')).pipe(
+            Effect.andThen(repoFailedWith('git status', 'index corrupt')),
+          )
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => {
+            did.push('git rev-parse')
+            return 'a'.repeat(40)
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([]),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+
+      const refs = run.find((e) => e.type === 'RunRefsPublished')
+      expect(refs!.data).toMatchObject({ outcome: 'nothing-committed' })
+      expect(String((refs!.data as { detail: string }).detail)).toContain('index corrupt')
     })
   })
 })
