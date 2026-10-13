@@ -14,7 +14,7 @@
  */
 import { z } from 'zod'
 
-import { Finding } from './vocabulary.ts'
+import { Finding, Step } from './vocabulary.ts'
 
 /** `build`'s own refusal, with the rounds spent (0120 §2 table). */
 export const BuildRed = z.object({ _tag: z.literal('BuildRed'), output: z.string() })
@@ -59,3 +59,22 @@ export const Proposal = z.discriminatedUnion('_tag', [
   VerifyRed,
 ])
 export type Proposal = z.infer<typeof Proposal>
+
+/**
+ * The step a proposal came from (0120 §2's table). Every variant but
+ * `InputNeeded` names one step; `InputNeeded` carries its own.
+ */
+export function fromOf(proposal: Proposal): Step {
+  switch (proposal._tag) {
+    case 'BuildRed':
+      return 'build'
+    case 'ReviewFindings':
+    case 'ReviewEmpty':
+      return 'review'
+    case 'InputNeeded':
+      return proposal.from
+    case 'MergeConflict':
+    case 'VerifyRed':
+      return 'merge'
+  }
+}
