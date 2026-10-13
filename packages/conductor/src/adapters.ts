@@ -31,17 +31,19 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  * for them — a forward-direction use, and not one that needs the backward
  * distinction this file carries.
  *
- * **A `commit`'s `NotDone` no longer needs `plugin`.** It used to collapse a
- * kept `run:`'s clean failure and the work action's own broken-setup
- * `did-not-finish` onto one tag and guess between `StepFailed` and
- * `StepDidNotFinish` by plugin — wrongly, for a throw on any commit-yielding
- * action, since `runActionPipeline`'s catch always answers `verdict: 'failed'`
- * and the real pipeline always answers that with `StepFailed`, regardless of
- * plugin (`#466` fix round). `commitResultOf`'s did-not-finish fallback now
- * answers `Interrupted{cause: outcome.interrupted ?? 'crash'}`, the way
- * `verdictResultOf`'s own fallback already does, so `NotDone` on `commit` is
- * only ever `verdict: 'failed'` and `eventOf` answers it `StepFailed`
- * unconditionally.
+ * **A `commit`'s `NotDone` still collapses three causes onto one tag, and
+ * still needs `plugin` — plus `threwRatherThanAnswered`.** A kept `run:`'s
+ * clean failure, the work action's own setup that broke before it dispatched
+ * an agent, and any commit-yielding action's dependency throwing, all answer
+ * `NotDone` (0120 §4 sends every one of them to `WaitOnPerson{SetupRefused}`,
+ * same as `nothing`/`worktree`/`design`/`signoff`). `commitEventOf` still has
+ * to tell the three apart to reproduce today's events: `plugin === 'run'` is
+ * the kept run's own clean failure (`StepFailed`), and otherwise the work
+ * action's — `StepDidNotFinish` for the setup that broke, `StepFailed` for a
+ * throw, told apart by `threwRatherThanAnswered` rather than by plugin, since
+ * `runActionPipeline`'s catch always answers `verdict: 'failed'` on a throw
+ * regardless of plugin (`#466` fix round — a throw on the work action had
+ * wrongly read as `StepDidNotFinish` here before this).
  *
  * **A `signoff`'s `NotDone` is always a throw, and so always `StepFailed`.**
  * `watch:`'s `then: 'request-approval'` and `human:` never return `failed`,
@@ -65,7 +67,7 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  *   domain `Action` — a reviewer's own classification of its refusal is not
  *   one of 0120 §1's facts, and `eventOf` cannot put it back.
  * - `ApprovalRequested.artifacts` is always `[]` here, as it is at the one
- *   place that appends it today (`action.ts:801`).
+ *   place that appends it today (`action.ts:889`).
  *
  * **A `watch:`'s `yields` is not always `'signoff'`.** `then: 'fail'` (the
  * tamper watch) never asks — it passes or it refuses — and 0120's
@@ -234,7 +236,7 @@ function signoffResultOf(outcome: ActionOutcomeEntry): ResultOf<'signoff'> {
       // `needs-approval` (`human-action.ts`), and a request-approval `watch:`
       // never returns anything but `passed`/`needs-approval` either. Every
       // instance of these three verdicts is `runActionPipeline`'s own catch
-      // (`action.ts:718-726`) and never the action's own answer, so this is
+      // (`action.ts:729-737`) and never the action's own answer, so this is
       // reachable — a `watch:`'s `deps.changedFiles()` throws whenever its
       // dependency rejects. `NotDone`, the same "a mechanical operation did
       // not happen" cell `commit`/`design`/`worktree`/`nothing` already carry,
@@ -266,11 +268,12 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       // A setup broken before any agent ran — `conduct.ts`'s four `the hook …`
       // sentences — and never a throw: `runActionPipeline`'s catch always
       // answers `verdict: 'failed'` (the case below), never `did-not-finish`.
-      // `Interrupted` rather than `NotDone`, the way `verdictResultOf`'s own
-      // did-not-finish fallback already reads a missing `interrupted` as a
-      // crash, so this cell and the next no longer share one tag and
-      // `eventOf` can tell them apart without reading `plugin` (`#466`).
-      return { _tag: 'Interrupted', cause: outcome.interrupted ?? 'crash', head: outcome.head ?? null }
+      // 0120 §4 assigns `commit`'s `NotDone` to `WaitOnPerson{SetupRefused}`
+      // regardless of cause, and this cell is squarely that: the hook never
+      // ran at all, which is not one of the five words `Interrupted` names
+      // (`#466` fix round — the prior `Interrupted{cause: 'crash'}` here read
+      // a broken hook as a crashed agent and offered `Requeue`).
+      return { _tag: 'NotDone' }
     case 'failed':
     case 'needs-approval':
       // A kept `run:`'s own clean failure (`kept-run-action.ts:80`), or any
@@ -508,12 +511,16 @@ function commitEventOf(action: OfYields<'commit'>, base: Base): ActionEvent {
     case 'Interrupted':
       return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NotDone':
-      // Every `commit` `NotDone` is `verdict: 'failed'` now — a kept `run:`'s
-      // own clean failure or any commit-yielding action's dependency throwing
-      // (`commitResultOf`'s did-not-finish fallback answers `Interrupted`
-      // instead, below) — and the real pipeline always answers `StepFailed`
-      // for `failed`, so this no longer reads `plugin` (`#466` fix round).
-      return { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
+      // Three real causes share this tag: a kept `run:`'s own clean failure
+      // (`plugin: 'run'`, `StepFailed`), the work action's own setup that
+      // broke before it ran (`plugin: 'agent'`, `StepDidNotFinish`), and any
+      // commit-yielding action's dependency throwing, on either plugin — the
+      // real pipeline always answers `StepFailed` for a throw regardless of
+      // plugin, so `threwRatherThanAnswered` overrides the plugin guess
+      // rather than the guess overriding it (`#466` fix round).
+      return action.plugin === 'run' || threwRatherThanAnswered(action)
+        ? { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
+        : { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NeverStarted':
       return { type: 'StepNeverRan', data: { ...base, detail: action.evidence } }
     case 'NotReached':
@@ -771,11 +778,15 @@ function escalatedHold(
 
   switch (proposal._tag) {
     case 'BuildRed':
+      // Same fallback as `MergeConflict`/`ReviewFindings`/`ReviewEmpty`: with
+      // no judge declared (`NotAsked`, the default), `reasonText` is `''` and
+      // `why` must not settle for the bare branch sentence when `output`
+      // carries the tsc failure itself.
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'red',
-        why: why(reasonText),
+        why: why(reasonText !== '' ? reasonText : proposal.output),
         raw: proposal.output,
         findings: [...pass.findings],
         paths: null,
@@ -787,7 +798,7 @@ function escalatedHold(
         _tag: 'Routed',
         run: reason.run,
         when: 'verify-failed',
-        why: why(reasonText),
+        why: why(reasonText !== '' ? reasonText : proposal.output),
         raw: proposal.output,
         findings: [...pass.findings],
         paths: null,

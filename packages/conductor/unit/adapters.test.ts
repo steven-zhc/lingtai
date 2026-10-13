@@ -9,7 +9,7 @@
 import type { Action, ActionVerdict, InterruptedCause, PipelineResult } from '@lingtai/actions'
 import { NEEDS_INPUT } from '@lingtai/actions'
 import { changedNothing, headOf, Hold, nextOf, type StepOutcome, wellFormed } from '@lingtai/domain'
-import { recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
+import { allowedResolutions, recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { actionOf, eventOf, holdOf, outcomeOf } from '../src/adapters.ts'
@@ -148,6 +148,28 @@ describe('a request-approval watch whose own dependency threw never prefills App
   })
 })
 
+describe('a setup that broke before any agent ran never reads as a crashed agent', () => {
+  it('`nextOf` answers `SetupRefused`, never `AgentCrashed`, and never prefills `Requeue`', () => {
+    // `conduct.ts`'s own four `the hook …` sentences (`:2620`, `:2625`,
+    // `:2627`, `:2750`) return `{ stopped }` with neither `interrupted` nor
+    // `committedNothing` set — no agent ever ran. 0120 §4 sends `commit`'s
+    // `NotDone` to `SetupRefused`, not `Interrupted` to `AgentCrashed`.
+    const built = actionOf(
+      fakeAction('agent', 'commit', 'write the change'),
+      entry('did-not-finish', { action: 'write the change', evidence: 'the hook was not wired: ECONNREFUSED' }),
+      ON_SHA,
+    )
+    expect(built.result._tag).toBe('NotDone')
+    const outcome: StepOutcome = { step: 'implement', round: 0, actions: [built] }
+    const next = nextOf(outcome, { runId: 'run-1' })
+    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused' } })
+    if (next._tag === 'WaitOnPerson') {
+      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).toBeNull()
+      expect(allowedResolutions(next.reason)).toEqual(['Requeue', 'Close'])
+    }
+  })
+})
+
 describe('an implement agent that committed nothing, with a `run:` the recipe declared after it', () => {
   const run = { runId: 'run-1' }
 
@@ -193,21 +215,21 @@ describe('eventOf reads `plugin` for the cell one result shape covers two real e
     expect(roundTrip(fakeAction('agent', 'commit'), committedNothing)?.type).toBe('StepDidNotFinish')
   })
 
-  it("a kept `run:`'s own clean failure and the work action's broken setup (no throw) are both `commit`'s `NotDone`/`Interrupted` split, never by `plugin`", () => {
+  it("a kept `run:`'s own clean failure and the work action's broken setup are both `commit`'s `NotDone`, told apart by `plugin`", () => {
     // `run:`'s clean failure is `verdict: 'failed'` → `NotDone` → `StepFailed`.
     expect(roundTrip(fakeAction('run', 'commit'), entry('failed'))?.type).toBe('StepFailed')
     // The work action's own broken setup, no throw, is `did-not-finish` with no
-    // flags → `Interrupted{cause: 'crash'}` → `StepDidNotFinish` — the same
-    // event as before, but no longer because `plugin === 'agent'`.
+    // flags → `NotDone` too (0120 §4 sends both to `SetupRefused`) → but
+    // `commitEventOf` still answers `StepDidNotFinish` for it, by `plugin`,
+    // the same event as before this ticket.
     expect(roundTrip(fakeAction('agent', 'commit'), entry('did-not-finish'))?.type).toBe('StepDidNotFinish')
   })
 
-  it('the implement agent action throwing is `StepFailed`, not `StepDidNotFinish` — the bug `plugin`-based guessing produced (`#466` fix round)', () => {
-    // Before this fix, `commitEventOf`'s `NotDone` case answered
-    // `action.plugin === 'run' ? StepFailed : StepDidNotFinish`, so a throw on
-    // the `agent`-plugin work action (`verdict: 'failed'`, same as any throw)
-    // wrongly read as `StepDidNotFinish`. `commitResultOf` no longer reaches
-    // `NotDone` except for `verdict: 'failed'`, so this is unconditional now.
+  it('the implement agent action throwing is `StepFailed`, not `StepDidNotFinish`, by `threwRatherThanAnswered` rather than by `plugin` alone', () => {
+    // A throw on the `agent`-plugin work action is `verdict: 'failed'`, same
+    // as any throw, and `commitEventOf`'s `NotDone` case would wrongly read
+    // it as the setup-broke-before-running case (`StepDidNotFinish`) if it
+    // went by `plugin` alone — `threwRatherThanAnswered` overrides that guess.
     const threw = entry('failed', { evidence: 'the write the change action threw: ECONNRESET' })
     expect(roundTrip(fakeAction('agent', 'commit', 'write the change'), threw)?.type).toBe('StepFailed')
   })
@@ -408,6 +430,34 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     )
     expect((hold as { raw: string | null }).raw).toBe('both sides touched src/fix.ts')
     expect((hold as { why: string }).why).toContain('both sides touched src/fix.ts')
+  })
+
+  it("a `BuildRed`/`VerifyRed` escalation's own `output` survives on `why`, with no `judge:` declared", () => {
+    // `route.ts:42`'s `NotAsked` — no judge declared, or nothing but a person
+    // to choose — leaves `reasonText` `''`; `why` must fall back to the
+    // proposal's own `output` rather than the bare branch sentence, the same
+    // fallback `MergeConflict`/`ReviewFindings`/`ReviewEmpty` already have.
+    const buildRed = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'BuildRed', output: 'tsc: 3 errors in pass.ts' },
+        because: { _tag: 'NotAsked' },
+      },
+      pass,
+    )
+    expect((buildRed as { why: string }).why).toContain('tsc: 3 errors in pass.ts')
+
+    const verifyRed = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'VerifyRed', output: 'tsc: 3 errors in pass.ts' },
+        because: { _tag: 'NotAsked' },
+      },
+      pass,
+    )
+    expect((verifyRed as { why: string }).why).toContain('tsc: 3 errors in pass.ts')
   })
 
   /**
