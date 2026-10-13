@@ -61,7 +61,19 @@ export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps):
   return {
     name: spec.name,
     kind: 'watch',
-    yields: 'signoff',
+    /**
+     * **`signoff` only for `request-approval`** (`#466`). `then: 'fail'` never
+     * produces `needs-approval` — only `passed` or `failed` — and 0120's
+     * `SignoffAction` union has no arm for a real refusal, only
+     * `Completed | Waived | NotReached`: an `actionOf` that kept this
+     * `'signoff'` would have to fold a tamper-watch refusal into the same
+     * shape a genuine approval request takes, which is the one thing the
+     * watch exists to keep from being waved through. Yielding `'verdict'`
+     * instead reads a `fail` match as a refused check (`StepFailed`,
+     * `CheckRefused`, never `SignoffRequired`), legal here because `proposed`
+     * is the only step `watchPlugin.at` serves and it accepts both yields.
+     */
+    yields: spec.then === 'fail' ? 'verdict' : 'signoff',
 
     async run(_context: ActionContext): Promise<ActionResult> {
       const changed = await deps.changedFiles()

@@ -8,8 +8,8 @@
  */
 import type { Action, ActionVerdict, InterruptedCause, PipelineResult } from '@lingtai/actions'
 import { NEEDS_INPUT } from '@lingtai/actions'
-import { Hold, wellFormed } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import { changedNothing, Hold, nextOf, type StepOutcome, wellFormed } from '@lingtai/domain'
+import { recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { actionOf, eventOf, holdOf, outcomeOf } from '../src/adapters.ts'
@@ -100,6 +100,58 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
     const built = actionOf(fakeAction('run', 'verdict'), undefined, ON_SHA)
     expect(built.result._tag).toBe('NotReached')
     expect(eventOf({ step: 'build', round: 0, actions: [built] }, RUN_ID)).toEqual([])
+  })
+
+  it('a tamper watch (`then: fail`) yields `verdict`, so its refusal is `StepFailed`, never `ApprovalRequested`', () => {
+    expect(roundTrip(fakeAction('watch', 'verdict'), entry('failed'))?.type).toBe('StepFailed')
+  })
+})
+
+describe('a tamper watch refusal routes as a refused check, never as something a person may approve', () => {
+  it('`nextOf` answers `CheckRefused`, and `recommendedResolution` never offers `Approve` for it', () => {
+    const built = actionOf(fakeAction('watch', 'verdict', 'tamper'), entry('failed', { action: 'tamper' }), ON_SHA)
+    const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
+    const next = nextOf(outcome, { runId: 'run-1' })
+    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'CheckRefused' } })
+    if (next._tag === 'WaitOnPerson') {
+      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).not.toBe('Approve')
+    }
+  })
+})
+
+describe('an implement agent that committed nothing, with a `run:` the recipe declared after it', () => {
+  const run = { runId: 'run-1' }
+
+  function implementOutcome(round: number): StepOutcome {
+    const actions = [fakeAction('agent', 'commit', 'write the change'), fakeAction('run', 'commit', 'format')]
+    const result: PipelineResult = {
+      ok: false,
+      failedAt: null,
+      heldAt: null,
+      neverRanAt: null,
+      didNotFinishAt: { action: 'write the change', detail: 'the agent produced no commits' },
+      askedAt: null,
+      results: [entry('did-not-finish', { action: 'write the change', committedNothing: true })],
+      skipped: ['format'],
+    }
+    return outcomeOf('implement', round, ON_SHA, actions, result)
+  }
+
+  it('is `wellFormed`, with the `run:` the pipeline never reached dropped rather than left `NotReached`', () => {
+    const outcome = implementOutcome(0)
+    expect(wellFormed(outcome)).toBe(true)
+    expect(outcome.actions).toHaveLength(1)
+  })
+
+  it('is `changedNothing`, so `nextOf` waits on a person instead of advancing to `build`', () => {
+    const outcome = implementOutcome(0)
+    expect(changedNothing(outcome)).toBe(true)
+    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced' } })
+  })
+
+  it('answers `FixerDisagrees` on a fix round instead of `NothingProduced`', () => {
+    const outcome = implementOutcome(1)
+    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'FixerDisagrees' } })
   })
 })
 
@@ -215,5 +267,78 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
       pass,
     )
     expect(hold).toMatchObject({ _tag: 'Asked', step: 'implement', question: 'which branch?' })
+  })
+
+  it('a spent `restarts` ceiling survives on `why`, for a `MergeConflict` proposal', () => {
+    const hold = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'MergeConflict', paths: ['a.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+        because: {
+          _tag: 'CandidateUnavailable',
+          excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+        },
+      },
+      pass,
+    )
+    expect((hold as { why: string }).why).toContain('`restarts` is spent')
+    expect((hold as { raw: string | null }).raw).not.toBeNull()
+  })
+
+  it('the same reason survives on `raw` for a `ReviewFindings` proposal, which has no evidence field of its own', () => {
+    const hold = holdOf(
+      {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'ReviewFindings', findings: [] },
+        because: {
+          _tag: 'CandidateUnavailable',
+          excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+        },
+      },
+      pass,
+    )
+    expect((hold as { raw: string | null }).raw).toContain('`restarts` is spent')
+  })
+
+  it('clips a multi-line, over-long raw answer to one short sentence on `why`, and leaves `raw` whole', () => {
+    const raw = 'line one\n\nline two with   extra   spaces\n'.repeat(20)
+    const hold = holdOf({ _tag: 'AnswerUnreadable', run, step: 'review', action: 'cold reviewer', raw }, pass)
+    const why = (hold as { why: string }).why
+    expect(why).not.toContain('\n')
+    expect(why.length).toBeLessThan(raw.length)
+    expect((hold as { raw: string }).raw).toBe(raw)
+  })
+
+  it('clips `why` the same way on every plain cell: CheckRefused, AgentCrashed, SetupRefused, NothingProduced, Ceiling', () => {
+    const messy = '  a   problem\n\nspans lines  '
+    const clean = 'a problem spans lines'
+    expect(
+      (
+        holdOf({ _tag: 'CheckRefused', run, step: 'merge', action: 'check', evidence: messy, findings: [] }, pass) as {
+          why: string
+        }
+      ).why,
+    ).toBe(clean)
+    expect(
+      (holdOf({ _tag: 'AgentCrashed', run, step: 'review', cause: 'crash', detail: messy }, pass) as { why: string })
+        .why,
+    ).toBe(clean)
+    expect(
+      (
+        holdOf({ _tag: 'SetupRefused', run, step: 'implement', action: 'the hook', why: messy }, pass) as {
+          why: string
+        }
+      ).why,
+    ).toBe(clean)
+    expect((holdOf({ _tag: 'NothingProduced', run, said: messy }, pass) as { why: string }).why).toBe(clean)
+    expect(
+      (
+        holdOf({ _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: messy, call: null }, pass) as {
+          detail: string
+        }
+      ).detail,
+    ).toBe(clean)
   })
 })

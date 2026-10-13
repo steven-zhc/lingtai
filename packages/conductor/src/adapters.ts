@@ -37,23 +37,51 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  *   one of 0120 §1's facts, and `eventOf` cannot put it back.
  * - `ApprovalRequested.artifacts` is always `[]` here, as it is at the one
  *   place that appends it today (`action.ts:801`).
- * - A `signoff`'s real `failed` (`watch:`'s own `then: fail`, the tamper
- *   watch) has no arm in 0120's `SignoffAction` union — only
- *   `Completed | Waived | NotReached` — so `actionOf` maps it to the same
- *   shape a real `needs-approval` takes, and `eventOf` reconstructs it as
- *   `ApprovalRequested` rather than the `StepFailed` it really was. Not
- *   exercised by #461's fixture.
  * - A `merge:`'s own `conflict` carries no `paths`/`baseSha`/`headSha` on the
  *   action's result — that evidence is `hold-of.ts`'s own
  *   `lastIntegrationRefusal`, read off the integration stream rather than off
  *   the action — so `actionOf` answers `Conflicted` with all three empty.
  *
+ * **A `watch:`'s `yields` is not always `'signoff'`.** `then: 'fail'` (the
+ * tamper watch) never asks — it passes or it refuses — and 0120's
+ * `SignoffAction` union has no arm for a real refusal, so `createWatchAction`
+ * yields `'verdict'` for that case (`watch-action.ts`, `#466`) and
+ * `verdictResultOf`/`verdictEventOf` carry it as an ordinary refused check,
+ * never as `SignoffRequired` — which is the one thing the watch exists to
+ * keep off the approvable path.
+ *
+ * **`outcomeOf` drops a trailing run of `NotReached` after an action that
+ * cleared.** `commitResultOf`'s `committedNothing` cell is 0120's own
+ * `changedNothing` cell (`Completed{head: null, question: null}`, cleared),
+ * but the pipeline still stopped there — a `run:` declared after it in the
+ * recipe never ran, and a raw zip would answer it `NotReached`. `wellFormed`
+ * (`domain/src/action.ts`) forbids a `NotReached` after a deciding action that
+ * cleared, and a `NotReached` carries no event either way (`eventOf` skips it
+ * outright) and no effect on `cleared`/`headOf`, so dropping the trailing run
+ * costs nothing once the action in front of it already cleared.
+ *
+ * **`holdOf` clips `why`/`detail` the way `hold-of.ts`'s own `said` always
+ * has** — `raw` stays the unclipped original (`hold-of.ts`'s own convention)
+ * and only the field a card renders as one sentence is normalised and
+ * capped. `said` below is that function, mirrored rather than imported:
+ * `hold-of.ts` imports `pass-steps.ts`, which imports `pass.ts`, which
+ * imports this file (`outcomeOf`) — importing `hold-of.ts` back from here
+ * would close that into an ESM cycle for one four-line helper.
+ *
  * Imports `@lingtai/domain/wait` rather than `@lingtai/domain`, because
  * `WaitReason` is that subpath's own (`wait.ts`'s header explains the name
  * collisions that keep it there until #464).
  */
-import type { Action as DomainAction, Finding, Hold, RefusalReason, Step, StepOutcome } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import {
+  cleared,
+  type Action as DomainAction,
+  type Finding,
+  type Hold,
+  type RefusalReason,
+  type Step,
+  type StepOutcome,
+} from '@lingtai/domain'
+import type { EscalationBecause, WaitReason } from '@lingtai/domain/wait'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]
@@ -156,8 +184,10 @@ function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
       // not set it, read as a crash rather than refused.
       return { _tag: 'Interrupted', cause: outcome.interrupted ?? 'crash' }
     case 'needs-approval':
-      // No `verdict`-yielding action asks today — only `watch:`/`human:` do,
-      // and both yield `signoff`. Nearest arm for a shape that cannot happen.
+      // No `verdict`-yielding action asks today — `watch:` only ever asks
+      // when `then: request-approval`, which yields `signoff`; the `verdict`
+      // yield is `then: fail`'s own, and that one never asks. Nearest arm
+      // for a shape that cannot happen.
       return { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings } }
   }
 }
@@ -172,10 +202,15 @@ function signoffResultOf(outcome: ActionOutcomeEntry): ResultOf<'signoff'> {
     case 'failed':
     case 'did-not-finish':
     case 'never-ran':
-      // `watch:`'s own `then: fail` (the tamper watch) is a real `failed`
-      // here, and a throw is too — and 0120's `SignoffAction` union has no
-      // arm for either, only `Completed | Waived | NotReached`. Both take the
-      // shape a real `needs-approval` would (the header names the loss).
+      // `watch:`'s own `then: fail` yields `verdict` now, not `signoff`
+      // (`watch-action.ts`, `#466`), so a `signoff`-yielding action only
+      // reaches here by throwing — `human:` never returns anything but
+      // `needs-approval` (`human-action.ts`), and a request-approval `watch:`
+      // never returns anything but `passed`/`needs-approval` either. 0120's
+      // `SignoffAction` union has no arm for a throw, only
+      // `Completed | Waived | NotReached`; it takes the shape a real
+      // `needs-approval` would, the nearest arm for a shape that should not
+      // happen.
       return { _tag: 'Completed', requested: { question: outcome.evidence } }
   }
 }
@@ -277,7 +312,8 @@ function nothingResultOf(outcome: ActionOutcomeEntry): ResultOf<'nothing'> {
  * One step's `StepOutcome` — `actions[i]` paired with `result.results[i]`,
  * the pipeline's own order (`action.ts`'s `runActionPipeline` pushes one
  * entry per action it reached and stops at the first that did not pass), so
- * every action past `result.results.length` is `NotReached`.
+ * every action past `result.results.length` is `NotReached` — **unless the
+ * action in front of them cleared** (see `droppingNotReachedAfterACleared`).
  */
 export function outcomeOf(
   step: Step,
@@ -286,7 +322,31 @@ export function outcomeOf(
   actions: readonly Action[],
   result: PipelineResult,
 ): StepOutcome {
-  return { step, round, actions: actions.map((action, i) => actionOf(action, result.results[i], onSha)) }
+  const built = actions.map((action, i) => actionOf(action, result.results[i], onSha))
+  return { step, round, actions: droppingNotReachedAfterACleared(built) }
+}
+
+/**
+ * `commitResultOf`'s `committedNothing` cell answers a stopped pipeline with
+ * a *cleared* result (`Completed{head: null, question: null}`, 0120's own
+ * `changedNothing` cell) — correct where that action is the last the recipe
+ * declared, but the pipeline stops there regardless of what the recipe
+ * declared after it (`action.ts`'s "stops at the first failure"), so a
+ * `run:` the recipe put after it never runs and a raw zip would answer it
+ * `NotReached`.
+ *
+ * `wellFormed` (`domain/src/action.ts`) holds that a `NotReached` only
+ * follows a deciding action that did **not** clear — the domain side of that
+ * line is fixed, so this is the one place left to keep it true. Dropping the
+ * trailing run costs nothing: a `NotReached` action carries no event either
+ * way (`eventOf` skips it outright, `cleared`/`headOf` already ignore it),
+ * so an action that cleared and the `NotReached`s the pipeline never got to
+ * run behind it collapse to the same step-level fact either way.
+ */
+function droppingNotReachedAfterACleared(actions: readonly DomainAction[]): DomainAction[] {
+  const firstNotReached = actions.findIndex((action) => action.result._tag === 'NotReached')
+  if (firstNotReached <= 0) return [...actions]
+  return cleared(actions[firstNotReached - 1]!) ? actions.slice(0, firstNotReached) : [...actions]
 }
 
 // ---------------------------------------------------------------- eventOf ----
@@ -460,6 +520,19 @@ function nothingEventOf(action: OfYields<'nothing'>, base: Base): ActionEvent {
 // ----------------------------------------------------------------- holdOf ----
 
 /**
+ * `hold-of.ts`'s own `said`, mirrored rather than imported (see this file's
+ * header): whitespace-normalise, trim, and clip to `n` characters with an
+ * ellipsis, so a `why` a card renders as one sentence never carries a raw
+ * multi-line agent or command answer verbatim. `raw` is never passed through
+ * this — it keeps the original, uncapped, for whatever reads deeper.
+ */
+function said(detail: string, n = 300): string {
+  const one = detail.replace(/\s+/g, ' ').trim()
+  if (one === '') return 'no detail was recorded'
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one
+}
+
+/**
  * The `Hold` a `WaitReason` would become — 0118 §1's model, through today's
  * spelling. `pass` carries the three facts that live on the pass rather than
  * on the wait: `branch`/`base` open a `Routed.why`, and `findings` rides on
@@ -494,13 +567,19 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
         _tag: 'DidNotFinish',
         run: reason.run,
         step: 'implement',
-        why: reason.said ?? 'the agent produced no commits',
+        why: said(reason.said ?? 'the agent produced no commits', 400),
         raw: reason.said,
       }
     case 'ProposedEscalated':
       return escalatedHold(reason, pass)
     case 'CheckRefused':
-      return { _tag: 'CheckRed', run: reason.run, step: reason.step, why: reason.evidence, raw: reason.evidence }
+      return {
+        _tag: 'CheckRed',
+        run: reason.run,
+        step: reason.step,
+        why: said(reason.evidence, 400),
+        raw: reason.evidence,
+      }
     case 'MergeRefused':
       return {
         _tag: 'MergeRefused',
@@ -516,9 +595,22 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
     case 'BudgetExhausted':
       // 0118 §3's rule: `null` rather than an invented zero. `#455`'s receipt
       // is what would fill `turns`/`costUsd`, and nothing mints one yet.
-      return { _tag: 'Ceiling', run: reason.run, kind: reason.cause, detail: reason.detail, turns: null, costUsd: null }
+      return {
+        _tag: 'Ceiling',
+        run: reason.run,
+        kind: reason.cause,
+        detail: said(reason.detail),
+        turns: null,
+        costUsd: null,
+      }
     case 'AgentCrashed':
-      return { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: reason.detail, raw: reason.detail }
+      return {
+        _tag: 'DidNotFinish',
+        run: reason.run,
+        step: reason.step,
+        why: said(reason.detail, 400),
+        raw: reason.detail,
+      }
     case 'SetupRefused':
       // `prepared` alone lifts by a person; every other step's setup failure
       // is an ordinary `DidNotFinish` today (`hold-of.ts:221-227`).
@@ -528,12 +620,37 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
             run: reason.run,
             step: reason.step,
             lifts: 'person',
-            why: reason.why,
+            why: said(reason.why, 400),
             raw: reason.why,
           }
-        : { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: reason.why, raw: reason.why }
+        : { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: said(reason.why, 400), raw: reason.why }
     case 'AnswerUnreadable':
       return answerUnreadableHold(reason, pass)
+  }
+}
+
+/**
+ * A line for `reason.because` (0120 §3's `EscalationBecause`) to fold into
+ * `escalatedHold`'s `why` — the same role `lastRoute.why` plays for
+ * `holdOfPass` (`hold-of.ts:119`), read off the structured reason rather
+ * than off a sentence `conduct.ts` built for a different caller. `''` where
+ * the router has nothing to add beyond the proposal itself: `NotAsked` means
+ * no judge even ran, so there is no extra reason to give.
+ */
+function reasonTextOf(because: EscalationBecause): string {
+  switch (because._tag) {
+    case 'NotAsked':
+      return ''
+    case 'JudgeHandedOver':
+      return because.why
+    case 'UnreadableReply':
+      return `the judge's answer could not be read: ${because.raw}`
+    case 'UnknownCandidate':
+      return `the judge named "${because.candidate}", which was not offered`
+    case 'CandidateUnavailable':
+      return because.excluded.because._tag === 'CeilingReached'
+        ? `the judge chose \`${because.excluded.id}\`, and \`${because.excluded.because.ceiling}\` is spent`
+        : `the judge chose \`${because.excluded.id}\`, which nothing holds it to`
   }
 }
 
@@ -549,7 +666,16 @@ function escalatedHold(
     return { _tag: 'Asked', run: reason.run, step: proposal.from, question: proposal.question }
   }
 
-  const why = `${pass.branch} into ${pass.base} is waiting on you.`
+  // `reason.because` is why the router escalated rather than selecting a
+  // candidate — dropped entirely before this fix, which is how a card for an
+  // escalation with the rounds spent read no differently from one with
+  // nothing to say at all.
+  const reasonText = reasonTextOf(reason.because)
+  const why =
+    reasonText === ''
+      ? `${pass.branch} into ${pass.base} is waiting on you.`
+      : `${pass.branch} into ${pass.base} is waiting on you. ${said(reasonText, 400)}`
+
   switch (proposal._tag) {
     case 'BuildRed':
       return {
@@ -581,7 +707,10 @@ function escalatedHold(
         run: reason.run,
         when: 'conflict',
         why,
-        raw: null,
+        // No `evidence` field on a conflict proposal — the escalation's own
+        // reason is the only text this cell has to carry (the header names
+        // the loss of the three merge-shaped fields; this is not that one).
+        raw: reasonText === '' ? null : reasonText,
         findings: [...pass.findings],
         paths: proposal.paths,
         baseSha: proposal.baseSha,
@@ -593,7 +722,9 @@ function escalatedHold(
         run: reason.run,
         when: 'findings',
         why,
-        raw: null,
+        // No `evidence` field here either — `findings` already carries the
+        // detail, and the escalation's own reason is what `raw` has left.
+        raw: reasonText === '' ? null : reasonText,
         findings: [...proposal.findings],
         paths: null,
         baseSha: null,
@@ -627,7 +758,7 @@ function answerUnreadableHold(
       _tag: 'Routed',
       run: reason.run,
       when: 'findings',
-      why: `${pass.branch} into ${pass.base} is waiting on you. ${reason.raw}`,
+      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(reason.raw, 400)}`,
       raw: reason.raw,
       findings: [...pass.findings],
       paths: null,
@@ -636,7 +767,7 @@ function answerUnreadableHold(
     }
   }
   if (reason.step === 'merge') {
-    return { _tag: 'CheckRed', run: reason.run, step: 'merge', why: reason.raw, raw: reason.raw }
+    return { _tag: 'CheckRed', run: reason.run, step: 'merge', why: said(reason.raw, 400), raw: reason.raw }
   }
-  return { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: reason.raw, raw: reason.raw }
+  return { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: said(reason.raw, 400), raw: reason.raw }
 }
