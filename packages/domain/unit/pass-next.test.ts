@@ -105,7 +105,7 @@ describe('nextOf: §2 Proposal table', () => {
     const result = next(outcome('merge', [action('merge', { _tag: 'Completed', integration })]))
     expect(result).toEqual({
       _tag: 'Propose',
-      proposal: { _tag: 'MergeConflict', paths: ['a.ts'], baseSha: 'base-1', headSha: 'head-1' },
+      proposal: { _tag: 'MergeConflict', output: '', paths: ['a.ts'], baseSha: 'base-1', headSha: 'head-1' },
     })
   })
 
@@ -727,7 +727,9 @@ describe('fromOf', () => {
   })
 
   it('MergeConflict: merge', () => {
-    expect(fromOf({ _tag: 'MergeConflict', paths: ['a.ts'], baseSha: 'base-1', headSha: 'head-1' })).toBe('merge')
+    expect(
+      fromOf({ _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: 'base-1', headSha: 'head-1' }),
+    ).toBe('merge')
   })
 
   it('VerifyRed: merge', () => {

@@ -99,7 +99,15 @@ export interface IntegrateOptions {
   verify?: (cwd: string) => Promise<{ ok: boolean; evidence: string }>
 }
 
-export type IntegrateResult = { ok: true; mergeCommit: string } | { ok: false; reason: RefusalReason; detail: string }
+export type IntegrateResult =
+  | { ok: true; mergeCommit: string }
+  | {
+      ok: false
+      reason: RefusalReason
+      detail: string
+      /** Set only for `reason: 'conflict'` — the three fields `refuse` was already handed for the log (`#466`). */
+      conflict?: { paths: string[]; baseSha: string; headSha: string }
+    }
 
 /**
  * A push this lane lost and is about to answer itself.
@@ -243,7 +251,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         detail: detail.slice(0, 2_000),
         ...conflict,
       })
-      return { ok: false, reason, detail } as IntegrateResult
+      return { ok: false, reason, detail, ...(conflict === undefined ? {} : { conflict }) } as IntegrateResult
     })
 
   const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>

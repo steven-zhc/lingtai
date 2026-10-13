@@ -66,7 +66,15 @@ export type MergeStrategy = 'merge-commit'
  */
 export type LandAnswer =
   /** The merge commit on the base branch. Not a worktree head: nothing local moved. */
-  { readonly merged: string } | { readonly notMerged: { readonly reason: RefusalReason; readonly detail: string } }
+  | { readonly merged: string }
+  | {
+      readonly notMerged: {
+        readonly reason: RefusalReason
+        readonly detail: string
+        /** Set only for `reason: 'conflict'` — threaded from `IntegrateResult.conflict` (`#466`). */
+        readonly conflict?: { readonly paths: string[]; readonly baseSha: string; readonly headSha: string }
+      }
+    }
 
 /**
  * The lane, as the only thing this action needs from its caller.
@@ -119,6 +127,9 @@ export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps):
         // what `directionOf` reads to tell a `conflict` from a `verify-failed`
         // from the five a judge is never offered.
         because: answer.notMerged.reason,
+        // The three fields a real conflict carries, threaded the way
+        // `interrupted` is (`#466`) — absent on every refusal but a conflict.
+        ...(answer.notMerged.conflict === undefined ? {} : { conflict: answer.notMerged.conflict }),
       }
     },
   }

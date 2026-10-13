@@ -13,6 +13,7 @@ import { recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { actionOf, eventOf, holdOf, outcomeOf } from '../src/adapters.ts'
+import { holdOfPass } from '../src/hold-of.ts'
 
 type ActionOutcomeEntry = PipelineResult['results'][number]
 
@@ -330,7 +331,13 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
       {
         _tag: 'ProposedEscalated',
         run,
-        proposal: { _tag: 'MergeConflict', paths: ['a.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+        proposal: {
+          _tag: 'MergeConflict',
+          output: 'both sides touched a.ts',
+          paths: ['a.ts'],
+          baseSha: 'b'.repeat(40),
+          headSha: 'c'.repeat(40),
+        },
         because: {
           _tag: 'CandidateUnavailable',
           excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
@@ -358,12 +365,18 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     expect((hold as { raw: string | null }).raw).toContain('`restarts` is spent')
   })
 
-  it('a `MergeConflict` proposal that carries real paths and no `judge:` declared still names the files', () => {
+  it("a `MergeConflict` proposal's own `output` survives on `raw` and `why`, with no `judge:` declared", () => {
     const hold = holdOf(
       {
         _tag: 'ProposedEscalated',
         run,
-        proposal: { _tag: 'MergeConflict', paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+        proposal: {
+          _tag: 'MergeConflict',
+          output: 'both sides touched src/fix.ts',
+          paths: ['src/fix.ts'],
+          baseSha: 'b'.repeat(40),
+          headSha: 'c'.repeat(40),
+        },
         because: { _tag: 'NotAsked' },
       },
       pass,
@@ -372,23 +385,79 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     expect((hold as { why: string }).why).toContain('both sides touched src/fix.ts')
   })
 
-  it('the only path that builds a `MergeConflict` from a real step never has paths to name, so `raw` stays null', () => {
-    // `actionOf` → `mergeResultOf` answers `Conflicted` with all three fields
-    // empty (the module header's own "what is lost"), so `nextOf` can never
-    // hand `holdOf` a `MergeConflict` with real paths through this path —
-    // unlike the literal above, which is the only way this proposal carries
-    // real data today.
-    const built = actionOf(fakeAction('merge', 'merge', 'land'), entry('failed', { because: 'conflict' }), ON_SHA)
+  /**
+   * **`holdOf` and `holdOfPass` must agree on a conflict built from a real
+   * step** (`#466`) — the fix for the cold review's own finding that
+   * `mergeResultOf` dropped `paths`/`baseSha`/`headSha` to empty always,
+   * which made `legacyColumns` lose the remedy on every conflict card.
+   */
+  it('a conflict built through `actionOf` → `nextOf` → `holdOf` matches `holdOfPass`, with real paths', () => {
+    const conflict = { paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) }
+    const built = actionOf(
+      fakeAction('merge', 'merge', 'land'),
+      entry('failed', { because: 'conflict', evidence: 'both sides touched src/fix.ts', conflict }),
+      ON_SHA,
+    )
     const outcome: StepOutcome = { step: 'merge', round: 0, actions: [built] }
     const next = nextOf(outcome, run)
-    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'MergeConflict', paths: [] } })
+    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'MergeConflict', ...conflict } })
     if (next._tag !== 'Propose') throw new Error('unreachable')
     const hold = holdOf(
       { _tag: 'ProposedEscalated', run, proposal: next.proposal, because: { _tag: 'NotAsked' } },
       pass,
     )
-    expect((hold as { raw: string | null }).raw).toBeNull()
-    expect((hold as { why: string }).why).not.toContain('touched')
+    const viaPass = holdOfPass({
+      stopped: {
+        step: 'merge',
+        ending: { ending: 'refused', because: 'conflict', at: 'land', detail: 'both sides touched src/fix.ts' },
+      },
+      lastRoute: null,
+      ceilingHit: null,
+      rested: 'waiting',
+      declined: null,
+      findings: [],
+      runId: run.runId,
+      branch: pass.branch,
+      base: pass.base,
+      integrationRefusal: conflict,
+    })
+    expect(hold).toEqual(viaPass)
+  })
+
+  it("a conflict with no paths recorded — #461 row 10a's own shape — matches `holdOfPass` too, both `null`", () => {
+    const built = actionOf(
+      fakeAction('merge', 'merge', 'land'),
+      entry('failed', { because: 'conflict', evidence: 'both sides touched src/fix.ts' }),
+      ON_SHA,
+    )
+    const outcome: StepOutcome = { step: 'merge', round: 0, actions: [built] }
+    const next = nextOf(outcome, run)
+    expect(next).toMatchObject({
+      _tag: 'Propose',
+      proposal: { _tag: 'MergeConflict', paths: null, baseSha: null, headSha: null },
+    })
+    if (next._tag !== 'Propose') throw new Error('unreachable')
+    const hold = holdOf(
+      { _tag: 'ProposedEscalated', run, proposal: next.proposal, because: { _tag: 'NotAsked' } },
+      pass,
+    )
+    const viaPass = holdOfPass({
+      stopped: {
+        step: 'merge',
+        ending: { ending: 'refused', because: 'conflict', at: 'land', detail: 'both sides touched src/fix.ts' },
+      },
+      lastRoute: null,
+      ceilingHit: null,
+      rested: 'waiting',
+      declined: null,
+      findings: [],
+      runId: run.runId,
+      branch: pass.branch,
+      base: pass.base,
+      integrationRefusal: null,
+    })
+    expect(hold).toEqual(viaPass)
+    expect((hold as { paths: string[] | null }).paths).toBeNull()
   })
 
   it('a review refusal with no `judge:` declared still names the findings, rather than a bare `why` and a null `raw`', () => {

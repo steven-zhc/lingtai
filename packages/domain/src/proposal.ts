@@ -36,12 +36,17 @@ export const InputNeeded = z.object({
 })
 export type InputNeeded = z.infer<typeof InputNeeded>
 
-/** The merge lane's own conflict. */
+/**
+ * The merge lane's own conflict. `output` is the lane's own text — `evidence`
+ * at the step, same as `BuildRed`/`VerifyRed`'s — and the three path fields
+ * are `null` where the action's result carried none (`#466`).
+ */
 export const MergeConflict = z.object({
   _tag: z.literal('MergeConflict'),
-  paths: z.array(z.string()),
-  baseSha: z.string(),
-  headSha: z.string(),
+  output: z.string(),
+  paths: z.array(z.string()).nullable(),
+  baseSha: z.string().nullable(),
+  headSha: z.string().nullable(),
 })
 export type MergeConflict = z.infer<typeof MergeConflict>
 

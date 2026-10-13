@@ -278,6 +278,14 @@ export interface ActionResult {
    * worktree the pass is still holding stands.
    */
   merged?: string
+  /**
+   * **The three fields a real conflict carries, on the result rather than
+   * only on the log** (`#466`). Absent on every result but the merge lane's
+   * own `conflict` refusal — `createMergeAction` sets it from
+   * `LandAnswer.notMerged.conflict`, itself `IntegrateResult.conflict` off
+   * `refuse`'s own call at `packages/repo/src/integrate.ts`.
+   */
+  conflict?: { paths: string[]; baseSha: string; headSha: string }
 }
 
 /**
@@ -618,6 +626,8 @@ export interface PipelineResult {
     committedNothing?: true
     /** The merge lane's own commit, where it landed one. `ActionResult.merged`. */
     merged?: string
+    /** The three fields a real conflict carries, where the lane refused with one. `ActionResult.conflict`. */
+    conflict?: { paths: string[]; baseSha: string; headSha: string }
   }[]
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[]
@@ -772,6 +782,9 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // Spread for `head`'s reason an eighth time: the merge lane's own commit,
       // carried the way `worktree:`'s `head` is (`#466`).
       ...(result.merged === undefined ? {} : { merged: result.merged }),
+      // Spread for `head`'s reason a ninth time: the three fields a real
+      // conflict carries, where the lane refused with one (`#466`).
+      ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
     })
 
     // And the same pair onto the context the *next* action is handed, so a

@@ -283,6 +283,7 @@ function mergeCompletedRefused(step: Step, integration: Integration, evidence: s
         _tag: 'Propose',
         proposal: {
           _tag: 'MergeConflict',
+          output: evidence,
           paths: integration.paths,
           baseSha: integration.baseSha,
           headSha: integration.headSha,

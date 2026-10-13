@@ -103,6 +103,7 @@ describe('allowedResolutions', () => {
     it('MergeConflict: Requeue, EditBodyAndRequeue, Close — a conflict cannot be merged', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
+        output: 'conflict',
         paths: ['apps/web/foo.ts'],
         baseSha: 'abc',
         headSha: 'def',

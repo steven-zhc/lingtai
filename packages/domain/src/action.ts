@@ -53,9 +53,16 @@ export const Integration = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('Integrated'), mergeSha: z.string() }),
   z.object({
     _tag: z.literal('Conflicted'),
-    paths: z.array(z.string()),
-    baseSha: z.string(),
-    headSha: z.string(),
+    /**
+     * `null` where the action's own result carries none — `actionOf` reaches
+     * this off the merge action's `ActionResult.conflict`, which is only set
+     * when the real lane refused with one (`#466`). Never `[]`/`''`: an
+     * absent field and an empty one are different facts, and `Hold.Routed`'s
+     * own fields (`hold.ts:201`) are `null` for the same reason.
+     */
+    paths: z.array(z.string()).nullable(),
+    baseSha: z.string().nullable(),
+    headSha: z.string().nullable(),
   }),
   z.object({
     _tag: z.literal('IntegrationRefused'),

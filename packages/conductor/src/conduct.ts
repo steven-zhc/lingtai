@@ -404,7 +404,8 @@ export interface RunOnceOptions {
    * `adapters.ts`'s `eventOf` against the run stream `conduct.ts` itself is
    * about to write from the very same `pass.steps`, so a mismatch there is an
    * adapter bug by #461's own rule rather than a reason for this seam to exist
-   * for production use.
+   * for production use. A throw from it is caught and noted on `runLog`
+   * rather than skipping the ending below.
    */
   onPass?: (pass: PassResult) => void
 }
@@ -2096,7 +2097,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           mergeCommit = result.mergeCommit
           return { merged: result.mergeCommit }
         }
-        return { notMerged: { reason: result.reason, detail: result.detail } }
+        return {
+          notMerged: {
+            reason: result.reason,
+            detail: result.detail,
+            ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
+          },
+        }
       }
 
       /**
@@ -3083,7 +3090,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ceilings,
         }),
       )
-      options.onPass?.(pass)
+      // An observer's own bug must not cost the ending: `runLog` is a trace,
+      // not a record (its own header), so a throw here is noted and the
+      // ending below still gets written.
+      try {
+        options.onPass?.(pass)
+      } catch (err) {
+        runLog.note('pass', `onPass threw: ${err instanceof Error ? err.message : String(err)}`)
+      }
 
       /**
        * **A store that refused an append is not a step's verdict about the

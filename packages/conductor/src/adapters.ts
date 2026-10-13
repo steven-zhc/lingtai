@@ -37,10 +37,6 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  *   one of 0120 §1's facts, and `eventOf` cannot put it back.
  * - `ApprovalRequested.artifacts` is always `[]` here, as it is at the one
  *   place that appends it today (`action.ts:801`).
- * - A `merge:`'s own `conflict` carries no `paths`/`baseSha`/`headSha` on the
- *   action's result — that evidence is `hold-of.ts`'s own
- *   `lastIntegrationRefusal`, read off the integration stream rather than off
- *   the action — so `actionOf` answers `Conflicted` with all three empty.
  *
  * **A `watch:`'s `yields` is not always `'signoff'`.** `then: 'fail'` (the
  * tamper watch) never asks — it passes or it refuses — and 0120's
@@ -305,9 +301,19 @@ function mergeResultOf(outcome: ActionOutcomeEntry): ResultOf<'merge'> {
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha: outcome.merged ?? '' } }
   }
   if (outcome.because === 'conflict') {
-    // The three fields a real conflict carries are on the integration
-    // stream, not on this result (the header names the loss).
-    return { _tag: 'Completed', integration: { _tag: 'Conflicted', paths: [], baseSha: '', headSha: '' } }
+    // The three fields a real conflict carries, where the lane's result had
+    // them (`ActionResult.conflict`, `#466`) — `null` where it did not, which
+    // is never true through a real step today but is through a test literal
+    // that predates this field.
+    return {
+      _tag: 'Completed',
+      integration: {
+        _tag: 'Conflicted',
+        paths: outcome.conflict?.paths ?? null,
+        baseSha: outcome.conflict?.baseSha ?? null,
+        headSha: outcome.conflict?.headSha ?? null,
+      },
+    }
   }
   return { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: refusalReasonOf(outcome.because) } }
 }
@@ -672,24 +678,12 @@ function reasonTextOf(because: EscalationBecause): string {
 }
 
 /**
- * `MergeConflict` carries no text of its own, only `paths`/`baseSha`/`headSha`
- * — the fallback `escalatedHold` reaches for when `reasonTextOf` has nothing
- * either, so a caller that built the proposal with real paths and no `judge:`
- * declared still names the files rather than leaving `raw` null.
- *
- * **Not the path through `mergeResultOf`.** That function answers `Conflicted`
- * with all three fields empty always (the header's own "what is lost"), so a
- * `MergeConflict` built from a real step through `actionOf` never has paths
- * for this to name — `paths`/`baseSha`/`headSha` only live on the real conflict
- * where `hold-of.ts`'s `lastIntegrationRefusal` reads them, off the integration
- * stream rather than off the action. This fallback is for whatever else builds
- * the proposal with real data — a test, or a future caller nearer the event.
+ * `ReviewFindings` carries no text of its own, only `findings` — the fallback
+ * `escalatedHold` reaches for when `reasonTextOf` has nothing either, so a
+ * `judge:`-less escalation still names the claims rather than leaving `raw`
+ * null. `MergeConflict` needed the same fallback before `#466` gave it its
+ * own `output`; it reaches for `output` directly now.
  */
-function mergeConflictOwnText(proposal: { paths: readonly string[] }): string | null {
-  return proposal.paths.length === 0 ? null : `both sides touched ${proposal.paths.join(', ')}`
-}
-
-/** The same fallback as {@link mergeConflictOwnText}, off `findings` — `ReviewFindings` carries no text of its own either. */
 function reviewFindingsOwnText(proposal: { findings: readonly Finding[] }): string | null {
   return proposal.findings.length === 0 ? null : proposal.findings.map((f) => f.claim).join('; ')
 }
@@ -741,32 +735,22 @@ function escalatedHold(
         baseSha: null,
         headSha: null,
       }
-    case 'MergeConflict': {
-      // No `evidence` field on a conflict proposal (the header names the
-      // loss of the three merge-shaped fields; this is not that one). When
-      // no judge replied either — `NotAsked`, the default with no `judge:`
-      // declared — fall back to the conflict's own paths where a caller
-      // supplied them. **Through `actionOf` that is never true** —
-      // `mergeResultOf` answers `Conflicted` with all three fields empty, so
-      // `raw`/`why` stay null/bare for a conflict built from a real step,
-      // unlike `holdOfPass` (`hold-of.ts:118-126`), which reads the real paths
-      // off the integration stream rather than off the action. Closing that
-      // gap means carrying `paths`/`baseSha`/`headSha` from `IntegrateResult`
-      // through `LandAnswer` and `ActionResult`, which is `packages/repo`'s
-      // and outside this file.
-      const detail = reasonText !== '' ? reasonText : mergeConflictOwnText(proposal)
+    case 'MergeConflict':
+      // `proposal.output` is the lane's own text (`#466`, `mergeCompletedRefused`
+      // in `pass-next.ts`) — the same shape `BuildRed`/`VerifyRed` already had,
+      // so `raw` matches `holdOfPass` (`hold-of.ts:118-126`, `raw: why`) rather
+      // than falling back to an invented sentence.
       return {
         _tag: 'Routed',
         run: reason.run,
         when: 'conflict',
-        why: why(detail ?? ''),
-        raw: detail,
+        why: why(reasonText !== '' ? reasonText : proposal.output),
+        raw: proposal.output,
         findings: [...pass.findings],
         paths: proposal.paths,
         baseSha: proposal.baseSha,
         headSha: proposal.headSha,
       }
-    }
     case 'ReviewFindings': {
       // Same fallback as `MergeConflict`, off `findings` rather than `paths`
       // — `findings` is the proposal's own evidence here.

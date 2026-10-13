@@ -113,7 +113,7 @@ type Assessment = { verdict: 'accepted' | 'refused'; findings: Finding[] }
 type Design = { document: string; locator?: string } // both from the same action (action.ts:212); "" is "no design needed"
 type Integration =
   | { _tag: 'Integrated'; mergeSha: string }
-  | { _tag: 'Conflicted'; paths: string[]; baseSha: string; headSha: string }
+  | { _tag: 'Conflicted'; paths: string[] | null; baseSha: string | null; headSha: string | null } // null where the action's own result carried none (#466)
   | { _tag: 'IntegrationRefused'; reason: Exclude<RefusalReason, 'conflict'> }
 
 type NeverStarted = { _tag: 'NeverStarted'; scope: 'conductor' | 'work-item' } // an account wall, an unmet environment
@@ -265,7 +265,7 @@ type Proposal =
   | { _tag: 'ReviewFindings'; findings: Finding[] }
   | { _tag: 'ReviewEmpty'; said: string; findings: Finding[] } // refused, and no finding carries a failure scenario
   | { _tag: 'InputNeeded'; from: 'design' | 'implement'; question: string }
-  | { _tag: 'MergeConflict'; paths: string[]; baseSha: string; headSha: string }
+  | { _tag: 'MergeConflict'; output: string; paths: string[] | null; baseSha: string | null; headSha: string | null } // output is the lane's own text; the three path fields are null where the action's result carried none (#466)
   | { _tag: 'VerifyRed'; output: string } // the base moved, and the re-verify on it went red
 ```
 
@@ -285,7 +285,7 @@ read off the deciding action by step and yield, never by plugin:
 | review    | `verdict` `Completed{refused}`, none with one                     | `ReviewEmpty{said: evidence, findings}`                          |
 | design    | `design` `Asked`                                                  | `InputNeeded{question}` (the draft stays on the `StepEnded`)     |
 | implement | `commit` `Completed` with a `question`                            | `InputNeeded{question}` (a commit beside it stays on the branch) |
-| merge     | `merge` `Completed{Conflicted}`                                   | `MergeConflict`                                                  |
+| merge     | `merge` `Completed{Conflicted}`                                   | `MergeConflict{output: evidence, ...Conflicted}`                 |
 | merge     | `merge` `Completed{IntegrationRefused{verify-failed}}`            | `VerifyRed{output: evidence}`                                    |
 
 Everything else that falls short ends the pass without a proposal (§4).

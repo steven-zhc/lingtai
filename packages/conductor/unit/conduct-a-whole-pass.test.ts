@@ -1000,6 +1000,42 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   })
 
   /**
+   * **A throwing `onPass` costs nothing the ending needs** (`#466`).
+   *
+   * `onPass` runs in the one gap `conduct.ts`'s own comment names — *between
+   * `runPass` returning and the ending being written* — and nothing in its
+   * type stops a caller's callback from throwing. Before this, that throw
+   * escaped uncaught, became a defect `Effect.catchAllDefect` answers by
+   * releasing the item and reporting `stage: 'unexpected'`, and lost every
+   * event the ending writes below it for a pass that had, in fact, landed.
+   */
+  it('still lands when `onPass` throws', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], landAtMerge('\n    - name: land the branch\n      merge: { strategy: merge-commit }')),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+        onPass: () => {
+          throw new Error('a broken observer')
+        },
+      },
+      fakePorts(did, store, true),
+    )
+
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+  })
+
+  /**
    * **A declared `design:` produces a verdict too**, and it is the first step whose
    * default is nothing (`#265`, 0065 §4).
    *

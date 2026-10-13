@@ -53,7 +53,13 @@ const reviewEmpty: Proposal = {
   said: 'nothing actionable',
   findings: [finding({ failureScenario: '' })],
 }
-const mergeConflict: Proposal = { _tag: 'MergeConflict', paths: ['a.ts'], baseSha: 'base-1', headSha: 'head-1' }
+const mergeConflict: Proposal = {
+  _tag: 'MergeConflict',
+  output: 'conflict',
+  paths: ['a.ts'],
+  baseSha: 'base-1',
+  headSha: 'head-1',
+}
 const verifyRed: Proposal = { _tag: 'VerifyRed', output: 'tsc failed on main' }
 const verifyRedEmpty: Proposal = { _tag: 'VerifyRed', output: '' }
 

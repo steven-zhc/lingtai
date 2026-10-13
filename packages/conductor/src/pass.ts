@@ -1867,7 +1867,9 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
  * that said anything is the answer*, so a `run:` written after the agent wins
  * over the agent's own commit, and a `run:` written before it (finding nothing
  * yet to commit) answers nothing and loses to the agent's. Ordering in the
- * recipe is what decides it, not a count enforced anywhere else.
+ * recipe is what decides it, not a count enforced anywhere else. `design` also
+ * produces one — a `file:` destination's own commit (`file-action.ts:280`) —
+ * for a `file:` destination alone, since the drafting agent never sets it.
  *
  * Read only on the passing branch, because the tree a refused pipeline was cut
  * into is the one the arrival already carries: a cut that did not happen is
