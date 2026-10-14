@@ -3359,6 +3359,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // word for it (`#468`).
           stoppedBy = fixed.failure ? fixed.failure.kind : null
           const cause = fixed.failure?.kind
+          // `implement`'s other dispatch, and `firstDispatch`'s own reason to
+          // set this (`#467`): the round's agent is the one holding the real
+          // turns and dollars `holdFor`'s patch reads back once `nextOf` turns
+          // this into a `Ceiling`.
+          if (fixed.failure && (fixed.failure.kind === 'out-of-turns' || fixed.failure.kind === 'out-of-usd')) {
+            ceilingHit = {
+              kind: fixed.failure.kind,
+              detail: fixed.failure.detail,
+              turns: fixed.turns,
+              costUsd: fixed.costUsd,
+            }
+          }
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
@@ -3642,6 +3654,30 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {
+          /**
+           * **`ceilingHit` is `implement`'s own receipt, not every agent's**
+           * (`#466`'s patch, read against `hold-of.ts`'s step 3). It is set only
+           * by `firstDispatch` and `fixRound` — the two dispatches `implement`
+           * ever runs — never by a cold reviewer, a declared `agent:` elsewhere,
+           * or the router's own judge. `holdOfPass`'s step 3 read that absence as
+           * *nobody decided, and the account did* only where `ceilingHit !==
+           * null`; everywhere else a `did-not-finish` fell to the ordinary
+           * `DidNotFinish` case in its switch, unconditionally on the step. The
+           * same read has to survive `nextOf`'s uniform `BudgetExhausted`, which
+           * carries no step and so cannot gate itself: without this, every one
+           * of those other agents' wall would read as the *ticket's own scope is
+           * wrong, requeue it* `Ceiling` sentence, with the numbers that sentence
+           * promises read as `null` besides.
+           */
+          if (pass.waitOn._tag === 'BudgetExhausted' && ceilingHit === null) {
+            return {
+              _tag: 'DidNotFinish',
+              run: runRef,
+              step: pass.stoppedAt!.step,
+              why: said(pass.waitOn.detail, 400),
+              raw: pass.waitOn.detail,
+            }
+          }
           const hold = holdOf(pass.waitOn, { branch, base, findings })
           if (hold._tag === 'Question') return hold
           const withRun: Hold = { ...hold, run: runRef }
@@ -3874,6 +3910,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * A `refused` ending is a step's own declared actions refusing, which is
          * the `build` gone red and the lane that would not take it.
          *
+         * **A third shape, since `#467` took `review`'s own unreadable answer off
+         * the router.** `endingOf` reports every `review` visit `passed`
+         * (`pass.ts:1928` — a reviewer's `failed` is findings, not a refusal), so an
+         * answer `parseFindings` cannot read at all stops the pass with
+         * `stopped.ending.ending === 'passed'`, neither of the two shapes above.
+         * Before `#467` the same answer walked on to `proposed`'s own way-through
+         * visit, which routed it to a person with `stopped === null` — the reviewer
+         * read the diff and could not be understood, which is `judged` for the
+         * same reason a refusal is. `pass.waitOn` still carries that it was this
+         * reason (`AnswerUnreadable`), which `stopped.ending.ending` alone no
+         * longer does.
+         *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
          * an agent stopped at `runtime.limits.turns` having committed twice — and
@@ -3892,7 +3940,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * by the pipeline, which is what `held` excludes — and the request is only
          * worth making where origin is holding something to merge (`onOrigin`).
          */
-        const judged = stopped === null || stopped.ending.ending === 'refused'
+        const judged =
+          stopped === null || stopped.ending.ending === 'refused' || pass.waitOn?._tag === 'AnswerUnreadable'
         if (!held && judged && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that

@@ -1391,9 +1391,10 @@ export const judgePlugin = definePlugin('judge', {
    * at `end` is resolved rather than run — and that is why opening the key is not
    * `#61`: the cell resolves *and* something calls it.
    *
-   * **Nowhere else, and the reason is `ARRIVE_AT_THE_ROUTER`** (`pass.ts:913`).
-   * A refusal at `build`, `review` or `merge` *travels* to `proposed` carrying its
-   * reason; the judge is asked once, there, about wherever the pass got to. A
+   * **Nowhere else, and the reason is `nextOf`** (`packages/domain/src/pass-next.ts`,
+   * `#467`). A refusal at `build`, `review` or `merge` that falls to `nextOf`'s
+   * `Propose` cell *travels* to `proposed` carrying its reason; the judge is
+   * asked once, there, about wherever the pass got to. A
    * `judge:` declared at the refusing step would be a second router at a step that
    * has not finished deciding what its own ending is.
    */
@@ -1659,7 +1660,7 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
 const ONLY_PROPOSED_ROUTES =
   '`proposed` is the only step that routes (0058 §3b), and a judge is asked there once about ' +
   'wherever the pass got to: a refusal at this step *travels* to it carrying its reason ' +
-  '(`ARRIVE_AT_THE_ROUTER` in `packages/conductor/src/pass.ts`), so a `judge:` here would be a ' +
+  '(`nextOf` in `packages/domain/src/pass-next.ts`), so a `judge:` here would be a ' +
   'second router at a step that has not finished deciding what its own ending is. Written at ' +
   '`proposed` it is read — `proposed` takes the one entry whose `when:` matches the reason the ' +
   'last step gave, one judge per direction, and only the `findings` one is a judgement worth an ' +

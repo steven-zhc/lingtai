@@ -1042,7 +1042,7 @@ describe('every step × kind cell runs or refuses', () => {
    * It was the same sentence at all ten while the plugin served nothing. Now the
    * cell at `proposed` is **null** — the whole of what `#274` opens — and the
    * other nine are a sentence about the *pair*: the router is `proposed`, a
-   * refusal at this step travels there (`ARRIVE_AT_THE_ROUTER`), and a judge here
+   * refusal at this step travels there (`nextOf`, `#467`), and a judge here
    * would be a second router at a step still deciding its own ending.
    *
    * The reduction rides along with it, because that is where somebody who wrote
@@ -1062,7 +1062,7 @@ describe('every step × kind cell runs or refuses', () => {
     expect(why).toContain('`judge:` does not implement `merge`')
     expect(why).toContain('it serves `proposed`')
     expect(why).toContain('only step that routes')
-    expect(why).toContain('ARRIVE_AT_THE_ROUTER')
+    expect(why).toContain('nextOf')
     expect(why).toContain('the workflow counts, the judge chooses')
     expect(why).toContain('one judge per direction')
     expect(why).toContain('refused by name')

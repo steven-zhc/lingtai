@@ -1246,10 +1246,13 @@ export function outcomeOf(pass: Pick<PassResult, 'stoppedAt' | 'rested'>): Termi
  *
  * 1. walk the spine — `STEPS`, in order — running each step's plugins and then
  *    its body;
- * 2. a step that did not pass goes to **`proposed`**, carrying its reason. All
- *    seven of them, which is 0058 §3b's second drawing — and `proposed` may
- *    route on its own way through too, which is where a `review`'s findings are
- *    judged;
+ * 2. a step that did not pass is read by `nextOf` (`#467`, 0120 §4): most of
+ *    0058 §3b's second drawing still goes to **`proposed`**, carrying its
+ *    reason, but three cells answer `WaitOnPerson` directly instead and never
+ *    visit the router — a `prepared` refusal, a check before the `merge`
+ *    lane, and an unreadable answer at `review` or `merge` (none of the three
+ *    is a direction any `judge:` answers). `proposed` may still route on its
+ *    own way through too, which is where a `review`'s findings are judged;
  * 3. a route is a destination from the set the workflow offered: a step, and the
  *    walk resumes there having spent a round; or `waiting`; or `claim`, which
  *    requeues and ends the pass;
@@ -1370,10 +1373,13 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   }
 
   /**
-   * **Every one of the seven's own way to `proposed`, carrying its reason** —
-   * 0058 §3b, and §3c's *what happened has to arrive intact*. A second visit
-   * to `proposed` rather than a branch inside the spine walk, running the
-   * router without the inspection: see `StepWork.arriving`.
+   * **The way to `proposed` for whichever of the seven still travels there,
+   * carrying its reason** — 0058 §3b, and §3c's *what happened has to arrive
+   * intact*. A second visit to `proposed` rather than a branch inside the
+   * spine walk, running the router without the inspection: see
+   * `StepWork.arriving`. Three of the seven never call this (`#467`): a
+   * `prepared` refusal, a check before the `merge` lane, and an unreadable
+   * answer at `review` or `merge` all answer `WaitOnPerson` directly instead.
    *
    * Shared between the two places that still take this path (`#467`): a visit
    * `nextOf` was not asked about, and a `Propose` answered against an ending

@@ -1019,6 +1019,149 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
+   * **The cold reviewer's own answer is unreadable, not the router's judge**
+   * (`#467`'s fix round). `nextOf` answers `WaitOnPerson{AnswerUnreadable}`
+   * directly for a `review` whose findings do not parse at all, so the pass
+   * never visits `proposed` a second time — but `holdOf` still reads it as
+   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
+   * got, and `conduct.ts`'s `judged` predicate must still read this as
+   * *something judged this diff and said no* or the *merge it anyway*
+   * control silently disappears from the card (`ApprovalRequested`).
+   */
+  it("13b. the cold reviewer's own answer is unreadable", async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const reviewUnreadable: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        if (!request.runId.includes(':review:')) return runtime.run(request)
+        return { ...(await runtime.run(request)), text: 'I am not sure what to say here.' }
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], JUDGED),
+        runtime: reviewUnreadable,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: 'held', step: 'review' })
+    expect(typesOf(theRun(store))).toContain('ApprovalRequested')
+    const hold = theHold(await theItem(store))
+    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
+    expect((hold as { why: string }).why).toContain('not readable as findings')
+  })
+
+  /**
+   * **A fix round's own agent is the one `ceilingHit` never covered**
+   * (`#467`'s fix round): `firstDispatch` sets it, `fixRound` did not, so a
+   * round bought on `review`'s findings that then ran out of turns read as
+   * `Ceiling{turns: null, costUsd: null}` — the implementer's own numbers
+   * from a dispatch it never ran. `#466`'s row 14a pins `firstDispatch`'s
+   * own receipt; this pins the round's.
+   */
+  it('14c. a fix round`s own agent hits the turn ceiling (`Ceiling`, round`s own numbers)', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const fixCeiling: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        if (request.runId.includes(':review:')) return refusingRuntime.run(request)
+        if (request.runId.includes(':fix:')) {
+          return {
+            exitCode: 1,
+            turns: 7,
+            durationMs: 3_000,
+            costUsd: 0.77,
+            failure: { kind: 'out-of-turns', detail: 'spent all 7 turns mid-fix' },
+            text: null,
+            sessionId: 'sess-fix',
+          }
+        }
+        return runtime.run(request)
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], JUDGED),
+        runtime: fixCeiling,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: 'held', step: 'implement' })
+    const hold = theHold(await theItem(store))
+    expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 7, costUsd: 0.77 })
+  })
+
+  /**
+   * **The cold reviewer's own wall is not the ticket's scope** (`#467`'s fix
+   * round). `ceilingHit` is `implement`'s own receipt alone (`firstDispatch`,
+   * `fixRound`) — a reviewer that runs out of turns leaves it `null`, and
+   * `nextOf`'s `BudgetExhausted` carries no step to gate itself with, so
+   * without `holdFor`'s guard this would read as `Ceiling{turns: null,
+   * costUsd: null}`: the *scope alarm, requeue* sentence, for a budget the
+   * implementer never touched. Before `#467` the same wall held as an
+   * ordinary `DidNotFinish` (`holdOfPass`'s step 3, gated on the same
+   * `ceilingHit`), and this is that shape surviving `nextOf`.
+   */
+  it('14d. the cold reviewer`s own wall is `DidNotFinish`, not a `Ceiling` nobody paid for', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const reviewCeiling: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        if (!request.runId.includes(':review:')) return runtime.run(request)
+        return {
+          exitCode: 1,
+          turns: 5,
+          durationMs: 2_000,
+          costUsd: 0.33,
+          failure: { kind: 'out-of-turns', detail: 'spent all 5 turns reviewing' },
+          text: null,
+          sessionId: 'sess-review',
+        }
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], JUDGED),
+        runtime: reviewCeiling,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: 'held', step: 'review' })
+    const hold = theHold(await theItem(store))
+    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'review' })
+  })
+
+  /**
    * `out-of-turns` with turns spent is the one failure kind that sets
    * `ceilingHit` (with `out-of-usd`, `conduct.ts:2774`), so it is the one
    * `Ceiling` in this file.
