@@ -61,6 +61,48 @@ const canned = (name: string, result: ActionResult): Action => ({
   run: async () => result,
 })
 
+/** A fixed sha standing in for a real agent's commit (`#469`). */
+const COMMITTED = 'c0ffee0'
+
+/**
+ * An `implement`/kept-run action that stands in for a committing agent or a
+ * `run:` beside it — `headOf` (`action.ts:333`) only sees a head on a
+ * `commit`-yielding action, so a fake meant to represent a real commit must
+ * carry both (`#469`). `head: null` is a kept-run that found nothing to
+ * commit, same as a real one (`commitResultOf`'s `outcome.head ?? null`).
+ */
+const committedSomething = (name: string, head: string | null = COMMITTED): Action => ({
+  name,
+  kind: 'agent',
+  yields: 'commit',
+  run: async () => ({ ...PASSED, evidence: 'committed', ...(head === null ? {} : { head }) }),
+})
+
+/**
+ * An `admit` action that stands in for the real cut — the real worktree
+ * action reports where the tree was cut, which is the base it was handed
+ * (`work-action.ts:13-16`), so this echoes the context's `onSha` rather than
+ * inventing one (`#469`).
+ */
+const cutAt = (name: string): Action => ({
+  name,
+  kind: 'worktree',
+  yields: 'worktree',
+  run: async (ctx) => ({ ...PASSED, head: ctx.onSha }),
+})
+
+/**
+ * A `design` action that stands in for the drafting agent — `yields: 'design'`
+ * is what `headOf` keys off, and the real agent never sets a head unless the
+ * destination is `file:` (`#469`).
+ */
+const drafted = (name: string, result: ActionResult): Action => ({
+  name,
+  kind: 'agent',
+  yields: 'design',
+  run: async () => result,
+})
+
 /** A recipe with only the ten steps on it, resolved by the real schema. */
 const recipeWith = (steps: Record<string, unknown>): PassOptions['recipe'] => ({
   steps: StepMap.parse(steps),
@@ -129,11 +171,23 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
   return { bodies, seen }
 }
 
+/**
+ * A declared action this file did not fake itself, built the way a real one
+ * would answer — a bare `canned(..., PASSED)` would carry no head at `admit`
+ * or `implement`, which `headOf` (`action.ts:333`) would misread as the tree
+ * never having moved (`#469`).
+ */
+function defaultFor(step: Step, name: string): Action {
+  if (step === 'admit') return cutAt(name)
+  if (step === 'implement') return committedSomething(name)
+  return canned(name, PASSED)
+}
+
 /** Every action the loop handed the pipeline, by visit. */
 function watchingActions(at: Record<string, readonly Action[]> = {}) {
   const ran: { step: Step; actions: readonly string[] }[] = []
   const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
-    const built = at[step] ?? actions.map((a) => canned(a.name, PASSED))
+    const built = at[step] ?? actions.map((a) => defaultFor(step, a.name))
     ran.push({ step, actions: built.map((a) => a.name) })
     return built
   }
@@ -162,8 +216,11 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
   const actionsAt: PassOptions['actionsAt'] = (step) => [
     {
       name: 'check',
-      kind: 'run',
-      yields: 'verdict',
+      // `implement`'s own check is a commit-yielding one, same as a real
+      // agent or kept-run there — `headOf` only reads a head off that yield
+      // (`#469`), and `answering` is what puts one on the result.
+      kind: step === 'implement' ? 'agent' : 'run',
+      yields: step === 'implement' ? 'commit' : 'verdict',
       run: async (seenWith) => {
         const lap = laps.get(step) ?? 0
         laps.set(step, lap + 1)
@@ -833,7 +890,7 @@ describe('every step that does not pass arrives at proposed', () => {
       const seen: (ActionContext['design'] | undefined)[] = []
       const { bodies } = watching({ proposed: THROUGH })
       const { actionsAt } = watchingActions({
-        design: results.map((result, i) => canned(`draft ${i}`, result)),
+        design: results.map((result, i) => drafted(`draft ${i}`, result)),
         implement: [
           {
             name: 'write it',
@@ -841,7 +898,7 @@ describe('every step that does not pass arrives at proposed', () => {
             yields: 'commit',
             run: async (context) => {
               seen.push(context.design)
-              return PASSED
+              return { ...PASSED, head: COMMITTED }
             },
           },
         ],
@@ -937,7 +994,7 @@ describe('every step that does not pass arrives at proposed', () => {
       const { bodies } = watching({ proposed: THROUGH })
       const { actionsAt } = watchingActions({
         design: [
-          canned('draft', {
+          drafted('draft', {
             verdict: 'passed',
             evidence: 'wrote it to the wiki',
             findings: [],
@@ -954,7 +1011,7 @@ describe('every step that does not pass arrives at proposed', () => {
               // A file-reading plugin: it knows repository paths and nothing else.
               const locator = seenWith.design?.locator ?? ''
               read.push(locator.startsWith('http') ? (seenWith.design?.document ?? '') : `read ${locator}`)
-              return PASSED
+              return { ...PASSED, head: COMMITTED }
             },
           },
         ],
@@ -992,7 +1049,7 @@ describe('every step that does not pass arrives at proposed', () => {
             yields: 'commit',
             run: async (seenWith) => {
               seen.push(seenWith.design)
-              return PASSED
+              return { ...PASSED, head: COMMITTED }
             },
           },
         ],
@@ -1613,11 +1670,9 @@ describe('a visit is judged against the head the walk has reached', () => {
    * tree says so on its ending, and every visit after it is judged against it.
    */
   it('judges the steps after a commit against the commit, and the ones before against the base', async () => {
-    const { bodies, seen } = watching({
-      // T4b's `implement`: the agent ran, and this is the head it committed.
-      implement: async () => ({ ending: 'passed', head: 'b2b2b2b' }),
-    })
-    const { actionsAt, judged } = judging()
+    const { bodies, seen } = watching()
+    // T4b's `implement`: the agent ran, and this is the head it committed.
+    const { actionsAt, judged } = judging((step) => (step === 'implement' ? { ...PASSED, head: 'b2b2b2b' } : PASSED))
     const { emit } = events()
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
@@ -1661,13 +1716,12 @@ describe('a visit is judged against the head the walk has reached', () => {
   it('advances the head again on a fix round', async () => {
     const heads = ['b2b2b2b', 'c3c3c3c']
     let commits = 0
-    const { bodies } = watching({
-      implement: async () => ({ ending: 'passed', head: heads[commits++] ?? '' }),
-      proposed: routerSaying(() => 'implement'),
+    const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+    const { actionsAt, judged } = judging((step, lap) => {
+      if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [] }
+      if (step === 'implement') return { ...PASSED, head: heads[commits++] ?? '' }
+      return PASSED
     })
-    const { actionsAt, judged } = judging((step, lap) =>
-      step === 'build' && lap === 0 ? { verdict: 'failed', evidence: '3 failing', findings: [] } : PASSED,
-    )
     const { emit } = events()
 
     const result = await runPass({
@@ -1694,10 +1748,7 @@ describe('a visit is judged against the head the walk has reached', () => {
   it("takes the last head among a step's own actions, not the first", async () => {
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions({
-      implement: [
-        canned('write the change', { verdict: 'passed', evidence: 'committed', findings: [], head: 'b2b2b2b' }),
-        canned('format', { verdict: 'passed', evidence: 'committed', findings: [], head: 'c3c3c3c' }),
-      ],
+      implement: [committedSomething('write the change', 'b2b2b2b'), committedSomething('format', 'c3c3c3c')],
     })
     const { emit } = events()
 
@@ -1712,10 +1763,7 @@ describe('a visit is judged against the head the walk has reached', () => {
   it('keeps the only head when a later action in the step answers none', async () => {
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions({
-      implement: [
-        canned('write the change', { verdict: 'passed', evidence: 'committed', findings: [], head: 'b2b2b2b' }),
-        canned('format', { verdict: 'passed', evidence: 'nothing to commit', findings: [] }),
-      ],
+      implement: [committedSomething('write the change', 'b2b2b2b'), committedSomething('format', null)],
     })
     const { emit } = events()
 
