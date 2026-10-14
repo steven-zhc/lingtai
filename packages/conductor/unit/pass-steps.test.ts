@@ -1509,9 +1509,11 @@ describe('proposed is the only step that routes, and one judge answers each when
     const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} })
     expect(nothing.result.routes[0]?.to).toBe('waiting')
     // Asked (`implement` is still on offer with `rounds` unspent), answers
-    // `noJudge`, and `findings` has no built-in either — `NotAsked`, naming
-    // what the ceiling already excluded (`restart`).
-    expect(nothing.result.routes[0]?.why).toContain('`restart` — `restarts` is spent')
+    // `noJudge`, and `findings` has no built-in either — `NotAsked`, and the
+    // sentence is the other `notAskedWhy` has, not the ceiling one: more than
+    // a person was on offer, and nothing declared for this direction is what
+    // held it back (`#462`'s own fix round, finding 1).
+    expect(nothing.result.routes[0]?.why).toContain('no `judge:` is declared for a "findings"')
     expect(nothing.asked.dispatch).toHaveLength(1)
   })
 
@@ -1732,9 +1734,14 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT])
     expect(result.routes[0]?.to).toBe('waiting')
     // Asked (two candidates are on offer), answered `noJudge`, and there is no
-    // built-in for `needs-input` either — `NotAsked`'s own sentence, same as a
-    // ceiling would have left, since nothing here was excluded by one.
-    expect(result.routes[0]?.why).toBe('nothing but a person was on offer')
+    // built-in for `needs-input` either — the `NotAsked` sentence for *that*,
+    // naming what `judge:` would have to say rather than what a ceiling
+    // already excluded (nothing did): `#462`'s own fix round, finding 1.
+    expect(result.routes[0]?.why).toBe(
+      'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, so ' +
+        'the pass is held for a person rather than the workflow choosing from `implement`, ' +
+        '`waiting` on its own (0061 §3)',
+    )
     expect(result.rested).toBe('waiting')
     // The person is shown the step that asked, not the router that sent it.
     expect(result.stoppedAt?.step).toBe('implement')

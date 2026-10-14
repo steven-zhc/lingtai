@@ -3,19 +3,26 @@
  * `conduct.ts`'s closure so the classification can be unit-tested on literals
  * rather than only through a whole pass.
  *
- * **Since `#462`, the only arrivals this still classifies are the two that
- * route without going through `offerFor`** (0120 *Two phases*: `proposed`'s
+ * **Since `#462`, the only arrival this still classifies live is the merge
+ * lane's own refusal with no direction** (0120 *Two phases*: `proposed`'s
  * real routing now reaches a person through `pass.waitOn`/`holdOf`, never
- * through here): the merge lane's own refusal with no direction (step 2
- * below), and a `prepared`/`proposed` refusal nobody routed (the `refused`
- * case in the switch). The old step 1 — a refusal the router sent on with a
- * direction (`red`, `verify-failed`, `conflict`) — is gone with
+ * through here) — step 2 below. The old step 1 — a refusal the router sent on
+ * with a direction (`red`, `verify-failed`, `conflict`) — is gone with
  * `arriveAtTheRouter`: every one of those is a `Propose` now, and reaches a
  * person as `WaitOnPerson{ProposedEscalated}` through `pass.waitOn`, never
- * through `stoppedAt`/`rested` alone. Step 4 (`stopped === null`) survives
- * for the one case that still rests with neither: `review`'s own unreadable
- * answer, which walks on to `proposed`'s spine visit and leaves a fixed
- * `PassRouted` row without ever asking `offerFor` a question.
+ * through `stoppedAt`/`rested` alone.
+ *
+ * **The `refused` case in the switch below is dead for the same reason, not
+ * a second live arrival.** A `prepared` refusal and a `proposed`/`merge`
+ * check refusal now set `pass.waitOn` too (`SetupRefused`/`CheckRefused`), so
+ * `holdFor` takes the `holdOf` branch for them before `holdOfPass` is ever
+ * called — see that case's own comment, which proves the unreachability
+ * rather than asserting it here.
+ *
+ * Step 4 (`stopped === null`) survives for the one case that still rests
+ * with neither: `review`'s own unreadable answer, which walks on to
+ * `proposed`'s spine visit and leaves a fixed `PassRouted` row without ever
+ * asking `offerFor` a question.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {
@@ -157,9 +164,10 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
 
   const { step } = stopped
   switch (stopped.ending.ending) {
-    // Goes through the router too (`directionOf`'s `needs-input`), but
-    // `Asked` carries the agent's question in a field `Routed` has none for,
-    // so this is never `Routed{when: 'needs-input'}`.
+    // Goes through the router too (`whenOf`'s `needs-input`,
+    // `proposed-route.ts`), but `Asked` carries the agent's question in a
+    // field `Routed` has none for, so this is never `Routed{when:
+    // 'needs-input'}`.
     case 'asked':
       return { _tag: 'Asked', run, step, question: detailOf(stopped.ending) }
 
@@ -176,10 +184,18 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
         findings: [...input.findings],
       }
 
-    // `prepared`'s and `proposed`'s own refusals both set `pass.waitOn`
-    // (`SetupRefused`/`CheckRefused`), so `holdFor` reads them through
-    // `holdOf` before `holdOfPass` is ever called — this case is reachable
-    // only on a log old enough to predate `#462`'s routing move.
+    // **Dead since `#462`, and kept only so this switch stays exhaustive over
+    // `StepEnding['ending']` — not because an older log can still produce
+    // one.** `holdOfPass` is handed a live `PassResult.stoppedAt`, built in
+    // the same call that invokes it (`conduct.ts`'s `holdFor`), and never a
+    // value read back off the log — there is no "log old enough" for this
+    // case to still answer to. What makes it unreachable: `nextOf` now sets
+    // `pass.waitOn` for every `refused` ending that can stop a pass —
+    // `prepared` as `SetupRefused`, `proposed`/`merge`'s own check as
+    // `CheckRefused`, `build` as a `Propose{BuildRed}` that routes — so
+    // `holdFor` takes the `holdOf` branch for them, before `holdOfPass` is
+    // ever called. The one survivor, `merge` with an `IntegrationRefused`
+    // reason, is caught by step 2 above.
     case 'refused': {
       const why = detailOf(stopped.ending)
       if (step === 'prepared') {

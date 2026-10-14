@@ -3211,7 +3211,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * `implement`, a second time — **and the round was already bought.**
        *
-       * `proposed` decided this, `onOffer` had already counted, and neither
+       * `proposed` decided this, `offerFor` had already counted, and neither
        * decision is re-made here: what arrives is `Brief.again`, which is the
        * judge's own words plus the criterion the round was bought on. `fixBrief` is
        * what turns that into a prompt, unchanged, and the three shapes it takes are
@@ -3643,13 +3643,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
        * (`#466`) where the loop asked it (`pass.waitOn !== null`), and
-       * `holdOfPass` from what the pass reported otherwise: the router's own
-       * rest (`rested === 'waiting'` with nothing on `waitOn`) and a `claim`
-       * decline are still `holdOfPass`'s until #462 moves `proposed` onto
-       * `nextOf` too. `rested` and `declined` are the two inputs `holdOfPass`
-       * needs beyond what the pass already reports on `stopped`.
-       * `legacyColumns` turns the result back into the
-       * `question`/`needs`/`diagnosis` every reader below still wants.
+       * `holdOfPass` from what the pass reported otherwise: since `#462`
+       * moved every other `proposed` arrival onto `nextOf`/`pass.waitOn`,
+       * what is left for `holdOfPass` is the merge lane's own refusal with no
+       * direction, the two fixed waits 0120 *Two phases* carries without a
+       * route, and a `claim` decline (`hold-of.ts`'s own header). `rested`
+       * and `declined` are the two inputs `holdOfPass` needs beyond what the
+       * pass already reports on `stopped`. `legacyColumns` turns the result
+       * back into the `question`/`needs`/`diagnosis` every reader below
+       * still wants.
        */
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {

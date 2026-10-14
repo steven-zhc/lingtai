@@ -828,10 +828,21 @@ describe('every step that does not pass arrives at proposed', () => {
     })
 
     // 0058 §3c: *that step again with "state your assumption"*, or a person —
-    // and with no judge built for `needs-input` (`BUILT_IN_FOR`), nothing but
-    // the person was ever asked, though the round was there to spend.
+    // and with no judge built for `needs-input` (`BUILT_IN_FOR`), the pass
+    // held with a person even though the round was there to spend and
+    // `implement` was genuinely on offer (`#462`'s own fix round, finding 1:
+    // this is not the same sentence a spent ceiling would have left).
     expect(result.routes).toEqual([
-      { from: 'implement', chose: 'waiting', to: 'waiting', why: 'nothing but a person was on offer', ceiling: null },
+      {
+        from: 'implement',
+        chose: 'waiting',
+        to: 'waiting',
+        why:
+          'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, ' +
+          'so the pass is held for a person rather than the workflow choosing from `implement`, ' +
+          '`waiting` on its own (0061 §3)',
+        ceiling: null,
+      },
     ])
     expect(result.stoppedAt).toMatchObject({
       step: 'implement',

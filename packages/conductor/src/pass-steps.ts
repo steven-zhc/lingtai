@@ -197,8 +197,9 @@ export interface Asked {
  *
  * `Asked` above says the judge at `proposed` may answer a question with `waiting`
  * *or that step again with* state your assumption. The second of those spends a
- * round — `onOffer` puts the asking step back on the offer, and `runPass` walks
- * into it again — and a round costs an agent run. So the step must be run
+ * round — `offerFor`'s `InputNeeded` cell (`@lingtai/domain`) puts the asking
+ * step back on the offer, and `runPass` walks into it again — and a round
+ * costs an agent run. So the step must be run
  * *differently* the second time, and the only thing that can make it different is
  * what the judge said: `context.recheck` is empty on this edge, because a
  * question raised no findings, and `context.onSha` is unchanged, because nothing
@@ -327,17 +328,19 @@ export interface Brief {
  * workflow has already counted, and `offering` is what is left of the arithmetic.
  *
  * **A judge answers *which of these*, never *what is legal*.** `offering` is
- * `Offer.affordable` — `onOffer`'s, computed from how far the pass got as well as
- * from what is left to spend (0061 §3): `prepared`'s refusal happens before any
- * agent has run, so `implement` is not in it there and a judge that knows nothing
- * about `prepared` still cannot choose wrongly.
+ * `offer.available.map(destinationOf)` in `replyFor` (`proposed-route.ts`) —
+ * `offerFor`'s own set (`@lingtai/domain`), computed from how far the pass got
+ * as well as from what is left to spend (0061 §3): `prepared`'s refusal
+ * happens before any agent has run, so `implement` is not in it there and a
+ * judge that knows nothing about `prepared` still cannot choose wrongly.
  *
- * **One list and not the `Offer`'s two**, and that is the safety property again
- * (0064 §7). The reachable half is the workflow's arithmetic *about money*: a
- * judge handed both could read off exactly which destinations the ceilings took
- * away, which is the one thing `JudgeBrief` exists to keep out of its hands. What
- * the two sets are for is the sentence a **person** then reads — `becauseSpent`
- * below — and the body holds them for that.
+ * **One list and not `RouteOffer`'s two**, and that is the safety property
+ * again (0064 §7). `offer.unavailable` is the workflow's arithmetic *about
+ * money*: a judge handed both could read off exactly which destinations the
+ * ceilings took away, which is the one thing this brief exists to keep out of
+ * its hands. What the two sets are for is the sentence a **person** then
+ * reads — `notAskedWhy`/`unavailableWhy` in `proposed-route.ts` — and
+ * `routedVisit` holds them for that.
  */
 export interface Judging {
   /** The direction — the reason the step that did not pass gave. */
@@ -408,11 +411,11 @@ export type Judged =
        * `#277`).
        *
        * A name and not a destination, because the rule that name stands for is
-       * the pass's: `MECHANICALLY` is `BUILT_IN`'s in this file's vocabulary, it
-       * is what the mechanical fallback already applies, and it is where `chose`
-       * and the spent ceiling are recorded (`#271`). A port that answered
-       * `next` for a built-in would be a second copy of that rule with the
-       * card's own distinction missing from it.
+       * the pass's: `MECHANICAL_WANTS` is `BUILT_IN`'s in `proposed-route.ts`'s
+       * vocabulary, it is what `replyFor`'s mechanical fallback applies, and
+       * `routedVisit` is where `chose` and the spent ceiling are recorded
+       * (`#271`). A port that answered `next` for a built-in would be a second
+       * copy of that rule with the card's own distinction missing from it.
        */
       readonly built: BuiltInJudge
       /** The entry's `name:`, so the sentence says which line of the recipe chose. */
@@ -422,8 +425,9 @@ export type Judged =
    * **The judge's dispatch met something account-wide, so the conductor stops
    * and this item does not back off** (0031 §3).
    *
-   * The same arm `Worked` carries and the same shape `stoodDown` reads, because
-   * the judge is the *third* depth the one wall is met at — after the step's own
+   * The same arm `Worked` carries, and the same shape `routeProposal` builds
+   * inline (`pass.ts`) rather than through a named helper, because the judge
+   * is the *third* depth the one wall is met at — after the step's own
    * agent and after the agent a refusal bought. A quota is about the account and
    * never about the diff (0031 §1), so a judge that never started has judged
    * nothing, exactly as a reviewer that never started has reviewed nothing
@@ -562,9 +566,17 @@ export const END_UNRESOLVED = 'end-unresolved'
 /**
  * What the step that did not pass said, as the judge is shown it (`#462`:
  * `proposed-route.ts`'s `replyFor` is the caller now, off the visit that
- * proposed rather than off the `Propose` itself — `ReviewFindings` carries no
- * evidence text of its own, so the free-text half still has to come from
- * here).
+ * proposed rather than off the `Propose` itself).
+ *
+ * **Always `''` for `review`'s own way-through visit.** `endingOf` reports
+ * `review` `passed` whatever it found (0058 §3: a reviewer's `failed`
+ * verdict is its findings, not a verdict about the step), so `'detail' in
+ * ending` below is false for that visit and `ReviewFindings`/`ReviewEmpty`'s
+ * own `evidence` is the empty string every time — `pass-steps.test.ts`'s own
+ * assertion pins it. The free text a `findings` judge reads for that
+ * direction is the findings themselves (`Judging.findings`), never this
+ * field; `evidence` is populated only for the other four directions, off the
+ * `StepRefused`/`StepAsked` ending that routes there.
  */
 export function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
   const ending = arriving.ending
@@ -850,15 +862,19 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * diff stopped being true, which is a fact about the world rather than a
      * verdict about the change. So `createMergeAction` puts the lane's own word on
      * `ActionResult.because`, `endingOf` carries it onto this step's ending rather
-     * than writing `action-refused` over it (`becauseFrom`), and `directionOf`
-     * reads it one step later — `proposed` is where a `conflict` is weighed and
+     * than writing `action-refused` over it (`becauseFrom`), and `nextOf` builds
+     * the `MergeConflict`/`VerifyRed` proposal `whenOf` (`proposed-route.ts`)
+     * reads one step later — `proposed` is where a `conflict` is weighed and
      * where a `verify-failed` buys the mechanical round.
      *
      * **It is one of `REFUSING_STEPS` all the same**, and the refusal is what pays
-     * for the edge back: `onOffer` offers `build` from here, so an agent that
-     * resolves a conflict writes code *after* the review passed and goes through
-     * both again. That is what buys *every path into `end` has been through
-     * `build` and `review`*.
+     * for the edge back: resolving a conflict is `fix-lines`, which lands at
+     * `implement` rather than at `build` directly (`offerFor`'s own rule,
+     * `@lingtai/domain`'s `routing.ts`: no candidate ever sends `merge` back to
+     * `build`), so an agent that resolves a conflict writes code *after* the
+     * review passed and goes through both `build` and `review` again on the way
+     * back. That is what buys *every path into `end` has been through `build`
+     * and `review`*.
      *
      * It reports no `head`. A merge commit is on the base branch and the worktree
      * did not move, and `LeftTheTreeAt` is a fact about the tree.

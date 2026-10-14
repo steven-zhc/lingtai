@@ -144,15 +144,35 @@ export async function replyFor(
   return toReply(MECHANICAL_WANTS[built], offer, why)
 }
 
-/** Why the ceilings left nothing but a person to ask — read off `offer.unavailable`, so the sentence still names what was spent even though nobody was asked. */
+/**
+ * **Why nothing was asked — and `replyFor` reaches `NotAsked` two unlike
+ * ways** (finding 1 of `#462`'s own fix round). `offer.available.length < 2`
+ * is truly nothing but a person on offer, checked before `judge` is ever
+ * called — the sentence there names what a ceiling already excluded.
+ * Anything else reaching `NotAsked` fell through `replyFor`'s `built ===
+ * null`: two or more candidates were on offer, a judge was asked (declared or
+ * not) and answered `noJudge`, and there is no built-in for this direction
+ * either — a different fact, so it is not the same sentence. Confusing the
+ * two told a person *nothing but a person was on offer* when `implement` was
+ * sitting right there with rounds unspent and the only thing missing was a
+ * `judge:` line.
+ */
 function notAskedWhy(offer: RouteOffer): string {
-  if (offer.unavailable.length === 0) return 'nothing but a person was on offer'
-  const reasons = offer.unavailable.map((c) =>
-    c.because._tag === 'CeilingReached'
-      ? `\`${c.id}\` — \`${c.because.ceiling}\` is spent`
-      : `\`${c.id}\` — nothing holds an agent to it`,
+  if (offer.available.length < 2) {
+    if (offer.unavailable.length === 0) return 'nothing but a person was on offer'
+    const reasons = offer.unavailable.map((c) =>
+      c.because._tag === 'CeilingReached'
+        ? `\`${c.id}\` — \`${c.because.ceiling}\` is spent`
+        : `\`${c.id}\` — nothing holds an agent to it`,
+    )
+    return `nothing but a person was on offer (${reasons.join(', ')})`
+  }
+  const when = whenOf(offer.proposal)
+  const offering = offer.available.map((c) => `\`${destinationOf(c, offer.proposal)}\``).join(', ')
+  return (
+    `no \`judge:\` is declared for a "${when}" and there is no built-in that answers one, so the ` +
+    `pass is held for a person rather than the workflow choosing from ${offering} on its own (0061 §3)`
   )
-  return `nothing but a person was on offer (${reasons.join(', ')})`
 }
 
 /** `reasonTextOf`'s own words (`adapters.ts`), read here for the run log's own sentence rather than for the `Hold`, which `escalatedHold` builds independently off the structured reason. */

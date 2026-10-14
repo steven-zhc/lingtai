@@ -163,7 +163,10 @@ export type SettlingStep = Exclude<Step, RefusingStep>
  * from no other — the same trick `RefusingStep` plays for the four. That
  * `proposed` is two jobs merged, the inspection and the router, is 0058's own
  * *What is not decided*; this file keeps them merged and tells them apart by
- * **how `proposed` was reached** — see `StepWork.arriving`.
+ * **how `proposed` was reached** — not through `StepWork.arriving` any more
+ * (`#462`): the inspection is the ordinary spine visit, calling this step's
+ * own body; the router's own visit is built directly by `routeProposal` in
+ * `runPass`'s loop, which never calls that body at all.
  */
 export type RoutingStep = 'proposed'
 
@@ -388,8 +391,9 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
  * it — the hook that appends it answers the agent `{ allow: true }` and the
  * run carries on.) It arrives at `proposed`, whose call is `waiting` with the
  * question or *that step again, stating its assumption* — and nothing but the
- * step that asked knows the question, which is why `onOffer` offers that step
- * and no other from here.
+ * step that asked knows the question, which is why `offerFor`'s `InputNeeded`
+ * cell (`@lingtai/domain`'s `routing.ts`) offers that step and no other from
+ * here.
  *
  * **It cost 0057's grouping nothing to split it out** (`#296`). This buys no fix
  * round either, so by *cost* it is still `did-not-finish`'s twin and 0057 §1–3
@@ -420,9 +424,9 @@ export interface StepAsked extends LeftTheTreeAt {
  * It is `ActionResult.because` on the way up: the two `agent` actions that can be
  * asked a question set it, `runActionPipeline` reads it *once* and answers
  * `askedAt`, and `endingOf` turns that into `StepAsked`. Above the pipeline
- * nothing spells it to decide where a pass goes; what is left is `directionOf`
- * handing it to `proposed` as the `when:` a recipe writes, which is a name in a
- * vocabulary rather than a branch.
+ * nothing spells it to decide where a pass goes; what is left is `whenOf`
+ * (`proposed-route.ts`) handing it to `proposed` as the `when:` a recipe
+ * writes, which is a name in a vocabulary rather than a branch.
  *
  * **It moved to `@lingtai/actions` in `#266` and is re-exported here**, because
  * the agent at `implement` is a plugin and a second definition of one word is the
@@ -458,9 +462,10 @@ export interface StepNeverRan extends LeftTheTreeAt {
  * `Step | "waiting"` rather than the four the drawing names, because **which
  * four are on offer is a fact the workflow computes per arrival** and not a
  * fact about the type (0061 §3: *the workflow decides which steps it may choose
- * from*). `onOffer` is that computation and `offering` is what a judge is
- * handed; a destination outside it is refused by name, which is 0061 §8's rule
- * used once more — *a step refuses a destination it did not offer.*
+ * from*). `offerFor` (`@lingtai/domain`) is that computation, and a judge's own
+ * `offering` (`Judging` in `pass-steps.ts`) is built from its `available` set;
+ * a destination outside it is refused by name, which is 0061 §8's rule used
+ * once more — *a step refuses a destination it did not offer.*
  *
  * `waiting` is not a step (0058 §3): it is where a pass rests until a person
  * moves it, and 0058 §3b's property worth keeping is that it has exactly one
@@ -543,7 +548,9 @@ export type ActionOutcome = PipelineResult['results'][number]
  *
  * `results` is `[]` at `end`, whose list is effects and never reaches a
  * pipeline; at any step whose list was empty; and at a `proposed` the pass
- * arrived at by routing, whose plugins are not re-run — see `StepWork.arriving`.
+ * arrived at by routing, whose plugins are not re-run — built directly by
+ * `routeProposal`'s own `record()` call (`#462`), which never calls this
+ * step's body at all.
  */
 export interface StepReached {
   readonly step: Step
@@ -552,9 +559,10 @@ export interface StepReached {
   /**
    * **This visit's own `StepOutcome`** (`#466`, 0120 §1) — `adapters.ts`'s
    * `outcomeOf`, built from the same `results` beside it, and `undefined`
-   * where no pipeline ran: a routing arrival (`StepWork.arriving`) and `end`,
-   * whose plugins are effects rather than verdicts. Nothing reads it yet but
-   * the proof against #461's fixture (`test/one-pass.ts`'s `once()`); #467
+   * where no pipeline ran: a routing visit (`routeProposal`'s own `record()`
+   * call) and `end`, whose plugins are effects rather than verdicts. Nothing
+   * reads it yet but the proof against #461's fixture (`test/one-pass.ts`'s
+   * `once()`); #467
    * is what puts `nextOf` in charge of what a visit carrying one does next.
    */
   readonly outcome?: StepOutcome
@@ -1054,7 +1062,7 @@ export function outcomeOf(pass: Pick<PassResult, 'stoppedAt' | 'rested'>): Termi
  * plugin.*
  *
  * **It terminates**, and structurally rather than by a guard: the only edges
- * that re-enter the spine are the ones `onOffer` offers, it offers none once
+ * that re-enter the spine are the ones `offerFor` offers, it offers none once
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
  * is refused. So the walk is at most `rounds + 1` laps long.
  */
@@ -1706,10 +1714,12 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
       //
       // **`becauseFrom` is not that.** The merge lane's `conflict` and
       // `verify-failed` are `RefusalReason`s the lane itself produced and the log
-      // already carries, and `directionOf` routes on them — so since the lane is
-      // a `merge:` action they arrive here on the result rather than being
-      // re-derived from a sentence (`ActionResult.because`). Every other kind
-      // says nothing and gets the pipeline's word.
+      // already carries, and `nextOf` builds the `MergeConflict`/`VerifyRed`
+      // proposal `whenOf` (`proposed-route.ts`) later turns into the direction
+      // routed on — so since the lane is a `merge:` action they arrive here on
+      // the result rather than being re-derived from a sentence
+      // (`ActionResult.because`). Every other kind says nothing and gets the
+      // pipeline's word.
       because: becauseFrom(result) ?? 'action-refused',
       at: result.failedAt,
       detail: evidenceFrom(result, 'failed'),
