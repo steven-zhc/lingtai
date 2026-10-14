@@ -120,7 +120,7 @@ import {
   verdictFor,
 } from '@lingtai/actions'
 import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from '@lingtai/domain'
-import { type ActionKind, type StepAction, StepMap, PLUGINS, servesStep, whyNoKindAt } from '@lingtai/recipe'
+import { type ActionKind, type StepAction, JudgeWhen, StepMap, PLUGINS, servesStep, whyNoKindAt } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import { decideBacklog } from '../src/backlog.ts'
@@ -1273,13 +1273,35 @@ describe('doc/reference.md', () => {
    * Derived rather than compared to a literal: the numeral comes from counting
    * the directions with no built-in, so the day a third one gets one the
    * document is red rather than quietly a direction out.
+   *
+   * **The total is derived too, since `#471`**: `NUMERAL` used to stop at
+   * `JudgeWhen.options.length`'s old ceiling of five, which is exactly what
+   * `#471` moved — `BUILT_IN_FOR` gained seven more `null`s the same day the
+   * enum gained seven more values, and a numeral table that could name only
+   * up to "five" would read `undefined` rather than catching the next one
+   * that arrives with no built-in either.
    */
   it('says how many directions a judge needs an agent for', async () => {
     const doc = await readFile(new URL('../../../doc/reference.md', import.meta.url), 'utf8')
-    const NUMERAL = ['none', 'one', 'two', 'three', 'four', 'five'] as const
+    const NUMERAL = [
+      'none',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+    ] as const
     const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length
+    const total = JudgeWhen.options.length
     expect(doc, "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs").toContain(
-      `for ${NUMERAL[spendsAnAgent]} of the five directions an agent`,
+      `for ${NUMERAL[spendsAnAgent]} of the ${NUMERAL[total]} directions an agent`,
     )
   })
 
