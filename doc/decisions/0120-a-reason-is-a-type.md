@@ -563,15 +563,29 @@ with GitHub's _blocked by_: `Action` and `StepOutcome` with `cleared`;
 `allowedResolutions`. The pass calls them in place of its own branches. Where
 it writes an event, a temporary **event-boundary adapter** turns the new
 value into today's payload; the adapters are the only place both shapes
-exist, each says so in its comment, and no reader is written against the new
-shape until phase 2.
+exist, each says so in its comment.
 
-**Phase 2: one ticket switches the events and resets the log.** It applies
-the appendix, deletes the adapters and resets the log, with the old-log guard
+**Readers move before the switch, through a read model.** A pure read model
+folds today's events into the new types (`StepOutcome`, the route,
+`WaitReason` and `Resolution`, the release cause), and test builders are the
+only way a test makes an event. The projections, the board, the CLI and the
+daemon then move onto the new types one ticket at a time, each green and none
+touching the log, and a column id that is only a projection's (`blocked` →
+`waiting`) is renamed with a rebuild. Readers are written once, against the
+new types; at the switch only the read model and the builders change.
+
+**Phase 2: one ticket switches the stored events and resets the log.** The
+stored shape cannot change in halves, because a log holding both shapes has no
+reader. So one ticket makes the writers append the appendix's events, makes
+the read model decode them instead of folding the old ones, deletes the
+adapters and the old schemas, and resets the log with the old-log guard
 (#451) and the reset steps (#448). Before 1.0 a stored shape changes by a
-reset, not an upcaster. It starts only when phase 1 is complete, and the
-renames #450 owns that touch the log (`WorkItemBlocked`, `HoldTriaged`) go in
-the same reset, never alone.
+reset, not an upcaster. It starts only when phase 1 and the reader moves are
+complete, and the renames #450 owns that touch the log (`WorkItemBlocked`,
+`HoldTriaged`) go in the same reset, never alone. It was one ticket for
+everything until 2026-10-14, when the old names were counted in about 60
+source and 76 test files, and a 13-file phase 1 ticket (#467) had taken four
+runs.
 
 ## Consequences
 
