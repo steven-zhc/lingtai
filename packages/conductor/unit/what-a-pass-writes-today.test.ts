@@ -459,11 +459,15 @@ runtime:
   })
 
   /**
-   * **The ticket's own *Watch out*.** `implement` is not in `REFUSING_STEPS`
-   * (`pass.ts:120`), so an implementer that produced no commits at round 0
-   * never reaches `goesToTheRouter` — it holds straight off the step as
-   * `DidNotFinish`, with `StepDidNotFinish` on the run and no `PassRouted`
-   * anywhere. This is the ending #461's first run ended on, seq 368–371.
+   * **Since `#472` this routes too.** An implementer that produced no commits
+   * at round 0 is `NothingProduced`, one of the seven `nextOf` now answers
+   * `Propose` for, so `routeProposal` records a `PassRouted` right after
+   * `StepDidNotFinish` on the run. With no `judge:` declared the router's
+   * floor is the same person, and `holdOf`'s `ProposedEscalated{NothingProduced}`
+   * branch calls the same `nothingProducedHold` builder the direct form did,
+   * so the hold itself — `DidNotFinish`, `why: 'the agent produced no
+   * commits'` — is unchanged. This is the ending #461's first run ended on,
+   * seq 368–371.
    */
   it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFinish`)', async () => {
     const store = memoryStore()
@@ -505,12 +509,12 @@ runtime:
       'StepsResolved',
       'RunFinished',
       'StepDidNotFinish',
+      'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'the agent produced no commits' })
-    expect(typesOf(theRun(store))).not.toContain('PassRouted')
   })
 
   /**
@@ -518,6 +522,13 @@ runtime:
    * nothing, without crashing — `committed` is false and `fixed.failure` is
    * null, so `conduct.ts:2966` sets `declined` and `holdOfPass` reads the
    * `did-not-finish` ending as `Declined` rather than `DidNotFinish`.
+   *
+   * **Two `PassRouted`s, since `#472`**: `pass.routes` collects one decision
+   * per routed visit over the whole walk and `conduct.ts:3506-3525` appends
+   * all of them in one batch after the walk returns, so the review's own
+   * `ReviewFindings` route (into the fix round) and the round's own
+   * `FixerDisagrees` route (now one of the seven) land as two consecutive
+   * entries rather than one.
    */
   it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', async () => {
     const store = memoryStore()
@@ -573,6 +584,7 @@ runtime:
       'FixRequested',
       'FixApplied',
       'StepDidNotFinish',
+      'PassRouted',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
@@ -654,12 +666,14 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepRequested',
       'StepStarted',
       'StepFailed',
-      // No `PassRouted` (`#467`): `nextOf` reads the check's own refusal as
-      // `WaitOnPerson{CheckRefused}` directly, so the pass never takes a
-      // second visit to `proposed` to discover there is no direction a
-      // `judge:` could be declared at for it. The hold is still `CheckRed`,
-      // through `holdOf`'s `CheckRefused` arm — the same `Hold` this row
-      // pinned before this ticket, reached a different way.
+      // `PassRouted`, since `#472`: `CheckRefused` is one of the seven, so
+      // `nextOf` answers `Propose` and the check's own refusal takes a
+      // routing visit to `proposed` — with no `judge:` declared for
+      // `check-refused`, the router's floor holds it for a person exactly as
+      // the direct `WaitOnPerson{CheckRefused}` did before this ticket. The
+      // hold is still `CheckRed`, through `holdOf`'s `ProposedEscalated` arm
+      // calling the same `checkRedHold` builder.
+      'PassRouted',
       'RunRefsPublished',
       'ApprovalRequested',
       'RunRefsPublished',
@@ -1176,7 +1190,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   /**
    * `out-of-turns` with turns spent is the one failure kind that sets
    * `ceilingHit` (with `out-of-usd`, `conduct.ts:2774`), so it is the one
-   * `Ceiling` in this file.
+   * `Ceiling` in this file. **Since `#472`** `BudgetExhausted` is one of the
+   * seven, so the run gains a `PassRouted`, and `holdFor`'s ceiling branch
+   * takes the step from `pass.waitOn.proposal.from` rather than
+   * `pass.stoppedAt!` — the hold itself, with `turns`/`costUsd` patched in
+   * from `ceilingHit`, is unchanged.
    */
   it('14a. the turn ceiling is hit mid-run (`Ceiling`)', async () => {
     const store = memoryStore()
@@ -1231,6 +1249,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunFinished',
       'RunFailed',
       'StepDidNotFinish',
+      'PassRouted',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',
