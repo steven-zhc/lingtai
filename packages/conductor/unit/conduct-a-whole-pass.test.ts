@@ -1513,9 +1513,12 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge')
     expect(routed[0]!.why).toContain('the recipe declares `judge: same-worktree`')
     expect(routed[0]!.ceiling).toBeNull()
-    // The second arrival wanted the same round and there was none: a declared
-    // judge is bounded by the workflow's numbers and never above them (0064 §7).
-    expect(routed[1]).toMatchObject({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })
+    // The second arrival wanted the same round and there was none: with
+    // `implement` off the offer, nothing but a person is left on it, and no
+    // judge is asked a second time either, declared or not (`#462`'s own
+    // rule) — a declared judge is bounded by the workflow's numbers and never
+    // above them (0064 §7).
+    expect(routed[1]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
 
     // So the pass rests with a person at the router, and the item says so.
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
@@ -1611,7 +1614,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(routed[0]!.why).toContain('two of its lines are wrong')
     expect(routed[0]!.why).toContain('5 turns')
     // And the third was never asked: nothing was on offer to choose between.
-    expect(routed[2]!.why).toContain('the only step on offer')
+    expect(routed[2]!.why).toContain('nothing but a person was on offer')
     expect(routed[2]!.ceiling).toBeNull()
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })

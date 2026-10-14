@@ -140,7 +140,7 @@ export async function replyFor(
   const why =
     'built' in answer
       ? `the "${answer.named}" judge: the recipe declares \`judge: ${built}\` for a "${when}"`
-      : `a "${when}" is mechanical — the work is still there and the remedy is to fix it where it stands`
+      : `the "${built}" judge: a "${when}" is mechanical — the work is still there and the remedy is to fix it where it stands`
   return toReply(MECHANICAL_WANTS[built], offer, why)
 }
 

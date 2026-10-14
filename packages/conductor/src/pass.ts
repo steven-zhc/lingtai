@@ -1135,16 +1135,24 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     reported: { step: Step; ending: StepReport } | null,
     arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
   ): Promise<boolean> => {
-    const offer = offerFor(proposal, { rounds: ceilings.rounds, restarts: ceilings.restarts }, {
-      rounds: roundsSpent,
-      restarts: ceilings.restartsSpent,
-    })
+    const offer = offerFor(
+      proposal,
+      { rounds: ceilings.rounds, restarts: ceilings.restarts },
+      {
+        rounds: roundsSpent,
+        restarts: ceilings.restartsSpent,
+      },
+    )
     const reply = await replyFor(offer, arrived, options.judge)
     if ('neverStarted' in reply) {
       // 0031 §3, at the third depth the same wall is met at: the judge
       // itself is an agent, and an account-wide wall is the conductor's to
       // answer, never a route.
-      const ending: StepNeverRan = { ending: 'never-ran', at: reply.neverStarted.agent, detail: reply.neverStarted.detail }
+      const ending: StepNeverRan = {
+        ending: 'never-ran',
+        at: reply.neverStarted.agent,
+        detail: reply.neverStarted.detail,
+      }
       record({ step: 'proposed', ending, results: [] })
       stoppedAt = { step: 'proposed', ending }
       return false
@@ -1153,7 +1161,13 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     const routed = routedVisit(offer, reply, decision)
     record({ step: 'proposed', ending: routed, results: [] })
     const chose = routed.chose ?? routed.to
-    routes.push({ from: reported?.step ?? 'proposed', chose, to: routed.to, why: routed.why, ceiling: ceilingOf(chose, offer) })
+    routes.push({
+      from: reported?.step ?? 'proposed',
+      chose,
+      to: routed.to,
+      why: routed.why,
+      ceiling: ceilingOf(chose, offer),
+    })
 
     const next = routeNext(offer, reply, decision, { runId: options.context.runId })
     switch (next._tag) {
@@ -1217,11 +1231,11 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       pendingUnreadableReview = null
       if (ending.ending === 'passed') {
         const why =
-          "the `review` step's answer could not be read at all — it did not parse as findings, " +
+          "`review`'s findings could not be read at all — the answer did not parse as findings, " +
           'so nothing structured came out of it however much the reviewer said. That is the ' +
           'machinery losing a judgement rather than a reviewer declining to make one, and it ' +
           'buys no round either: an answer nobody can read is not a criterion (0038 §2). The ' +
-          "answer itself is on review's own `StepFailed`, clipped, and whole in that attempt's " +
+          "answer itself is on the step's own `StepFailed`, clipped, and whole in that attempt's " +
           `agent transcript; the pass is held for a person, who can read both: ${pending.raw}`
         const routed: StepRouted = { ending: 'routed', to: 'waiting', why }
         record({ step: 'proposed', ending: routed, results: [] })
@@ -1884,7 +1898,7 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding): StepEnding {
   if (ending.ending === 'routed') {
     throw new Error(
       `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and no body may route any ` +
-        'more (`#462`) — `runPass`\'s own loop does that now, off `nextOf`\'s `Propose`.',
+        "more (`#462`) — `runPass`'s own loop does that now, off `nextOf`'s `Propose`.",
     )
   }
   return ending

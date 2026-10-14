@@ -1217,7 +1217,14 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 } })
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+    })
 
     expect(result.stoppedAt).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
     expect(result.routes).toEqual([])
@@ -1425,7 +1432,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
         from: 'build',
         chose: 'implement',
         to: 'implement',
-        why: 'a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
+        why: 'the "same-worktree" judge: a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
         ceiling: null,
       },
     ])
@@ -1712,7 +1719,7 @@ describe('a visit is judged in the round the pass is in', () => {
         from: 'build',
         chose: 'implement',
         to: 'implement',
-        why: 'a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
+        why: 'the "same-worktree" judge: a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
         ceiling: null,
       },
     ])

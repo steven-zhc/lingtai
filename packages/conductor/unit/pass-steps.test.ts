@@ -1263,12 +1263,16 @@ describe('review returns findings and judges nothing', () => {
     // Nothing is dropped: the reviewer's own verdict is on the visit, and it is
     // what says there is a `findings` direction to judge at all.
     expect(reviewed?.results.map((r) => r.verdict)).toEqual(['failed'])
+    // `offering` is `offerFor`'s own order (`implement` before `waiting`, the
+    // design's own pinned order for a brief) and `evidence` is empty: a
+    // `ReviewFindings` proposal carries no raw evidence string of its own,
+    // only the findings (`#462`).
     expect(asked.judge).toEqual([
       {
         when: 'findings',
-        offering: ['waiting', 'implement'],
+        offering: ['implement', 'waiting'],
         findings: [BLOCKER],
-        evidence: REVIEW_REFUSED.evidence,
+        evidence: '',
       },
     ])
   })
@@ -1489,20 +1493,25 @@ describe('proposed is the only step that routes, and one judge answers each when
     const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } })
     // `review`'s findings arrive on the way through, so the router is `proposed`
     // itself and the round goes back to `implement`.
-    expect(declared.asked.judge.map((on) => on.when)).toEqual(['findings', 'findings'])
+    expect(declared.asked.judge.map((on) => on.when)).toEqual(['findings'])
     expect(declared.result.routes[0]).toMatchObject({ from: 'proposed', to: 'implement' })
     expect(declared.asked.dispatch).toHaveLength(2)
     // The findings are what the round was bought on, and what the agent is
     // briefed with — an empty `recheck` here would be a round spent on nothing.
     expect(declared.asked.dispatch[1]?.context.recheck).toEqual([BLOCKER])
-    // The second refusal has no round left, so it rests with a person: a
+    // The second refusal has no round left and nothing else on offer but a
+    // person, so no judge is asked a second time either (the ticket's own
+    // rule: a judge is paid, and one that cannot help is not asked) — a
     // declared judge is bounded by the ceiling, never above it (0064 §7).
     expect(declared.result.rested).toBe('waiting')
     expect(declared.result.routes[1]?.why).toContain('`rounds` is spent')
 
     const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} })
     expect(nothing.result.routes[0]?.to).toBe('waiting')
-    expect(nothing.result.routes[0]?.why).toContain('no `judge:` is declared')
+    // Asked (`implement` is still on offer with `rounds` unspent), answers
+    // `noJudge`, and `findings` has no built-in either — `NotAsked`, naming
+    // what the ceiling already excluded (`restart`).
+    expect(nothing.result.routes[0]?.why).toContain('`restart` — `restarts` is spent')
     expect(nothing.asked.dispatch).toHaveLength(1)
   })
 
@@ -1516,12 +1525,12 @@ describe('proposed is the only step that routes, and one judge answers each when
    * a runtime and the port is what asks it. The agent here answers *the lines*,
    * so the round goes back to `implement`.
    *
-   * **And it stops at `rounds`, not one past it.** The same judge is asked the
-   * second time with `implement` off the offer, and the most it can do with that
-   * set is a person: the counting is the workflow's, the offer is what is left of
-   * it, and no answer widens a set it was handed. `rounds: 1` and two refusals is
-   * the smallest arrangement where the difference between *spends a round* and
-   * *spends rounds* is visible.
+   * **And it stops at `rounds`, not one past it.** With `implement` off the
+   * offer the second time, nothing but a person is left on it — and the
+   * ticket's own rule (`#462`) is that a judge is paid, so one that cannot
+   * help is not asked a second time either, declared or not. `rounds: 1` and
+   * two refusals is the smallest arrangement where the difference between
+   * *spends a round* and *spends rounds* is visible.
    */
   it('dispatches a runtime judge the recipe declares, and spends one round of `rounds`', async () => {
     const steps = declaring('findings', 'the lines or the approach', 'claude-code')
@@ -1538,18 +1547,21 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    // Asked on both arrivals, and never handed a count — the brief is the
-    // direction, the words and the set (`JudgeBrief`).
-    expect(seen.map((on) => on.when)).toEqual(['findings', 'findings'])
+    // Asked once, and never handed a count — the brief is the direction, the
+    // words and the set (`JudgeBrief`).
+    expect(seen.map((on) => on.when)).toEqual(['findings'])
     expect(Object.keys(seen[0]!).sort()).toEqual(['evidence', 'findings', 'offering', 'when'])
     // The round it asked for, bought once, on the findings it read.
     expect(result.routes[0]).toMatchObject({ from: 'proposed', chose: 'implement', to: 'implement' })
     expect(result.routes[0]?.why).toContain('two of its lines are wrong')
     expect(asked.dispatch).toHaveLength(2)
     expect(asked.dispatch[1]?.context.recheck).toEqual([BLOCKER])
-    // And the second time, `implement` was never on the set to ask for.
-    expect(seen[1]?.offering).not.toContain('implement')
-    expect(result.routes[1]).toMatchObject({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })
+    // The second refusal offers nothing but a person — `rounds` is spent and
+    // `implement` is off the set — so no judge is asked, declared or not, and
+    // `chose` is `waiting` rather than naming the destination a judge never
+    // got to choose.
+    expect(result.routes[1]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
+    expect(result.routes[1]?.why).toContain('`rounds` is spent')
     expect(result.rested).toBe('waiting')
   })
 
@@ -1606,12 +1618,14 @@ describe('proposed is the only step that routes, and one judge answers each when
       ...checked(PASSED, REVIEW_REFUSED),
       steps,
       answers: { judge: theRecipesJudge(steps, greedy) },
-      ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
+      // `restarts` left to spend keeps a second candidate on offer (`claim`,
+      // off `restart`) so the declared judge is genuinely asked rather than
+      // skipped outright — `rounds` spent is what takes `implement` off it.
+      ceilings: { rounds: 0, restarts: 1, restartsSpent: 0 },
     })
 
     expect(result.routes[0]).toMatchObject({ chose: 'implement', to: 'waiting' })
-    expect(result.routes[0]?.why).toContain('the "the lines or the approach" judge answered "implement"')
-    expect(result.routes[0]?.why).toContain('`rounds` is spent')
+    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
     expect(result.rested).toBe('waiting')
   })
 
@@ -1630,9 +1644,9 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 3, restartsSpent: 0 },
     })
 
-    expect(asked.judge[0]?.offering).toEqual(['waiting', 'implement'])
+    expect(asked.judge[0]?.offering).toEqual(['implement', 'waiting'])
     expect(result.routes[0]?.to).toBe('waiting')
-    expect(result.routes[0]?.why).toContain('answered "claim"')
+    expect(result.routes[0]?.why).toContain('the judge named "claim", which was not offered')
     expect(result.rested).toBe('waiting')
     // The item is held for a person, never released.
     expect(outcomeOf(result)).toBe('blocked')
@@ -1662,7 +1676,7 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(early.asked.judge).toEqual([])
     expect(early.result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
-    expect(late.asked.judge[0]?.offering).toEqual(['waiting', 'implement'])
+    expect(late.asked.judge[0]?.offering).toEqual(['implement', 'waiting'])
     // And a judge is never told what it is answering for, nor what is left to
     // spend: `Judging` carries the direction, the words and the set, and no
     // ceiling and no count (`JudgeBrief`).
@@ -1717,7 +1731,10 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT])
     expect(result.routes[0]?.to).toBe('waiting')
-    expect(result.routes[0]?.why).toContain('no `judge:` is declared')
+    // Asked (two candidates are on offer), answered `noJudge`, and there is no
+    // built-in for `needs-input` either — `NotAsked`'s own sentence, same as a
+    // ceiling would have left, since nothing here was excluded by one.
+    expect(result.routes[0]?.why).toBe('nothing but a person was on offer')
     expect(result.rested).toBe('waiting')
     // The person is shown the step that asked, not the router that sent it.
     expect(result.stoppedAt?.step).toBe('implement')
@@ -1733,12 +1750,15 @@ describe('proposed is the only step that routes, and one judge answers each when
     const { result } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
       answers: { judge: { next: 'implement', named: 'claude-code', why: 'have another go' } },
-      // Nothing left to spend, so `implement` is on no offer.
-      ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
+      // `restarts` left to spend keeps a second candidate on offer (`claim`,
+      // off `restart`) so the judge is genuinely asked rather than skipped —
+      // `rounds` spent is what takes `implement` off it.
+      ceilings: { rounds: 0, restarts: 1, restartsSpent: 0 },
     })
 
     expect(result.routes[0]?.to).toBe('waiting')
-    expect(result.routes[0]?.why).toContain('the "claude-code" judge answered "implement" for `review`\'s findings')
+    expect(result.routes[0]?.chose).toBe('implement')
+    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
     expect(result.rested).toBe('waiting')
   })
 
@@ -1758,7 +1778,7 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(asked.judge).toEqual([])
     expect(result.routes[0]).toMatchObject({ to: 'waiting' })
-    expect(result.routes[0]?.why).toContain('nothing an agent could be held to')
+    expect(result.routes[0]?.why).toContain('nothing holds an agent to it')
     expect(result.rested).toBe('waiting')
   })
 
@@ -1932,10 +1952,12 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     // The pass that is compared is a real one: a round bought on the findings, a
     // second refusal with nothing left to spend, and a person at the end of it.
+    // The second refusal offers nothing but a person (`rounds` is spent), so
+    // the judge is asked only once (`#462`'s own rule).
     expect(passes[0]).toMatchObject({
       rested: 'waiting',
       dispatched: 2,
-      judged: ['findings', 'findings'],
+      judged: ['findings'],
     })
     expect((passes[0] as { routes: unknown[] }).routes[0]).toMatchObject({
       from: 'proposed',
@@ -1976,27 +1998,30 @@ describe('proposed is the only step that routes, and one judge answers each when
    * **What was chosen, what happened, and which ceiling is the difference between
    * them** (`#271`; 0064 §7's pair, and the fields `PassRouted` carries).
    *
-   * Both rows below end at `waiting` and `to` alone cannot tell either of them
-   * from a decision that asked for a person — which is the sentence on the card.
-   * The first wanted another round and the rounds were spent; the second wanted a
-   * fresh approach and the item had no restart left. The route is why a pass took
-   * the path it took, and until `#271` it was written to a file that is deleted on
-   * the ending where the change lands.
+   * Both rows below end at `waiting`, and for a different reason each: the
+   * first has nothing but a person on offer, so no judge is asked and `chose`
+   * says so by naming the same thing `to` does; the second has a round to
+   * spend, so a judge is genuinely asked, answers `claim`, and `chose` names
+   * what it chose even though the restart it wanted was already spent. The
+   * route is why a pass took the path it took, and until `#271` it was written
+   * to a file that is deleted on the ending where the change lands.
    */
   it('records what the decision wanted, and which ceiling refused it', async () => {
     const spent = await pass({
       actions: { build: [canned('typecheck', RED)] },
-      // The built-in wants `implement` and there is no round to buy it with.
+      // Nothing but a person is on offer with no round to buy `implement`
+      // with, so no judge is asked at all (the ticket's own rule, `#462`) —
+      // `chose` is `waiting` rather than naming the built-in's own choice.
       ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
     })
 
     expect(spent.result.routes).toEqual([
       {
         from: 'build',
-        chose: 'implement',
+        chose: 'waiting',
         to: 'waiting',
-        why: expect.stringContaining('same-worktree'),
-        ceiling: 'rounds',
+        why: expect.stringContaining('`fix-lines` — `rounds` is spent'),
+        ceiling: null,
       },
     ])
 
@@ -2008,12 +2033,18 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
+    // `chose` still names the destination the judge picked (`claim`, off
+    // `restart`'s own mapping); `why` is the generic excluded-candidate
+    // sentence rather than the judge's own words — `routedVisit` builds a
+    // `CandidateUnavailable` row off the structured decision, never off
+    // `reply.why`, so it reads the same whether a judge chose it or a built-in
+    // would have.
     expect(overruled.result.routes).toEqual([
       {
         from: 'proposed',
         chose: 'claim',
         to: 'waiting',
-        why: expect.stringContaining('answered "claim"'),
+        why: 'the judge chose `restart`, and `restarts` is spent',
         ceiling: 'restarts',
       },
     ])
@@ -2035,7 +2066,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(spent.result.routes[0]?.why).toContain('it wanted `implement`, and `rounds` is spent')
+    expect(spent.result.routes[0]?.why).toContain('`fix-lines` — `rounds` is spent')
 
     // The item's ceiling rather than this pass's, and through the other door: a
     // declared judge answering outside the set it was handed.
@@ -2045,7 +2076,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(overruled.result.routes[0]?.why).toContain('it wanted `claim`, and `restarts` is spent')
+    expect(overruled.result.routes[0]?.why).toContain('the judge chose `restart`, and `restarts` is spent')
 
     // **A destination no number would have offered used to be named here too,
     // read off `prepared`'s own refusal and a built-in that answered anyway**
@@ -2138,51 +2169,37 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
   })
 
   /**
-   * **Every path into `end` has been through `build` and `review`**, and the edge
-   * from `merge` back to `build` is what buys it: an agent that resolves a
-   * conflict writes code *after* the review passed, so both run again before
-   * anything lands.
-   *
-   * A declared judge is what chooses it. `conflict` has no built-in, and that is
-   * deliberate — **the intent conflict is the row an agent must not take**: two
-   * changes that edited the same decision differently produce text an agent can
-   * merge and an intent it cannot know.
+   * **No candidate ever sends `merge` back to `build`** (`@lingtai/domain`'s
+   * `offerFor`, `routing.ts:102-104`): a `MergeConflict`'s `fix-lines` is a
+   * `FixRound{to: 'implement'}` by the type it is built from, never `'build'`
+   * — `conflict` has no built-in either, and resolving one is still the
+   * fixer's job, just without a lane back through `build` and `review`. A
+   * judge that answers `build` anyway names a destination `fix-lines` never
+   * maps to, so it is refused the same way any unoffered destination is: the
+   * pass rests for a person rather than routing anywhere.
    */
-  it('takes a conflict back through `build` and `review` when a judge says so', async () => {
-    let refuses = true
+  it('refuses a judge that answers `build` for a conflict, which no candidate ever offers', async () => {
     const { result } = await pass({
       answers: {
-        land: () => {
-          const answer: LandAnswer = refuses
-            ? { notMerged: { reason: 'conflict', detail: 'both changed doc/design/the-pipeline.md' } }
-            : { merged: MERGED }
-          refuses = false
-          return answer
-        },
+        land: () => ({ notMerged: { reason: 'conflict', detail: 'both changed doc/design/the-pipeline.md' } }),
         judge: { next: 'build', named: 'claude-code', why: 'the text resolves; the intent is one file' },
       },
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(walk(result).slice(8)).toEqual([
-      'merge:refused',
-      'proposed:routed',
-      'build:passed',
-      'review:passed',
-      'proposed:passed',
-      'merge:passed',
-      'end:passed',
-    ])
+    expect(walk(result).slice(8)).toEqual(['merge:refused', 'proposed:routed', 'end:passed'])
     expect(result.routes).toEqual([
       {
         from: 'merge',
         chose: 'build',
-        to: 'build',
-        why: 'the text resolves; the intent is one file',
+        to: 'waiting',
+        why: 'the judge named "build", which was not offered',
         ceiling: null,
       },
     ])
-    expect(outcomeOf(result)).toBe('landed')
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', because: { _tag: 'UnknownCandidate' } })
+    expect(result.rested).toBe('waiting')
+    expect(outcomeOf(result)).not.toBe('landed')
   })
 
   /**
