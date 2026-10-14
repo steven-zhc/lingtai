@@ -802,6 +802,25 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
   })
 
+  /**
+   * **A declared `judge:` is asked, and its answer is taken** — the half of
+   * routing a `human:`/`no-judge-declared` test cannot show. `restart` is
+   * offered beside `hand-to-person` (`hasCriterion` off the install's own
+   * evidence), so a judge choosing it spends the restart rather than reaching
+   * a person, exactly as it would for any other of the seven.
+   */
+  it('restarts a `prepared` refusal when a judge is declared for it', async () => {
+    const { result, asked } = await pass({
+      steps: { prepared: [{ name: 'install', run: 'false' }] },
+      actions: { prepared: [canned('install', RED)] },
+      answers: { judge: { next: 'claim', named: 'claude-code', why: 'fresh worktree' } },
+      ceilings: { rounds: 3, restarts: 1, restartsSpent: 0 },
+    })
+
+    expect(asked.judge[0]?.when).toBe('setup-refused')
+    expect(result.rested).toBe('requeued')
+  })
+
   it('passes on a green install, and adds nothing of its own', async () => {
     const { result } = await pass({
       steps: { prepared: [{ name: 'install', run: 'true' }] },

@@ -1236,6 +1236,197 @@ describe('every step that does not pass arrives at proposed', () => {
   })
 
   /**
+   * **The ticket's own seven, each checked the same way**: a `proposed:` that
+   * declares a `human:` sign-off, no `judge:` for the direction the fall-short
+   * routes under, and the assertion that the sign-off is never built — the
+   * routing visit `routeProposal` records is never a second call to
+   * `proposed`'s own body (`#462`), whatever answered the router.
+   */
+  it("does not run proposed's own declared human: for a setup refusal", async () => {
+    const recipe = recipeWith({
+      prepared: [{ name: 'install', run: 'pnpm install' }],
+      proposed: [{ name: 'sign off', human: 'ship it?' }],
+    })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      prepared: [canned('install', { verdict: 'failed', evidence: 'pnpm install exited 1', findings: [] })],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.some((r) => r.step === 'proposed')).toBe(false)
+    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused' } })
+    expect(result.rested).toBe('waiting')
+  })
+
+  /**
+   * **Unlike the others, `proposed` is already on the spine before `merge`
+   * refuses** — every pass that gets this far visits it once on the way
+   * through, trivially (0120 §3's own note). What this checks is that the
+   * routing visit `merge`'s own `CheckRefused` takes afterwards is a second,
+   * distinct entry in `result.steps` rather than a second call to the
+   * declared `human:` — `ran` still has exactly one `proposed` entry.
+   */
+  it("does not run proposed's own declared human: a second time for a check before the merge lane", async () => {
+    const recipe = recipeWith({
+      merge: [
+        { name: 'check', run: 'true' },
+        { name: 'land the branch', merge: { strategy: 'merge-commit' } },
+      ],
+      proposed: [{ name: 'sign off', human: 'ship it?' }],
+    })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      merge: [canned('check', { verdict: 'failed', evidence: 'looks risky', findings: [] })],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
+    expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
+    expect(result.steps.filter((s) => s.step === 'proposed').at(-1)?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'CheckRefused' } })
+    expect(result.rested).toBe('waiting')
+  })
+
+  it("does not run proposed's own declared human: for an implementer that produced nothing", async () => {
+    const recipe = recipeWith({ proposed: [{ name: 'sign off', human: 'ship it?' }] })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      implement: [committedSomething('write the change', null)],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.some((r) => r.step === 'proposed')).toBe(false)
+    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'NothingProduced' } })
+    expect(result.rested).toBe('waiting')
+  })
+
+  /**
+   * **`FixerDisagrees` is the one of the seven that needs a round already
+   * spent** — a judge declared for `findings` sends the first review's
+   * blocker back to `implement`, and the second attempt commits nothing,
+   * which is `changedNothing` with `round > 0`.
+   */
+  it("does not run proposed's own declared human: for a fix round that changed nothing", async () => {
+    const finding: ActionFinding = {
+      file: 'packages/conductor/src/pass.ts',
+      line: 1,
+      claim: 'a blocker',
+      failureScenario: 'it does the wrong thing',
+      severity: 'major',
+    }
+    const recipe = recipeWith({ proposed: [{ name: 'sign off', human: 'ship it?' }] })
+    const { bodies } = watching()
+    let reviews = 0
+    let implements_ = 0
+    const actionsAt: PassOptions['actionsAt'] = (step) =>
+      step === 'review'
+        ? [
+            canned('cold reviewer', {
+              verdict: reviews === 0 ? 'failed' : 'passed',
+              evidence: 'read the diff',
+              findings: reviews++ === 0 ? [finding] : [],
+            }),
+          ]
+        : step === 'implement'
+          ? [committedSomething('write the change', implements_++ === 0 ? COMMITTED : null)]
+          : []
+    const { emit } = events()
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async (on) =>
+        on.when === 'findings'
+          ? { next: 'implement', named: 'test', why: 'the lines, not the approach' }
+          : { noJudge: true },
+    })
+
+    const ran = result.steps.filter((s) => s.step === 'proposed')
+    expect(ran.some((s) => s.results.some((r) => r.action === 'sign off'))).toBe(false)
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } })
+    expect(result.rested).toBe('waiting')
+  })
+
+  /** Same shape as the check before it: one ordinary visit, then one routing visit, never two calls to the body. */
+  it("does not run proposed's own declared human: a second time for the merge lane's own refusal", async () => {
+    const recipe = recipeWith({
+      merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }],
+      proposed: [{ name: 'sign off', human: 'ship it?' }],
+    })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      merge: [
+        {
+          name: 'land the branch',
+          kind: 'merge',
+          yields: 'merge',
+          run: async () => ({
+            verdict: 'failed',
+            evidence: 'main moved under it',
+            findings: [],
+            because: 'dirty-base',
+          }),
+        },
+      ],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
+    expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
+    expect(result.steps.filter((s) => s.step === 'proposed').at(-1)?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'MergeRefused', reason: 'dirty-base' },
+    })
+    expect(result.rested).toBe('waiting')
+  })
+
+  it("does not run proposed's own declared human: for an implementer that ran out of turns", async () => {
+    const recipe = recipeWith({ proposed: [{ name: 'sign off', human: 'ship it?' }] })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      implement: [
+        {
+          name: 'write the change',
+          kind: 'agent',
+          yields: 'commit',
+          run: async () => ({
+            verdict: 'did-not-finish',
+            evidence: 'spent all 10 turns with no commit',
+            findings: [],
+            interrupted: 'out-of-turns',
+          }),
+        },
+      ],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.some((r) => r.step === 'proposed')).toBe(false)
+    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'BudgetExhausted', kind: 'out-of-turns' },
+    })
+    expect(result.rested).toBe('waiting')
+  })
+
+  /**
    * **`proposed`'s own refusal routes to itself now** (`#472`): `verdictRefusedAs`
    * reads a refusal at `proposed` as `CheckRefused` exactly as it does at
    * `merge`, and `CheckRefused` is one of the seven that always proposes, so
