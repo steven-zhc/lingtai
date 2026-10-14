@@ -566,6 +566,20 @@ export const RunRefsPublished = z.object({
    */
   branchCarries: z.boolean().optional(),
   /**
+   * The arm's own head, on `published` and `already-published`, only where it
+   * is not `headSha` — a kept WIP commit one ahead of the agent's own last
+   * commit, which `branchCarries: true` names as what `branch` carries
+   * (`#468`). Absent wherever the arm is at `headSha` too, which is every row
+   * with no WIP and every row written before this field existed, so a reader
+   * who does not know the field still reads `branch and arm at headSha` and
+   * is right.
+   *
+   * **Never read in place of `RunKeptUncommitted`.** This exists only so the
+   * history line does not say the arm shares a sha it never had; the WIP's
+   * own files, insertions and deletions are that event's, not this one's.
+   */
+  armSha: z.string().nullable().optional(),
+  /**
    * Git's own words when `refused` or `arm-only`, the store's and the ref they
    * were about when `unrecorded`, and null on `nothing-committed` unless a
    * keep failed — null unless something has to be said, nowhere else.

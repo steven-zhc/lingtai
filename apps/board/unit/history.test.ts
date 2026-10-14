@@ -183,6 +183,39 @@ describe('a line of history', () => {
   })
 
   /**
+   * **A kept WIP sits on the arm one commit ahead of what `branch` carries,
+   * and the row must not say the two refs share a sha** (`#468`). `armSha` is
+   * the field that says the arm's own head differs from `headSha`; without
+   * it the row before this fix read `agent/7 and agent/7-attempt-1 at
+   * bbbbbbb` though the arm was actually at `ccccccc` — a sentence a person
+   * fetching `agent/7-attempt-1` would find false.
+   */
+  it('names the arm at its own later sha when a kept WIP sits ahead of what branch carries', () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e('RunRefsPublished', { branch: 'agent/7', arm: 'agent/7-attempt-1', ...data }))
+
+    expect(
+      row({
+        outcome: 'published',
+        headSha: 'b'.repeat(40),
+        armSha: 'c'.repeat(40),
+        detail: null,
+        branchCarries: true,
+      }),
+    ).toBe('agent/7 at bbbbbbb and agent/7-attempt-1 at ccccccc')
+
+    expect(
+      row({
+        outcome: 'already-published',
+        headSha: 'b'.repeat(40),
+        armSha: 'c'.repeat(40),
+        detail: null,
+        branchCarries: true,
+      }),
+    ).toBe('already there — agent/7 at bbbbbbb and agent/7-attempt-1 at ccccccc')
+  })
+
+  /**
    * **Absent `branchCarries` means carried** (`#468`) — every row written
    * before this field existed had `branch` at `headSha`, and replaying one
    * must read exactly as it always did.

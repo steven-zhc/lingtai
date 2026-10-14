@@ -474,7 +474,7 @@ describe('when the agent meets the wall', () => {
      */
     const hitTheWallDirty = async (
       committed: boolean,
-      breaks: { leasedBranch?: string; failKeptOnce?: boolean } = {},
+      breaks: { leasedBranch?: string; failKeptOnce?: boolean; push?: string } = {},
     ) => {
       const store = memoryStore()
       const did: string[] = []
@@ -501,6 +501,17 @@ describe('when the agent meets the wall', () => {
             ? Effect.sync(() => {
                 did.push(`git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`)
               }).pipe(Effect.andThen(pushRefusedWith(breaks.leasedBranch!)))
+            : beforeRefusal(args, o)
+      }
+      // Every push refused, not only the leased half — origin unreachable, as
+      // opposed to a sibling claim moving `agent/<n>` out from under the lease.
+      if (breaks.push !== undefined) {
+        const beforeRefusal = inner
+        inner = (args, o) =>
+          args[0] === 'push'
+            ? Effect.sync(() => {
+                did.push(`git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`)
+              }).pipe(Effect.andThen(pushRefusedWith(breaks.push!)))
             : beforeRefusal(args, o)
       }
       ports.repo.git = (args, o) => {
@@ -578,9 +589,11 @@ describe('when the agent meets the wall', () => {
 
       // **The durable row must never assert the mergeable branch carries the
       // WIP commit** (`#468`) — `agent/7` is at the agent's own commit, not
-      // the WIP sha `keepUncommittedWork` moved `HEAD` onto.
+      // the WIP sha `keepUncommittedWork` moved `HEAD` onto. `armSha` names
+      // where the arm actually is, one commit ahead of `headSha`, which is
+      // what stops the history line from reading the two refs as one sha.
       const refs = run.find((e) => e.type === 'RunRefsPublished')
-      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40) })
+      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40), armSha: WIP_SHA })
     })
 
     it('keeps it on the arm alone when the agent itself committed nothing', async () => {
@@ -667,6 +680,34 @@ describe('when the agent meets the wall', () => {
       const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toHaveLength(1)
       expect(kept[0]!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+    })
+
+    /**
+     * **A push origin never takes at all names the branch's own commit, never
+     * the WIP sha on top of it** (`#468`). Both refspecs are rejected — origin
+     * is unreachable, not merely stale — so the arm-alone retry fails too and
+     * the publish lands on `refused`. `headSha` there must be `branchHead`
+     * (the agent's own commit): a person rescuing by hand who instead pushed
+     * the WIP sha to `agent/7` would put a `wip:` commit on the one branch the
+     * merge lane reads, and `integrate.ts`'s own guard refuses it until
+     * somebody unpicks the branch.
+     */
+    it('names the branch’s own commit on a refused push, never the WIP sha kept on top of it', async () => {
+      const unreachable = 'fatal: unable to access — Could not resolve host'
+      const { result, run } = await hitTheWallDirty(true, { push: unreachable })
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+
+      const refs = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['refused', 'refused'])
+      for (const row of refs) {
+        expect(row.data).toMatchObject({ headSha: 'b'.repeat(40) })
+      }
+
+      // Neither push ever landed the WIP sha on origin, so there is nothing
+      // fetchable to account for — `noteKept` only fires once a push of the
+      // arm has actually succeeded (`doc/design/468.md`: "a sha named on the
+      // log must be fetchable").
+      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
     })
 
     /**

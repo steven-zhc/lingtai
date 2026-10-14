@@ -1537,13 +1537,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         headSha: string | null,
         detail: string | null,
         branchCarries?: boolean,
+        armSha?: string,
       ): Promise<void> => {
         try {
           await appendAt(runId, [
             {
               type: 'RunRefsPublished',
               actor: 'conductor',
-              data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail, branchCarries }),
+              data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail, branchCarries, armSha }),
             },
           ])
         } catch (defect) {
@@ -1847,7 +1848,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // thing from. `withWipFailure` folds in a failed keep too, though
             // the two never coincide: a WIP failure leaves `branchHead` at
             // `head`, so `branchCarries` is `true` there.
-            await noteRefs('already-published', branchHead ?? head, withWipFailure(null), branchHead !== null)
+            //
+            // **`armSha` only where it differs from `headSha`** (`#468`): a
+            // kept WIP sits on the arm one commit ahead of what `branch`
+            // carries, and the history line must say so rather than naming
+            // both refs at the one sha `branch` actually has.
+            await noteRefs(
+              'already-published',
+              branchHead ?? head,
+              withWipFailure(null),
+              branchHead !== null,
+              wip !== null ? head : undefined,
+            )
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
             // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
@@ -1902,7 +1914,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return pushed.left.detail
             }
             runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
-            await noteRefs('refused', head, withWipFailure(pushed.left.detail))
+            // `branchHead`, never `head`: once a WIP exists `head` is the WIP
+            // sha, which was never pushed anywhere — neither push attempt
+            // above landed it on `branch` or `arm` — and naming it here is
+            // the sha a person rescuing by hand would push onto `branch`
+            // itself, landing the WIP commit on the one ref the merge lane
+            // reads (`#468`).
+            await noteRefs('refused', branchHead, withWipFailure(pushed.left.detail))
             return pushed.left.detail
           }
           if (branchHead !== null) {
@@ -1921,8 +1939,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Same call as the `already-published` branch above, and for the
           // same reason: `branch`'s absence is `branchCarries: false`, never
           // silently behind a `headSha` that is actually the arm's own
-          // (`#468`).
-          await noteRefs('published', branchHead ?? head, withWipFailure(null), branchHead !== null)
+          // (`#468`). `armSha` is passed for the same reason as there too.
+          await noteRefs(
+            'published',
+            branchHead ?? head,
+            withWipFailure(null),
+            branchHead !== null,
+            wip !== null ? head : undefined,
+          )
           // Never for the arm alone (`#468`) — see the `already-published`
           // branch above for why.
           if (branchHead !== null) await recordDiff(branch, branchHead)

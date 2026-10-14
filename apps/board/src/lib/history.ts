@@ -234,6 +234,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     // `detail` here while `branch` was pushed at exactly this sha.
     const suffix = d['detail'] ? ` — ${clip(d['detail'])}` : ''
     if (d['branchCarries'] === false) return `${prefix}${need(d, 'arm')} at ${sha(d, 'headSha')}${suffix}`
+    // **`armSha` is the arm's own head only where it is not `headSha`**
+    // (`#468`) — a kept WIP commit one ahead of what `branch` carries, which
+    // the row below must not read as a sha the two refs share.
+    if (typeof d['armSha'] === 'string' && d['armSha'] !== d['headSha']) {
+      return `${prefix}${need(d, 'branch')} at ${sha(d, 'headSha')} and ${need(d, 'arm')} at ${sha(d, 'armSha')}${suffix}`
+    }
     return `${prefix}${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}${suffix}`
   },
   /**
