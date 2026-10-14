@@ -213,6 +213,28 @@ export const readingBack = (seen: TheDesign[]): Action => ({
 })
 
 /**
+ * **The committing agent production always buys beside the declared reader**
+ * — `conduct.ts`'s `defaultsAt` puts a `createWorkAction` (`yields: 'commit'`)
+ * at `implement` on every pass, so a fixture that declared only `readingBack`
+ * there carried no head and no locator-pass `implement` visit could tell
+ * `changedNothing` apart from a real one (`#469`, `headOf` in
+ * `action.ts:333`). The head is fixed, same for both locator arms, so
+ * `withoutTheLocator`'s shape comparison still agrees.
+ */
+const COMMITTED = 'c0ffee0'
+export const writingBeside = (): Action => ({
+  name: 'write the change',
+  kind: 'agent',
+  yields: 'commit',
+  run: async (): Promise<ActionResult> => ({
+    verdict: 'passed',
+    evidence: 'committed',
+    findings: [],
+    head: COMMITTED,
+  }),
+})
+
+/**
  * The ten bodies, each passing.
  *
  * `proposed` passes rather than routing to a person, so the walk is the ordinary
@@ -266,7 +288,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
   const events: Emitted[] = []
   const at: Record<string, readonly Action[]> = {
     design: [keeping(locator)],
-    implement: [readingBack(briefed)],
+    implement: [readingBack(briefed), writingBeside()],
   }
   const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
     at[step] ??

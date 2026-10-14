@@ -183,11 +183,25 @@ function defaultFor(step: Step, name: string): Action {
   return canned(name, PASSED)
 }
 
+/**
+ * What a recipe that declares nothing at `admit` or `implement` still gets in
+ * real life — `conduct.ts`'s `defaultsAt` buys the cut and the commit on
+ * every pass, same names as `createWorktreeAction` and `createWorkAction`
+ * default to, so a `canned`/empty step here would misread as `changedNothing`
+ * where a real pass never would (`#469`).
+ */
+function undeclaredDefault(step: Step): Action[] {
+  if (step === 'admit') return [cutAt('cut the branch')]
+  if (step === 'implement') return [committedSomething('write the change')]
+  return []
+}
+
 /** Every action the loop handed the pipeline, by visit. */
 function watchingActions(at: Record<string, readonly Action[]> = {}) {
   const ran: { step: Step; actions: readonly string[] }[] = []
   const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
-    const built = at[step] ?? actions.map((a) => defaultFor(step, a.name))
+    const built =
+      at[step] ?? (actions.length > 0 ? actions.map((a) => defaultFor(step, a.name)) : undeclaredDefault(step))
     ran.push({ step, actions: built.map((a) => a.name) })
     return built
   }
@@ -356,13 +370,15 @@ describe('a step that was configured is never skipped', () => {
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stoppedAt).toBeNull()
-    // The nine steps whose plugins are verdicts, each with what it declared.
+    // The nine steps whose plugins are verdicts, each with what it declared —
+    // except `admit` and `implement`, which buy a cut and a commit on every
+    // pass whether the recipe declares anything there or not (`#469`).
     expect(ran).toEqual([
       { step: 'claim', actions: [] },
-      { step: 'admit', actions: [] },
+      { step: 'admit', actions: ['cut the branch'] },
       { step: 'prepared', actions: ['install'] },
       { step: 'design', actions: [] },
-      { step: 'implement', actions: [] },
+      { step: 'implement', actions: ['write the change'] },
       { step: 'build', actions: [] },
       { step: 'review', actions: [] },
       { step: 'proposed', actions: ['build'] },
@@ -384,6 +400,10 @@ describe('a step that was configured is never skipped', () => {
     const { bodies } = watching()
     let entered = 0
     const { actionsAt } = watchingActions({
+      // `admit` and `implement` emptied out too: both buy a default action on
+      // every pass (`#469`), and this test isolates `install`'s own three.
+      admit: [],
+      implement: [],
       prepared: [
         {
           name: 'install',
@@ -402,7 +422,7 @@ describe('a step that was configured is never skipped', () => {
 
     expect(entered).toBe(1)
     // Requested, started, passed — the pipeline's three, and nothing from the
-    // nine steps whose lists were empty.
+    // seven other steps whose lists were empty.
     expect(seen).toHaveLength(3)
   })
 })
@@ -1773,6 +1793,27 @@ describe('a visit is judged against the head the walk has reached', () => {
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'b2b2b2b' })
     expect(seen.find((s) => s.step === 'build')?.context.onSha).toBe('b2b2b2b')
   })
+
+  /**
+   * `pass.ts:1622-1627`'s own rule: *a body that reports a head of its own
+   * wins*. Nothing else here conflicts the two, since `#469` made every
+   * `implement` action carry its own head — this is the one test where the
+   * action and the body disagree, so the spread order at `pass.ts:1717`
+   * stays load-bearing rather than coincidentally unreachable.
+   */
+  it("lets a body's own head win over what its own actions left", async () => {
+    const { bodies } = watching({ implement: async () => ({ ending: 'passed', head: 'bodyreported' }) })
+    const { actionsAt } = watchingActions({ implement: [committedSomething('write the change', 'actionreported')] })
+    const { emit } = events()
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(result.stoppedAt).toBeNull()
+    expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({
+      ending: 'passed',
+      head: 'bodyreported',
+    })
+  })
 })
 
 describe('a visit is judged in the round the pass is in', () => {
@@ -1785,9 +1826,13 @@ describe('a visit is judged in the round the pass is in', () => {
    */
   it('counts the rounds it bought, and every lap is judged in its own', async () => {
     const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
-    const { actionsAt, judged } = judging((step, lap) =>
-      step === 'build' && lap === 0 ? { verdict: 'failed', evidence: '3 failing', findings: [] } : PASSED,
-    )
+    const { actionsAt, judged } = judging((step, lap) => {
+      if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [] }
+      // Realistic rather than headless — a real `implement` always commits,
+      // and this test is about rounds and not about the head (`#469`).
+      if (step === 'implement') return { ...PASSED, head: COMMITTED }
+      return PASSED
+    })
     const { emit } = events()
 
     const result = await runPass({
@@ -1852,9 +1897,13 @@ describe('the round a pass buys is bought on something', () => {
           : { ending: 'passed' }
       },
     })
-    const { actionsAt, judged } = judging((step, lap) =>
-      step === 'review' && lap === 0 ? { verdict: 'passed', evidence: 'read the diff', findings: [finding] } : PASSED,
-    )
+    const { actionsAt, judged } = judging((step, lap) => {
+      if (step === 'review' && lap === 0) return { verdict: 'passed', evidence: 'read the diff', findings: [finding] }
+      // Realistic rather than headless — a real `implement` always commits,
+      // and this test is about findings and not about the head (`#469`).
+      if (step === 'implement') return { ...PASSED, head: COMMITTED }
+      return PASSED
+    })
     const { emit } = events()
 
     const result = await runPass({
@@ -1882,9 +1931,13 @@ describe('the round a pass buys is bought on something', () => {
    */
   it("carries a refusing action's findings into the round it bought", async () => {
     const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
-    const { actionsAt, judged } = judging((step, lap) =>
-      step === 'build' && lap === 0 ? { verdict: 'failed', evidence: '3 failing', findings: [finding] } : PASSED,
-    )
+    const { actionsAt, judged } = judging((step, lap) => {
+      if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [finding] }
+      // Realistic rather than headless — a real `implement` always commits,
+      // and this test is about findings and not about the head (`#469`).
+      if (step === 'implement') return { ...PASSED, head: COMMITTED }
+      return PASSED
+    })
     const { emit } = events()
 
     await runPass({
