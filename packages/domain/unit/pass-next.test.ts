@@ -160,83 +160,91 @@ describe('nextOf: §4 Fell short as table', () => {
     })
   })
 
-  it('verdict, Interrupted{out-of-turns}: WaitOnPerson{BudgetExhausted}', () => {
+  it('verdict, Interrupted{out-of-turns}: Propose{BudgetExhausted}', () => {
     const result = next(
       outcome('review', [
         action('verdict', { _tag: 'Interrupted', cause: 'out-of-turns' }, { evidence: 'ran out', call: 'call-1' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: 'ran out', call: 'call-1' },
+      _tag: 'Propose',
+      proposal: {
+        _tag: 'BudgetExhausted',
+        from: 'review',
+        kind: 'out-of-turns',
+        turns: null,
+        costUsd: null,
+        detail: 'ran out',
+      },
     })
   })
 
-  it('verdict, Interrupted{out-of-usd}: WaitOnPerson{BudgetExhausted}', () => {
+  it('verdict, Interrupted{out-of-usd}: Propose{BudgetExhausted}', () => {
     const result = next(
       outcome('merge', [action('verdict', { _tag: 'Interrupted', cause: 'out-of-usd' }, { evidence: '$ gone' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'BudgetExhausted', run, cause: 'out-of-usd', detail: '$ gone', call: null },
+      _tag: 'Propose',
+      proposal: {
+        _tag: 'BudgetExhausted',
+        from: 'merge',
+        kind: 'out-of-usd',
+        turns: null,
+        costUsd: null,
+        detail: '$ gone',
+      },
     })
   })
 
-  it('nothing, NotDone: WaitOnPerson{SetupRefused}', () => {
+  it('nothing, NotDone: Propose{SetupRefused}', () => {
     const result = next(
       outcome('implement', [
         action('nothing', { _tag: 'NotDone' }, { name: 'file-brief:plan', evidence: 'could not write the brief' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: {
-        _tag: 'SetupRefused',
-        run,
-        step: 'implement',
-        action: 'file-brief:plan',
-        why: 'could not write the brief',
-      },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'implement', output: 'could not write the brief' },
     })
   })
 
-  it('worktree, NotDone: WaitOnPerson{SetupRefused}', () => {
+  it('worktree, NotDone: Propose{SetupRefused}', () => {
     const result = next(
       outcome('admit', [
         action('worktree', { _tag: 'NotDone' }, { name: 'worktree:cut', evidence: 'could not cut the tree' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'SetupRefused', run, step: 'admit', action: 'worktree:cut', why: 'could not cut the tree' },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'admit', output: 'could not cut the tree' },
     })
   })
 
-  it('commit, NotDone: WaitOnPerson{SetupRefused}', () => {
+  it('commit, NotDone: Propose{SetupRefused}', () => {
     const result = next(
       outcome('implement', [
         action('commit', { _tag: 'NotDone' }, { name: 'run:fmt', evidence: 'could not restore the tree' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'SetupRefused', run, step: 'implement', action: 'run:fmt', why: 'could not restore the tree' },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'implement', output: 'could not restore the tree' },
     })
   })
 
-  it('design, NotDone: WaitOnPerson{SetupRefused}', () => {
+  it('design, NotDone: Propose{SetupRefused}', () => {
     const result = next(
       outcome('design', [
         action('design', { _tag: 'NotDone' }, { name: 'file:design', evidence: 'could not keep the design' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'SetupRefused', run, step: 'design', action: 'file:design', why: 'could not keep the design' },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'design', output: 'could not keep the design' },
     })
   })
 
-  it('verdict at prepared, Completed{refused}: WaitOnPerson{SetupRefused}', () => {
+  it('verdict at prepared, Completed{refused}: Propose{SetupRefused}', () => {
     const result = next(
       outcome('prepared', [
         action(
@@ -247,12 +255,12 @@ describe('nextOf: §4 Fell short as table', () => {
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'SetupRefused', run, step: 'prepared', action: 'run:doctor', why: 'doctor failed' },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'prepared', output: 'doctor failed' },
     })
   })
 
-  it('verdict at proposed, Completed{refused}: WaitOnPerson{CheckRefused}', () => {
+  it('verdict at proposed, Completed{refused}: Propose{CheckRefused}', () => {
     const findings = [finding()]
     const result = next(
       outcome('proposed', [
@@ -264,12 +272,12 @@ describe('nextOf: §4 Fell short as table', () => {
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'CheckRefused', run, step: 'proposed', action: 'watch:ci', evidence: 'ci red', findings },
+      _tag: 'Propose',
+      proposal: { _tag: 'CheckRefused', from: 'proposed', output: 'ci red' },
     })
   })
 
-  it('verdict at merge, Completed{refused}: WaitOnPerson{CheckRefused}', () => {
+  it('verdict at merge, Completed{refused}: Propose{CheckRefused}', () => {
     const findings: Finding[] = []
     const result = next(
       outcome('merge', [
@@ -281,52 +289,52 @@ describe('nextOf: §4 Fell short as table', () => {
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'CheckRefused', run, step: 'merge', action: 'watch:ci', evidence: 'ci red again', findings },
+      _tag: 'Propose',
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'ci red again' },
     })
   })
 
-  it('verdict at review, AnswerUnreadable: WaitOnPerson{AnswerUnreadable}', () => {
+  it('verdict at review, AnswerUnreadable: Propose{AnswerUnreadable}', () => {
     const result = next(
       outcome('review', [action('verdict', { _tag: 'AnswerUnreadable', raw: 'garbled' }, { name: 'agent:review' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'AnswerUnreadable', run, step: 'review', action: 'agent:review', raw: 'garbled' },
+      _tag: 'Propose',
+      proposal: { _tag: 'AnswerUnreadable', from: 'review', raw: 'garbled' },
     })
   })
 
-  it('verdict at proposed, AnswerUnreadable: WaitOnPerson{AnswerUnreadable}', () => {
+  it('verdict at proposed, AnswerUnreadable: Propose{AnswerUnreadable}', () => {
     const result = next(
       outcome('proposed', [action('verdict', { _tag: 'AnswerUnreadable', raw: 'garbled' }, { name: 'judge:claude' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'AnswerUnreadable', run, step: 'proposed', action: 'judge:claude', raw: 'garbled' },
+      _tag: 'Propose',
+      proposal: { _tag: 'AnswerUnreadable', from: 'proposed', raw: 'garbled' },
     })
   })
 
-  it('verdict at merge, AnswerUnreadable: WaitOnPerson{AnswerUnreadable}', () => {
+  it('verdict at merge, AnswerUnreadable: Propose{AnswerUnreadable}', () => {
     const result = next(
       outcome('merge', [action('verdict', { _tag: 'AnswerUnreadable', raw: 'garbled' }, { name: 'agent:merge' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'AnswerUnreadable', run, step: 'merge', action: 'agent:merge', raw: 'garbled' },
+      _tag: 'Propose',
+      proposal: { _tag: 'AnswerUnreadable', from: 'merge', raw: 'garbled' },
     })
   })
 
-  it('design, AnswerUnreadable: WaitOnPerson{AnswerUnreadable}', () => {
+  it('design, AnswerUnreadable: Propose{AnswerUnreadable}', () => {
     const result = next(
       outcome('design', [action('design', { _tag: 'AnswerUnreadable', raw: 'garbled' }, { name: 'agent:design' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'AnswerUnreadable', run, step: 'design', action: 'agent:design', raw: 'garbled' },
+      _tag: 'Propose',
+      proposal: { _tag: 'AnswerUnreadable', from: 'design', raw: 'garbled' },
     })
   })
 
-  it('implement, round > 0, all cleared, no head: WaitOnPerson{FixerDisagrees}', () => {
+  it('implement, round > 0, all cleared, no head: Propose{FixerDisagrees}', () => {
     const result = next(
       outcome(
         'implement',
@@ -340,10 +348,10 @@ describe('nextOf: §4 Fell short as table', () => {
         1,
       ),
     )
-    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'FixerDisagrees', run, said: 'nothing to add' } })
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'FixerDisagrees', said: 'nothing to add' } })
   })
 
-  it('implement, round 0, all cleared, no head: WaitOnPerson{NothingProduced}', () => {
+  it('implement, round 0, all cleared, no head: Propose{NothingProduced}', () => {
     const result = next(
       outcome(
         'implement',
@@ -357,7 +365,7 @@ describe('nextOf: §4 Fell short as table', () => {
         0,
       ),
     )
-    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: 'nothing to add' } })
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: 'nothing to add' } })
   })
 
   it('implement, a kept run after the agent: said is the agent’s own words, not the run’s', () => {
@@ -384,8 +392,8 @@ describe('nextOf: §4 Fell short as table', () => {
       ),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'FixerDisagrees', run, said: 'the finding is wrong — the caller already guards this' },
+      _tag: 'Propose',
+      proposal: { _tag: 'FixerDisagrees', said: 'the finding is wrong — the caller already guards this' },
     })
   })
 
@@ -413,21 +421,15 @@ describe('nextOf: §4 Fell short as table', () => {
     })
   })
 
-  it('signoff, NotDone: WaitOnPerson{SetupRefused}, never SignoffRequired', () => {
+  it('signoff, NotDone: Propose{SetupRefused}, never SignoffRequired', () => {
     const result = next(
       outcome('proposed', [
         action('signoff', { _tag: 'NotDone' }, { name: 'watch:migrations', evidence: 'the watch action threw' }),
       ]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: {
-        _tag: 'SetupRefused',
-        run,
-        step: 'proposed',
-        action: 'watch:migrations',
-        why: 'the watch action threw',
-      },
+      _tag: 'Propose',
+      proposal: { _tag: 'SetupRefused', from: 'proposed', output: 'the watch action threw' },
     })
   })
 
@@ -438,14 +440,14 @@ describe('nextOf: §4 Fell short as table', () => {
   })
 
   const OTHER_SIX_REASONS = RefusalReason.exclude(['conflict', 'verify-failed']).options
-  it.each(OTHER_SIX_REASONS)('merge, IntegrationRefused{%s}: WaitOnPerson{MergeRefused}', (reason) => {
+  it.each(OTHER_SIX_REASONS)('merge, IntegrationRefused{%s}: Propose{MergeRefused}', (reason) => {
     const integration = { _tag: 'IntegrationRefused' as const, reason }
     const result = next(
       outcome('merge', [action('merge', { _tag: 'Completed', integration }, { evidence: 'the lane said so' })]),
     )
     expect(result).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'MergeRefused', run, reason, raw: 'the lane said so' },
+      _tag: 'Propose',
+      proposal: { _tag: 'MergeRefused', reason, output: 'the lane said so' },
     })
   })
 })
@@ -528,8 +530,8 @@ describe('nextOf: Advance along the spine', () => {
 describe('nextOf: the "said" extraction', () => {
   it('no commit action at all: said null', () => {
     expect(next(outcome('implement', []))).toEqual({
-      _tag: 'WaitOnPerson',
-      reason: { _tag: 'NothingProduced', run, said: null },
+      _tag: 'Propose',
+      proposal: { _tag: 'NothingProduced', said: null },
     })
   })
 
@@ -544,7 +546,7 @@ describe('nextOf: the "said" extraction', () => {
         action('commit', { _tag: 'Completed', head: null, question: null }, { plugin: 'agent', evidence: '' }),
       ]),
     )
-    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: null } })
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: null } })
   })
 
   it("the last agent commit action's non-empty evidence: said that evidence", () => {
@@ -557,7 +559,7 @@ describe('nextOf: the "said" extraction', () => {
         ),
       ]),
     )
-    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: 'tried the rename' } })
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: 'tried the rename' } })
   })
 
   it("a kept run's evidence is never said, even when the agent's own is empty", () => {
@@ -571,7 +573,7 @@ describe('nextOf: the "said" extraction', () => {
         ),
       ]),
     )
-    expect(result).toEqual({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced', run, said: null } })
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: null } })
   })
 })
 

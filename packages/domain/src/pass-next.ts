@@ -20,7 +20,7 @@
  */
 import { z } from 'zod'
 
-import { Action, CallId, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
+import { Action, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
 import { Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
 import { RunRef, WaitReason } from './wait.ts'
@@ -105,8 +105,8 @@ export function nextOf(outcome: StepOutcome, run: RunRef): NextOfResult {
   if (step === 'implement' && changedNothing(outcome)) {
     const said = lastCommitEvidence(outcome)
     return {
-      _tag: 'WaitOnPerson',
-      reason: outcome.round > 0 ? { _tag: 'FixerDisagrees', run, said } : { _tag: 'NothingProduced', run, said },
+      _tag: 'Propose',
+      proposal: outcome.round > 0 ? { _tag: 'FixerDisagrees', said } : { _tag: 'NothingProduced', said },
     }
   }
 
@@ -132,11 +132,11 @@ function fellShortAs(step: Step, action: Action, run: RunRef): NextOfResult {
     case 'design':
       return designFellShort(step, action, run)
     case 'worktree':
-      return worktreeFellShort(step, action, run)
+      return worktreeFellShort(step, action)
     case 'merge':
-      return mergeFellShort(step, action, run)
+      return mergeFellShort(step, action)
     case 'nothing':
-      return nothingFellShort(step, action, run)
+      return nothingFellShort(step, action)
   }
 }
 
@@ -144,13 +144,13 @@ function fellShortAs(step: Step, action: Action, run: RunRef): NextOfResult {
 function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: RunRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
-      return verdictRefusedAs(step, action.name, action.evidence, action.result.assessment.findings, run)
+      return verdictRefusedAs(step, action.evidence, action.result.assessment.findings)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
     case 'AnswerUnreadable':
-      return answerUnreadable(step, action.name, action.result.raw, run)
+      return answerUnreadable(step, action.result.raw)
     case 'Interrupted':
-      return interruptedAs(step, action.result.cause, action.evidence, action.call, run)
+      return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
@@ -163,7 +163,7 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: RunRef):
     case 'Completed':
       return signoffRequired(step, action.name, action.result.requested!.question, run)
     case 'NotDone':
-      return setupRefused(step, action.name, action.evidence, run)
+      return setupRefused(step, action.evidence)
     case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
@@ -179,9 +179,9 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: RunRef): N
         proposal: { _tag: 'InputNeeded', from: 'implement', question: action.result.question! },
       }
     case 'Interrupted':
-      return interruptedAs(step, action.result.cause, action.evidence, action.call, run)
+      return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'NotDone':
-      return setupRefused(step, action.name, action.evidence, run)
+      return setupRefused(step, action.evidence)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
     case 'NotReached':
@@ -197,11 +197,11 @@ function designFellShort(step: Step, action: OfYields<'design'>, run: RunRef): N
     case 'Asked':
       return { _tag: 'Propose', proposal: { _tag: 'InputNeeded', from: 'design', question: action.result.question } }
     case 'AnswerUnreadable':
-      return answerUnreadable(step, action.name, action.result.raw, run)
+      return answerUnreadable(step, action.result.raw)
     case 'Interrupted':
-      return interruptedAs(step, action.result.cause, action.evidence, action.call, run)
+      return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'NotDone':
-      return setupRefused(step, action.name, action.evidence, run)
+      return setupRefused(step, action.evidence)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
     case 'NotReached':
@@ -210,10 +210,10 @@ function designFellShort(step: Step, action: OfYields<'design'>, run: RunRef): N
 }
 
 /** No `default` — a new `worktree` result `_tag` must be given a cell here. */
-function worktreeFellShort(step: Step, action: OfYields<'worktree'>, run: RunRef): NextOfResult {
+function worktreeFellShort(step: Step, action: OfYields<'worktree'>): NextOfResult {
   switch (action.result._tag) {
     case 'NotDone':
-      return setupRefused(step, action.name, action.evidence, run)
+      return setupRefused(step, action.evidence)
     case 'Completed':
       throw new ImpossibleOutcomeError(step, action.yields, 'Completed always clears')
     case 'NotReached':
@@ -222,20 +222,20 @@ function worktreeFellShort(step: Step, action: OfYields<'worktree'>, run: RunRef
 }
 
 /** No `default` — a new `merge` result `_tag` must be given a cell here. */
-function mergeFellShort(step: Step, action: OfYields<'merge'>, run: RunRef): NextOfResult {
+function mergeFellShort(step: Step, action: OfYields<'merge'>): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
-      return mergeCompletedRefused(step, action.result.integration, action.evidence, run)
+      return mergeCompletedRefused(step, action.result.integration, action.evidence)
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
 }
 
 /** No `default` — a new `nothing` result `_tag` must be given a cell here. */
-function nothingFellShort(step: Step, action: OfYields<'nothing'>, run: RunRef): NextOfResult {
+function nothingFellShort(step: Step, action: OfYields<'nothing'>): NextOfResult {
   switch (action.result._tag) {
     case 'NotDone':
-      return setupRefused(step, action.name, action.evidence, run)
+      return setupRefused(step, action.evidence)
     case 'Completed':
       throw new ImpossibleOutcomeError(step, action.yields, 'Completed always clears')
     case 'NotReached':
@@ -244,16 +244,10 @@ function nothingFellShort(step: Step, action: OfYields<'nothing'>, run: RunRef):
 }
 
 /** A refusing `verdict`, by step (0120 §2's table). No `default` — `claim`, `end` cannot carry one, and `admit`, `design`, `implement` never legally run a `verdict`. */
-function verdictRefusedAs(
-  step: Step,
-  actionName: string,
-  evidence: string,
-  findings: Finding[],
-  run: RunRef,
-): NextOfResult {
+function verdictRefusedAs(step: Step, evidence: string, findings: Finding[]): NextOfResult {
   switch (step) {
     case 'prepared':
-      return setupRefused(step, actionName, evidence, run)
+      return setupRefused(step, evidence)
     case 'build':
       return { _tag: 'Propose', proposal: { _tag: 'BuildRed', output: evidence } }
     case 'review': {
@@ -265,7 +259,7 @@ function verdictRefusedAs(
     }
     case 'proposed':
     case 'merge':
-      return checkRefused(step, actionName, evidence, findings, run)
+      return checkRefused(step, evidence)
     case 'claim':
     case 'admit':
     case 'design':
@@ -276,7 +270,7 @@ function verdictRefusedAs(
 }
 
 /** The merge lane's own refusal, having already excluded `Integrated` (`nextOf`'s first check). */
-function mergeCompletedRefused(step: Step, integration: Integration, evidence: string, run: RunRef): NextOfResult {
+function mergeCompletedRefused(step: Step, integration: Integration, evidence: string): NextOfResult {
   switch (integration._tag) {
     case 'Conflicted':
       return {
@@ -293,7 +287,7 @@ function mergeCompletedRefused(step: Step, integration: Integration, evidence: s
       if (integration.reason === 'verify-failed') {
         return { _tag: 'Propose', proposal: { _tag: 'VerifyRed', output: evidence } }
       }
-      return { _tag: 'WaitOnPerson', reason: { _tag: 'MergeRefused', run, reason: integration.reason, raw: evidence } }
+      return { _tag: 'Propose', proposal: { _tag: 'MergeRefused', reason: integration.reason, output: evidence } }
     case 'Integrated':
       throw new ImpossibleOutcomeError(step, 'merge', 'Integrated already handled before nextOf falls short')
   }
@@ -304,11 +298,13 @@ function interruptedAs(
   step: Step,
   cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
   detail: string,
-  call: CallId | null,
   run: RunRef,
 ): NextOfResult {
   if (cause === 'out-of-turns' || cause === 'out-of-usd') {
-    return { _tag: 'WaitOnPerson', reason: { _tag: 'BudgetExhausted', run, cause, detail, call } }
+    return {
+      _tag: 'Propose',
+      proposal: { _tag: 'BudgetExhausted', from: step, kind: cause, turns: null, costUsd: null, detail },
+    }
   }
   if (step !== 'design' && step !== 'implement' && step !== 'review' && step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'agent', `AgentCrashed{${cause}} cannot happen at ${step}`)
@@ -316,28 +312,22 @@ function interruptedAs(
   return { _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', run, step, cause, detail } }
 }
 
-function answerUnreadable(step: Step, actionName: string, raw: string, run: RunRef): NextOfResult {
+function answerUnreadable(step: Step, raw: string): NextOfResult {
   if (step !== 'design' && step !== 'review' && step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'verdict|design', `AnswerUnreadable cannot happen at ${step}`)
   }
-  return { _tag: 'WaitOnPerson', reason: { _tag: 'AnswerUnreadable', run, step, action: actionName, raw } }
+  return { _tag: 'Propose', proposal: { _tag: 'AnswerUnreadable', from: step, raw } }
 }
 
-function setupRefused(step: Step, actionName: string, why: string, run: RunRef): NextOfResult {
-  return { _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused', run, step, action: actionName, why } }
+function setupRefused(step: Step, why: string): NextOfResult {
+  return { _tag: 'Propose', proposal: { _tag: 'SetupRefused', from: step, output: why } }
 }
 
-function checkRefused(
-  step: Step,
-  actionName: string,
-  evidence: string,
-  findings: Finding[],
-  run: RunRef,
-): NextOfResult {
+function checkRefused(step: Step, evidence: string): NextOfResult {
   if (step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'verdict', `CheckRefused cannot happen at ${step}`)
   }
-  return { _tag: 'WaitOnPerson', reason: { _tag: 'CheckRefused', run, step, action: actionName, evidence, findings } }
+  return { _tag: 'Propose', proposal: { _tag: 'CheckRefused', from: step, output: evidence } }
 }
 
 function signoffRequired(step: Step, actionName: string, question: string, run: RunRef): NextOfResult {

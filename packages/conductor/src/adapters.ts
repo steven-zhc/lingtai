@@ -914,11 +914,14 @@ function answerUnreadableHold(
   // `merge` reads as the lane's own `CheckRed`; `design` has nothing but an
   // ordinary `DidNotFinish`.
   if (step === 'review' || step === 'proposed') {
+    // The prefix is a short form of `pass.ts`'s own deleted sentence
+    // (`pendingUnreadableReview`, `#472`), ahead of `raw` inside the same
+    // `said(…, 400)` so it survives clipping where `raw` alone would not.
     return {
       _tag: 'Routed',
       run,
       when: 'findings',
-      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(raw, 400)}`,
+      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(`the findings could not be read at all: ${raw}`, 400)}`,
       raw,
       findings: [...pass.findings],
       paths: null,

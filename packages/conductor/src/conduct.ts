@@ -3658,10 +3658,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? pass.waitOn.proposal.detail
                 : null
           if (budgetDetail !== null && ceilingHit === null) {
+            // **The step from the proposal, not `pass.stoppedAt`** (`#472`):
+            // `nextOf` no longer produces the direct `WaitOnPerson{BudgetExhausted}`
+            // — only the wrapped `ProposedEscalated{proposal: BudgetExhausted}`
+            // reaches here now, and its own `from` is the step that ran out,
+            // the same fact `pass.stoppedAt!.step` named before this ticket.
+            const step =
+              pass.waitOn._tag === 'ProposedEscalated' && pass.waitOn.proposal._tag === 'BudgetExhausted'
+                ? pass.waitOn.proposal.from
+                : pass.stoppedAt!.step
             return {
               _tag: 'DidNotFinish',
               run: runRef,
-              step: pass.stoppedAt!.step,
+              step,
               why: said(budgetDetail, 400),
               raw: budgetDetail,
             }
@@ -3681,6 +3690,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // differ from the fixer's actual last words on `FixApplied` (row 7).
           if (withRun._tag === 'Declined' && declined !== null) {
             return { ...withRun, said: declined.said }
+          }
+          // **`MergeRefused` loses `paths`/`baseSha`/`headSha` through
+          // `holdOf`** (`#472`): `mergeRefusedHold` writes `null` for all
+          // three, because neither `Proposal.MergeRefused` nor
+          // `WaitReason.MergeRefused` carries them — only the integration
+          // stream does. Filled in here the same way `holdOfPass`'s own
+          // step 2 already did for this reason, off the same
+          // `lastIntegrationRefusal`.
+          if (withRun._tag === 'MergeRefused') {
+            const refusal = await lastIntegrationRefusal(store, project, base, workItemId, branch)
+            return {
+              ...withRun,
+              paths: refusal?.paths ?? null,
+              baseSha: refusal?.baseSha ?? null,
+              headSha: refusal?.headSha ?? null,
+            }
           }
           return withRun
         }

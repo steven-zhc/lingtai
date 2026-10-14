@@ -1076,17 +1076,6 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   let waitOn: WaitReason | null = null
   let roundsSpent = 0
 
-  /**
-   * **A `review` whose own answer could not be read, carried across its walk
-   * to `proposed`'s spine visit** (`#462`, `#467`'s `f215adba`). Set only at
-   * the one step `nextOf`'s `AnswerUnreadable` does not stop for — see the
-   * `WaitOnPerson` cell below — and consumed by the very next visit to
-   * `proposed`: if that visit's own declared plugins clear, the fixed row
-   * below fires; if they do not, this is simply dropped, because whatever
-   * `proposed` itself just reported takes precedence.
-   */
-  let pendingUnreadableReview: { readonly raw: string } | null = null
-
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'claim'
 
@@ -1226,33 +1215,6 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       throw new Error(`"${at}" answered "routed", which no body may do since #462`)
     }
 
-    // **The one visit `proposed`'s own answer could still be pending for**
-    // (`#462`): `review`'s own `AnswerUnreadable` walked on here rather than
-    // stopping, carrying the reason past this step's own declared
-    // `human:`/`watch:` plugins. If they clear (`ending.ending === 'passed'`),
-    // the fixed row fires and the pass rests — one of 0120 *Two phases*'s two
-    // waits that keep a `PassRouted` row without ever asking `offerFor`. If
-    // they do not, whatever `proposed` itself just reported takes precedence
-    // and the pending reason is simply dropped.
-    if (at === 'proposed' && pendingUnreadableReview !== null) {
-      const pending = pendingUnreadableReview
-      pendingUnreadableReview = null
-      if (ending.ending === 'passed') {
-        const why =
-          "`review`'s findings could not be read at all — the answer did not parse as findings, " +
-          'so nothing structured came out of it however much the reviewer said. That is the ' +
-          'machinery losing a judgement rather than a reviewer declining to make one, and it ' +
-          'buys no round either: an answer nobody can read is not a criterion (0038 §2). The ' +
-          "answer itself is on the step's own `StepFailed`, clipped, and whole in that attempt's " +
-          `agent transcript; the pass is held for a person, who can read both: ${pending.raw}`
-        const routed: StepRouted = { ending: 'routed', to: 'waiting', why }
-        record({ step: 'proposed', ending: routed, results: [] })
-        routes.push({ from: 'proposed', chose: 'waiting', to: 'waiting', why, ceiling: null })
-        rested = 'waiting'
-        break
-      }
-    }
-
     // **#467: the pass acts on `nextOf`'s answer** (0120 §4) rather than on
     // `ARRIVE_AT_THE_ROUTER`/`goesToTheRouter`'s own branches — asked wherever
     // asking it cannot throw by construction. `at` is never `claim` here
@@ -1325,38 +1287,9 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     }
 
     if (next._tag === 'WaitOnPerson') {
-      // **`review`'s own `AnswerUnreadable` still has to reach `proposed`'s
-      // spine visit.** Carried forward rather than routed here, because the
-      // visit that runs a declared `human:`/`watch:` action at `proposed:` is
-      // the spine one, and this is not it (`pendingUnreadableReview`, read at
-      // the top of the next lap).
-      if (next.reason._tag === 'AnswerUnreadable' && at === 'review') {
-        pendingUnreadableReview = { raw: next.reason.raw }
-        at = after(at)
-        continue
-      }
-      // **`MergeRefused` is the one `WaitOnPerson` that still visits
-      // `proposed`, and still without routing** — one of 0120 *Two phases*'s
-      // two fixed rows. `mergeCompletedRefused` (`pass-next.ts`) answers it
-      // directly for every `IntegrationRefused` reason but `verify-failed`,
-      // because none of the other six is a direction any `judge:` can be
-      // declared at (`hold-of.ts`'s own step 2: *the merge lane refused with
-      // no direction*). The lane still visits `proposed` all the same
-      // (0058 §3b): it finds no direction, and rests with a person — the
-      // same `MergeRefused` `holdOfPass` already gives that visit.
-      if (next.reason._tag === 'MergeRefused') {
-        const why =
-          `the \`${at}\` step reported "${'because' in ending ? ending.because : ending.ending}", ` +
-          'which is not a direction any `judge:` answers — it stops the lane before the diff is ' +
-          'what is in doubt — so the pass is held for a person rather than buying a round for it'
-        const routed: StepRouted = { ending: 'routed', to: 'waiting', why }
-        record({ step: 'proposed', ending: routed, results: [] })
-        routes.push({ from: at, chose: 'waiting', to: 'waiting', why, ceiling: null })
-        rested = 'waiting'
-        stoppedAt = { step: at, ending }
-        break
-      }
-      // Every other reason: no router visit, and `holdOf` (`#466`) reads
+      // `AgentCrashed` and `SignoffRequired` are the only two left here
+      // (`#472`): every other fall-short is a `Propose` now, handled by the
+      // branch above. No router visit for either — `holdOf` (`#466`) reads
       // `next.reason` directly.
       stoppedAt = { step: at, ending }
       waitOn = next.reason
