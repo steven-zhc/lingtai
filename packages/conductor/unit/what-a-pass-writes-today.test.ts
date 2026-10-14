@@ -262,10 +262,12 @@ runtime:
 `
     const store = memoryStore()
     const did: string[] = []
+    const judgePrompts: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
       run: async (request) => {
         if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
+        judgePrompts.push(request.prompt)
         return {
           ...(await refusingRuntime.run(request)),
           text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
@@ -332,6 +334,12 @@ runtime:
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
+    // **`ReviewFindings` routed with a restart on offer** (#462's own test
+    // list): `rounds: 1` and `restarts: 1` are both unspent on this arrival,
+    // so the judge's brief offers `claim` (off `restart`) beside `implement`
+    // and `waiting`, not only the two a spent restart would leave.
+    expect(judgePrompts).toHaveLength(1)
+    expect(judgePrompts[0]).toContain('`claim`')
   })
 
   /**

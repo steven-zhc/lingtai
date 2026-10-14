@@ -1621,6 +1621,223 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   })
 
   /**
+   * **Only `HandToPerson` on offer, so no judge is asked at all — not even a
+   * declared one** (the ticket's own *Watch out*, and this is the *Done when*
+   * it names). `rounds: 0` and `restarts: 0` from the very first arrival, so
+   * `implement` and `claim` are both off the offer before anything is asked:
+   * `offer.available.length < 2` is checked before `judge` is ever called, and
+   * that holds whether the recipe names a runtime or nothing at all.
+   */
+  it('dispatches no judge when only `HandToPerson` is on offer, declared or not', async () => {
+    const NOTHING_TO_SPEND = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: cold reviewer
+      agent: claude-code
+      prompt: look for races
+  proposed:
+    - name: the lines or the approach
+      judge: claude-code
+      when: findings
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 0, restarts: 0 }
+`
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ran: string[] = []
+    const judging: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        ran.push(request.runId)
+        return refusingRuntime.run(request)
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, NOTHING_TO_SPEND),
+        runtime: judging,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(ran.filter((id) => id.includes(':judge:'))).toEqual([])
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const routed = run
+      .filter((e) => e.type === 'PassRouted')
+      .map((e) => e.data as { chose: string; to: string; why: string; ceiling: string | null })
+    expect(routed).toHaveLength(1)
+    expect(routed[0]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
+    expect(routed[0]!.why).toContain('nothing but a person was on offer')
+
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+  })
+
+  /**
+   * **`ReviewEmpty` has no paid candidate either** (0120 §3's appendix): a
+   * blocker finding with a blank `failureScenario` is an opinion and not a
+   * criterion (`fix.ts:375`'s `actionable`), so `fix-lines` and `restart` are
+   * both `NoCriterion` from the first arrival — even with `rounds: 2` unspent
+   * and an agent judge declared (`JUDGED_BY_AN_AGENT`), nothing is asked and
+   * the hold is `Routed{when: 'findings'}`, the same shape an unrouted
+   * `ReviewFindings` judgement gets.
+   */
+  it('asks no judge for a `ReviewEmpty` refusal, which has no criterion to pay for', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ran: string[] = []
+    const opinion = JSON.stringify({
+      findings: [
+        { file: 'src/fix.ts', line: 12, severity: 'blocker', claim: 'a hunch about the shape', failureScenario: '  ' },
+      ],
+    })
+    const emptyReview: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        ran.push(request.runId)
+        if (!request.runId.includes(':review:')) return refusingRuntime.run(request)
+        return { ...(await refusingRuntime.run(request)), text: opinion }
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
+        runtime: emptyReview,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(ran.filter((id) => id.includes(':judge:'))).toEqual([])
+
+    const item = await store.read(`wi-${PROJECT}-7`)
+    const blocked = item.find((e) => e.type === 'WorkItemBlocked')!
+    expect((blocked.data as { hold: Hold }).hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
+
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+  })
+
+  /**
+   * **`UnknownCandidate`**: the judge answers a destination no candidate maps
+   * to at all. `build` is a real `Destination` the pass can route other visits
+   * to (`merge`'s own, pre-`#460`), but `fix-lines` for a `ReviewFindings` is a
+   * `FixRound{to: 'implement'}` by construction, so nothing in the offer,
+   * available or excluded, answers to it — `decideRoute` reads that as
+   * `UnknownCandidate`, and `PassRouted.chose` still names what the judge
+   * said, for the card.
+   */
+  it('refuses a judge that answers a destination no candidate maps to, as UnknownCandidate', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const judging: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
+        return {
+          ...(await refusingRuntime.run(request)),
+          text: '```json\n{"next": "build", "why": "go fix it where it actually broke"}\n```',
+        }
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
+        runtime: judging,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const routed = run.filter((e) => e.type === 'PassRouted').map((e) => e.data as { chose: string; to: string })
+    expect(routed[0]).toMatchObject({ chose: 'build', to: 'waiting' })
+
+    const item = await store.read(`wi-${PROJECT}-7`)
+    const blocked = item.find((e) => e.type === 'WorkItemBlocked')!
+    expect((blocked.data as { hold: Hold }).hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
+
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+  })
+
+  /**
+   * **`CandidateUnavailable`**: restarts spent, rounds left, and the judge
+   * answers `claim` anyway. `JUDGED_BY_AN_AGENT`'s own ceilings (`rounds: 2,
+   * restarts: 0`) mean `restart` is excluded on the very first arrival, so a
+   * judge choosing it is refused the same way a spent `rounds` would be —
+   * `chose` still names the destination (`claim`), and `ceiling` names what
+   * took it off the offer.
+   */
+  it('refuses a judge that answers `claim` with restarts spent, as CandidateUnavailable', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const judging: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
+        return {
+          ...(await refusingRuntime.run(request)),
+          text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+        }
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
+        runtime: judging,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const routed = run
+      .filter((e) => e.type === 'PassRouted')
+      .map((e) => e.data as { chose: string; to: string; why: string; ceiling: string | null })
+    expect(routed[0]).toMatchObject({ chose: 'claim', to: 'waiting', ceiling: 'restarts' })
+    expect(routed[0]!.why).toContain('the judge chose `restart`, and `restarts` is spent')
+
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+  })
+
+  /**
    * **Two runtimes in one pass** — the claim `#314` exists to be testable by,
    * and the one thing a single working runtime could not show
    * ([0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)

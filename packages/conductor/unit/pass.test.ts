@@ -1495,6 +1495,42 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
   })
 
   /**
+   * **Empty `BuildRed` is `NoCriterion`, the same as an opinion-only
+   * `ReviewEmpty`** (0120 §3's appendix) — `offerFor`'s `round` for a
+   * `BuildRed` reads `proposal.output.trim() !== ''`, so a refusal that
+   * printed nothing buys no round and asks no judge, declared or not. Proved
+   * here rather than through `once()`: only `run:` serves `build` and it
+   * spawns a process (#461's design, row 3), which is the filesystem and so
+   * is integration (0060 §1).
+   */
+  it('asks no judge for an empty `BuildRed`, which has no criterion to pay for', async () => {
+    const recipe = recipeWith({})
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      build: [canned('tests', { verdict: 'failed', evidence: '', findings: [] })],
+    })
+    const { emit } = events()
+    let dispatched = 0
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async () => {
+        dispatched += 1
+        return { noJudge: true }
+      },
+    })
+
+    expect(dispatched).toBe(0)
+    expect(result.routes[0]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
+    expect(result.rested).toBe('waiting')
+  })
+
+  /**
    * **A restart is a requeue and it ends the pass** (0058 §3b): the item is
    * released, and the queue's next pass orders by kind and then by number as it
    * always does — so the next ticket taken may not be this one. Which is why the
