@@ -530,8 +530,7 @@ describe('four steps may refuse, and the other six may not', () => {
    *
    * A plugin saying no at a step the workflow does not let refuse is an ordinary
    * verdict and not a programming error. Reported as `did-not-finish`, which buys
-   * no fix round (0057) and is not routed, because a step that may not refuse has
-   * not refused.
+   * no fix round (0057) on its own — the step's own ending stands either way.
    *
    * **`yields: 'commit'`, not `'verdict'`** (`#467`): 0120 §1's legality table
    * has no `verdict`-yielding action at `implement` at all — `nextOf` throws
@@ -539,6 +538,14 @@ describe('four steps may refuse, and the other six may not', () => {
    * misreading one — so a realistic stand-in for *something declared at
    * `implement` refuses* is a failing commit-yielding one instead, same kind
    * `committedSomething` answers with when it succeeds.
+   *
+   * **Since `#472` this does route**: a `commit`-yielding `NotDone` is
+   * `setupRefused`'s to answer regardless of step (it always was, even before
+   * this ticket), and `setupRefused` is one of the seven that now proposes
+   * rather than waiting directly. `bornAtOrAfterImplement('implement')` is
+   * true, so `implement` is on offer beside `restart` — but with no judge
+   * declared, nothing is chosen, and the pass rests exactly where it did
+   * before: no round bought, same person.
    */
   it("reads a plugin's failed verdict at one of the five as did-not-finish", async () => {
     const { bodies } = watching()
@@ -567,8 +574,14 @@ describe('four steps may refuse, and the other six may not', () => {
     })
     // Everything the action said is kept: the router's whole job is reading it.
     expect(result.steps.find((s) => s.step === 'implement')?.results).toHaveLength(1)
-    // And no round was bought for it, which is what `did-not-finish` costs.
-    expect(result.routes).toEqual([])
+    // Routed, but no round was bought for it: nothing chose `implement` off
+    // the offer, because no judge is declared.
+    expect(result.routes).toMatchObject([{ from: 'implement', to: 'waiting' }])
+    expect(result.waitOn).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'SetupRefused', from: 'implement' },
+    })
+    expect(result.rested).toBe('waiting')
   })
 
   /**
@@ -652,22 +665,24 @@ describe('four steps may refuse, and the other six may not', () => {
       },
     })
     // The step's own body never ran: its plugins ended the step. **Nor does
-    // `proposed`'s** (`#467`) — `nextOf` answers `prepared`'s own refusal
-    // `WaitOnPerson{SetupRefused}` directly, so the walk goes straight to
-    // `end` rather than taking a second visit to a router that cannot be the
-    // step's own setup breaking (0120 §2's variant table).
+    // `proposed`'s**, even though the refusal routes since `#472` —
+    // `routeProposal` builds the routing visit directly rather than through a
+    // second call to `proposed`'s own body, so `seen` (body calls alone)
+    // stays `['claim', 'admit', 'end']` either way.
     expect(seen.map((s) => s.step)).toEqual(['claim', 'admit', 'end'])
   })
 
   /**
-   * **`prepared`'s own refusal goes straight to a person, without routing**
-   * (`#467`, 0120 §2's variant table) — the one of 0058 §3b's seven this
-   * ticket takes off the drawing. No agent has run, so there is no diff and
-   * no judge could choose *the lines* over *the approach* about one; `onOffer`
+   * **`prepared`'s own refusal routes, but never to `implement`** (`#472`,
+   * 0120 §2's variant table). No agent has run, so there is no diff and no
+   * judge could choose *the lines* over *the approach* about one; `onOffer`
    * already said so by leaving `implement` off `prepared`'s own offer
-   * (`AFTER_AN_AGENT`), and this is that same fact read off `nextOf` instead.
+   * (`AFTER_AN_AGENT`, `bornAtOrAfterImplement('prepared')` is false), and
+   * `nextOf` answers `Propose` regardless — the routing visit happens, the
+   * body never runs for it (`seen` stays untouched), and with no judge
+   * declared the pass rests exactly where it did before this ticket.
    */
-  it('sends a refusal at prepared straight to a person, with no second visit to proposed', async () => {
+  it('routes a refusal at prepared, but never offers it `implement`', async () => {
     const { recipe, at } = installFails()
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions(at)
@@ -675,10 +690,13 @@ describe('four steps may refuse, and the other six may not', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.steps.map((s) => s.step)).not.toContain('proposed')
-    expect(result.routes).toEqual([])
-    expect(result.rested).toBeNull()
-    expect(result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
+    expect(result.steps.map((s) => s.step)).toContain('proposed')
+    expect(result.routes).toMatchObject([{ from: 'prepared', to: 'waiting' }])
+    expect(result.rested).toBe('waiting')
+    expect(result.waitOn).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'SetupRefused', from: 'prepared' },
+    })
     expect(seen.some((s) => s.step === 'proposed')).toBe(false)
   })
 })
@@ -1172,17 +1190,21 @@ describe('every step that does not pass arrives at proposed', () => {
   })
 
   /**
-   * **A `review` whose answer could not be read still visits `proposed`'s own
-   * inspection, and a declared `human:` there still runs** (`#467`) — unlike
-   * `build`'s refusal above, which routes straight out of `routeProposal`
-   * without ever calling `proposed`'s own plugins or body (`#462`). `review`
-   * always ends `passed` (`endingOf`), so the walk reaches `proposed` the
-   * ordinary way, as a spine visit, which is the one condition under which
-   * `runStep` runs a step's own declared plugins at all. Skipping that visit
-   * would leave the declared gate silently unbuilt and the pass reporting
-   * `passed` where a person should be asked.
+   * **A `review` whose answer could not be read never runs `proposed`'s own
+   * declared `human:`** (`#472`, reversing `#467`'s own rule here). Before
+   * this ticket, `review`'s own `AnswerUnreadable` was carried forward as a
+   * pending flag (`pendingUnreadableReview`, `db205f85`) so that the walk
+   * reached `proposed` as an ordinary spine visit and ran its declared
+   * plugins before routing. `nextOf` answers `Propose{AnswerUnreadable}`
+   * directly now, exactly as it does for the other six, so `routeProposal`
+   * builds the routing visit itself (`#462`) without ever calling `proposed`'s
+   * own body — the same shape `build`'s refusal above already had. A sign-off
+   * is for something about to land, and nothing is about to land here (see
+   * 0120 §2's own note on this reversal); the routed `AnswerUnreadable`
+   * still reaches a person, just through the router's own floor rather than
+   * the declared gate.
    */
-  it("still runs proposed's own declared human: when review's own answer could not be read", async () => {
+  it("does not run proposed's own declared human: when review's own answer could not be read", async () => {
     const recipe = recipeWith({
       review: [{ name: 'cold review', agent: 'claude-code', prompt: '' }],
       proposed: [{ name: 'sign off', human: 'ship it?' }],
@@ -1207,20 +1229,23 @@ describe('every step that does not pass arrives at proposed', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(ran.some((r) => r.step === 'proposed')).toBe(true)
-    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([
-      { action: 'sign off', verdict: 'needs-approval', evidence: 'ship it?', findings: [] },
-    ])
-    expect(result.waitOn).toMatchObject({ _tag: 'SignoffRequired' })
-    expect(result.rested).toBeNull()
+    expect(ran.some((r) => r.step === 'proposed')).toBe(false)
+    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable' } })
+    expect(result.rested).toBe('waiting')
   })
 
   /**
-   * And the three that are not on the drawing go nowhere. `proposed` is the
-   * router, so a visit that did not pass there has nothing above it to appeal
-   * to; `waiting` is where it rests and `stoppedAt` names it.
+   * **`proposed`'s own refusal routes to itself now** (`#472`): `verdictRefusedAs`
+   * reads a refusal at `proposed` as `CheckRefused` exactly as it does at
+   * `merge`, and `CheckRefused` is one of the seven that always proposes, so
+   * the spine visit that failed is followed by a second, routing visit to
+   * `proposed` — the one place a step's own refusal is also the router's to
+   * answer. With no judge declared for `check-refused`, nothing is chosen and
+   * the pass rests for a person exactly as the direct `WaitOnPerson` did
+   * before this ticket.
    */
-  it("does not route proposed's own refusal", async () => {
+  it("routes proposed's own refusal to itself, in a second visit", async () => {
     const recipe = recipeWith({ proposed: [{ name: 'tamper', run: 'true' }] })
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions({
@@ -1238,23 +1263,29 @@ describe('every step that does not pass arrives at proposed', () => {
     })
 
     expect(result.stoppedAt).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
-    expect(result.routes).toEqual([])
-    // One visit to `proposed`, not two: nothing sent its own refusal to itself.
-    expect(result.steps.filter((s) => s.step === 'proposed')).toHaveLength(1)
+    expect(result.routes).toMatchObject([{ from: 'proposed', to: 'waiting' }])
+    // Two visits to `proposed`: the spine visit that failed, and the routing
+    // visit `routeProposal` takes to answer that same failure.
+    expect(result.steps.filter((s) => s.step === 'proposed')).toHaveLength(2)
+    expect(result.rested).toBe('waiting')
     expect(seen.at(-1)?.step).toBe('end')
   })
 
   /**
-   * `never-ran` and `held` do not arrive either, and the endings say why. A
-   * quota is about the account rather than the diff, and the only judge worth an
-   * agent is itself an agent (0061 §3) — so paying to ask *what shall we do
-   * about the quota* is the one route that cannot work. A declared `human:` is
-   * the recipe having already decided a person is next.
+   * **`never-ran` still does not arrive** — a quota is about the account
+   * rather than the diff, and the only judge worth an agent is itself an
+   * agent (0061 §3), so `requeuedNeverStarted` is not one of the seven and
+   * never routes. **`needs-approval` does, since `#472`**: the yield is
+   * `verdict`, so a `needs-approval` answer still clears as `Completed{refused}`
+   * (`verdictResultOf`), `checkRefused` is one of the seven, and a `question
+   * already put to a person` reaches a person through the router's own floor
+   * now rather than directly — the step's own `held` ending stands either
+   * way, so what moves is only whether a `PassRouted` sits beside it.
    */
-  it('does not route a never-ran or a question already put to a person', async () => {
-    for (const [verdict, ending] of [
-      ['never-ran', 'never-ran'],
-      ['needs-approval', 'held'],
+  it('does not route a never-ran, but does route a question already put to a person', async () => {
+    for (const [verdict, ending, routes] of [
+      ['never-ran', 'never-ran', false],
+      ['needs-approval', 'held', true],
     ] as const) {
       // The lane so the recipe resolves (`#270`); what runs is `watchingActions`'s,
       // and this list is only asked to be a legal one.
@@ -1280,7 +1311,7 @@ describe('every step that does not pass arrives at proposed', () => {
       })
 
       expect(result.stoppedAt).toMatchObject({ step: 'merge', ending: { ending } })
-      expect(result.routes).toEqual([])
+      expect(result.routes).toEqual(routes ? [expect.objectContaining({ from: 'merge' })] : [])
     }
   })
 
@@ -1935,10 +1966,11 @@ describe('a body can read what the steps before it said', () => {
     expect(result.steps.find((s) => s.step === 'prepared')?.results).toEqual([
       { action: 'install', verdict: 'failed', evidence: 'exited 1', findings: [] },
     ])
-    // `end` sees the step that stopped the pass, not the two before it only —
-    // and no `proposed` in between it and `end` (`#467`): `prepared`'s own
-    // refusal answers `WaitOnPerson{SetupRefused}` directly.
-    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared'])
+    // `end` sees the step that stopped the pass and the routing visit
+    // `prepared`'s own refusal takes since `#472` — `SetupRefused` is one of
+    // the seven, so it reaches `proposed` before `end` even with no judge
+    // declared to answer it.
+    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'proposed'])
   })
 })
 
