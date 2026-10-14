@@ -304,7 +304,6 @@ describe('the ten steps are the vocabulary, and here they are data', () => {
     expect(PASS.filter((s) => s.plugins === 'effects').map((s) => s.step)).toEqual(['end'])
     expect(PASS.find((s) => s.step === 'end')?.refuses).toBe(false)
   })
-
 })
 
 // ------------------------------------------------------- an empty step ----

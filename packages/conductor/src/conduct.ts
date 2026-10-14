@@ -24,6 +24,7 @@ import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, t
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
   type Hold,
+  type RunRef,
   type Tier,
   WIP_COMMIT_PREFIX,
   legacyColumns,
@@ -176,6 +177,7 @@ import { isBuiltInJudge } from '@lingtai/recipe'
 import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
+import { holdOf } from './adapters.ts'
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
 import { agentBranch, armBranch } from './branches.ts'
@@ -3615,14 +3617,49 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const roundsSpent = pass.routes.filter((route) => route.to !== 'waiting' && route.to !== 'claim').length
 
       /**
-       * The `Hold` a person is owed, built by `holdOfPass` from what the pass
-       * reported — classified by who sent the item to a person (0118 §1,
-       * `8a669849`, #452). `rested` and `declined` are the two inputs that
-       * reading needs beyond what the pass already reports on `stopped`.
+       * **The `run` `holdOfPass` builds today** (`hold-of.ts:97-102`) — the two
+       * facts only `conduct.ts` holds and neither `nextOf` nor `holdOf` can
+       * know: `wait.ts`'s `RunRef` has no `repairOf`, and `unpushed` is known
+       * only after the pass, from `notPushed`. Built once so both `holdFor`
+       * branches below patch the same object onto whichever `Hold` they build.
+       */
+      const runRef: RunRef = {
+        runId,
+        ...(repairOf === null ? {} : { repairOf: { after: repairOf.after, reason: repairOf.reason } }),
+        ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
+      }
+
+      /**
+       * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
+       * (`#466`) where the loop asked it (`pass.waitOn !== null`), and
+       * `holdOfPass` from what the pass reported otherwise: the router's own
+       * rest (`rested === 'waiting'` with nothing on `waitOn`) and a `claim`
+       * decline are still `holdOfPass`'s until #462 moves `proposed` onto
+       * `nextOf` too. `rested` and `declined` are the two inputs `holdOfPass`
+       * needs beyond what the pass already reports on `stopped`.
        * `legacyColumns` turns the result back into the
        * `question`/`needs`/`diagnosis` every reader below still wants.
        */
       const holdFor = async (): Promise<Hold> => {
+        if (pass.waitOn !== null) {
+          const hold = holdOf(pass.waitOn, { branch, base, findings })
+          if (hold._tag === 'Question') return hold
+          const withRun: Hold = { ...hold, run: runRef }
+          // 0118 §3's rule: `null` rather than an invented zero — `holdOf`
+          // already writes that, and `ceilingHit` is the one place left that
+          // knows what was actually spent (row 14a, `#466`'s own header).
+          if (withRun._tag === 'Ceiling' && ceilingHit !== null) {
+            return { ...withRun, turns: ceilingHit.turns, costUsd: ceilingHit.costUsd }
+          }
+          // `declined.said` is `FixApplied.said` (#453), read here the same
+          // way `holdOfPass`'s own caller reads it — `nextOf`'s own `said`
+          // (`lastCommitEvidence`, skipping a kept `run:`'s evidence) can
+          // differ from the fixer's actual last words on `FixApplied` (row 7).
+          if (withRun._tag === 'Declined' && declined !== null) {
+            return { ...withRun, said: declined.said }
+          }
+          return withRun
+        }
         const integrationRefusal =
           stopped?.step === 'merge' && stopped.ending.ending === 'refused'
             ? await lastIntegrationRefusal(store, project, base, workItemId, branch)
