@@ -143,7 +143,10 @@ type Action = ActionBase &
           | Waived
           | NotReached
       }
-    | { yields: 'signoff'; result: { _tag: 'Completed'; requested: { question: string } | null } | Waived | NotDone | NotReached } // null: not triggered; NotDone: the dependency a watch:/human: reads before it can ask threw (#466)
+    | {
+        yields: 'signoff'
+        result: { _tag: 'Completed'; requested: { question: string } | null } | Waived | NotDone | NotReached
+      } // null: not triggered; NotDone: the dependency a watch:/human: reads before it can ask threw (#466)
     | {
         yields: 'commit'
         result:
@@ -267,42 +270,68 @@ type Proposal =
   | { _tag: 'InputNeeded'; from: 'design' | 'implement'; question: string }
   | { _tag: 'MergeConflict'; output: string; paths: string[] | null; baseSha: string | null; headSha: string | null } // output is the lane's own text; the three path fields are null where the action's result carried none (#466)
   | { _tag: 'VerifyRed'; output: string } // the base moved, and the re-verify on it went red
+  | { _tag: 'SetupRefused'; output: string } // prepared refused, or a non-verdict action did not finish
+  | { _tag: 'CheckRefused'; output: string } // a declared check at proposed or before the lane at merge refused
+  | { _tag: 'AnswerUnreadable'; raw: string } // the agent answered and the machine could not read it
+  | { _tag: 'NothingProduced' } // implement at round 0 cleared and committed nothing
+  | { _tag: 'FixerDisagrees'; said: string } // implement in a fix round cleared and committed nothing
+  | { _tag: 'MergeRefused'; reason: RefusalReason; output: string } // the lane refused for one of the seven (§4)
+  | { _tag: 'BudgetExhausted'; kind: 'out-of-turns' | 'out-of-usd'; turns: number | null; costUsd: number | null }
 ```
 
 Each variant says which step it comes from; only `InputNeeded` can come from
 two, so only it carries `from`, and `fromOf(proposal)` derives the step for
 the rest. The five `JudgeWhen`s map onto it: `red` is `BuildRed`,
 `verify-failed` `VerifyRed`, `conflict` `MergeConflict`, `needs-input`
-`InputNeeded`, `findings` `ReviewFindings` and `ReviewEmpty`.
+`InputNeeded`, `findings` `ReviewFindings` and `ReviewEmpty`. Each of the
+seven variants after `VerifyRed` has a `JudgeWhen` of its own, and its
+built-in judge (`BUILT_IN_FOR`) is `null`: declared nothing, it reaches a
+person, which is today's outcome with one `PassRouted` more.
 
 There is no `proposalOf`: a proposal is `nextOf`'s `Propose` branch (§4),
 read off the deciding action by step and yield, never by plugin:
 
-| Step      | Deciding action                                                   | Proposal                                                         |
-| --------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
-| build     | `verdict` `Completed{refused}`                                    | `BuildRed{output: evidence}`                                     |
-| review    | `verdict` `Completed{refused}`, a finding with a failure scenario | `ReviewFindings`                                                 |
-| review    | `verdict` `Completed{refused}`, none with one                     | `ReviewEmpty{said: evidence, findings}`                          |
-| design    | `design` `Asked`                                                  | `InputNeeded{question}` (the draft stays on the `StepEnded`)     |
-| implement | `commit` `Completed` with a `question`                            | `InputNeeded{question}` (a commit beside it stays on the branch) |
-| merge     | `merge` `Completed{Conflicted}`                                   | `MergeConflict{output: evidence, ...Conflicted}`                 |
-| merge     | `merge` `Completed{IntegrationRefused{verify-failed}}`            | `VerifyRed{output: evidence}`                                    |
+| Step                            | Deciding action                                                   | Proposal                                                         |
+| ------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| build                           | `verdict` `Completed{refused}`                                    | `BuildRed{output: evidence}`                                     |
+| review                          | `verdict` `Completed{refused}`, a finding with a failure scenario | `ReviewFindings`                                                 |
+| review                          | `verdict` `Completed{refused}`, none with one                     | `ReviewEmpty{said: evidence, findings}`                          |
+| design                          | `design` `Asked`                                                  | `InputNeeded{question}` (the draft stays on the `StepEnded`)     |
+| implement                       | `commit` `Completed` with a `question`                            | `InputNeeded{question}` (a commit beside it stays on the branch) |
+| merge                           | `merge` `Completed{Conflicted}`                                   | `MergeConflict{output: evidence, ...Conflicted}`                 |
+| merge                           | `merge` `Completed{IntegrationRefused{verify-failed}}`            | `VerifyRed{output: evidence}`                                    |
+| merge                           | `merge` `Completed{IntegrationRefused}`, the other seven reasons  | `MergeRefused{reason, output: evidence}`                         |
+| prepared                        | `verdict` `Completed{refused}` (a timeout is a refusal)           | `SetupRefused{output: evidence}`                                 |
+| any                             | `nothing`, `worktree`, `commit`, `design`, `signoff` `NotDone`    | `SetupRefused{output: evidence}`                                 |
+| proposed, merge                 | `verdict` `Completed{refused}`                                    | `CheckRefused{output: evidence}`                                 |
+| review, proposed, merge; design | `AnswerUnreadable`                                                | `AnswerUnreadable{raw}`                                          |
+| implement                       | round 0, all cleared, no `head`                                   | `NothingProduced`                                                |
+| implement                       | round > 0, all cleared, no `head`                                 | `FixerDisagrees{said}`                                           |
+| any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{kind, turns, costUsd}`                          |
 
-Everything else that falls short ends the pass without a proposal (§4).
+**Everything the work falls short on goes through `proposed`; only what has
+nothing to decide, or nobody able to decide it, ends the pass without a
+proposal (§4).** `proposed` is the one place a recipe author steps in, with
+a `judge:` keyed by `when:` and a `human:` or `watch:` gate. A stop that
+skipped it would silently disable those declarations for that stop, as an
+unreadable review answer once skipped a declared `human:` (#467). Routing
+what has only a person to offer costs nothing, because the built-in judge is
+synchronous. And "only a person" is what nobody has declared yet, not what
+nobody may ever declare: a judge for `MergeRefused{dirty-base}` can rebase
+and retry, one for `SetupRefused` can restart, and one for
+`BudgetExhausted` can restart from the kept work (#468), with the restart
+counted in `restartsSpent` like any other.
 
 - **`review` refuses.** Today `review` refuses nothing and its findings are
   judged on `proposed`'s way through (`pass-steps.ts:602`). A refusing
   reviewer now proposes `ReviewFindings` and the offer carries the restart, so
   the way-through judgement moves rather than being kept in two places.
-- **An unreadable answer is not a proposal.** It reaches a person before any
-  judge is asked today (`pass-steps.ts:885`), at `review` as at every other
-  step, so it is `AnswerUnreadable` (0118).
-- **`prepared`'s refusal does not route.** It reaches the router today with
-  an offer of nothing but a person; going straight to `SetupRefused` changes
-  no outcome and writes one `PassRouted` fewer.
-- **A check before the lane at `merge` does not route.** `directionOf` has no
-  direction for it today (`pass-steps.ts:622`); it reaches a person as
-  `CheckRefused`.
+- **An unreadable answer is a proposal.** It reached a person before any
+  judge was asked (`pass-steps.ts:885`), so a `human:` declared at
+  `proposed:` never saw it. It now proposes `AnswerUnreadable`, and with
+  nothing declared a person still gets it.
+- **`prepared`'s refusal and a check before the lane at `merge` route.** Both
+  reach a person when nothing is declared, as they did before #467.
 
 ### 3. Route: how `proposed` chooses
 
@@ -403,25 +432,21 @@ const spentAfter: (spent: Spent, next: PassNext) => Spent
 ```
 
 `nextOf` never returns `FixRound`: a step that falls short proposes, and only
-a route spends. **Where the deciding action does not propose**, `nextOf`
-answers by yield and step:
+a route spends. **What does not propose** is what has nothing to decide, or
+nobody able to decide it, and `nextOf` answers it by yield and step:
 
-| Yields / step                                        | Fell short as                                                         | `nextOf`                         |
-| ---------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------- |
-| any                                                  | `NeverStarted{scope}`                                                 | `Requeued{NeverStarted{scope}}`  |
-| any                                                  | `Interrupted{crash \| timeout \| aborted}`                            | `WaitOnPerson{AgentCrashed}`     |
-| any                                                  | `Interrupted{out-of-turns \| out-of-usd}`                             | `WaitOnPerson{BudgetExhausted}`  |
-| `nothing`, `worktree`, `commit`, `design`, `signoff` | `NotDone`                                                             | `WaitOnPerson{SetupRefused}`     |
-| `verdict` at `prepared`                              | `Completed{refused}` (a timeout is a refusal, `process-action.ts:74`) | `WaitOnPerson{SetupRefused}`     |
-| `verdict` at `proposed`, `merge`                     | `Completed{refused}`                                                  | `WaitOnPerson{CheckRefused}`     |
-| `verdict` at `review`, `proposed`, `merge`; `design` | `AnswerUnreadable`                                                    | `WaitOnPerson{AnswerUnreadable}` |
-| `implement`, round > 0                               | all cleared, no `head`                                                | `WaitOnPerson{FixerDisagrees}`   |
-| `implement`, round 0                                 | all cleared, no `head`                                                | `WaitOnPerson{NothingProduced}`  |
-| `signoff`                                            | `Completed{requested}`                                                | `WaitOnPerson{SignoffRequired}`  |
-| `merge`                                              | `Completed{Integrated}` (cleared)                                     | `Landed{integrated: mergeSha}`   |
-| `merge`                                              | `IntegrationRefused`, the other seven reasons                         | `WaitOnPerson{MergeRefused}`     |
+| Yields / step | Fell short as                              | `nextOf`                        |
+| ------------- | ------------------------------------------ | ------------------------------- |
+| any           | `NeverStarted{scope}`                      | `Requeued{NeverStarted{scope}}` |
+| any           | `Interrupted{crash \| timeout \| aborted}` | `WaitOnPerson{AgentCrashed}`    |
+| `signoff`     | `Completed{requested}`                     | `WaitOnPerson{SignoffRequired}` |
+| `merge`       | `Completed{Integrated}` (cleared)          | `Landed{integrated: mergeSha}`  |
 
-The seven are `dirty-base`, `unpushed-base`, `pending-migration`,
+An agent crash does not route because the judge would be an agent too, on
+the same usage cap or login; retrying it is the scheduler's. A signoff is
+`proposed`'s own gate. `Landed` and `Requeued` have nothing left to decide.
+
+The seven lane refusals (§2's `MergeRefused`) are `dirty-base`, `unpushed-base`, `pending-migration`,
 `no-commits`, `push-rejected`, `wip-commit` and `unexpected`
 (`pass-steps.ts:606`): they stop the lane before the diff is in doubt.
 `wip-commit` is the lane refusing a branch that carries a WIP commit
