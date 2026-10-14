@@ -141,39 +141,6 @@ describe('holdOfPass', () => {
     expect(hold).toMatchObject({ _tag: 'Human', findings: [finding] })
   })
 
-  it('reads a build refusal with the rounds spent as Routed, when: red, carrying the red output', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
-      lastRoute: { from: 'build', to: 'waiting', why: 'exit 2' },
-    })
-    expect(hold).toMatchObject({
-      _tag: 'Routed',
-      when: 'red',
-      why: 'agent/1 into main is waiting on you. exit 2',
-      raw: 'exit 2',
-      paths: null,
-      baseSha: null,
-      headSha: null,
-    })
-  })
-
-  it('reads a merge conflict refusal with the rounds spent as Routed, when: conflict, carrying the integration evidence', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      stopped: { step: 'merge', ending: { ending: 'refused', because: 'conflict', at: null, detail: 'CONFLICT' } },
-      lastRoute: { from: 'merge', to: 'waiting', why: 'CONFLICT' },
-      integrationRefusal: { paths: ['a.ts'], baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) },
-    })
-    expect(hold).toMatchObject({
-      _tag: 'Routed',
-      when: 'conflict',
-      paths: ['a.ts'],
-      baseSha: 'a'.repeat(40),
-      headSha: 'b'.repeat(40),
-    })
-  })
-
   it('reads a `prepared` refusal as SetupRefused, lifts: person — excluded from step 1 by name', () => {
     // `rested` stays `'waiting'` (BASE_INPUT's default — the router does send
     // this on, same as a `build` red would be) and `directionOf` would answer

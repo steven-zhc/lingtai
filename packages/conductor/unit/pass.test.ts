@@ -516,7 +516,7 @@ describe('four steps may refuse, and the other six may not', () => {
         ending: 'did-not-finish',
         because: 'threw',
         detail: expect.stringContaining(
-          'the `merge` step routed the pass to `implement`, and `proposed` is the only step that routes',
+          'the `merge` step routed the pass to `implement`, and no body may route any more',
         ),
       },
     })
@@ -604,10 +604,15 @@ describe('four steps may refuse, and the other six may not', () => {
     expect(reviewed?.results).toEqual([
       { action: 'cold reviewer', verdict: 'failed', evidence: 'a blocker in pass.ts', findings: [finding] },
     ])
-    // Nothing refused, so nothing stopped the pass and no round was bought here:
-    // the visit that decides is `proposed`, on its own way through.
+    // Nothing refused, so nothing stopped the pass. `review`'s own `StepFailed`
+    // reaches `nextOf` as a `Propose{ReviewFindings}` right there (0120 §2),
+    // and the router finds no judge for `findings` (no declared one, no
+    // built-in) — `NotAsked`, rested at `waiting` with `stoppedAt` still null.
+    // `merge` is never reached: the route is taken the moment `review`
+    // reports, not after a walk through every later step.
     expect(result.stoppedAt).toBeNull()
-    expect(result.steps.map((s) => s.step)).toEqual([...STEPS])
+    expect(result.rested).toBe('waiting')
+    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'merge'))
   })
 
   /** And at one of the four the same verdict is a refusal, with all it buys. */
@@ -2283,8 +2288,11 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
     { module: 'pass.ts', allowed: ['pass-steps.ts', 'conduct.ts'] },
     // `hold-of.ts` calls `directionOf` (#452) — reading the same direction the
     // router already computed, never a second routing decision, so this is
-    // not the second engine the rule above is against.
-    { module: 'pass-steps.ts', allowed: ['conduct.ts', 'hold-of.ts'] },
+    // not the second engine the rule above is against. `pass.ts` is allowed
+    // since `#462`: `whatArrived` and the `Judging`/`Judged` types are what
+    // the shell builds a judge's brief from, off the visit a body reported —
+    // reading the arrival, never deciding a second route.
+    { module: 'pass-steps.ts', allowed: ['conduct.ts', 'hold-of.ts', 'pass.ts'] },
   ])('$module is imported only by $allowed', ({ module, allowed }) => {
     const src = fileURLToPath(new URL('../src', import.meta.url))
     // The span is kept inside one statement by refusing to cross the next

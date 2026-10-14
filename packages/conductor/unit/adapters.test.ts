@@ -13,7 +13,6 @@ import { allowedResolutions, recommendedResolution, type WaitReason } from '@lin
 import { describe, expect, it } from 'vitest'
 
 import { actionOf, eventOf, holdOf, outcomeOf } from '../src/adapters.ts'
-import { holdOfPass } from '../src/hold-of.ts'
 
 type ActionOutcomeEntry = PipelineResult['results'][number]
 
@@ -479,12 +478,19 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
   })
 
   /**
-   * **`holdOf` and `holdOfPass` must agree on a conflict built from a real
-   * step** (`#466`) — the fix for the cold review's own finding that
-   * `mergeResultOf` dropped `paths`/`baseSha`/`headSha` to empty always,
-   * which made `legacyColumns` lose the remedy on every conflict card.
+   * **A conflict built from a real step carries its paths through `holdOf`**
+   * (`#466`) — the fix for the cold review's own finding that `mergeResultOf`
+   * dropped `paths`/`baseSha`/`headSha` to empty always, which made
+   * `legacyColumns` lose the remedy on every conflict card.
+   *
+   * Since `#462` a `MergeConflict` never reaches `holdOfPass` — it is a
+   * `Propose` (`nextOf`'s own `MergeConflict` branch), so the pass never sets
+   * `stoppedAt` for it and `holdOf`'s `ProposedEscalated` arm is the only path
+   * a real conflict takes. Comparing it against a hand-built `holdOfPass`
+   * input compared two things nothing produces any more; this asserts the one
+   * path directly instead.
    */
-  it('a conflict built through `actionOf` → `nextOf` → `holdOf` matches `holdOfPass`, with real paths', () => {
+  it('a conflict built through `actionOf` → `nextOf` → `holdOf` carries its paths', () => {
     const conflict = { paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) }
     const built = actionOf(
       fakeAction('merge', 'merge', 'land'),
@@ -499,25 +505,17 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
       { _tag: 'ProposedEscalated', run, proposal: next.proposal, because: { _tag: 'NotAsked' } },
       pass,
     )
-    const viaPass = holdOfPass({
-      stopped: {
-        step: 'merge',
-        ending: { ending: 'refused', because: 'conflict', at: 'land', detail: 'both sides touched src/fix.ts' },
-      },
-      lastRoute: null,
-      ceilingHit: null,
-      rested: 'waiting',
-      declined: null,
-      findings: [],
-      runId: run.runId,
-      branch: pass.branch,
-      base: pass.base,
-      integrationRefusal: conflict,
+    expect(hold).toMatchObject({
+      _tag: 'Routed',
+      when: 'conflict',
+      raw: 'both sides touched src/fix.ts',
+      paths: conflict.paths,
+      baseSha: conflict.baseSha,
+      headSha: conflict.headSha,
     })
-    expect(hold).toEqual(viaPass)
   })
 
-  it("a conflict with no paths recorded — #461 row 10a's own shape — matches `holdOfPass` too, both `null`", () => {
+  it("a conflict with no paths recorded — #461 row 10a's own shape — carries `null` through `holdOf` too", () => {
     const built = actionOf(
       fakeAction('merge', 'merge', 'land'),
       entry('failed', { because: 'conflict', evidence: 'both sides touched src/fix.ts' }),
@@ -534,23 +532,7 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
       { _tag: 'ProposedEscalated', run, proposal: next.proposal, because: { _tag: 'NotAsked' } },
       pass,
     )
-    const viaPass = holdOfPass({
-      stopped: {
-        step: 'merge',
-        ending: { ending: 'refused', because: 'conflict', at: 'land', detail: 'both sides touched src/fix.ts' },
-      },
-      lastRoute: null,
-      ceilingHit: null,
-      rested: 'waiting',
-      declined: null,
-      findings: [],
-      runId: run.runId,
-      branch: pass.branch,
-      base: pass.base,
-      integrationRefusal: null,
-    })
-    expect(hold).toEqual(viaPass)
-    expect((hold as { paths: string[] | null }).paths).toBeNull()
+    expect(hold).toMatchObject({ _tag: 'Routed', when: 'conflict', paths: null, baseSha: null, headSha: null })
   })
 
   it('a review refusal with no `judge:` declared still names the findings, rather than a bare `why` and a null `raw`', () => {
