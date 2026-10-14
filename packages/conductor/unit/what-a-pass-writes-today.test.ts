@@ -29,10 +29,6 @@
  *
  * **Disagreements with 0120 found by running the rows, not by reading it:**
  *
- * - **`NotDone` at `implement` is not routed** (row 6, the ticket's own
- *   *Watch out*): `implement` is not in `REFUSING_STEPS` (`pass.ts:120`), so
- *   `goesToTheRouter` never sees the ending and it holds as `DidNotFinish`
- *   straight off the step, with no `PassRouted` anywhere on the run.
  * - **The wall is not a `Ceiling`** (row 14b): only `out-of-turns` and
  *   `out-of-usd` set `ceilingHit` (`conduct.ts:2774–2781`); `timeout` falls to
  *   an ordinary `DidNotFinish` at the step it stopped, same shape as row 6.
