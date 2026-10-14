@@ -96,7 +96,8 @@ import {
  * from a `PipelineResult` to a step's ending, so the five verdicts the pipeline
  * can produce are read in one place rather than at every call site.
  */
-import { STEPS, type Step, type StepOutcome } from '@lingtai/domain'
+import { decidingAction, nextOf, STEPS, type PassNext, type Step, type StepOutcome } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import type { Recipe, StepAction } from '@lingtai/recipe'
 
 // Aliased: this file exports its own `outcomeOf`, over `PassResult`'s
@@ -953,8 +954,10 @@ export function ceilingFor(to: Destination, offer: Offer): Ceiling | null {
  * it.** That function also takes `claim` off the set when something else on the
  * pass has asked for a person — releasing the item would throw their question
  * away — and in this loop nothing can have: a `human:` action, a `watch:` that
- * saw a migration and a repair all end their step `held`, `goesToTheRouter`
- * lets no `held` past, and the pass rests there without ever reaching a judge.
+ * saw a migration and a repair all end their step `held`, `nextOf` reads that
+ * ending's own `signoff` as asked rather than cleared and answers
+ * `WaitOnPerson{SignoffRequired}` directly — never `Propose` — so the pass
+ * rests there without ever reaching a judge.
  * So the rule is a fact about the walk rather than a line in this function, and
  * `alsoAsked` has no counterpart on `Judging` for the same reason.
  *
@@ -1005,53 +1008,6 @@ export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, rounds
  * list, and that omission is the whole of 0061 §3's worked example.
  */
 const AFTER_AN_AGENT: readonly Step[] = ['implement', 'build', 'review', 'proposed', 'merge']
-
-/**
- * The seven steps whose non-pass arrives at `proposed` — 0058 §3b's second
- * drawing, node for node.
- *
- * ```
- * a step that did not pass
- * admit · prepared · design · implement · build · review · merge   →   proposed
- * ```
- *
- * The three that are not on it are not omissions, and each is left off for its
- * own reason. **`claim`** has picked nothing, so there is no item, no worktree
- * and no diff for a judge to be handed — and 0058 §2 is why it is a rectangle at
- * all: *if a `claim` plugin could refuse, not one of those consequences would
- * mean anything.* **`proposed`** is the router, and a visit that did not pass
- * there has nowhere above it to appeal to, so `waiting` is where it rests.
- * **`end`** runs after the decision rather than before it.
- */
-export const ARRIVE_AT_THE_ROUTER = [
-  'admit',
-  'prepared',
-  'design',
-  'implement',
-  'build',
-  'review',
-  'merge',
-] as const satisfies readonly Step[]
-
-/**
- * Whether an ending has anywhere to go, or is where the pass rests.
- *
- * The other half of the drawing above, read off the ending rather than off the
- * step. What does **not** arrive is written on the endings themselves —
- * `StepHeld` (the recipe already asked a person), `StepNeverRan` (the account,
- * not the diff), `StepDidNotFinish` (0057 §2's crash has no question in it for a
- * judge to answer).
- *
- * **Two `ending` values and no `because`** (`#296`). It read
- * `ending === "did-not-finish" && ending.because === NEEDS_INPUT` until *asked*
- * was its own ending, which is one control-flow decision taken on a free-form
- * string: nothing in the type system said that a plugin spelling the token
- * differently, or forgetting it, would send a pass with a question in it to a
- * stop instead of to a judge.
- */
-function goesToTheRouter(ending: StepEnding): ending is StepRefused | StepAsked {
-  return ending.ending === 'refused' || ending.ending === 'asked'
-}
 
 // ------------------------------------------------------------- the loop ----
 
@@ -1222,6 +1178,19 @@ export interface PassResult {
    * offered. `stoppedAt` is what tells those apart from a landing.
    */
   readonly rested: Rest | null
+  /**
+   * **The reason `nextOf` (#459) gave for a `WaitOnPerson` answer, or
+   * `null`** (`#467`) — a second field rather than a second `stoppedAt`,
+   * because `stoppedAt` is read for far more than the hold (`conduct.ts`'s
+   * `claim` early return, `outcomeOf`, the *merge it anyway* veto) and this
+   * ticket adds one field rather than changing those readers.
+   *
+   * Set only where the loop asked `nextOf` and it answered `WaitOnPerson` —
+   * never on the router's own rest (`rested === 'waiting'` with nothing in
+   * this field), which stays `holdOfPass`'s until #462 moves `proposed` onto
+   * `nextOf` too.
+   */
+  readonly waitOn: WaitReason | null
 }
 
 /**
@@ -1302,6 +1271,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   const routes: RouteTaken[] = []
   let stoppedAt: PassResult['stoppedAt'] = null
   let rested: Rest | null = null
+  let waitOn: WaitReason | null = null
   let roundsSpent = 0
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
@@ -1399,6 +1369,36 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     return true
   }
 
+  /**
+   * **Every one of the seven's own way to `proposed`, carrying its reason** —
+   * 0058 §3b, and §3c's *what happened has to arrive intact*. A second visit
+   * to `proposed` rather than a branch inside the spine walk, running the
+   * router without the inspection: see `StepWork.arriving`.
+   *
+   * Shared between the two places that still take this path (`#467`): a visit
+   * `nextOf` was not asked about, and a `Propose` answered against an ending
+   * that itself refused or asked rather than passed.
+   */
+  const arriveAtTheRouter = async (at: Step, reached: StepReached, ending: StepReport): Promise<boolean> => {
+    const arrival = onOffer(at, ending, ceilings, roundsSpent)
+    const router = record(
+      await runStep(SPEC.proposed, options, bodies, [...steps], {
+        context: contextFor(),
+        arriving: reached,
+        offering: arrival,
+        outcome: null,
+      }),
+    )
+    if (router.ending.ending !== 'routed') {
+      // The router did not answer — its body threw, or `theWorkflowsToSay`
+      // refused what it answered. What stopped the pass is then `proposed`,
+      // and the step that arrived is in `steps` one entry above it.
+      stoppedAt = { step: 'proposed', ending: router.ending }
+      return false
+    }
+    return take(router.ending, { step: at, ending }, arrival)
+  }
+
   while (at !== null && at !== 'end') {
     const spec = SPEC[at]
     // **`proposed` routes on the way through as well as on the way back** (0058
@@ -1433,43 +1433,88 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       break
     }
 
-    if (ending.ending === 'passed') {
-      at = after(at)
-      continue
+    // **#467: the pass acts on `nextOf`'s answer** (0120 §4) rather than on
+    // `ARRIVE_AT_THE_ROUTER`/`goesToTheRouter`'s own branches — asked wherever
+    // asking it cannot throw by construction. `at` is never `claim` here
+    // (`decidingAction` is never asked for that step either, so `claim`'s own
+    // declines keep today's ending deciding, row 15), and a `merge` whose
+    // plugins never reached a deciding action (`decidingAction === null`) is
+    // the one case `nextOf`'s own doc says throws (`pass-next.ts:111-113`) —
+    // excluded here rather than caught, so an empty `merge:` list keeps
+    // today's ending too.
+    const outcome = reached.outcome
+    let next: PassNext | null = null
+    if (at !== 'claim' && outcome !== undefined && decidingAction(outcome) !== null) {
+      try {
+        next = nextOf(outcome, { runId: options.context.runId })
+      } catch (error) {
+        // Any `ImpossibleOutcomeError` that still escapes takes `end` with it
+        // otherwise, and `end` is the one guarantee `threw` exists to keep —
+        // see `runStep`'s own catch, which this mirrors for the same reason.
+        stoppedAt = { step: at, ending: threw(spec, error) }
+        break
+      }
     }
 
-    // A step that did not pass, and is not one of the seven the drawing takes to
-    // the router — either by which step it is, or by which of the five endings
-    // it reported.
-    if (!(ARRIVE_AT_THE_ROUTER as readonly Step[]).includes(at) || !goesToTheRouter(ending)) {
+    if (next === null) {
+      // Today's ending decides — `claim`'s own declines (never routed: the
+      // step is not one of the seven `proposed` appeals to), and a `merge`
+      // with no deciding action (an empty `merge:` list, which the pipeline
+      // always passes).
+      if (ending.ending === 'passed') {
+        at = after(at)
+        continue
+      }
       stoppedAt = { step: at, ending }
       break
     }
 
-    // **Every one of the seven arrives at `proposed`, carrying its reason** —
-    // 0058 §3b, and §3c's *what happened has to arrive intact*. This is a second
-    // visit to `proposed` in the pass rather than a branch inside the spine
-    // walk, and it runs the router without the inspection: see
-    // `StepWork.arriving`.
-    const arrival = onOffer(at, ending, ceilings, roundsSpent)
-    const router = record(
-      await runStep(SPEC.proposed, options, bodies, [...steps], {
-        context: contextFor(),
-        arriving: reached,
-        offering: arrival,
-        outcome: null,
-      }),
-    )
+    if (next._tag === 'Advance' || next._tag === 'Landed') {
+      // **The rule the deleted `!goesToTheRouter` branch encoded, which 0120
+      // §4 has no cell for — kept rather than dropped.** The plugins cleared
+      // and the body itself did not, which `nextOf` cannot see: it reads only
+      // the plugins' own `StepOutcome`, never the body's ending. A body that
+      // threw or answered `never-ran` on its own (`proposed`'s judge) stops
+      // the pass exactly as it does today.
+      if (ending.ending !== 'passed') {
+        stoppedAt = { step: at, ending }
+        break
+      }
+      at = after(at)
+      continue
+    }
 
-    if (router.ending.ending !== 'routed') {
-      // The router did not answer — its body threw, or `theWorkflowsToSay`
-      // refused what it answered. What stopped the pass is then `proposed`, and
-      // the step that arrived is in `steps` one entry above it.
-      stoppedAt = { step: 'proposed', ending: router.ending }
+    if (next._tag === 'Propose') {
+      if (ending.ending === 'passed') {
+        // **Only `review` produces this.** `endingOf` always passes `review`
+        // through, findings and all (0058 §3: *a reviewer returns findings
+        // with a severity and no verdict*), and the judgement is made one
+        // step later, on `proposed`'s own way-through visit — the same walk
+        // every other `passed` ending already takes.
+        at = after(at)
+        continue
+      }
+      // The same arrival `ARRIVE_AT_THE_ROUTER` took for this ending.
+      if (await arriveAtTheRouter(at, reached, ending)) continue
       break
     }
 
-    if (!take(router.ending, { step: at, ending }, arrival)) break
+    if (next._tag === 'WaitOnPerson') {
+      // No router visit: `holdOf` (`#466`) reads `next.reason` directly.
+      stoppedAt = { step: at, ending }
+      waitOn = next.reason
+      break
+    }
+
+    // `next._tag === 'Requeued'`. `NeverStarted` is the only cause `nextOf`
+    // gives a step's own ending — a `Restart` is a *route*'s to spend (0120
+    // §3), never a step's. `rested` stays `null`: `outcomeOf` reads this stop
+    // as `failed` off `stoppedAt.ending.ending === 'never-ran'` alone, and
+    // `rested = 'requeued'` is `take`'s own word for a route that chose
+    // `claim` — setting it here too would make `conduct.ts` read a restart
+    // that was never spent.
+    stoppedAt = { step: at, ending }
+    break
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
@@ -1487,7 +1532,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     }),
   )
 
-  return { steps, stoppedAt, routes, rested }
+  return { steps, stoppedAt, routes, rested, waitOn }
 }
 
 /**
@@ -1740,12 +1785,19 @@ async function runStep(
  *
  * **`did-not-finish` at every one of the ten, and never `refused` or `asked`**: a
  * crash is not a judgement about the change, so it buys no fix round and stands
- * only the pass down (0057 §1–3). That it does not reach the router is now the
- * ending's own doing rather than the value of `because` — `goesToTheRouter` reads
- * no string since `#296`, so a crash cannot acquire a destination by writing one.
- * `because: "threw"` is what tells *the step threw* from *an agent started and
- * left no receipt*, a field rather than a sentence (0031 §1), and the message the
- * assertion wrote is on `detail`, which is where a person reads it.
+ * only the pass down (0057 §1–3). That it does not reach the router is still
+ * true under `nextOf` (`#467`) rather than by accident: a body only runs, and
+ * so only throws, once its own step's plugins have already passed
+ * (`runStep`'s own early return below), so `nextOf` reading that same
+ * `StepOutcome` answers `Advance` — and the loop's own rule for a `nextOf`
+ * that clears against a body that did not stands the pass down rather than
+ * routing it (see `runPass`'s `Advance`/`Landed` cell). A `Propose` is never
+ * on offer here either: it is `nextOf`'s reading of an action that did *not*
+ * clear, and a step whose plugins did not clear returns before its body ever
+ * runs, so no throw and no route can share one visit. `because: "threw"` is
+ * what tells *the step threw* from *an agent started and left no receipt*, a
+ * field rather than a sentence (0031 §1), and the message the assertion wrote
+ * is on `detail`, which is where a person reads it.
  */
 function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
   return {

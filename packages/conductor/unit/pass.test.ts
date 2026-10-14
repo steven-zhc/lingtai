@@ -25,7 +25,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'
 import {
-  ARRIVE_AT_THE_ROUTER,
   NEEDS_INPUT,
   NOT_BUILT_YET,
   NO_DESIGN,
@@ -306,15 +305,6 @@ describe('the ten steps are the vocabulary, and here they are data', () => {
     expect(PASS.find((s) => s.step === 'end')?.refuses).toBe(false)
   })
 
-  /** 0058 §3b's second drawing, node for node — and the three not on it. */
-  it('takes seven steps to the router, and not claim, proposed or end', () => {
-    expect([...ARRIVE_AT_THE_ROUTER]).toEqual(['admit', 'prepared', 'design', 'implement', 'build', 'review', 'merge'])
-    expect(STEPS.filter((s) => !(ARRIVE_AT_THE_ROUTER as readonly Step[]).includes(s))).toEqual([
-      'claim',
-      'proposed',
-      'end',
-    ])
-  })
 })
 
 // ------------------------------------------------------- an empty step ----

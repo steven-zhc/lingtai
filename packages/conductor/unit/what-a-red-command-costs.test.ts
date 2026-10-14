@@ -28,7 +28,17 @@ import { fileURLToPath } from 'node:url'
 import { runPlugin } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { ARRIVE_AT_THE_ROUTER, onOffer, type Ceilings, type StepEnding } from '../src/pass.ts'
+import { onOffer, type Ceilings, type StepEnding } from '../src/pass.ts'
+
+/**
+ * The seven steps whose refusal still reaches a judge after `#467` — 0058
+ * §3b's drawing, minus `prepared`, which `nextOf` now answers
+ * `WaitOnPerson{SetupRefused}` directly for (0120 §2's own variant table).
+ * Kept here rather than imported: `pass.ts` deleted `ARRIVE_AT_THE_ROUTER`
+ * along with the branches that read it, since the set it named is now an
+ * emergent property of `nextOf` rather than a table this file can reuse.
+ */
+const REACHES_A_JUDGE_ON_REFUSAL = ['admit', 'design', 'implement', 'build', 'review', 'merge'] as const
 
 const page = readFileSync(fileURLToPath(new URL('../../../doc/plugins/run.md', import.meta.url)), 'utf8')
 
@@ -77,17 +87,18 @@ describe('the run page says what a red command costs at each step it may be writ
   /**
    * A refusal buys a round by being routed back into the spine, so a row that
    * promises one is a claim about two things: that the refusal reaches the
-   * router at all (`ARRIVE_AT_THE_ROUTER`), and that `implement` is on the offer
-   * when it gets there (`AFTER_AN_AGENT`, through `onOffer`). `prepared` fails
-   * the second and `proposed` the first.
+   * router at all (`REACHES_A_JUDGE_ON_REFUSAL`, above), and that `implement`
+   * is on the offer when it gets there (`AFTER_AN_AGENT`, through `onOffer`).
+   * `prepared` fails both since `#467` — `nextOf` answers its own refusal
+   * `WaitOnPerson{SetupRefused}` directly — and `proposed` fails the first.
    */
   it('promises a fix round only where the refusal reaches a judge that can give one', () => {
     const spare: Ceilings = { rounds: 2, restartsLeft: 1 }
     const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
 
     for (const row of costTable().filter((each) => each.bought)) {
-      const step = row.step as (typeof ARRIVE_AT_THE_ROUTER)[number]
-      expect(ARRIVE_AT_THE_ROUTER, `a red \`run:\` at \`${step}\` never reaches the router`).toContain(step)
+      const step = row.step as (typeof REACHES_A_JUDGE_ON_REFUSAL)[number]
+      expect(REACHES_A_JUDGE_ON_REFUSAL, `a red \`run:\` at \`${step}\` never reaches the router`).toContain(step)
       expect(
         onOffer(step, refused, spare, 0).affordable,
         `\`${step}\` is promised a fix round, and the offer there has no \`implement\` on it`,
@@ -105,7 +116,7 @@ describe('the run page says what a red command costs at each step it may be writ
     const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
 
     expect(onOffer('prepared', refused, spare, 0).reachable).toEqual(['waiting'])
-    expect(ARRIVE_AT_THE_ROUTER).not.toContain('proposed')
+    expect(REACHES_A_JUDGE_ON_REFUSAL).not.toContain('proposed')
     expect(
       costTable()
         .filter((row) => !row.bought)
