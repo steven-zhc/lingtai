@@ -371,8 +371,9 @@ describe('a step that was configured is never skipped', () => {
 
     expect(result.stoppedAt).toBeNull()
     // The nine steps whose plugins are verdicts, each with what it declared —
-    // except `admit` and `implement`, which buy a cut and a commit on every
-    // pass whether the recipe declares anything there or not (`#469`).
+    // except `admit` and `implement`: this recipe declares nothing at either,
+    // so each gets the fixture's own stand-in for `defaultsAt`'s cut and
+    // commit rather than an empty step (`#469`).
     expect(ran).toEqual([
       { step: 'claim', actions: [] },
       { step: 'admit', actions: ['cut the branch'] },
@@ -400,8 +401,10 @@ describe('a step that was configured is never skipped', () => {
     const { bodies } = watching()
     let entered = 0
     const { actionsAt } = watchingActions({
-      // `admit` and `implement` emptied out too: both buy a default action on
-      // every pass (`#469`), and this test isolates `install`'s own three.
+      // `admit` and `implement` emptied out too: nothing is declared at
+      // either, so each would otherwise get the fixture's stand-in for
+      // `defaultsAt`'s default action (`#469`) — this test isolates
+      // `install`'s own three.
       admit: [],
       implement: [],
       prepared: [
@@ -820,7 +823,9 @@ describe('every step that does not pass arrives at proposed', () => {
     let lap = 0
     const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
       step !== 'design'
-        ? actions.map((a) => canned(a.name, PASSED))
+        ? actions.length > 0
+          ? actions.map((a) => defaultFor(step, a.name))
+          : undeclaredDefault(step)
         : [
             {
               name: 'draft',
@@ -1419,7 +1424,9 @@ describe('proposed routes on the way through as well as on the way back', () => 
               findings: reviews++ === 0 ? [finding] : [],
             }),
           ]
-        : []
+        : step === 'implement'
+          ? [committedSomething('write the change')]
+          : []
     const { emit } = events()
 
     const result = await runPass({
@@ -1538,7 +1545,9 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
               refusals++ === 0 ? { verdict: 'failed', evidence: '3 failing', findings: [] } : PASSED,
             ),
           ]
-        : []
+        : step === 'implement'
+          ? [committedSomething('write the change')]
+          : []
     const { emit } = events()
 
     const result = await runPass({

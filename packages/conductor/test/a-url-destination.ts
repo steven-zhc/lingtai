@@ -213,13 +213,16 @@ export const readingBack = (seen: TheDesign[]): Action => ({
 })
 
 /**
- * **The committing agent production always buys beside the declared reader**
- * — `conduct.ts`'s `defaultsAt` puts a `createWorkAction` (`yields: 'commit'`)
- * at `implement` on every pass, so a fixture that declared only `readingBack`
- * there carried no head and no locator-pass `implement` visit could tell
- * `changedNothing` apart from a real one (`#469`, `headOf` in
- * `action.ts:333`). The head is fixed, same for both locator arms, so
- * `withoutTheLocator`'s shape comparison still agrees.
+ * **A declared reader buys no committing agent for free** — `conduct.ts`'s
+ * `defaultsAt` only runs when nothing is declared at all: `declared.length >
+ * 0 ? declared : defaultsAt(step)` substitutes rather than composes
+ * (`conduct.ts:2846`). So a fixture that declared only `readingBack` at
+ * `implement` carried no head, and no locator-pass `implement` visit could
+ * tell `changedNothing` apart from a real one (`#469`, `headOf` in
+ * `action.ts:333`). `writingBeside` is declared beside `readingBack`
+ * explicitly, standing in for whatever else a real recipe runs at
+ * `implement` to produce the commit. The head is fixed, same for both
+ * locator arms, so `withoutTheLocator`'s shape comparison still agrees.
  */
 const COMMITTED = 'c0ffee0'
 export const writingBeside = (): Action => ({
