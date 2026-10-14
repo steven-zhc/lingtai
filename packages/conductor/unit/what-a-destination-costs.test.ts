@@ -51,19 +51,12 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 import { NEEDS_INPUT, type Action, type ActionEvent, type ActionResult } from '@lingtai/actions'
-import type { Step } from '@lingtai/domain'
+import { offerFor, type Proposal, type Step } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import {
-  onOffer,
-  outcomeOf,
-  runPass,
-  type Ceilings,
-  type PassOptions,
-  type PassResult,
-  type StepEnding,
-} from '../src/pass.ts'
+import { outcomeOf, runPass, type Ceilings, type PassOptions, type PassResult } from '../src/pass.ts'
+import { destinationOf } from '../src/proposed-route.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 
@@ -71,7 +64,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url))
  * Rounds to spare on every pass below, so that *no round was bought* is a fact
  * about the ending rather than about an empty purse.
  */
-const SPARE: Ceilings = { rounds: 2, restartsLeft: 1 }
+const SPARE: Ceilings = { rounds: 2, restarts: 1, restartsSpent: 0 }
 
 /**
  * **The line a recipe writes to keep the design somewhere**, as near as the
@@ -319,12 +312,16 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * §3c's *that step again, stating the assumption*.
      */
     it('arrives with somewhere to go, which a crash never does', () => {
-      const question: StepEnding = { ending: 'asked', at: 'keep it', detail: 'which space?' }
+      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
+      const offer = offerFor(proposal, { rounds: SPARE.rounds, restarts: SPARE.restarts }, { rounds: 0, restarts: 0 })
 
-      expect(onOffer('design', question, SPARE, 0).affordable).toEqual(['waiting', 'design'])
+      expect(offer.available.map((candidate) => destinationOf(candidate, proposal)).sort()).toEqual([
+        'design',
+        'waiting',
+      ])
       // Nobody but the step that asked knows the question, so the offer is that
       // step and a person, and never `implement`.
-      expect(onOffer('design', question, SPARE, 0).reachable).not.toContain('implement')
+      expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).not.toContain('implement')
     })
 
     /**
@@ -337,12 +334,18 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * design run each time, up to `runtime.limits.rounds` and no further.
      */
     it('charges a round for `design` again, and stops offering it once they are spent', () => {
-      const question: StepEnding = { ending: 'asked', at: 'keep it', detail: 'which space?' }
+      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
+      const offer = offerFor(
+        proposal,
+        { rounds: SPARE.rounds, restarts: SPARE.restarts },
+        { rounds: SPARE.rounds, restarts: 0 },
+      )
 
-      expect(onOffer('design', question, SPARE, SPARE.rounds).affordable).toEqual(['waiting'])
-      // Reachable all the same: having no round left is the budget's answer and
-      // not the workflow's, which is the distinction the two sets exist to keep.
-      expect(onOffer('design', question, SPARE, SPARE.rounds).reachable).toEqual(['waiting', 'design'])
+      expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).toEqual(['waiting'])
+      // Unavailable rather than absent: having no round left is the budget's
+      // answer and not the workflow's, which is the distinction `available`/
+      // `unavailable` exist to keep.
+      expect(offer.unavailable.map((candidate) => candidate.id)).toEqual(['state-assumption'])
     })
   })
 })

@@ -855,7 +855,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     // 0058 §3c: *that step again with "state your assumption"*, or a person.
@@ -926,7 +926,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     // The route 0058 §3c names, and the step that asked is the step it went to:
@@ -1245,7 +1245,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 3, restartsLeft: 3 } })
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 } })
 
     expect(result.stoppedAt).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
     expect(result.routes).toEqual([])
@@ -1286,7 +1286,7 @@ describe('every step that does not pass arrives at proposed', () => {
         emit,
         bodies,
         actionsAt,
-        ceilings: { rounds: 3, restartsLeft: 3 },
+        ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
       })
 
       expect(result.stoppedAt).toMatchObject({ step: 'merge', ending: { ending } })
@@ -1311,7 +1311,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restartsLeft: 3 },
+      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toMatchObject({
@@ -1323,8 +1323,8 @@ describe('every step that does not pass arrives at proposed', () => {
 })
 
 describe('the workflow decides which steps the judge may choose from', () => {
-  const spent: Ceilings = { rounds: 0, restartsLeft: 0 }
-  const spare: Ceilings = { rounds: 2, restartsLeft: 1 }
+  const spent: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
+  const spare: Ceilings = { rounds: 2, restarts: 1, restartsSpent: 0 }
   const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
   const asking: StepEnding = { ending: 'asked', at: null, detail: '?' }
   /** `proposed`'s own visit, which is the `findings` direction and no other. */
@@ -1406,8 +1406,8 @@ describe('the workflow decides which steps the judge may choose from', () => {
    * names which of the two ceilings it was.
    */
   it('keeps what the pass reached apart from what it can pay for', () => {
-    const noRestart: Ceilings = { rounds: 2, restartsLeft: 0 }
-    const noRound: Ceilings = { rounds: 0, restartsLeft: 1 }
+    const noRestart: Ceilings = { rounds: 2, restarts: 0, restartsSpent: 0 }
+    const noRound: Ceilings = { rounds: 0, restarts: 1, restartsSpent: 0 }
 
     // No meaning: off both sets, and no ceiling to name.
     const early = onOffer('prepared', refused, spare, 0)
@@ -1454,7 +1454,7 @@ describe('the workflow decides which steps the judge may choose from', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restartsLeft: 0 },
+      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toMatchObject({
@@ -1487,7 +1487,7 @@ describe('the workflow decides which steps the judge may choose from', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restartsLeft: 0 },
+      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toMatchObject({
@@ -1555,7 +1555,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     // The review passed both times, so nothing ever refused — and the pass still
@@ -1614,7 +1614,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toBeNull()
@@ -1676,7 +1676,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toBeNull()
@@ -1732,7 +1732,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.routes.map((r) => r.to)).toEqual(['implement', 'implement', 'waiting'])
@@ -1770,7 +1770,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 1 },
+      ceilings: { rounds: 2, restarts: 1, restartsSpent: 0 },
     })
 
     expect(result.rested).toBe('requeued')
@@ -1867,7 +1867,7 @@ describe('a visit is judged against the head the walk has reached', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toBeNull()
@@ -1958,7 +1958,7 @@ describe('a visit is judged in the round the pass is in', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.routes).toEqual([
@@ -2029,7 +2029,7 @@ describe('the round a pass buys is bought on something', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(result.stoppedAt).toBeNull()
@@ -2063,7 +2063,7 @@ describe('the round a pass buys is bought on something', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restartsLeft: 0 },
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
     expect(judged.filter((j) => j.step === 'build').map((j) => j.recheck)).toEqual([[], [finding]])
