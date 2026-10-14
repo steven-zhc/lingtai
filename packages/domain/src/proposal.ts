@@ -1,8 +1,10 @@
 /**
  * 0120 §2's `Proposal`: why the pass is at `proposed`. Each variant names the
  * step it comes from and carries the evidence that belongs to it; `fromOf`,
- * which derives the step for every variant but `InputNeeded`, is #459's — it
- * reads this type rather than owning a copy of it.
+ * which derives the step for every variant that names only one, is #459's —
+ * it reads this type rather than owning a copy of it. `#471` adds a `from` to
+ * every variant reachable from more than one step, `InputNeeded` no longer
+ * alone in that.
  *
  * Declared here for #458 because `WaitReason.ProposedEscalated` (`wait.ts`)
  * carries a `Proposal`. #459's own *What to write* already says to move this
@@ -14,7 +16,7 @@
  */
 import { z } from 'zod'
 
-import { Finding, Step } from './vocabulary.ts'
+import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /** `build`'s own refusal, with the rounds spent (0120 §2 table). */
 export const BuildRed = z.object({ _tag: z.literal('BuildRed'), output: z.string() })
@@ -54,7 +56,72 @@ export type MergeConflict = z.infer<typeof MergeConflict>
 export const VerifyRed = z.object({ _tag: z.literal('VerifyRed'), output: z.string() })
 export type VerifyRed = z.infer<typeof VerifyRed>
 
-/** Why the pass is at `proposed` — 0120 §2's six reasons. */
+/**
+ * `prepared` refused, or a non-`verdict` action did not finish — #471's
+ * seven, added beside the original six with no caller yet (#472).
+ *
+ * **Not exported individually, unlike the six above.** `hold.ts` already
+ * exports a `SetupRefused` and a `MergeRefused`, and `action.ts` an
+ * `AnswerUnreadable`; both are re-exported at the package root (`index.ts`'s
+ * `export *`), so a second top-level binding of the same name would make the
+ * name ambiguous there (TS2308) the moment anything imported it — the same
+ * reason `wait.ts`'s own seven stay unexported (`wait.ts`'s header). Nothing
+ * outside this file imports any of the original six by name either (checked
+ * before writing these), so leaving all seven of #471's variants unexported
+ * costs no caller anything.
+ */
+const SetupRefused = z.object({ _tag: z.literal('SetupRefused'), from: Step, output: z.string() })
+type SetupRefused = z.infer<typeof SetupRefused>
+
+/** A declared check at `proposed` or before the lane at `merge` that refused. */
+const CheckRefused = z.object({
+  _tag: z.literal('CheckRefused'),
+  from: Step.extract(['proposed', 'merge']),
+  output: z.string(),
+})
+type CheckRefused = z.infer<typeof CheckRefused>
+
+/** The agent answered, and the machine could not read it. */
+const AnswerUnreadable = z.object({
+  _tag: z.literal('AnswerUnreadable'),
+  from: Step.extract(['design', 'review', 'proposed', 'merge']),
+  raw: z.string(),
+})
+type AnswerUnreadable = z.infer<typeof AnswerUnreadable>
+
+/** `implement` at round 0 cleared and committed nothing — there is only the ticket to argue with. */
+const NothingProduced = z.object({ _tag: z.literal('NothingProduced'), said: z.string().nullable() })
+type NothingProduced = z.infer<typeof NothingProduced>
+
+/** `implement` in a fix round cleared and committed nothing — the fixer disagrees with the reviewer. */
+const FixerDisagrees = z.object({ _tag: z.literal('FixerDisagrees'), said: z.string().nullable() })
+type FixerDisagrees = z.infer<typeof FixerDisagrees>
+
+/** The lane refused for one of the seven reasons that are neither a conflict nor a red re-verify (those are `MergeConflict`/`VerifyRed` above). */
+const MergeRefused = z.object({
+  _tag: z.literal('MergeRefused'),
+  // `moves.ts:16-19`'s own reason for the omitted `default`: a reason
+  // `RefusalReason` gains tomorrow fails this at the type level.
+  reason: RefusalReason.exclude(['conflict', 'verify-failed']),
+  output: z.string(),
+})
+type MergeRefused = z.infer<typeof MergeRefused>
+
+/** A turn or dollar ceiling, from any step. */
+const BudgetExhausted = z.object({
+  _tag: z.literal('BudgetExhausted'),
+  from: Step,
+  // The same two values `hold.ts`'s `CeilingKind` extracts, written out
+  // rather than imported: this file must not import `hold.ts` (`wait.ts`'s
+  // own ESM-cycle reason, `wait.ts:138-140`).
+  kind: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
+  turns: z.number().nullable(),
+  costUsd: z.number().nullable(),
+  detail: z.string(),
+})
+type BudgetExhausted = z.infer<typeof BudgetExhausted>
+
+/** Why the pass is at `proposed` — 0120 §2's thirteen reasons. */
 export const Proposal = z.discriminatedUnion('_tag', [
   BuildRed,
   ReviewFindings,
@@ -62,12 +129,19 @@ export const Proposal = z.discriminatedUnion('_tag', [
   InputNeeded,
   MergeConflict,
   VerifyRed,
+  SetupRefused,
+  CheckRefused,
+  AnswerUnreadable,
+  NothingProduced,
+  FixerDisagrees,
+  MergeRefused,
+  BudgetExhausted,
 ])
 export type Proposal = z.infer<typeof Proposal>
 
 /**
- * The step a proposal came from (0120 §2's table). Every variant but
- * `InputNeeded` names one step; `InputNeeded` carries its own.
+ * The step a proposal came from (0120 §2's table). Every variant reachable
+ * from more than one step carries its own `from`; the rest name one step.
  */
 export function fromOf(proposal: Proposal): Step {
   switch (proposal._tag) {
@@ -77,9 +151,17 @@ export function fromOf(proposal: Proposal): Step {
     case 'ReviewEmpty':
       return 'review'
     case 'InputNeeded':
+    case 'SetupRefused':
+    case 'CheckRefused':
+    case 'AnswerUnreadable':
+    case 'BudgetExhausted':
       return proposal.from
+    case 'NothingProduced':
+    case 'FixerDisagrees':
+      return 'implement'
     case 'MergeConflict':
     case 'VerifyRed':
+    case 'MergeRefused':
       return 'merge'
   }
 }

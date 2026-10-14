@@ -228,6 +228,21 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'MergeConflict':
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
+        // `#471`'s seven, each given the direct `WaitReason` variant's own
+        // row (`:217-240` above) rather than a new one — `holdOf`'s equality
+        // is a claim about the `Hold`, and the resolutions offered for it
+        // follow the same `Hold`.
+        case 'CheckRefused':
+        case 'FixerDisagrees':
+          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
+        case 'MergeRefused':
+          return ['Approve', 'Requeue', 'Close']
+        case 'NothingProduced':
+        case 'BudgetExhausted':
+        case 'AnswerUnreadable':
+          return ['EditBodyAndRequeue', 'Requeue', 'Close']
+        case 'SetupRefused':
+          return ['Requeue', 'Close']
       }
     case 'MergeRefused':
       return ['Approve', 'Requeue', 'Close']
@@ -263,6 +278,11 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
  * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted` and
  * `AgentCrashed`, `null` everywhere else. No `default`, for the reason
  * {@link tableResolutions} has none.
+ *
+ * **`ProposedEscalated` branches on its own proposal**, so an escalated
+ * `BudgetExhausted` (`#471`) still prefills `Requeue`, the same as the direct
+ * one above — `holdOf`'s equality is about the `Hold`, and the card's
+ * prefilled resolution is read off this function rather than off the `Hold`.
  */
 function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
   switch (reason._tag) {
@@ -271,11 +291,12 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
     case 'BudgetExhausted':
     case 'AgentCrashed':
       return 'Requeue'
+    case 'ProposedEscalated':
+      return reason.proposal._tag === 'BudgetExhausted' ? 'Requeue' : null
     case 'OwnQuestion':
     case 'AgentQuestion':
     case 'FixerDisagrees':
     case 'NothingProduced':
-    case 'ProposedEscalated':
     case 'CheckRefused':
     case 'MergeRefused':
     case 'SetupRefused':

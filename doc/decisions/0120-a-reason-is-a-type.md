@@ -270,18 +270,19 @@ type Proposal =
   | { _tag: 'InputNeeded'; from: 'design' | 'implement'; question: string }
   | { _tag: 'MergeConflict'; output: string; paths: string[] | null; baseSha: string | null; headSha: string | null } // output is the lane's own text; the three path fields are null where the action's result carried none (#466)
   | { _tag: 'VerifyRed'; output: string } // the base moved, and the re-verify on it went red
-  | { _tag: 'SetupRefused'; output: string } // prepared refused, or a non-verdict action did not finish
-  | { _tag: 'CheckRefused'; output: string } // a declared check at proposed or before the lane at merge refused
-  | { _tag: 'AnswerUnreadable'; raw: string } // the agent answered and the machine could not read it
-  | { _tag: 'NothingProduced' } // implement at round 0 cleared and committed nothing
-  | { _tag: 'FixerDisagrees'; said: string } // implement in a fix round cleared and committed nothing
-  | { _tag: 'MergeRefused'; reason: RefusalReason; output: string } // the lane refused for one of the seven (§4)
-  | { _tag: 'BudgetExhausted'; kind: 'out-of-turns' | 'out-of-usd'; turns: number | null; costUsd: number | null }
+  | { _tag: 'SetupRefused'; from: Step; output: string } // prepared refused, or a non-verdict action did not finish
+  | { _tag: 'CheckRefused'; from: 'proposed' | 'merge'; output: string } // a declared check at proposed or before the lane at merge refused
+  | { _tag: 'AnswerUnreadable'; from: 'design' | 'review' | 'proposed' | 'merge'; raw: string } // the agent answered and the machine could not read it
+  | { _tag: 'NothingProduced'; said: string | null } // implement at round 0 cleared and committed nothing
+  | { _tag: 'FixerDisagrees'; said: string | null } // implement in a fix round cleared and committed nothing
+  | { _tag: 'MergeRefused'; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'>; output: string } // the lane refused for one of the seven (§4)
+  | { _tag: 'BudgetExhausted'; from: Step; kind: 'out-of-turns' | 'out-of-usd'; turns: number | null; costUsd: number | null; detail: string }
 ```
 
-Each variant says which step it comes from; only `InputNeeded` can come from
-two, so only it carries `from`, and `fromOf(proposal)` derives the step for
-the rest. The five `JudgeWhen`s map onto it: `red` is `BuildRed`,
+Each variant says which step it comes from. Every variant reachable from more
+than one step carries its own `from` — `InputNeeded` is no longer alone in
+that — and `fromOf(proposal)` derives the step for the rest. The five
+`JudgeWhen`s map onto it: `red` is `BuildRed`,
 `verify-failed` `VerifyRed`, `conflict` `MergeConflict`, `needs-input`
 `InputNeeded`, `findings` `ReviewFindings` and `ReviewEmpty`. Each of the
 seven variants after `VerifyRed` has a `JudgeWhen` of its own, and its

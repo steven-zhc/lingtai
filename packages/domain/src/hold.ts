@@ -23,8 +23,8 @@ import { z } from 'zod'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
- * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
- * entry's `when:` names — and there is **one entry per reason**
+ * **The twelve reasons a pass arrives at `proposed`**, which is what a
+ * `judge:` entry's `when:` names — and there is **one entry per reason**
  * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
  *
  * **`when:` is one key and its legal values are the step's**, which is
@@ -36,26 +36,47 @@ import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts
  * and a value one of them does not know is refused by name when the recipe
  * resolves.
  *
- * Two of the five are the merge lane's own words and mean there what they mean
- * here: `conflict` and `verify-failed` are `RefusalReason` in
- * `packages/domain/src/events.ts`. The other three are the reasons the steps
- * 0058 §3 named will report when they are built (0061 §5) — `red` is `build`'s,
- * `findings` is `review`'s, and `needs-input` is an implementing agent that
- * stopped to ask, which is 0057's class rather than a refusal.
+ * Two of the first five are the merge lane's own words and mean there what
+ * they mean here: `conflict` and `verify-failed` are `RefusalReason` in
+ * `packages/domain/src/events.ts`. Three more of the first five are the
+ * reasons the steps 0058 §3 named will report when they are built (0061 §5) —
+ * `red` is `build`'s, `findings` is `review`'s, and `needs-input` is an
+ * implementing agent that stopped to ask, which is 0057's class rather than a
+ * refusal. **`#471` adds the other seven** — 0120 §2's own `Proposal` names
+ * one `JudgeWhen` per variant after `VerifyRed`, each with a built-in answer
+ * of `null` (`BUILT_IN_FOR`): declared nothing, each reaches a person, which
+ * is today's outcome with one `PassRouted` more.
  *
- * **Not `RefusalReason` itself**, though it holds two of the five. That enum is
- * the *integration*'s list — `dirty-base`, `unpushed-base`, `push-rejected`,
- * `unexpected` — and a judge is never asked about those: they stop the lane
- * before the diff is what is in doubt, and offering a judge a direction
- * nothing can arrive by is the same mistake as offering it a step nothing can
- * run.
+ * **Not `RefusalReason` itself**, though it holds two of the twelve. That enum
+ * is the *integration*'s list — `dirty-base`, `unpushed-base`,
+ * `push-rejected`, `unexpected` — and **a judge may be asked about those now**
+ * (`#471`, reversing what this comment said before it): a judge for
+ * `MergeRefused{dirty-base}` can rebase and retry, one for `SetupRefused` can
+ * restart, and one for `BudgetExhausted` can restart from the kept work
+ * (0120 §2), with the restart counted in `restartsSpent` like any other.
+ * `conflict` and `verify-failed` stay the two exceptions inside
+ * `RefusalReason` itself: those stop the lane before the diff is what is in
+ * doubt, and `MergeConflict`/`VerifyRed` already have their own `JudgeWhen`.
  *
  * Moved here from `packages/recipe/src/recipe.ts` by #439, because
  * `@lingtai/recipe` depends on `@lingtai/domain` and not the other way round,
  * and `Judgement.Routed` below is typed over this enum. `recipe.ts` re-exports
  * it under the same name, so no importer of `@lingtai/recipe` changes.
  */
-export const JudgeWhen = z.enum(['red', 'verify-failed', 'conflict', 'needs-input', 'findings'])
+export const JudgeWhen = z.enum([
+  'red',
+  'verify-failed',
+  'conflict',
+  'needs-input',
+  'findings',
+  'setup-refused',
+  'check-refused',
+  'answer-unreadable',
+  'nothing-produced',
+  'fixer-disagrees',
+  'merge-refused',
+  'budget-exhausted',
+])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
 
 /**

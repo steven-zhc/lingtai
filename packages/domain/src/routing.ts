@@ -23,6 +23,7 @@ import { z } from 'zod'
 import { FixRound, type PassNext, Restart, type Spent } from './pass-next.ts'
 import { Proposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
+import { STEPS, type Step } from './vocabulary.ts'
 import { RunRef } from './wait.ts'
 
 /**
@@ -103,6 +104,15 @@ export class ImpossibleRouteError extends Error {
  * only `'design' | 'implement'`, so a `merge`-born proposal's `fix-lines`
  * lands at `'implement'` by the type it is built from, not by a check here.
  */
+/**
+ * Whether a proposal born at `step` got far enough for `implement` to have
+ * something to fix — `judge.ts`'s own `anAgentHasRun`, read off `STEPS`
+ * rather than a second list of the steps that qualify.
+ */
+function bornAtOrAfterImplement(step: Step): boolean {
+  return STEPS.indexOf(step) >= STEPS.indexOf('implement')
+}
+
 export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
   const available: Candidate[] = []
   const unavailable: ExcludedCandidate[] = []
@@ -160,6 +170,45 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       round('fix-lines', 'implement', false)
       restart(false)
       break
+    case 'SetupRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'CheckRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'AnswerUnreadable': {
+      const hasCriterion = proposal.raw.trim() !== ''
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'NothingProduced':
+      round('fix-lines', 'implement', false)
+      restart(false)
+      break
+    case 'FixerDisagrees': {
+      const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'MergeRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'BudgetExhausted': {
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', true)
+      restart(true)
+      break
+    }
     default: {
       const unhandled: never = proposal
       throw new ImpossibleRouteError(`unhandled proposal: ${JSON.stringify(unhandled)}`)
