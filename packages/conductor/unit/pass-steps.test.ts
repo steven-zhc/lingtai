@@ -176,6 +176,31 @@ const canned = (name: string, result: ActionResult): Action => ({
   run: async () => result,
 })
 
+/**
+ * A declared `admit:` action that stands in for a real cut — the real
+ * `worktree:` plugin reports where the tree was cut, and the action's own
+ * context is where the tree was cut from, so this echoes `ctx.onSha` back as
+ * the head rather than inventing one (`#469`, `work-action.ts:13-16`).
+ */
+const cutAt = (name: string): Action => ({
+  name,
+  kind: 'run',
+  yields: 'worktree',
+  run: async (ctx) => ({ ...PASSED, head: ctx.onSha }),
+})
+
+/**
+ * A declared `implement:` action that stands in for a real commit — a real
+ * commit is a new sha, so this one is fixed rather than echoing the context
+ * back, unlike `cutAt` (`#469`).
+ */
+const committedSomething = (name: string, head = COMMITTED): Action => ({
+  name,
+  kind: 'run',
+  yields: 'commit',
+  run: async () => ({ ...PASSED, head }),
+})
+
 /** A recipe with only the ten steps on it, resolved by the real schema. */
 const recipeWith = (steps: Record<string, unknown> = {}): PassOptions['recipe'] => ({
   steps: StepMap.parse(steps),
@@ -452,6 +477,12 @@ async function pass(
       // `design:` is the step's whole behaviour since `#265`, and a canned pass
       // would assert the body it replaced rather than the plugin that replaced it.
       if (step === 'design' && actions.length > 0) return [drafting()]
+      // A declared `worktree:` or `agent:` at these two steps is a cut or a
+      // commit, not a bare verdict — `headOf` reads the head off them, so a
+      // plain `canned` here would make a declared, passing action misread as
+      // `changedNothing` (`#467`, `#469`).
+      if (step === 'admit' && actions.length > 0) return actions.map((a) => cutAt(a.name))
+      if (step === 'implement' && actions.length > 0) return actions.map((a) => committedSomething(a.name))
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED))
       if (step === 'claim') return [claiming()]
       if (step === 'admit') return [cutting()]
