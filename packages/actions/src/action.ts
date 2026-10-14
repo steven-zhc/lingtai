@@ -841,7 +841,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
        * different places: the first reaches `proposed` and may end at a person,
        * the second stops the pass. That difference used to be re-derived from
        * `because` at four call sites above this one (`endingOf`,
-       * `nextOf` (`packages/conductor/src/pass.ts:1449` is the call site), `onOffer`, `sentBackTo`), where a token spelled
+       * `nextOf`, `onOffer`, `sentBackTo`), where a token spelled
        * `"needs input"` or a plugin that forgot to set one would have silently
        * lost the destination and every one of them would have compiled.
        *

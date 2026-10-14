@@ -3902,17 +3902,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * A `refused` ending is a step's own declared actions refusing, which is
          * the `build` gone red and the lane that would not take it.
          *
-         * **A third shape, since `#467` took `review`'s own unreadable answer off
-         * the router.** `endingOf` reports every `review` visit `passed`
-         * (`pass.ts:1928` — a reviewer's `failed` is findings, not a refusal), so an
-         * answer `parseFindings` cannot read at all stops the pass with
-         * `stopped.ending.ending === 'passed'`, neither of the two shapes above.
-         * Before `#467` the same answer walked on to `proposed`'s own way-through
-         * visit, which routed it to a person with `stopped === null` — the reviewer
-         * read the diff and could not be understood, which is `judged` for the
-         * same reason a refusal is. `pass.waitOn` still carries that it was this
-         * reason (`AnswerUnreadable`), which `stopped.ending.ending` alone no
-         * longer does.
+         * **A third shape, since `#467` took the `merge` lane's own unreadable
+         * answer off the router** — `review`'s own unreadable answer still walks
+         * on to `proposed`'s own way-through visit (the one visit that also runs
+         * a declared `human:`/`watch:` action there), which routes it to a person
+         * with `stopped === null`, the first shape above. `merge` has no such
+         * visit left ahead of it: `endingOf` still reports every `merge` visit
+         * `passed` for the same reason it does `review`'s (`pass.ts:1928` — a
+         * reviewer's `failed` is findings, not a refusal), so an answer
+         * `parseFindings` cannot read at all there stops the pass with
+         * `stopped.ending.ending === 'passed'`, neither of the two shapes above —
+         * the lane's own re-verify read the diff and could not be understood,
+         * which is `judged` for the same reason a refusal is. `pass.waitOn`
+         * carries that it was this reason (`AnswerUnreadable`), which
+         * `stopped.ending.ending` alone does not.
          *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —

@@ -136,15 +136,21 @@ EN = dict(
 
     s1h="The ten steps",
     s1l="Read it downward. The four in brass are the steps that may say no; "
-        "everything that does not simply pass arrives at <code>proposed</code>, "
-        "which is the only step that decides what happens next.",
+        "most of what does not simply pass arrives at <code>proposed</code>, "
+        "which is the only step that decides what happens next — a "
+        "<code>prepared</code> refusal and a check before the merge lane answer "
+        "you directly instead, with no direction for <code>proposed</code> to "
+        "route.",
     s1c="<b>Brass means a step may refuse</b> — <code>prepared</code>, "
         "<code>build</code>, <code>proposed</code> and <code>merge</code>. The "
         "dashed rectangle is the worktree: cut at <code>admit</code>, alive until "
-        "the merge is done. The dashed lines on the right are every step that did "
-        "not simply pass; they all arrive at <code>proposed</code>. The solid "
-        "lines on the left are what <code>proposed</code> answers — back to the "
-        "agent, back to the queue, or to you.",
+        "the merge is done. The dashed lines on the right are most of what did "
+        "not simply pass, arriving at <code>proposed</code>; the short dashed "
+        "line from <code>prepared</code> is its own refusal going straight to "
+        "waiting on you instead, same as a check before the merge lane does, "
+        "because neither is a direction <code>proposed</code> has anything to "
+        "route. The solid lines on the left are what <code>proposed</code> "
+        "answers — back to the agent, back to the queue, or to you.",
 
     s2h="Every word on that drawing",
     s2l="Ten terms, and Lingtai means exactly these by them.",
@@ -215,16 +221,18 @@ EN = dict(
          "no round, because it passed no judgement on your change.",
 
     s5h="When it stops and waits for you",
-    s5l="One way in, and one place to look.",
+    s5l="One place to look, however it got there.",
     prop_h="What puts a ticket there",
     prop1="Every ceiling is spent — the rounds, then the restarts — and the "
           "change is still refused. Or a question came back that only you can "
           "answer: an unclear requirement, a design decision, two changes that "
           "edited the same intent differently.",
-    prop2="<b>Only <code>proposed</code> can send a ticket to you.</b> No step "
-          "reaches you on its own, which is what makes <i>is this worth "
-          "interrupting somebody over</i> one decision in one place rather than "
-          "a habit scattered through the pipeline.",
+    prop2="<b>Mostly <code>proposed</code> decides to send a ticket to you.</b> "
+          "A <code>prepared</code> refusal and a check before the merge lane "
+          "reach you on their own instead, because neither is a direction "
+          "<code>proposed</code> has anything to route — which is still what "
+          "makes <i>is this worth interrupting somebody over</i> one decision "
+          "rather than a habit scattered through the pipeline.",
     gap_h="What it carries with it",
     gap1="What refused it and why, in the words the step used — the findings, "
          "the build's output, the paths that conflicted. You should never have "
@@ -235,9 +243,10 @@ EN = dict(
 
     foot="Generated from scripts/the-pass.py · Lingtai",
     f1_alt="One pass from claim to end. Ten steps on a spine; four of them may "
-           "refuse — prepared, build, proposed and merge — and every step that "
-           "did not simply pass arrives at proposed, which is the only step "
-           "that routes and the only way to waiting on you.",
+           "refuse — prepared, build, proposed and merge — and most of what "
+           "did not simply pass arrives at proposed, the only step that "
+           "routes; a prepared refusal and a check before the merge lane "
+           "answer you directly instead, without routing.",
     f1_steps=(
         ("claim",     "which tickets, and in what order",           False),
         ("admit",     "the requirement · the worktree",             False),
@@ -259,7 +268,7 @@ EN = dict(
     f1_ret_claim="× restarts",
     f1_wait="waiting on you",
     f1_wait2="every ceiling spent · a question only you can answer",
-    f1_spent="the one way in",
+    f1_spent="proposed's own way in",
     f1_closed="you close it",
 )
 
@@ -285,12 +294,16 @@ ZH = dict(
         "不会因为某一步说了不，就把它扔掉重来。",
 
     s1h="十步",
-    s1l="从上往下读。黄铜色的四步是会说不的；每一个没有径直通过的步都抵达 "
-        "<code>proposed</code>，它是唯一决定下一步去哪的步。",
+    s1l="从上往下读。黄铜色的四步是会说不的；大多数没有径直通过的步都抵达 "
+        "<code>proposed</code>，它是唯一决定下一步去哪的步 —— 但 "
+        "<code>prepared</code> 的拒绝和合并车道前的一次检查会直接回答你，"
+        "因为两者都没有 <code>proposed</code> 能路由的方向。",
     s1c="<b>黄铜色表示这一步会拒绝</b> —— <code>prepared</code>、<code>build</code>、"
         "<code>proposed</code>、<code>merge</code>。虚线框是工作树：在 "
-        "<code>admit</code> 切出，一直活到合并完成。右边的虚线是每一个没有径直通过"
-        "的步，它们全都抵达 <code>proposed</code>。左边的实线是 "
+        "<code>admit</code> 切出，一直活到合并完成。右边的虚线是大多数没有径直通过"
+        "的步，它们抵达 <code>proposed</code>；从 <code>prepared</code> 出发的那条短"
+        "虚线是它自己的拒绝，直接去 waiting on you，合并车道前的检查也是一样，"
+        "因为两者都没有 <code>proposed</code> 能路由的方向。左边的实线是 "
         "<code>proposed</code> 的回答 —— 回到 agent、回到队列，或者到你这里。",
 
     s2h="图上每一个词",
@@ -351,14 +364,16 @@ ZH = dict(
          "因为它对你的改动没有做出任何裁决。",
 
     s5h="它什么时候停下来等你",
-    s5l="一个入口，一个去处。",
+    s5l="一个去处，不管它怎么到的。",
     prop_h="什么会把一张票放到那里",
     prop1="所有上限都花完了 —— 先是 rounds，然后是 restarts —— 而这次改动仍然被拒。"
           "或者回来了一个只有你能回答的问题：需求不清、一个设计决定、"
           "两处改动把同一个意图改成了不同的样子。",
-    prop2="<b>只有 <code>proposed</code> 能把票送到你面前。</b>没有任何一步能自己"
-          "走到你这里 —— 正是这一点，让<i>这值不值得打扰一个人</i>成为一个地方的"
-          "一个决定，而不是散落在整条流水线里的习惯。",
+    prop2="<b>大多数情况下是 <code>proposed</code> 决定把票送到你面前。</b>"
+          "<code>prepared</code> 的拒绝和合并车道前的一次检查会自己走到你这里，"
+          "因为两者都没有 <code>proposed</code> 能路由的方向 —— 这仍然让"
+          "<i>这值不值得打扰一个人</i>成为一个地方的一个决定，而不是散落在"
+          "整条流水线里的习惯。",
     gap_h="它会带着什么过来",
     gap1="是什么拒的、为什么，用那一步自己的话 —— findings、build 的输出、"
          "冲突的那些路径。你不该为了搞清一张票为什么在等而去翻日志。",
@@ -367,8 +382,9 @@ ZH = dict(
 
     foot="由 scripts/the-pass.py 生成 · 灵台",
     f1_alt="一趟 pass，从 claim 到 end。主干上十步，其中四步会拒绝 —— prepared、"
-           "build、proposed、merge —— 而每一个没有径直通过的步都抵达 proposed，"
-           "它是唯一做路由的一步，也是通向 waiting on you 的唯一入口。",
+           "build、proposed、merge —— 而大多数没有径直通过的步都抵达 proposed，"
+           "它是唯一做路由的一步；prepared 的拒绝和合并车道前的一次检查会直接"
+           "回答你，不经过路由。",
     f1_steps=(
         ("claim",     "取哪些票，按什么顺序",                        False),
         ("admit",     "需求 · 工作树",                              False),
@@ -390,7 +406,7 @@ ZH = dict(
     f1_ret_claim="× restarts",
     f1_wait="waiting on you",
     f1_wait2="上限花完 · 一个只有你能回答的问题",
-    f1_spent="唯一的入口",
+    f1_spent="proposed 自己的入口",
     f1_closed="你把它关掉",
 )
 
@@ -436,10 +452,12 @@ def figure_one(T):
             a(line(CX, y + BH, CX, _y(i + 1)))
 
     # what did not pass: a stub from each such step into one channel, and one
-    # arrow into proposed. Seven edges drawn as seven stubs and a rule.
+    # arrow into proposed. Six edges drawn as six stubs and a rule — `prepared`
+    # is not one of them (`#467`): its own refusal never reaches `proposed` at
+    # all, so it gets its own line straight to "waiting on you" below instead.
     idx = {name: k for k, (name, _, _) in enumerate(steps)}
     po = idx["proposed"]
-    for name in ("admit", "prepared", "design", "implement", "build", "review"):
+    for name in ("admit", "design", "implement", "build", "review"):
         y = _y(idx[name]) + BH / 2
         a(line(BX + BW, y, FAN, y, arrow=False, op=".55", dash="4 4"))
     a(line(BX + BW, _y(idx["merge"]) + BH / 2, FAN,
@@ -479,6 +497,15 @@ def figure_one(T):
     a(poly([(BX + BW, _y(po) + BH - 8), (FAN + 30, _y(po) + BH - 8),
             (FAN + 30, wy + BH / 2), (RX - 2, wy + BH / 2)]))
     a(txt(RX + RW / 2, wy - 8, T["f1_spent"], size=10.5, op=".62"))
+
+    # `prepared`'s own refusal, straight to you — its own dashed line rather
+    # than one more stub into the fan, because it never visits `proposed`
+    # (`#467`, 0120 §2's variant table: no agent has run, so there is no diff
+    # for a judge to be handed).
+    py = _y(idx["prepared"]) + BH / 2
+    a(line(BX + BW, py, FAN + 15, py, arrow=False, op=".55", dash="4 4"))
+    a(line(FAN + 15, py, FAN + 15, wy + BH / 2, arrow=False, op=".55", dash="4 4"))
+    a(line(FAN + 15, wy + BH / 2, RX - 2, wy + BH / 2, op=".55", dash="4 4"))
 
     # and waiting reaches end, because end runs on every outcome
     ey = _y(idx["end"]) + BH / 2

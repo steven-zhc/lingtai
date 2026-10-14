@@ -1019,14 +1019,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * **The cold reviewer's own answer is unreadable, not the router's judge**
-   * (`#467`'s fix round). `nextOf` answers `WaitOnPerson{AnswerUnreadable}`
-   * directly for a `review` whose findings do not parse at all, so the pass
-   * never visits `proposed` a second time — but `holdOf` still reads it as
-   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
-   * got, and `conduct.ts`'s `judged` predicate must still read this as
-   * *something judged this diff and said no* or the *merge it anyway*
-   * control silently disappears from the card (`ApprovalRequested`).
+   * **The cold reviewer's own answer is unreadable, and still visits
+   * `proposed`'s own spine — the one visit that runs a declared
+   * `human:`/`watch:` action there** (`#467`'s fix round). `nextOf` answers
+   * `WaitOnPerson{AnswerUnreadable}` for a `review` whose findings do not
+   * parse at all, but the loop reads that answer at `review` as carrying the
+   * pass on to `proposed`'s own way-through visit rather than stopping —
+   * `pass.waitOn` stays `null`, and `proposed`'s own body (`reviewRefused` +
+   * `judged`'s `unreadable` branch) is what turns it into the same
+   * `Routed{when: 'findings'}` an unrouted `review` refusal always got. A
+   * recipe that declared a gate at `proposed:` would have it run here; this
+   * fixture declares none, so the visit's only effect is the routing.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()
@@ -1054,11 +1057,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       fakePorts(did, store),
     )
 
-    expect(result).toMatchObject({ ok: 'held', step: 'review' })
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     expect(typesOf(theRun(store))).toContain('ApprovalRequested')
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('not readable as findings')
+    expect((hold as { why: string }).why).toContain('could not be read at all')
   })
 
   /**

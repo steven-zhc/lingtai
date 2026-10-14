@@ -1189,6 +1189,50 @@ describe('every step that does not pass arrives at proposed', () => {
   })
 
   /**
+   * **A `review` whose answer could not be read still visits `proposed`'s own
+   * inspection, and a declared `human:` there still runs** (`#467`) — unlike
+   * `build`'s refusal above, which arrives at `proposed` without its plugins
+   * (`arriveAtTheRouter` hands the visit a `reached`, never `null`). `review`
+   * always ends `passed` (`endingOf`), so the walk reaches `proposed` the
+   * ordinary way — `arriving: null` — which is the one condition under which
+   * `runStep` runs a step's own declared plugins at all. Skipping that visit
+   * would leave the declared gate silently unbuilt and the pass reporting
+   * `passed` where a person should be asked.
+   */
+  it("still runs proposed's own declared human: when review's own answer could not be read", async () => {
+    const recipe = recipeWith({
+      review: [{ name: 'cold review', agent: 'claude-code', prompt: '' }],
+      proposed: [{ name: 'sign off', human: 'ship it?' }],
+    })
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      review: [canned('cold review', { verdict: 'failed', evidence: 'garbled', findings: [], unreadable: true })],
+      // `yields: 'signoff'`, not `canned`'s `'verdict'` — a real `human:`
+      // action (`createHumanAction`) is what this stands in for, and
+      // `nextOf` reads a `needs-approval` verdict differently by yield
+      // (`SignoffRequired` vs. `CheckRefused`, `adapters.ts:215-220`).
+      proposed: [
+        {
+          name: 'sign off',
+          kind: 'human',
+          yields: 'signoff',
+          run: async () => ({ verdict: 'needs-approval', evidence: 'ship it?', findings: [] }),
+        },
+      ],
+    })
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(ran.some((r) => r.step === 'proposed')).toBe(true)
+    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([
+      { action: 'sign off', verdict: 'needs-approval', evidence: 'ship it?', findings: [] },
+    ])
+    expect(result.waitOn).toMatchObject({ _tag: 'SignoffRequired' })
+    expect(result.rested).toBeNull()
+  })
+
+  /**
    * And the three that are not on the drawing go nowhere. `proposed` is the
    * router, so a visit that did not pass there has nothing above it to appeal
    * to; `waiting` is where it rests and `stoppedAt` names it.

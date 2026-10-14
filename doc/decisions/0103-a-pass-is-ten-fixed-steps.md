@@ -77,14 +77,20 @@ never report a fault.
 
 6. **Most of what does not simply pass arrives at `proposed`, carrying its
    reason intact** — read off each visit's `StepOutcome` by `nextOf`
-   (`packages/domain/src/pass-next.ts`), which answers `Propose` for `admit`,
-   `design`, `implement`'s own question, `build`, `review` and the merge
-   lane's own refusal. **Three cells answer a person directly instead, and
-   never visit the router**: a refusal at `prepared`, a check before the merge
-   lane refusing, and an unreadable answer at `review` or `merge` — none of
-   which is a direction any `judge:` could be declared at, so there is nothing
-   to offer one. `claim` has nothing to route (no item yet), `end` runs after
-   the decision, and a `proposed` that refuses has nowhere above it to appeal
+   (`packages/domain/src/pass-next.ts`), which answers `Propose` for `design`,
+   `implement`'s own question, `build`, a `review` whose answer parses, and
+   the merge lane's own refusal. **Four cells answer a person directly
+   instead, and never visit the router**: a refusal at `admit` (cutting the
+   worktree) or at `prepared` — both `worktreeFellShort`'s only arm, never
+   `Propose` — a check before the merge lane refusing, and an unreadable
+   answer at `merge` — none of which is a direction any `judge:` could be
+   declared at, so there is nothing to offer one. An unreadable answer at
+   `review` is `nextOf`'s own `WaitOnPerson` too, but the pass carries it on
+   to `proposed`'s own way-through visit rather than stopping at `review` —
+   that visit is the one that runs a declared `human:`/`watch:` action, and
+   the answer is still not a criterion any judge is paid to look at (0038
+   §2). `claim` has nothing to route (no item yet), `end` runs after the
+   decision, and a `proposed` that refuses has nowhere above it to appeal
    to, so it rests at `waiting`. `proposed` also runs on the way through: a
    pass that sailed past has a recorded decision saying so, and that visit is
    where `review`'s findings are judged.

@@ -1768,13 +1768,15 @@ describe('proposed is the only step that routes, and one judge answers each when
    * that night said something else entirely: nobody comparing them would have seen
    * that one was a dropped answer rather than a thin review.
    *
-   * **Since `#467` this never reaches `proposed` at all** (0120 §2's variant
-   * table): `nextOf` reads `review`'s own `AnswerUnreadable` verdict directly
-   * and answers `WaitOnPerson` before the way-through visit that used to be
-   * the one place this was told apart from a thin opinion. An answer nobody
-   * can read is still not a criterion (0038 §2), so no judge is paid to look
-   * at it and `implement` is still not bought — `rounds: 3` here is what makes
-   * that an assertion rather than an accident of the ceilings.
+   * **`nextOf` still reads `review`'s own `AnswerUnreadable` verdict
+   * directly (0120 §2's variant table), and the loop still has to carry it to
+   * `proposed`'s own way-through visit rather than stopping at `review`
+   * itself** — that visit is the one place `arriving` is `null` for this
+   * step, which is the one condition under which `runStep` runs a declared
+   * `human:`/`watch:` action at `proposed:` at all. An answer nobody can read
+   * is still not a criterion (0038 §2), so no judge is paid to look at it and
+   * `implement` is still not bought — `rounds: 3` here is what makes that an
+   * assertion rather than an accident of the ceilings.
    */
   it('reports an answer it could not read as unreadable, and not as an opinion', async () => {
     const { result, asked } = await pass({
@@ -1786,10 +1788,12 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
 
     expect(asked.judge).toEqual([])
-    expect(result.steps.some((visit) => visit.step === 'proposed')).toBe(false)
-    expect(result.routes).toEqual([])
-    expect(result.waitOn).toMatchObject({ _tag: 'AnswerUnreadable', step: 'review' })
-    expect(result.rested).toBeNull()
+    expect(result.steps.some((visit) => visit.step === 'proposed')).toBe(true)
+    expect(result.routes[0]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
+    expect(result.routes[0]?.why).toContain("`review`'s findings could not be read at all")
+    expect(result.routes[0]?.why).not.toContain('nothing an agent could be held to')
+    expect(result.waitOn).toBeNull()
+    expect(result.rested).toBe('waiting')
     expect(asked.land).toEqual([])
   })
 
