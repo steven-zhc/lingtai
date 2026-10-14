@@ -137,14 +137,19 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
   })
 })
 
+/** `#472`'s wrapped form a `Propose` reaches a person by, for the `recommendedResolution`/`allowedResolutions` checks below — `holdOf`'s own equality (`#471`) says this answers the same as the direct `WaitReason` would. */
+function escalated(proposal: Proposal): WaitReason {
+  return { _tag: 'ProposedEscalated', run: { runId: 'run-1' }, proposal, because: { _tag: 'NotAsked' } }
+}
+
 describe('a tamper watch refusal routes as a refused check, never as something a person may approve', () => {
   it('`nextOf` answers `CheckRefused`, and `recommendedResolution` never offers `Approve` for it', () => {
     const built = actionOf(fakeAction('watch', 'verdict', 'tamper'), entry('failed', { action: 'tamper' }), ON_SHA)
     const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
     const next = nextOf(outcome, { runId: 'run-1' })
-    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'CheckRefused' } })
-    if (next._tag === 'WaitOnPerson') {
-      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).not.toBe('Approve')
+    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'CheckRefused' } })
+    if (next._tag === 'Propose') {
+      expect(recommendedResolution(escalated(next.proposal), { _tag: 'NotDeclared' })).not.toBe('Approve')
     }
   })
 })
@@ -158,9 +163,9 @@ describe('a request-approval watch whose own dependency threw never prefills App
     )
     const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
     const next = nextOf(outcome, { runId: 'run-1' })
-    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused' } })
-    if (next._tag === 'WaitOnPerson') {
-      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).not.toBe('Approve')
+    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'SetupRefused' } })
+    if (next._tag === 'Propose') {
+      expect(recommendedResolution(escalated(next.proposal), { _tag: 'NotDeclared' })).not.toBe('Approve')
     }
   })
 })
@@ -179,10 +184,11 @@ describe('a setup that broke before any agent ran never reads as a crashed agent
     expect(built.result._tag).toBe('NotDone')
     const outcome: StepOutcome = { step: 'implement', round: 0, actions: [built] }
     const next = nextOf(outcome, { runId: 'run-1' })
-    expect(next).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'SetupRefused' } })
-    if (next._tag === 'WaitOnPerson') {
-      expect(recommendedResolution(next.reason, { _tag: 'NotDeclared' })).toBeNull()
-      expect(allowedResolutions(next.reason)).toEqual(['Requeue', 'Close'])
+    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'SetupRefused' } })
+    if (next._tag === 'Propose') {
+      const reason = escalated(next.proposal)
+      expect(recommendedResolution(reason, { _tag: 'NotDeclared' })).toBeNull()
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
     }
   })
 })
@@ -214,12 +220,12 @@ describe('an implement agent that committed nothing, with a `run:` the recipe de
   it('is `changedNothing`, so `nextOf` waits on a person instead of advancing to `build`', () => {
     const outcome = implementOutcome(0)
     expect(changedNothing(outcome)).toBe(true)
-    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'NothingProduced' } })
+    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'NothingProduced' } })
   })
 
   it('answers `FixerDisagrees` on a fix round instead of `NothingProduced`', () => {
     const outcome = implementOutcome(1)
-    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'FixerDisagrees' } })
+    expect(nextOf(outcome, run)).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'FixerDisagrees' } })
   })
 })
 

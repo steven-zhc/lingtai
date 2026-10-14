@@ -36,8 +36,8 @@ the agent, every time, and commits what it changed (`doc/writing-a-plugin.md`'s 
 | `prepared` | `blocked`: no agent has run, so `implement` is not on offer. **No round bought.** |
 | `implement` | Put back to the agent's own commit; `build`'s copy of it is the backstop. **No round bought.** |
 | `build` | Back to the agent with the error. **A fix round.** |
-| `proposed` | `blocked`: the router has nowhere above it to appeal to. **No round bought.** |
-| `merge` | `action-refused` is no direction a `judge:` answers: held for a person. **No round bought.** |
+| `proposed` | No built-in `judge:` answers a `check-refused`, so it is `blocked` for a person unless a recipe declares one. **No round bought** without one. |
+| `merge` | `action-refused` is no direction a built-in `judge:` answers, so it is held for a person unless a recipe declares one. **No round bought** without one. |
 
 A check the diff can satisfy belongs at `build`; a fix-up for what the agent wrote
 belongs at `implement`; the other five steps are refused.
