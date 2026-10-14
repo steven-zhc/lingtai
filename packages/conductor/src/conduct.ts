@@ -3686,7 +3686,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
        * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`,
-       * and `ARRIVE_AT_THE_ROUTER` does not include the step — so `stoppedAt` is
+       * and the loop never asks `nextOf` about `claim` — so `stoppedAt` is
        * `{step: "claim"}` and `outcomeOf` reads any non-`never-ran` stop as
        * `blocked`. Left to fall through, the blocked branch appends
        * `ApprovalRequested` to a run stream with no `RunStarted`, appends

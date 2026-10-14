@@ -1022,7 +1022,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * are *took it* and three ways of *did not*, the three arrive as `failed`
      * verdicts at a step `REFUSING_STEPS` does not carry, and `endingOf` reports
      * each as a `did-not-finish` carrying the action's own `because`. None of them
-     * reaches the router either (`ARRIVE_AT_THE_ROUTER`).
+     * reaches `nextOf` either — `claim` runs outside `runPass`, and `nextOf` throws
+     * if it is asked about it (0120 §6).
      *
      * **It is still where a pass begins, and there is nothing left here to
      * reset.** It cleared the item, its stream and the design before asking,
@@ -1251,8 +1252,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      */
     // `StepNeverRan` since `#277`: the judge this step may dispatch meets the
     // same account-wide wall every other agent does, and 0031 §3's answer is
-    // the conductor's rather than a route. `goesToTheRouter` already refuses
-    // it, so it ends the pass here and nothing loops.
+    // the conductor's rather than a route. `nextOf` gives this ending to the
+    // conductor, not to the router, so it ends the pass here and nothing loops.
     proposed: async ({ arriving, offering, reached }): Promise<StepPassed | StepRouted | StepNeverRan> => {
       if (arriving === null) {
         const said = reviewRefused(reached)

@@ -893,7 +893,7 @@ export function parseDraft(text: string | null): Drafted {
  *
  * **The fourth is `needs-input`, and until `#294` no runtime could reach it.**
  * 0058 §3c names `design` as one of the three steps that may end asking,
- * `ARRIVE_AT_THE_ROUTER` carries `design`, `goesToTheRouter` admits the ending
+ * `nextOf` answers `Propose` for a refusal at `design`,
  * and `the-pass.py` draws the fan — and this function had no branch that produced
  * the token, so a design agent that found the ticket unanswerable had one move:
  * write its doubts into the document and hand them to the implementer, which is
@@ -978,7 +978,7 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         /**
          * **0058 §3c, reachable** (`#294`). `did-not-finish` and not `failed`: the
          * agent judged nothing, so no round is charged for the asking, and
-         * `because` is what carries it past `goesToTheRouter` to `proposed` —
+         * `because` is what `nextOf` reads to send it to `proposed` —
          * where `BUILT_IN_FOR["needs-input"]` is null, so a person holds it with
          * the question unless a recipe declared a judge for the direction.
          *
