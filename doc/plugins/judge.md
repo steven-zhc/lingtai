@@ -22,10 +22,19 @@ of these*, never *what may be spent*:** `stepsOnOffer` counts `rounds` and
 person, and a set of one is never asked. `claude-code` (or `codex`) costs one
 dispatch per arrival.
 
-**Five directions, two already answered.** With nothing declared, `BUILT_IN_FOR`
-sends `red` and `verify-failed` to `same-worktree`, so a `judge:` there only
-rewords the card; `conflict` and `needs-input` go to a person. **`findings` is the
-one worth an agent**: *the lines* and *the approach* are different work.
+**Twelve directions, and ten of them have no built-in — but seven of those ten
+cannot arrive here yet.** With nothing declared, `BUILT_IN_FOR` sends `red` and
+`verify-failed` to `same-worktree`, so a `judge:` there only rewords the card;
+`conflict` and `needs-input` go to a person. **`findings` is the one worth an
+agent today**: *the lines* and *the approach* are different work. The other
+seven — `setup-refused`, `check-refused`, `answer-unreadable`,
+`nothing-produced`, `fixer-disagrees`, `merge-refused` and `budget-exhausted`
+(`#471`) — are also `null` in `BUILT_IN_FOR`, so a declared judge for one would
+cost an agent the same way `findings` does, except that until `#472` wires
+`nextOf` to propose them, nothing routes a refusal to any of those `when:`
+values: a `judge:` entry naming one resolves but is never asked, and a person
+is next, same as before `#471`. See [`doc/design/471.md`](../design/471.md)
+for what each is and what routes it once it can arrive.
 
 ## Where it may be declared
 
@@ -40,7 +49,7 @@ built-in answers apply.
 |---|---|---|---|
 | `name` | string | yes | How every verdict and waiver addresses this action; the route's sentence names it, so write it as the decision it makes. |
 | `judge` | `same-worktree` \| `claude-code` \| `codex` | yes | Who decides. `ask-or-assume` is not in the enum: nothing implements it. |
-| `when` | `red` \| `verify-failed` \| `conflict` \| `needs-input` \| `findings` | yes, **no default** | The direction this entry answers. Two entries for one direction: the first wins, both are on the board. |
+| `when` | `red` \| `verify-failed` \| `conflict` \| `needs-input` \| `findings` \| `setup-refused` \| `check-refused` \| `answer-unreadable` \| `nothing-produced` \| `fixer-disagrees` \| `merge-refused` \| `budget-exhausted` | yes, **no default** | The direction this entry answers. Two entries for one direction: the first wins, both are on the board. The seven after `findings` (`#471`) resolve but are never asked until `#472` wires `nextOf` to propose them. |
 | `model` | string | no, the runtime's own default | Which model buys the judgement; handed to the runtime unvalidated. |
 | `limits` | `{ turns?, wall? }` | no, `runtime.limits` | What this call may spend; it may only narrow the ceiling. |
 
@@ -90,7 +99,7 @@ build:
 > only step that routes … — refused when the recipe resolves, before any money.
 
 An omitted or misspelled `when:` gives `its "when" field is not what "judge"
-accepts: Invalid option: expected one of "red"|"verify-failed"|"conflict"|"needs-input"|"findings"`;
+accepts: Invalid option: expected one of "red"|"verify-failed"|"conflict"|"needs-input"|"findings"|"setup-refused"|"check-refused"|"answer-unreadable"|"nothing-produced"|"fixer-disagrees"|"merge-refused"|"budget-exhausted"`;
 `judge: ask-or-assume` gives the same with `"same-worktree"|"claude-code"|"codex"`.
 `rounds: 5` gives `"judge" declares no "rounds" field`.
 

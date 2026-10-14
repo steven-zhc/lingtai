@@ -389,7 +389,7 @@ type Arrival = Omit<Judging, 'offering'> & {
  * meeting an account-wide wall, which is the conductor's to answer and not this
  * item's (0031 §3); `noJudge` is the recipe saying nothing for this direction.
  *
- * **`noJudge` is not a failure and is the ordinary answer for four of the five.**
+ * **`noJudge` is not a failure and is the ordinary answer for ten of the twelve.**
  * `BUILT_IN_FOR` is what the body falls back to — the mechanical directions are
  * answered there, synchronously, spending nothing — and where that is `null` too,
  * the pass reaches a person. So a direction nobody configured costs no agent and

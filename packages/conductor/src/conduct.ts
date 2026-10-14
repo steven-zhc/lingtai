@@ -3641,14 +3641,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * wall would read as the *ticket's own scope is wrong, requeue it*
            * `Ceiling` sentence, with the numbers that sentence promises read as
            * `null` besides.
+           *
+           * **A `BudgetExhausted` reaches here two ways** (`#471`): directly,
+           * or wrapped as `ProposedEscalated{proposal: BudgetExhausted}` once
+           * `proposed:` declares nothing for `budget-exhausted` (0061 §3,
+           * `BUILT_IN_FOR`). Both name the same situation — some agent other
+           * than `firstDispatch` ran out — so both are read off the same
+           * `ceilingHit === null` test; gating on `pass.waitOn._tag` alone
+           * would miss the wrapped form and let it through to `holdOf`'s
+           * `Ceiling`.
            */
-          if (pass.waitOn._tag === 'BudgetExhausted' && ceilingHit === null) {
+          const budgetDetail =
+            pass.waitOn._tag === 'BudgetExhausted'
+              ? pass.waitOn.detail
+              : pass.waitOn._tag === 'ProposedEscalated' && pass.waitOn.proposal._tag === 'BudgetExhausted'
+                ? pass.waitOn.proposal.detail
+                : null
+          if (budgetDetail !== null && ceilingHit === null) {
             return {
               _tag: 'DidNotFinish',
               run: runRef,
               step: pass.stoppedAt!.step,
-              why: said(pass.waitOn.detail, 400),
-              raw: pass.waitOn.detail,
+              why: said(budgetDetail, 400),
+              raw: budgetDetail,
             }
           }
           const hold = holdOf(pass.waitOn, { branch, base, findings })

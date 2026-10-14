@@ -471,6 +471,23 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
 }
 
 /**
+ * `#471`'s seven `JudgeWhen` values — a `judge:` may legally name one of
+ * these since the schema widened to take the whole enum, but nothing
+ * proposes them until `#472` wires `nextOf` to do it (`doc/design/471.md`,
+ * `BUILT_IN_FOR` in `packages/conductor/src/judge.ts`). The `judge` case
+ * below reads this set so the panel never describes a call that cannot fire.
+ */
+const NOT_YET_ROUTED: ReadonlySet<string> = new Set([
+  'setup-refused',
+  'check-refused',
+  'answer-unreadable',
+  'nothing-produced',
+  'fixer-disagrees',
+  'merge-refused',
+  'budget-exhausted',
+])
+
+/**
  * What an action does, and what bounds it, as one line each.
  *
  * Only a command carries a clock of its own (`stepPlan` reads the same
@@ -677,6 +694,16 @@ export function describeAction(
         own.length === 0
           ? 'runtime.limits, with no bound of its own'
           : `${own.join(' and ')} on this one call, narrowing runtime.limits`
+      // `#471`'s seven resolve but nothing proposes them until `#472` wires
+      // `nextOf` to do it — the recipe panel must say that rather than
+      // describe a wiring that cannot fire (`apps/cli/src/run.ts:218` hedges
+      // the same gap for a runtime judge generally; this is the specific case).
+      if (NOT_YET_ROUTED.has(a.when)) {
+        return {
+          does: `names ${a.judge}, ${a.model ?? 'its default model'}, for a ${a.when} refusal — but nothing routes one there yet, so it is never asked`,
+          bound: `would be ${call}; ${counts} — if it were ever asked`,
+        }
+      }
       return {
         does: `asks ${a.judge}, ${a.model ?? 'its default model'}, which step is next, for a ${a.when} refusal`,
         bound: `${call}; ${counts}`,

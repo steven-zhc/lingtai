@@ -10,7 +10,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * destination comes back from the model and is held to the offer by `judged` in
  * `pass-steps.ts`, which is where every other route is held to it too.
  *
- * **Why an agent at all, for one of the five directions.** 0061 §3 measured
+ * **Why an agent at all, for one of the twelve directions.** 0061 §3 measured
  * `findings` at 231 refusals in fourteen days and calls it *the one judgement
  * worth an agent*, because it is the only arrival where the two answers are
  * different work: *these lines are wrong* is another round in the worktree that
