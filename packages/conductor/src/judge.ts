@@ -462,6 +462,11 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
  * — one judge for all five pays an agent sixty times to reach a mechanical
  * conclusion, and makes anyone replacing it reimplement the mechanical branches
  * correctly or the loop breaks.
+ *
+ * **`#471`'s seven are `null` too.** Each is a judgement nothing built-in
+ * should make unasked — rebasing a `MergeRefused{dirty-base}`, restarting a
+ * `BudgetExhausted` from the kept work — so declaring nothing reaches a
+ * person, the same floor every direction already has.
  */
 export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   red: 'same-worktree',
@@ -469,6 +474,13 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   conflict: null,
   'needs-input': null,
   findings: null,
+  'setup-refused': null,
+  'check-refused': null,
+  'answer-unreadable': null,
+  'nothing-produced': null,
+  'fixer-disagrees': null,
+  'merge-refused': null,
+  'budget-exhausted': null,
 }
 
 /** Where the pass goes, and whether the judge had to be overruled to send it there. */

@@ -103,13 +103,14 @@ import {
   cleared,
   diagnoseRefusal,
   type Action as DomainAction,
+  type CeilingKind,
   type Finding,
   type Hold,
   type RefusalReason,
   type Step,
   type StepOutcome,
 } from '@lingtai/domain'
-import type { EscalationBecause, WaitReason } from '@lingtai/domain/wait'
+import type { EscalationBecause, RunRef, WaitReason } from '@lingtai/domain/wait'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]
@@ -619,6 +620,73 @@ function said(detail: string, n = 300): string {
 }
 
 /**
+ * **One builder per cell `holdOf` and `escalatedHold` both need** (`#471`),
+ * so that `holdOf(ProposedEscalated{proposal: X})` equals `holdOf(X's direct
+ * WaitReason)` by construction rather than by two call sites staying in
+ * sync. Each takes the run and the facts its direct `WaitReason` carries —
+ * never the reason or the proposal itself, so neither caller passes the
+ * other's shape.
+ */
+function ceilingHold(
+  run: RunRef,
+  kind: CeilingKind,
+  detail: string,
+  turns: number | null,
+  costUsd: number | null,
+): Hold {
+  return { _tag: 'Ceiling', run, kind, detail: said(detail), turns, costUsd }
+}
+
+function setupRefusedHold(run: RunRef, step: Step, why: string): Hold {
+  // `prepared` alone lifts by a person; every other step's setup failure is
+  // an ordinary `DidNotFinish` today (`hold-of.ts:221-227`).
+  return step === 'prepared'
+    ? { _tag: 'SetupRefused', run, step, lifts: 'person', why: said(why, 400), raw: why }
+    : { _tag: 'DidNotFinish', run, step, why: said(why, 400), raw: why }
+}
+
+function checkRedHold(run: RunRef, step: Step, evidence: string): Hold {
+  return { _tag: 'CheckRed', run, step, why: said(evidence, 400), raw: evidence }
+}
+
+function mergeRefusedHold(
+  run: RunRef,
+  reason: RefusalReason,
+  raw: string,
+  pass: { branch: string; base: string },
+): Hold {
+  return {
+    _tag: 'MergeRefused',
+    run,
+    reason,
+    // `holdOfPass` reads this cell's `why` from `diagnoseRefusal`
+    // (`hold-of.ts:143-155`), not from the lane's own raw detail.
+    why: diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base }).what,
+    paths: null,
+    baseSha: null,
+    headSha: null,
+    raw,
+    afterApproval: false,
+  }
+}
+
+function declinedHold(run: RunRef, step: Step, saidText: string | null): Hold {
+  return { _tag: 'Declined', run, step, said: saidText }
+}
+
+function nothingProducedHold(run: RunRef, saidText: string | null): Hold {
+  // No `Hold` today — the nearest is a `DidNotFinish` at `implement`, the
+  // step `nextOf` names for it (0120 §4's `WaitOnPerson`).
+  return {
+    _tag: 'DidNotFinish',
+    run,
+    step: 'implement',
+    why: said(saidText ?? 'the agent produced no commits', 400),
+    raw: saidText,
+  }
+}
+
+/**
  * The `Hold` a `WaitReason` would become — 0118 §1's model, through today's
  * spelling. `pass` carries the three facts that live on the pass rather than
  * on the wait: `branch`/`base` open a `Routed.why`, and `findings` rides on
@@ -645,54 +713,19 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
         findings: [...pass.findings],
       }
     case 'FixerDisagrees':
-      return { _tag: 'Declined', run: reason.run, step: 'implement', said: reason.said }
+      return declinedHold(reason.run, 'implement', reason.said)
     case 'NothingProduced':
-      // No `Hold` today — the nearest is a `DidNotFinish` at `implement`,
-      // the step `nextOf` names for it (0120 §4's `WaitOnPerson`).
-      return {
-        _tag: 'DidNotFinish',
-        run: reason.run,
-        step: 'implement',
-        why: said(reason.said ?? 'the agent produced no commits', 400),
-        raw: reason.said,
-      }
+      return nothingProducedHold(reason.run, reason.said)
     case 'ProposedEscalated':
       return escalatedHold(reason, pass)
     case 'CheckRefused':
-      return {
-        _tag: 'CheckRed',
-        run: reason.run,
-        step: reason.step,
-        why: said(reason.evidence, 400),
-        raw: reason.evidence,
-      }
+      return checkRedHold(reason.run, reason.step, reason.evidence)
     case 'MergeRefused':
-      return {
-        _tag: 'MergeRefused',
-        run: reason.run,
-        reason: reason.reason,
-        // `holdOfPass` reads this cell's `why` from `diagnoseRefusal`
-        // (`hold-of.ts:143-155`), not from the lane's own raw detail — one
-        // composed sentence naming the branch and the base, rather than the
-        // raw git output `reason.raw` carries uncapped on `raw` below.
-        why: diagnoseRefusal({ reason: reason.reason, detail: reason.raw, branch: pass.branch, base: pass.base }).what,
-        paths: null,
-        baseSha: null,
-        headSha: null,
-        raw: reason.raw,
-        afterApproval: false,
-      }
+      return mergeRefusedHold(reason.run, reason.reason, reason.raw, pass)
     case 'BudgetExhausted':
       // 0118 §3's rule: `null` rather than an invented zero. `#455`'s receipt
       // is what would fill `turns`/`costUsd`, and nothing mints one yet.
-      return {
-        _tag: 'Ceiling',
-        run: reason.run,
-        kind: reason.cause,
-        detail: said(reason.detail),
-        turns: null,
-        costUsd: null,
-      }
+      return ceilingHold(reason.run, reason.cause, reason.detail, null, null)
     case 'AgentCrashed':
       return {
         _tag: 'DidNotFinish',
@@ -702,20 +735,9 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
         raw: reason.detail,
       }
     case 'SetupRefused':
-      // `prepared` alone lifts by a person; every other step's setup failure
-      // is an ordinary `DidNotFinish` today (`hold-of.ts:221-227`).
-      return reason.step === 'prepared'
-        ? {
-            _tag: 'SetupRefused',
-            run: reason.run,
-            step: reason.step,
-            lifts: 'person',
-            why: said(reason.why, 400),
-            raw: reason.why,
-          }
-        : { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: said(reason.why, 400), raw: reason.why }
+      return setupRefusedHold(reason.run, reason.step, reason.why)
     case 'AnswerUnreadable':
-      return answerUnreadableHold(reason, pass)
+      return answerUnreadableHold(reason.run, reason.step, reason.raw, pass)
   }
 }
 
@@ -856,32 +878,56 @@ function escalatedHold(
         baseSha: null,
         headSha: null,
       }
+    // `#471`'s seven: none of their direct `Hold`s has a field for
+    // `reason.because` (the Watch out's own rule), so these call the same
+    // builder the direct `WaitReason` case above does, off the proposal's
+    // own facts, and never read `reasonText`/`why` above.
+    case 'SetupRefused':
+      return setupRefusedHold(reason.run, proposal.from, proposal.output)
+    case 'CheckRefused':
+      return checkRedHold(reason.run, proposal.from, proposal.output)
+    case 'AnswerUnreadable':
+      return answerUnreadableHold(reason.run, proposal.from, proposal.raw, pass)
+    case 'NothingProduced':
+      return nothingProducedHold(reason.run, proposal.said)
+    case 'FixerDisagrees':
+      return declinedHold(reason.run, 'implement', proposal.said)
+    case 'MergeRefused':
+      return mergeRefusedHold(reason.run, proposal.reason, proposal.output, pass)
+    case 'BudgetExhausted':
+      // An escalated `BudgetExhausted` passes the proposal's own
+      // `turns`/`costUsd` through — the direct path always writes `null`
+      // there (nothing mints a receipt for it yet), and the proposal is the
+      // only place those two numbers are known at this point.
+      return ceilingHold(reason.run, proposal.kind, proposal.detail, proposal.turns, proposal.costUsd)
   }
 }
 
 function answerUnreadableHold(
-  reason: Extract<WaitReason, { _tag: 'AnswerUnreadable' }>,
+  run: RunRef,
+  step: Step,
+  raw: string,
   pass: { branch: string; base: string; findings: readonly Finding[] },
 ): Hold {
   // No `Hold` today. `review`/`proposed` go through the router
   // (`Routed{when: 'findings'}`, as an unrouted `review` refusal does);
   // `merge` reads as the lane's own `CheckRed`; `design` has nothing but an
   // ordinary `DidNotFinish`.
-  if (reason.step === 'review' || reason.step === 'proposed') {
+  if (step === 'review' || step === 'proposed') {
     return {
       _tag: 'Routed',
-      run: reason.run,
+      run,
       when: 'findings',
-      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(reason.raw, 400)}`,
-      raw: reason.raw,
+      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(raw, 400)}`,
+      raw,
       findings: [...pass.findings],
       paths: null,
       baseSha: null,
       headSha: null,
     }
   }
-  if (reason.step === 'merge') {
-    return { _tag: 'CheckRed', run: reason.run, step: 'merge', why: said(reason.raw, 400), raw: reason.raw }
+  if (step === 'merge') {
+    return { _tag: 'CheckRed', run, step: 'merge', why: said(raw, 400), raw }
   }
-  return { _tag: 'DidNotFinish', run: reason.run, step: reason.step, why: said(reason.raw, 400), raw: reason.raw }
+  return { _tag: 'DidNotFinish', run, step, why: said(raw, 400), raw }
 }

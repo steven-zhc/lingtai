@@ -52,6 +52,20 @@ export function whenOf(proposal: Proposal): JudgeWhen {
     case 'ReviewFindings':
     case 'ReviewEmpty':
       return 'findings'
+    case 'SetupRefused':
+      return 'setup-refused'
+    case 'CheckRefused':
+      return 'check-refused'
+    case 'AnswerUnreadable':
+      return 'answer-unreadable'
+    case 'NothingProduced':
+      return 'nothing-produced'
+    case 'FixerDisagrees':
+      return 'fixer-disagrees'
+    case 'MergeRefused':
+      return 'merge-refused'
+    case 'BudgetExhausted':
+      return 'budget-exhausted'
   }
 }
 
