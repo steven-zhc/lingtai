@@ -646,7 +646,12 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepRequested',
       'StepStarted',
       'StepFailed',
-      'PassRouted',
+      // No `PassRouted` (`#467`): `nextOf` reads the check's own refusal as
+      // `WaitOnPerson{CheckRefused}` directly, so the pass never takes a
+      // second visit to `proposed` to discover there is no direction a
+      // `judge:` could be declared at for it. The hold is still `CheckRed`,
+      // through `holdOf`'s `CheckRefused` arm — the same `Hold` this row
+      // pinned before this ticket, reached a different way.
       'RunRefsPublished',
       'ApprovalRequested',
       'RunRefsPublished',

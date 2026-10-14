@@ -731,11 +731,13 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
 
 describe('prepared refuses, and the refusal reports like any other', () => {
   /**
-   * The ticket's own *watch out*: a failed install is the cheapest refusal there
-   * is. Every join it travels through is the skeleton's — `endingOf` reads a
-   * `failed` verdict at a refusing step as a refusal, the loop takes it to
-   * `proposed`, the router sends it to a person, and what the person is shown is
-   * the install rather than the router.
+   * **Except that since `#467` it does not route.** `endingOf` still reads a
+   * `failed` verdict at a refusing step as a refusal — `result.stoppedAt`
+   * names the install exactly as it always did — but `nextOf` answers
+   * `prepared`'s own refusal `WaitOnPerson{SetupRefused}` directly (0120 §2's
+   * variant table): no agent has run, so there is no diff and no judge could
+   * choose *the lines* over *the approach* about one, and the loop no longer
+   * pays for a second visit to discover that.
    */
   it('carries a failed install to a person, naming the install and not the router', async () => {
     const { result } = await pass({
@@ -743,7 +745,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
       actions: { prepared: [canned('install', RED)] },
     })
 
-    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:refused', 'proposed:routed', 'end:passed'])
+    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:refused', 'end:passed'])
     expect(result.stoppedAt).toEqual({
       step: 'prepared',
       ending: {
@@ -753,43 +755,30 @@ describe('prepared refuses, and the refusal reports like any other', () => {
         detail: 'pnpm install exited 1',
       },
     })
-    expect(result.routes).toEqual([
-      // **What was wanted and what happened, and no ceiling between them**
-      // (`#271`). The built-in wants the work fixed where it stands; `prepared`
-      // offers no step at all, so a person got it — and `ceiling` is null
-      // because no number a project could raise would have offered `implement`
-      // here. That is the reading `chose` alone would get wrong.
-      {
-        from: 'prepared',
-        chose: 'implement',
-        to: 'waiting',
-        why: expect.any(String),
-        ceiling: null,
-      },
-    ])
-    expect(result.rested).toBe('waiting')
+    // No router visit, and so no route decided — `waitOn` carries the reason
+    // instead (`#467`).
+    expect(result.routes).toEqual([])
+    expect(result.rested).toBeNull()
+    expect(result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
     expect(outcomeOf(result)).toBe('blocked')
   })
 
   /**
    * 0061 §3's worked example, from the other side: a failed install refuses
    * before any agent has run, so there is no diff and no error in one to fix.
-   * `implement` is therefore not among the destinations the judge is offered —
-   * even with a round to spend.
+   * **Since `#467` this is no longer a judge's own question** — the destination
+   * set `implement` would have been missing from is never built, because
+   * `prepared`'s refusal never reaches a router to offer it to.
    */
-  it('offers the judge a person and a restart, and never `implement`', async () => {
+  it('never offers the judge `implement` for a `prepared` refusal, by never asking one', async () => {
     const { result } = await pass({
       steps: { prepared: [{ name: 'install', run: 'false' }] },
       actions: { prepared: [canned('install', RED)] },
       ceilings: { rounds: 3, restartsLeft: 1 },
     })
 
-    const router = result.steps.find((visit) => visit.step === 'proposed')
-    expect(router?.ending.ending).toBe('routed')
-    // What the router was offered is what `NOT_BUILT_YET`'s body quotes back.
-    const why = router?.ending.ending === 'routed' ? router.ending.why : ''
-    expect(why).toContain('prepared')
-    expect(why).not.toContain('implement')
+    expect(result.steps.some((visit) => visit.step === 'proposed')).toBe(false)
+    expect(result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
   })
 
   it('passes on a green install, and adds nothing of its own', async () => {
@@ -1648,8 +1637,9 @@ describe('proposed is the only step that routes, and one judge answers each when
    * **The set depends on how far the pass got, not only on what is left to
    * spend** (0061 §3, and the ticket's own *watch out*). A failed install refuses
    * before any agent has run, so there is no diff and no error in one to fix —
-   * and a judge that knows nothing about `prepared` still cannot choose wrongly,
-   * because the wrong answer was never in the set.
+   * and since `#467` a judge that knows nothing about `prepared` is never asked
+   * at all, which is a stronger answer than *cannot choose wrongly*: there is
+   * no choice on offer to get wrong.
    *
    * **And `claim` is on neither**, though the item has a restart to spend: both
    * are mechanical directions, and 0039 §2's rule is that a restart needs a
@@ -1665,7 +1655,8 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
     const late = await pass({ ...checked(RED, PASSED), ceilings: spare })
 
-    expect(early.asked.judge[0]?.offering).toEqual(['waiting'])
+    expect(early.asked.judge).toEqual([])
+    expect(early.result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
     expect(late.asked.judge[0]?.offering).toEqual(['waiting', 'implement'])
     // And a judge is never told what it is answering for, nor what is left to
     // spend: `Judging` carries the direction, the words and the set, and no
@@ -1777,10 +1768,13 @@ describe('proposed is the only step that routes, and one judge answers each when
    * that night said something else entirely: nobody comparing them would have seen
    * that one was a dropped answer rather than a thin review.
    *
-   * **Same destination, different sentence, and still no round.** An answer nobody
-   * can read is not a criterion either (0038 §2), so no judge is paid to look at it
-   * and `implement` is not bought — `rounds: 3` here is what makes that an
-   * assertion rather than an accident of the ceilings.
+   * **Since `#467` this never reaches `proposed` at all** (0120 §2's variant
+   * table): `nextOf` reads `review`'s own `AnswerUnreadable` verdict directly
+   * and answers `WaitOnPerson` before the way-through visit that used to be
+   * the one place this was told apart from a thin opinion. An answer nobody
+   * can read is still not a criterion (0038 §2), so no judge is paid to look
+   * at it and `implement` is still not bought — `rounds: 3` here is what makes
+   * that an assertion rather than an accident of the ceilings.
    */
   it('reports an answer it could not read as unreadable, and not as an opinion', async () => {
     const { result, asked } = await pass({
@@ -1792,29 +1786,26 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
 
     expect(asked.judge).toEqual([])
-    expect(result.routes[0]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
-    expect(result.routes[0]?.why).toContain("`review`'s findings could not be read at all")
-    // The sentence the old one gave, and the whole of what `#279` is: a person
-    // reading this must not be told the reviewer had no opinion.
-    expect(result.routes[0]?.why).not.toContain('nothing an agent could be held to')
-    expect(result.rested).toBe('waiting')
+    expect(result.steps.some((visit) => visit.step === 'proposed')).toBe(false)
+    expect(result.routes).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'AnswerUnreadable', step: 'review' })
+    expect(result.rested).toBeNull()
     expect(asked.land).toEqual([])
   })
 
   /**
-   * **And the same is true of the lane's own agent, which is the path that does not
-   * go through `judged` at all** (`#279`).
+   * **And the same is true of the lane's own agent** (`#279`), and since
+   * `#467` for the same reason as `review`'s: `nextOf` reads an `AnswerUnreadable`
+   * verdict at `merge` directly (0120 §2's variant table allows it at `design`,
+   * `review`, `proposed` and `merge` alike) and answers `WaitOnPerson` before
+   * any judge, including the one that used to misname this *not a direction
+   * any `judge:` answers* on the way through — which was true about the arrival
+   * and wrong about the cause (a dropped judgement is a thing to re-run; a
+   * reason no judge answers is a thing to go and look at).
    *
    * `agentPlugin.at` carries `merge`, so a recipe may declare a re-verify there.
    * When its answer does not parse, `createAgentAction` returns
-   * `{verdict: "failed", unreadable: true}` and sets no `because` — so `endingOf`
-   * reports `action-refused`, `directionOf` has no direction for that, and
-   * `proposed` takes its `when === null` branch. That branch answers a person
-   * directly and never reaches `judged`, where `unreadable` is read: so the flag
-   * `whatArrived` computes was dead on the one arrival that could carry it, and the
-   * sentence a person got was *not a direction any `judge:` answers* — true, and
-   * about the wrong thing. A dropped judgement is a thing to re-run; a reason no
-   * judge answers is a thing to go and look at.
+   * `{verdict: "failed", unreadable: true}` and sets no `because`.
    *
    * The reviewer that found this had its own findings dropped by the bug it was
    * reviewing the fix for, which is why this test arrived by hand.
@@ -1830,11 +1821,14 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
 
     expect(asked.judge).toEqual([])
-    expect(result.routes[0]).toMatchObject({ from: 'merge', to: 'waiting', ceiling: null })
-    expect(result.routes[0]?.why).toContain('could not be read at all')
-    // The sentence this branch used to give for a dropped answer.
-    expect(result.routes[0]?.why).not.toContain('not a direction any')
-    expect(result.rested).toBe('waiting')
+    // `proposed`'s own way-through visit still happens — it is on the spine
+    // between `review` and `merge` regardless — but only once, and it never
+    // routes: `merge`'s own `AnswerUnreadable` is `nextOf`'s to answer
+    // directly, not a second arrival at the router.
+    expect(result.steps.filter((visit) => visit.step === 'proposed')).toHaveLength(1)
+    expect(result.routes).toEqual([])
+    expect(result.waitOn).toMatchObject({ _tag: 'AnswerUnreadable', step: 'merge' })
+    expect(result.rested).toBeNull()
     expect(outcomeOf(result)).not.toBe('landed')
   })
 
@@ -2044,44 +2038,15 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(overruled.result.routes[0]?.why).toContain('it wanted `claim`, and `restarts` is spent')
 
-    // And a destination no number would have offered is not named in the words
-    // at all, which is `#271`'s rule: naming a step the arrival could not have
-    // taken invites the reader to ask for it. `chose` records it; the card does
-    // not.
-    const never = await pass({
-      steps: { prepared: [{ name: 'install', run: 'false' }] },
-      actions: { prepared: [canned('install', RED)] },
-      ceilings: { rounds: 3, restartsLeft: 3 },
-    })
-
-    expect(never.result.routes[0]?.chose).toBe('implement')
-    expect(never.result.routes[0]?.why).not.toContain('implement')
-    expect(never.result.routes[0]?.why).not.toContain('spent')
-  })
-
-  /**
-   * **And null is a ceiling's absence rather than a gap in the record** — the
-   * reading `ceilingFor` is careful about. A failed install refuses before any
-   * agent has run, so the built-in's `implement` was on neither half of the
-   * offer whatever is left to spend: naming `rounds` here would send a person to
-   * raise a number that would refuse the same route again.
-   */
-  it('names no ceiling where no number would have offered the choice', async () => {
-    const { result } = await pass({
-      steps: { prepared: [{ name: 'install', run: 'false' }] },
-      actions: { prepared: [canned('install', RED)] },
-      ceilings: { rounds: 3, restartsLeft: 3 },
-    })
-
-    expect(result.routes).toEqual([
-      {
-        from: 'prepared',
-        chose: 'implement',
-        to: 'waiting',
-        why: expect.stringContaining('same-worktree'),
-        ceiling: null,
-      },
-    ])
+    // **A destination no number would have offered used to be named here too,
+    // read off `prepared`'s own refusal and a built-in that answered anyway**
+    // (`#271`'s rule: naming a step the arrival could not have taken invites
+    // the reader to ask for it). Since `#467` that example no longer exists:
+    // `prepared`'s refusal never reaches a router, so no built-in ever gets
+    // the chance to name `implement` for it — `ceilingFor('implement',
+    // early)` is `null` for the same reason, proved directly in
+    // `pass.test.ts`'s "keeps what the pass reached apart from what it can
+    // pay for" rather than through a real pass here.
   })
 })
 
