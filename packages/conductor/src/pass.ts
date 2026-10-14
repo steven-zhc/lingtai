@@ -1500,7 +1500,26 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     }
 
     if (next._tag === 'WaitOnPerson') {
-      // No router visit: `holdOf` (`#466`) reads `next.reason` directly.
+      // **`MergeRefused` is the one `WaitOnPerson` that still routes.**
+      // `mergeCompletedRefused` (`pass-next.ts`) answers it directly for
+      // every `IntegrationRefused` reason but `verify-failed` — never
+      // `Propose` — because none of the other six is a direction any
+      // `judge:` can be declared at (`hold-of.ts`'s own step 2: *the merge
+      // lane refused with no direction*). But the lane is one of the seven
+      // that arrives at `proposed` all the same (0058 §3b): today's pass
+      // routes it, finds no direction, and rests with a person — the same
+      // `MergeRefused` `holdOfPass` already gives that arrival once routed.
+      // Answering it here instead would be the one cell where `nextOf`
+      // disagrees with 0058 §3b itself rather than with 0120 §4's own gap,
+      // so this is kept on the arrival path rather than added to the table:
+      // no `waitOn`, and `holdOfPass` reads it exactly as it did before this
+      // ticket.
+      if (next.reason._tag === 'MergeRefused') {
+        if (await arriveAtTheRouter(at, reached, ending)) continue
+        break
+      }
+      // Every other reason: no router visit, and `holdOf` (`#466`) reads
+      // `next.reason` directly.
       stoppedAt = { step: at, ending }
       waitOn = next.reason
       break
