@@ -189,7 +189,7 @@ import { fixBrief } from './fix.ts'
 import { type CeilingHit, holdOfPass, lastIntegrationRefusal } from './hold-of.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
-import { keptRunPort } from './kept-run-port.ts'
+import { commitWipExceptPlanted, keptRunPort } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
@@ -1639,12 +1639,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return
         }
         if (dirty.right.trim() === '') return
-        // **The planted env file is excluded below, so dirt that is only that
-        // file is not agent work to keep** (`#468`) — `provisionWorktree`
-        // writes it untracked and unignored, and a porcelain line for it alone
-        // must read the same as a clean tree, not send `git add`/`git commit`
-        // at a tree with nothing else for them to touch. Porcelain's own
-        // format is two status characters, a space, then the path.
+        // **Dirt that is only the planted env file is not agent work to
+        // keep** (`#468`) — a porcelain line for it alone must read the same
+        // as a clean tree, not send `git add`/`git commit` at a tree with
+        // nothing else for them to touch. Porcelain's own format is two
+        // status characters, a space, then the path.
         const onlyThePlantedFile = dirty.right
           .split('\n')
           .filter((line) => line.trim() !== '')
@@ -1656,53 +1655,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runLog.note('push', wipFailure)
           return
         }
-        // `:(exclude)` the planted env file, the same exclusion
-        // `kept-run-port.ts`'s own `keep` applies and for the same reason:
-        // `provisionWorktree` writes it untracked and unignored, so a bare
-        // `git add -A` would sweep its secrets into the WIP commit and force-push
-        // them to origin on the arm (`#468`).
-        const added = await gitAsked(['add', '-A', '--', '.', `:(exclude)${recipe.env.plantAt}`])
-        if (Either.isLeft(added)) {
-          wipFailure = `the dirty tree was not kept — git add failed: ${added.left.detail}`
-          runLog.note('push', wipFailure)
-          return
-        }
-        // **The exclusion above only stops this call from staging the planted
-        // file — it does not unstage one the agent's own `git add -A` already
-        // staged before it was cut off** (`#468`). `kept-run-port.ts`'s `keep`
-        // gets away with the pathspec alone because its paired `clean` runs
-        // `git reset --hard HEAD` first and empties the index; nothing resets
-        // the index here, so a planted file staged by the agent is still
-        // staged after this call. `git reset -- <plantAt>` unstages it
-        // unconditionally, back to however it stood against `HEAD` — which,
-        // since `provisionWorktree` writes it untracked, is untracked again.
-        const unstaged = await gitAsked(['reset', '--', recipe.env.plantAt])
-        if (Either.isLeft(unstaged)) {
-          wipFailure = `the dirty tree was not kept — the planted env file could not be unstaged: ${unstaged.left.detail}`
-          runLog.note('push', wipFailure)
-          return
-        }
-        // The identity is explicit because nothing else configures one in
-        // this worktree, and signing is off for the same reason `--no-verify`
-        // is: a failed hook or a missing key must not cost this one commit.
-        const committed = await gitAsked([
-          '-c',
-          'user.name=Lingtai',
-          '-c',
-          'user.email=lingtai@users.noreply.github.com',
-          '-c',
-          'commit.gpgsign=false',
-          'commit',
-          '--no-verify',
-          '-m',
+        // `kept-run-port.ts`'s `commitWipExceptPlanted` stages everything and
+        // then unstages the planted env file by name, rather than excluding
+        // it from the `add` — a `:(exclude)` pathspec exits 1 whenever the
+        // repository's own `.gitignore` already covers the path, even though
+        // it staged everything else (`#470`).
+        const kept = await commitWipExceptPlanted(
+          gitAsked,
+          recipe.env.plantAt,
           // `runId` always starts `run-` (its one constructor, above), which
           // `WIP_COMMIT_PREFIX` already carries — sliced off here so the
           // message reads `wip: run-<uuid> stopped by …` rather than
           // doubling it.
           `${WIP_COMMIT_PREFIX}${runId.slice('run-'.length)} stopped by ${stoppedBy}`,
-        ])
-        if (Either.isLeft(committed)) {
-          wipFailure = `the dirty tree was not kept — git commit failed: ${committed.left.detail}`
+        )
+        if ('failed' in kept) {
+          wipFailure = `the dirty tree was not kept — ${kept.failed}`
           runLog.note('push', wipFailure)
           return
         }

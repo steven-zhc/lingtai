@@ -3,7 +3,10 @@
  * answers from a script. No git binary, so this is `unit/` by 0060 §1, and it
  * is what pins the two traps `doc/design/390.md` names: `clean` resets to the
  * agent's own `HEAD`, never the base, and the planted env file is spared by
- * both the clean and the add.
+ * both the clean and the add. It cannot see `#470`'s own trap — a fake git
+ * answers whatever the test says, never git's real exit code on a `:(exclude)`
+ * pathspec whose path is itself gitignored — so this only pins call order; the
+ * exit-code trap is `integration/kept-run-port.test.ts`'s.
  */
 import { Either } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -41,7 +44,7 @@ describe('keptRunPort.clean', () => {
 })
 
 describe('keptRunPort.keep', () => {
-  it('adds everything but the planted file, commits, and records the new head', async () => {
+  it('adds everything, unstages the planted file, commits, and records the new head', async () => {
     const recorded: string[] = []
     const { git, asked } = fakeGit({
       // `--quiet` implies `--exit-code`: a left is *something is staged*.
@@ -58,7 +61,8 @@ describe('keptRunPort.keep', () => {
     })
     expect(await port.keep('format')).toEqual({ committed: 'abc1234' })
     expect(asked).toEqual([
-      ['add', '-A', '--', '.', `:(exclude)${PLANT}`],
+      ['add', '-A'],
+      ['reset', '-q', '--', PLANT],
       ['diff', '--cached', '--quiet'],
       ['commit', '-m', 'chore(implement): format for #390'],
       ['rev-parse', 'HEAD'],
@@ -78,7 +82,23 @@ describe('keptRunPort.keep', () => {
       },
     })
     expect(await port.keep('format')).toEqual({ nothing: true })
-    expect(asked.map((a) => a[0])).toEqual(['add', 'diff'])
+    expect(asked.map((a) => a[0])).toEqual(['add', 'reset', 'diff'])
+    expect(recorded).toEqual([])
+  })
+
+  it('stops at a refused add, and never reaches the commit', async () => {
+    const recorded: string[] = []
+    const { git, asked } = fakeGit({ 'add -A': Either.left({ detail: 'index.lock exists' }) })
+    const port = keptRunPort({
+      git,
+      plantAt: PLANT,
+      issue: '390',
+      recordCompletion: async (head) => {
+        recorded.push(head)
+      },
+    })
+    expect(await port.keep('format')).toEqual({ failed: 'git add refused it: index.lock exists' })
+    expect(asked).toEqual([['add', '-A']])
     expect(recorded).toEqual([])
   })
 })

@@ -848,12 +848,14 @@ describe('when the agent meets the wall', () => {
     })
 
     /**
-     * **A bare `git add -A` would sweep the planted env file's secrets into
-     * the WIP commit and force-push them to the arm** (`#468`) — the same
-     * mistake `kept-run-port.ts`'s own `keep` excludes `recipe.env.plantAt`
-     * to avoid. `keepUncommittedWork` must exclude it the same way.
+     * **Staging everything and then unstaging the planted env file by name is
+     * what keeps its secrets out of the WIP commit** (`#468`, `#470`) —
+     * `kept-run-port.ts`'s `commitWipExceptPlanted` does this rather than a
+     * `:(exclude)` pathspec on the `add`, which exits 1 whenever the
+     * repository's own `.gitignore` already covers the planted path.
+     * `keepUncommittedWork` must go through that same helper.
      */
-    it('excludes the planted env file from the WIP commit’s staging', async () => {
+    it('unstages the planted env file from the WIP commit’s staging', async () => {
       const store = memoryStore()
       const did: string[] = []
       const ports = fakePorts(did, store)
@@ -912,21 +914,19 @@ describe('when the agent meets the wall', () => {
       )
       expect(result.ok, JSON.stringify(result)).toBe('held')
 
-      // The pathspec excludes the planted file by name — never a bare
-      // `git add -A`, which would stage its secrets alongside the real edit.
-      expect(did).toContain('git add -A -- . :(exclude).env.local')
+      // A bare `git add -A` — never a `:(exclude)` pathspec, which exits 1
+      // whenever the repository's own `.gitignore` already covers the
+      // planted path (`#470`).
+      expect(did).toContain('git add -A')
 
-      // **`:(exclude)` alone does not unstage a path the agent's own
-      // `git add -A` already staged before it was cut off** (`#468`) — a
-      // pathspec on `add` only decides what that call stages, and does
-      // nothing to an index entry some earlier `add` already made. The
-      // commit below is only ever clean of the planted file because this
-      // call unstages it unconditionally, after the exclude-add and before
-      // the commit — verified against real git in the finding this pins: the
-      // exclusion alone still produced a commit containing `.env.local`.
-      expect(did).toContain('git reset -- .env.local')
-      expect(did.indexOf('git add -A -- . :(exclude).env.local')).toBeLessThan(did.indexOf('git reset -- .env.local'))
-      expect(did.indexOf('git reset -- .env.local')).toBeLessThan(did.indexOf('git commit --no-verify'))
+      // **The `add` above stages the planted file along with everything
+      // else — it is this `reset` that takes it back out** (`#468`, `#470`),
+      // unconditionally and after the `add`, which is the only way that works
+      // whether or not the repository ignores the path and whether or not an
+      // earlier `add` by the agent had already staged it.
+      expect(did).toContain('git reset -q -- .env.local')
+      expect(did.indexOf('git add -A')).toBeLessThan(did.indexOf('git reset -q -- .env.local'))
+      expect(did.indexOf('git reset -q -- .env.local')).toBeLessThan(did.indexOf('git commit --no-verify'))
 
       const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
