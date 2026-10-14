@@ -3359,18 +3359,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // word for it (`#468`).
           stoppedBy = fixed.failure ? fixed.failure.kind : null
           const cause = fixed.failure?.kind
-          // `implement`'s other dispatch, and `firstDispatch`'s own reason to
-          // set this (`#467`): the round's agent is the one holding the real
-          // turns and dollars `holdFor`'s patch reads back once `nextOf` turns
-          // this into a `Ceiling`.
-          if (fixed.failure && (fixed.failure.kind === 'out-of-turns' || fixed.failure.kind === 'out-of-usd')) {
-            ceilingHit = {
-              kind: fixed.failure.kind,
-              detail: fixed.failure.detail,
-              turns: fixed.turns,
-              costUsd: fixed.costUsd,
-            }
-          }
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
@@ -3655,19 +3643,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {
           /**
-           * **`ceilingHit` is `implement`'s own receipt, not every agent's**
-           * (`#466`'s patch, read against `hold-of.ts`'s step 3). It is set only
-           * by `firstDispatch` and `fixRound` — the two dispatches `implement`
-           * ever runs — never by a cold reviewer, a declared `agent:` elsewhere,
-           * or the router's own judge. `holdOfPass`'s step 3 read that absence as
-           * *nobody decided, and the account did* only where `ceilingHit !==
-           * null`; everywhere else a `did-not-finish` fell to the ordinary
-           * `DidNotFinish` case in its switch, unconditionally on the step. The
-           * same read has to survive `nextOf`'s uniform `BudgetExhausted`, which
-           * carries no step and so cannot gate itself: without this, every one
-           * of those other agents' wall would read as the *ticket's own scope is
-           * wrong, requeue it* `Ceiling` sentence, with the numbers that sentence
-           * promises read as `null` besides.
+           * **`ceilingHit` is `firstDispatch`'s own receipt, not every
+           * agent's** (`#466`'s patch, read against `hold-of.ts`'s step 3).
+           * It is set only there — never by a fix round's own dispatch, a
+           * cold reviewer, a declared `agent:` elsewhere, or the router's own
+           * judge — because only the implementer's first attempt is a signal
+           * about the ticket's own scope; a round bought back into `implement`
+           * ran out on the round's own budget, not the ticket's, and reads as
+           * an ordinary `DidNotFinish` the same way the reviewer's wall does.
+           * `holdOfPass`'s step 3 read that absence as *nobody decided, and
+           * the account did* only where `ceilingHit !== null`; everywhere else
+           * a `did-not-finish` fell to the ordinary `DidNotFinish` case in its
+           * switch, unconditionally on the step. The same read has to survive
+           * `nextOf`'s uniform `BudgetExhausted`, which carries no step and so
+           * cannot gate itself: without this, every one of those other agents'
+           * wall would read as the *ticket's own scope is wrong, requeue it*
+           * `Ceiling` sentence, with the numbers that sentence promises read as
+           * `null` besides.
            */
           if (pass.waitOn._tag === 'BudgetExhausted' && ceilingHit === null) {
             return {

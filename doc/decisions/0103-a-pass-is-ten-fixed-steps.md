@@ -75,13 +75,18 @@ never report a fault.
    where a pass goes. They are separate events too: `StepAsked` and
    `StepDidNotFinish`. Neither buys a fix round.
 
-6. **Every step that does not simply pass arrives at `proposed`.** A `refused`
-   or `asked` ending at any of `ARRIVE_AT_THE_ROUTER` — `admit`, `prepared`,
-   `design`, `implement`, `build`, `review`, `merge` — travels to `proposed`
-   carrying its reason intact. `claim` has nothing to route (no item yet), `end`
-   runs after the decision, and a `proposed` that refuses has nowhere above it to
-   appeal to, so it rests at `waiting`. `proposed` also runs on the way through:
-   a pass that sailed past has a recorded decision saying so, and that visit is
+6. **Most of what does not simply pass arrives at `proposed`, carrying its
+   reason intact** — read off each visit's `StepOutcome` by `nextOf`
+   (`packages/domain/src/pass-next.ts`), which answers `Propose` for `admit`,
+   `design`, `implement`'s own question, `build`, `review` and the merge
+   lane's own refusal. **Three cells answer a person directly instead, and
+   never visit the router**: a refusal at `prepared`, a check before the merge
+   lane refusing, and an unreadable answer at `review` or `merge` — none of
+   which is a direction any `judge:` could be declared at, so there is nothing
+   to offer one. `claim` has nothing to route (no item yet), `end` runs after
+   the decision, and a `proposed` that refuses has nowhere above it to appeal
+   to, so it rests at `waiting`. `proposed` also runs on the way through: a
+   pass that sailed past has a recorded decision saying so, and that visit is
    where `review`'s findings are judged.
 
 7. **The workflow computes the offer; the judge picks from it.** `onOffer` in

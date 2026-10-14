@@ -1062,14 +1062,15 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * **A fix round's own agent is the one `ceilingHit` never covered**
-   * (`#467`'s fix round): `firstDispatch` sets it, `fixRound` did not, so a
-   * round bought on `review`'s findings that then ran out of turns read as
-   * `Ceiling{turns: null, costUsd: null}` — the implementer's own numbers
-   * from a dispatch it never ran. `#466`'s row 14a pins `firstDispatch`'s
-   * own receipt; this pins the round's.
+   * **A fix round's own wall is not the ticket's scope either** (`#467`'s fix
+   * round) — the same read as the cold reviewer's (14d), for a dispatch
+   * `firstDispatch`'s own receipt never covers. `ceilingHit` is set only by
+   * the implementer's first attempt (row 14a); a round bought on `review`'s
+   * findings that then runs out of turns leaves it `null`, so `holdFor`'s
+   * guard reads it as `DidNotFinish` rather than inventing a `Ceiling` — with
+   * real numbers or not — for a budget the ticket's own scope never promised.
    */
-  it('14c. a fix round`s own agent hits the turn ceiling (`Ceiling`, round`s own numbers)', async () => {
+  it('14c. a fix round`s own agent hits the turn ceiling (`DidNotFinish`, not the ticket`s scope)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const fixCeiling: Runtime = {
@@ -1108,7 +1109,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 7, costUsd: 0.77 })
+    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement' })
   })
 
   /**
