@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { Action, ActionContext, ActionEvent, ActionFinding, ActionResult } from '@lingtai/actions'
 import { STEPS, type Step } from '@lingtai/domain'
-import { StepMap } from '@lingtai/recipe'
+import { StepMap, type StepAction } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'
@@ -171,15 +171,35 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
 }
 
 /**
+ * A `merge:` action that stands in for the lane itself — `kind`/`yields:
+ * 'merge'`, same as `createMergeAction` would build. `nextOf` reads a
+ * `merge` visit's deciding action by its `yields` alone (`#467`,
+ * `pass-next.ts:84-99`), and throws *merge cleared without an Integrated
+ * action* for anything declared at `merge` that answers `canned`'s generic
+ * `verdict` shape instead — a check before the lane is realistically
+ * `canned`, but the lane answering `PASSED` here is what a real `merge:`
+ * strategy succeeding looks like.
+ */
+const lands = (name: string): Action => ({
+  name,
+  kind: 'merge',
+  yields: 'merge',
+  run: async () => PASSED,
+})
+
+/**
  * A declared action this file did not fake itself, built the way a real one
  * would answer — a bare `canned(..., PASSED)` would carry no head at `admit`
  * or `implement`, which `headOf` (`action.ts:333`) would misread as the tree
- * never having moved (`#469`).
+ * never having moved (`#469`), and a bare `canned` at `merge` would misread as
+ * `nextOf`'s own impossible case where the recipe actually names the lane
+ * (`#467`).
  */
-function defaultFor(step: Step, name: string): Action {
-  if (step === 'admit') return cutAt(name)
-  if (step === 'implement') return committedSomething(name)
-  return canned(name, PASSED)
+function defaultFor(step: Step, action: StepAction): Action {
+  if (step === 'admit') return cutAt(action.name)
+  if (step === 'implement') return committedSomething(action.name)
+  if (step === 'merge' && 'merge' in action) return lands(action.name)
+  return canned(action.name, PASSED)
 }
 
 /**
@@ -199,8 +219,7 @@ function undeclaredDefault(step: Step): Action[] {
 function watchingActions(at: Record<string, readonly Action[]> = {}) {
   const ran: { step: Step; actions: readonly string[] }[] = []
   const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
-    const built =
-      at[step] ?? (actions.length > 0 ? actions.map((a) => defaultFor(step, a.name)) : undeclaredDefault(step))
+    const built = at[step] ?? (actions.length > 0 ? actions.map((a) => defaultFor(step, a)) : undeclaredDefault(step))
     ran.push({ step, actions: built.map((a) => a.name) })
     return built
   }
@@ -231,9 +250,13 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
       name: 'check',
       // `implement`'s own check is a commit-yielding one, same as a real
       // agent or kept-run there — `headOf` only reads a head off that yield
-      // (`#469`), and `answering` is what puts one on the result.
-      kind: step === 'implement' ? 'agent' : 'run',
-      yields: step === 'implement' ? 'commit' : 'verdict',
+      // (`#469`), and `answering` is what puts one on the result. `merge`'s is
+      // the lane's own yield since `#467`: `nextOf` throws on a `merge` whose
+      // deciding action is not `yields: 'merge'` (`pass-next.ts:111-113`), so
+      // a generic `verdict` check here would misreport every lap that reaches
+      // `merge` as a crash rather than a landing.
+      kind: step === 'implement' ? 'agent' : step === 'merge' ? 'merge' : 'run',
+      yields: step === 'implement' ? 'commit' : step === 'merge' ? 'merge' : 'verdict',
       run: async (seenWith) => {
         const lap = laps.get(step) ?? 0
         laps.set(step, lap + 1)
@@ -531,11 +554,25 @@ describe('four steps may refuse, and the other six may not', () => {
    * verdict and not a programming error. Reported as `did-not-finish`, which buys
    * no fix round (0057) and is not routed, because a step that may not refuse has
    * not refused.
+   *
+   * **`yields: 'commit'`, not `'verdict'`** (`#467`): 0120 §1's legality table
+   * has no `verdict`-yielding action at `implement` at all — `nextOf` throws
+   * `a verdict refusal cannot happen at implement` rather than silently
+   * misreading one — so a realistic stand-in for *something declared at
+   * `implement` refuses* is a failing commit-yielding one instead, same kind
+   * `committedSomething` answers with when it succeeds.
    */
   it("reads a plugin's failed verdict at one of the five as did-not-finish", async () => {
     const { bodies } = watching()
     const { actionsAt } = watchingActions({
-      implement: [canned('a check of its own', { verdict: 'failed', evidence: 'no diff', findings: [] })],
+      implement: [
+        {
+          name: 'a check of its own',
+          kind: 'agent',
+          yields: 'commit',
+          run: async () => ({ verdict: 'failed', evidence: 'no diff', findings: [] }),
+        },
+      ],
     })
     const { emit } = events()
 
@@ -631,9 +668,35 @@ describe('four steps may refuse, and the other six may not', () => {
         detail: 'pnpm install exited 1',
       },
     })
-    // The step's own body never ran: its plugins ended the step. The router did,
-    // and then `end`.
-    expect(seen.map((s) => s.step)).toEqual(['claim', 'admit', 'proposed', 'end'])
+    // The step's own body never ran: its plugins ended the step. **Nor does
+    // `proposed`'s** (`#467`) — `nextOf` answers `prepared`'s own refusal
+    // `WaitOnPerson{SetupRefused}` directly, so the walk goes straight to
+    // `end` rather than taking a second visit to a router that cannot be the
+    // step's own setup breaking (0120 §2's variant table).
+    expect(seen.map((s) => s.step)).toEqual(['claim', 'admit', 'end'])
+  })
+
+  /**
+   * **`prepared`'s own refusal goes straight to a person, without routing**
+   * (`#467`, 0120 §2's variant table) — the one of 0058 §3b's seven this
+   * ticket takes off the drawing. No agent has run, so there is no diff and
+   * no judge could choose *the lines* over *the approach* about one; `onOffer`
+   * already said so by leaving `implement` off `prepared`'s own offer
+   * (`AFTER_AN_AGENT`), and this is that same fact read off `nextOf` instead.
+   */
+  it('sends a refusal at prepared straight to a person, with no second visit to proposed', async () => {
+    const { recipe, at } = installFails()
+    const { bodies, seen } = watching()
+    const { actionsAt } = watchingActions(at)
+    const { emit } = events()
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+
+    expect(result.steps.map((s) => s.step)).not.toContain('proposed')
+    expect(result.routes).toEqual([])
+    expect(result.rested).toBeNull()
+    expect(result.waitOn).toMatchObject({ _tag: 'SetupRefused', step: 'prepared' })
+    expect(seen.some((s) => s.step === 'proposed')).toBe(false)
   })
 })
 
@@ -714,7 +777,11 @@ describe('every step that does not pass arrives at proposed', () => {
    * later as a router nothing can call.
    */
   it('takes a refusal to the router, carrying its reason', async () => {
-    const { recipe, at } = installFails()
+    // `build`, not `prepared`: a red build is still one of the seven
+    // `nextOf` answers `Propose` for (`#467`) — `prepared`'s own refusal is
+    // the one of the seven this ticket takes off the drawing, proved in its
+    // own test above rather than here.
+    const recipe = recipeWith({ build: [{ name: 'tests', run: 'pnpm test' }] })
     let handed: Handed | undefined
     const { bodies } = watching({
       proposed: async (work) => {
@@ -727,32 +794,43 @@ describe('every step that does not pass arrives at proposed', () => {
           reached: work.reached,
           context: work.context,
         }
-        return { ending: 'routed', to: 'waiting', why: 'a base that will not install is yours' }
+        return { ending: 'routed', to: 'waiting', why: 'a build that will not pass is yours' }
       },
     })
-    const { actionsAt } = watchingActions(at)
+    const { actionsAt } = watchingActions({
+      build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
+    })
     const { emit } = events()
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
     // What happened arrived intact (0058 §3c) — the step, what refused, and why.
     expect(handed?.arriving).toMatchObject({
-      step: 'prepared',
-      ending: { ending: 'refused', because: 'action-refused', at: 'install', detail: 'pnpm install exited 1' },
+      step: 'build',
+      ending: { ending: 'refused', because: 'action-refused', at: 'tests', detail: '3 failing' },
     })
     expect(handed?.arriving?.results).toEqual([
-      { action: 'install', verdict: 'failed', evidence: 'pnpm install exited 1', findings: [] },
+      { action: 'tests', verdict: 'failed', evidence: '3 failing', findings: [] },
     ])
     // `proposed` is visited for the routing, and the visit is in `steps`.
-    expect(result.steps.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'proposed', 'end'])
+    expect(result.steps.map((s) => s.step)).toEqual([
+      'claim',
+      'admit',
+      'prepared',
+      'design',
+      'implement',
+      'build',
+      'proposed',
+      'end',
+    ])
     // A body that named no other destination wanted the one it took, and no
     // ceiling stood between them (`RouteTaken`, `#271`).
     expect(result.routes).toEqual([
       {
-        from: 'prepared',
+        from: 'build',
         chose: 'waiting',
         to: 'waiting',
-        why: 'a base that will not install is yours',
+        why: 'a build that will not pass is yours',
         ceiling: null,
       },
     ])
@@ -813,7 +891,7 @@ describe('every step that does not pass arrives at proposed', () => {
     const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
       step !== 'design'
         ? actions.length > 0
-          ? actions.map((a) => defaultFor(step, a.name))
+          ? actions.map((a) => defaultFor(step, a))
           : undeclaredDefault(step)
         : [
             {
@@ -1085,24 +1163,27 @@ describe('every step that does not pass arrives at proposed', () => {
    * and a declared `human:` approval must not reach a person once per round.
    */
   it("runs the router without re-running proposed's own inspection", async () => {
+    // `build`, not `prepared`: a red build still arrives at `proposed`
+    // (`#467`), and this test is about what that arrival does *not* re-run.
     const recipe = recipeWith({
-      prepared: [{ name: 'install', run: 'pnpm install' }],
+      build: [{ name: 'tests', run: 'pnpm test' }],
       proposed: [{ name: 'sign off', human: 'ship it?' }],
     })
     const { bodies } = watching({
       proposed: routerSaying(() => 'waiting'),
     })
     const { actionsAt, ran } = watchingActions({
-      prepared: [canned('install', { verdict: 'failed', evidence: 'exited 1', findings: [] })],
+      build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
       proposed: [canned('sign off', { verdict: 'needs-approval', evidence: 'ship it?', findings: [] })],
     })
     const { emit } = events()
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    // `prepared` refused before the spine ever reached `proposed`, so the
-    // declared `human:` action was never built and nobody was asked twice.
-    expect(ran.map((r) => r.step)).toEqual(['claim', 'admit', 'prepared'])
+    // `build` refused before the spine ever reached `proposed`'s own
+    // inspection, so the declared `human:` action was never built and nobody
+    // was asked twice.
+    expect(ran.map((r) => r.step)).toEqual(['claim', 'admit', 'prepared', 'design', 'implement', 'build'])
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
     expect(result.rested).toBe('waiting')
   })
@@ -1310,17 +1391,21 @@ describe('the workflow decides which steps the judge may choose from', () => {
 
   /** And a destination outside the set is refused by name (0061 §3, §8). */
   it('refuses a route it did not offer', async () => {
-    const { recipe, at } = installFails()
+    // `design` asking, not `prepared` refusing (`#467`): the question's own
+    // offer is `[waiting, design]` (`onOffer`'s `asked` branch pushes only
+    // the step that asked), so `implement` is off it the same way it was off
+    // `prepared`'s before this ticket.
     const { bodies, seen } = watching({
-      // `prepared` refused, so `implement` is on no offer — and this is the
+      design: asked('which base?'),
+      // `design` asked, so `implement` is on no offer — and this is the
       // judge that answers it anyway.
       proposed: async () => ({ ending: 'routed', to: 'implement', why: 'have another go' }),
     })
-    const { actionsAt } = watchingActions(at)
+    const { actionsAt } = watchingActions()
     const { emit } = events()
 
     const result = await runPass({
-      recipe,
+      recipe: recipeWith({}),
       context,
       emit,
       bodies,
@@ -1333,7 +1418,9 @@ describe('the workflow decides which steps the judge may choose from', () => {
       ending: {
         ending: 'did-not-finish',
         because: 'threw',
-        detail: expect.stringContaining('`proposed` routed the pass to `implement`, which was not on offer — waiting'),
+        detail: expect.stringContaining(
+          '`proposed` routed the pass to `implement`, which was not on offer — waiting, design',
+        ),
       },
     })
     // Refused rather than obeyed, and `end` still ran.
@@ -1652,23 +1739,11 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     expect(result.steps.at(-1)?.step).toBe('end')
   })
 
-  /** And a restart is on no offer when the item has none left. */
-  it('does not offer a restart the item cannot afford', async () => {
-    const { recipe, at } = installFails()
-    let offering: Offer = NO_OFFER
-    const { bodies } = watching({
-      proposed: async (work) => {
-        offering = work.offering
-        return { ending: 'routed', to: 'waiting', why: 'nothing left to spend' }
-      },
-    })
-    const { actionsAt } = watchingActions(at)
-    const { emit } = events()
-
-    await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 2, restartsLeft: 0 } })
-
-    expect(offering.affordable).toEqual(['waiting'])
-  })
+  // A restart being on no offer when the item has none left is `onOffer`'s
+  // own claim, proved directly against it above (`spentRestart`) — `prepared`
+  // was this suite's only example of an arrival `claim` is never on the offer
+  // for anyway (`#467` takes it off the router entirely), so there is no
+  // longer a `runPass` scenario this duplicates rather than restates.
 })
 
 // ------------------------------------------- the head, the round, the findings ----
@@ -2017,9 +2092,10 @@ describe('a body can read what the steps before it said', () => {
     expect(result.steps.find((s) => s.step === 'prepared')?.results).toEqual([
       { action: 'install', verdict: 'failed', evidence: 'exited 1', findings: [] },
     ])
-    // `end` sees the step that stopped the pass and the route that was chosen
-    // for it, not the two before them only.
-    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'proposed'])
+    // `end` sees the step that stopped the pass, not the two before it only —
+    // and no `proposed` in between it and `end` (`#467`): `prepared`'s own
+    // refusal answers `WaitOnPerson{SetupRefused}` directly.
+    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared'])
   })
 })
 
@@ -2317,14 +2393,27 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
    * the router, the router answers, and `routes` records that it did.
    */
   it('sends a refusal to a person, through the router, with no judge built', async () => {
-    const { recipe, at } = installFails()
-    const { actionsAt } = watchingActions(at)
+    // `build`, not `prepared` (`#467`): a red build still arrives at
+    // `proposed`, which is the one thing this test needs from its example.
+    const recipe = recipeWith({ build: [{ name: 'tests', run: 'pnpm test' }] })
+    const { actionsAt } = watchingActions({
+      build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
+    })
     const { emit } = events()
 
     const result = await runPass({ recipe, context, emit, actionsAt })
 
-    expect(result.steps.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'proposed', 'end'])
-    expect(result.routes).toMatchObject([{ from: 'prepared', to: 'waiting' }])
+    expect(result.steps.map((s) => s.step)).toEqual([
+      'claim',
+      'admit',
+      'prepared',
+      'design',
+      'implement',
+      'build',
+      'proposed',
+      'end',
+    ])
+    expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
     expect(result.routes[0]?.why).toContain('no `judge:` is built yet')
     expect(result.rested).toBe('waiting')
     expect(outcomeOf(result)).toBe('blocked')

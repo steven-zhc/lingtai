@@ -1465,6 +1465,15 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         at = after(at)
         continue
       }
+      // **Except a question, same as the `Advance`/`Landed` cell below.**
+      // `design` and `implement` ask from their own bodies, which run after a
+      // step with no declared actions at all passes trivially — nothing here
+      // is `nextOf`'s to answer (there was no deciding action to read), but
+      // 0058 §3c's *that step again, stating its assumption* still is.
+      if (ending.ending === 'asked') {
+        if (await arriveAtTheRouter(at, reached, ending)) continue
+        break
+      }
       stoppedAt = { step: at, ending }
       break
     }
@@ -1473,9 +1482,20 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       // **The rule the deleted `!goesToTheRouter` branch encoded, which 0120
       // §4 has no cell for — kept rather than dropped.** The plugins cleared
       // and the body itself did not, which `nextOf` cannot see: it reads only
-      // the plugins' own `StepOutcome`, never the body's ending. A body that
-      // threw or answered `never-ran` on its own (`proposed`'s judge) stops
-      // the pass exactly as it does today.
+      // the plugins' own `StepOutcome`, never the body's ending.
+      if (ending.ending === 'asked') {
+        // **Except a question.** `design` and `implement` both run a body
+        // after clean plugins, and the body is the one thing that can ask —
+        // nothing a `commit`/`design` action's own result carries says so
+        // (`changedNothing` reads a cleared commit as *finished*, not as
+        // *asked*). 0058 §3c's *that step again, stating its assumption* is
+        // still `proposed`'s to answer, so this is the same arrival a
+        // `refused` ending takes, not the stop below.
+        if (await arriveAtTheRouter(at, reached, ending)) continue
+        break
+      }
+      // A body that threw or answered `never-ran` on its own (`proposed`'s
+      // judge) stops the pass exactly as it does today.
       if (ending.ending !== 'passed') {
         stoppedAt = { step: at, ending }
         break
