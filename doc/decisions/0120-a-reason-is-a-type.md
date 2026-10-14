@@ -312,10 +312,12 @@ read off the deciding action by step and yield, never by plugin:
 
 **Everything the work falls short on goes through `proposed`; only what has
 nothing to decide, or nobody able to decide it, ends the pass without a
-proposal (§4).** `proposed` is the one place a recipe author steps in, with
-a `judge:` keyed by `when:` and a `human:` or `watch:` gate. A stop that
-skipped it would silently disable those declarations for that stop, as an
-unreadable review answer once skipped a declared `human:` (#467). Routing
+proposal (§4).** `proposed`'s router is where a recipe author decides what a
+shortfall costs, with a `judge:` keyed by `when:`. A stop that skipped the
+router would silently disable those judges for that stop. A `human:` or
+`watch:` gate at `proposed:` is not one of them: it is a sign-off before
+something lands, so it runs on the spine visit only, and a routed shortfall
+reaches a person through the route instead (#472). Routing
 what has only a person to offer costs nothing, because the built-in judge is
 synchronous. And "only a person" is what nobody has declared yet, not what
 nobody may ever declare: a judge for `MergeRefused{dirty-base}` can rebase
@@ -328,9 +330,10 @@ counted in `restartsSpent` like any other.
   reviewer now proposes `ReviewFindings` and the offer carries the restart, so
   the way-through judgement moves rather than being kept in two places.
 - **An unreadable answer is a proposal.** It reached a person before any
-  judge was asked (`pass-steps.ts:885`), so a `human:` declared at
-  `proposed:` never saw it. It now proposes `AnswerUnreadable`, and with
-  nothing declared a person still gets it.
+  judge was asked (`pass-steps.ts:885`), so no `judge:` could be declared for
+  it. It now proposes `AnswerUnreadable`, and with nothing declared a person
+  still gets it. `review`'s unreadable answer stops running `proposed`'s
+  `human:` on its way to that person, like every other shortfall (#472).
 - **`prepared`'s refusal and a check before the lane at `merge` route.** Both
   reach a person when nothing is declared, as they did before #467.
 
@@ -462,7 +465,9 @@ question, or something unreadable (`agent-action.ts:964-1031`).
   `proposed` with `Advance{to: 'proposed'}`, running what is declared there (a
   `human:` signoff). One whose step fell short arrives with
   `Propose{proposal}` and is routed, its reason in the value: going to route
-  without saying why cannot be written.
+  without saying why cannot be written. A routed visit runs none of
+  `proposed`'s declared plugins; if its judge sends the pass round again, the
+  sign-off runs on the next spine visit, before `merge`.
 - **A restart is a requeue.** It releases the claim and puts the item back in
   the queue, the same terminal a run that never started reaches (`outcomeOf`,
   `pass.ts:1245`), so it is `Requeued` with the restart in its cause.
