@@ -28,16 +28,10 @@ import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
   NO_DESIGN,
-  NO_OFFER,
   PASS,
   REFUSING_STEPS,
-  ceilingFor,
-  onOffer,
   outcomeOf,
   runPass,
-  type Ceilings,
-  type Destination,
-  type Offer,
   type PassOptions,
   type StepBodies,
   type StepBody,
@@ -112,42 +106,28 @@ interface Handed {
   step: Step
   actions: readonly string[]
   outcome: TerminalOutcome | null
-  arriving: StepReached | null
-  offering: Offer
   reached: readonly StepReached[]
   /** This visit's — the head it is judged against, the round, and the recheck. */
   context: ActionContext
 }
 
 /**
- * A router that answers whatever a test tells it to — and only ever on a
- * routing arrival, since a spine visit has nothing to route.
- */
-function routerSaying(to: (work: StepWork<'proposed'>) => Destination) {
-  return async (work: StepWork<Step>): Promise<StepEnding> => {
-    const at = work as StepWork<'proposed'>
-    if (at.arriving === null) return { ending: 'passed' }
-    return { ending: 'routed', to: to(at), why: 'because a test said so' }
-  }
-}
-
-/**
  * The ten bodies, each recording the work it was handed and then passing —
  * plus whichever of them a test wants to answer differently.
  *
- * `proposed` is the one that does not simply pass, and it matches
- * `NOT_BUILT_YET`'s: a refusal is taken to a person. A body that answered
- * `passed` on a routing arrival is refused by the loop, and rightly — there is
- * no spine under a step that did not pass — so every test that reaches the
- * router needs an answer from it, and *a person* is the one that is always on
- * offer.
+ * **Every one of them, `proposed` included, simply passes by default** since
+ * `#462`: routing is `runPass`'s own loop now (`routeProposal`, through
+ * `proposed-route.ts`), off `nextOf`'s `Propose` rather than off this body's
+ * answer, so `proposed`'s body is only ever called on the spine visit — on
+ * the way through, or after a route has already landed the walk back on a
+ * step. A test that wants a particular destination chosen declares a
+ * `judge:` on `PassOptions` instead of overriding this body.
  *
  * `seen` is what makes *a configured step is never skipped* checkable: it is
  * appended to once per visit, in order.
  */
 function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
   const seen: Handed[] = []
-  const toAPerson = routerSaying(() => 'waiting')
   const bodies = Object.fromEntries(
     STEPS.map((step) => [
       step,
@@ -156,14 +136,12 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
           step: work.step,
           actions: work.actions.map((a) => a.name),
           outcome: work.outcome,
-          arriving: work.arriving,
-          offering: work.offering,
           reached: work.reached,
           context: work.context,
         })
         const override = overrides[step]
         if (override) return await override(work)
-        return step === 'proposed' ? await toAPerson(work) : { ending: 'passed' }
+        return { ending: 'passed' }
       },
     ]),
   ) as unknown as StepBodies
@@ -782,21 +760,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // the one of the seven this ticket takes off the drawing, proved in its
     // own test above rather than here.
     const recipe = recipeWith({ build: [{ name: 'tests', run: 'pnpm test' }] })
-    let handed: Handed | undefined
-    const { bodies } = watching({
-      proposed: async (work) => {
-        handed = {
-          step: work.step,
-          actions: work.actions.map((a) => a.name),
-          outcome: work.outcome,
-          arriving: work.arriving,
-          offering: work.offering,
-          reached: work.reached,
-          context: work.context,
-        }
-        return { ending: 'routed', to: 'waiting', why: 'a build that will not pass is yours' }
-      },
-    })
+    const { bodies } = watching()
     const { actionsAt } = watchingActions({
       build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
     })
@@ -804,14 +768,17 @@ describe('every step that does not pass arrives at proposed', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    // What happened arrived intact (0058 §3c) — the step, what refused, and why.
-    expect(handed?.arriving).toMatchObject({
-      step: 'build',
-      ending: { ending: 'refused', because: 'action-refused', at: 'tests', detail: '3 failing' },
+    // What happened arrived intact (0058 §3c) — the step, what refused, and
+    // why — read off `steps` itself, since routing no longer calls
+    // `proposed`'s own body to see it (`#462`).
+    const build = result.steps.find((s) => s.step === 'build')
+    expect(build?.ending).toMatchObject({
+      ending: 'refused',
+      because: 'action-refused',
+      at: 'tests',
+      detail: '3 failing',
     })
-    expect(handed?.arriving?.results).toEqual([
-      { action: 'tests', verdict: 'failed', evidence: '3 failing', findings: [] },
-    ])
+    expect(build?.results).toEqual([{ action: 'tests', verdict: 'failed', evidence: '3 failing', findings: [] }])
     // `proposed` is visited for the routing, and the visit is in `steps`.
     expect(result.steps.map((s) => s.step)).toEqual([
       'claim',
@@ -823,14 +790,16 @@ describe('every step that does not pass arrives at proposed', () => {
       'proposed',
       'end',
     ])
-    // A body that named no other destination wanted the one it took, and no
-    // ceiling stood between them (`RouteTaken`, `#271`).
+    // No round to spend (the default ceilings are `NOTHING_SPARE`), so
+    // nothing but a person was ever on offer — and no ceiling stood between
+    // the route taken and the one candidate the offer excluded (`RouteTaken`,
+    // `#271`).
     expect(result.routes).toEqual([
       {
         from: 'build',
         chose: 'waiting',
         to: 'waiting',
-        why: 'a build that will not pass is yours',
+        why: 'nothing but a person was on offer (`fix-lines` — `rounds` is spent)',
         ceiling: null,
       },
     ])
@@ -838,13 +807,8 @@ describe('every step that does not pass arrives at proposed', () => {
 
   /** And `needs-input` arrives too, which is the half that is not a refusal. */
   it('takes a needs-input to the router without buying a round', async () => {
-    let offering: Offer = NO_OFFER
     const { bodies } = watching({
       implement: asked('which of the two `base` values did you mean?'),
-      proposed: async (work) => {
-        offering = work.offering
-        return { ending: 'routed', to: 'waiting', why: 'only you can answer that' }
-      },
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -858,8 +822,12 @@ describe('every step that does not pass arrives at proposed', () => {
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
-    // 0058 §3c: *that step again with "state your assumption"*, or a person.
-    expect(offering.affordable).toEqual(['waiting', 'implement'])
+    // 0058 §3c: *that step again with "state your assumption"*, or a person —
+    // and with no judge built for `needs-input` (`BUILT_IN_FOR`), nothing but
+    // the person was ever asked, though the round was there to spend.
+    expect(result.routes).toEqual([
+      { from: 'implement', chose: 'waiting', to: 'waiting', why: 'nothing but a person was on offer', ceiling: null },
+    ])
     expect(result.stoppedAt).toMatchObject({
       step: 'implement',
       ending: { ending: 'asked' },
@@ -917,7 +885,7 @@ describe('every step that does not pass arrives at proposed', () => {
               },
             },
           ]
-    const { bodies } = watching({ proposed: routerSaying(() => 'design') })
+    const { bodies } = watching()
     const { emit } = events()
 
     const result = await runPass({
@@ -927,6 +895,7 @@ describe('every step that does not pass arrives at proposed', () => {
       bodies,
       actionsAt,
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async () => ({ next: 'design', named: 'test', why: 'because a test said so' }),
     })
 
     // The route 0058 §3c names, and the step that asked is the step it went to:
@@ -1169,9 +1138,7 @@ describe('every step that does not pass arrives at proposed', () => {
       build: [{ name: 'tests', run: 'pnpm test' }],
       proposed: [{ name: 'sign off', human: 'ship it?' }],
     })
-    const { bodies } = watching({
-      proposed: routerSaying(() => 'waiting'),
-    })
+    const { bodies } = watching()
     const { actionsAt, ran } = watchingActions({
       build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
       proposed: [canned('sign off', { verdict: 'needs-approval', evidence: 'ship it?', findings: [] })],
@@ -1191,10 +1158,10 @@ describe('every step that does not pass arrives at proposed', () => {
   /**
    * **A `review` whose answer could not be read still visits `proposed`'s own
    * inspection, and a declared `human:` there still runs** (`#467`) — unlike
-   * `build`'s refusal above, which arrives at `proposed` without its plugins
-   * (`arriveAtTheRouter` hands the visit a `reached`, never `null`). `review`
+   * `build`'s refusal above, which routes straight out of `routeProposal`
+   * without ever calling `proposed`'s own plugins or body (`#462`). `review`
    * always ends `passed` (`endingOf`), so the walk reaches `proposed` the
-   * ordinary way — `arriving: null` — which is the one condition under which
+   * ordinary way, as a spine visit, which is the one condition under which
    * `runStep` runs a step's own declared plugins at all. Skipping that visit
    * would leave the declared gate silently unbuilt and the pass reporting
    * `passed` where a person should be asked.
@@ -1239,7 +1206,7 @@ describe('every step that does not pass arrives at proposed', () => {
    */
   it("does not route proposed's own refusal", async () => {
     const recipe = recipeWith({ proposed: [{ name: 'tamper', run: 'true' }] })
-    const { bodies, seen } = watching({ proposed: routerSaying(() => 'implement') })
+    const { bodies, seen } = watching()
     const { actionsAt } = watchingActions({
       proposed: [canned('tamper', { verdict: 'failed', evidence: 'a watched path moved', findings: [] })],
     })
@@ -1274,7 +1241,7 @@ describe('every step that does not pass arrives at proposed', () => {
           { name: 'land it', merge: { strategy: 'merge-commit' } },
         ],
       })
-      const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+      const { bodies } = watching()
       const { actionsAt } = watchingActions({
         merge: [canned('check', { verdict, evidence: '…', findings: [] })],
       })
@@ -1300,7 +1267,6 @@ describe('every step that does not pass arrives at proposed', () => {
       implement: async () => {
         throw new Error('the agent runtime raised: ECONNRESET')
       },
-      proposed: routerSaying(() => 'implement'),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -1322,197 +1288,17 @@ describe('every step that does not pass arrives at proposed', () => {
   })
 })
 
-describe('the workflow decides which steps the judge may choose from', () => {
-  const spent: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
-  const spare: Ceilings = { rounds: 2, restarts: 1, restartsSpent: 0 }
-  const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
-  const asking: StepEnding = { ending: 'asked', at: null, detail: '?' }
-  /** `proposed`'s own visit, which is the `findings` direction and no other. */
-  const wayThrough: StepEnding = { ending: 'passed' }
-
-  /**
-   * 0061 §3: *when `rounds` is spent, `implement` is not in that set* — and
-   * `waiting` is always there, because a person can always be the answer.
-   */
-  it('offers a person, and nothing else, once every ceiling is spent', () => {
-    expect(onOffer('proposed', wayThrough, spent, 0).affordable).toEqual(['waiting'])
-    expect(onOffer('proposed', wayThrough, spare, spare.rounds).affordable).toEqual(['waiting', 'claim'])
-  })
-
-  /**
-   * *The set depends on how far the pass got, not only on what is left to
-   * spend.* A failed install refuses before any agent has run, so there is no
-   * diff and no error in one to fix.
-   */
-  it('does not offer implement for a refusal at prepared', () => {
-    expect(onOffer('prepared', refused, spare, 0).affordable).toEqual(['waiting'])
-    expect(onOffer('build', refused, spare, 0).affordable).toEqual(['waiting', 'implement'])
-    expect(onOffer('review', refused, spare, 0).affordable).toEqual(['waiting', 'implement'])
-  })
-
-  /**
-   * A conflict an agent resolved is code written *after* `review` passed, so it
-   * goes back through both — the edge that buys *every path into `end` has been
-   * through `build` and `review`*.
-   */
-  it('offers build for a refusal at merge', () => {
-    expect(onOffer('merge', refused, spare, 0).affordable).toEqual(['waiting', 'implement', 'build'])
-  })
-
-  /** 0058 §3c: a `needs-input` offers the step that asked, and nothing else. */
-  it('offers the step that asked, for a needs-input', () => {
-    expect(onOffer('design', asking, spare, 0).affordable).toEqual(['waiting', 'design'])
-    expect(onOffer('admit', asking, spare, 0).affordable).toEqual(['waiting', 'admit'])
-  })
-
-  /**
-   * **And the way-through visit is offered something too**, which is what makes
-   * *`review` returns findings and judges nothing* buildable: the review passed,
-   * so nothing refused, and the judge that reads its findings is at `proposed` on
-   * the spine.
-   */
-  it('offers the way-through visit a round as well as a person', () => {
-    expect(onOffer('proposed', wayThrough, spare, 0).affordable).toEqual(['waiting', 'claim', 'implement'])
-  })
-
-  /**
-   * **A restart is offered for one direction and it is `findings`** — 0039 §2,
-   * `stepsOnOffer`'s own rule, and the reason it is in code rather than in the
-   * recipe: *no number a project writes down should make a typecheck error buy a
-   * fresh worktree, and no judge should be able to either.* The way-through visit
-   * is the `findings` direction; every other arrival at the router is one of the
-   * four mechanical ones, and their remedy is to fix the work where it stands.
-   *
-   * It is the one move `claim` makes that cannot be taken back: the item is
-   * released and the worktree thrown away.
-   */
-  it('offers a restart for the findings direction and for no other', () => {
-    expect(onOffer('proposed', wayThrough, spare, 0).affordable).toContain('claim')
-    for (const at of ['prepared', 'implement', 'build', 'review', 'merge'] as const) {
-      expect(onOffer(at, refused, spare, 0).reachable).not.toContain('claim')
-    }
-    expect(onOffer('implement', asking, spare, 0).reachable).not.toContain('claim')
-  })
-
-  /**
-   * **The two sets, and the whole of why there are two** (0064 §7).
-   *
-   * A destination can be off the offer for two unlike reasons and `affordable`
-   * alone reads them the same. `implement` from a `prepared` refusal is *no
-   * meaning* — no agent has run, and no number a person raises puts it back, so
-   * it is off **both** sets. `implement` from a spent pass, and `claim` from an
-   * item with no restart left, are *no money*: reachable, unaffordable, and
-   * exactly the numbers somebody can raise. `ceilingFor` is that subtraction and
-   * names which of the two ceilings it was.
-   */
-  it('keeps what the pass reached apart from what it can pay for', () => {
-    const noRestart: Ceilings = { rounds: 2, restarts: 0, restartsSpent: 0 }
-    const noRound: Ceilings = { rounds: 0, restarts: 1, restartsSpent: 0 }
-
-    // No meaning: off both sets, and no ceiling to name.
-    const early = onOffer('prepared', refused, spare, 0)
-    expect(early.reachable).toEqual(['waiting'])
-    expect(ceilingFor('implement', early)).toBeNull()
-
-    // No money, and the item's ceiling rather than this pass's.
-    const spentRestart = onOffer('proposed', wayThrough, noRestart, 0)
-    expect(spentRestart.reachable).toEqual(['waiting', 'claim', 'implement'])
-    expect(spentRestart.affordable).toEqual(['waiting', 'implement'])
-    expect(ceilingFor('claim', spentRestart)).toBe('restarts')
-
-    // No money, and this pass's. Every edge but `claim` spends a round.
-    const spentRound = onOffer('merge', refused, noRound, 0)
-    expect(spentRound.reachable).toEqual(['waiting', 'implement', 'build'])
-    expect(spentRound.affordable).toEqual(['waiting'])
-    expect(ceilingFor('implement', spentRound)).toBe('rounds')
-    expect(ceilingFor('build', spentRound)).toBe('rounds')
-
-    // And `waiting` costs nothing, so no ceiling can take it out — which is what
-    // keeps the set non-empty and every arrival answerable.
-    expect(onOffer('proposed', wayThrough, spent, 0).affordable).toContain('waiting')
-    expect(ceilingFor('waiting', spentRound)).toBeNull()
-  })
-
-  /** And a destination outside the set is refused by name (0061 §3, §8). */
-  it('refuses a route it did not offer', async () => {
-    // `design` asking, not `prepared` refusing (`#467`): the question's own
-    // offer is `[waiting, design]` (`onOffer`'s `asked` branch pushes only
-    // the step that asked), so `implement` is off it the same way it was off
-    // `prepared`'s before this ticket.
-    const { bodies, seen } = watching({
-      design: asked('which base?'),
-      // `design` asked, so `implement` is on no offer — and this is the
-      // judge that answers it anyway.
-      proposed: async () => ({ ending: 'routed', to: 'implement', why: 'have another go' }),
-    })
-    const { actionsAt } = watchingActions()
-    const { emit } = events()
-
-    const result = await runPass({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
-    })
-
-    expect(result.stoppedAt).toMatchObject({
-      step: 'proposed',
-      ending: {
-        ending: 'did-not-finish',
-        because: 'threw',
-        detail: expect.stringContaining(
-          '`proposed` routed the pass to `implement`, which was not on offer — waiting, design',
-        ),
-      },
-    })
-    // Refused rather than obeyed, and `end` still ran.
-    expect(result.routes).toEqual([])
-    expect(seen.at(-1)?.step).toBe('end')
-  })
-
-  /** And the way-through visit is held to the same set. */
-  it('refuses a route the way-through visit was not offered', async () => {
-    const { bodies } = watching({
-      // `build` is only ever offered for a conflict at `merge`.
-      proposed: async () => ({ ending: 'routed', to: 'build', why: 'round we go' }),
-    })
-    const { actionsAt } = watchingActions()
-    const { emit } = events()
-
-    const result = await runPass({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
-    })
-
-    expect(result.stoppedAt).toMatchObject({
-      step: 'proposed',
-      ending: {
-        ending: 'did-not-finish',
-        detail: expect.stringContaining(
-          '`proposed` routed the pass to `build`, which was not on offer — waiting, implement',
-        ),
-      },
-    })
-  })
-})
-
 describe('proposed routes on the way through as well as on the way back', () => {
   /**
-   * **This is what lets `review` judge nothing** (0058 §3, and the change with
-   * the most evidence behind it: *10% of `review` refusals in 14 days carried no
-   * findings at all*). A review that found a blocker and one that found nothing
-   * both pass; the findings ride on `review`'s `results`, and the step that reads
-   * them is `proposed` on its way through. If that visit could only pass or
-   * report, a `findings` judge would have nowhere to say *the lines* or *the
-   * approach* — the 231-refusal case, and 0061 §3's one judgement worth an agent.
+   * **`review` refuses with its findings, and the step still ends `passed`**
+   * (0120 §2, 0058 §3) — the findings ride on `review`'s `results`, and what
+   * routes on them is `nextOf`'s own `Propose{ReviewFindings}`, read by
+   * `proposed` on the way through rather than by a second visit to `review`.
+   * The judge is the one place a `findings` direction is worth an agent
+   * (0061 §3), so it is declared here rather than left to a built-in — there
+   * is none for `findings` (`BUILT_IN_FOR`).
    */
-  it('sends a change back to implement on the findings of a review that passed', async () => {
+  it('sends a change back to implement on the findings of a review that refused', async () => {
     const finding: ActionFinding = {
       file: 'packages/conductor/src/pass.ts',
       line: 1,
@@ -1520,26 +1306,13 @@ describe('proposed routes on the way through as well as on the way back', () => 
       failureScenario: 'it does the wrong thing',
       severity: 'major',
     }
-    let findingsSeen: readonly ActionFinding[] = []
-    let laps = 0
-    const { bodies } = watching({
-      proposed: async (work) => {
-        const at = work as StepWork<'proposed'>
-        if (at.arriving !== null) return { ending: 'routed', to: 'waiting', why: 'unreachable here' }
-        findingsSeen = at.reached.find((s) => s.step === 'review')?.results.flatMap((r) => r.findings) ?? []
-        // One round on the findings, then let it past — which is what a fix that
-        // landed looks like.
-        return laps++ === 0 && findingsSeen.length > 0
-          ? { ending: 'routed', to: 'implement', why: 'the lines, not the approach' }
-          : { ending: 'passed' }
-      },
-    })
+    const { bodies } = watching()
     let reviews = 0
     const actionsAt: PassOptions['actionsAt'] = (step) =>
       step === 'review'
         ? [
             canned('cold reviewer', {
-              verdict: 'passed',
+              verdict: reviews === 0 ? 'failed' : 'passed',
               evidence: 'read the diff',
               findings: reviews++ === 0 ? [finding] : [],
             }),
@@ -1556,10 +1329,12 @@ describe('proposed routes on the way through as well as on the way back', () => 
       bodies,
       actionsAt,
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 
-    // The review passed both times, so nothing ever refused — and the pass still
-    // bought a round and then landed.
+    // The step ends `passed` both times — a review that refuses still does
+    // (0058 §3) — and the pass still bought a round on the first one's
+    // findings and then landed.
     expect(result.steps.filter((s) => s.step === 'review').map((s) => s.ending.ending)).toEqual(['passed', 'passed'])
     expect(result.routes).toEqual([
       {
@@ -1592,48 +1367,6 @@ describe('proposed routes on the way through as well as on the way back', () => 
     ])
   })
 
-  /**
-   * And when the judge decides the findings are a person's, nothing is named as
-   * having stopped the pass — because nothing refused. `rested` is what says a
-   * person holds it, and `outcomeOf` reads that before `stoppedAt` for exactly
-   * this case.
-   */
-  it('reports no stopping step when the way-through visit sends it to a person', async () => {
-    const { bodies } = watching({
-      proposed: async (work) =>
-        (work as StepWork<'proposed'>).arriving === null
-          ? { ending: 'routed', to: 'waiting', why: 'this changes a decision — your call' }
-          : { ending: 'routed', to: 'waiting', why: 'unreachable here' },
-    })
-    const { actionsAt } = watchingActions()
-    const { emit } = events()
-
-    const result = await runPass({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
-
-    expect(result.stoppedAt).toBeNull()
-    expect(result.rested).toBe('waiting')
-    expect(result.routes).toEqual([
-      {
-        from: 'proposed',
-        chose: 'waiting',
-        to: 'waiting',
-        why: 'this changes a decision — your call',
-        ceiling: null,
-      },
-    ])
-    expect(outcomeOf(result)).toBe('blocked')
-    // `merge` was never reached, and `end` was told the pass did not land.
-    expect(result.steps.map((s) => s.step)).not.toContain('merge')
-    expect(result.steps.at(-1)?.step).toBe('end')
-  })
-
   /** The default body lets it past, which is today's behaviour with no judge. */
   it('lets a change past on the way through when no judge is built', async () => {
     const { actionsAt } = watchingActions()
@@ -1655,7 +1388,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
     // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({})
-    const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+    const { bodies } = watching()
     const actionsAt: PassOptions['actionsAt'] = (step) =>
       step === 'build'
         ? [
@@ -1681,8 +1414,15 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
 
     expect(result.stoppedAt).toBeNull()
     expect(result.rested).toBeNull()
+    // No judge declared, so the mechanical built-in answers `red` (`BUILT_IN_FOR`).
     expect(result.routes).toEqual([
-      { from: 'build', chose: 'implement', to: 'implement', why: 'because a test said so', ceiling: null },
+      {
+        from: 'build',
+        chose: 'implement',
+        to: 'implement',
+        why: 'a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
+        ceiling: null,
+      },
     ])
     expect(result.steps.map((s) => s.step)).toEqual([
       'claim',
@@ -1717,10 +1457,9 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
     // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({})
-    const { bodies } = watching({
-      // The replaced judge that would loop for ever if it could.
-      proposed: routerSaying((work) => (work.offering.affordable.includes('implement') ? 'implement' : 'waiting')),
-    })
+    // No judge declared — the mechanical built-in for `red` always wants
+    // `implement`, and would loop for ever if the ceiling did not stop it.
+    const { bodies } = watching()
     const { actionsAt } = watchingActions({
       build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
     })
@@ -1750,18 +1489,20 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
    * loop does not walk back to `claim` itself.
    */
   it('ends the pass when the judge chooses a restart', async () => {
-    // On the way through, because that is the one visit `claim` is offered at:
-    // a restart answers *the approach is wrong*, which only the `findings`
-    // direction can say (0039 §2).
-    const { bodies } = watching({
-      proposed: async (work): Promise<StepEnding> => {
-        const at = work as StepWork<'proposed'>
-        return at.arriving === null
-          ? { ending: 'routed', to: 'claim', why: 'because a test said so' }
-          : { ending: 'routed', to: 'waiting', why: 'not this one' }
-      },
+    // Born at `review`, because that is the one direction a restart is ever
+    // offered for: *the approach is wrong*, which only `findings` can say
+    // (0039 §2) — `offerFor` offers `restart` for `ReviewFindings` alone.
+    const finding: ActionFinding = {
+      file: 'packages/conductor/src/pass.ts',
+      line: 1,
+      claim: 'a blocker',
+      failureScenario: 'it does the wrong thing',
+      severity: 'major',
+    }
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker', findings: [finding] })],
     })
-    const { actionsAt } = watchingActions()
     const { emit } = events()
 
     const result = await runPass({
@@ -1771,6 +1512,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       bodies,
       actionsAt,
       ceilings: { rounds: 2, restarts: 1, restartsSpent: 0 },
+      judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
     })
 
     expect(result.rested).toBe('requeued')
@@ -1783,11 +1525,10 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     expect(result.steps.at(-1)?.step).toBe('end')
   })
 
-  // A restart being on no offer when the item has none left is `onOffer`'s
-  // own claim, proved directly against it above (`spentRestart`) — `prepared`
-  // was this suite's only example of an arrival `claim` is never on the offer
-  // for anyway (`#467` takes it off the router entirely), so there is no
-  // longer a `runPass` scenario this duplicates rather than restates.
+  // A restart being on no offer when the item has none left is `offerFor`'s
+  // own claim, proved directly against it in `domain/unit/routing.test.ts` —
+  // there is no longer a `runPass` scenario this duplicates rather than
+  // restates.
 })
 
 // ------------------------------------------- the head, the round, the findings ----
@@ -1853,7 +1594,7 @@ describe('a visit is judged against the head the walk has reached', () => {
   it('advances the head again on a fix round', async () => {
     const heads = ['b2b2b2b', 'c3c3c3c']
     let commits = 0
-    const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+    const { bodies } = watching()
     const { actionsAt, judged } = judging((step, lap) => {
       if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [] }
       if (step === 'implement') return { ...PASSED, head: heads[commits++] ?? '' }
@@ -1942,7 +1683,7 @@ describe('a visit is judged in the round the pass is in', () => {
    * slow re-review reads as the one that already finished.
    */
   it('counts the rounds it bought, and every lap is judged in its own', async () => {
-    const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+    const { bodies } = watching()
     const { actionsAt, judged } = judging((step, lap) => {
       if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [] }
       // Realistic rather than headless — a real `implement` always commits,
@@ -1962,7 +1703,13 @@ describe('a visit is judged in the round the pass is in', () => {
     })
 
     expect(result.routes).toEqual([
-      { from: 'build', chose: 'implement', to: 'implement', why: 'because a test said so', ceiling: null },
+      {
+        from: 'build',
+        chose: 'implement',
+        to: 'implement',
+        why: 'a "red" is mechanical — the work is still there and the remedy is to fix it where it stands',
+        ceiling: null,
+      },
     ])
     expect(judged.map((j) => [j.step, j.round])).toEqual([
       ['claim', 0],
@@ -1999,23 +1746,15 @@ describe('the round a pass buys is bought on something', () => {
    * them silently stops applying it.
    *
    * The lap's findings rather than a refusal's, because a route is chosen on
-   * both of `proposed`'s visits: here the review **passed** carrying a finding
-   * and the way-through judge bought the round on it (0058 §3b), which is the
-   * case 0061 §3 calls the one judgement worth an agent.
+   * both of `proposed`'s visits: here the review **refused** carrying a
+   * finding (the step itself still ends `passed`, 0058 §3), and the judge
+   * `nextOf`'s own `Propose{ReviewFindings}` reaches bought the round on it,
+   * which is the case 0061 §3 calls the one judgement worth an agent.
    */
   it("hands the next round's plugins the findings this one was bought on", async () => {
-    let laps = 0
-    const { bodies } = watching({
-      proposed: async (work) => {
-        const at = work as StepWork<'proposed'>
-        if (at.arriving !== null) return { ending: 'routed', to: 'waiting', why: 'unreachable here' }
-        return laps++ === 0
-          ? { ending: 'routed', to: 'implement', why: 'the lines, not the approach' }
-          : { ending: 'passed' }
-      },
-    })
+    const { bodies } = watching()
     const { actionsAt, judged } = judging((step, lap) => {
-      if (step === 'review' && lap === 0) return { verdict: 'passed', evidence: 'read the diff', findings: [finding] }
+      if (step === 'review' && lap === 0) return { verdict: 'failed', evidence: 'read the diff', findings: [finding] }
       // Realistic rather than headless — a real `implement` always commits,
       // and this test is about findings and not about the head (`#469`).
       if (step === 'implement') return { ...PASSED, head: COMMITTED }
@@ -2030,6 +1769,7 @@ describe('the round a pass buys is bought on something', () => {
       bodies,
       actionsAt,
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 
     expect(result.stoppedAt).toBeNull()
@@ -2047,7 +1787,7 @@ describe('the round a pass buys is bought on something', () => {
    * that refused carrying what it found, and the round it bought asked about it.
    */
   it("carries a refusing action's findings into the round it bought", async () => {
-    const { bodies } = watching({ proposed: routerSaying(() => 'implement') })
+    const { bodies } = watching()
     const { actionsAt, judged } = judging((step, lap) => {
       if (step === 'build' && lap === 0) return { verdict: 'failed', evidence: '3 failing', findings: [finding] }
       // Realistic rather than headless — a real `implement` always commits,
@@ -2430,13 +2170,14 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
   })
 
   /**
-   * **A pass with no judge built sends every refusal to a person**, which is the
-   * correct answer while `rounds` can buy nothing and is what `NOT_BUILT_YET`
-   * therefore says. It is not the straight break to `end` that leaves a
-   * `proposed` written later as a router nothing can call: the refusal reaches
-   * the router, the router answers, and `routes` records that it did.
+   * **A pass with no rounds to spend sends every refusal to a person**, which
+   * is the correct answer while `rounds` can buy nothing and is what the
+   * default `Ceilings` (`NOTHING_SPARE`) therefore gives. It is not the
+   * straight break to `end` that leaves a `proposed` written later as a
+   * router nothing can call: the refusal reaches `offerFor`, nothing but a
+   * person is on offer, and `routes` records that it rested there.
    */
-  it('sends a refusal to a person, through the router, with no judge built', async () => {
+  it('sends a refusal to a person, through the router, with no round to spend', async () => {
     // `build`, not `prepared` (`#467`): a red build still arrives at
     // `proposed`, which is the one thing this test needs from its example.
     const recipe = recipeWith({ build: [{ name: 'tests', run: 'pnpm test' }] })
@@ -2458,7 +2199,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
       'end',
     ])
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
-    expect(result.routes[0]?.why).toContain('no `judge:` is built yet')
+    expect(result.routes[0]?.why).toContain('nothing but a person was on offer')
     expect(result.rested).toBe('waiting')
     expect(outcomeOf(result)).toBe('blocked')
   })
