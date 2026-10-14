@@ -63,6 +63,39 @@ const mergeConflict: Proposal = {
 const verifyRed: Proposal = { _tag: 'VerifyRed', output: 'tsc failed on main' }
 const verifyRedEmpty: Proposal = { _tag: 'VerifyRed', output: '' }
 
+// #471's seven, each with the `from`/evidence shape the ADR gives it.
+const setupRefusedAtPrepared: Proposal = { _tag: 'SetupRefused', from: 'prepared', output: 'pnpm install failed' }
+const setupRefusedAtImplement: Proposal = { _tag: 'SetupRefused', from: 'implement', output: 'the hook was not wired' }
+const setupRefusedEmpty: Proposal = { _tag: 'SetupRefused', from: 'implement', output: '' }
+const checkRefused: Proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'blocker found' }
+const checkRefusedEmpty: Proposal = { _tag: 'CheckRefused', from: 'merge', output: '' }
+const answerUnreadableAtDesign: Proposal = { _tag: 'AnswerUnreadable', from: 'design', raw: 'not JSON' }
+const answerUnreadableAtReview: Proposal = { _tag: 'AnswerUnreadable', from: 'review', raw: 'not JSON' }
+const answerUnreadableEmpty: Proposal = { _tag: 'AnswerUnreadable', from: 'review', raw: '' }
+const nothingProduced: Proposal = { _tag: 'NothingProduced', said: 'nothing to say' }
+const nothingProducedNull: Proposal = { _tag: 'NothingProduced', said: null }
+const fixerDisagrees: Proposal = { _tag: 'FixerDisagrees', said: 'the approach cannot work' }
+const fixerDisagreesNull: Proposal = { _tag: 'FixerDisagrees', said: null }
+const fixerDisagreesBlank: Proposal = { _tag: 'FixerDisagrees', said: '   ' }
+const mergeRefused: Proposal = { _tag: 'MergeRefused', reason: 'dirty-base', output: 'main moved' }
+const mergeRefusedEmpty: Proposal = { _tag: 'MergeRefused', reason: 'dirty-base', output: '' }
+const budgetExhaustedAtImplement: Proposal = {
+  _tag: 'BudgetExhausted',
+  from: 'implement',
+  kind: 'out-of-turns',
+  turns: 10,
+  costUsd: null,
+  detail: 'spent all 10 turns',
+}
+const budgetExhaustedAtDesign: Proposal = {
+  _tag: 'BudgetExhausted',
+  from: 'design',
+  kind: 'out-of-usd',
+  turns: null,
+  costUsd: 5,
+  detail: 'spent $5',
+}
+
 const ALL_PROPOSALS = [
   inputNeededDesign,
   inputNeededImplement,
@@ -74,6 +107,23 @@ const ALL_PROPOSALS = [
   mergeConflict,
   verifyRed,
   verifyRedEmpty,
+  setupRefusedAtPrepared,
+  setupRefusedAtImplement,
+  setupRefusedEmpty,
+  checkRefused,
+  checkRefusedEmpty,
+  answerUnreadableAtDesign,
+  answerUnreadableAtReview,
+  answerUnreadableEmpty,
+  nothingProduced,
+  nothingProducedNull,
+  fixerDisagrees,
+  fixerDisagreesNull,
+  fixerDisagreesBlank,
+  mergeRefused,
+  mergeRefusedEmpty,
+  budgetExhaustedAtImplement,
+  budgetExhaustedAtDesign,
 ]
 
 describe('offerFor: zero spent', () => {
@@ -181,6 +231,185 @@ describe('offerFor: zero spent', () => {
         { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
         { id: 'restart', because: { _tag: 'NoCriterion' } },
       ],
+    })
+  })
+})
+
+describe("offerFor: #471's seven — a born-before-implement step leaves fix-lines out entirely, never unavailable", () => {
+  const zero: Spent = { rounds: 0, restarts: 0 }
+
+  it('SetupRefused{prepared} with output: fix-lines is not offered at all (born before implement), restart{1} and hand-to-person', () => {
+    expect(offerFor(setupRefusedAtPrepared, policy, zero)).toEqual({
+      proposal: setupRefusedAtPrepared,
+      available: [
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('SetupRefused{implement} with empty output: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    expect(offerFor(setupRefusedEmpty, policy, zero)).toEqual({
+      proposal: setupRefusedEmpty,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
+    })
+  })
+
+  it('CheckRefused with output: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+    expect(offerFor(checkRefused, policy, zero)).toEqual({
+      proposal: checkRefused,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('CheckRefused with empty output: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    expect(offerFor(checkRefusedEmpty, policy, zero)).toEqual({
+      proposal: checkRefusedEmpty,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
+    })
+  })
+
+  it('AnswerUnreadable{design} with raw: fix-lines is not offered at all (born before implement), restart{1} and hand-to-person', () => {
+    expect(offerFor(answerUnreadableAtDesign, policy, zero)).toEqual({
+      proposal: answerUnreadableAtDesign,
+      available: [
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('AnswerUnreadable{review} with raw: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+    expect(offerFor(answerUnreadableAtReview, policy, zero)).toEqual({
+      proposal: answerUnreadableAtReview,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('AnswerUnreadable{review} with empty raw: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    expect(offerFor(answerUnreadableEmpty, policy, zero)).toEqual({
+      proposal: answerUnreadableEmpty,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
+    })
+  })
+
+  it('NothingProduced: fix-lines and restart are both unavailable{NoCriterion}, whatever `said` carries — the ticket says so', () => {
+    for (const proposal of [nothingProduced, nothingProducedNull]) {
+      expect(offerFor(proposal, policy, zero)).toEqual({
+        proposal,
+        available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+        unavailable: [
+          { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+          { id: 'restart', because: { _tag: 'NoCriterion' } },
+        ],
+      })
+    }
+  })
+
+  it('FixerDisagrees with a non-blank `said`: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+    expect(offerFor(fixerDisagrees, policy, zero)).toEqual({
+      proposal: fixerDisagrees,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('FixerDisagrees with `said: null` or blank: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    for (const proposal of [fixerDisagreesNull, fixerDisagreesBlank]) {
+      expect(offerFor(proposal, policy, zero)).toEqual({
+        proposal,
+        available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+        unavailable: [
+          { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+          { id: 'restart', because: { _tag: 'NoCriterion' } },
+        ],
+      })
+    }
+  })
+
+  it('MergeRefused with output: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+    expect(offerFor(mergeRefused, policy, zero)).toEqual({
+      proposal: mergeRefused,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('MergeRefused with empty output: fix-lines and restart are both unavailable{NoCriterion}', () => {
+    expect(offerFor(mergeRefusedEmpty, policy, zero)).toEqual({
+      proposal: mergeRefusedEmpty,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
+    })
+  })
+
+  it('BudgetExhausted{implement}: always a criterion — fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+    expect(offerFor(budgetExhaustedAtImplement, policy, zero)).toEqual({
+      proposal: budgetExhaustedAtImplement,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('BudgetExhausted{design}: fix-lines is not offered at all (born before implement), restart{1} and hand-to-person', () => {
+    expect(offerFor(budgetExhaustedAtDesign, policy, zero)).toEqual({
+      proposal: budgetExhaustedAtDesign,
+      available: [
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [],
+    })
+  })
+
+  it('MergeRefused: restart excluded by CeilingReached{restarts}, fix-lines still available', () => {
+    const atRestarts: Spent = { rounds: 0, restarts: 1 }
+    expect(offerFor(mergeRefused, policy, atRestarts)).toEqual({
+      proposal: mergeRefused,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [{ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } }],
     })
   })
 })

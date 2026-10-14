@@ -417,6 +417,20 @@ describe('the mechanical directions spend nothing', () => {
   })
 
   /**
+   * `#471`'s seven, declared nothing so each reaches a person — the same
+   * floor `conflict`/`needs-input`/`findings` already have above.
+   */
+  it('says the same for `#471`s seven: none has a built-in either', () => {
+    expect(BUILT_IN_FOR['setup-refused']).toBeNull()
+    expect(BUILT_IN_FOR['check-refused']).toBeNull()
+    expect(BUILT_IN_FOR['answer-unreadable']).toBeNull()
+    expect(BUILT_IN_FOR['nothing-produced']).toBeNull()
+    expect(BUILT_IN_FOR['fixer-disagrees']).toBeNull()
+    expect(BUILT_IN_FOR['merge-refused']).toBeNull()
+    expect(BUILT_IN_FOR['budget-exhausted']).toBeNull()
+  })
+
+  /**
    * **Every name the schema accepts is a function here**, which is what stops a
    * recipe naming a judge nothing answers — `#61` through the one door a
    * replaceable plugin opens. 0061 §3's example also names `ask-or-assume`, and

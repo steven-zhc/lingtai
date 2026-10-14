@@ -8,7 +8,7 @@
  */
 import type { Action, ActionVerdict, InterruptedCause, PipelineResult } from '@lingtai/actions'
 import { NEEDS_INPUT } from '@lingtai/actions'
-import { changedNothing, headOf, Hold, nextOf, type StepOutcome, wellFormed } from '@lingtai/domain'
+import { changedNothing, headOf, Hold, nextOf, type Proposal, type StepOutcome, wellFormed } from '@lingtai/domain'
 import { allowedResolutions, recommendedResolution, type WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
@@ -620,5 +620,134 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
         }
       ).detail,
     ).toBe(clean)
+  })
+})
+
+/**
+ * `#471`'s own equality: `holdOf(ProposedEscalated{proposal: X})` equals
+ * `holdOf(X's direct WaitReason)`, built from the same facts — the shared
+ * builders (`setupRefusedHold`, `checkRedHold`, `answerUnreadableHold`,
+ * `nothingProducedHold`, `declinedHold`, `mergeRefusedHold`, `ceilingHold`)
+ * are what makes this true by construction rather than by two call sites
+ * staying in sync; this pins it per variant, the way `#466`'s own fix round
+ * did for `MergeConflict`.
+ */
+describe('holdOf: an escalated #471 proposal equals its direct WaitReason', () => {
+  const pass = { branch: 'agent/7', base: 'main', findings: [] }
+  const run = { runId: 'run-1' }
+
+  function escalated(proposal: Proposal): WaitReason {
+    return { _tag: 'ProposedEscalated', run, proposal, because: { _tag: 'NotAsked' } }
+  }
+
+  it('SetupRefused: at `prepared`, where the direct `Hold` lifts by a person', () => {
+    const direct: WaitReason = {
+      _tag: 'SetupRefused',
+      run,
+      step: 'prepared',
+      action: 'install',
+      why: 'pnpm install failed',
+    }
+    const proposal: Proposal = { _tag: 'SetupRefused', from: 'prepared', output: 'pnpm install failed' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('SetupRefused: at `implement`, an ordinary `DidNotFinish`', () => {
+    const direct: WaitReason = {
+      _tag: 'SetupRefused',
+      run,
+      step: 'implement',
+      action: 'the hook',
+      why: 'the hook was not wired',
+    }
+    const proposal: Proposal = { _tag: 'SetupRefused', from: 'implement', output: 'the hook was not wired' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('CheckRefused: at `proposed`', () => {
+    const direct: WaitReason = {
+      _tag: 'CheckRefused',
+      run,
+      step: 'proposed',
+      action: 'check',
+      evidence: 'blocker found',
+      findings: [],
+    }
+    const proposal: Proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'blocker found' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('CheckRefused: at `merge`', () => {
+    const direct: WaitReason = {
+      _tag: 'CheckRefused',
+      run,
+      step: 'merge',
+      action: 'check',
+      evidence: 'the lane refused',
+      findings: [],
+    }
+    const proposal: Proposal = { _tag: 'CheckRefused', from: 'merge', output: 'the lane refused' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it("AnswerUnreadable: at `design`, an ordinary `DidNotFinish` — never `Routed{when: 'needs-input'}`'s own shape", () => {
+    const direct: WaitReason = { _tag: 'AnswerUnreadable', run, step: 'design', action: 'draft', raw: 'not JSON' }
+    const proposal: Proposal = { _tag: 'AnswerUnreadable', from: 'design', raw: 'not JSON' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it("AnswerUnreadable: at `review`, routed as `Routed{when: 'findings'}`", () => {
+    const direct: WaitReason = {
+      _tag: 'AnswerUnreadable',
+      run,
+      step: 'review',
+      action: 'cold reviewer',
+      raw: 'not JSON',
+    }
+    const proposal: Proposal = { _tag: 'AnswerUnreadable', from: 'review', raw: 'not JSON' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it("AnswerUnreadable: at `merge`, the lane's own `CheckRed`", () => {
+    const direct: WaitReason = { _tag: 'AnswerUnreadable', run, step: 'merge', action: 'check', raw: 'not JSON' }
+    const proposal: Proposal = { _tag: 'AnswerUnreadable', from: 'merge', raw: 'not JSON' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('NothingProduced', () => {
+    const direct: WaitReason = { _tag: 'NothingProduced', run, said: 'the approach cannot work' }
+    const proposal: Proposal = { _tag: 'NothingProduced', said: 'the approach cannot work' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('FixerDisagrees', () => {
+    const direct: WaitReason = { _tag: 'FixerDisagrees', run, said: 'the approach cannot work' }
+    const proposal: Proposal = { _tag: 'FixerDisagrees', said: 'the approach cannot work' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('MergeRefused', () => {
+    const direct: WaitReason = { _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'main moved' }
+    const proposal: Proposal = { _tag: 'MergeRefused', reason: 'dirty-base', output: 'main moved' }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
+  })
+
+  it('BudgetExhausted: the direct path writes `turns`/`costUsd` null, so the proposal must too for the two to agree', () => {
+    const direct: WaitReason = {
+      _tag: 'BudgetExhausted',
+      run,
+      cause: 'out-of-turns',
+      detail: 'spent all 10 turns',
+      call: null,
+    }
+    const proposal: Proposal = {
+      _tag: 'BudgetExhausted',
+      from: 'implement',
+      kind: 'out-of-turns',
+      turns: null,
+      costUsd: null,
+      detail: 'spent all 10 turns',
+    }
+    expect(holdOf(escalated(proposal), pass)).toEqual(holdOf(direct, pass))
   })
 })
