@@ -952,18 +952,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     /**
      * **What the back edges may spend** (0061 §3, and 0040's two dimensions).
      *
-     * `rounds` bounds depth and `restartsLeft` bounds breadth, and the pass reads
-     * both rather than asking anybody: `onOffer` puts `implement` on the offer
-     * while rounds are left and `claim` while restarts are, and offers neither
-     * once they are spent. That is the whole of *the workflow counts, the judge
-     * chooses* — which is why `decideFix` and `decideRestart` are no longer
-     * consulted here. What each of them decided is now either the ceiling's
-     * arithmetic or the judge's answer, and neither is a second opinion this file
-     * is entitled to.
+     * `rounds` bounds depth and `restarts`/`restartsSpent` bound breadth, and
+     * the pass reads all three rather than asking anybody: `offerFor`
+     * (`@lingtai/domain`) puts `implement` on the offer while rounds are left
+     * and `claim` while restarts are, and offers neither once they are spent.
+     * That is the whole of *the workflow counts, the judge chooses* — which
+     * is why `decideFix` and `decideRestart` are no longer consulted here.
+     * What each of them decided is now either the ceiling's arithmetic or the
+     * judge's answer, and neither is a second opinion this file is entitled
+     * to.
      */
     const ceilings: Ceilings = {
       rounds: ceiling.rounds,
-      restartsLeft: Math.max(0, ceiling.restarts - folded.restarts.length),
+      restarts: ceiling.restarts,
+      restartsSpent: folded.restarts.length,
     }
 
     let released = false
@@ -2189,13 +2191,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const askTheAgent = async (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> => {
         const named = declared.named
         const held = (why: string): Judged => ({ next: 'waiting', named, why })
-        if (on.offering.length < 2) {
-          return held(
-            `the "${named}" judge was not asked about this "${on.when}": \`${on.offering[0]}\` was ` +
-              'the only step on offer, and an agent paid to pick the only item on a list has ' +
-              'judged nothing',
-          )
-        }
+        // `#462`: the set-of-one guard that used to live here (`on.offering
+        // .length < 2`) is dead — `replyFor` (`proposed-route.ts`) answers
+        // `NotAsked` before `judge` is ever called for a set that size, which
+        // is the ticket's own rule: a judge is paid, so one that cannot help
+        // is not asked, not even a built-in.
 
         // **The runtime the entry named, dispatched** (`#314`). It used to be
         // `options.runtime.capabilities.id` unconditionally, with a comment saying
@@ -2298,10 +2298,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }
         const chose = chosenIn(outcome.text)
         if (chose === null) {
-          return held(
-            `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
-              `(${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
-          )
+          // `#462`: a judge's own unreadable answer is `Judged.unreadable`
+          // now, not folded into `held`'s `next: 'waiting'` — it becomes
+          // `JudgeReply.Unreadable` in `replyFor`, which `decideRoute` reads
+          // as `UnreadableReply` rather than as a destination somebody chose.
+          return {
+            unreadable: {
+              named,
+              raw:
+                `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
+                `(${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
+            },
+          }
         }
         // Held to the offer by `judged` in `pass-steps.ts` and never here — a
         // destination the set did not contain is refused by name there, with the
@@ -3439,7 +3447,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // step has already run the action that filled them.
       const ports: PassPorts = {
         onStream: () => onStream,
-        judge,
         readEnd,
         recordEnd,
       }
@@ -3462,6 +3469,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           actionsAt,
           bodies: bodiesFor(ports),
           ceilings,
+          // `#462`: the judge port moved off `PassPorts` onto `PassOptions`,
+          // since `proposed`'s own body never asks one any more — `runPass`'s
+          // loop does, through `routeProposal`.
+          judge,
         }),
       )
       // An observer's own bug must not cost the ending: `runLog` is a trace,

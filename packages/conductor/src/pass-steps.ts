@@ -134,20 +134,14 @@ import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // definition of them is a drift nobody would notice.
 
 import { resolveEndActions } from './end-step.ts'
-import { BUILT_IN_FOR } from './judge.ts'
 import {
-  NEEDS_INPUT,
   NOT_BUILT_YET,
   type SentBack,
-  ceilingFor,
   type Destination,
-  type Offer,
   type StepBodies,
   type StepDidNotFinish,
-  type StepNeverRan,
   type StepPassed,
   type StepReached,
-  type StepRouted,
 } from './pass.ts'
 
 // -------------------------------------------------- what a pass is about ----
@@ -443,6 +437,15 @@ export type Judged =
    */
   | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
   | { readonly noJudge: true }
+  /**
+   * **The judge answered, and the machine could not read it** (`#462`,
+   * 0120 §3's `UnreadableReply`) — `chosenIn`'s `null`, carried here rather
+   * than folded into `held(...)`'s `next: 'waiting'` the way every other
+   * unreadable answer still is. `named` is the entry's `name:`, for the same
+   * reason every other answer here carries it; `raw` is the judge's own
+   * words, whole, for the person who ends up reading them.
+   */
+  | { readonly unreadable: { readonly named: string; readonly raw: string } }
 
 /**
  * A step's own work, as the pass asks for it — for the **four** steps that have
@@ -486,41 +489,6 @@ export interface PassPorts {
    * about.
    */
   onStream(): string | null
-  /**
-   * `proposed` — **which of the offered steps the recipe's `judge:` for this
-   * direction answers**, or that it declared none.
-   *
-   * 0061 §3 in one sentence, and the two halves of it are on either side of this
-   * call: *`judge:` decides which step is next. The workflow decides which steps
-   * it may choose from.* The set is already computed — it is on `Judging.offering`
-   * — and the body holds the answer to it, so a judge that answers outside the set
-   * is refused by name rather than obeyed (0061 §8).
-   *
-   * **It is a port and not an action, and since `#274` that is the distinction
-   * rather than a stand-in.** `judgePlugin.at` carries `proposed`, so a recipe
-   * declares its judges there — and `actionsFromRecipe` still builds none, because
-   * a judge produces no verdict and is asked once per arrival rather than once per
-   * entry. What a live implementation does with the declared list is
-   * `judgeDeclaredAt` (`judge.ts`): take the entry whose `when:` matches, and
-   * answer with the built-in it names.
-   *
-   * **`worktree:` and `merge:` are what a wired row looks like when its plugin
-   * produces a verdict**, and they are the contrast rather than siblings: each
-   * key opened, each entry left `CALLED_DIRECTLY`, `ports.cut` and `ports.land`
-   * went, and each body emptied — in one diff, because 0065 §7's *two things must
-   * not both run* is what a half-migrated step costs, and at `merge` it is the
-   * branch landed twice (`#268`, `#270`). This row stayed through its own
-   * opening because what it answers is not a verdict: nothing in
-   * `runActionPipeline` could carry *which step is next*.
-   *
-   * **Answering costs money for one of the five and must not for the other four.**
-   * A live implementation returns `noJudge` for a direction the recipe declared
-   * nothing for, and the body falls back to `BUILT_IN_FOR` — so `red` and
-   * `verify-failed` are mechanical by default and no agent is paid to reach a
-   * conclusion a `switch` reaches. What a recipe *did* declare is asked, whichever
-   * direction it is, because a declared judge nothing calls is `#61` again.
-   */
-  judge(on: Judging): Promise<Judged>
   /**
    * `end` — the work item's own stream.
    *
@@ -592,166 +560,13 @@ export const END_UNRESOLVED = 'end-unresolved'
 // --------------------------------------------------------- what refused ----
 
 /**
- * **Which of the five directions an arrival at `proposed` is**, or null where it
- * is none of them.
- *
- * `when:` is *the reason the last step gave* (`JudgeWhen`), and the reason is read
- * off **which step arrived** rather than off the ending's `because`: the pipeline
- * knows only that *something the recipe declared refused* and says
- * `action-refused` at every step alike, on purpose — writing `verify-failed` there
- * would put a retired word back on a list that may only shrink (`endingOf`). So
- * the direction is the pass's to name, and it is named where the pass knows it:
- *
- * ```
- * needs-input   a step that stopped and asked, at any of the three that can
- * red           a command said no — `build`'s checks, and `prepared`'s install,
- *               which is the same kind of evidence one step earlier
- * conflict      the merge lane's own word
- * verify-failed   the merge lane's other one: the base moved and the re-verify
- *               went red
- * findings      **not here.** `review` refuses nothing, so it never arrives —
- *               its findings are judged on `proposed`'s own way through
- * ```
- *
- * **Null is the lane's other seven reasons** — `dirty-base`, `unpushed-base`,
- * `pending-migration`, `no-commits`, `push-rejected`, `wip-commit`,
- * `unexpected` — and `JudgeWhen`'s own doc is why they are not directions:
- * they stop the lane before the diff is what is in doubt, and *offering a
- * judge a direction nothing can arrive by is the same mistake as offering it
- * a step nothing can run.* A person is next, which is where they go today.
- *
- * Exported for `hold-of.ts`'s `holdOfPass` (#452), which needs the same
- * reading of `PassResult.stoppedAt` the router used to decide whether an
- * arrival was sent to a person with a direction — a copy in that file would
- * let the two disagree about it. The parameter is narrowed to the two fields
- * `stoppedAt` actually carries, which is all `StepReached` `stoppedAt` is.
+ * What the step that did not pass said, as the judge is shown it (`#462`:
+ * `proposed-route.ts`'s `replyFor` is the caller now, off the visit that
+ * proposed rather than off the `Propose` itself — `ReviewFindings` carries no
+ * evidence text of its own, so the free-text half still has to come from
+ * here).
  */
-export function directionOf(arriving: Pick<StepReached, 'step' | 'ending'>): JudgeWhen | null {
-  const ending = arriving.ending
-  // The one report with anywhere to go, and its own ending since `#296`: this is
-  // the last place `NEEDS_INPUT` is written down in the conductor, and it is a
-  // name in the recipe's `when:` vocabulary rather than a branch on a string.
-  if (ending.ending === 'asked') return NEEDS_INPUT
-  if (ending.ending !== 'refused') return null
-  if (arriving.step !== 'merge') return 'red'
-  if (ending.because === 'conflict') return 'conflict'
-  return ending.because === 'verify-failed' ? 'verify-failed' : null
-}
-
-/**
- * **The mechanical answers, and the whole of what keeps `proposed` from buying a
- * model to answer a question a `switch` answers.**
- *
- * The rule is `BUILT_IN["same-worktree"]`'s in [`judge.ts`](judge.ts) and the
- * argument is there: `red` and `verify-failed` were seen sixty times between them
- * in fourteen days and not one of them was a judgement. A build that went red
- * says *this line is wrong* by construction; a merge whose re-verify went red on
- * the new base says *the base moved and the result is wrong*; in both the work is
- * still there (0039 §2) and the remedy is to fix it where it stands. **And it
- * falls to a person rather than reaching for `claim`** — when `implement` is not
- * on offer the rounds are spent or no agent has run, and neither is answered by
- * starting over.
- *
- * **It is that function's rule written again rather than that function called,
- * and the reason is the two files' `Destination`s.** `judge.ts`'s has three
- * values and calls a person `human`; the pass's is `Step | "waiting"`, because the
- * loop offers `build` from `merge` and the asking step back to itself, neither of
- * which the three can say. Reconciling them is T5's, which deletes the caller
- * `judge.ts` was written for; until then `pass-steps.test.ts`'s *the mechanical
- * answer is `judge.ts`'s, cell for cell* is what makes a divergence a failing
- * test rather than a surprise.
- *
- * A **total** record over `BuiltInJudge`, so a name added to `BUILT_IN_JUDGES`
- * with no answer here does not compile — the same argument `BUILT_IN` makes.
- *
- * **What it wants and what it settles for, rather than one function of the
- * offer** (`#271`). The two were the same line and the difference was lost in
- * it: a route to `waiting` because the rounds are spent read exactly like a route
- * to `waiting` somebody chose, and `RouteTaken.chose` is what a person is owed
- * there. So the cell says the answer it would give with everything on offer, and
- * the caller is what consults the offer.
- */
-const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly orElse: Destination }> = {
-  'same-worktree': { wants: 'implement', orElse: 'waiting' },
-}
-
-/**
- * Whether the arrival carries something an agent could be held to.
- *
- * `stepsOnOffer`'s first rule and `decideFix`'s before it (0038 §2, 0039 §2): the
- * bar is not *has findings*, it is *carries something the fixer could not have
- * authored* — a `failureScenario` a reviewer wrote before anybody knew what the
- * fix would be, or a command's own output and *run it again; green is green*.
- * **A refusal with neither buys nothing at either extent**, so no judge is asked
- * and no round is offered: asking an agent to address an opinion is the unbounded
- * rewriting 0038 §2 is about.
- *
- * It is `review`'s own measurement that makes this the rule rather than a
- * precaution: **10% of its refusals in fourteen days carried no findings at
- * all** — 24 of them ([012](../../../doc/experiments/012-where-the-turns-go.md)
- * §4). Under the old pass each bought a fix round with nothing in it.
- *
- * The shape is decided by `when` rather than inferred from what arrived, which is
- * `carriesACriterion`'s reason there: a `findings` arrival that came back with
- * none is an absent criterion rather than a command with no output, which is the
- * more useful of the two truths.
- *
- * **It is only asked of an arrival that could be read**, and that is not a detail
- * of the caller (`#279`). *No finding with a failure scenario* is a claim about
- * what the reviewer said, and an answer that did not parse supports no claim about
- * what the reviewer said at all — so `judged` answers `Arrival.unreadable` first
- * and this function never sees one. Moving that test in here would put two
- * different facts behind one `false`, which is the shape the bug had.
- */
-function carriesACriterion(on: Arrival): boolean {
-  return on.when === 'findings'
-    ? on.findings.some((finding) => finding.failureScenario.trim() !== '')
-    : on.evidence.trim() !== ''
-}
-
-/**
- * **What `review` came back with, where the reviewer said it stops the change** —
- * or null, where nothing did.
- *
- * Read off the visit rather than off an ending, because `review`'s ending says
- * nothing: a reviewer's `failed` verdict is its findings and not a verdict about
- * the step, so `endingOf` reports the step as `passed` and leaves the verdict on
- * `results` where it belongs. That is the whole of *`review` returns findings and
- * judges nothing*, and this is the reader it leaves them for.
- *
- * The last `review` visit and not the first: a pass that took a round has two, and
- * what the way-through `proposed` is judging is the review that has just run. A
- * pass that never reached `review` — a red `build` routed straight here — has no
- * visit at all and is not this function's case: it arrives with a direction.
- *
- * Findings from the passing results are carried too, and deliberately: a reviewer
- * that refused on a blocker and also filed two minors has said three things about
- * one diff, and the agent that is sent back should be told all three.
- */
-function reviewRefused(reached: readonly StepReached[]): Omit<Arrival, 'when'> | null {
-  const reviewed = reached.findLast((visit) => visit.step === 'review')
-  if (reviewed === undefined) return null
-  // By verdict rather than by position, which is `evidenceFrom`'s reason: the
-  // pipeline stops at the first action that did not pass, so the one that refused
-  // is the only result with that verdict and is also the last.
-  const refused = reviewed.results.filter((result) => result.verdict === 'failed').at(-1)
-  if (refused === undefined) return null
-  return {
-    findings: reviewed.results.flatMap((result) => result.findings),
-    evidence: refused.evidence,
-    // **The reviewer's own answer, and the difference `findings: []` cannot
-    // carry** (`#279`): the action that refused says whether its answer parsed,
-    // and it is read off the same result the evidence is, so *what refused* and
-    // *whether it could be read* cannot come from two different reviewers.
-    unreadable: refused.unreadable === true,
-  }
-}
-
-/**
- * What the step that did not pass said, as the judge is shown it — and one thing
- * it is not shown: `unreadable` is answered before any judge is asked (`#279`).
- */
-function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
+export function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
   const ending = arriving.ending
   return {
     findings: arriving.results.flatMap((result) => result.findings),
@@ -759,60 +574,11 @@ function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
     // two the loop routes — and it is the words a person reads beside the
     // judge's (0043).
     evidence: 'detail' in ending ? ending.detail : '',
-    // `reviewRefused`'s rule at the other door: by verdict, off the action that
-    // stopped the pipeline. Only an `agent:` action has an answer to parse, and
-    // `agentPlugin.at` puts one at `merge` as well as at `review`, so the routing
-    // arrivals are asked the same question the way through is (`#279`).
+    // `#279`'s own rule: by verdict, off the action that stopped the pipeline.
+    // Only an `agent:` action has an answer to parse, and `agentPlugin.at`
+    // puts one at `merge` as well as at `review`.
     unreadable: arriving.results.filter((result) => result.verdict === 'failed').at(-1)?.unreadable === true,
   }
-}
-
-/** The reason the arriving step gave, for a sentence about it. */
-function reasonOf(arriving: StepReached): string {
-  const ending = arriving.ending
-  return 'because' in ending ? ending.because : ending.ending
-}
-
-/**
- * `waiting`, which `onOffer` offers on every arrival, so this can never be
- * refused.
- *
- * `chose` is the destination somebody asked for and did not get, on the one path
- * that has one — a judge answering outside its offer. Every other caller wanted
- * a person and says nothing, which `take` reads as *it went where it wanted*.
- */
-function toAPerson(why: string, chose?: Destination): StepRouted {
-  return chose === undefined
-    ? { ending: 'routed', to: 'waiting', why }
-    : { ending: 'routed', to: 'waiting', why, chose }
-}
-
-/** The offered steps, for a sentence a person or a judge reads. */
-function listing(offering: readonly Destination[]): string {
-  return offering.map((step) => `"${step}"`).join(', ')
-}
-
-/**
- * **Why the destination a decision wanted was not one it could have — and only
- * where a number would have bought it** (0064 §7).
- *
- * `offering` used to be one set, so a destination missing from it read the same
- * whichever reason it was missing for, and the words on the card could say only
- * *that is not one of the steps it was offered*. With `Offer`'s two sets the
- * difference is readable, and it is the difference between two next moves: a
- * `rounds` or a `restarts` that is spent is a line in
- * `~/.lingtai/<project>/recipe.yml` somebody can raise, and a step the arrival
- * never reached is not.
- *
- * **Empty for the second, deliberately, and that is `#271`'s rule kept.** The
- * words are what the router quotes back to a person, and naming a step no number
- * would have offered invites the reader to ask for it — `implement` from a
- * `prepared` refusal, where no agent has run and none will until the install
- * works. `RouteTaken.chose` records what was wanted there; the sentence does not.
- */
-function becauseSpent(wanted: Destination, offer: Offer): string {
-  const ceiling = ceilingFor(wanted, offer)
-  return ceiling === null ? '' : ` — it wanted \`${wanted}\`, and \`${ceiling}\` is spent`
 }
 
 /**
@@ -832,174 +598,6 @@ function becauseSpent(wanted: Destination, offer: Offer): string {
  * now that the work runs *before* the body rather than in it.
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
-  /**
-   * 0031 §3, at whichever of the two steps dispatched the agent.
-   *
-   * Shared rather than written twice, because the whole value of the case is
-   * that `design` and `implement` answer the same wall the same way: a body that
-   * spelled it out at one of them is a body that can be changed at one of them.
-   */
-  const stoodDown = (wall: NeverStarted['neverStarted']): StepNeverRan => ({
-    ending: 'never-ran',
-    at: wall.agent,
-    detail: wall.detail,
-  })
-
-  /**
-   * **One arrival at `proposed`, answered** — and the only place a round is bought.
-   *
-   * Five answers in order, and the order is what makes the cheap ones cheap:
-   *
-   * 0. **nothing was read** — `Arrival.unreadable`, and a person. Asked before
-   *    everything else because it is what makes the next answer honest: an answer
-   *    nobody could parse arrives as `findings: []`, which is also what a reviewer
-   *    with nothing to say writes, and for four days the two were one sentence
-   *    (`#279`). It buys no round either;
-   * 1. **nothing to hold an agent to** — `carriesACriterion`, and a person. Asked
-   *    before any judge, because a refusal with no criterion buys nothing at either
-   *    extent and paying a model to discover that is paying twice;
-   * 2. **what the recipe declared** for this direction, whichever it is. A judge a
-   *    person wrote down and nothing calls is `#61` arriving through the one door
-   *    this repository has decided it will not leave open;
-   * 3. **the mechanical answer**, where it declared none — `BUILT_IN_FOR`, which is
-   *    `same-worktree` for `red` and `verify-failed` and nothing for the other three.
-   *    So the sixty refusals a year that are not judgements cost no agent;
-   * 4. **a person**, for a direction with neither. `needs-input` is that today:
-   *    0061 §3's yaml names `ask-or-assume` and nothing implements it, so a
-   *    question reaches somebody rather than a name the schema would accept and no
-   *    code answers.
-   *
-   * And a judge held to the set: **an answer outside `offering` is refused by
-   * name**, and the fallback is the one destination that cannot loop. An overruled
-   * judge is not one to ask for a second opinion, so the answer is not the next
-   * cheapest step — it is a person, with the refusal on the card (`askJudge`).
-   */
-  /**
-   * `StepNeverRan` is in the return type because the judge is an agent since
-   * `#277`: the one arrival that dispatches one can meet the account-wide wall
-   * every other dispatch can, and 0031 §3's answer to it is not a route.
-   */
-  const judged = async (arrival: Arrival, offer: Offer, about: string): Promise<StepRouted | StepNeverRan> => {
-    /**
-     * **Nothing was read, which is not the same as nothing being said** (`#279`).
-     *
-     * Asked before `carriesACriterion` because it is the reason that function
-     * would otherwise be wrong: an answer nobody could parse reaches it as
-     * `findings: []`, and the only sentence it has for that is *the reviewer held
-     * no opinion worth a round*. `#269`'s third review answered a `major` with a
-     * failure scenario and three minors, ended one closing brace short of valid
-     * JSON, and parked the pass under that sentence — 61 turns and $8.97, no round
-     * bought, and four findings that then existed only in a run log which is
-     * deleted when the item lands.
-     *
-     * **It goes to the same place and for a different reason.** An answer nobody
-     * can read is not a criterion either, so it buys no round (0038 §2) and no
-     * judge is paid to look at it. What is different is what the card and the log
-     * then say, which is the whole of what was lost: *the machinery dropped it* is
-     * a thing to re-run, and *the reviewer had nothing* is a thing to merge.
-     */
-    if (arrival.unreadable) {
-      return toAPerson(
-        `${about} could not be read at all — the answer did not parse as findings, so nothing ` +
-          'structured came out of it however much the reviewer said. That is the machinery ' +
-          'losing a judgement rather than a reviewer declining to make one, and it buys no ' +
-          'round either: an answer nobody can read is not a criterion (0038 §2). The answer ' +
-          "itself is on the step's own `StepFailed`, clipped, and whole in that attempt's " +
-          'agent transcript; the pass is held for a person, who can read both',
-      )
-    }
-    if (!carriesACriterion(arrival)) {
-      return toAPerson(
-        `${about} carries nothing an agent could be held to — ` +
-          `${arrival.when === 'findings' ? 'no finding with a failure scenario' : 'no output'} — so ` +
-          'no round is worth buying and the pass is held for a person (0038 §2)',
-      )
-    }
-    // The affordable half and never the `Offer` — a judge answers *which of
-    // these*, and what the ceilings took away is not its business (`Judging`).
-    //
-    // `unreadable` is dropped rather than spread: it is the pass's own fact about
-    // whether there was an answer, it has already been answered above, and a
-    // judge's brief is the three fields and the set and nothing else.
-    const { unreadable: _read, ...judging } = arrival
-    const on: Judging = { ...judging, offering: offer.affordable }
-    const answer = await ports.judge(on)
-    // Before the answer is read as one, because a judge that never started did
-    // not answer: 0031 §3, at the third depth the same wall is met at.
-    if ('neverStarted' in answer) return stoodDown(answer.neverStarted)
-    if ('next' in answer) {
-      if (!on.offering.includes(answer.next)) {
-        return toAPerson(
-          `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
-            `of the steps it was offered — ${listing(on.offering)}` +
-            // Which half it failed, where that is a number rather than the shape
-            // of the arrival: a `restarts` a person can raise reads differently
-            // from a `claim` that was never on a mechanical direction's offer.
-            `${becauseSpent(answer.next, offer)}. A judge chooses which of the ` +
-            "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
-            'rounds and restarts spent to work them out (0061 §3). The pass is held for a person, ' +
-            'because a judge that answered outside the set is not one to ask a second time',
-          // The judge's answer is on the log as what was chosen, and `to` says a
-          // person got it instead: an overruled judge and a judge that asked for a
-          // person are not the same thing to read back.
-          answer.next,
-        )
-      }
-      return { ending: 'routed', to: answer.next, why: answer.why }
-    }
-
-    /**
-     * **A built-in, and the two ways one is reached are one branch** (`#274`).
-     *
-     * The recipe declared it for this direction — `judgeDeclaredAt`, through
-     * `ports.judge` — or it declared nothing and `BUILT_IN_FOR` is the mechanical
-     * default. Those differ in *which directions they answer* and in nothing else:
-     * a declared `same-worktree` for a `findings` is the same rule applied to an
-     * arrival the default leaves for a person, so the rule is applied once, here,
-     * where `chose` and the spent ceiling are recorded (`#271`).
-     */
-    const declared = 'built' in answer ? answer : null
-    const built = declared?.built ?? BUILT_IN_FOR[on.when]
-    if (built === null) {
-      return toAPerson(
-        `no \`judge:\` is declared for a "${on.when}" and there is no built-in that answers one, ` +
-          `so ${about} is held for a person rather than the workflow choosing from ` +
-          `${listing(on.offering)} on its own (0061 §3)`,
-      )
-    }
-    const mechanical = MECHANICALLY[built]
-    const afforded = on.offering.includes(mechanical.wants)
-    const next = afforded ? mechanical.wants : mechanical.orElse
-    return {
-      ending: 'routed',
-      to: next,
-      // What it would have answered with everything on offer, so that a
-      // `waiting` the rounds bought and a `waiting` somebody chose are two
-      // different rows on the log (`RouteTaken.chose`).
-      //
-      // **It is in the sentence only where a ceiling is what refused it**, and
-      // `becauseSpent` is that distinction (0064 §7). A step no number would
-      // have offered stays out of the words, which is `#271`'s rule —
-      // naming one invites the reader to ask for it (`pass-steps.test.ts`'s
-      // *offers the judge a person and a restart, and never `implement`*) —
-      // while a spent `rounds` is a line somebody can raise and so is said.
-      chose: mechanical.wants,
-      why:
-        // Whose choice it was, in the words a person reads on the card: a line of
-        // the recipe, named, or the default that spends nothing where the recipe
-        // said nothing. *Mechanical* is the argument for the default and is not
-        // said over a declaration — a recipe may declare one for `findings`,
-        // which is the direction 0061 §3 calls the judgement.
-        (declared === null
-          ? `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
-            'there and the remedy is to fix it where it stands'
-          : `the "${declared.named}" judge on ${about}: the recipe declares ` +
-            `\`judge: ${built}\` for a "${on.when}"`) +
-        ` — and of ${listing(on.offering)} it ` +
-        `chose \`${next}\`${afforded ? '' : becauseSpent(mechanical.wants, offer)}`,
-    }
-  }
-
   return {
     ...NOT_BUILT_YET,
 
@@ -1223,84 +821,17 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     review: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
-     * **The only step that routes** (0058 §3), and the one that spends what a
-     * round costs.
+     * **Nothing beyond its plugins, since `#462`.**
      *
-     * Its two jobs are told apart by `arriving`, which is the whole of what
-     * `StepWork` carries it for:
-     *
-     * - **`null` — the way through.** `build` and `review` have passed, and what is
-     *   left to judge is what the reviewer said: `findings`, the direction 0061 §3
-     *   measured at 231 refusals and calls *the one judgement worth an agent*. A
-     *   reviewer that refused nothing lets the change through to `merge`, which is
-     *   a recorded decision saying so rather than an absence (0058 §3b);
-     * - **a visit — a routing arrival.** The step that did not pass, carrying its
-     *   reason intact (0058 §3c), and `directionOf` is which of the five that is.
-     *
-     * **Every arrival is answered, and five things can answer it, in this order.**
-     * An answer nobody could read is a person, before anything else is asked
-     * (`#279`); a refusal carrying nothing an agent could be held to is a person,
-     * whatever is declared; a direction no judge is written for is a person; what
-     * the recipe declared for the direction is asked; and where it declared
-     * nothing, the mechanical answer is given without paying for one. **A judge that answers
-     * outside `offering` is refused by name and the pass is held for a person**,
-     * which is 0061 §8 again and the asymmetry `judge.ts` opens with — *a
-     * misconfiguration that fails is cheap; one that loops is not.*
-     *
-     * So the floor `#253` set holds: **an arrival no judge can answer still reaches
-     * a person**, as it did when no judge existed at all.
+     * The routing this step's own name carries moved into `runPass`'s loop
+     * (`pass.ts`, through `proposed-route.ts`): `nextOf`'s `Propose` is what
+     * drives it now, at every step that produces one, not only on a visit this
+     * body was handed. What is left here is exactly what every declarable step's
+     * body is — the recipe's own `human:`/`watch:`/tamper plugins have already
+     * run by the time this is called, and this step's own work is nothing beyond
+     * them.
      */
-    // `StepNeverRan` since `#277`: the judge this step may dispatch meets the
-    // same account-wide wall every other agent does, and 0031 §3's answer is
-    // the conductor's rather than a route. `nextOf` gives this ending to the
-    // conductor, not to the router, so it ends the pass here and nothing loops.
-    proposed: async ({ arriving, offering, reached }): Promise<StepPassed | StepRouted | StepNeverRan> => {
-      if (arriving === null) {
-        const said = reviewRefused(reached)
-        // Nothing the reviewer said stops this. The findings at or below the bar
-        // are on `review`'s own visit and are the `backlog:` plugin's business,
-        // not a reason to hold a change back.
-        if (said === null) return { ending: 'passed' }
-        return await judged({ when: 'findings', ...said }, offering, "`review`'s findings")
-      }
-      const when = directionOf(arriving)
-      if (when === null) {
-        const arrived = whatArrived(arriving)
-        /**
-         * **An unreadable answer here is the machinery's, and this branch is how
-         * it would have been missed** (`#279`).
-         *
-         * `judged` answers `unreadable` first, and this path does not reach
-         * `judged`: an `agent:` at `merge` — legal, `agentPlugin.at` carries the
-         * step — whose answer does not parse gives `verdict: "failed"` with no
-         * `because`, so `endingOf` reports `action-refused`, `directionOf` has no
-         * direction for that, and the sentence below would have called a dropped
-         * judgement *not a direction any `judge:` answers*. True, and about the
-         * wrong thing: the lane's re-verify said something and nobody could read
-         * it. Same destination, and the sentence is what was lost.
-         */
-        if (arrived.unreadable) {
-          return toAPerson(
-            `the \`${arriving.step}\` step's answer could not be read at all — it did not parse ` +
-              'as findings, so nothing structured came out of it however much the action said. ' +
-              'That is the machinery losing a judgement rather than a step declining to make ' +
-              "one, and it buys no round either (0038 §2). The answer is on that step's own " +
-              "`StepFailed`, clipped, and whole in the attempt's agent transcript; the pass is " +
-              'held for a person, who can read both',
-          )
-        }
-        return toAPerson(
-          `the \`${arriving.step}\` step reported "${reasonOf(arriving)}", which is not a ` +
-            'direction any `judge:` answers — it stops the lane before the diff is what is in ' +
-            'doubt — so the pass is held for a person rather than buying a round for it',
-        )
-      }
-      return await judged(
-        { when, ...whatArrived(arriving) },
-        offering,
-        `the \`${arriving.step}\` step's ${arriving.ending.ending}`,
-      )
-    },
+    proposed: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * **Reports a `reason` and a `detail`, decides nothing — and this is the

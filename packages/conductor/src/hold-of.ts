@@ -3,23 +3,19 @@
  * `conduct.ts`'s closure so the classification can be unit-tested on literals
  * rather than only through a whole pass.
  *
- * **Classified by who sent the item to a person** (0118 §1, `8a669849`,
- * #452) — never by whether `stoppedAt` happens to be set. The test is *did
- * this pass reach the `proposed` router and get sent on*: `rested ===
- * 'waiting'` together with either nothing refused (`stopped === null`, the
- * router judged `review`'s findings on its own way through) or a refusal
- * `directionOf` can name a direction for. Both become `Routed`, carrying the
- * direction and its evidence. A refusal the router sent on with no direction
- * — the merge lane's own six reasons, which stop it before the diff is what
- * is in doubt — keeps its `Failure` variant, and so does everything
- * `stoppedAt`/`ceilingHit` say nobody decided.
- *
- * **`prepared` is the one exception, by name.** `directionOf` answers `'red'`
- * for it exactly as it does for `build`, but 0120 §2 and the ticket's own
- * variant table keep a `prepared` refusal `SetupRefused` — *nobody decided;
- * the step itself broke* — rather than routing it, so step 1 below excludes
- * `stopped.step === 'prepared'` and the `refused` case in the switch is where
- * it is still produced.
+ * **Since `#462`, the only arrivals this still classifies are the two that
+ * route without going through `offerFor`** (0120 *Two phases*: `proposed`'s
+ * real routing now reaches a person through `pass.waitOn`/`holdOf`, never
+ * through here): the merge lane's own refusal with no direction (step 2
+ * below), and a `prepared`/`proposed` refusal nobody routed (the `refused`
+ * case in the switch). The old step 1 — a refusal the router sent on with a
+ * direction (`red`, `verify-failed`, `conflict`) — is gone with
+ * `arriveAtTheRouter`: every one of those is a `Propose` now, and reaches a
+ * person as `WaitOnPerson{ProposedEscalated}` through `pass.waitOn`, never
+ * through `stoppedAt`/`rested` alone. Step 4 (`stopped === null`) survives
+ * for the one case that still rests with neither: `review`'s own unreadable
+ * answer, which walks on to `proposed`'s spine visit and leaves a fixed
+ * `PassRouted` row without ever asking `offerFor` a question.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {
@@ -30,7 +26,6 @@ import {
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
-import { directionOf } from './pass-steps.ts'
 import type { Destination, PassResult, Rest } from './pass.ts'
 
 export type StoppedAt = PassResult['stoppedAt']
@@ -99,37 +94,6 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     runId: input.runId,
     ...(input.unpushed === undefined ? {} : { unpushed: input.unpushed }),
     ...(input.repairOf === undefined ? {} : { repairOf: input.repairOf }),
-  }
-
-  // 1. The router sent a refusal on with a direction — `red`, `verify-failed`
-  // or `conflict`, the rounds spent either way. Before the merge-refused
-  // check below: a `conflict`/`verify-failed` refusal is also a `merge`
-  // refusal, and it must read as `Routed` rather than `MergeRefused`.
-  // `prepared` is excluded by name here — see the header — and stays
-  // `SetupRefused`, produced by the `refused` case in the switch below.
-  if (
-    input.rested === 'waiting' &&
-    stopped !== null &&
-    stopped.ending.ending === 'refused' &&
-    stopped.step !== 'prepared'
-  ) {
-    const when = directionOf(stopped)
-    if (when !== null) {
-      const why = detailOf(stopped.ending)
-      const routedWhy = input.lastRoute?.why ?? why
-      const conflict = when === 'conflict' ? input.integrationRefusal : null
-      return {
-        _tag: 'Routed',
-        run,
-        when,
-        why: `${input.branch} into ${input.base} is waiting on you. ${said(routedWhy, 400)}`,
-        raw: why,
-        findings: [...input.findings],
-        paths: conflict?.paths ?? null,
-        baseSha: conflict?.baseSha ?? null,
-        headSha: conflict?.headSha ?? null,
-      }
-    }
   }
 
   // 2. The merge lane refused with no direction — it stops the lane before
@@ -212,12 +176,10 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
         findings: [...input.findings],
       }
 
-    // Only reached when step 1 did not route it on: `prepared`, excluded by
-    // name there, or — in practice — `proposed`'s own plugins refusing.
-    // `directionOf` would answer `'red'` for the second one too; what keeps
-    // it out of step 1 is `rested`, not the direction — the router's own
-    // failure never reaches `take()`, so `rested` stays `null`
-    // (`pass.ts:1450-1455`), never `'waiting'`.
+    // `prepared`'s and `proposed`'s own refusals both set `pass.waitOn`
+    // (`SetupRefused`/`CheckRefused`), so `holdFor` reads them through
+    // `holdOf` before `holdOfPass` is ever called — this case is reachable
+    // only on a log old enough to predate `#462`'s routing move.
     case 'refused': {
       const why = detailOf(stopped.ending)
       if (step === 'prepared') {

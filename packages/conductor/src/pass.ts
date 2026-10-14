@@ -96,7 +96,18 @@ import {
  * from a `PipelineResult` to a step's ending, so the five verdicts the pipeline
  * can produce are read in one place rather than at every call site.
  */
-import { decidingAction, nextOf, STEPS, type PassNext, type Step, type StepOutcome } from '@lingtai/domain'
+import {
+  decidingAction,
+  decideRoute,
+  nextOf,
+  offerFor,
+  routeNext,
+  STEPS,
+  type PassNext,
+  type Proposal,
+  type Step,
+  type StepOutcome,
+} from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import type { Recipe, StepAction } from '@lingtai/recipe'
 
@@ -106,6 +117,12 @@ import type { Recipe, StepAction } from '@lingtai/recipe'
 // against (`adapters.ts`'s own doc comment).
 import { outcomeOf as stepOutcomeOf } from './adapters.ts'
 import type { TerminalOutcome } from './end-step.ts'
+// `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
+// this closes an ESM cycle with the module that imports values from this one
+// (`NOT_BUILT_YET`) — safe because neither side reads the other's export at
+// module-evaluation time, only inside a function called later.
+import { whatArrived, type Judged, type Judging } from './pass-steps.ts'
+import { ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
 
 // ------------------------------------------------------- the ten, as data ----
 
@@ -573,52 +590,6 @@ export interface StepWork<S extends Step = Step> {
    */
   readonly reached: readonly StepReached[]
   /**
-   * **The step that did not pass and sent the pass here — at `proposed`, and
-   * nowhere else.**
-   *
-   * It is the whole of what tells `proposed`'s two jobs apart, which 0058's own
-   * *What is not decided* says are merged in one station:
-   *
-   * - `null` — the pass reached `proposed` **on the spine**, after `review`
-   *   passed. This is the inspection: the declared `watch:`, `human:` and
-   *   tamper plugins have just run, and the body's answer is `passed` (on to
-   *   `merge`) or one of the reports. 0058 §3b wants this visit for its own
-   *   sake — *`proposed` runs on the way through as well as on the way back, so
-   *   a pass that sailed through has a recorded decision saying it did*;
-   * - a `StepReached` — the pass arrived **by routing**, carrying that step's
-   *   `reason` (0058 §3c: *what happened has to arrive intact*). The body must
-   *   answer with a `StepRouted`, and **`proposed`'s own plugins are not
-   *   re-run**: they are verdicts about a diff, and the step that arrived did
-   *   not pass, so there is no new diff to inspect. Re-running them would put a
-   *   declared `human:` approval in front of a person once per round.
-   *
-   * A route is legal on both, and that is what makes `review` able to judge
-   * nothing: it passes carrying findings, and the visit that reads them is the
-   * `null` one. What is legal only on the second is *anything but* a route.
-   */
-  readonly arriving: S extends RoutingStep ? StepReached | null : null
-  /**
-   * **What is on offer — at `proposed`, and nowhere else.** Never empty on
-   * either of its visits, because a judge may hold a change back on the way
-   * through as well as answer a refusal on the way back.
-   *
-   * 0061 §3, and the sentence the whole split rests on: *`judge:` decides which
-   * step is next. The workflow decides which steps it may choose from.* The
-   * workflow counts the rounds and restarts spent, works out what is reachable
-   * from where the pass actually got to, and hands the body the result as a
-   * fact. **A judge is never asked to know which step it is answering for** —
-   * it answers *which of these*, never *what is legal* — and when `rounds` is
-   * spent, `implement` is simply not in `affordable`.
-   *
-   * **Two sets and not a menu** (0064 §7, `Offer`): the body routes against
-   * `affordable` and hands a judge that list alone, and `reachable` is there so
-   * that a decision the offer refused can be reported as *no money* or as *no
-   * meaning* rather than as one indistinguishable absence.
-   *
-   * `onOffer` is the computation and its doc comment is the rule, cell by cell.
-   */
-  readonly offering: S extends RoutingStep ? Offer : NoOffer
-  /**
    * **Which ending the pass reached — at `end`, and nowhere else.**
    *
    * `end` is the one step whose declared effects are filtered by `when:`, and
@@ -712,37 +683,18 @@ export const NOT_BUILT_YET: StepBodies = {
    */
   review: nothingBeyondThePlugins,
   /**
-   * **Refuses**, and the only step that routes — and the router is the half of
-   * it that cannot be empty.
+   * **Refuses, and routes nothing — since `#462` that is every body's row,
+   * not only this one's.**
    *
-   * On its own way through it passes, which is *`build` and `review` said
-   * nothing that stops this* and is today's behaviour at a point whose actions
-   * all passed: no judge is reading the findings, so nothing holds the change
-   * back. On a routing arrival it answers `waiting`: **a pass with no judge built
-   * sends every refusal to a person.** That is not a placeholder standing in for
-   * a decision — it is the correct decision while `rounds` can buy nothing,
-   * because the alternative readings are both wrong. `passed` would carry a
-   * refused change on to `merge`, and any step back would be the workflow
-   * inventing the judgement 0061 §3 reserves for a plugin.
-   *
-   * **The body that asks a judge is `bodiesFor`'s** ([`pass-steps.ts`](pass-steps.ts),
-   * `#254`) — one `judge:` per `when:`, `red` and `verify-failed` mechanically
-   * back to `implement`, `findings` the one worth an agent, each choosing from
-   * `offering` and nothing else. What it keeps is this row's floor: an arrival
-   * no judge can answer still reaches a person.
+   * The routing this step's name used to carry is `runPass`'s own loop now
+   * (`routeProposal`, through `proposed-route.ts`), off `nextOf`'s `Propose`
+   * rather than off this body's answer. So the floor `#253` set — *a pass
+   * with no judge built sends every refusal to a person* — is kept the same
+   * way it is for a caller that hands in a real `judge:`: `replyFor` reads an
+   * absent `PassOptions.judge` as `noJudge`, falls back to `BUILT_IN_FOR`
+   * where that answers, and lands on a person where neither does.
    */
-  proposed: async ({ arriving, offering }) =>
-    arriving === null
-      ? { ending: 'passed' }
-      : {
-          ending: 'routed',
-          to: 'waiting',
-          why:
-            `no \`judge:\` is built yet in these bodies (\`bodiesFor\`'s ask one), so the ` +
-            `\`${arriving.step}\` step's ` +
-            `${arriving.ending.ending} goes to a person rather than to ` +
-            `${offering.affordable.filter((d) => d !== 'waiting').join(' or ') || 'any step'}`,
-        },
+  proposed: async () => ({ ending: 'passed' }),
   /**
    * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
    * the lane is `bodiesFor`'s port, and over the whole log it has refused 32
@@ -787,7 +739,7 @@ export const NOT_BUILT_YET: StepBodies = {
 // ---------------------------------------------------------- what is on offer ----
 
 /**
- * What the workflow may spend on the back edges, as two numbers.
+ * What the workflow may spend on the back edges, as three numbers (`#462`).
  *
  * **They are handed in rather than read off the recipe, and that is 0061 §4's
  * rule rather than a shortcut**: *a setting has exactly one home, and a step
@@ -797,6 +749,12 @@ export const NOT_BUILT_YET: StepBodies = {
  * has not moved them out of `runtime.limits` yet. So the pass takes the values;
  * it does not care which key they came from, and it will not need editing when
  * they move.
+ *
+ * **`restarts`/`restartsSpent` rather than one precomputed `restartsLeft`**,
+ * since `#462`: `offerFor` (`@lingtai/domain`) wants a total policy and what
+ * has already been spent as two separate numbers — the same split `rounds`
+ * already has against this pass's own `roundsSpent` — rather than the
+ * subtraction done once at the call site.
  */
 export interface Ceilings {
   /**
@@ -805,209 +763,28 @@ export interface Ceilings {
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
-   * than a guard: every back edge spends one, and when they are spent `onOffer`
+   * than a guard: every back edge spends one, and when they are spent `offerFor`
    * stops offering a step. A judge that answers `implement` anyway is refused
    * by name.
    */
   readonly rounds: number
   /**
-   * How many restarts this **item** has left — its history, not this pass's, so
-   * the caller counts it off the item's stream and the pass is told the answer.
+   * How many restarts this **item** may spend in total — its ceiling, not what
+   * is left of it.
    *
-   * Zero means `claim` is not on offer and a spent pass rests with a person.
-   * Above zero it may be chosen, and choosing it **ends this pass**: a restart
-   * is a requeue (0058 §3b), the item is released, and the queue's next pass
-   * orders by kind and then by number as it always does — so *the next ticket
-   * taken may not be this one*.
+   * Zero, or equal to `restartsSpent`, means `claim` is not on offer and a spent
+   * pass rests with a person. Above `restartsSpent` it may be chosen, and
+   * choosing it **ends this pass**: a restart is a requeue (0058 §3b), the item
+   * is released, and the queue's next pass orders by kind and then by number as
+   * it always does — so *the next ticket taken may not be this one*.
    */
-  readonly restartsLeft: number
+  readonly restarts: number
+  /** How many restarts this item has already spent — its history, not this pass's. */
+  readonly restartsSpent: number
 }
 
 /** Nothing on the back edges, which is what a caller that says nothing gets. */
-const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 }
-
-/**
- * What `proposed`'s own visit is judging: nothing refused.
- *
- * Named because `onOffer` takes an ending and the way-through visit has not
- * reached one: `runPass` asks it what would be on offer *if nothing refused*
- * before the body runs, then asks again with the ending the body returned. A
- * bare `{ ending: "passed" }` at the first of those two calls would not say
- * which of the two questions it is asking.
- */
-const PASSED_THROUGH: StepPassed = { ending: 'passed' }
-
-/**
- * **What is on offer, and it is two sets rather than one** (0064 §7).
- *
- * `offering` used to be a single list mixing two unlike facts, and the whole
- * cost of that was that **it could not say why a destination was missing**: *no
- * meaning* and *no money* read identically, and they are different messages to
- * whoever ends up on the card. `implement` is off a `prepared` refusal's offer
- * because no agent has run — no number a person could raise would put it back —
- * and off a spent pass's offer because the rounds are gone, which is exactly a
- * number a person could raise.
- *
- * So the two are named separately and the difference between them is the
- * budget's, by construction: `affordable` is `reachable` minus what the ceilings
- * refuse, and `ceilingFor` reads which ceiling that was off the pair rather than
- * re-deriving it. **`waiting` is in both, always** — it is the one destination
- * that costs nothing, so no ceiling can take it out, which is what makes it the
- * right answer both when a decision chooses it and when a ceiling is spent.
- *
- * **A judge is handed `affordable` and never this object.** It answers *which of
- * these*, never *what is legal*, and the reachable set is the workflow's own
- * arithmetic about money — `Judging` in [`pass-steps.ts`](pass-steps.ts) carries
- * the one list, and 0064 §7's *the plugin chooses; the workflow still bounds what
- * the choice costs* is that line drawn.
- */
-export interface Offer {
-  /**
-   * Everything the arrival could mean, whatever is left to spend — *how far the
-   * pass got*, and the half no ceiling participates in.
-   */
-  readonly reachable: readonly Destination[]
-  /**
-   * Those of them this pass can pay for. **This is the set, and the only one a
-   * decision is held to** (`theWorkflowsToSay`).
-   */
-  readonly affordable: readonly Destination[]
-}
-
-/**
- * Nothing on offer — the nine steps that do not route, said as two empty sets
- * rather than as an absent field.
- *
- * Its own type, so `StepWork.offering` goes on saying *at `proposed`, and
- * nowhere else* in the type rather than in a comment.
- */
-export interface NoOffer {
-  readonly reachable: readonly []
-  readonly affordable: readonly []
-}
-
-/** The one value of `NoOffer`, so the nine visits share it. */
-export const NO_OFFER: NoOffer = { reachable: [], affordable: [] }
-
-/**
- * **Which ceiling took a destination off the offer, or null** — and null is a
- * real answer twice over.
- *
- * Read off the pair rather than by asking `onOffer` a second question with a
- * fabricated budget, which is what this replaces: a destination in `reachable`
- * and not in `affordable` differs from an affordable one *by the budget and by
- * nothing else*, so the subtraction is the answer and the arithmetic is which
- * number pays for that edge — `claim` is the item's restarts and every other
- * edge is this pass's rounds (`Ceilings`).
- *
- * Null where the destination was affordable, and null where it was never
- * reachable: the second is the one worth naming, because a refusal that named a
- * ceiling there would send a person to raise a limit that will refuse the same
- * route again.
- */
-export function ceilingFor(to: Destination, offer: Offer): Ceiling | null {
-  if (offer.affordable.includes(to) || !offer.reachable.includes(to)) return null
-  return to === 'claim' ? 'restarts' : 'rounds'
-}
-
-/**
- * The destinations a judge may choose from, given what arrived and what is left
- * to spend.
- *
- * **The set depends on how far the pass got, not only on what is left**
- * (0061 §3, and T4b's own *watch out*). `at` is where the pass is and `ending`
- * is what it reported there — `passed` on `proposed`'s own way through, which is
- * a routing opportunity too. Cell by cell:
- *
- * ```
- * waiting              always. A person can always be the answer, and 0058 §3b
- *                      keeps it to exactly one way in: this one
- * claim                **on `proposed`'s own way through, and nowhere else**,
- *                      while the item has a restart left. That visit is the
- *                      `findings` direction — every other arrival at the router
- *                      is one of the mechanical four (`directionOf`) — and
- *                      0039 §2's rule is that a restart needs a *judgement*: a
- *                      red build and a conflict leave the work still there and
- *                      their remedy is mechanical, so starting over throws a
- *                      branch away for nothing. **No number a project writes
- *                      down should make a typecheck error buy a fresh
- *                      worktree, and no judge should be able to either.**
- *                      Choosing it requeues and ends the pass
- * that step again      for a `needs-input` — 0058 §3c's *that step again with
- *                      "state your assumption"*. `admit`, `design` and
- *                      `implement` are the three that can ask, and nothing but
- *                      the step that asked knows the question
- * implement            from `implement` or anywhere after it. **Not from
- *                      `prepared`**: a failed install refuses before any agent
- *                      has run, so there is no diff and no error in one to fix,
- *                      and a judge that knows nothing about `prepared` still
- *                      cannot choose wrongly
- * build                from `merge` — a conflict an agent resolved is code
- *                      written *after* `review` passed, so it goes back through
- *                      both (0058 §3c). It is what buys the invariant *every
- *                      path into `end` has been through `build` and `review`*
- * ```
- *
- * Both step edges want a round, because both buy another agent run.
- *
- * **`stepsOnOffer`'s other rule has no cell here because the loop already keeps
- * it.** That function also takes `claim` off the set when something else on the
- * pass has asked for a person — releasing the item would throw their question
- * away — and in this loop nothing can have: a `human:` action, a `watch:` that
- * saw a migration and a repair all end their step `held`, `nextOf` reads that
- * ending's own `signoff` as asked rather than cleared and answers
- * `WaitOnPerson{SignoffRequired}` directly — never `Propose` — so the pass
- * rests there without ever reaching a judge.
- * So the rule is a fact about the walk rather than a line in this function, and
- * `alsoAsked` has no counterpart on `Judging` for the same reason.
- *
- * **The cells above are `reachable`, and `affordable` is what the two ceilings
- * then leave of it** (0064 §7). Every one of them but `waiting` re-enters the
- * spine and so buys an agent run, which is what they cost: `claim` spends the
- * item's restart and each of the others spends one of this pass's rounds. That
- * subtraction is the whole of the second set, and it is why the offer can say
- * which half refused a destination without being asked a second question.
- */
-export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, roundsSpent: number): Offer {
-  const reachable: Destination[] = ['waiting']
-  // The way-through visit, which is the `findings` direction and the only one a
-  // restart is offered for — see the table above. **Reachable whatever the item
-  // has left**: having no restart to spend is the budget's answer and not this
-  // half's, which is the distinction the two sets exist to keep.
-  if (at === 'proposed' && ending.ending === 'passed') reachable.push('claim')
-
-  if (ending.ending === 'asked') {
-    // The step that asked, and nothing else: nobody but it knows the question,
-    // so the edges below are not reachable from a question either.
-    reachable.push(at)
-  } else {
-    // `implement` is on offer once the pass has got as far as an agent having
-    // written something for the decision to be about.
-    if (AFTER_AN_AGENT.includes(at)) reachable.push('implement')
-    if (at === 'merge') reachable.push('build')
-  }
-
-  const round = roundsSpent < ceilings.rounds
-  const restart = ceilings.restartsLeft > 0
-  return {
-    reachable,
-    // `waiting` costs nothing, so no ceiling can take it out — which is what
-    // keeps the set non-empty and therefore keeps every arrival answerable.
-    affordable: reachable.filter((to) => (to === 'waiting' ? true : to === 'claim' ? restart : round)),
-  }
-}
-
-/**
- * The places a pass can be judged from with a diff behind it.
- *
- * `implement` itself is on the list because a refusal *at* `implement` is one
- * its own next run can answer, and `proposed` is on it because **`proposed`
- * routes on the way through as well as on the way back** (0058 §3b) — a `review`
- * that passed with findings above the bar is judged at that visit, and its
- * answer is *the lines or the approach* (0061 §3). `prepared` is not on the
- * list, and that omission is the whole of 0061 §3's worked example.
- */
-const AFTER_AN_AGENT: readonly Step[] = ['implement', 'build', 'review', 'proposed', 'merge']
+const NOTHING_SPARE: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
 
 // ------------------------------------------------------------- the loop ----
 
@@ -1070,6 +847,18 @@ export interface PassOptions {
    * point runs (0060 §1).
    */
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[]
+  /**
+   * `proposed` — **which of the offered steps the recipe's `judge:` for this
+   * direction answers**, or that it declared none (`#462`). Moved here from
+   * `PassPorts` (`pass-steps.ts`), since a judge is asked by `routeProposal`
+   * now rather than by a step's own body — the seam is the same one
+   * `judgeDeclaredAt`/`askTheAgent` answer through, only the caller moved.
+   *
+   * Absent where a caller says nothing: `replyFor` (`proposed-route.ts`)
+   * reads that as `noJudge`, so a test that never declares a judge needs no
+   * fake for one.
+   */
+  readonly judge?: (on: Judging) => Promise<Judged>
 }
 
 /**
@@ -1279,6 +1068,17 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   let waitOn: WaitReason | null = null
   let roundsSpent = 0
 
+  /**
+   * **A `review` whose own answer could not be read, carried across its walk
+   * to `proposed`'s spine visit** (`#462`, `#467`'s `f215adba`). Set only at
+   * the one step `nextOf`'s `AnswerUnreadable` does not stop for — see the
+   * `WaitOnPerson` cell below — and consumed by the very next visit to
+   * `proposed`: if that visit's own declared plugins clear, the fixed row
+   * below fires; if they do not, this is simply dropped, because whatever
+   * `proposed` itself just reported takes precedence.
+   */
+  let pendingUnreadableReview: { readonly raw: string } | null = null
+
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'claim'
 
@@ -1320,129 +1120,115 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   }
 
   /**
-   * What a route does to the walk, in one place — because a route is chosen at
-   * two of them: `proposed`'s own visit on the way through, and the visit the
-   * loop takes a step that did not pass to. `reported` is what a person should
-   * be shown, and is null where nothing refused.
-   *
-   * `offer` is the one the visit was handed — the same object that went to the
-   * body — because naming the ceiling is a subtraction over its two sets
-   * (`ceilingFor`) and not something derivable from the route alone. It is
-   * passed rather than recomputed for the reason `reported` is passed: it is
-   * built differently on the two visits, and the way-through one is judged on a
-   * `review` that passed.
+   * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
+   * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
+   * `proposed-route.ts`) are called** (`#462`, 0120 §3). Records the
+   * `proposed` visit directly, the way `routedVisit`'s own doc explains —
+   * there is no body left to call for it — appends the `RouteTaken`, and
+   * applies what `routeNext` answered. `reported` is what a person should be
+   * shown if this escalates, and is null for the one case that produces a
+   * `Propose` with nothing to report: `review` passing on its own way through,
+   * carrying findings above the bar.
    */
-  const take = (route: StepRouted, reported: { step: Step; ending: StepReport } | null, offer: Offer): boolean => {
-    const chose = route.chose ?? route.to
-    routes.push({
-      from: reported?.step ?? 'proposed',
-      chose,
-      to: route.to,
-      why: route.why,
-      // Read here and not on the ending, because this is the only scope that
-      // holds both the choice and the offer it was made against. A route that
-      // got what it wanted took an affordable destination, so this is null
-      // without a `chose === to` case of its own.
-      ceiling: ceilingFor(chose, offer),
+  const routeProposal = async (
+    proposal: Proposal,
+    reported: { step: Step; ending: StepReport } | null,
+    arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
+  ): Promise<boolean> => {
+    const offer = offerFor(proposal, { rounds: ceilings.rounds, restarts: ceilings.restarts }, {
+      rounds: roundsSpent,
+      restarts: ceilings.restartsSpent,
     })
-    if (route.to === 'waiting' || route.to === 'claim') {
-      rested = route.to === 'claim' ? 'requeued' : 'waiting'
-      // What a person reads is the step that did not pass, never the router that
-      // sent it to them; where it was sent is `routes`.
-      stoppedAt = reported
+    const reply = await replyFor(offer, arrived, options.judge)
+    if ('neverStarted' in reply) {
+      // 0031 §3, at the third depth the same wall is met at: the judge
+      // itself is an agent, and an account-wide wall is the conductor's to
+      // answer, never a route.
+      const ending: StepNeverRan = { ending: 'never-ran', at: reply.neverStarted.agent, detail: reply.neverStarted.detail }
+      record({ step: 'proposed', ending, results: [] })
+      stoppedAt = { step: 'proposed', ending }
       return false
     }
-    // Back into the spine, and a round is what that costs.
-    //
-    // **The round the pass is about to buy is bought on something**, and 0038 §2
-    // is what the next agent is owed: *the findings a previous version of this
-    // diff was refused for, that an agent has since been asked to make stop
-    // happening* — each one's `failureScenario` written before anybody knew what
-    // the fix would be, which is what makes it a criterion the fixer could not
-    // author. So the lap's findings become the next lap's `recheck`, and the
-    // reviewer at `review` is handed them by name.
-    //
-    // The lap's, rather than the arriving step's alone: a route is chosen on
-    // both of `proposed`'s visits, and the way-through one is judged on a
-    // `review` that **passed** carrying findings (0058 §3b). Reading only what
-    // refused would hand the fixer nothing in exactly the case 0061 §3 calls the
-    // one judgement worth an agent.
-    recheck = findingsIn(steps.slice(lapStart))
-    lapStart = steps.length
-    roundsSpent += 1
-    at = route.to
-    return true
-  }
+    const decision = decideRoute(offer, reply)
+    const routed = routedVisit(offer, reply, decision)
+    record({ step: 'proposed', ending: routed, results: [] })
+    const chose = routed.chose ?? routed.to
+    routes.push({ from: reported?.step ?? 'proposed', chose, to: routed.to, why: routed.why, ceiling: ceilingOf(chose, offer) })
 
-  /**
-   * **The way to `proposed` for whichever of the seven still travels there,
-   * carrying its reason** — 0058 §3b, and §3c's *what happened has to arrive
-   * intact*. A second visit to `proposed` rather than a branch inside the
-   * spine walk, running the router without the inspection: see
-   * `StepWork.arriving`. Three of the seven never call this (`#467`): a
-   * `prepared` refusal and a check before the `merge` lane answer
-   * `WaitOnPerson` directly instead, and an unreadable answer at `merge` does
-   * too — at `review` it instead walks on to `proposed`'s own spine visit
-   * (`arriving: null`), which is the one visit that runs a declared
-   * `human:`/`watch:` action there, and that visit's own body reads the same
-   * unreadable answer and routes it.
-   *
-   * Shared between the two places that still take this path (`#467`): a visit
-   * `nextOf` was not asked about, and a `Propose` answered against an ending
-   * that itself refused or asked rather than passed.
-   */
-  const arriveAtTheRouter = async (at: Step, reached: StepReached, ending: StepReport): Promise<boolean> => {
-    const arrival = onOffer(at, ending, ceilings, roundsSpent)
-    const router = record(
-      await runStep(SPEC.proposed, options, bodies, [...steps], {
-        context: contextFor(),
-        arriving: reached,
-        offering: arrival,
-        outcome: null,
-      }),
-    )
-    if (router.ending.ending !== 'routed') {
-      // The router did not answer — its body threw, or `theWorkflowsToSay`
-      // refused what it answered. What stopped the pass is then `proposed`,
-      // and the step that arrived is in `steps` one entry above it.
-      stoppedAt = { step: 'proposed', ending: router.ending }
-      return false
+    const next = routeNext(offer, reply, decision, { runId: options.context.runId })
+    switch (next._tag) {
+      case 'FixRound':
+        // The same bookkeeping `take` always did: the lap's own findings
+        // become the next lap's `recheck` (0038 §2), and a round is spent.
+        recheck = findingsIn(steps.slice(lapStart))
+        lapStart = steps.length
+        roundsSpent = next.round
+        at = next.to
+        return true
+      case 'Requeued':
+        rested = 'requeued'
+        stoppedAt = reported
+        return false
+      case 'WaitOnPerson':
+        rested = 'waiting'
+        stoppedAt = reported
+        waitOn = next.reason
+        return false
+      // `routeNext`'s own doc: `HandToPerson` never escapes it, so what it
+      // returns is never `Advance`, `Propose` or `Landed` — kept as a throw
+      // rather than a silent fallthrough, the same choice `nextOf`'s own
+      // `ImpossibleOutcomeError` makes.
+      case 'Advance':
+      case 'Propose':
+      case 'Landed':
+        throw new Error(`routeNext answered "${next._tag}", which 0120 §3's own doc says it never does`)
     }
-    return take(router.ending, { step: at, ending }, arrival)
   }
 
   while (at !== null && at !== 'end') {
     const spec = SPEC[at]
-    // **`proposed` routes on the way through as well as on the way back** (0058
-    // §3b) — and that visit is where a `review`'s findings are judged, which is
-    // 231 of the log's refusals and 0061 §3's one judgement worth an agent.
-    // `review` judges nothing and passes, so nothing refused and there is
-    // nothing arriving; what the judge reads is the findings on `reached`, and
-    // what it may answer is this offer. Held in a local because `take` is
-    // handed the same object the body was, rather than a second computation of
-    // it (`ceilingFor`).
-    const offer = spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : NO_OFFER
     const reached = record(
       await runStep(spec, options, bodies, [...steps], {
         context: contextFor(),
-        // The spine visit: the step's own plugins, then its own body. Nothing has
-        // arrived, and at nine of the ten there is nothing to route.
-        arriving: null,
-        offering: offer,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
       }),
     )
     const ending = reached.ending
-
     if (ending.ending === 'routed') {
-      // `proposed`, on the way through, having decided the change is not going
-      // to `merge` as it stands. Nothing reported anything, so nothing is named
-      // as having stopped the pass: `routes` says what was decided and
-      // `review`'s own entry says what it was decided on.
-      if (take(ending, null, offer)) continue
-      break
+      // Unreachable: no body may answer `routed` any more (`theWorkflowsToSay`
+      // already throws for it at `runStep`). Narrows `StepRouted` out of
+      // `ending`'s type for the rest of the lap, the way `StepReport` is
+      // defined to exclude it.
+      throw new Error(`"${at}" answered "routed", which no body may do since #462`)
+    }
+
+    // **The one visit `proposed`'s own answer could still be pending for**
+    // (`#462`): `review`'s own `AnswerUnreadable` walked on here rather than
+    // stopping, carrying the reason past this step's own declared
+    // `human:`/`watch:` plugins. If they clear (`ending.ending === 'passed'`),
+    // the fixed row fires and the pass rests — one of 0120 *Two phases*'s two
+    // waits that keep a `PassRouted` row without ever asking `offerFor`. If
+    // they do not, whatever `proposed` itself just reported takes precedence
+    // and the pending reason is simply dropped.
+    if (at === 'proposed' && pendingUnreadableReview !== null) {
+      const pending = pendingUnreadableReview
+      pendingUnreadableReview = null
+      if (ending.ending === 'passed') {
+        const why =
+          "the `review` step's answer could not be read at all — it did not parse as findings, " +
+          'so nothing structured came out of it however much the reviewer said. That is the ' +
+          'machinery losing a judgement rather than a reviewer declining to make one, and it ' +
+          'buys no round either: an answer nobody can read is not a criterion (0038 §2). The ' +
+          "answer itself is on review's own `StepFailed`, clipped, and whole in that attempt's " +
+          `agent transcript; the pass is held for a person, who can read both: ${pending.raw}`
+        const routed: StepRouted = { ending: 'routed', to: 'waiting', why }
+        record({ step: 'proposed', ending: routed, results: [] })
+        routes.push({ from: 'proposed', chose: 'waiting', to: 'waiting', why, ceiling: null })
+        rested = 'waiting'
+        break
+      }
     }
 
     // **#467: the pass acts on `nextOf`'s answer** (0120 §4) rather than on
@@ -1468,6 +1254,18 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       }
     }
 
+    // **A body's own `asked`, built into a `Propose{InputNeeded}` by the shell
+    // itself** (`#462`): `design` and `implement` are the two bodies that can
+    // ask after plugins that cleared trivially (`next === null`, no deciding
+    // action to read) or cleared for real (`next._tag === 'Advance'`), and
+    // 0058 §3c's *that step again, stating its assumption* is still
+    // `proposed`'s to answer either way.
+    if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
+      const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
+      if (await routeProposal(proposal, { step: at, ending }, whatArrived(reached))) continue
+      break
+    }
+
     if (next === null) {
       // Today's ending decides — `claim`'s own declines (never routed: the
       // step is not one of the seven `proposed` appeals to), and a `merge`
@@ -1477,35 +1275,11 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         at = after(at)
         continue
       }
-      // **Except a question, same as the `Advance`/`Landed` cell below.**
-      // `design` and `implement` ask from their own bodies, which run after a
-      // step with no declared actions at all passes trivially — nothing here
-      // is `nextOf`'s to answer (there was no deciding action to read), but
-      // 0058 §3c's *that step again, stating its assumption* still is.
-      if (ending.ending === 'asked') {
-        if (await arriveAtTheRouter(at, reached, ending)) continue
-        break
-      }
       stoppedAt = { step: at, ending }
       break
     }
 
     if (next._tag === 'Advance' || next._tag === 'Landed') {
-      // **The rule the deleted `!goesToTheRouter` branch encoded, which 0120
-      // §4 has no cell for — kept rather than dropped.** The plugins cleared
-      // and the body itself did not, which `nextOf` cannot see: it reads only
-      // the plugins' own `StepOutcome`, never the body's ending.
-      if (ending.ending === 'asked') {
-        // **Except a question.** `design` and `implement` both run a body
-        // after clean plugins, and the body is the one thing that can ask —
-        // nothing a `commit`/`design` action's own result carries says so
-        // (`changedNothing` reads a cleared commit as *finished*, not as
-        // *asked*). 0058 §3c's *that step again, stating its assumption* is
-        // still `proposed`'s to answer, so this is the same arrival a
-        // `refused` ending takes, not the stop below.
-        if (await arriveAtTheRouter(at, reached, ending)) continue
-        break
-      }
       // A body that threw or answered `never-ran` on its own (`proposed`'s
       // judge) stops the pass exactly as it does today.
       if (ending.ending !== 'passed') {
@@ -1517,55 +1291,47 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     }
 
     if (next._tag === 'Propose') {
-      if (ending.ending === 'passed') {
-        // **Only `review` produces this.** `endingOf` always passes `review`
-        // through, findings and all (0058 §3: *a reviewer returns findings
-        // with a severity and no verdict*), and the judgement is made one
-        // step later, on `proposed`'s own way-through visit — the same walk
-        // every other `passed` ending already takes.
-        at = after(at)
-        continue
-      }
-      // The same arrival `ARRIVE_AT_THE_ROUTER` took for this ending.
-      if (await arriveAtTheRouter(at, reached, ending)) continue
+      // **Every `Propose` routes, whatever the visit's ending** (`#462`,
+      // deleting the old `ending.ending === 'passed'` walk-on that discarded
+      // `review`'s own `Propose` and re-derived it one step later). `reported`
+      // is null only for that one case — `review` passing on its own way
+      // through, carrying findings above the bar — which is the one `Propose`
+      // with nothing of its own to report (0058 §3b).
+      const reported = ending.ending === 'passed' ? null : { step: at, ending }
+      if (await routeProposal(next.proposal, reported, whatArrived(reached))) continue
       break
     }
 
     if (next._tag === 'WaitOnPerson') {
       // **`review`'s own `AnswerUnreadable` still has to reach `proposed`'s
-      // spine visit, same as `Propose` does above.** That visit is the one
-      // place `arriving` is `null` for this step, which is the one condition
-      // `runStep` runs the step's own declared plugins under (`runStep`'s own
-      // `spec.plugins === 'verdicts' && reaching.arriving === null`) — a
-      // `human:`/`watch:` declared at `proposed:` never runs on an *arrival*
-      // (`arriveAtTheRouter` hands it a reached visit, not `null`). Stopping
-      // here instead, as every other `WaitOnPerson` does, would skip that
-      // visit outright rather than carry the reason to it: the body still
-      // reads the same unreadable answer off `reached.outcome` through
-      // `reviewRefused`, and `judged`'s own `arrival.unreadable` branch is
-      // what turns it into the held-for-a-person answer — unchanged since
-      // before this ticket, and the reason `AnswerUnreadable` is not added to
-      // the table for this one step.
+      // spine visit.** Carried forward rather than routed here, because the
+      // visit that runs a declared `human:`/`watch:` action at `proposed:` is
+      // the spine one, and this is not it (`pendingUnreadableReview`, read at
+      // the top of the next lap).
       if (next.reason._tag === 'AnswerUnreadable' && at === 'review') {
+        pendingUnreadableReview = { raw: next.reason.raw }
         at = after(at)
         continue
       }
-      // **`MergeRefused` is the one `WaitOnPerson` that still routes.**
-      // `mergeCompletedRefused` (`pass-next.ts`) answers it directly for
-      // every `IntegrationRefused` reason but `verify-failed` — never
-      // `Propose` — because none of the other six is a direction any
-      // `judge:` can be declared at (`hold-of.ts`'s own step 2: *the merge
-      // lane refused with no direction*). But the lane is one of the seven
-      // that arrives at `proposed` all the same (0058 §3b): today's pass
-      // routes it, finds no direction, and rests with a person — the same
-      // `MergeRefused` `holdOfPass` already gives that arrival once routed.
-      // Answering it here instead would be the one cell where `nextOf`
-      // disagrees with 0058 §3b itself rather than with 0120 §4's own gap,
-      // so this is kept on the arrival path rather than added to the table:
-      // no `waitOn`, and `holdOfPass` reads it exactly as it did before this
-      // ticket.
+      // **`MergeRefused` is the one `WaitOnPerson` that still visits
+      // `proposed`, and still without routing** — one of 0120 *Two phases*'s
+      // two fixed rows. `mergeCompletedRefused` (`pass-next.ts`) answers it
+      // directly for every `IntegrationRefused` reason but `verify-failed`,
+      // because none of the other six is a direction any `judge:` can be
+      // declared at (`hold-of.ts`'s own step 2: *the merge lane refused with
+      // no direction*). The lane still visits `proposed` all the same
+      // (0058 §3b): it finds no direction, and rests with a person — the
+      // same `MergeRefused` `holdOfPass` already gives that visit.
       if (next.reason._tag === 'MergeRefused') {
-        if (await arriveAtTheRouter(at, reached, ending)) continue
+        const why =
+          `the \`${at}\` step reported "${'because' in ending ? ending.because : ending.ending}", ` +
+          'which is not a direction any `judge:` answers — it stops the lane before the diff is ' +
+          'what is in doubt — so the pass is held for a person rather than buying a round for it'
+        const routed: StepRouted = { ending: 'routed', to: 'waiting', why }
+        record({ step: 'proposed', ending: routed, results: [] })
+        routes.push({ from: at, chose: 'waiting', to: 'waiting', why, ceiling: null })
+        rested = 'waiting'
+        stoppedAt = { step: at, ending }
         break
       }
       // Every other reason: no router visit, and `holdOf` (`#466`) reads
@@ -1579,9 +1345,9 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // gives a step's own ending — a `Restart` is a *route*'s to spend (0120
     // §3), never a step's. `rested` stays `null`: `outcomeOf` reads this stop
     // as `failed` off `stoppedAt.ending.ending === 'never-ran'` alone, and
-    // `rested = 'requeued'` is `take`'s own word for a route that chose
-    // `claim` — setting it here too would make `conduct.ts` read a restart
-    // that was never spent.
+    // `rested = 'requeued'` is `routeProposal`'s own word for a route that
+    // chose `claim` — setting it here too would make `conduct.ts` read a
+    // restart that was never spent.
     stoppedAt = { step: at, ending }
     break
   }
@@ -1595,8 +1361,6 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   record(
     await runStep(SPEC.end, options, bodies, [...steps], {
       context: contextFor(),
-      arriving: null,
-      offering: NO_OFFER,
       outcome,
     }),
   )
@@ -1605,14 +1369,17 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
 }
 
 /**
- * The four things a visit is handed that depend on *how* it was reached rather
- * than on which step it is.
+ * The two things a visit is handed that depend on *how far the walk has got*
+ * rather than on which step it is.
  *
- * Kept together and computed by `runPass` alone, because each is the workflow's
- * own answer and none is derivable inside `runStep`: `outcome` needs where the
- * pass rested, `arriving`/`offering` need what the last step said and what has
- * been spent, and `context` needs the head the walk has reached, the round it is
- * in and what that round was bought on.
+ * Computed by `runPass` alone, because neither is derivable inside `runStep`:
+ * `outcome` needs where the pass rested, and `context` needs the head the walk
+ * has reached, the round it is in and what that round was bought on.
+ *
+ * **`arriving`/`offering` left with `#462`'s routing move** — every visit
+ * `runStep` runs is a spine visit now, since a routing visit is built
+ * directly by `runPass` (`routeProposal`'s own `record()` calls) rather than
+ * through a second call to this step's body.
  */
 interface Reaching {
   /**
@@ -1622,8 +1389,6 @@ interface Reaching {
    * move: the one a caller handed in is the base the walk started from.
    */
   readonly context: ActionContext
-  readonly arriving: StepReached | null
-  readonly offering: Offer
   readonly outcome: TerminalOutcome | null
 }
 
@@ -1752,10 +1517,9 @@ async function runStep(
   let wroteTheDesign: WroteTheDesign = {}
 
   try {
-    // A routing arrival runs the router and not the inspection — `StepWork
-    // .arriving` is the whole argument, and it is why this is `=== null` rather
-    // than an unconditional call.
-    if (spec.plugins === 'verdicts' && reaching.arriving === null) {
+    // Every visit `runStep` runs is a spine visit since `#462` — a routing
+    // visit is built directly by `runPass` and never reaches here.
+    if (spec.plugins === 'verdicts') {
       // Hoisted so the same list goes to the pipeline and to `outcomeOf`
       // (`#466`): `result.results[i]` belongs to `pipelineActions[i]`, and a
       // second call to `actionsAt` is not a guarantee that it returns the
@@ -1816,19 +1580,17 @@ async function runStep(
       actions,
       refuses: spec.refuses,
       reached,
-      // `StepWork<Step>`'s three conditional fields distribute over the whole
-      // union, so each widens to both of its branches — `StepReached | null`,
-      // `Offer | NoOffer`, `TerminalOutcome | null` — and `Reaching` carries a
-      // field assignable to each, so none of them needs a cast.
-      arriving: reaching.arriving,
-      offering: reaching.offering,
+      // `StepWork<Step>`'s one conditional field distributes over the whole
+      // union, so it widens to both of its branches — `TerminalOutcome |
+      // null` — and `Reaching` carries a field assignable to it, so it needs
+      // no cast.
       outcome: reaching.outcome,
       context: reaching.context,
       emit: options.emit,
     })
     return {
       step: spec.step,
-      ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }, reaching),
+      ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }),
       results,
       outcome,
     }
@@ -2086,50 +1848,32 @@ function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
 }
 
 /**
- * The runtime half of the two rules the workflow keeps for itself, and **a
+ * The runtime half of the one rule the workflow keeps for itself, and **a
  * body's alone**.
  *
- * `EndingAt` says both to anybody writing a body, and the compiler stops
- * looking once a body is read out of `StepBodies[Step]` — which is the whole of
- * what this catches, and the whole of what its throws are right for. Three
- * things a body may not do, each a programming error about the workflow rather
- * than a thing that happened to a diff:
+ * `EndingAt` says it to anybody writing a body, and the compiler stops looking
+ * once a body is read out of `StepBodies[Step]` — which is what this catches:
+ * a body may not **refuse at one of the six** (0058 §2). The consequences a
+ * refusal buys — a fix round, a held item, a person — are exactly what must
+ * not be spent on one nothing meant.
  *
- * - **refuse at one of the six** (0058 §2). The consequences a refusal buys —
- *   a fix round, a held item, a person — are exactly what must not be spent on
- *   one nothing meant;
- * - **route from anywhere but `proposed`** (0058 §3). `waiting` has exactly one
- *   way in and that is the property worth keeping: *is this worth interrupting
- *   somebody over* is asked in one place;
- * - **route somewhere it was not offered** (0061 §3, §8). The offer is how the
- *   workflow keeps the loop bounded while every plugin stays replaceable, so a
- *   judge that answers `implement` after `rounds` is spent is refused by name
- *   rather than obeyed.
- *
- * A plugin's `failed` verdict at one of the six is none of these and never
+ * A plugin's `failed` verdict at one of the six is none of this and never
  * reaches here: `endingOf` reads it against the step and reports
  * `did-not-finish`, so a reviewer finding a blocker is answered rather than
  * treated as a bug.
+ *
+ * **Routing left with `#462`**: no body may answer `routed` any more —
+ * `proposed`'s is `async () => ({ ending: 'passed' })` — so the two checks
+ * that used to hold a body to its offer (`routes`/`routing.affordable`) are
+ * gone with the thing they guarded, and `runPass`'s own `routeProposal` is
+ * what the loop is held to instead.
  *
  * Every throw is caught by `runStep` and reported as the visit's ending,
  * because a programming error is the case where an unattended run most needs
  * `end` to run and the item to carry a terminal outcome. The message is what a
  * person reads on `detail`; what it no longer does is take the pass with it.
  */
-function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reaching): StepEnding {
-  if (reaching.arriving !== null && ending.ending !== 'routed') {
-    // **A visit the loop routed into must answer with a route.** There is no
-    // spine under it: the step before it did not pass, so `passed` would carry a
-    // refused change onward and any report would be a second reason on top of
-    // the one that arrived. The four answers are 0058 §3b's, and `waiting` is
-    // always one of them, so there is no arrival a judge cannot answer.
-    throw new Error(
-      `\`proposed\` was handed the \`${reaching.arriving.step}\` step's ` +
-        `${reaching.arriving.ending.ending} and answered \`${ending.ending}\` rather than a route. ` +
-        `A step that did not pass is routed, not reported on again: choose one of ` +
-        `${reaching.offering.affordable.join(', ')} (0058 §3b, 0061 §3).`,
-    )
-  }
+function theWorkflowsToSay(spec: StepSpec, ending: StepEnding): StepEnding {
   if (ending.ending === 'refused' && !spec.refuses) {
     throw new Error(
       `the \`${spec.step}\` step refused, and only ${REFUSING_STEPS.join(', ')} may refuse ` +
@@ -2138,26 +1882,10 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reachin
     )
   }
   if (ending.ending === 'routed') {
-    if (!spec.routes) {
-      throw new Error(
-        `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and \`proposed\` is the ` +
-          'only step that routes (0058 §3). A step that did not pass reports its reason and the ' +
-          'loop takes it to `proposed`, which is what keeps `waiting` to one way in.',
-      )
-    }
-    if (!reaching.offering.affordable.includes(ending.to)) {
-      // **And the refusal says which half it failed** (0064 §7): a ceiling is a
-      // number somebody can raise, and a destination the arrival never reached
-      // is not — so the two cannot read as one absence.
-      const ceiling = ceilingFor(ending.to, reaching.offering)
-      throw new Error(
-        `\`proposed\` routed the pass to \`${ending.to}\`, which was not on offer — ` +
-          `${reaching.offering.affordable.join(', ') || 'nothing was'}` +
-          `${ceiling === null ? '' : `, and \`${ceiling}\` is spent`} (0061 §3). A judge answers ` +
-          '*which of these*, never *what is legal*: the workflow counts the rounds and restarts ' +
-          'spent and hands it the set, so a destination outside the set is refused by name (0061 §8).',
-      )
-    }
+    throw new Error(
+      `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and no body may route any ` +
+        'more (`#462`) — `runPass`\'s own loop does that now, off `nextOf`\'s `Propose`.',
+    )
   }
   return ending
 }
