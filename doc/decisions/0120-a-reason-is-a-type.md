@@ -276,7 +276,14 @@ type Proposal =
   | { _tag: 'NothingProduced'; said: string | null } // implement at round 0 cleared and committed nothing
   | { _tag: 'FixerDisagrees'; said: string | null } // implement in a fix round cleared and committed nothing
   | { _tag: 'MergeRefused'; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'>; output: string } // the lane refused for one of the seven (§4)
-  | { _tag: 'BudgetExhausted'; from: Step; kind: 'out-of-turns' | 'out-of-usd'; turns: number | null; costUsd: number | null; detail: string }
+  | {
+      _tag: 'BudgetExhausted'
+      from: Step
+      kind: 'out-of-turns' | 'out-of-usd'
+      turns: number | null
+      costUsd: number | null
+      detail: string
+    }
 ```
 
 Each variant says which step it comes from. Every variant reachable from more
@@ -305,10 +312,10 @@ read off the deciding action by step and yield, never by plugin:
 | prepared                        | `verdict` `Completed{refused}` (a timeout is a refusal)           | `SetupRefused{from: 'prepared', output: evidence}`               |
 | any                             | `nothing`, `worktree`, `commit`, `design`, `signoff` `NotDone`    | `SetupRefused{from: step, output: evidence}`                     |
 | proposed, merge                 | `verdict` `Completed{refused}`                                    | `CheckRefused{from: step, output: evidence}`                     |
-| review, proposed, merge; design | `AnswerUnreadable`                                                | `AnswerUnreadable{from: step, raw}`                               |
-| implement                       | round 0, all cleared, no `head`                                   | `NothingProduced{said}`                                           |
+| review, proposed, merge; design | `AnswerUnreadable`                                                | `AnswerUnreadable{from: step, raw}`                              |
+| implement                       | round 0, all cleared, no `head`                                   | `NothingProduced{said}`                                          |
 | implement                       | round > 0, all cleared, no `head`                                 | `FixerDisagrees{said}`                                           |
-| any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{from: step, kind, turns, costUsd, detail}`       |
+| any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{from: step, kind, turns, costUsd, detail}`      |
 
 **Everything the work falls short on goes through `proposed`; only what has
 nothing to decide, or nobody able to decide it, ends the pass without a
