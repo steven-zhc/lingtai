@@ -61,8 +61,9 @@ export type MergeStrategy = 'merge-commit'
  *
  * `reason` is `RefusalReason` because those are the lane's own words and they
  * are already on the log. Two of the nine — `conflict` and `verify-failed` —
- * are also `JudgeWhen` values; the other seven stop the lane before the diff is
- * what is in doubt, so no judge is offered them and a person is next.
+ * are their own `JudgeWhen` values; the other seven share one, `merge-refused`
+ * (`#471`), and until `#472` wires `nextOf` to propose it, nothing asks a
+ * judge about them and a person is next, same as today.
  */
 export type LandAnswer =
   /** The merge commit on the base branch. Not a worktree head: nothing local moved. */

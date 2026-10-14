@@ -104,9 +104,11 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
   }
 
   // 2. The merge lane refused with no direction — it stops the lane before
-  // the diff is what is in doubt, which is `JudgeWhen`'s own reason a
-  // direction cannot name these: dirty-base, unpushed-base,
-  // pending-migration, no-commits, wip-commit, push-rejected, unexpected.
+  // the diff is what is in doubt. `merge-refused` is already `JudgeWhen`'s
+  // own name for these seven — dirty-base, unpushed-base, pending-migration,
+  // no-commits, wip-commit, push-rejected, unexpected (`#471`) — but until
+  // `#472` wires `nextOf` to turn this stop into a `MergeRefused` proposal,
+  // nothing routes it through `proposed`'s judge and a person is next here.
   if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
     const why = detailOf(stopped.ending)
     const parsedReason = RefusalReasonSchema.safeParse(stopped.ending.because)

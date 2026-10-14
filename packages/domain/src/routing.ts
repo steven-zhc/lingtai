@@ -89,6 +89,15 @@ export class ImpossibleRouteError extends Error {
 }
 
 /**
+ * Whether a proposal born at `step` got far enough for `implement` to have
+ * something to fix — `judge.ts`'s own `anAgentHasRun`, read off `STEPS`
+ * rather than a second list of the steps that qualify.
+ */
+function bornAtOrAfterImplement(step: Step): boolean {
+  return STEPS.indexOf(step) >= STEPS.indexOf('implement')
+}
+
+/**
  * **0120 §3's offer, built from the proposal, the two ceilings and what this
  * pass has already spent.**
  *
@@ -104,15 +113,6 @@ export class ImpossibleRouteError extends Error {
  * only `'design' | 'implement'`, so a `merge`-born proposal's `fix-lines`
  * lands at `'implement'` by the type it is built from, not by a check here.
  */
-/**
- * Whether a proposal born at `step` got far enough for `implement` to have
- * something to fix — `judge.ts`'s own `anAgentHasRun`, read off `STEPS`
- * rather than a second list of the steps that qualify.
- */
-function bornAtOrAfterImplement(step: Step): boolean {
-  return STEPS.indexOf(step) >= STEPS.indexOf('implement')
-}
-
 export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
   const available: Candidate[] = []
   const unavailable: ExcludedCandidate[] = []

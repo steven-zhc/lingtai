@@ -293,7 +293,7 @@ export function stepsOnOffer(input: OfferInput): readonly Destination[] {
  *
  * `decideFix`'s own two tests, and the shape is decided by `when` rather than
  * inferred from what arrived: `findings` is the one direction a reviewer's
- * findings are the whole of, and the other four are held to what the step
+ * findings are the whole of, and the other eleven are held to what the step
  * printed. That is the same split `FixOn` makes, read off the key a recipe
  * writes instead of guessed from a findings array's length — so a `findings`
  * refusal that came back with none of them is an absent criterion here rather
@@ -445,13 +445,13 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
 /**
  * Which directions a built-in answers, and which cost money.
  *
- * A **total** record over the five, so a sixth direction does not compile until
- * somebody has said which kind it is — `RUN_OWNER`'s argument in
+ * A **total** record over the twelve, so a thirteenth direction does not
+ * compile until somebody has said which kind it is — `RUN_OWNER`'s argument in
  * `attribution.ts`, and `#197`'s receipt for what a default costs.
  *
  * `null` does not mean *no judge*. It means **no judge that spends nothing**:
- * the three are the directions where deciding is a judgement, and 0061 §3's
- * measurement is the whole argument for the split —
+ * the ten are the directions where deciding is a judgement, and 0061 §3's
+ * measurement is the whole argument for the split on the first five —
  *
  *     red           34   back to implement with the error       mechanical
  *     verify-failed   26   back to implement with the new base    mechanical
@@ -459,14 +459,17 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
  *     needs-input    —   interrupt, or go round stating the assumption
  *     findings     231   the lines or the approach              ← the judgement
  *
- * — one judge for all five pays an agent sixty times to reach a mechanical
+ * — one judge for all twelve pays an agent sixty times to reach a mechanical
  * conclusion, and makes anyone replacing it reimplement the mechanical branches
  * correctly or the loop breaks.
  *
- * **`#471`'s seven are `null` too.** Each is a judgement nothing built-in
- * should make unasked — rebasing a `MergeRefused{dirty-base}`, restarting a
- * `BudgetExhausted` from the kept work — so declaring nothing reaches a
- * person, the same floor every direction already has.
+ * **`#471`'s seven are `null` too**, which brings the ten to this count. Each
+ * is a judgement nothing built-in should make unasked — rebasing a
+ * `MergeRefused{dirty-base}`, restarting a `BudgetExhausted` from the kept
+ * work once something builds that (#468; today's `restart` releases the
+ * ticket and starts from the base in a fresh worktree, keeping nothing) — so
+ * declaring nothing reaches a person, the same floor every direction already
+ * has.
  */
 export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   red: 'same-worktree',

@@ -302,13 +302,13 @@ read off the deciding action by step and yield, never by plugin:
 | merge                           | `merge` `Completed{Conflicted}`                                   | `MergeConflict{output: evidence, ...Conflicted}`                 |
 | merge                           | `merge` `Completed{IntegrationRefused{verify-failed}}`            | `VerifyRed{output: evidence}`                                    |
 | merge                           | `merge` `Completed{IntegrationRefused}`, the other seven reasons  | `MergeRefused{reason, output: evidence}`                         |
-| prepared                        | `verdict` `Completed{refused}` (a timeout is a refusal)           | `SetupRefused{output: evidence}`                                 |
-| any                             | `nothing`, `worktree`, `commit`, `design`, `signoff` `NotDone`    | `SetupRefused{output: evidence}`                                 |
-| proposed, merge                 | `verdict` `Completed{refused}`                                    | `CheckRefused{output: evidence}`                                 |
-| review, proposed, merge; design | `AnswerUnreadable`                                                | `AnswerUnreadable{raw}`                                          |
-| implement                       | round 0, all cleared, no `head`                                   | `NothingProduced`                                                |
+| prepared                        | `verdict` `Completed{refused}` (a timeout is a refusal)           | `SetupRefused{from: 'prepared', output: evidence}`               |
+| any                             | `nothing`, `worktree`, `commit`, `design`, `signoff` `NotDone`    | `SetupRefused{from: step, output: evidence}`                     |
+| proposed, merge                 | `verdict` `Completed{refused}`                                    | `CheckRefused{from: step, output: evidence}`                     |
+| review, proposed, merge; design | `AnswerUnreadable`                                                | `AnswerUnreadable{from: step, raw}`                               |
+| implement                       | round 0, all cleared, no `head`                                   | `NothingProduced{said}`                                           |
 | implement                       | round > 0, all cleared, no `head`                                 | `FixerDisagrees{said}`                                           |
-| any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{kind, turns, costUsd}`                          |
+| any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{from: step, kind, turns, costUsd, detail}`       |
 
 **Everything the work falls short on goes through `proposed`; only what has
 nothing to decide, or nobody able to decide it, ends the pass without a

@@ -1202,17 +1202,24 @@ has one legal value because `integrate.ts:417` offers one: `git merge
 --no-edit`, then a push that is a fast-forward where it can be one.
 
 **`judge:` is one entry per `when:`, and the two rules that make it safe are in
-the schema rather than in prose** (0061 §3). Six things arrive at `proposed`
-and only one of them is a judgement worth an agent:
+the schema rather than in prose** (0061 §3). Twelve things arrive at
+`proposed` and ten of them are judgements worth an agent:
 
 ```
-reason              seen      what deciding actually is
-build   red           34      back to implement with the error — mechanical
-merge   verify-failed   26      back to implement with the new base — mechanical
-merge   conflict       6      text: resolve · intent: a person
-design  needs-input   —     answer it, or `design` again stating the assumption
-implement needs-input   —     interrupt, or go round stating the assumption
-review  findings      231     the lines or the approach   ← the judgement
+reason                       seen      what deciding actually is
+build     red                   34      back to implement with the error — mechanical
+merge     verify-failed          26      back to implement with the new base — mechanical
+merge     conflict                6      text: resolve · intent: a person
+design    needs-input            —      answer it, or `design` again stating the assumption
+implement needs-input            —      interrupt, or go round stating the assumption
+review    findings              231      the lines or the approach   ← the judgement
+any       setup-refused           —      `prepared` lifts by a person; restart elsewhere (`#471`)
+proposed/merge check-refused      —      a declared check's own evidence (`#471`)
+design/review/proposed/merge answer-unreadable — the agent answered and the machine could not read it (`#471`)
+implement nothing-produced        —      round 0 cleared and committed nothing — only the ticket to argue with (`#471`)
+implement fixer-disagrees         —      a fix round cleared and committed nothing, disagreeing with the reviewer (`#471`)
+merge     merge-refused           —      one of the seven integration reasons, neither conflict nor a red re-verify (`#471`)
+any       budget-exhausted        —      a turn or dollar ceiling, from any step (`#471`)
 ```
 
 **`needs-input` has two producers, and a `when:` cannot tell them apart**
@@ -1225,11 +1232,14 @@ implementer's offers `implement`. Declare one only if the same judge should be
 paid for both; a person is the floor under either, because
 `BUILT_IN_FOR["needs-input"]` is null.
 
-So `when:` is required and has no default — no entry can answer for all six —
-and `red` and `verify-failed` are answered by `same-worktree`, a **built-in**
-which is a synchronous function in `packages/conductor/src/judge.ts`. Being
-synchronous is the declaration that it spends nothing: nothing that dispatches
-an agent can answer without awaiting.
+So `when:` is required and has no default — no entry can answer for all
+twelve — and `red` and `verify-failed` are answered by `same-worktree`, a
+**built-in** which is a synchronous function in
+`packages/conductor/src/judge.ts`. Being synchronous is the declaration that
+it spends nothing: nothing that dispatches an agent can answer without
+awaiting. `#471`'s seven are among the ten with no built-in, declared nothing
+reaches a person just as `conflict`, `needs-input` and `findings` already do
+— see `doc/design/471.md` for what each is and what routes it.
 
 **The legal names are `same-worktree` and the runtimes — `claude-code`,
 `codex`** (`#277`). The rule has never changed, and it is the list that moves
