@@ -20,7 +20,7 @@
  * those same two functions, so a divergence between the two directions is a
  * failing round-trip test rather than a silent drift.
  */
-import { cleared, type Action, type NeverStarted, type StepOutcome, type WaitId } from './action.ts'
+import { cleared, type Action, type Assessment, type NeverStarted, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { PayloadOf } from './events.ts'
 import type { Hold } from './hold.ts'
@@ -1426,4 +1426,58 @@ export function cardFactOf(event: Envelope): CardFact | null {
     default:
       return null
   }
+}
+
+// -------------------------------------------------------- findingsRaisedOf ----
+
+/**
+ * What `finding_backlog` (`packages/projector/src/backlog.ts`) folds off a
+ * passing gate's own `StepPassed`, for #481.
+ *
+ * **Not `stepOutcomesOf`.** That function answers about a whole run's slice —
+ * a recipe lookup through `StepsResolved`, a `verdict`-yield-only result, a
+ * round read off `FixRequested` — and byte-identity with today's fold loses
+ * exactly where that machinery would show through:
+ *
+ * - `stepOutcomesOf` skips any action `shapeFor` cannot place (no recipe
+ *   entry and no `STEP_DEFAULTS` row — true of `build`, `review` and
+ *   `proposed`, `:146-148`), so a `StepPassed` at those steps on a run whose
+ *   `StepsResolved` is absent or silent about the action loses its minors
+ *   outright. Today's fold reads every `StepPassed` there is.
+ * - It only ever reaches a `verdict`-yield action's findings; today's fold
+ *   does not care what the action yields.
+ * - `RunStepOutcome` carries no `seq`/`at` — `finding_backlog.raised_seq`/
+ *   `raised_at` are the envelope's own fields, read directly in
+ *   `backlog.ts`, not through this function.
+ * - It is a slice function (one item's whole history, in order); a
+ *   projection's `apply` gets whatever batch the runner handed it, which can
+ *   split a run's `StepsResolved` from its own `StepPassed`.
+ *
+ * So this reads one event at a time, as `cardFactOf` does, and reuses only
+ * `verdictResultFrom`'s own `StepPassed` arm — never `stepOutcomesOf` — to
+ * stay in 0120's vocabulary without inheriting any of the above.
+ *
+ * **Only `StepPassed`.** Every other type answers `null`, `StepFailed`
+ * included: a refusing gate's minors already have somewhere to go — a fix
+ * round, and then a person — and are not this backlog's.
+ */
+export interface FindingsRaised {
+  readonly runId: string
+  readonly step: Step
+  readonly action: string
+  readonly onSha: string
+  readonly assessment: Assessment
+}
+
+/** `findingsRaisedOf`'s one entry point — see the section header for what it does and does not answer. */
+export function findingsRaisedOf(event: Envelope): FindingsRaised | null {
+  if (event.type !== 'StepPassed') return null
+  const d = event.data as PayloadOf<'StepPassed'>
+  const result = verdictResultFrom(event)
+  // `StepPassed` only ever answers `Completed{assessment}` here — the other
+  // arms in `verdictResultFrom`'s own return type are for the other terminal
+  // types (and for a `signoff`-yield action's own `Completed{requested}`),
+  // which this guard above already excluded.
+  if (result._tag !== 'Completed' || !('assessment' in result)) return null
+  return { runId: d.runId, step: d.step, action: d.action, onSha: d.onSha, assessment: result.assessment }
 }
