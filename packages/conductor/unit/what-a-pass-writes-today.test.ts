@@ -58,7 +58,15 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { Envelope, Hold } from '@lingtai/domain'
-import { integrationStream, reduceIntegration } from '@lingtai/domain'
+import {
+  holdOf,
+  integrationStream,
+  reduceIntegration,
+  releaseCauseOf,
+  routesOf,
+  stepOutcomesOf,
+  waitsOf,
+} from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -100,6 +108,36 @@ async function theItem(store: ReturnType<typeof memoryStore>): Promise<Envelope[
 function theHold(item: readonly Envelope[]): Hold | null {
   const blocked = item.find((e) => e.type === 'WorkItemBlocked')
   return blocked === undefined ? null : (blocked.data as { hold: Hold }).hold
+}
+
+function bySeq(a: Envelope, b: Envelope): number {
+  return a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0
+}
+
+/** The item's own events, every run's, and the integration lane's — one item's slice of the log, `read-model.ts`'s own input shape. */
+async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelope[]> {
+  const item = await theItem(store)
+  const runs = theRuns(store).flat()
+  const integration = await store.read(integrationStream(PROJECT, 'main'))
+  return [...item, ...runs, ...integration].sort(bySeq)
+}
+
+/**
+ * **The check that `waitsOf` is `holdOf`'s own mapping and not a second
+ * one** (the design's own `Watch out`): the last `WorkItemBlocked` on the
+ * slice folds, through `waitsOf` and back through `holdOf`, to a `Hold`
+ * whose `_tag` — and `step`/`when`, where the stored hold carries one —
+ * agrees with what was actually written.
+ */
+function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold): void {
+  const waits = waitsOf(all)
+  const wait = waits[waits.length - 1]
+  expect(wait).toBeDefined()
+  const rebuilt = holdOf(wait!.reason, { branch: 'agent/7', base: 'main', findings: [] })
+  expect(rebuilt._tag).toBe(hold._tag)
+  if (rebuilt._tag === 'Routed' && hold._tag === 'Routed') expect(rebuilt.when).toBe(hold.when)
+  if ('step' in rebuilt && 'step' in hold) expect(rebuilt.step).toBe(hold.step)
+  if ('reason' in rebuilt && 'reason' in hold) expect(rebuilt.reason).toBe(hold.reason)
 }
 
 describe('what a pass writes today, one row per ending (#461)', () => {
@@ -144,6 +182,16 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepPassed',
     ])
     expect(theHold(await theItem(store))).toBeNull()
+
+    const outcomes = stepOutcomesOf(await allEvents(store))
+    expect(outcomes.find((o) => o.step === 'implement')?.actions[0]).toMatchObject({
+      yields: 'commit',
+      result: { _tag: 'Completed', question: null },
+    })
+    expect(outcomes.find((o) => o.step === 'merge')?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      integration: { _tag: 'Integrated', mergeSha: 'c'.repeat(40) },
+    })
   })
 
   /**
@@ -225,6 +273,20 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     ])
     const fixApplied = theRun(store)!.find((e) => e.type === 'FixApplied')!
     expect(fixApplied.data).toMatchObject({ round: 1, said: 'done' })
+
+    const runId = theRun(store)![0]!.streamId
+    // `from` is `'proposed'`, not `'review'`: `review` always ends `passed`
+    // (`endingOf`), so its refusal is folded into the `proposed` visit with
+    // `reported: null`, and `routeProposal` writes `from: reported?.step ??
+    // 'proposed'` (`pass.ts:1173`).
+    expect(routesOf(await allEvents(store))).toEqual([
+      {
+        runId,
+        from: 'proposed',
+        decision: { _tag: 'Selected', candidate: 'fix-lines' },
+        next: { _tag: 'FixRound', to: 'implement', round: 1 },
+      },
+    ])
   })
 
   /**
@@ -337,6 +399,19 @@ runtime:
     // and `waiting`, not only the two a spent restart would leave.
     expect(judgePrompts).toHaveLength(1)
     expect(judgePrompts[0]).toContain('`claim`')
+
+    const runId = theRun(store)![0]!.streamId
+    const all = await allEvents(store)
+    // `from` is `'proposed'`, the same reason as row 2's own comment.
+    expect(routesOf(all)).toEqual([
+      {
+        runId,
+        from: 'proposed',
+        decision: { _tag: 'Selected', candidate: 'restart' },
+        next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
+      },
+    ])
+    expect(releaseCauseOf(all)).toEqual([{ _tag: 'Restart', restart: 1 }])
   })
 
   /**
@@ -453,6 +528,29 @@ runtime:
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
     expect((hold as { why: string }).why).toContain('`restarts` is spent')
+
+    const all = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all, hold!)
+    // `PassRouted.ceiling` is `'restarts'` even though the file header's own
+    // `WaitReason` reading folds the sentence into `why` rather than a new
+    // tag (0118 §1 gains none for this) — the judge chose `restart`, which
+    // `offerFor` had already excluded, so `routesOf` reads it as the
+    // ordinary ceiling escalation `CandidateUnavailable` always is.
+    const runId2 = runs[1]![0]!.streamId
+    expect(routesOf(all).filter((r) => r.runId === runId2)).toEqual([
+      {
+        runId: runId2,
+        from: 'proposed',
+        decision: {
+          _tag: 'Escalated',
+          because: {
+            _tag: 'CandidateUnavailable',
+            excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+          },
+        },
+        next: { _tag: 'HandToPerson' },
+      },
+    ])
   })
 
   /**
@@ -512,6 +610,7 @@ runtime:
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'the agent produced no commits' })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -589,6 +688,13 @@ runtime:
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Declined', step: 'implement' })
     expect((hold as { said: string | null }).said).toContain('the approach cannot work')
+
+    const all = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all, hold!)
+    const routes = routesOf(all)
+    expect(routes).toHaveLength(2)
+    expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
+    expect(routes[1]).toMatchObject({ from: 'implement', decision: { _tag: 'Escalated' } })
   })
 
   /**
@@ -678,6 +784,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'CheckRed', step: 'merge' })
     expect((hold as { why: string }).why).toContain('blocker src/fix.ts:12')
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -743,6 +850,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'conflict', raw: 'both sides touched src/fix.ts' })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -838,6 +946,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       baseSha: 'b'.repeat(40),
       headSha: 'c'.repeat(40),
     })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -925,6 +1034,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Asked', step: 'design', question: asked })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -998,6 +1108,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       source: 'declared',
       question: "Merge this? It is Lingtai's own code.",
     })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1066,6 +1177,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
     expect((hold as { why: string }).why).toContain('was not readable as one of the steps')
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1112,6 +1224,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
     expect((hold as { why: string }).why).toContain('could not be read at all')
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1163,6 +1276,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement' })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1213,6 +1327,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: 'held', step: 'review' })
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'review' })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1284,6 +1399,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 10, costUsd: 1.1 })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1349,6 +1465,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'timeout: exceeded wall 2m' })
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1387,6 +1504,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(await theItem(store)).toEqual([])
     expect(said).toEqual([])
     expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
+    // so its own three events — a real `run-*` stream, the file header's own
+    // point — fold to none at all.
+    expect(stepOutcomesOf(theRun(store) ?? [])).toEqual([])
   })
 
   /**
@@ -1474,6 +1595,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
     expect(typesOf(await flaky.read(itemId))).toEqual(['WorkItemReleased', 'IssueUpdated'])
     expect(typesOf(theRun(flaky))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    // No `WorkItemClaimed` ever landed on this stream — the append that would
+    // have written it is what threw.
+    expect(releaseCauseOf(await flaky.read(itemId))).toEqual([{ _tag: 'ClaimUnconfirmed' }])
   })
 
   /**
@@ -1638,6 +1762,7 @@ runtime:
     // This is the ceiling actually being spent — the bug this test is against
     // left `PassRestarted` unappended on this exact ending.
     expect(restarted.data).toMatchObject({ restart: 1, of: 2, headSha: fixture.FIX_SHA })
+    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'Restart', restart: 1 }])
 
     // The same pass, run again on the same store with fresh ports:
     // `folded.restarts` already carries the first, and a second WIP on a
@@ -1664,5 +1789,9 @@ runtime:
     const restarts = item2.filter((e) => e.type === 'PassRestarted')
     expect(restarts).toHaveLength(2)
     expect(restarts[1]!.data).toMatchObject({ restart: 2, of: 2 })
+    expect(releaseCauseOf(await allEvents(store))).toEqual([
+      { _tag: 'Restart', restart: 1 },
+      { _tag: 'Restart', restart: 2 },
+    ])
   })
 })

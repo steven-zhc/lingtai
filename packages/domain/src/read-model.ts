@@ -423,78 +423,97 @@ function isAdvance(from: Step, to: string): boolean {
   return toIndex > STEPS.indexOf(from)
 }
 
-function nextRoundOf(events: readonly Envelope[], runId: string, afterSeq: bigint): number {
-  const found = events.find(
-    (e) => e.type === 'FixRequested' && (e.data as { runId: string }).runId === runId && e.seq > afterSeq,
-  )
-  return found === undefined ? 0 : (found.data as { round: number }).round
-}
-
-function nextRestartOf(events: readonly Envelope[], runId: string, afterSeq: bigint): number {
-  const found = events.find(
-    (e) => e.type === 'PassRestarted' && (e.data as { runId: string }).runId === runId && e.seq > afterSeq,
-  )
-  return found === undefined ? 0 : (found.data as { restart: number }).restart
-}
-
 /**
  * **Today's record of a route is `PassRouted`, not `FixRequested`/
  * `PassRestarted`/`FixDeclined`.** `FixDeclined` has no writer in `src`
  * (`events.ts:1339`'s schema, never appended); `PassRouted` is paired with
- * whichever of the other two follows it on the same run, since neither
- * carries the decision itself.
+ * whichever of the other two the same visit bought.
+ *
+ * **Not by `seq` order** — `conduct.ts` appends every `PassRouted` for a
+ * pass in one batch *after the walk returns* (`pass.routes`, `conduct.ts`'s
+ * own comment: "they were all decided by the walk that has just returned"),
+ * so every `FixRequested`/`PassRestarted` a route bought is already on the
+ * run **before** the `PassRouted` that explains it. Paired by position
+ * instead: the Nth route that chose a fix round is the Nth `FixRequested`
+ * on the run, in the order the walk actually bought them, and a restart is
+ * the one `PassRestarted` a pass ever spends.
  */
 export function routesOf(events: readonly Envelope[]): RoutedPass[] {
-  const out: RoutedPass[] = []
+  const routedByRun = new Map<string, Envelope[]>()
   for (const e of events) {
     if (e.type !== 'PassRouted') continue
-    const runId = e.streamId
-    const data = e.data as { from: Step; chose: string; to: string; ceiling: 'rounds' | 'restarts' | null }
-    if (isAdvance(data.from, data.to)) continue
+    const list = routedByRun.get(e.streamId)
+    if (list === undefined) routedByRun.set(e.streamId, [e])
+    else list.push(e)
+  }
 
-    if (data.to === 'waiting') {
-      const decision: RouteDecisionT =
-        data.ceiling === null
-          ? { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
-          : {
-              _tag: 'Escalated',
-              because: {
-                _tag: 'CandidateUnavailable',
-                excluded: {
-                  id: data.chose === 'claim' ? CANDIDATE_FOR_CEILING.claim : CANDIDATE_FOR_CEILING.other,
-                  because: { _tag: 'CeilingReached', ceiling: data.ceiling },
+  const out: RoutedPass[] = []
+  for (const [runId, routed] of routedByRun) {
+    const fixRequests = events
+      .filter((e) => e.type === 'FixRequested' && (e.data as { runId: string }).runId === runId)
+      .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
+    const restarts = events
+      .filter((e) => e.type === 'PassRestarted' && (e.data as { runId: string }).runId === runId)
+      .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
+    let fixIndex = 0
+    let restartIndex = 0
+
+    for (const e of routed) {
+      const data = e.data as { from: Step; chose: string; to: string; ceiling: 'rounds' | 'restarts' | null }
+      if (isAdvance(data.from, data.to)) continue
+
+      if (data.to === 'waiting') {
+        const decision: RouteDecisionT =
+          data.ceiling === null
+            ? { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
+            : {
+                _tag: 'Escalated',
+                because: {
+                  _tag: 'CandidateUnavailable',
+                  excluded: {
+                    id: data.chose === 'claim' ? CANDIDATE_FOR_CEILING.claim : CANDIDATE_FOR_CEILING.other,
+                    because: { _tag: 'CeilingReached', ceiling: data.ceiling },
+                  },
                 },
-              },
-            }
-      out.push({ runId, from: data.from, decision, next: { _tag: 'HandToPerson' } })
-      continue
-    }
+              }
+        out.push({ runId, from: data.from, decision, next: { _tag: 'HandToPerson' } })
+        continue
+      }
 
-    if (data.to === 'claim') {
-      const restart = nextRestartOf(events, runId, e.seq)
+      if (data.to === 'claim') {
+        const restart = restarts[restartIndex++]
+        out.push({
+          runId,
+          from: data.from,
+          decision: { _tag: 'Selected', candidate: 'restart' },
+          next: {
+            _tag: 'Requeued',
+            cause: {
+              _tag: 'Restart',
+              restart: restart === undefined ? 0 : (restart.data as { restart: number }).restart,
+            },
+          },
+        })
+        continue
+      }
+
+      // `to` is `'design'` or `'implement'`: `state-assumption` only ever
+      // routes to the step an `InputNeeded` named (`routing.ts`'s own
+      // `round('state-assumption', proposal.from, true)`), which is
+      // `'design'` for a design question and `'implement'` for one
+      // `implement` asked — the second is indistinguishable here from an
+      // ordinary `fix-lines` round back to `implement`, and reads as that
+      // (a named loss).
+      const candidate = data.to === 'design' ? 'state-assumption' : 'fix-lines'
+      const fixRequest = fixRequests[fixIndex++]
+      const round = fixRequest === undefined ? 0 : (fixRequest.data as { round: number }).round
       out.push({
         runId,
         from: data.from,
-        decision: { _tag: 'Selected', candidate: 'restart' },
-        next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart } },
+        decision: { _tag: 'Selected', candidate },
+        next: { _tag: 'FixRound', to: data.to as 'design' | 'implement', round },
       })
-      continue
     }
-
-    // `to` is `'design'` or `'implement'`: `state-assumption` only ever
-    // routes to the step an `InputNeeded` named (`routing.ts`'s own
-    // `round('state-assumption', proposal.from, true)`), which is `'design'`
-    // for a design question and `'implement'` for one `implement` asked —
-    // the second is indistinguishable here from an ordinary `fix-lines`
-    // round back to `implement`, and reads as that (a named loss).
-    const candidate = data.to === 'design' ? 'state-assumption' : 'fix-lines'
-    const round = nextRoundOf(events, runId, e.seq)
-    out.push({
-      runId,
-      from: data.from,
-      decision: { _tag: 'Selected', candidate },
-      next: { _tag: 'FixRound', to: data.to as 'design' | 'implement', round },
-    })
   }
   return out
 }
