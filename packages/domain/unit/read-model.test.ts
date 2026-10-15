@@ -246,24 +246,58 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
   })
 
-  it('names the loss: a verdict Interrupted always reads back as cause "crash"', () => {
-    // `StepDidNotFinish` carries no `cause` for a `verdict` action — the same
-    // loss `verdictResultOf` (`adapters.ts:215`) accepts in the forward
-    // direction, defaulted the same way (row 14d of #461's fixture).
+  it('a verdict Interrupted reads back its own cause from the wire (#478)', () => {
+    // The kind is on the wire in `StepDidNotFinish.detail`'s own prefix —
+    // `agent-action.ts:580`'s own sentence — the same prefix
+    // `verdictResultOf` (`adapters.ts:167`) reads on the forward side.
     const run = aRun('run-1')
     const action: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
       onSha,
       call: null,
-      evidence: 'spent all 5 turns reviewing',
+      evidence: 'the reviewer did not finish (timeout): spent all 5 turns reviewing',
       yields: 'verdict',
       result: { _tag: 'Interrupted', cause: 'timeout' },
     }
     const outcome = outcomeOf('review', 0, [action])
     const events = run.aStepEnded(outcome)
     const [got] = stepOutcomesOf(events)
-    expect(got?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'crash' })
+    expect(got?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'timeout' })
+  })
+
+  it('a verdict Interrupted with no kind on the wire reads back "crash"', () => {
+    // No real pass writes a bare `StepDidNotFinish.detail` for a `verdict`
+    // action (`requireRealInterruptedEvidence`, `test/events.ts`), so this
+    // appends the terminal event directly on the run's own stream rather
+    // than through `aStepEnded`, which refuses it — the one case
+    // `read-model.ts`'s own `crash` fallback exists for: `boundedEvidence`'s
+    // clipping dropping the kind's prefix entirely. The accepted action ahead
+    // of it only seeds the recipe (`shapeFor` needs a `StepsResolved` entry
+    // for `review`, which has no `STEP_DEFAULTS` of its own) and clears, so
+    // the bare-detail action joins its outcome rather than starting a new one.
+    const run = aRun('run-1')
+    const accepted: Action = {
+      plugin: 'agent',
+      name: 'cold reviewer',
+      onSha,
+      call: null,
+      evidence: 'looks right',
+      yields: 'verdict',
+      result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+    }
+    const events = [
+      ...run.aStepEnded(outcomeOf('review', 0, [accepted])),
+      run.event('StepDidNotFinish', {
+        step: 'review',
+        action: 'cold reviewer',
+        runId: run.runId,
+        onSha,
+        detail: 'the reviewer died',
+      }),
+    ]
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions.at(-1)?.result).toEqual({ _tag: 'Interrupted', cause: 'crash' })
   })
 
   it('a signoff action that passed with nothing asked', () => {
@@ -523,19 +557,22 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // `StepDidNotFinish` on a `design` action carries no `_tag` either — an
     // `agent:` drafter that crashed and a `file:` destination that could
     // not write emit the same event. Disambiguated by `plugin`, which this
-    // file has and `adapters.ts`'s forward direction does not need.
+    // file has and `adapters.ts`'s forward direction does not need. The
+    // agent cell's own cause is `out-of-turns`, not `crash` (#478) — a kind
+    // the fold would equally answer by its own default, so this tells the
+    // two apart rather than agreeing with that default.
     const runAgent = aRun('run-agent')
     const agentAction: Action = {
       plugin: 'agent',
       name: 'draft',
       onSha,
       call: null,
-      evidence: 'crashed mid-draft',
+      evidence: 'the design agent did not finish (out-of-turns): crashed mid-draft',
       yields: 'design',
-      result: { _tag: 'Interrupted', cause: 'crash' },
+      result: { _tag: 'Interrupted', cause: 'out-of-turns' },
     }
     const agentEvents = runAgent.aStepEnded(outcomeOf('design', 0, [agentAction]))
-    expect(stepOutcomesOf(agentEvents)[0]?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'crash' })
+    expect(stepOutcomesOf(agentEvents)[0]?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns' })
 
     const runFile = aRun('run-file')
     const fileAction: Action = {
@@ -549,6 +586,21 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     }
     const fileEvents = runFile.aStepEnded(outcomeOf('design', 0, [fileAction]))
     expect(stepOutcomesOf(fileEvents)[0]?.actions[0]?.result).toEqual({ _tag: 'NotDone' })
+  })
+
+  it('a design agent Interrupted with no kind on the wire reads back "crash"', () => {
+    // The same no-real-pass-writes-this case `requireRealInterruptedEvidence`
+    // (`test/events.ts`) refuses for `aStepEnded`, built here directly with
+    // `makeStream` instead — `design` has its own `STEP_DEFAULTS` entry
+    // (`read-model.ts:92`), so no `StepsResolved` recipe is needed for
+    // `shapeFor` to read this action as an `agent:` drafter.
+    const runId = 'run-design-1'
+    const event = makeStream(runId)
+    const events = [
+      event('StepDidNotFinish', { step: 'design', action: 'draft', runId, onSha, detail: 'the agent died' }),
+    ]
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'crash' })
   })
 
   it('a nothing action that passed and one that did not', () => {

@@ -41,6 +41,31 @@ function recipeEntryFor(action: Action): Record<string, unknown> {
   }
 }
 
+/**
+ * `agent-action.ts`'s own two sentences for a `verdict`- or `design`-yielding
+ * agent action that started and did not finish — `` `the reviewer did not
+ * finish (${kind}): ...` `` and `` `the design agent did not finish
+ * (${kind}): ...` `` (`:580`, `:963`) — the only shape a real pass ever
+ * writes into one of those two cells' own `Interrupted` evidence. A fixture
+ * that hands `aStepEnded` a bare string there is agreeing with
+ * `read-model.ts`'s own `crash` default instead of testing it against the
+ * real wire (#478), so this refuses it by name rather than letting it
+ * through quietly. `design` with `plugin: 'file'` never yields `Interrupted`
+ * (a `file:` destination's own failure is `NotDone`), so it is exempt.
+ */
+function requireRealInterruptedEvidence(action: Action): void {
+  if (action.yields !== 'verdict' && action.yields !== 'design') return
+  if (action.result._tag !== 'Interrupted') return
+  if (action.yields === 'design' && action.plugin === 'file') return
+  const label = action.yields === 'verdict' ? 'reviewer' : 'design agent'
+  const prefix = `the ${label} did not finish (${action.result.cause}): `
+  if (!action.evidence.startsWith(prefix)) {
+    throw new Error(
+      `aStepEnded: no real pass writes "${action.evidence}" for an Interrupted ${action.yields} action — it must start with "${prefix}"`,
+    )
+  }
+}
+
 /** One run's own stream, with the bookkeeping `stepOutcomesOf` reads kept beside the step events themselves. */
 export interface RunFixture {
   readonly runId: string
@@ -160,6 +185,7 @@ export function aRun(runId: string): RunFixture {
       const onSha = outcome.actions[0]?.onSha ?? 'a'.repeat(40)
       envelopes.push(...openRound(outcome.round, onSha))
       for (const action of outcome.actions) {
+        requireRealInterruptedEvidence(action)
         if (action.yields === 'commit') envelopes.push(...contextFor(outcome, action))
       }
       for (const stepEvent of eventOf(outcome, runId)) {

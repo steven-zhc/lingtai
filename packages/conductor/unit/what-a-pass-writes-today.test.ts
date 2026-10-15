@@ -1375,7 +1375,14 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: 'held', step: 'review' })
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'review' })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all, hold!)
+    // #478: this row's own wire sentence (`agent-action.ts:580`) names the
+    // real kind, and `stepOutcomesOf` must read it back rather than folding
+    // to its own `crash` default — this is the one row here whose events
+    // come from that real sentence rather than a fixture's own literal.
+    const review = stepOutcomesOf(all).find((o) => o.step === 'review')
+    expect(review?.actions.at(-1)?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns' })
   })
 
   /**
