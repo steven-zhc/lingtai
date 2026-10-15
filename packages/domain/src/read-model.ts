@@ -87,15 +87,25 @@ const STEP_DEFAULTS: Partial<Record<Step, { plugin: string; yields: Action['yiel
 }
 
 /**
- * `conduct.ts:4038`'s own pseudo-action — `ApprovalRequested{action: 'judge'
- * | 'unfixed'}`, the "merge it anyway" offer appended directly, with no
- * `StepRequested`/`StepStarted` and no entry in any recipe, at whichever
- * step the pass stopped at (`stopped?.step ?? 'proposed'`) rather than at
- * `merge` alone. Named apart from `shapeFor`'s recipe/`STEP_DEFAULTS` lookup
- * so it is never read as that step's own action — `conduct.ts:4024`'s own
- * comment is why it is named `unfixed` and not after whatever refused.
+ * Every name `conduct.ts` appends an `ApprovalRequested` under directly,
+ * never through a recipe entry — so `shapeFor`'s recipe/`STEP_DEFAULTS`
+ * lookup must never be asked to explain one of these as that step's own
+ * action:
+ *
+ * - `conduct.ts:4038`'s own pseudo-action, `ApprovalRequested{action: 'judge'
+ *   | 'unfixed'}` — the "merge it anyway" offer, at whichever step the pass
+ *   stopped at (`stopped?.step ?? 'proposed'`) rather than at `merge` alone.
+ *   `conduct.ts:4024`'s own comment is why it is named `unfixed` and not
+ *   after whatever refused.
+ * - `alsoHeldAtMerge` (`conduct.ts:2686-2705`), always at `merge`: `'repair'`
+ *   for a repair bought before `#143`, and `'no-merge'` for every
+ *   `--no-merge` run. Without these two, `shapeFor` fell through to
+ *   `STEP_DEFAULTS['merge']` and `mergeResultFrom` answered for an
+ *   `ApprovalRequested` it was never built to read — so a pass that asked a
+ *   person for approval before the lane read as the lane itself having
+ *   refused.
  */
-const INJECTED_APPROVAL_ACTIONS = new Set(['judge', 'unfixed'])
+const INJECTED_APPROVAL_ACTIONS = new Set(['judge', 'unfixed', 'repair', 'no-merge'])
 
 /**
  * The plugin and `yields` a recipe's own action entry declares — `#466`'s
@@ -173,7 +183,7 @@ function failureKindOf(failure: string | null | undefined): string | null {
  * bookkeeping — plus `ran`, whether this round's own agent was ever
  * dispatched. Round 0 is always `ran: true`: nothing ever writes a round-0
  * `FixApplied` (that event is `fixRound`'s own, `conduct.ts:3314`), so there
- * is no "never dispatched" cell to tell apart there, only the `hookSetupBroke`
+ * is no "never dispatched" cell to tell apart there, only the `committedNothing`
  * one `commitResultFrom` already reads. A round above 0 is `ran` exactly when
  * its own `FixApplied` exists — `conduct.ts:3250`'s own early return (no
  * settings) is *before* that append, so a round that never got that far
@@ -265,21 +275,46 @@ function signoffResultFrom(e: Envelope): Action['result'] {
 }
 
 /**
- * `conduct.ts`'s own four sentences a `commit` action's setup fails with
- * (`work-action.ts`'s own header, `conduct.ts:2948-3085`) — matched whole
- * rather than by a single `startsWith('the hook ')`, which the second of the
- * four never passes: `` `the hook's smoke test did not run: ...` `` has an
- * apostrophe where the other three have a space.
+ * `conduct.ts:3180`'s own fixed sentence for a commit action that ran to
+ * completion and left nothing on the branch — `'the agent produced no
+ * commits'`, with no variable suffix, so `boundedEvidence` never clips it
+ * (`work-action.ts:184`; `tail()`, `command.ts:158`, only clips a string
+ * that overruns its own line/byte budget, and this literal never does).
+ *
+ * **Every other `StepDidNotFinish` either cell below ever sees is one of
+ * `conduct.ts`'s own four hook-setup sentences** (`conduct.ts:2948-3085`,
+ * `work-action.ts`'s own header) — each carries a runtime's own error text
+ * after the colon, which can be arbitrarily long, and `boundedEvidence`
+ * clips a long one with `tail()`, which keeps the *end* of a long single
+ * line and drops the leading sentence entirely. Matching against the four
+ * prefixes directly (`startsWith`) used to fail exactly when a detail was
+ * long enough to need that clipping, folding a setup break to
+ * `Completed{head: null, question: null}` — a commit action that cleared —
+ * instead of `NotDone`. The fixed sentence is the one text this cell can
+ * recognise whether or not it was clipped, so this checks for *that* and
+ * reads everything else — clipped or not — as the hook having broken.
  */
-const HOOK_SETUP_SENTENCES = [
-  'the hook was not wired: ',
-  "the hook's smoke test did not run: ",
-  'the hook did not fail closed: ',
-  'the hook socket was not served: ',
-] as const
+const NO_COMMITS_SENTENCE = 'the agent produced no commits'
 
-function hookSetupBroke(detail: string): boolean {
-  return HOOK_SETUP_SENTENCES.some((sentence) => detail.startsWith(sentence))
+function committedNothing(detail: string): boolean {
+  return detail === NO_COMMITS_SENTENCE
+}
+
+/**
+ * `agent-action.ts`'s own two sentences for a `verdict`- or `design`-yielding
+ * agent action that started and did not finish — `` `the reviewer did not
+ * finish (${kind}): ...` `` (any step but `implement`/`design`) and
+ * `` `the design agent did not finish (${kind}): ...` `` (`design`) — the
+ * only place either action's own cause can be read at all: `RunFailed` is
+ * `firstDispatch`'s own receipt for the implementer's dispatch alone
+ * (`conduct.ts:3114`), so a reviewer's or a drafting agent's own crash,
+ * timeout or turn/cost wall never writes one, and the sentence on the wire
+ * is the sole carrier.
+ */
+const AGENT_DID_NOT_FINISH = /^the (?:reviewer|design agent) did not finish \(([a-z-]+)\):/
+
+function agentDidNotFinishKind(detail: string): string | null {
+  return AGENT_DID_NOT_FINISH.exec(detail)?.[1] ?? null
 }
 
 function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: string, round: number): Action['result'] {
@@ -300,12 +335,12 @@ function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: strin
       // off; `ctx.ran` already says so without one.
       if (round > 0 && !ctx.ran) return { _tag: 'NotDone' }
       const detail = (e.data as { detail: string }).detail
-      // `ctx.ran` and no failure: either the work action's own setup broke
-      // before any agent ran, at round 0 (`NotDone`, `hookSetupBroke`'s four
-      // sentences), or an agent ran to the end and left nothing on the
-      // branch, at any round (`Completed{head: null, question: null}`,
-      // `conduct.ts:3180`'s own words, `work-action.ts`'s own `committedNothing`).
-      return hookSetupBroke(detail) ? { _tag: 'NotDone' } : { _tag: 'Completed', head: null, question: null }
+      // `ctx.ran` and no failure: either an agent ran to the end and left
+      // nothing on the branch, at any round (`Completed{head: null, question:
+      // null}`, `conduct.ts:3180`'s own fixed sentence, `work-action.ts`'s own
+      // `committedNothing`), or the work action's own setup broke before any
+      // agent ran, at round 0 (`NotDone`, one of the four hook-setup sentences).
+      return committedNothing(detail) ? { _tag: 'Completed', head: null, question: null } : { _tag: 'NotDone' }
     }
     case 'StepFailed':
       // A kept `run:`'s own clean failure, or any commit-yielding action's
@@ -964,13 +999,34 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
       // causes `commitResultFrom` already tells apart above — the work
       // action's own setup breaking before any agent ran, and the agent
       // running to completion with nothing on the branch (row 6 of #461).
-      // The agent's own "no commits" sentence never starts with "the hook "
-      // (`work-action.ts`'s own four setup sentences do), so the same
-      // `hookSetupBroke` check that reads the forward event back for
+      // The agent's own "no commits" sentence is the one fixed literal
+      // `committedNothing` checks for (`work-action.ts`'s own four setup
+      // sentences carry a runtime's own text after the colon instead, which
+      // can be clipped away by `boundedEvidence` before it ever reaches this
+      // hold) — the same check that reads the forward event back for
       // `commitResultFrom` tells this one apart too.
-      if (kind === null && hold.step === 'implement' && !hookSetupBroke(hold.raw ?? hold.why)) {
+      if (kind === null && hold.step === 'implement' && committedNothing(hold.raw ?? hold.why)) {
         return { _tag: 'NothingProduced', run, said: hold.raw }
       }
+      // **Every other step's own agent** — `review`/`build`/`proposed`/`merge`'s
+      // verdict-yielding checks and `design`'s own drafter — never has a
+      // `RunFailed` to read a cause off (that event is the implementer's
+      // alone), so `kind` is `null` here regardless of whether an agent ran
+      // at all. `agentDidNotFinishKind` reads the run's own sentence instead:
+      // row 14d's cold reviewer spent five turns and $0.33 before its own
+      // wall, and without this it read as `SetupRefused` — 0118's "the setup
+      // broke before any agent ran" for an agent that ran.
+      const agentKind = agentDidNotFinishKind(hold.raw ?? hold.why)
+      if (agentKind === 'crash' || agentKind === 'timeout' || agentKind === 'aborted') {
+        return { _tag: 'AgentCrashed', run, step: crashStep, cause: agentKind, detail: hold.raw ?? hold.why }
+      }
+      // `out-of-turns`/`out-of-usd` read this way too (`wait.ts:161` disallows
+      // them on `AgentCrashed`, the same exclusion the fix-round branch above
+      // already carries) — row 14d's own ending, and the nearest cell this
+      // one round-trips to is `SetupRefused`'s, below, since `NothingProduced`
+      // and `BudgetExhausted` both hard-code a shape (`step: 'implement'`, a
+      // `Ceiling` `Hold` with no `step` at all) that would disagree with the
+      // stored hold's own `_tag`/`step` here.
       return { _tag: 'SetupRefused', run, step: hold.step, action: '', why: hold.raw ?? hold.why }
     }
     case 'SetupRefused':

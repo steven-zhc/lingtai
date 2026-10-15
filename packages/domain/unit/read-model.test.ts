@@ -361,6 +361,32 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
   })
 
+  it('reads a hook-setup break whose leading sentence boundedEvidence already clipped away as a setup break too', () => {
+    // `boundedEvidence` (`command.ts:216`) clips a long single-line detail
+    // with `tail()`, which keeps only the *end* of the text — so a hook-setup
+    // sentence long enough to need clipping never reaches this cell with its
+    // "the hook ... " prefix intact at all, and `hookSetupBroke`'s old
+    // prefix match failed on every one of them. `work-action.ts:3180`'s own
+    // "the agent produced no commits" is the one sentence this cell ever
+    // sees with no variable suffix, so it is never clipped — `committedNothing`
+    // checks for that literal instead of the four open-ended prefixes, so a
+    // clipped hook-setup detail (anything that is not that exact literal)
+    // still reads as `NotDone` rather than a commit that cleared with nothing.
+    const run = aRun('run-1')
+    const action: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: '…a socket error so long that boundedEvidence dropped the leading sentence entirely',
+      yields: 'commit',
+      result: { _tag: 'NotDone' },
+    }
+    const outcome = outcomeOf('implement', 0, [action])
+    const events = run.aStepEnded(outcome)
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+  })
+
   it('a commit action that was interrupted, at round 0', () => {
     const run = aRun('run-1')
     const action: Action = {
@@ -782,6 +808,37 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     })
   })
 
+  it('reads "no-merge" and "repair" ApprovalRequested at `merge` as a signoff, never as the lane\'s own refusal', () => {
+    // `alsoHeldAtMerge` (`conduct.ts:2686-2705`) injects these two ahead of
+    // the lane, always at `merge` — never through a recipe entry. Without
+    // them in `INJECTED_APPROVAL_ACTIONS`, `shapeFor` fell through to
+    // `STEP_DEFAULTS['merge']` and `mergeResultFrom` read the
+    // `ApprovalRequested` as if it were the merge lane's own terminal event,
+    // finding no `IntegrationRefused` and no matching `Hold` to fall back on,
+    // and so answering `Completed{integration: {_tag: 'IntegrationRefused',
+    // reason: 'unexpected'}}` — a pass that asked a person before the lane
+    // ever ran read as the lane itself having refused.
+    for (const action of ['no-merge', 'repair']) {
+      const run = aRun(`run-${action}`)
+      const events = [
+        run.event('ApprovalRequested', {
+          step: 'merge',
+          action,
+          runId: run.runId,
+          onSha,
+          question: `Merge agent/1 into main? (${action})`,
+          artifacts: [],
+        }),
+      ]
+      const [got] = stepOutcomesOf(events)
+      expect(got?.actions[0]).toMatchObject({ plugin: 'conductor', yields: 'signoff' })
+      expect(got?.actions[0]?.result).toEqual({
+        _tag: 'Completed',
+        requested: { question: `Merge agent/1 into main? (${action})` },
+      })
+    }
+  })
+
   it('reads a "judge" ApprovalRequested at `proposed` without throwing', () => {
     // No recipe entry and no `STEP_DEFAULTS['proposed']` — this used to throw.
     const run = aRun('run-1')
@@ -1151,7 +1208,11 @@ describe('waitsOf', () => {
     // branch whenever the run had bought any `FixRequested` at all, with no
     // check that `hold.step` was `implement`, so a reviewer dying after a
     // clean fix round answered `NothingProduced` at `implement` instead of
-    // naming `review`'s own crash.
+    // naming `review`'s own crash. `review` never writes a `RunFailed` at all
+    // (`firstDispatch`'s own receipt, for the implementer alone) — the only
+    // place its own cause can be read is `agent-action.ts`'s own sentence,
+    // `` `the reviewer did not finish (${kind}): ...` ``, so the fixture
+    // writes that rather than an invented format a real pass never produces.
     const run = aRun('run-1')
     const itemStream = makeStream('wi-473-1')
     const head = 'd'.repeat(40)
@@ -1164,7 +1225,7 @@ describe('waitsOf', () => {
       yields: 'commit',
       result: { _tag: 'Completed', head, question: null },
     }
-    const crashDetail = 'crash: the reviewer died'
+    const crashDetail = 'the reviewer did not finish (crash): the reviewer died'
     const events = [
       ...run.aStepEnded(outcomeOf('implement', 1, [cleanFix])),
       run.event('StepDidNotFinish', {
@@ -1184,11 +1245,11 @@ describe('waitsOf', () => {
     ]
     const [wait] = waitsOf(events)
     expect(wait?.reason).toEqual({
-      _tag: 'SetupRefused',
+      _tag: 'AgentCrashed',
       run: { runId: run.runId },
       step: 'review',
-      action: '',
-      why: crashDetail,
+      cause: 'crash',
+      detail: crashDetail,
     })
   })
 
