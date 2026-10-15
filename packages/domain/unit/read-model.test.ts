@@ -13,7 +13,17 @@ import { describe, expect, it } from 'vitest'
 import type { Action, StepOutcome } from '../src/action.ts'
 import { holdOf } from '../src/adapters.ts'
 import { releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
-import { aRelease, aResolution, aRoute, aRun, aWait, aWithdrawal } from '../test/events.ts'
+import {
+  aClaim,
+  aLanding,
+  anIntegrationRefusal,
+  aRelease,
+  aResolution,
+  aRoute,
+  aRun,
+  aWait,
+  aWithdrawal,
+} from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
 const onSha = 'a'.repeat(40)
@@ -380,8 +390,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       result: { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } },
     }
     const itemStream = makeStream(`wi-473-1`)
-    const landed = itemStream('WorkItemLanded', { mergeCommit: mergeSha, base: 'main' })
-    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), landed]
+    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), ...aLanding(itemStream, mergeSha)]
     expect(stepOutcomesOf(events)).toEqual([{ ...outcomeOf('merge', 0, [action]), runId: run.runId }])
   })
 
@@ -400,16 +409,14 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       },
     }
     const integrationStream = makeStream('int-473-main')
-    const refused = integrationStream('IntegrationRefused', {
-      workItemId: 'wi-473-1',
-      branch: 'agent/473',
+    const refused = anIntegrationRefusal(integrationStream, 'wi-473-1', 'agent/473', {
       reason: 'conflict',
       detail: 'both sides touched src/fix.ts',
       paths: ['src/fix.ts'],
       baseSha: 'b'.repeat(40),
       headSha: 'c'.repeat(40),
     })
-    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), refused]
+    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), ...refused]
     expect(stepOutcomesOf(events)).toEqual([{ ...outcomeOf('merge', 0, [action]), runId: run.runId }])
   })
 })
@@ -576,9 +583,9 @@ describe('releaseCauseOf', () => {
 
   it('answers null for an ordinary failed pass', () => {
     const itemStream = makeStream('wi-473-1')
-    const claimed = itemStream('WorkItemClaimed', { runId: 'run-1', worker: 'conductor:1', title: null, kind: null })
+    const claimed = aClaim(itemStream, 'run-1')
     const released = itemStream('WorkItemReleased', { runId: 'run-1', reason: 'the pass did not finish' })
-    expect(releaseCauseOf([claimed, released])).toEqual([null])
+    expect(releaseCauseOf([...claimed, released])).toEqual([null])
   })
 
   it('answers ClaimUnconfirmed when no claim preceded the release', () => {

@@ -260,7 +260,37 @@ export function aRelease(
   return [itemStream('WorkItemReleased', { runId, reason })]
 }
 
-/** `run.event('<type>')`, exposed so a test can seed the run's stream directly where no builder above fits — a `WorkItemClaimed`, say. */
+/** `WorkItemClaimed` — the claim `releaseCauseOf` looks for since the item's last release or landing. */
+export function aClaim(itemStream: ReturnType<typeof makeStream>, runId: string, worker = 'conductor:1'): Envelope[] {
+  return [itemStream('WorkItemClaimed', { runId, worker, title: null, kind: null })]
+}
+
+/** `WorkItemLanded` — the merge sha `mergeResultFrom` (`read-model.ts`) reads back for a `merge` action's own `Integrated`. */
+export function aLanding(itemStream: ReturnType<typeof makeStream>, mergeCommit: string, base = 'main'): Envelope[] {
+  return [itemStream('WorkItemLanded', { mergeCommit, base })]
+}
+
+/** `IntegrationRefused` — the three optional fields `mergeResultFrom` reads back for a `Conflicted`/`IntegrationRefused` result. */
+export function anIntegrationRefusal(
+  integrationStream: ReturnType<typeof makeStream>,
+  workItemId: string,
+  branch: string,
+  refusal: { reason: string; detail?: string; paths?: string[]; baseSha?: string; headSha?: string },
+): Envelope[] {
+  return [
+    integrationStream('IntegrationRefused', {
+      workItemId,
+      branch,
+      reason: refusal.reason,
+      detail: refusal.detail ?? '',
+      ...(refusal.paths === undefined ? {} : { paths: refusal.paths }),
+      ...(refusal.baseSha === undefined ? {} : { baseSha: refusal.baseSha }),
+      ...(refusal.headSha === undefined ? {} : { headSha: refusal.headSha }),
+    } as never),
+  ]
+}
+
+/** `run.event('<type>')`, exposed so a test can seed the run's stream directly where no builder above fits. */
 export function aRunRef(runId: string): RunRef {
   return { runId }
 }
