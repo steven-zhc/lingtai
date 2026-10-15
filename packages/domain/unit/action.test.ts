@@ -160,6 +160,11 @@ describe('cleared', () => {
     expect(cleared(action)).toBe(false)
   })
 
+  it('commit/Waived: cleared', () => {
+    const action = parseAction({ ...base, yields: 'commit', result: { _tag: 'Waived', waitId: 'wait-1' } })
+    expect(cleared(action)).toBe(true)
+  })
+
   it('commit/NotReached: not cleared', () => {
     const action = parseAction({ ...base, yields: 'commit', result: { _tag: 'NotReached' } })
     expect(cleared(action)).toBe(false)
@@ -204,6 +209,11 @@ describe('cleared', () => {
     expect(cleared(action)).toBe(false)
   })
 
+  it('design/Waived: cleared', () => {
+    const action = parseAction({ ...base, yields: 'design', result: { _tag: 'Waived', waitId: 'wait-1' } })
+    expect(cleared(action)).toBe(true)
+  })
+
   it('design/NotReached: not cleared', () => {
     const action = parseAction({ ...base, yields: 'design', result: { _tag: 'NotReached' } })
     expect(cleared(action)).toBe(false)
@@ -218,6 +228,11 @@ describe('cleared', () => {
   it('worktree/NotDone: not cleared', () => {
     const action = parseAction({ ...base, yields: 'worktree', result: { _tag: 'NotDone' } })
     expect(cleared(action)).toBe(false)
+  })
+
+  it('worktree/Waived: cleared', () => {
+    const action = parseAction({ ...base, yields: 'worktree', result: { _tag: 'Waived', waitId: 'wait-1' } })
+    expect(cleared(action)).toBe(true)
   })
 
   it('worktree/NotReached: not cleared', () => {
@@ -256,6 +271,11 @@ describe('cleared', () => {
     expect(cleared(action)).toBe(false)
   })
 
+  it('merge/Waived: cleared', () => {
+    const action = parseAction({ ...base, yields: 'merge', result: { _tag: 'Waived', waitId: 'wait-1' } })
+    expect(cleared(action)).toBe(true)
+  })
+
   it('merge/NotReached: not cleared', () => {
     const action = parseAction({ ...base, yields: 'merge', result: { _tag: 'NotReached' } })
     expect(cleared(action)).toBe(false)
@@ -270,6 +290,11 @@ describe('cleared', () => {
   it('nothing/NotDone: not cleared', () => {
     const action = parseAction({ ...base, yields: 'nothing', result: { _tag: 'NotDone' } })
     expect(cleared(action)).toBe(false)
+  })
+
+  it('nothing/Waived: cleared', () => {
+    const action = parseAction({ ...base, yields: 'nothing', result: { _tag: 'Waived', waitId: 'wait-1' } })
+    expect(cleared(action)).toBe(true)
   })
 
   it('nothing/NotReached: not cleared', () => {

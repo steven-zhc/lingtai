@@ -157,6 +157,7 @@ const CommitAction = ActionBase.extend({
     // A kept-run could not restore the tree (`kept-run-action.ts:80`).
     NotDone,
     NeverStarted,
+    Waived,
     NotReached,
   ]),
 })
@@ -172,6 +173,7 @@ const DesignAction = ActionBase.extend({
     Interrupted,
     NotDone,
     NeverStarted,
+    Waived,
     NotReached,
   ]),
 })
@@ -181,6 +183,7 @@ const WorktreeAction = ActionBase.extend({
   result: z.discriminatedUnion('_tag', [
     z.object({ _tag: z.literal('Completed'), head: z.string() }),
     NotDone,
+    Waived,
     NotReached,
   ]),
 })
@@ -189,6 +192,7 @@ const MergeAction = ActionBase.extend({
   yields: z.literal('merge'),
   result: z.discriminatedUnion('_tag', [
     z.object({ _tag: z.literal('Completed'), integration: Integration }),
+    Waived,
     NotReached,
   ]),
 })
@@ -196,7 +200,7 @@ const MergeAction = ActionBase.extend({
 const NothingAction = ActionBase.extend({
   yields: z.literal('nothing'),
   // Did something; the pass asks only whether it did.
-  result: z.discriminatedUnion('_tag', [z.object({ _tag: z.literal('Completed') }), NotDone, NotReached]),
+  result: z.discriminatedUnion('_tag', [z.object({ _tag: z.literal('Completed') }), NotDone, Waived, NotReached]),
 })
 
 /**
@@ -257,6 +261,8 @@ export function cleared(action: Action): boolean {
       switch (action.result._tag) {
         case 'Completed':
           return action.result.question === null
+        case 'Waived':
+          return true
         case 'Interrupted':
         case 'NotDone':
         case 'NeverStarted':
@@ -266,6 +272,8 @@ export function cleared(action: Action): boolean {
     case 'design':
       switch (action.result._tag) {
         case 'Drafted':
+          return true
+        case 'Waived':
           return true
         case 'Asked':
         case 'AnswerUnreadable':
@@ -279,6 +287,8 @@ export function cleared(action: Action): boolean {
       switch (action.result._tag) {
         case 'Completed':
           return true
+        case 'Waived':
+          return true
         case 'NotDone':
         case 'NotReached':
           return false
@@ -287,12 +297,16 @@ export function cleared(action: Action): boolean {
       switch (action.result._tag) {
         case 'Completed':
           return action.result.integration._tag === 'Integrated'
+        case 'Waived':
+          return true
         case 'NotReached':
           return false
       }
     case 'nothing':
       switch (action.result._tag) {
         case 'Completed':
+          return true
+        case 'Waived':
           return true
         case 'NotDone':
         case 'NotReached':

@@ -385,6 +385,13 @@ function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: strin
       // A kept `run:`'s own clean failure, or any commit-yielding action's
       // dependency throwing (`commitEventOf`'s own two causes) — both `NotDone`.
       return { _tag: 'NotDone' }
+    case 'StepWaived':
+      // A person overruled a declared check at `implement` (`approve.ts`'s
+      // own "any `point:action` the run reported ... is waivable" —
+      // `implement:write the change` is on every pass's own plan,
+      // `defaultsAt`, `conduct.ts:2804-2821`). The same arm `verdictResultFrom`
+      // carries above.
+      return { _tag: 'Waived', waitId: syntheticWaitId(e) }
     default:
       throw new Error(`stepOutcomesOf: "${e.type}" cannot end a commit action`)
   }
@@ -407,6 +414,9 @@ function designResultFrom(e: Envelope, plugin: string): Action['result'] {
       // `plugin` is the one fact this file has that `adapters.ts` does not
       // need in the forward direction, so it is used to tell them apart.
       return plugin === 'file' ? { _tag: 'NotDone' } : { _tag: 'Interrupted', cause: 'crash' }
+    case 'StepWaived':
+      // Same arm as `commit`'s own above — a person overruled this gate too.
+      return { _tag: 'Waived', waitId: syntheticWaitId(e) }
     default:
       throw new Error(`stepOutcomesOf: "${e.type}" cannot end a design action`)
   }
@@ -414,6 +424,7 @@ function designResultFrom(e: Envelope, plugin: string): Action['result'] {
 
 function worktreeResultFrom(e: Envelope, runEvents: readonly Envelope[], index: number): Action['result'] {
   if (e.type === 'StepDidNotFinish') return { _tag: 'NotDone' }
+  if (e.type === 'StepWaived') return { _tag: 'Waived', waitId: syntheticWaitId(e) }
   // `StepPassed` carries no `head` (`worktreeEventOf` never wrote one) — the
   // next action's `onSha` on this run is where the cut left the branch, since
   // nothing moves it between them; with no next action, nothing moved it at
@@ -455,6 +466,18 @@ function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: s
     const landed = events.find((x) => x.type === 'WorkItemLanded' && x.streamId === workItemId)
     const mergeSha = landed === undefined ? '' : (landed.data as { mergeCommit: string }).mergeCommit
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } }
+  }
+  if (e.type === 'StepWaived') {
+    // A person overruled the merge lane's own refusal (`approve.ts:313`) —
+    // `refusingOn` names `merge:<action>` the same way it names a `verdict`
+    // or `signoff` gate, and the lane's refusal that came before this on the
+    // wire is its own, separate `StepOutcome` (the grouping rule below:
+    // a group never grows past its own deciding action). Without this arm,
+    // the branch below re-read the same `IntegrationRefused` row the
+    // refusal already consumed and fabricated a second, identical refusal
+    // in the waiver's place — `MergeAction['result']` has no `Waived` arm
+    // to carry it any other way until now.
+    return { _tag: 'Waived', waitId: syntheticWaitId(e) }
   }
   const runId = (e.data as { runId: string }).runId
   // **By `workItemId`, and bounded to at-or-before this merge's own
@@ -514,7 +537,9 @@ function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: s
 }
 
 function nothingResultFrom(e: Envelope): Action['result'] {
-  return e.type === 'StepPassed' ? { _tag: 'Completed' } : { _tag: 'NotDone' }
+  if (e.type === 'StepPassed') return { _tag: 'Completed' }
+  if (e.type === 'StepWaived') return { _tag: 'Waived', waitId: syntheticWaitId(e) }
+  return { _tag: 'NotDone' }
 }
 
 function actionFromEvent(
@@ -967,6 +992,17 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
       }
     }
     case 'MergeRefused':
+      // **`hold.paths`/`hold.baseSha`/`hold.headSha` are dropped here, not
+      // carried through.** `Hold.MergeRefused` gained those three fields for
+      // a `dirty-base` refusal (`#472`'s own triage evidence), but
+      // `WaitReason.MergeRefused` (`wait.ts:125-132`) has no field for any of
+      // them — that evidence belongs to the conflict case, which folds
+      // through `Routed{when:'conflict'}`/`Proposal.MergeConflict` instead,
+      // never through this one. A reader who needs the three fields back off
+      // a `MergeRefused` wait cannot get them from `waitsOf`; `holdForRun`
+      // above is the one place in this file that still reads the stored
+      // `Hold` directly, rather than through `WaitReason`, for exactly this
+      // reason.
       return {
         _tag: 'MergeRefused',
         run: toRunRef(hold.run),

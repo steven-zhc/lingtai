@@ -171,6 +171,11 @@ function commitEventOf(action: OfYields<'commit'>, base: Base): StepEvent {
         : { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NeverStarted':
       return { type: 'StepNeverRan', data: { ...base, detail: action.evidence } }
+    case 'Waived':
+      // Never produced by any action today (0120 §6's own person-only path),
+      // the same as `verdict`'s/`signoff`'s own `Waived` arm above — it
+      // clears, so the nearest event is an ordinary pass.
+      return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -189,6 +194,9 @@ function designEventOf(action: OfYields<'design'>, base: Base): StepEvent {
       return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
     case 'NeverStarted':
       return { type: 'StepNeverRan', data: { ...base, detail: action.evidence } }
+    case 'Waived':
+      // Same as `commit`'s own `Waived` arm above.
+      return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -200,6 +208,9 @@ function worktreeEventOf(action: OfYields<'worktree'>, base: Base): StepEvent {
       return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotDone':
       return { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
+    case 'Waived':
+      // Same as `commit`'s own `Waived` arm above.
+      return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -211,6 +222,10 @@ function mergeEventOf(action: OfYields<'merge'>, base: Base): StepEvent {
       return action.result.integration._tag === 'Integrated'
         ? { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
         : { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
+    case 'Waived':
+      // Same as `commit`'s own `Waived` arm above — a person overruling the
+      // merge lane's own refusal (`approve.ts:313`, `#473`'s own major finding).
+      return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }
@@ -245,6 +260,9 @@ function nothingEventOf(action: OfYields<'nothing'>, base: Base): StepEvent {
       return action.plugin === 'queue' || threwRatherThanAnswered(action)
         ? { type: 'StepFailed', data: { ...base, evidence: action.evidence, findings: [] } }
         : { type: 'StepDidNotFinish', data: { ...base, detail: action.evidence } }
+    case 'Waived':
+      // Same as `commit`'s own `Waived` arm above.
+      return { type: 'StepPassed', data: { ...base, evidence: action.evidence, findings: [] } }
     case 'NotReached':
       return unreachable(base)
   }

@@ -1003,6 +1003,99 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     expect(outcomes[1]?.actions[0]?.result).toEqual({ _tag: 'Waived', waitId: `${run.runId}:${waived.seq}` })
     for (const outcome of outcomes) expect(wellFormed(outcome)).toBe(true)
   })
+
+  it('reads a StepWaived on the merge lane itself as Waived, never as a second, identical refusal (#473 major finding)', () => {
+    // Row 10a plus a person's approval: the merge lane refuses on a
+    // conflict, `conduct.ts:4038` injects the "merge it anyway" offer, and
+    // `approve.ts:313` appends `StepWaived{step:'merge', action:'land the
+    // branch'}` ahead of `ApprovalGranted` — waiving the lane's own action,
+    // not a declared check beside it. Before this fix, `mergeResultFrom` had
+    // no case for `StepWaived` and fell into the refusal-reading branch,
+    // re-reading the same `IntegrationRefused` row and fabricating a second,
+    // identical `Conflicted` result where the log holds one refusal and one
+    // waiver.
+    const run = aRun('run-1')
+    const conflictAction: Action = {
+      plugin: 'merge',
+      name: 'land the branch',
+      onSha,
+      call: null,
+      evidence: 'conflict',
+      yields: 'merge',
+      result: {
+        _tag: 'Completed',
+        integration: { _tag: 'Conflicted', paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+      },
+    }
+    const integrationStream = makeStream('int-473-main')
+    const itemStream = makeStream('wi-473-1')
+    const refused = anIntegrationRefusal(integrationStream, 'wi-473-1', 'agent/473', {
+      reason: 'conflict',
+      detail: 'both sides touched src/fix.ts',
+      paths: ['src/fix.ts'],
+      baseSha: 'b'.repeat(40),
+      headSha: 'c'.repeat(40),
+    })
+    const refusalEvents = [
+      ...aClaim(itemStream, run.runId),
+      ...run.aStepEnded(outcomeOf('merge', 0, [conflictAction])),
+      ...refused,
+    ]
+    const waived = run.event('StepWaived', {
+      step: 'merge',
+      action: 'land the branch',
+      runId: run.runId,
+      onSha,
+      by: 'steven',
+      reason: 'resolved by hand',
+    })
+    const outcomes = stepOutcomesOf([...refusalEvents, waived])
+    expect(outcomes).toHaveLength(2)
+    expect(outcomes[0]?.actions[0]?.result).toEqual(conflictAction.result)
+    expect(outcomes[1]?.actions[0]?.result).toEqual({ _tag: 'Waived', waitId: `${run.runId}:${waived.seq}` })
+    for (const outcome of outcomes) expect(wellFormed(outcome)).toBe(true)
+  })
+
+  it('reads a StepWaived at implement (a commit action) as Waived rather than throwing', () => {
+    // `waive()` (`approve.ts:587`) refuses only `end` — any `point:action`
+    // the run reported, or that its last `StepsResolved` plan lists, is
+    // waivable (`approve.ts:619-630`), and that plan lists
+    // `implement:write the change` on every pass (`defaultsAt`,
+    // `conduct.ts:2804-2821`). Before this fix, `commitResultFrom` had no
+    // case for `StepWaived` and fell to its `default`, throwing
+    // `stepOutcomesOf: "StepWaived" cannot end a commit action` — exactly
+    // the throw `TERMINAL_TYPES`'s own admission of `StepWaived` for every
+    // yield was supposed to make unreachable.
+    const run = aRun('run-1')
+    const waived = run.event('StepWaived', {
+      step: 'implement',
+      action: 'write the change',
+      runId: run.runId,
+      onSha,
+      by: 'steven',
+      reason: 'known flake',
+    })
+    expect(() => stepOutcomesOf([waived])).not.toThrow()
+    const [outcome] = stepOutcomesOf([waived])
+    expect(outcome?.actions[0]?.result).toEqual({ _tag: 'Waived', waitId: `${run.runId}:${waived.seq}` })
+    expect(wellFormed(outcome!)).toBe(true)
+  })
+
+  it('reads a StepWaived at design as Waived rather than throwing', () => {
+    const run = aRun('run-1')
+    const waived = run.event('StepWaived', {
+      step: 'design',
+      action: 'draft',
+      runId: run.runId,
+      onSha,
+      by: 'steven',
+      reason: 'known flake',
+    })
+    expect(() => stepOutcomesOf([waived])).not.toThrow()
+    const [outcome] = stepOutcomesOf([waived])
+    expect(outcome?.actions[0]?.result).toEqual({ _tag: 'Waived', waitId: `${run.runId}:${waived.seq}` })
+    expect(wellFormed(outcome!)).toBe(true)
+  })
 })
 
 describe('routesOf', () => {

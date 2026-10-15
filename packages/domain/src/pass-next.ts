@@ -184,6 +184,7 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: RunRef): N
       return setupRefused(step, action.evidence)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
+    case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
@@ -204,6 +205,7 @@ function designFellShort(step: Step, action: OfYields<'design'>, run: RunRef): N
       return setupRefused(step, action.evidence)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
+    case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
@@ -216,6 +218,7 @@ function worktreeFellShort(step: Step, action: OfYields<'worktree'>): NextOfResu
       return setupRefused(step, action.evidence)
     case 'Completed':
       throw new ImpossibleOutcomeError(step, action.yields, 'Completed always clears')
+    case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
@@ -226,6 +229,7 @@ function mergeFellShort(step: Step, action: OfYields<'merge'>): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
       return mergeCompletedRefused(step, action.result.integration, action.evidence)
+    case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
@@ -238,6 +242,7 @@ function nothingFellShort(step: Step, action: OfYields<'nothing'>): NextOfResult
       return setupRefused(step, action.evidence)
     case 'Completed':
       throw new ImpossibleOutcomeError(step, action.yields, 'Completed always clears')
+    case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
   }
