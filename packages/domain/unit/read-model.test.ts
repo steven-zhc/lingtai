@@ -339,6 +339,28 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
   })
 
+  it("reads the hook's own smoke-test sentence as a setup break too, not as a commit that cleared with nothing", () => {
+    // `hookSetupBroke` matched `'the hook '` (a trailing space) — the one
+    // sentence of the four with an apostrophe right after "hook" fails that
+    // prefix, so a round-0 commit action whose setup broke this way used to
+    // fold to `Completed{head: null, question: null}` (cleared) rather than
+    // `NotDone`, which is indistinguishable on the read model from an agent
+    // that ran to completion and left nothing on the branch.
+    const run = aRun('run-1')
+    const action: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: "the hook's smoke test did not run: socket refused",
+      yields: 'commit',
+      result: { _tag: 'NotDone' },
+    }
+    const outcome = outcomeOf('implement', 0, [action])
+    const events = run.aStepEnded(outcome)
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+  })
+
   it('a commit action that was interrupted, at round 0', () => {
     const run = aRun('run-1')
     const action: Action = {
@@ -1122,6 +1144,54 @@ describe('waitsOf', () => {
     })
   })
 
+  it("names a review crash after a clean fix round as review's own, never implement's NothingProduced", () => {
+    // A round bought on `implement`, applied cleanly (`FixApplied{round:1,
+    // failure:null}`), must not decide a *later* `review` crash on the same
+    // run — `reasonFromHold`'s `DidNotFinish` case used to take the fix-round
+    // branch whenever the run had bought any `FixRequested` at all, with no
+    // check that `hold.step` was `implement`, so a reviewer dying after a
+    // clean fix round answered `NothingProduced` at `implement` instead of
+    // naming `review`'s own crash.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const head = 'd'.repeat(40)
+    const cleanFix: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: `committed ${head.slice(0, 7)}`,
+      yields: 'commit',
+      result: { _tag: 'Completed', head, question: null },
+    }
+    const crashDetail = 'crash: the reviewer died'
+    const events = [
+      ...run.aStepEnded(outcomeOf('implement', 1, [cleanFix])),
+      run.event('StepDidNotFinish', {
+        step: 'review',
+        action: 'cold reviewer',
+        runId: run.runId,
+        onSha: head,
+        detail: crashDetail,
+      }),
+      ...aWait(itemStream, {
+        _tag: 'AgentCrashed',
+        run: { runId: run.runId },
+        step: 'review',
+        cause: 'crash',
+        detail: crashDetail,
+      }),
+    ]
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual({
+      _tag: 'SetupRefused',
+      run: { runId: run.runId },
+      step: 'review',
+      action: '',
+      why: crashDetail,
+    })
+  })
+
   it('reads a Routed{findings} hold back as ProposedEscalated/ReviewFindings', () => {
     const itemStream = makeStream('wi-473-1')
     const finding = {
@@ -1174,6 +1244,68 @@ describe('waitsOf', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
     const [wait] = waitsOf(events)
     expect(wait?.reason).toEqual(reason)
+  })
+
+  it("a later round's own findings outrank an earlier round's own unreadable answer on the same run", () => {
+    // Round 0's cold reviewer answers unreadably, a fix round is bought, the
+    // fixer commits, and round 1's review refuses with a real finding —
+    // `lastUnreadableAt` used to search the whole run with no round bound, so
+    // round 0's own unreadable `StepFailed` outranked round 1's own
+    // `Routed{findings}` hold, and the escalation read as `AnswerUnreadable`
+    // with the finding the person actually has to read dropped.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const unreadableReview: Action = {
+      plugin: 'agent',
+      name: 'cold reviewer',
+      onSha,
+      call: null,
+      evidence: 'I am not sure what to say here.',
+      yields: 'verdict',
+      result: { _tag: 'AnswerUnreadable', raw: 'I am not sure what to say here.' },
+    }
+    const head = 'b'.repeat(40)
+    const fixedCommit: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: `committed ${head.slice(0, 7)}`,
+      yields: 'commit',
+      result: { _tag: 'Completed', head, question: null },
+    }
+    const finding = {
+      file: 'src/fix.ts',
+      line: 12,
+      claim: 'off by one',
+      failureScenario: 'n+1 reads past the end',
+      severity: 'blocker' as const,
+    }
+    const refusedWithFindings: Action = {
+      plugin: 'agent',
+      name: 'cold reviewer',
+      onSha: head,
+      call: null,
+      evidence: 'blocker src/fix.ts:12',
+      yields: 'verdict',
+      result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [finding] } },
+    }
+    const events = [
+      ...run.aStepEnded(outcomeOf('review', 0, [unreadableReview])),
+      ...run.aStepEnded(outcomeOf('implement', 1, [fixedCommit])),
+      ...run.aStepEnded(outcomeOf('review', 1, [refusedWithFindings])),
+      ...aWait(itemStream, {
+        _tag: 'ProposedEscalated',
+        run: { runId: run.runId },
+        proposal: { _tag: 'ReviewFindings', findings: [finding] },
+        because: { _tag: 'NotAsked' },
+      }),
+    ]
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'ReviewFindings', findings: [finding] },
+    })
   })
 
   it('answers the Resolution once one lands: Requeue', () => {

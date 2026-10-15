@@ -264,9 +264,22 @@ function signoffResultFrom(e: Envelope): Action['result'] {
   }
 }
 
-/** `the hook ` is `conduct.ts`'s own prefix for the four sentences a `commit` action's setup fails with (`work-action.ts`'s own header). */
+/**
+ * `conduct.ts`'s own four sentences a `commit` action's setup fails with
+ * (`work-action.ts`'s own header, `conduct.ts:2948-3085`) — matched whole
+ * rather than by a single `startsWith('the hook ')`, which the second of the
+ * four never passes: `` `the hook's smoke test did not run: ...` `` has an
+ * apostrophe where the other three have a space.
+ */
+const HOOK_SETUP_SENTENCES = [
+  'the hook was not wired: ',
+  "the hook's smoke test did not run: ",
+  'the hook did not fail closed: ',
+  'the hook socket was not served: ',
+] as const
+
 function hookSetupBroke(detail: string): boolean {
-  return detail.startsWith('the hook ')
+  return HOOK_SETUP_SENTENCES.some((sentence) => detail.startsWith(sentence))
 }
 
 function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: string, round: number): Action['result'] {
@@ -719,21 +732,38 @@ function refusingStepFailed(
  * different prefix on the same `Routed{when: 'findings'}` hold, because
  * `review`'s own cold reviewer and a judge declared at `proposed` are
  * different actors; this is that distinction's own reverse.
+ *
+ * **Bounded to the round this `Routed` hold's own `blockedSeq` belongs to**
+ * (`afterSeq`, exclusive, through `blockedSeq`, inclusive) — an earlier
+ * round's own unreadable answer is moot once a `FixRequested` moved the run
+ * past it, and must not outrank a *later* round's own real findings just
+ * because it is still the run's only unreadable `StepFailed`.
  */
 function lastUnreadableAt(
   events: readonly Envelope[],
   runId: string,
   steps: readonly string[],
+  afterSeq: bigint,
+  blockedSeq: bigint,
 ): { step: string; action: string; evidence: string } | undefined {
   const found = events.filter(
     (e) =>
       e.type === 'StepFailed' &&
       e.streamId === runId &&
+      e.seq > afterSeq &&
+      e.seq <= blockedSeq &&
       steps.includes((e.data as { step: string }).step) &&
       (e.data as { unreadable?: true }).unreadable === true,
   )
   const last = found[found.length - 1]
   return last === undefined ? undefined : (last.data as { step: string; action: string; evidence: string })
+}
+
+/** The seq of the latest `FixRequested` on this run before `beforeSeq`, or `0n` where none precedes it — the start of the round `beforeSeq` falls in. */
+function lastRoundBoundary(events: readonly Envelope[], runId: string, beforeSeq: bigint): bigint {
+  const rounds = fixRoundsOf(events, runId).filter((fr) => fr.seq < beforeSeq)
+  const last = rounds[rounds.length - 1]
+  return last === undefined ? 0n : last.seq
 }
 
 /** The `because` of that run's last escalated route (`routesOf`) — never a second fold of `PassRouted`. */
@@ -743,12 +773,17 @@ function becauseFor(events: readonly Envelope[], runId: string): EscalationBecau
   return last === undefined ? { _tag: 'NotAsked' } : (last.decision as { because: EscalationBecause }).because
 }
 
-function routedToReason(hold: Extract<Hold, { _tag: 'Routed' }>, events: readonly Envelope[]): WaitReason {
+function routedToReason(
+  hold: Extract<Hold, { _tag: 'Routed' }>,
+  events: readonly Envelope[],
+  blockedSeq: bigint,
+): WaitReason {
   const run = toRunRef(hold.run)
   const because = becauseFor(events, hold.run.runId)
 
   if (hold.when === 'findings') {
-    const unreadable = lastUnreadableAt(events, hold.run.runId, ['review', 'proposed'])
+    const roundBoundary = lastRoundBoundary(events, hold.run.runId, blockedSeq)
+    const unreadable = lastUnreadableAt(events, hold.run.runId, ['review', 'proposed'], roundBoundary, blockedSeq)
     if (unreadable !== undefined) {
       if (unreadable.step === 'review') {
         return { _tag: 'AnswerUnreadable', run, step: 'review', action: unreadable.action, raw: unreadable.evidence }
@@ -803,7 +838,7 @@ function routedToReason(hold: Extract<Hold, { _tag: 'Routed' }>, events: readonl
   }
 }
 
-function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
+function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: bigint): WaitReason {
   switch (hold._tag) {
     case 'Question':
       return { _tag: 'OwnQuestion', question: hold.question, by: hold.by }
@@ -825,7 +860,7 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
     case 'Declined':
       return { _tag: 'FixerDisagrees', run: toRunRef(hold.run), said: hold.said }
     case 'Routed':
-      return routedToReason(hold, events)
+      return routedToReason(hold, events, blockedSeq)
     case 'CheckRed': {
       const failed = refusingStepFailed(events, hold.run.runId, hold.step)
       if (failed?.unreadable === true) {
@@ -879,7 +914,15 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
       // bug): a clean round 1 followed by a round 2 whose own setup broke
       // must not read round 1's `failure: null` back for round 2's ending.
       // `fixRoundsOf` is the same ordering `stepOutcomesOf` keys a round off.
-      const fixRounds = fixRoundsOf(events, hold.run.runId)
+      //
+      // **And only at `implement`.** A round bought on `implement` says
+      // nothing about `review`, `build` or `merge` crashing on its own
+      // account on a later visit of the same run: `FixApplied` is `implement`'s
+      // own receipt, and reading a `review`/`build`/`merge` `DidNotFinish` off
+      // it answered the crash with `implement`'s round instead, which is how a
+      // reviewer that died after a clean fix round read as `NothingProduced`
+      // at `implement` rather than `AgentCrashed` at `review`.
+      const fixRounds = hold.step === 'implement' ? fixRoundsOf(events, hold.run.runId) : []
       const lastRound = fixRounds[fixRounds.length - 1]
       if (lastRound !== undefined) {
         const fixApplied = onRun.find(
@@ -991,7 +1034,7 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
     .filter((e) => e.type === 'WorkItemBlocked')
     .map((e) => {
       const hold = (e.data as { hold: Hold }).hold
-      const reason = reasonFromHold(hold, events)
+      const reason = reasonFromHold(hold, events, e.seq)
       return { reason, resolution: resolutionAfter(events, e.streamId, e.seq, reason) }
     })
 }
