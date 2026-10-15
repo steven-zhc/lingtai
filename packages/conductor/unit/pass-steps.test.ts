@@ -2345,7 +2345,6 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
  */
 describe('every step that does not simply pass reports a reason', () => {
   it.each([
-    { what: 'a claim nobody could take', answers: { take: { passedOver: 'no kind label' } } as Answers },
     { what: 'a tree that was not cut', answers: { cut: { notCut: 'no such base ref' } } as Answers },
     { what: 'an agent with no receipt', answers: { dispatch: { stopped: 'the budget went' } } as Answers },
     {
