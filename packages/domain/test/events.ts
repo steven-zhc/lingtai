@@ -8,7 +8,7 @@
  * (`stepOutcomesOf(aStepEnded(...))` etc.) is a claim about one pair of
  * functions agreeing with itself, not about two independent tables.
  */
-import type { Action, Envelope, Finding, RunRef, Step, StepOutcome } from '../src/index.ts'
+import type { Action, Envelope, Finding, RefusalReason, RunRef, Step, StepOutcome } from '../src/index.ts'
 import { eventOf, holdOf, STEPS } from '../src/index.ts'
 import type { Resolution, WaitReason } from '../src/wait.ts'
 import { makeStream } from './support.ts'
@@ -349,4 +349,38 @@ export function anIntegrationRefusal(
 /** A bare `RunRef` — `{runId}` — for a `WaitReason`/`Hold` that needs one and nothing more; not an appender, `aRun` is what opens a stream. */
 export function aRunRef(runId: string): RunRef {
   return { runId }
+}
+
+/** `FixDeclined` — no writer in `src` today (`events.ts:1339`'s schema, never appended). */
+export function aFixDeclined(run: RunFixture, round: number, why: string): Envelope[] {
+  return [run.event('FixDeclined', { runId: run.runId, round, action: 'reviewer', why, findings: [] })]
+}
+
+/** `ApprovalRevoked` — no writer in `src` today. */
+export function anApprovalRevoked(
+  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
+  onSha: string,
+  by = 'steven',
+): Envelope[] {
+  return [
+    run.event('ApprovalRevoked', {
+      step: run.step,
+      action: run.action,
+      runId: run.runId,
+      onSha,
+      by,
+      reason: 'withdrawn',
+    }),
+  ]
+}
+
+/** `RepairRequested` — retired by `#143`; no writer in `src` today, and `store.append` refuses it for a real caller. */
+export function aRepairRequested(
+  itemStream: ReturnType<typeof makeStream>,
+  runId: string,
+  reason: RefusalReason = 'verify-failed',
+) {
+  return [
+    itemStream('RepairRequested', { runId, reason, detail: 'policy: exit 1', fingerprint: '0123456789ab', attempt: 1 }),
+  ]
 }

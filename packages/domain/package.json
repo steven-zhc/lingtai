@@ -3,7 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./wait": "./src/wait.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./wait": "./src/wait.ts",
+    "./test/events": "./test/events.ts",
+    "./test/support": "./test/support.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
