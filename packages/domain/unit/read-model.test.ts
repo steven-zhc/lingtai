@@ -1733,4 +1733,27 @@ describe('releaseCauseOf', () => {
     const released = itemStream('WorkItemReleased', { runId: 'run-1', reason: 'the append may have committed' })
     expect(releaseCauseOf([released])).toEqual([{ _tag: 'ClaimUnconfirmed' }])
   })
+
+  it('answers NeverStarted{scope: "conductor"} when the run\'s last step never ran', () => {
+    // `'conductor'` means *the account hit a wall, stand down* (0031 §3);
+    // `'work-item'` means *this one item did not start*. The run's own
+    // `StepNeverRan` is an account-wide wall, never this item's own, so the
+    // release reads `scope: 'conductor'` the way every forward builder
+    // (`verdictResultFrom`/`commitResultFrom`/`designResultFrom`) already
+    // does for the same event.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const events = [
+      ...aClaim(itemStream, run.runId),
+      run.event('StepNeverRan', {
+        step: 'review',
+        action: 'cold reviewer',
+        runId: run.runId,
+        onSha,
+        detail: 'the account was over budget',
+      }),
+      ...aRelease(itemStream, run.runId),
+    ]
+    expect(releaseCauseOf(events)).toEqual([{ _tag: 'NeverStarted', scope: 'conductor' }])
+  })
 })

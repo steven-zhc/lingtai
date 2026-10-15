@@ -20,7 +20,7 @@
  * those same two functions, so a divergence between the two directions is a
  * failing round-trip test rather than a silent drift.
  */
-import { cleared, type Action, type StepOutcome, type WaitId } from './action.ts'
+import { cleared, type Action, type NeverStarted, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Hold } from './hold.ts'
 import type { Restart } from './pass-next.ts'
@@ -1200,7 +1200,7 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
 /** 0120 §5's four causes a `WorkItemReleased` may carry. */
 export type ReleaseCause =
   | Restart
-  | { readonly _tag: 'NeverStarted'; readonly scope: 'work-item' }
+  | NeverStarted
   | { readonly _tag: 'ByPerson'; readonly waitId: string }
   | { readonly _tag: 'ClaimUnconfirmed' }
 
@@ -1239,7 +1239,7 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
       const runId = (release.data as { runId: string }).runId
       const lastStepOnRun = [...events].filter((e) => e.streamId === runId && TERMINAL_TYPES.has(e.type)).pop()
       if (lastStepOnRun?.type === 'StepNeverRan') {
-        return { _tag: 'NeverStarted', scope: 'work-item' }
+        return { _tag: 'NeverStarted', scope: 'conductor' }
       }
       return null
     })
