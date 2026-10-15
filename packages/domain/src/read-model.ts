@@ -123,19 +123,26 @@ function shapeOf(step: Step, entry: Record<string, unknown>): { plugin: string; 
  * not there is one `conduct.ts` injected regardless of what the recipe said —
  * `defaultsAt` in `conduct.ts`, answered here by step rather than imported,
  * since this package may not depend on `@lingtai/conductor`.
+ *
+ * **`undefined` where neither answers, never a throw.** `recipe` is absent
+ * outright on a v1/v2 `StepsResolved` (`events.ts:762-766`'s own "absent,
+ * not empty"), and a v3+ recipe may simply name no entry for an action at a
+ * step with no default of its own (`build`/`review`/`proposed`/`prepared`
+ * declare none) — both are an ordinary historical row, not a corrupt one,
+ * and `stepOutcomesOf` skips the action rather than stopping the whole fold
+ * over it (`events.ts:736`'s own rule for an unknown type, applied here to
+ * an unknown shape).
  */
 function shapeFor(
   step: Step,
   name: string,
   recipe: Record<string, unknown> | undefined,
-): { plugin: string; yields: Action['yields'] } {
+): { plugin: string; yields: Action['yields'] } | undefined {
   const steps = recipe?.steps as Record<string, unknown> | undefined
   const entries = steps?.[step] as Array<Record<string, unknown>> | undefined
   const entry = entries?.find((candidate) => candidate.name === name)
   if (entry !== undefined) return shapeOf(step, entry)
-  const fallback = STEP_DEFAULTS[step]
-  if (fallback !== undefined) return fallback
-  throw new Error(`stepOutcomesOf: no recipe entry and no default for action "${name}" at step "${step}"`)
+  return STEP_DEFAULTS[step]
 }
 
 function recipeFor(events: readonly Envelope[], runId: string): Record<string, unknown> | undefined {
@@ -401,13 +408,15 @@ function actionFromEvent(
   runEvents: readonly Envelope[],
   index: number,
   workItemId: string | undefined,
-): Action {
+): Action | undefined {
   const data = e.data as { step: Step; action: string; onSha: string }
   const base = { name: data.action, onSha: data.onSha, call: null, evidence: evidenceOf(e) }
   if (e.type === 'ApprovalRequested' && INJECTED_APPROVAL_ACTIONS.has(data.action)) {
     return { ...base, plugin: 'conductor', yields: 'signoff', result: signoffResultFrom(e) as never }
   }
-  const { plugin, yields } = shapeFor(data.step, data.action, recipe)
+  const shape = shapeFor(data.step, data.action, recipe)
+  if (shape === undefined) return undefined
+  const { plugin, yields } = shape
   const baseWithPlugin = { ...base, plugin }
   switch (yields) {
     case 'verdict':
@@ -451,10 +460,22 @@ function roundAt(seq: bigint, fixRounds: readonly { seq: bigint; round: number }
 }
 
 /**
- * One `StepOutcome` per `(runId, step, round)` a pass's terminal step events
- * group into, in the order `eventOf` would itself have written them —
- * `claim` and `end` excluded, since 0120 §6 runs both outside `runPass` and
- * neither ever has one.
+ * The `StepOutcome`s a pass's terminal step events group into, in the order
+ * `eventOf` would itself have written them — `claim` and `end` excluded,
+ * since 0120 §6 runs both outside `runPass` and neither ever has one.
+ *
+ * **Not one per `(runId, step, round)`.** `conduct.ts:4038`'s own injected
+ * "merge it anyway" offer is appended at the same step and round as the
+ * refusal it follows, and grouping it into that refusal's own outcome would
+ * leave the refusing action neither last nor cleared — `wellFormed`
+ * (`action.ts:496`) rejects that, so the loop below starts a second outcome
+ * instead. The two outcomes it returns therefore carry the *same*
+ * `(runId, step, round)`. **A reader asking "what did `merge` end with"
+ * must not key the result by that triple in a `Map`, `Object.fromEntries`
+ * or any other last-wins fold** — that answers with the injected offer and
+ * silently drops the refusal, or the lane's own `Conflicted`, it followed.
+ * Read the returned array in order, or tell the two apart by `plugin`
+ * (`'conductor'` names the injected one).
  */
 export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
   const byRun = new Map<string, Envelope[]>()
@@ -477,6 +498,12 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
       const e = runEvents[i]!
       const data = e.data as { step: Step }
       const round = roundAt(e.seq, fixRounds)
+      const action = actionFromEvent(e, events, runId, round, recipe, runEvents, i, workItemId)
+      // No recipe entry and no default (`shapeFor`'s own `undefined`) — an
+      // ordinary historical row (`events.ts:762-766`), not a corrupt one.
+      // Skip it and keep folding, rather than stopping the whole item's
+      // projection at this `seq` the way a throw would.
+      if (action === undefined) continue
       // **A group never grows past its own deciding action.** There is no
       // `NotReached` on this backward path — every terminal event is a real
       // action that ran — so `wellFormed` (`action.ts:496`) reduces to
@@ -495,7 +522,7 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
         if (current !== null) result.push({ ...current, runId })
         current = { step: data.step, round, actions: [] }
       }
-      current.actions.push(actionFromEvent(e, events, runId, round, recipe, runEvents, i, workItemId))
+      current.actions.push(action)
     }
     if (current !== null) result.push({ ...current, runId })
   }
@@ -578,17 +605,26 @@ export function routesOf(events: readonly Envelope[]): RoutedPass[] {
       }
 
       if (data.to === 'claim') {
-        const restart = restarts[restartIndex++]
+        const restart = restarts[restartIndex]
+        // **An absent row is an unknown, not a value** — the same rule
+        // `releaseCauseOf` already answers `null` for. `conduct.ts` appends
+        // every `PassRouted` for a pass *before* checking `armIsUp`
+        // (`conduct.ts:3601,3916`), so a route that chose `restart` but
+        // whose arm never reached origin writes this `PassRouted` with no
+        // matching `PassRestarted` at all — the pass fell through to the
+        // `failed` ending and spent nothing. Answering `Restart{restart:0}`
+        // here would invent a restart that never happened and disagree with
+        // `releaseCauseOf`'s own `null` for that same release; skip the
+        // route instead of guessing at it.
+        if (restart === undefined) continue
+        restartIndex++
         out.push({
           runId,
           from: data.from,
           decision: { _tag: 'Selected', candidate: 'restart' },
           next: {
             _tag: 'Requeued',
-            cause: {
-              _tag: 'Restart',
-              restart: restart === undefined ? 0 : (restart.data as { restart: number }).restart,
-            },
+            cause: { _tag: 'Restart', restart: (restart.data as { restart: number }).restart },
           },
         })
         continue
@@ -783,6 +819,18 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
         }
       }
       if (kind === 'no-commits') {
+        return { _tag: 'NothingProduced', run, said: hold.raw }
+      }
+      // **No `RunFailed`/`FixApplied.failure` at all** (`kind === null`): at
+      // `implement`, `hold-of.ts`'s own `did-not-finish` ending collapses
+      // the same two causes `commitResultFrom` already tells apart above —
+      // the work action's own setup breaking before any agent ran, and the
+      // agent running to completion with nothing on the branch (row 6 of
+      // #461). The agent's own "no commits" sentence never starts with "the
+      // hook " (`work-action.ts`'s own four setup sentences do), so the same
+      // `hookSetupBroke` check that reads the forward event back for
+      // `commitResultFrom` tells this one apart too.
+      if (kind === null && hold.step === 'implement' && !hookSetupBroke(hold.raw ?? hold.why)) {
         return { _tag: 'NothingProduced', run, said: hold.raw }
       }
       return { _tag: 'SetupRefused', run, step: hold.step, action: '', why: hold.raw ?? hold.why }

@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { wellFormed, type Action, type StepOutcome } from '../src/action.ts'
 import { holdOf } from '../src/adapters.ts'
 import { READ, releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
+import { STEPS } from '../src/vocabulary.ts'
 import {
   aClaim,
   aLanding,
@@ -33,13 +34,27 @@ function outcomeOf(step: StepOutcome['step'], round: number, actions: Action[]):
 }
 
 /**
+ * `eventOf`'s own bookkeeping triples, on every terminal event — never read
+ * by any of the four functions, which only ever look at the terminal event
+ * itself and the handful of named types in `READ`. Excluded below so the
+ * comparison can run both directions without either of these two forcing a
+ * `READ` entry nothing reads.
+ */
+const NEVER_READ = new Set(['StepRequested', 'StepStarted'])
+
+/**
  * **The design's actual request**: "have a unit test assert that each one
- * [in `READ`] is produced by some builder." Asserting `READ.toContain(...)`
- * on a single name (as this test once did) checks `READ` against itself,
- * not against the builders — dropping a type from `READ`, or adding a fifth
- * type to a reader without listing it, left this green either way. Building
- * one slice that exercises every builder and comparing its own types against
- * `READ` is what actually holds the list to the code.
+ * [in `READ`] is produced by some builder." Checking only `READ ⊆ types`
+ * (as this test once did, and as `READ.toContain(...)` on a single name did
+ * before that) holds in one direction alone — dropping a type from `READ`
+ * only shrinks the list being checked, so the same assertion stays green
+ * over a list that is now wrong, and a reader this ticket's own
+ * `commitContextFor` consults (`RunProposedCompletion`, `RunFailed`,
+ * `FixApplied`) can vanish from `READ` with nothing to notice. Checking
+ * `types ⊆ READ` too — every type the comprehensive slice below actually
+ * produces must be named in `READ` — closes that: dropping one of those
+ * three leaves it produced by a builder but absent from the list, and the
+ * second assertion catches exactly that.
  */
 it('READ names every type some builder in events.ts actually produces', () => {
   const run = aRun('run-read-coverage')
@@ -144,9 +159,11 @@ it('READ names every type some builder in events.ts actually produces', () => {
     ...aRelease(itemStream, run.runId),
   ]
 
-  const types = new Set(events.map((e) => e.type))
+  const types = new Set(events.map((e) => e.type).filter((type) => !NEVER_READ.has(type)))
   const missing = READ.filter((type) => !types.has(type))
+  const extra = [...types].filter((type) => !(READ as readonly string[]).includes(type))
   expect(missing).toEqual([])
+  expect(extra).toEqual([])
 })
 
 describe('stepOutcomesOf round-trips through aStepEnded', () => {
@@ -758,6 +775,54 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     expect(got?.actions[0]?.result).toEqual({ _tag: 'Asked', question: asked, draft: null })
   })
 
+  it('skips a `review` action on a v1/v2 run whose `StepsResolved` carries no `recipe` at all, without throwing', () => {
+    // `StepsResolved.recipe` is `optional()` and absent, not empty, on a
+    // v1/v2 row (`events.ts:763-766`) — `recipeFor` answers `undefined`,
+    // and `review`/`build`/`proposed`/`prepared` have no `STEP_DEFAULTS` row
+    // (an action at those steps is always one the recipe declared). The
+    // historical row is skipped, not thrown over.
+    const run = aRun('run-v2')
+    const events = [
+      run.event('StepsResolved', {
+        runId: run.runId,
+        configHash: 'v2-fixture',
+        steps: STEPS.map((step) => ({ step, actions: [] })),
+      }),
+      run.event('StepPassed', {
+        step: 'review',
+        action: 'cold reviewer',
+        runId: run.runId,
+        onSha,
+        evidence: 'looks right',
+        findings: [],
+      }),
+    ]
+    expect(() => stepOutcomesOf(events)).not.toThrow()
+    expect(stepOutcomesOf(events)).toEqual([])
+  })
+
+  it('skips a `build` action a v3+ recipe names no entry for, without throwing', () => {
+    const run = aRun('run-v3')
+    const events = [
+      run.event('StepsResolved', {
+        runId: run.runId,
+        configHash: 'v3-fixture',
+        steps: STEPS.map((step) => ({ step, actions: [] })),
+        recipe: { steps: { build: [{ name: 'a different check', run: 'true' }] } },
+      }),
+      run.event('StepPassed', {
+        step: 'build',
+        action: 'pnpm test',
+        runId: run.runId,
+        onSha,
+        evidence: 'green',
+        findings: [],
+      }),
+    ]
+    expect(() => stepOutcomesOf(events)).not.toThrow()
+    expect(stepOutcomesOf(events)).toEqual([])
+  })
+
   it('splits the injected offer into its own `StepOutcome`, never behind the refusal it follows', () => {
     // 0120's own invariant (`action.ts:484-494`): at most one action in a
     // `StepOutcome` fails to clear, and nothing real follows it. A `check`
@@ -787,6 +852,16 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     expect(outcomes[0]?.actions).toHaveLength(1)
     expect(outcomes[1]?.actions).toHaveLength(1)
     for (const outcome of outcomes) expect(wellFormed(outcome)).toBe(true)
+    // The trap the function's own docstring names: both outcomes carry the
+    // *same* `(runId, step, round)` — `stepOutcomesOf` is not one outcome
+    // per that triple, so a reader keying the result by it in a `Map` or
+    // `Object.fromEntries` (last-wins) would silently overwrite the
+    // refusal with the injected offer and lose it.
+    expect(outcomes[0]?.step).toBe(outcomes[1]?.step)
+    expect(outcomes[0]?.round).toBe(outcomes[1]?.round)
+    expect(outcomes[0]?.runId).toBe(outcomes[1]?.runId)
+    expect(outcomes[0]?.actions[0]?.plugin).not.toBe('conductor')
+    expect(outcomes[1]?.actions[0]?.plugin).toBe('conductor')
   })
 })
 
@@ -815,6 +890,17 @@ describe('routesOf', () => {
         next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
       },
     ])
+  })
+
+  it('answers nothing for a route to claim whose restart was never recorded', () => {
+    // `conduct.ts` appends `PassRouted{to:'claim'}` before checking whether
+    // the arm reached origin (`conduct.ts:3601,3916`) — when it did not, no
+    // `PassRestarted` follows and the pass falls through to an ordinary
+    // failed ending. Inventing `Restart{restart:0}` here would claim a
+    // restart that never happened.
+    const run = aRun('run-1')
+    const events = [run.event('PassRouted', { from: 'proposed', chose: 'claim', to: 'claim', why: '', ceiling: null })]
+    expect(routesOf(events)).toEqual([])
   })
 
   it('folds an escalation with a spent ceiling', () => {
@@ -853,6 +939,40 @@ describe('waitsOf', () => {
     expect(holdOf(wait!.reason, { branch: 'agent/473', base: 'main', findings: [] })._tag).toBe(
       holdOf(reason, { branch: 'agent/473', base: 'main', findings: [] })._tag,
     )
+  })
+
+  it('reads an implementer that produced no commits at round 0 as NothingProduced, never SetupRefused (row 6 of #461)', () => {
+    // The run carries no `RunFailed` at all — the agent ran to completion
+    // and simply left nothing on the branch — so `reasonFromHold`'s
+    // `DidNotFinish` case cannot tell this apart from the work action's own
+    // setup breaking before any agent ran without reading the run's own
+    // `StepDidNotFinish` detail back, the same way `commitResultFrom`
+    // already does via `hookSetupBroke`.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const noCommits: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: 'the agent produced no commits',
+      yields: 'commit',
+      result: { _tag: 'Completed', head: null, question: null },
+    }
+    const events = [
+      ...run.aStepEnded(outcomeOf('implement', 0, [noCommits])),
+      ...aWait(itemStream, {
+        _tag: 'NothingProduced',
+        run: { runId: run.runId },
+        said: 'the agent produced no commits',
+      }),
+    ]
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual({
+      _tag: 'NothingProduced',
+      run: { runId: run.runId },
+      said: 'the agent produced no commits',
+    })
   })
 
   it('reads a Routed{findings} hold back as ProposedEscalated/ReviewFindings', () => {
