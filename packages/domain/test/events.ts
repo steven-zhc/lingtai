@@ -290,7 +290,7 @@ export function anIntegrationRefusal(
   ]
 }
 
-/** `run.event('<type>')`, exposed so a test can seed the run's stream directly where no builder above fits. */
+/** A bare `RunRef` — `{runId}` — for a `WaitReason`/`Hold` that needs one and nothing more; not an appender, `aRun` is what opens a stream. */
 export function aRunRef(runId: string): RunRef {
   return { runId }
 }

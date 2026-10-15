@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome } from '../src/action.ts'
 import { holdOf } from '../src/adapters.ts'
-import { releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
+import { READ, releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
 import {
   aClaim,
   aLanding,
@@ -31,6 +31,10 @@ const onSha = 'a'.repeat(40)
 function outcomeOf(step: StepOutcome['step'], round: number, actions: Action[]): StepOutcome {
   return { step, round, actions }
 }
+
+it('READ names every type commitContextFor reads, including RunProducedDiff', () => {
+  expect(READ).toContain('RunProducedDiff')
+})
 
 describe('stepOutcomesOf round-trips through aStepEnded', () => {
   it('a verdict action that passed', () => {
@@ -390,7 +394,11 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       result: { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } },
     }
     const itemStream = makeStream(`wi-473-1`)
-    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), ...aLanding(itemStream, mergeSha)]
+    const events = [
+      ...aClaim(itemStream, run.runId),
+      ...run.aStepEnded(outcomeOf('merge', 0, [action])),
+      ...aLanding(itemStream, mergeSha),
+    ]
     expect(stepOutcomesOf(events)).toEqual([{ ...outcomeOf('merge', 0, [action]), runId: run.runId }])
   })
 
@@ -409,6 +417,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       },
     }
     const integrationStream = makeStream('int-473-main')
+    const itemStream = makeStream('wi-473-1')
     const refused = anIntegrationRefusal(integrationStream, 'wi-473-1', 'agent/473', {
       reason: 'conflict',
       detail: 'both sides touched src/fix.ts',
@@ -416,8 +425,105 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       baseSha: 'b'.repeat(40),
       headSha: 'c'.repeat(40),
     })
-    const events = [...run.aStepEnded(outcomeOf('merge', 0, [action])), ...refused]
+    const events = [...aClaim(itemStream, run.runId), ...run.aStepEnded(outcomeOf('merge', 0, [action])), ...refused]
     expect(stepOutcomesOf(events)).toEqual([{ ...outcomeOf('merge', 0, [action]), runId: run.runId }])
+  })
+
+  it('a merge refusal is matched by workItemId, not by the first refusal on the shared integration stream', () => {
+    // The integration stream (`int-<project>-<base>`) is shared by every work
+    // item on that base — an older refusal for a different item must not be
+    // read as this run's own merge result.
+    const integrationStream = makeStream('int-473-main')
+    const itemStream = makeStream('wi-473-7')
+    const older = anIntegrationRefusal(integrationStream, 'wi-473-999', 'agent/999', {
+      reason: 'conflict',
+      detail: 'not mine',
+      paths: ['src/not-mine.ts'],
+      baseSha: 'f'.repeat(40),
+      headSha: 'e'.repeat(40),
+    })
+    const run = aRun('run-7')
+    const action: Action = {
+      plugin: 'merge',
+      name: 'land the branch',
+      onSha,
+      call: null,
+      evidence: 'dirty base',
+      yields: 'merge',
+      result: { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' } },
+    }
+    const ownRefusal = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+      reason: 'dirty-base',
+      detail: 'origin moved',
+    })
+    const events = [
+      ...older,
+      ...aClaim(itemStream, run.runId),
+      ...run.aStepEnded(outcomeOf('merge', 0, [action])),
+      ...ownRefusal,
+    ]
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' },
+    })
+  })
+})
+
+describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseudo-action', () => {
+  it('reads an "unfixed" ApprovalRequested at `merge` as a signoff, never as the merge lane\'s own result', () => {
+    // `conduct.ts` appends this `ApprovalRequested` directly — no
+    // `StepRequested`/`StepStarted`, no recipe entry — at whichever step the
+    // pass stopped at, which can be `merge` itself (a check declared before
+    // the lane refused it). `STEP_DEFAULTS['merge']` must not claim it.
+    const run = aRun('run-1')
+    const events = [
+      run.event('ApprovalRequested', {
+        step: 'merge',
+        action: 'unfixed',
+        runId: run.runId,
+        onSha,
+        question: 'Merge agent/1 into main anyway?',
+        artifacts: [],
+      }),
+    ]
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]).toMatchObject({ plugin: 'conductor', yields: 'signoff' })
+    expect(got?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      requested: { question: 'Merge agent/1 into main anyway?' },
+    })
+  })
+
+  it('reads a "judge" ApprovalRequested at `proposed` without throwing', () => {
+    // No recipe entry and no `STEP_DEFAULTS['proposed']` — this used to throw.
+    const run = aRun('run-1')
+    const events = [
+      run.event('ApprovalRequested', {
+        step: 'proposed',
+        action: 'judge',
+        runId: run.runId,
+        onSha,
+        question: 'Merge agent/1 into main?',
+        artifacts: [],
+      }),
+    ]
+    expect(() => stepOutcomesOf(events)).not.toThrow()
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]).toMatchObject({ plugin: 'conductor', yields: 'signoff' })
+  })
+
+  it('reads a `design` action with no `StepsResolved` on the run at all, without throwing', () => {
+    // `StepsResolved` is only appended at `implement`'s own dispatch
+    // (`conduct.ts:3016`) — a run that asks a question at `design` and stops
+    // there, as row 11 of #461 does, never reaches it, so `recipeFor` answers
+    // `undefined` and the recipe-entry lookup has nothing to find `draft` in.
+    const run = aRun('run-1')
+    const asked = 'which wins?'
+    const events = [run.event('StepAsked', { step: 'design', action: 'draft', runId: run.runId, onSha, detail: asked })]
+    expect(() => stepOutcomesOf(events)).not.toThrow()
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]?.result).toEqual({ _tag: 'Asked', question: asked, draft: null })
   })
 })
 
@@ -567,6 +673,77 @@ describe('waitsOf', () => {
     ]
     const [wait] = waitsOf(events)
     expect(wait?.resolution).toEqual({ _tag: 'Approve', onSha })
+  })
+
+  it('answers Approve for an earlier wait even when a later wait on the same item is requeued', () => {
+    // approve.ts's own documented sequence (`approve.ts:318`, `:555`):
+    // `Blocked{Human}` → `ApprovalGranted` on the run → the merge refuses →
+    // `Blocked{MergeRefused, afterApproval: true}` → that second wait's own
+    // requeue. The first wait's resolution must not be read off the second
+    // wait's own `WorkItemUnblocked`.
+    const itemStream = makeStream('wi-473-1')
+    const run = aRun('run-1')
+    const firstReason = {
+      _tag: 'SignoffRequired' as const,
+      run: { runId: run.runId },
+      step: 'proposed' as const,
+      action: 'approval',
+      question: 'Merge this?',
+    }
+    const secondReason = {
+      _tag: 'MergeRefused' as const,
+      run: { runId: run.runId },
+      reason: 'dirty-base' as const,
+      raw: 'origin moved',
+    }
+    const events = [
+      ...aWait(itemStream, firstReason),
+      ...aResolution(
+        itemStream,
+        { _tag: 'Approve', onSha },
+        { event: run.event, step: 'proposed', action: 'approval', runId: run.runId },
+      ),
+      ...aWait(itemStream, secondReason),
+      ...aResolution(itemStream, { _tag: 'Requeue' }),
+    ]
+    const [firstWait, secondWait] = waitsOf(events)
+    expect(firstWait?.resolution).toEqual({ _tag: 'Approve', onSha })
+    expect(secondWait?.resolution).toEqual({ _tag: 'Requeue' })
+  })
+
+  it("carries the refusing StepFailed's own findings on CheckRefused, not an empty list", () => {
+    // `Hold.CheckRed` itself carries no `findings` (`holdOf`'s own
+    // `checkRedHold`) — the only place they can come from is the refusing
+    // `StepFailed` on the run, which the design's own table names as their
+    // source.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const finding = {
+      file: 'src/fix.ts',
+      line: 12,
+      claim: 'off by one',
+      failureScenario: 'n+1 reads past the end',
+      severity: 'blocker' as const,
+    }
+    const stepFailed = run.event('StepFailed', {
+      step: 'merge',
+      action: 'a gate',
+      runId: run.runId,
+      onSha,
+      evidence: 'blocker src/fix.ts:12',
+      findings: [finding],
+    })
+    const blocked = itemStream('WorkItemBlocked', {
+      hold: {
+        _tag: 'CheckRed',
+        run: { runId: run.runId },
+        step: 'merge',
+        why: 'blocker src/fix.ts:12',
+        raw: 'blocker src/fix.ts:12',
+      },
+    })
+    const [wait] = waitsOf([stepFailed, blocked])
+    expect(wait?.reason).toMatchObject({ _tag: 'CheckRefused', findings: [finding] })
   })
 })
 

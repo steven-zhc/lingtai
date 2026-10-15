@@ -56,6 +56,7 @@ export const READ = [
   'RunFailed',
   'FixRequested',
   'FixApplied',
+  'RunProducedDiff',
   'PassRouted',
   'PassRestarted',
   'IntegrationRefused',
@@ -74,7 +75,27 @@ const STEP_DEFAULTS: Partial<Record<Step, { plugin: string; yields: Action['yiel
   admit: { plugin: 'worktree', yields: 'worktree' },
   implement: { plugin: 'agent', yields: 'commit' },
   merge: { plugin: 'merge', yields: 'merge' },
+  // `design` has no `defaultsAt` row (`conduct.ts`'s own `defaultsAt` answers
+  // `[]` for it) — an action here is always one the recipe declared, never a
+  // step default — but `StepsResolved` is only appended at `implement`'s own
+  // dispatch (`conduct.ts:3016`), so a run that asks a question at `design`
+  // and never reaches `implement` carries none, leaving nothing here to read
+  // the real plugin off. `agent` is the common case; a `file:` destination
+  // reads as one too, which is the same named loss `designResultFrom`'s own
+  // comment already carries for a plugin it cannot tell apart on the wire.
+  design: { plugin: 'agent', yields: 'design' },
 }
+
+/**
+ * `conduct.ts:4038`'s own pseudo-action — `ApprovalRequested{action: 'judge'
+ * | 'unfixed'}`, the "merge it anyway" offer appended directly, with no
+ * `StepRequested`/`StepStarted` and no entry in any recipe, at whichever
+ * step the pass stopped at (`stopped?.step ?? 'proposed'`) rather than at
+ * `merge` alone. Named apart from `shapeFor`'s recipe/`STEP_DEFAULTS` lookup
+ * so it is never read as that step's own action — `conduct.ts:4024`'s own
+ * comment is why it is named `unfixed` and not after whatever refused.
+ */
+const INJECTED_APPROVAL_ACTIONS = new Set(['judge', 'unfixed'])
 
 /**
  * The plugin and `yields` a recipe's own action entry declares — `#466`'s
@@ -278,13 +299,29 @@ function worktreeResultFrom(e: Envelope, runEvents: readonly Envelope[], index: 
   return { _tag: 'Completed', head }
 }
 
-function mergeResultFrom(e: Envelope, events: readonly Envelope[]): Action['result'] {
+/**
+ * The item this run was claimed against — `WorkItemClaimed.runId` is the
+ * only event that links a run back to its own stream's id (`envelope.streamId`).
+ */
+function workItemIdFor(events: readonly Envelope[], runId: string): string | undefined {
+  const claimed = events.find((e) => e.type === 'WorkItemClaimed' && (e.data as { runId: string }).runId === runId)
+  return claimed?.streamId
+}
+
+function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: string | undefined): Action['result'] {
   if (e.type === 'StepPassed') {
-    const landed = events.find((x) => x.type === 'WorkItemLanded')
+    const landed = events.find((x) => x.type === 'WorkItemLanded' && x.streamId === workItemId)
     const mergeSha = landed === undefined ? '' : (landed.data as { mergeCommit: string }).mergeCommit
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } }
   }
-  const refused = events.find((x) => x.type === 'IntegrationRefused')
+  // **By `workItemId`, never by type alone** — the integration stream
+  // (`int-<project>-<base>`) is shared by every work item on that base, so
+  // `events.find` on type alone answers with whichever refusal happens to
+  // sit first in the slice, not this run's own.
+  const matching = events.filter(
+    (x) => x.type === 'IntegrationRefused' && (x.data as { workItemId: string }).workItemId === workItemId,
+  )
+  const refused = matching[matching.length - 1]
   if (refused === undefined) {
     return { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'unexpected' } }
   }
@@ -323,25 +360,30 @@ function actionFromEvent(
   recipe: Record<string, unknown> | undefined,
   runEvents: readonly Envelope[],
   index: number,
+  workItemId: string | undefined,
 ): Action {
   const data = e.data as { step: Step; action: string; onSha: string }
+  const base = { name: data.action, onSha: data.onSha, call: null, evidence: evidenceOf(e) }
+  if (e.type === 'ApprovalRequested' && INJECTED_APPROVAL_ACTIONS.has(data.action)) {
+    return { ...base, plugin: 'conductor', yields: 'signoff', result: signoffResultFrom(e) as never }
+  }
   const { plugin, yields } = shapeFor(data.step, data.action, recipe)
-  const base = { plugin, name: data.action, onSha: data.onSha, call: null, evidence: evidenceOf(e) }
+  const baseWithPlugin = { ...base, plugin }
   switch (yields) {
     case 'verdict':
-      return { ...base, yields: 'verdict', result: verdictResultFrom(e) as never }
+      return { ...baseWithPlugin, yields: 'verdict', result: verdictResultFrom(e) as never }
     case 'signoff':
-      return { ...base, yields: 'signoff', result: signoffResultFrom(e) as never }
+      return { ...baseWithPlugin, yields: 'signoff', result: signoffResultFrom(e) as never }
     case 'commit':
-      return { ...base, yields: 'commit', result: commitResultFrom(e, events, runId, round) as never }
+      return { ...baseWithPlugin, yields: 'commit', result: commitResultFrom(e, events, runId, round) as never }
     case 'design':
-      return { ...base, yields: 'design', result: designResultFrom(e, plugin) as never }
+      return { ...baseWithPlugin, yields: 'design', result: designResultFrom(e, plugin) as never }
     case 'worktree':
-      return { ...base, yields: 'worktree', result: worktreeResultFrom(e, runEvents, index) as never }
+      return { ...baseWithPlugin, yields: 'worktree', result: worktreeResultFrom(e, runEvents, index) as never }
     case 'merge':
-      return { ...base, yields: 'merge', result: mergeResultFrom(e, events) as never }
+      return { ...baseWithPlugin, yields: 'merge', result: mergeResultFrom(e, events, workItemId) as never }
     case 'nothing':
-      return { ...base, yields: 'nothing', result: nothingResultFrom(e) as never }
+      return { ...baseWithPlugin, yields: 'nothing', result: nothingResultFrom(e) as never }
   }
 }
 
@@ -389,6 +431,7 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
   for (const [runId, runEvents] of byRun) {
     const recipe = recipeFor(events, runId)
     const fixRounds = fixRoundsOf(events, runId)
+    const workItemId = workItemIdFor(events, runId)
     let current: { step: Step; round: number; actions: Action[] } | null = null
     for (let i = 0; i < runEvents.length; i++) {
       const e = runEvents[i]!
@@ -398,7 +441,7 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
         if (current !== null) result.push({ ...current, runId })
         current = { step: data.step, round, actions: [] }
       }
-      current.actions.push(actionFromEvent(e, events, runId, round, recipe, runEvents, i))
+      current.actions.push(actionFromEvent(e, events, runId, round, recipe, runEvents, i, workItemId))
     }
     if (current !== null) result.push({ ...current, runId })
   }
@@ -538,12 +581,14 @@ function refusingStepFailed(
   events: readonly Envelope[],
   runId: string,
   step: string,
-): { action: string; evidence: string; unreadable?: true } | undefined {
+): { action: string; evidence: string; findings: Finding[]; unreadable?: true } | undefined {
   const found = events.filter(
     (e) => e.type === 'StepFailed' && e.streamId === runId && (e.data as { step: string }).step === step,
   )
   const last = found[found.length - 1]
-  return last === undefined ? undefined : (last.data as { action: string; evidence: string; unreadable?: true })
+  return last === undefined
+    ? undefined
+    : (last.data as { action: string; evidence: string; findings: Finding[]; unreadable?: true })
 }
 
 /** The `because` of that run's last escalated route (`routesOf`) — never a second fold of `PassRouted`. */
@@ -645,7 +690,7 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
         step: hold.step as 'proposed' | 'merge',
         action: failed?.action ?? '',
         evidence: hold.raw ?? '',
-        findings: failed?.evidence === undefined ? [] : [],
+        findings: failed?.findings ?? [],
       }
     }
     case 'MergeRefused':
@@ -693,25 +738,40 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
   }
 }
 
+/**
+ * Bounded by the *next* `WorkItemBlocked`, not just by `blockedSeq` —
+ * otherwise an answer to a later wait (approve.ts's documented sequence:
+ * `Blocked` → `ApprovalGranted` → a second `Blocked` → that one's own
+ * `Unblocked`) reads back as this wait's own resolution, because an
+ * unbounded search for the first `WorkItemUnblocked` after `blockedSeq`
+ * finds the second wait's answer rather than nothing. Within the window,
+ * the earliest of `WorkItemUnblocked`/`ApprovalGranted`/`WorkItemClosed` is
+ * the one that actually ended this wait — never `WorkItemUnblocked`
+ * unconditionally ahead of `ApprovalGranted`.
+ */
 function resolutionAfter(events: readonly Envelope[], blockedSeq: bigint, reason: WaitReason): Resolution | null {
-  const unblocked = events.find((e) => e.type === 'WorkItemUnblocked' && e.seq > blockedSeq)
-  if (unblocked !== undefined) {
-    const d = unblocked.data as { note: string; withdrawn?: true }
-    if (d.withdrawn === true) return { _tag: 'Requeue' }
-    if (reason._tag === 'OwnQuestion') return { _tag: 'AnswerQuestion', choice: d.note }
-    // `EditBodyAndRequeue` has no event of its own today — both it and an
-    // ordinary requeue write the same `WorkItemUnblocked` (`approve.ts:555`).
-    return { _tag: 'Requeue' }
-  }
-  if ('run' in reason) {
-    const granted = events.find(
-      (e) => e.type === 'ApprovalGranted' && e.streamId === reason.run.runId && e.seq > blockedSeq,
-    )
-    if (granted !== undefined) return { _tag: 'Approve', onSha: (granted.data as { onSha: string }).onSha }
-  }
-  const closed = events.find((e) => e.type === 'WorkItemClosed' && e.seq > blockedSeq)
-  if (closed !== undefined) return { _tag: 'Close' }
-  return null
+  const nextBlocked = events.find((e) => e.type === 'WorkItemBlocked' && e.seq > blockedSeq)
+  const inWindow = (seq: bigint) => seq > blockedSeq && (nextBlocked === undefined || seq < nextBlocked.seq)
+
+  const unblocked = events.find((e) => e.type === 'WorkItemUnblocked' && inWindow(e.seq))
+  const granted =
+    'run' in reason
+      ? events.find((e) => e.type === 'ApprovalGranted' && e.streamId === reason.run.runId && inWindow(e.seq))
+      : undefined
+  const closed = events.find((e) => e.type === 'WorkItemClosed' && inWindow(e.seq))
+
+  const candidates = [unblocked, granted, closed].filter((e): e is Envelope => e !== undefined)
+  if (candidates.length === 0) return null
+  const first = candidates.reduce((a, b) => (a.seq < b.seq ? a : b))
+
+  if (first.type === 'ApprovalGranted') return { _tag: 'Approve', onSha: (first.data as { onSha: string }).onSha }
+  if (first.type === 'WorkItemClosed') return { _tag: 'Close' }
+  const d = first.data as { note: string; withdrawn?: true }
+  if (d.withdrawn === true) return { _tag: 'Requeue' }
+  if (reason._tag === 'OwnQuestion') return { _tag: 'AnswerQuestion', choice: d.note }
+  // `EditBodyAndRequeue` has no event of its own today — both it and an
+  // ordinary requeue write the same `WorkItemUnblocked` (`approve.ts:555`).
+  return { _tag: 'Requeue' }
 }
 
 /** One entry per `WorkItemBlocked`, 0118 §1's `WaitReason` and `Resolution` through the phase-1 adapter's own mapping. */
