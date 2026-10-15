@@ -1840,15 +1840,14 @@ describe('proposed is the only step that routes, and one judge answers each when
    * that one was a dropped answer rather than a thin review.
    *
    * **`nextOf` still reads `review`'s own `AnswerUnreadable` verdict
-   * directly (0120 §2's variant table), and the loop still has to carry it to
-   * `proposed`'s own way-through visit rather than stopping at `review`
-   * itself** — that visit is the one place `arriving` is `null` for this
-   * step, which is the one condition under which `runStep` runs a declared
-   * `human:`/`watch:` action at `proposed:` at all. **Since `#472` the
-   * refusal reaches the router**: the raw answer is non-empty, so `implement`
-   * is on offer alongside `restart` and `waiting`, and a judge is asked — but
-   * none is declared, so `implement` is still not bought, now because nobody
-   * chose it rather than because it was never offered.
+   * directly (0120 §2's variant table), but since `#472` answers
+   * `Propose{AnswerUnreadable}` rather than carrying it forward as a pending
+   * flag** — `review` always ends `passed` (`endingOf`), so `routeProposal`
+   * builds the routing visit itself (`#462`) without ever calling `proposed`'s
+   * own declared `human:`/`watch:` action: the raw answer is non-empty, so
+   * `implement` is on offer alongside `restart` and `waiting`, and a judge is
+   * asked — but none is declared, so `implement` is still not bought, now
+   * because nobody chose it rather than because it was never offered.
    */
   it('reports an answer it could not read as unreadable, and not as an opinion', async () => {
     const { result, asked } = await pass({

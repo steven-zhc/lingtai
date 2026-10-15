@@ -35,8 +35,8 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  * still needs `plugin` — plus `threwRatherThanAnswered`.** A kept `run:`'s
  * clean failure, the work action's own setup that broke before it dispatched
  * an agent, and any commit-yielding action's dependency throwing, all answer
- * `NotDone` (0120 §4 sends every one of them to `WaitOnPerson{SetupRefused}`,
- * same as `nothing`/`worktree`/`design`/`signoff`). `commitEventOf` still has
+ * `NotDone` (0120 §4 sends every one of them to `Propose{SetupRefused}` since
+ * `#472`, same as `nothing`/`worktree`/`design`/`signoff`). `commitEventOf` still has
  * to tell the three apart to reproduce today's events: `plugin === 'run'` is
  * the kept run's own clean failure (`StepFailed`), and otherwise the work
  * action's — `StepDidNotFinish` for the setup that broke, `StepFailed` for a
@@ -270,8 +270,8 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       // A setup broken before any agent ran — `conduct.ts`'s four `the hook …`
       // sentences — and never a throw: `runActionPipeline`'s catch always
       // answers `verdict: 'failed'` (the case below), never `did-not-finish`.
-      // 0120 §4 assigns `commit`'s `NotDone` to `WaitOnPerson{SetupRefused}`
-      // regardless of cause, and this cell is squarely that: the hook never
+      // 0120 §4 assigns `commit`'s `NotDone` to `Propose{SetupRefused}` since
+      // `#472` regardless of cause, and this cell is squarely that: the hook never
       // ran at all, which is not one of the five words `Interrupted` names
       // (`#466` fix round — the prior `Interrupted{cause: 'crash'}` here read
       // a broken hook as a crashed agent and offered `Requeue`).
@@ -676,7 +676,7 @@ function declinedHold(run: RunRef, step: Step, saidText: string | null): Hold {
 
 function nothingProducedHold(run: RunRef, saidText: string | null): Hold {
   // No `Hold` today — the nearest is a `DidNotFinish` at `implement`, the
-  // step `nextOf` names for it (0120 §4's `WaitOnPerson`).
+  // step `nextOf`'s `Propose{NothingProduced}` names for it (0120 §4).
   return {
     _tag: 'DidNotFinish',
     run,

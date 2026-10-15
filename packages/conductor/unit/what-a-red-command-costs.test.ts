@@ -30,7 +30,8 @@ import { nextOf, offerFor, type Proposal, type Step, type StepOutcome } from '@l
 import { runPlugin } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { destinationOf } from '../src/proposed-route.ts'
+import { BUILT_IN_FOR } from '../src/judge.ts'
+import { destinationOf, whenOf } from '../src/proposed-route.ts'
 
 /**
  * A `run:` action's own refusal, as `nextOf` reads it — a `verdict`-yielding
@@ -156,11 +157,23 @@ describe('the run page says what a red command costs at each step it may be writ
       ).not.toBeNull()
     }
     const prepared = proposalOnRefusal('prepared')!
-    const offer = offerFor(prepared, { rounds: 2, restarts: 1 }, { rounds: 0, restarts: 0 })
+    const preparedOffer = offerFor(prepared, { rounds: 2, restarts: 1 }, { rounds: 0, restarts: 0 })
     expect(
-      offer.available.some((candidate) => destinationOf(candidate, prepared) === 'implement'),
+      preparedOffer.available.some((candidate) => destinationOf(candidate, prepared) === 'implement'),
       '`prepared` is promised no round, and the offer there should have no `implement` on it',
     ).toBe(false)
+    for (const step of ['proposed', 'merge'] as const) {
+      const proposal = proposalOnRefusal(step)!
+      const offer = offerFor(proposal, { rounds: 2, restarts: 1 }, { rounds: 0, restarts: 0 })
+      expect(
+        offer.available.some((candidate) => destinationOf(candidate, proposal) === 'implement'),
+        `\`${step}\` is promised no round for a different reason — the offer there should still have \`implement\` on it`,
+      ).toBe(true)
+      expect(
+        BUILT_IN_FOR[whenOf(proposal)],
+        `\`${step}\`'s own check refusal should have no built-in judge to buy a round without a recipe declaring one`,
+      ).toBeNull()
+    }
     expect(
       costTable()
         .filter((row) => !row.bought)

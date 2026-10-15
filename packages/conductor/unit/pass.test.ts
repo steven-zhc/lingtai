@@ -1326,18 +1326,28 @@ describe('every step that does not pass arrives at proposed', () => {
     const { bodies } = watching()
     let reviews = 0
     let implements_ = 0
-    const actionsAt: PassOptions['actionsAt'] = (step) =>
-      step === 'review'
-        ? [
-            canned('cold reviewer', {
-              verdict: reviews === 0 ? 'failed' : 'passed',
-              evidence: 'read the diff',
-              findings: reviews++ === 0 ? [finding] : [],
-            }),
-          ]
-        : step === 'implement'
-          ? [committedSomething('write the change', implements_++ === 0 ? COMMITTED : null)]
-          : []
+    // Only `review` and `implement` are stubbed for the two-round shape this
+    // test needs; every other step — `proposed` included — builds its real
+    // declared actions the way `watchingActions` does, so a regression that
+    // made `routeProposal` run `proposed`'s body directly would show up here
+    // exactly as it would in the other six.
+    const ran: { step: Step; actions: readonly string[] }[] = []
+    const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+      const built =
+        step === 'review'
+          ? [
+              canned('cold reviewer', {
+                verdict: reviews === 0 ? 'failed' : 'passed',
+                evidence: 'read the diff',
+                findings: reviews++ === 0 ? [finding] : [],
+              }),
+            ]
+          : step === 'implement'
+            ? [committedSomething('write the change', implements_++ === 0 ? COMMITTED : null)]
+            : actions.map((a) => defaultFor(step, a))
+      ran.push({ step, actions: built.map((a) => a.name) })
+      return built
+    }
     const { emit } = events()
 
     const result = await runPass({
@@ -1353,8 +1363,7 @@ describe('every step that does not pass arrives at proposed', () => {
           : { noJudge: true },
     })
 
-    const ran = result.steps.filter((s) => s.step === 'proposed')
-    expect(ran.some((s) => s.results.some((r) => r.action === 'sign off'))).toBe(false)
+    expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } })
     expect(result.rested).toBe('waiting')
   })

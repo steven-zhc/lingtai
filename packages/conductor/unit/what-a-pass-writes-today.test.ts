@@ -58,6 +58,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { Envelope, Hold } from '@lingtai/domain'
+import { integrationStream, reduceIntegration } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -746,15 +747,40 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
   /**
    * `dirty-base` is one of the lane's other six reasons — no direction exists
-   * for it, so it stays `MergeRefused` (`hold-of.ts`'s step 2).
+   * for it, so it stays `MergeRefused` (`conduct.ts`'s own `MergeRefused`
+   * patch, `#472`, filling `paths`/`baseSha`/`headSha` in from
+   * `lastIntegrationRefusal` since `holdOf` alone writes `null` for all
+   * three). The fake `integrate` appends a real `IntegrationRefused` row —
+   * carrying those three fields for a `dirty-base` reason, which the real
+   * lane (`packages/repo/src/integrate.ts`) only does for `conflict` — so
+   * this is the unit-level stand-in `doc/design/472.md`'s own *What nothing
+   * here can verify* section asks for: whether the patch actually reads them
+   * back onto the hold.
    */
   it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const ports = fakePorts(did, store, true)
-    ports.repo.integrate = () =>
-      Effect.sync(() => {
+    ports.repo.integrate = (o) =>
+      Effect.promise(async () => {
         did.push('integrate')
+        const stream = integrationStream(o.project, o.base)
+        const at = reduceIntegration(await store.read(stream)).version
+        await store.append(stream, at, [
+          {
+            type: 'IntegrationRefused',
+            actor: 'conductor',
+            data: {
+              workItemId: o.workItemId,
+              branch: o.branch,
+              reason: 'dirty-base',
+              detail: 'main moved under it',
+              paths: ['src/fix.ts'],
+              baseSha: 'b'.repeat(40),
+              headSha: 'c'.repeat(40),
+            },
+          },
+        ])
         return { ok: false, reason: 'dirty-base', detail: 'main moved under it' } as never
       })
 
@@ -805,7 +831,13 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'MergeRefused', reason: 'dirty-base' })
+    expect(hold).toMatchObject({
+      _tag: 'MergeRefused',
+      reason: 'dirty-base',
+      paths: ['src/fix.ts'],
+      baseSha: 'b'.repeat(40),
+      headSha: 'c'.repeat(40),
+    })
   })
 
   /**
@@ -1037,17 +1069,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * **The cold reviewer's own answer is unreadable, and still visits
-   * `proposed`'s own spine — the one visit that runs a declared
-   * `human:`/`watch:` action there** (`#467`'s fix round). `nextOf` answers
-   * `WaitOnPerson{AnswerUnreadable}` for a `review` whose findings do not
-   * parse at all, but the loop reads that answer at `review` as carrying the
-   * pass on to `proposed`'s own way-through visit rather than stopping —
-   * `pass.waitOn` stays `null`, and `proposed`'s own body (`reviewRefused` +
-   * `judged`'s `unreadable` branch) is what turns it into the same
-   * `Routed{when: 'findings'}` an unrouted `review` refusal always got. A
-   * recipe that declared a gate at `proposed:` would have it run here; this
-   * fixture declares none, so the visit's only effect is the routing.
+   * **The cold reviewer's own answer is unreadable, and since `#472` never
+   * runs `proposed`'s own declared `human:`/`watch:` action** (reversing
+   * `#467`'s own carry-forward). `nextOf` answers `Propose{AnswerUnreadable}`
+   * for a `review` whose findings do not parse at all, exactly as it does for
+   * the other six fall-shorts, and `review` always ends `passed` (`endingOf`),
+   * so `routeProposal`'s `reported` is `null` and it builds the routing visit
+   * itself (`#462`) without ever calling `proposed`'s own body. A recipe that
+   * declared a gate at `proposed:` would **not** have it run here; the hold —
+   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
+   * got, with the *could not be read at all* sentence ahead of the raw answer
+   * — comes from `holdOf`'s `answerUnreadableHold` builder instead.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()

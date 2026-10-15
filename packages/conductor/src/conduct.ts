@@ -3923,20 +3923,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * A `refused` ending is a step's own declared actions refusing, which is
          * the `build` gone red and the lane that would not take it.
          *
-         * **A third shape, since `#467` took the `merge` lane's own unreadable
-         * answer off the router** — `review`'s own unreadable answer still walks
-         * on to `proposed`'s own way-through visit (the one visit that also runs
-         * a declared `human:`/`watch:` action there), which routes it to a person
-         * with `stopped === null`, the first shape above. `merge` has no such
-         * visit left ahead of it: `endingOf` still reports every `merge` visit
-         * `passed` for the same reason it does `review`'s (`pass.ts:1928` — a
-         * reviewer's `failed` is findings, not a refusal), so an answer
-         * `parseFindings` cannot read at all there stops the pass with
-         * `stopped.ending.ending === 'passed'`, neither of the two shapes above —
-         * the lane's own re-verify read the diff and could not be understood,
-         * which is `judged` for the same reason a refusal is. `pass.waitOn`
-         * carries that it was this reason (`AnswerUnreadable`), which
-         * `stopped.ending.ending` alone does not.
+         * **An unreadable answer needs no third shape, since `#472` routes it
+         * through `nextOf`'s `Propose` like every other fall-short** — and the
+         * two shapes above already cover both steps it can happen at.
+         * `review`'s is special-cased `passed` by `endingOf` (a reviewer's
+         * `failed` is findings, not a refusal), so `routeProposal`'s `reported`
+         * is `null` and it lands on `stopped === null`, the first shape. `merge`
+         * is one of `REFUSING_STEPS`, so `endingOf` reports its own unreadable
+         * answer `refused` instead, and it lands on the second shape,
+         * `stopped.ending.ending === 'refused'`.
          *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
@@ -3956,8 +3951,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * by the pipeline, which is what `held` excludes — and the request is only
          * worth making where origin is holding something to merge (`onOrigin`).
          */
-        const judged =
-          stopped === null || stopped.ending.ending === 'refused' || pass.waitOn?._tag === 'AnswerUnreadable'
+        const judged = stopped === null || stopped.ending.ending === 'refused'
         if (!held && judged && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that

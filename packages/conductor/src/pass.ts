@@ -1043,15 +1043,14 @@ export function outcomeOf(pass: Pick<PassResult, 'stoppedAt' | 'rested'>): Termi
  *
  * 1. walk the spine — `STEPS`, in order — running each step's plugins and then
  *    its body;
- * 2. a step that did not pass is read by `nextOf` (`#467`, 0120 §4): most of
- *    0058 §3b's second drawing still goes to **`proposed`**, carrying its
- *    reason, but a `prepared` refusal and a check before the `merge` lane
- *    answer `WaitOnPerson` directly instead and never visit `proposed` at
- *    all (neither is a direction any `judge:` answers). An unreadable answer
- *    at `merge` does the same; at `review` it still walks on to `proposed`'s
- *    own way-through visit — the one that also runs a declared
- *    `human:`/`watch:` action — which is where a `review`'s findings are
- *    judged, unreadable ones included;
+ * 2. a step that did not pass is read by `nextOf` (`#472`, 0120 §4): every one
+ *    of 0058 §3b's seven fall-shorts answers `Propose` now, and `Propose`
+ *    always visits `proposed`'s router (`routeProposal`) rather than
+ *    `proposed`'s own way-through body — a `prepared` refusal and a check
+ *    before the `merge` lane included, whether or not any `judge:` answers
+ *    the direction it routes under. Only `AgentCrashed` and
+ *    `SignoffRequired` still answer `WaitOnPerson` directly and never visit
+ *    `proposed` at all;
  * 3. a route is a destination from the set the workflow offered: a step, and the
  *    walk resumes there having spent a round; or `waiting`; or `claim`, which
  *    requeues and ends the pass;
