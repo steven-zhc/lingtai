@@ -388,6 +388,22 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
   })
 
+  it('a commit action in a fix round that was interrupted (round 1)', () => {
+    const run = aRun('run-1')
+    const action: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: 'spent all 7 turns mid-fix',
+      yields: 'commit',
+      result: { _tag: 'Interrupted', cause: 'out-of-turns', head: null },
+    }
+    const outcome = outcomeOf('implement', 1, [action])
+    const events = run.aStepEnded(outcome)
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+  })
+
   it('a design action that drafted', () => {
     const run = aRun('run-1')
     const action: Action = {

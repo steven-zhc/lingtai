@@ -138,7 +138,10 @@ export function aRun(runId: string): RunFixture {
           headSha: action.result.head,
           turns: 1,
           costUsd: null,
-          failure: action.result.cause,
+          // `"<kind>: <detail>"`, the way `conduct.ts:3326` writes it — never
+          // a bare kind, which is `RunFailed.kind`'s own shape (the round-0
+          // branch above), not this one's.
+          failure: `${action.result.cause}: ${action.evidence}`,
         }),
       ]
     }
