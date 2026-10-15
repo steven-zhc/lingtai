@@ -1390,6 +1390,93 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
+   * **`not-claimed`: another conductor already holds the item** (`#463`).
+   *
+   * `claimWorkItem` reads `held` off the `WorkItemClaimed` seeded below and the
+   * claim declines before `runPass` ever starts. Same shape as row 15: the item
+   * stream is exactly what was seeded (nothing of this run's own), and the run
+   * stream still opens through `claim`'s own bookkeeping.
+   */
+  it('15b. a claim decline (`not-claimed`) writes no work-item events', async () => {
+    const store = memoryStore()
+    const said: string[] = []
+    const did: string[] = []
+    const itemId = `wi-${PROJECT}-7`
+    await store.append(itemId, 0, [
+      {
+        type: 'WorkItemClaimed',
+        actor: 'conductor',
+        data: { runId: 'run-somebody-else', worker: 'other:1', title: null, kind: null },
+      },
+    ])
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: false, stage: 'claim' })
+    expect((result as { detail: string }).detail).toContain('held')
+    expect((await store.read(itemId)).map((e) => e.type)).toEqual(['WorkItemClaimed'])
+    expect(said).toEqual([])
+    expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+  })
+
+  /**
+   * **`claim-unconfirmed`: the append may have committed and then lost the
+   * connection** (`#463`). Only the `WorkItemClaimed` append throws — every
+   * other append on the run stream goes through — so `claim` reports
+   * `mayHold` and `conduct.ts` releases what this run may hold rather than
+   * resolving an ending it never confirmed: `WorkItemReleased` on the item
+   * stream, and no `EndActionsResolved` anywhere, because `end` never runs on
+   * a decline.
+   */
+  it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing', async () => {
+    const base = memoryStore()
+    const said: string[] = []
+    const did: string[] = []
+    const itemId = `wi-${PROJECT}-7`
+    const flaky: typeof base = {
+      ...base,
+      append: async (streamId, expectedVersion, events) => {
+        if (streamId === itemId && events.some((e) => e.type === 'WorkItemClaimed')) {
+          throw new Error('connection lost')
+        }
+        return base.append(streamId, expectedVersion, events)
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store: flaky,
+      },
+      fakePorts(did, flaky),
+    )
+
+    expect(result).toMatchObject({ ok: false, stage: 'claim' })
+    expect(typesOf(await flaky.read(itemId))).toEqual(['WorkItemReleased', 'IssueUpdated'])
+    expect(typesOf(theRun(flaky))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+  })
+
+  /**
    * **A restart that keeps a WIP still spends the ceiling** (`#468`).
    *
    * The fix round's own agent commits half the fix and then meets the wall —

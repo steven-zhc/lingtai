@@ -1130,7 +1130,14 @@ describe('implement dispatches the one agent, and reports what it committed', ()
           ? [claiming]
           : step === 'implement'
             ? [createWorkAction({ name: 'write the change', prompt: '' }, working)]
-            : actions.map((a) => canned(a.name, PASSED)),
+            : step === 'merge'
+              ? [
+                  createMergeAction(
+                    { name: 'land the branch', strategy: 'merge-commit' },
+                    { land: async () => ({ merged: MERGED }) },
+                  ),
+                ]
+              : actions.map((a) => canned(a.name, PASSED)),
     })
 
     expect(walk(result)).toEqual([
