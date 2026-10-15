@@ -20,7 +20,7 @@
  * from a module-global counter, so a stream built inside an `it` would get a
  * different `updated_seq` depending on which `it` ran first.
  */
-import type { Envelope } from '@lingtai/domain'
+import type { Action, Envelope, StepOutcome } from '@lingtai/domain'
 import {
   aClaim,
   aFixDeclined,
@@ -42,6 +42,11 @@ import type { ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
 const SHA = 'a'.repeat(40)
+
+/** `aStepEnded`'s own input shape — `read-model.test.ts`'s local helper, copied rather than imported (it is that file's, not a builder). */
+function outcomeOf(step: StepOutcome['step'], round: number, actions: Action[]): StepOutcome {
+  return { step, round, actions }
+}
 
 const events: Envelope[] = []
 
@@ -310,6 +315,121 @@ events.push(
   }),
 )
 
+// ---- row 21: an ordinary verdict pass --------------------------------------
+const stepPassedStream = makeStream('wi-pin-steppassed')
+const stepPassedRun = aRun('run-pin-steppassed')
+events.push(...aClaim(stepPassedStream, stepPassedRun.runId))
+events.push(
+  ...stepPassedRun.aStepEnded(
+    outcomeOf('review', 0, [
+      {
+        plugin: 'agent',
+        name: 'reviewer',
+        onSha: SHA,
+        call: null,
+        evidence: 'looks right',
+        yields: 'verdict',
+        result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+      },
+    ]),
+  ),
+)
+
+// ---- row 22: an ordinary verdict refusal -----------------------------------
+const stepFailedStream = makeStream('wi-pin-stepfailed')
+const stepFailedRun = aRun('run-pin-stepfailed')
+events.push(...aClaim(stepFailedStream, stepFailedRun.runId))
+events.push(
+  ...stepFailedRun.aStepEnded(
+    outcomeOf('review', 0, [
+      {
+        plugin: 'agent',
+        name: 'reviewer',
+        onSha: SHA,
+        call: null,
+        evidence: 'blocker src/fix.ts:1',
+        yields: 'verdict',
+        result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+      },
+    ]),
+  ),
+)
+
+// ---- row 23: a verdict action an account wall stopped before it ran -------
+const stepNeverRanStream = makeStream('wi-pin-stepneverran')
+const stepNeverRanRun = aRun('run-pin-stepneverran')
+events.push(...aClaim(stepNeverRanStream, stepNeverRanRun.runId))
+events.push(
+  ...stepNeverRanRun.aStepEnded(
+    outcomeOf('review', 0, [
+      {
+        plugin: 'agent',
+        name: 'reviewer',
+        onSha: SHA,
+        call: null,
+        evidence: 'account wall',
+        yields: 'verdict',
+        result: { _tag: 'NeverStarted', scope: 'conductor' },
+      },
+    ]),
+  ),
+)
+
+// ---- row 24: a commit action interrupted at round 0, which also writes RunFailed ----
+const didNotFinishStream = makeStream('wi-pin-didnotfinish')
+const didNotFinishRun = aRun('run-pin-didnotfinish')
+events.push(...aClaim(didNotFinishStream, didNotFinishRun.runId))
+events.push(
+  ...didNotFinishRun.aStepEnded(
+    outcomeOf('implement', 0, [
+      {
+        plugin: 'agent',
+        name: 'write the change',
+        onSha: SHA,
+        call: null,
+        evidence: 'crashed partway through',
+        yields: 'commit',
+        result: { _tag: 'Interrupted', cause: 'crash', head: null },
+      },
+    ]),
+  ),
+)
+
+// ---- row 25: a commit action that stopped to ask ---------------------------
+const stepAskedStream = makeStream('wi-pin-stepasked')
+const stepAskedRun = aRun('run-pin-stepasked')
+events.push(...aClaim(stepAskedStream, stepAskedRun.runId))
+events.push(
+  ...stepAskedRun.aStepEnded(
+    outcomeOf('implement', 0, [
+      {
+        plugin: 'agent',
+        name: 'write the change',
+        onSha: SHA,
+        call: null,
+        evidence: 'stopped to ask',
+        yields: 'commit',
+        result: { _tag: 'Completed', head: null, question: 'which file?' },
+      },
+    ]),
+  ),
+)
+
+// ---- row 26: a person waived a refusing check ------------------------------
+const stepWaivedStream = makeStream('wi-pin-stepwaived')
+const stepWaivedRun = aRun('run-pin-stepwaived')
+events.push(...aClaim(stepWaivedStream, stepWaivedRun.runId))
+events.push(
+  stepWaivedRun.event('StepWaived', {
+    step: 'merge',
+    action: 'check',
+    runId: stepWaivedRun.runId,
+    onSha: SHA,
+    by: 'steven',
+    reason: 'known flake',
+  }),
+)
+
 function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow | undefined {
   return rows.find((r) => r.task_id === taskId)
 }
@@ -386,5 +506,35 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(row.restarts).toBe(1)
     expect(row.restarts_of).toBe(2)
     expect(row.note).toContain('restart 1 of 2')
+  })
+
+  it('folds every Step* verdict the same key:verdict pair the old direct matches wrote', async () => {
+    const { tasks } = await fold(events.length)
+
+    expect(taskOf(tasks, 'wi-pin-steppassed')).toMatchObject({
+      verdicts: JSON.stringify({ 'run-pin-steppassed:review:reviewer': 'passed' }),
+    })
+    expect(taskOf(tasks, 'wi-pin-stepfailed')).toMatchObject({
+      verdicts: JSON.stringify({ 'run-pin-stepfailed:review:reviewer': 'failed' }),
+    })
+    expect(taskOf(tasks, 'wi-pin-stepneverran')).toMatchObject({
+      verdicts: JSON.stringify({ 'run-pin-stepneverran:review:reviewer': 'never-ran' }),
+    })
+    expect(taskOf(tasks, 'wi-pin-stepasked')).toMatchObject({
+      verdicts: JSON.stringify({ 'run-pin-stepasked:implement:write the change': 'asked' }),
+    })
+    expect(taskOf(tasks, 'wi-pin-stepwaived')).toMatchObject({
+      verdicts: JSON.stringify({ 'run-pin-stepwaived:merge:check': 'waived' }),
+    })
+  })
+
+  it('writes RunFailed as the note beside the StepDidNotFinish it explains', async () => {
+    const { tasks } = await fold(events.length)
+
+    const row = taskOf(tasks, 'wi-pin-didnotfinish')
+    expect(row).toMatchObject({
+      note: 'crash: crashed partway through',
+      verdicts: JSON.stringify({ 'run-pin-didnotfinish:implement:write the change': 'did-not-finish' }),
+    })
   })
 })

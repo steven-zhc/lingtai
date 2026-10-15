@@ -1,4 +1,6 @@
-import type { Envelope } from '@lingtai/domain'
+import type { Envelope, Finding, ToAppend } from '@lingtai/domain'
+import { aRun, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
 /**
  * What a `ProjectionStore` is, stated once and run against every implementation.
@@ -144,18 +146,28 @@ const started = (workItemId: string) => ({
   },
 })
 
-const stepPassed = (runId: string, findings: unknown[] = []) => ({
-  type: 'StepPassed',
-  actor: 'conductor',
-  data: {
-    step: 'proposed' as const,
-    action: 'build',
-    runId,
-    onSha: 'a'.repeat(40),
-    evidence: 'green',
-    findings,
-  },
-})
+/** `{ type, actor, data }` — what `append` wants — off a builder's own `Envelope`. */
+const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, data: e.data })
+
+/** `StepPassed`, built through `aStepEnded` — 0120 retires it, so this goes through the builder rather than the wire shape directly (#480). */
+const stepPassed = (runId: string, findings: Finding[] = []): ToAppend[] =>
+  aRun(runId)
+    .aStepEnded({
+      step: 'proposed',
+      round: 0,
+      actions: [
+        {
+          plugin: 'agent',
+          name: 'build',
+          onSha: 'a'.repeat(40),
+          call: null,
+          evidence: 'green',
+          yields: 'verdict',
+          result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings } },
+        },
+      ],
+    })
+    .map(toAppend)
 
 const runAwaitingInput = (prompt: string) => ({
   type: 'RunAwaitingInput',
@@ -163,19 +175,52 @@ const runAwaitingInput = (prompt: string) => ({
   data: { prompt },
 })
 
-const runFailed = (kind: string, detail: string) => ({
-  type: 'RunFailed',
-  actor: 'conductor',
-  data: { kind, detail },
-})
+/**
+ * `RunFailed`, built through `aStepEnded`'s own `contextFor` — the same path
+ * a round-0 commit action interrupted with no head writes it on a real pass
+ * (`read-model.ts`'s `commitContextFor`). 0120 retires it, so this goes
+ * through the builder rather than the wire shape directly (#480).
+ */
+const runFailed = (
+  runId: string,
+  cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
+  detail: string,
+): ToAppend[] =>
+  aRun(runId)
+    .aStepEnded({
+      step: 'implement',
+      round: 0,
+      actions: [
+        {
+          plugin: 'agent',
+          name: 'write the change',
+          onSha: 'a'.repeat(40),
+          call: null,
+          evidence: detail,
+          yields: 'commit',
+          result: { _tag: 'Interrupted', cause, head: null },
+        },
+      ],
+    })
+    .map(toAppend)
 
-const blocked = (question: string) => ({
-  type: 'WorkItemBlocked',
-  actor: 'conductor',
-  data: {
-    hold: { _tag: 'Asked' as const, run: { runId: 'run-0' }, step: 'proposed' as const, question },
-  },
-})
+/**
+ * `WorkItemBlocked{hold: Asked}`, built through `aWait` — 0120 retires both,
+ * so this goes through the builder rather than the wire shape directly
+ * (#480). `step: 'implement'` rather than the gate step these tests used to
+ * write by hand: `AgentQuestion`'s own schema restricts a `WaitReason` asking
+ * to `'design' | 'implement'` (`wait.ts`), which is what the builder is for —
+ * a shape the real store would refuse never gets this far.
+ */
+const blocked = (question: string): ToAppend =>
+  toAppend(
+    aWait(makeStream('contract-scratch'), {
+      _tag: 'AgentQuestion',
+      run: { runId: 'run-0' },
+      step: 'implement',
+      question,
+    })[0]!,
+  )
 
 const dispatchRefused = () => ({
   type: 'DispatchRefused',
@@ -437,7 +482,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       try {
         const written = [
           ...(await f.events.append(task, 0, [claimed(run, 'a card the board renders')])),
-          ...(await f.events.append(run, 0, [stepPassed(run)])),
+          ...(await f.events.append(run, 0, stepPassed(run))),
         ]
         await made(f, taskViewProjection, written)
 
@@ -478,11 +523,11 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.note).toBe('the `proposed` step asked: which base branch?')
+        expect(card.note).toBe('the `implement` step asked: which base branch?')
         expect(card.waiting).toBe(true)
         expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
-        expect(card.diagnosis?.what).toBe('the `proposed` step asked: which base branch?')
+        expect(card.diagnosis?.what).toBe('the `implement` step asked: which base branch?')
         expect(card.diagnosis?.done).toBeNull()
       } finally {
         await f.close()
@@ -557,7 +602,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.note).toBe('the `proposed` step asked: which base branch?')
+        expect(card.note).toBe('the `implement` step asked: which base branch?')
         expect(card.waiting).toBe(true)
         expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
@@ -609,7 +654,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       try {
         const written = [
           ...(await f.events.append(task, 0, [claimed(run, 'a run that crashed')])),
-          ...(await f.events.append(run, 0, [started(task), runFailed('crash', 'out of memory')])),
+          ...(await f.events.append(run, 0, [started(task), ...runFailed(run, 'crash', 'out of memory')])),
         ]
         await made(f, taskViewProjection, written)
 
@@ -629,7 +674,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       try {
         const written = [
           ...(await f.events.append(task, 0, [claimed(run, 'a run that crashed and was then held')])),
-          ...(await f.events.append(run, 0, [started(task), runFailed('crash', 'out of memory')])),
+          ...(await f.events.append(run, 0, [started(task), ...runFailed(run, 'crash', 'out of memory')])),
           ...(await f.events.append(task, 1, [blocked('why did this crash?')])),
         ]
         await made(f, taskViewProjection, written)
@@ -637,7 +682,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.waiting).toBe(true)
-        expect(card.note).toBe('the `proposed` step asked: why did this crash?')
+        expect(card.note).toBe('the `implement` step asked: why did this crash?')
       } finally {
         await f.close()
       }
@@ -648,7 +693,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       const task = f.stream('wi', '43')
       const run = f.stream('run', 'backlog')
       try {
-        const written = await f.events.append(run, 0, [started(task), stepPassed(run, [minor])])
+        const written = await f.events.append(run, 0, [started(task), ...stepPassed(run, [minor])])
         await made(f, backlogProjection, written)
 
         const entries = await f.store.backlog({ project: f.project })

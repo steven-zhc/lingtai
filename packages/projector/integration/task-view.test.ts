@@ -15,6 +15,9 @@ import { integrationStream } from '@lingtai/domain'
  * **Retention is a query.** A landed task falling out of the window must still
  * be a row. Deleting it would make the projection depend on when it last ran.
  */
+import type { ToAppend } from '@lingtai/domain'
+import { aRepairRequested, aRoute, aRun, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import { directPostgresUrl } from '@lingtai/env'
 import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
@@ -87,11 +90,39 @@ const released = (runId: string, reason: string) => ({
 
 const KILLED = 'the run was killed by an operator timeout before it produced anything'
 
-const passed = (runId: string, step: string, action: string, onSha: string) => ({
-  type: 'StepPassed',
-  actor: 'conductor',
-  data: { step: step, action, runId, onSha, evidence: 'exit 0', findings: [] },
-})
+/** `{ type, actor, data }` off a builder's own `Envelope`, or off one of this file's own non-retired literals — both already carry the three fields `append` wants. */
+function toAppend(e: { type: string; actor: string; data: unknown }): ToAppend {
+  return { type: e.type, actor: e.actor, data: e.data }
+}
+
+/**
+ * `StepPassed`, built through `aStepEnded` — 0120 retires it, so this fixture
+ * goes through the builder rather than the wire shape directly (#480).
+ */
+function passed(
+  runId: string,
+  step: 'claim' | 'admit' | 'prepared' | 'design' | 'implement' | 'build' | 'review' | 'proposed' | 'merge' | 'end',
+  action: string,
+  onSha: string,
+): ToAppend[] {
+  return aRun(runId)
+    .aStepEnded({
+      step,
+      round: 0,
+      actions: [
+        {
+          plugin: 'agent',
+          name: action,
+          onSha,
+          call: null,
+          evidence: 'exit 0',
+          yields: 'verdict',
+          result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+        },
+      ],
+    })
+    .map(toAppend)
+}
 
 const started = (n: number) => ({
   type: 'RunStarted',
@@ -108,6 +139,19 @@ const started = (n: number) => ({
   },
 })
 
+/** Each stream's own version, so an append below never has to carry its own number. */
+const versions = new Map<string, number>()
+
+/** `store.append`, with the expected version read off `versions` rather than counted by hand. */
+async function append(
+  streamId: string,
+  events: ReadonlyArray<{ type: string; actor: string; data: unknown }>,
+): Promise<void> {
+  const before = versions.get(streamId) ?? 0
+  await store.append(streamId, before, events.map(toAppend))
+  versions.set(streamId, before + events.length)
+}
+
 /**
  * An event this build refuses to append, written the way an older build did.
  *
@@ -115,35 +159,38 @@ const started = (n: number) => ({
  * writes — and would make it impossible to seed the one thing a rebuild has to
  * survive: a log from before the type was retired. So the row goes in beneath
  * the store, with the next version on the stream, and the store reads it back
- * exactly as it reads a real one.
+ * exactly as it reads a real one. Tracked on the same `versions` map as
+ * `append`, since the two share a stream's version sequence.
  */
-async function appendRetired(streamId: string, version: number, type: string, data: object): Promise<void> {
+async function appendRetired(streamId: string, type: string, data: object): Promise<void> {
+  const before = versions.get(streamId) ?? 0
   const c = new pg.Client({ connectionString: directPostgresUrl() })
   await c.connect()
   try {
     await c.query(
       "insert into events (stream_id, version, type, data, actor) values ($1, $2, $3, $4::jsonb, 'conductor')",
-      [streamId, version, type, JSON.stringify(data)],
+      [streamId, before + 1, type, JSON.stringify(data)],
     )
   } finally {
     await c.end()
   }
+  versions.set(streamId, before + 1)
 }
 
 async function seed(): Promise<void> {
   // 1 — queued and nothing else.
-  await store.append(wi(1), 0, [discovered(1, 'still waiting')])
+  await append(wi(1), [discovered(1, 'still waiting')])
 
   // 2 — running, guard tripped twice, cost recorded.
-  await store.append(wi(2), 0, [discovered(2, 'a race in the importer'), claimed(2)])
-  await store.append(run(2), 0, [
+  await append(wi(2), [discovered(2, 'a race in the importer'), claimed(2)])
+  await append(run(2), [
     started(2),
     { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 63, durationMs: 100, costUsd: 5.42 } },
   ])
 
   // 3 — at the gates, one passed and one failed.
-  await store.append(wi(3), 0, [discovered(3, 'gates in progress', 'feature'), claimed(3)])
-  await store.append(run(3), 0, [
+  await append(wi(3), [discovered(3, 'gates in progress', 'feature'), claimed(3)])
+  await append(run(3), [
     started(3),
     {
       type: 'RunProducedDiff',
@@ -151,30 +198,39 @@ async function seed(): Promise<void> {
       data: { branch: 'agent/3', headSha: 'sha-a', files: 3, insertions: 40, deletions: 2 },
     },
     { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-a' } },
-    {
-      type: 'StepPassed',
-      actor: 'conductor',
-      data: { step: 'proposed', action: 'build', runId: run(3), onSha: 'sha-a', evidence: 'exit 0', findings: [] },
-    },
-    {
-      type: 'StepFailed',
-      actor: 'conductor',
-      data: {
+    ...aRun(run(3))
+      .aStepEnded({
         step: 'proposed',
-        action: 'review',
-        runId: run(3),
-        onSha: 'sha-a',
-        evidence: 'two findings',
-        findings: [],
-      },
-    },
+        round: 0,
+        actions: [
+          {
+            plugin: 'agent',
+            name: 'build',
+            onSha: 'sha-a',
+            call: null,
+            evidence: 'exit 0',
+            yields: 'verdict',
+            result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+          },
+          {
+            plugin: 'agent',
+            name: 'review',
+            onSha: 'sha-a',
+            call: null,
+            evidence: 'two findings',
+            yields: 'verdict',
+            result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+          },
+        ],
+      })
+      .map(toAppend),
   ])
 
   // 4 — refused by the integrator.
-  await store.append(wi(4), 0, [discovered(4, 'will not merge')])
+  await append(wi(4), [discovered(4, 'will not merge')])
   const lane = integrationStream(PROJECT, 'develop')
   created.add(lane)
-  await store.append(lane, 0, [
+  await append(lane, [
     {
       type: 'IntegrationAttempted',
       actor: 'conductor',
@@ -188,7 +244,7 @@ async function seed(): Promise<void> {
   ])
 
   // 5 — landed.
-  await store.append(wi(5), 0, [
+  await append(wi(5), [
     discovered(5, 'landed a while ago'),
     { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234def', base: 'develop' } },
   ])
@@ -196,43 +252,67 @@ async function seed(): Promise<void> {
   // 6 — attempt 1 passed a gate and was then killed from outside. Attempt 2
   //     arrives in `secondAttempt`, after the rebuild, so the window this is
   //     about is folded the way production folds it.
-  await store.append(wi(6), 0, [discovered(6, 'killed, then run again'), claimedWith(attempt(6, 'a'))])
-  await store.append(attempt(6, 'a'), 0, [started(6), passed(attempt(6, 'a'), 'prepared', 'install', 'sha-6a')])
+  await append(wi(6), [discovered(6, 'killed, then run again'), claimedWith(attempt(6, 'a'))])
+  await append(attempt(6, 'a'), [started(6), ...passed(attempt(6, 'a'), 'prepared', 'install', 'sha-6a')])
 
   // 7 — the same kill, with nothing after it: still in the queue, and the only
   //     thing it has to show for the attempt is the sentence the release gave.
-  await store.append(wi(7), 0, [discovered(7, 'killed and not picked up again'), claimedWith(attempt(7, 'a'))])
-  await store.append(attempt(7, 'a'), 0, [started(7), passed(attempt(7, 'a'), 'prepared', 'install', 'sha-7')])
-  await store.append(wi(7), 2, [released(attempt(7, 'a'), KILLED)])
+  await append(wi(7), [discovered(7, 'killed and not picked up again'), claimedWith(attempt(7, 'a'))])
+  await append(attempt(7, 'a'), [started(7), ...passed(attempt(7, 'a'), 'prepared', 'install', 'sha-7')])
+  await append(wi(7), [released(attempt(7, 'a'), KILLED)])
 
   // 8 — a person's word, twice: a red build waived, and the merge approved.
-  await store.append(wi(8), 0, [discovered(8, 'overridden by a person'), claimed(8)])
-  await store.append(run(8), 0, [
-    started(8),
-    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-8' } },
-    {
-      type: 'StepFailed',
-      actor: 'conductor',
-      data: { step: 'proposed', action: 'build', runId: run(8), onSha: 'sha-8', evidence: 'exit 1', findings: [] },
-    },
-    {
-      type: 'StepWaived',
-      actor: 'human:steven',
-      data: {
-        step: 'proposed',
-        action: 'build',
-        runId: run(8),
-        onSha: 'sha-8',
-        by: 'human:steven',
-        reason: 'known flake',
-      },
-    },
-    {
-      type: 'ApprovalGranted',
-      actor: 'human:steven',
-      data: { step: 'merge', action: 'human', runId: run(8), onSha: 'sha-8', by: 'human:steven', note: '' },
-    },
-  ])
+  await append(wi(8), [discovered(8, 'overridden by a person'), claimed(8)])
+  {
+    const run8 = aRun(run(8))
+    await append(run(8), [
+      started(8),
+      { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-8' } },
+      ...run8
+        .aStepEnded({
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'agent',
+              name: 'build',
+              onSha: 'sha-8',
+              call: null,
+              evidence: 'exit 1',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+            },
+          ],
+        })
+        .map(toAppend),
+      // `StepWaived` has no dedicated builder, the same as `read-model.test.ts`'s
+      // own fixtures for it: `run.event` is `aRun`'s own writer, exposed for
+      // exactly this (`events.ts`'s `RunFixture.event` doc comment).
+      toAppend(
+        run8.event('StepWaived', {
+          step: 'proposed',
+          action: 'build',
+          runId: run(8),
+          onSha: 'sha-8',
+          by: 'human:steven',
+          reason: 'known flake',
+        }),
+      ),
+      // `aResolution`'s `Approve` case writes the same event with a fixed
+      // `by`/`note` ('steven'/'looks right') that nothing here reads; written
+      // directly instead, so the actor this fixture is about stays on the row.
+      toAppend(
+        run8.event('ApprovalGranted', {
+          step: 'merge',
+          action: 'human',
+          runId: run(8),
+          onSha: 'sha-8',
+          by: 'human:steven',
+          note: '',
+        }),
+      ),
+    ])
+  }
 
   // 9 — approved, and the merge hit a conflict anyway. The whole of #84 in one
   //     stream: the approval is spent, `approve()` refuses every further click,
@@ -242,37 +322,43 @@ async function seed(): Promise<void> {
   //     attempt that agent was. `#143` takes the purchase away — and takes
   //     `RepairRequested` with it, which `store.append` now refuses as retired,
   //     so this could not be seeded even if it were still meant.
-  await store.append(wi(9), 0, [discovered(9, 'approved, then conflicted'), claimedWith(attempt(9, 'a'))])
-  await store.append(attempt(9, 'a'), 0, [
-    started(9),
-    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-9a' } },
-    {
-      type: 'ApprovalRequested',
-      actor: 'conductor',
-      data: {
-        step: 'merge',
-        action: 'approval',
-        runId: attempt(9, 'a'),
-        onSha: 'sha-9a',
-        question: 'Merge?',
-        artifacts: [],
-      },
-    },
-    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
-    {
-      type: 'ApprovalGranted',
-      actor: 'human:steven',
-      data: {
-        step: 'merge',
-        action: 'approval',
-        runId: attempt(9, 'a'),
-        onSha: 'sha-9a',
-        by: 'human:steven',
-        note: '',
-      },
-    },
-  ])
-  await store.append(lane, 2, [
+  await append(wi(9), [discovered(9, 'approved, then conflicted'), claimedWith(attempt(9, 'a'))])
+  {
+    const run9a = aRun(attempt(9, 'a'))
+    await append(attempt(9, 'a'), [
+      started(9),
+      { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-9a' } },
+      ...run9a
+        .aStepEnded({
+          step: 'merge',
+          round: 0,
+          actions: [
+            {
+              plugin: 'human',
+              name: 'approval',
+              onSha: 'sha-9a',
+              call: null,
+              evidence: '',
+              yields: 'signoff',
+              result: { _tag: 'Completed', requested: { question: 'Merge?' } },
+            },
+          ],
+        })
+        .map(toAppend),
+      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
+      toAppend(
+        run9a.event('ApprovalGranted', {
+          step: 'merge',
+          action: 'approval',
+          runId: attempt(9, 'a'),
+          onSha: 'sha-9a',
+          by: 'human:steven',
+          note: '',
+        }),
+      ),
+    ])
+  }
+  await append(lane, [
     {
       type: 'IntegrationRefused',
       actor: 'conductor',
@@ -284,7 +370,7 @@ async function seed(): Promise<void> {
       },
     },
   ])
-  await store.append(wi(9), 2, [
+  await append(wi(9), [
     {
       type: 'WorkItemBlocked',
       actor: 'conductor',
@@ -292,6 +378,15 @@ async function seed(): Promise<void> {
         // A failure to acknowledge and not a judgement: the approval was spent
         // and the merge still refused, so nothing is being asked of anybody's
         // opinion — `legacyColumns` reads the diagnosis off `diagnoseRefusal`.
+        //
+        // **No builder reaches this shape.** `aWait`'s `holdOf` always writes
+        // `afterApproval: false` (`adapters.ts`'s `mergeRefusedHold`) — the
+        // pass's own refusal, nobody has approved this sha yet. `true` is
+        // `approve.ts`'s own producer: a person already approved this exact
+        // sha and the lane still refused (`hold.ts`'s own comment on the
+        // field) — a different code path than any `WaitReason` models, so the
+        // `Hold` is pinned directly rather than invented through one that does
+        // not produce it.
         hold: {
           _tag: 'MergeRefused' as const,
           run: { runId: attempt(9, 'a') },
@@ -311,23 +406,21 @@ async function seed(): Promise<void> {
   //      code bought a repair, and run-b was that repair. The rebuild has to
   //      keep the repair's money apart, exactly as the live projection did and
   //      as the task page's own fold still does.
-  await store.append(wi(15), 0, [discovered(15, 'repaired before #143'), claimedWith(attempt(15, 'a'))])
-  await store.append(attempt(15, 'a'), 0, [
+  await append(wi(15), [discovered(15, 'repaired before #143'), claimedWith(attempt(15, 'a'))])
+  await append(attempt(15, 'a'), [
     started(15),
     { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
   ])
-  await appendRetired(wi(15), 3, 'RepairRequested', {
-    runId: attempt(15, 'a'),
-    reason: 'verify-failed',
-    detail: 'policy: exit 1',
-    fingerprint: '0123456789ab',
-    attempt: 1,
-  })
-  await store.append(wi(15), 3, [
+  await appendRetired(
+    wi(15),
+    'RepairRequested',
+    aRepairRequested(makeStream(wi(15)), attempt(15, 'a'))[0]!.data as object,
+  )
+  await append(wi(15), [
     released(attempt(15, 'a'), 'repairing verify-failed (attempt 1)'),
     claimedWith(attempt(15, 'b')),
   ])
-  await store.append(attempt(15, 'b'), 0, [
+  await append(attempt(15, 'b'), [
     started(15),
     { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
   ])
@@ -335,22 +428,16 @@ async function seed(): Promise<void> {
   // 16 — the old code bought a repair and released the item, and then the
   //      daemon restarted onto #143. Nothing has claimed it, so it is still
   //      owed the backoff exemption the repair was bought with.
-  await store.append(wi(16), 0, [discovered(16, 'released for a repair, then deployed'), claimed(16)])
-  await appendRetired(wi(16), 3, 'RepairRequested', {
-    runId: run(16),
-    reason: 'verify-failed',
-    detail: 'policy: exit 1',
-    fingerprint: '0123456789ab',
-    attempt: 1,
-  })
-  await store.append(wi(16), 3, [released(run(16), 'repairing verify-failed (attempt 1)')])
+  await append(wi(16), [discovered(16, 'released for a repair, then deployed'), claimed(16)])
+  await appendRetired(wi(16), 'RepairRequested', aRepairRequested(makeStream(wi(16)), run(16))[0]!.data as object)
+  await append(wi(16), [released(run(16), 'repairing verify-failed (attempt 1)')])
 
   // 10 — the branch was repaired and approval re-requested on the new head.
   //      The run produced `sha-10a` and is asking about `sha-10b`, which is
   //      the whole of #92: the card held only the first and offered it as the
   //      second, so the board's Approve refused what the CLI accepted.
-  await store.append(wi(10), 0, [discovered(10, 'repaired, then re-offered'), claimed(10)])
-  await store.append(run(10), 0, [
+  await append(wi(10), [discovered(10, 'repaired, then re-offered'), claimed(10)])
+  await append(run(10), [
     started(10),
     {
       type: 'RunProducedDiff',
@@ -358,52 +445,66 @@ async function seed(): Promise<void> {
       data: { branch: 'agent/10', headSha: 'sha-10a', files: 1, insertions: 2, deletions: 0 },
     },
     { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-10a' } },
-    {
-      type: 'ApprovalRequested',
-      actor: 'conductor',
-      data: { step: 'merge', action: 'no-merge', runId: run(10), onSha: 'sha-10a', question: 'Merge?', artifacts: [] },
-    },
-    {
-      type: 'ApprovalRequested',
-      actor: 'conductor',
-      data: {
+    ...aRun(run(10))
+      .aStepEnded({
         step: 'merge',
-        action: 'repair',
-        runId: run(10),
-        onSha: 'sha-10b',
-        question: 'Merge the repair?',
-        artifacts: [],
-      },
-    },
+        round: 0,
+        actions: [
+          {
+            plugin: 'human',
+            name: 'no-merge',
+            onSha: 'sha-10a',
+            call: null,
+            evidence: '',
+            yields: 'signoff',
+            result: { _tag: 'Completed', requested: { question: 'Merge?' } },
+          },
+          {
+            plugin: 'human',
+            name: 'repair',
+            onSha: 'sha-10b',
+            call: null,
+            evidence: '',
+            yields: 'signoff',
+            result: { _tag: 'Completed', requested: { question: 'Merge the repair?' } },
+          },
+        ],
+      })
+      .map(toAppend),
   ])
-  await store.append(wi(10), 2, [
-    {
-      type: 'WorkItemBlocked',
-      // A `Human` hold, injected by `--no-merge` or a repair — the question
-      // is all it carries itself, and `legacyColumns` composes the rest.
-      actor: 'conductor',
-      data: {
-        hold: {
-          _tag: 'Human' as const,
-          run: { runId: run(10) },
-          step: 'merge' as const,
-          source: 'injected' as const,
-          question: 'a repair is waiting on you',
-        },
-      },
-    },
+  await append(wi(10), [
+    // A `Human` hold, injected by `--no-merge` or a repair — the question
+    // is all it carries itself, and `legacyColumns` composes the rest.
+    toAppend(
+      aWait(makeStream(wi(10)), {
+        _tag: 'SignoffRequired',
+        run: { runId: run(10) },
+        step: 'merge',
+        action: 'human',
+        question: 'a repair is waiting on you',
+      })[0]!,
+    ),
   ])
 
   // 11 — a block that carries a diagnosis and a recommended action (#83). 12 is
   //      the same block answered, because the diagnosis has to *go* when the
   //      hold does: one left behind would report last week's failure on a card
   //      nobody is being asked about.
-  await store.append(wi(11), 0, [discovered(11, 'diagnosed, with a move'), claimed(11)])
-  await store.append(wi(11), 2, [
+  await append(wi(11), [discovered(11, 'diagnosed, with a move'), claimed(11)])
+  await append(wi(11), [
     {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
+        // No builder reaches this shape either — same gap as item 9's, a few
+        // lines up. `reason: 'conflict'` is excluded from
+        // `WaitReason.MergeRefused` outright (`wait.ts`); a conflict today
+        // escalates through `ProposedEscalated` to `Hold.Routed{when:
+        // 'conflict'}` instead (`escalatedHold`), a different tag with
+        // different composed text. This exact shape has been dead since
+        // `#472` (`hold-of.ts`'s own comment on `holdOfPass`'s `MergeRefused`
+        // branch); it is pinned directly because no `WaitReason`, dead or
+        // alive, produces it.
         hold: {
           _tag: 'MergeRefused' as const,
           run: { runId: run(11) },
@@ -420,12 +521,14 @@ async function seed(): Promise<void> {
   ])
 
   // 12 — diagnosed, then unblocked by a person.
-  await store.append(wi(12), 0, [discovered(12, 'diagnosed, then answered'), claimed(12)])
-  await store.append(wi(12), 2, [
+  await append(wi(12), [discovered(12, 'diagnosed, then answered'), claimed(12)])
+  await append(wi(12), [
     {
       type: 'WorkItemBlocked',
       actor: 'conductor',
       data: {
+        // Same gap as 11's, two items up: dead since #472, no `WaitReason`
+        // reaches it.
         hold: {
           _tag: 'MergeRefused' as const,
           run: { runId: run(12) },
@@ -445,104 +548,127 @@ async function seed(): Promise<void> {
   // 13 — a round in flight, so the note has to say which round *of how many*.
   //      `FixRequested.of` is what makes that readable off the log: a
   //      projection is a fold and may not read the recipe the ceiling is in.
-  await store.append(wi(13), 0, [discovered(13, 'patching, round one'), claimed(13)])
-  await store.append(run(13), 0, [
-    started(13),
-    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-13' } },
-    {
-      type: 'StepFailed',
-      actor: 'conductor',
-      data: {
-        step: 'proposed',
-        action: 'review',
-        runId: run(13),
-        onSha: 'sha-13',
-        evidence: 'one finding',
-        findings: [],
-      },
-    },
-    {
-      type: 'FixRequested',
-      actor: 'conductor',
-      data: { runId: run(13), round: 1, of: 3, action: 'review', onSha: 'sha-13', findings: [] },
-    },
-    // What the round cost, which is the only thing `repair_costs` holds since
-    // `#143`: a run is never a repair, so a run's money is always the work's
-    // and what answering a refusal cost is keyed by the round that bought it.
-    {
-      type: 'FixApplied',
-      actor: 'conductor',
-      data: { runId: run(13), round: 1, headSha: 'sha-13b', turns: 7, costUsd: 0.75, failure: null },
-    },
-    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
-  ])
+  await append(wi(13), [discovered(13, 'patching, round one'), claimed(13)])
+  {
+    const run13 = aRun(run(13))
+    await append(run(13), [
+      started(13),
+      { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-13' } },
+      ...run13
+        .aStepEnded({
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'agent',
+              name: 'review',
+              onSha: 'sha-13',
+              call: null,
+              evidence: 'one finding',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+            },
+          ],
+        })
+        .map(toAppend),
+      // `FixRequested`/`FixApplied` with these exact round/cost figures have
+      // no dedicated builder either — `aStepEnded`'s own round>0 bookkeeping
+      // hardcodes `of: round` and `turns: 1, costUsd: null` (`events.ts`'s
+      // `openRound`/`contextFor`), so written directly, the same as
+      // `StepWaived` above.
+      toAppend(
+        run13.event('FixRequested', {
+          runId: run(13),
+          round: 1,
+          of: 3,
+          action: 'review',
+          onSha: 'sha-13',
+          findings: [],
+        }),
+      ),
+      // What the round cost, which is the only thing `repair_costs` holds since
+      // `#143`: a run is never a repair, so a run's money is always the work's
+      // and what answering a refusal cost is keyed by the round that bought it.
+      toAppend(
+        run13.event('FixApplied', {
+          runId: run(13),
+          round: 1,
+          headSha: 'sha-13b',
+          turns: 7,
+          costUsd: 0.75,
+          failure: null,
+        }),
+      ),
+      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
+    ])
+  }
 
   // 14 — the rounds were spent and the ticket started over
   //      ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
   //      Released rather than blocked, which is the whole of the change, and
   //      carrying which arm it is now on — the thing `attempts` cannot say.
-  await store.append(wi(14), 0, [discovered(14, 'started over once'), claimed(14)])
-  await store.append(run(14), 0, [
-    started(14),
-    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-14' } },
-    {
-      type: 'StepFailed',
-      actor: 'conductor',
-      data: {
-        step: 'proposed',
-        action: 'review',
-        runId: run(14),
-        onSha: 'sha-14',
-        evidence: 'still refused',
-        findings: [],
-      },
-    },
-  ])
-  await store.append(wi(14), 2, [
-    {
-      type: 'PassRestarted',
-      actor: 'conductor',
-      data: {
-        runId: run(14),
-        restart: 1,
-        of: 2,
-        action: 'review',
-        rounds: 3,
-        branch: 'agent/14',
-        headSha: 'sha-14',
-        findings: [],
-      },
-    },
-    released(run(14), 'the review reviewer still refused after 3 round(s) — restart 1 of 2'),
-  ])
+  await append(wi(14), [discovered(14, 'started over once'), claimed(14)])
+  {
+    const run14 = aRun(run(14))
+    await append(run(14), [
+      started(14),
+      { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-14' } },
+      ...run14
+        .aStepEnded({
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'agent',
+              name: 'review',
+              onSha: 'sha-14',
+              call: null,
+              evidence: 'still refused',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+            },
+          ],
+        })
+        .map(toAppend),
+    ])
+    // `aRoute`'s `to: 'claim'` branch writes `PassRouted` on the run's own
+    // stream and `PassRestarted` on the item's — real conduct.ts's own split
+    // (`pass-next.ts`) — and `rounds: 0` rather than this fixture's `3`, which
+    // `task_view` never reads (`cardFactOf`'s `Restarted` fact carries only
+    // `restart`/`of`).
+    const [routed, restarted] = aRoute(run14, { from: 'review', to: 'claim', restart: 1, of: 2 }, makeStream(wi(14)))
+    await append(run(14), [toAppend(routed!)])
+    await append(wi(14), [
+      toAppend(restarted!),
+      released(run(14), 'the review reviewer still refused after 3 round(s) — restart 1 of 2'),
+    ])
+  }
 
   // 17 — a question asked before any run (#147), with nothing before it on the
   //      stream: no discovery, no claim. The block is the task's first event,
   //      so the row has to be made by it or the queue would not see the hold.
-  await store.append(wi(17), 0, [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'human:steven',
-      data: {
-        hold: {
-          _tag: 'Question' as const,
-          question: 'Which of the three designs should the tripwire use?',
-          by: 'human:steven',
-        },
-      },
-    },
+  await append(wi(17), [
+    toAppend(
+      aWait(makeStream(wi(17)), {
+        _tag: 'OwnQuestion',
+        question: 'Which of the three designs should the tripwire use?',
+        by: 'human:steven',
+      })[0]!,
+    ),
   ])
 
   // 18 — the same question, answered. The answer is what a rebuild has to be
   //      able to say, and it outlives the claim that follows it.
-  await store.append(wi(18), 0, [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'human:steven',
-      data: {
-        hold: { _tag: 'Question' as const, question: 'Refuse at the hook, or at the claim?', by: 'human:steven' },
-      },
-    },
+  await append(wi(18), [
+    toAppend(
+      aWait(makeStream(wi(18)), {
+        _tag: 'OwnQuestion',
+        question: 'Refuse at the hook, or at the claim?',
+        by: 'human:steven',
+      })[0]!,
+    ),
+    // `aResolution`'s `AnswerQuestion` case hardcodes `by: 'steven'`; the
+    // assertion below needs the real actor, so this one is written directly.
     { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'at the hook' } },
     claimed(18),
   ])
@@ -550,9 +676,9 @@ async function seed(): Promise<void> {
 
 /** Appended after the rebuild, so `fold` is what folds it. */
 async function secondAttempt(): Promise<void> {
-  await store.append(wi(6), 2, [released(attempt(6, 'a'), KILLED)])
-  await store.append(wi(6), 3, [claimedWith(attempt(6, 'b'))])
-  await store.append(attempt(6, 'b'), 0, [started(6)])
+  await append(wi(6), [released(attempt(6, 'a'), KILLED)])
+  await append(wi(6), [claimedWith(attempt(6, 'b'))])
+  await append(attempt(6, 'b'), [started(6)])
 }
 
 async function build(): Promise<void> {
