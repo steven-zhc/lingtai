@@ -2145,10 +2145,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *   taking work into a wall every queued item would meet, which is what §3
        *   is for, and about §5's resume happening without anybody watching.
        *
-       * **Nothing is dispatched for a set of one.** `waiting` is on every offer
-       * and is the whole of a refusal at `admit` or `prepared`, where no agent
-       * has run — paying a model to pick the only item on a list is the purchase
-       * `stepsOnOffer`'s criterion rule exists to refuse, one step further on.
+       * **Nothing is dispatched for a set of one**, but a refusal at `admit` or
+       * `prepared` is not that set — `offerFor`'s `SetupRefused` cell calls
+       * `restart(hasCriterion)` regardless of step (`routing.ts:173-178`), so
+       * with any evidence and a restart left, `available` is `['restart',
+       * 'hand-to-person']` even though no agent has run, and a declared judge
+       * is asked there same as anywhere else. What a set of one still excludes
+       * is the narrower case — no evidence, or no restart left to spend — where
+       * `stepsOnOffer`'s criterion rule has already refused the only purchase
+       * on offer, one step further on.
        *
        * **What it cost is in the sentence** rather than on an event of its own.
        * `PassRouted.why` is what a person reads beside the arriving step's
@@ -3614,13 +3619,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `holdOfPass` from what the pass reported otherwise. `#462` moved most
        * `proposed` arrivals onto `nextOf`/`pass.waitOn`, and `#472` moved the
        * rest the same way — the merge lane's own refusal with no direction,
-       * and the two fixed waits 0120 *Two phases* used to carry without a
-       * route — so what is left for `holdOfPass` is a plugin's own `held`
-       * request for a person and a `claim` decline (`hold-of.ts`'s own
-       * header). `rested` and `declined` are the two inputs `holdOfPass`
-       * needs beyond what the pass already reports on `stopped`.
-       * `legacyColumns` turns the result back into the
-       * `question`/`needs`/`diagnosis` every reader below still wants.
+       * the two fixed waits 0120 *Two phases* used to carry without a route,
+       * and a plugin's own `held` request for a person, which sets
+       * `pass.waitOn` exactly as a refusal does — so what is left for
+       * `holdOfPass` is `claim`'s own decline (never routed: it is not one of
+       * the seven `proposed` appeals to), a fix round's own decline, set
+       * directly here rather than through `pass.waitOn`, and a body — or
+       * `nextOf` itself — that threw (`hold-of.ts`'s own header). `rested`
+       * and `declined` are the two inputs `holdOfPass` needs beyond what the
+       * pass already reports on `stopped`. `legacyColumns` turns the result
+       * back into the `question`/`needs`/`diagnosis` every reader below still
+       * wants.
        */
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {
@@ -3926,13 +3935,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          *
          * **An unreadable answer needs no third shape, since `#472` routes it
          * through `nextOf`'s `Propose` like every other fall-short** — and the
-         * two shapes above already cover both steps it can happen at.
+         * two shapes above already cover three of the four steps it can
+         * happen at (`AnswerUnreadable` is legal at `design`, `review`,
+         * `proposed` and `merge`, `pass-next.ts:316`, 0120 §2's table).
          * `review`'s is special-cased `passed` by `endingOf` (a reviewer's
          * `failed` is findings, not a refusal), so `routeProposal`'s `reported`
-         * is `null` and it lands on `stopped === null`, the first shape. `merge`
-         * is one of `REFUSING_STEPS`, so `endingOf` reports its own unreadable
-         * answer `refused` instead, and it lands on the second shape,
-         * `stopped.ending.ending === 'refused'`.
+         * is `null` and it lands on `stopped === null`, the first shape.
+         * `proposed` and `merge` are both `REFUSING_STEPS`, so `endingOf`
+         * reports either one's own unreadable answer `refused`, and both land
+         * on the second shape, `stopped.ending.ending === 'refused'`. `design`
+         * is neither — not special-cased and not a `REFUSING_STEPS` member —
+         * so its own unreadable draft is an ordinary `did-not-finish`, and
+         * `judged` is `false` for it: the next paragraph's rule, not a third
+         * shape, and correct here for the same reason it is at `admit` — no
+         * commit exists yet for *merge it anyway* to be an offer about.
          *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —

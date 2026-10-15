@@ -20,8 +20,21 @@
  * case's own comment, which proves the unreachability rather than asserting
  * it here.
  *
- * What is left live: `case 'held'` below, a plugin's own request for a
- * person, which `pass.waitOn` never carries either way.
+ * **`case 'held'` is dead too, for the same reason as `refused`.** A `held`
+ * ending comes from one place, `endingOf`'s own `result.heldAt`, which is
+ * always the deciding action — a `signoff` yield answers
+ * `WaitOnPerson{SignoffRequired}`, a `verdict` yield answers
+ * `Propose{CheckRefused}`, and a `worktree` yield answers
+ * `Propose{SetupRefused}` (`pass-steps.test.ts`'s `holds the item when the
+ * cut asks a question`) — so `pass.waitOn` is set every time, and `holdFor`
+ * takes the `holdOf` branch before `holdOfPass` is ever called. What is left
+ * live is `case 'did-not-finish'` below: `claim`'s own decline (never
+ * routed — `claim` is not one of the seven `proposed` appeals to), a fix
+ * round's own decline, set directly by `conduct.ts` rather than through
+ * `pass.waitOn` (`declined`, read against `what-a-pass-writes-today.test.ts`'s
+ * own *`implement` changes nothing in a fix round*), and a body — or
+ * `nextOf` itself — that threw, which leaves `pass.waitOn` null with no route
+ * ever decided.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {

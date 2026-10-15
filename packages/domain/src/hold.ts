@@ -51,14 +51,14 @@ import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts
  * is the *integration*'s list — `dirty-base`, `unpushed-base`,
  * `push-rejected`, `unexpected` — and **`#471` gives those their own
  * `JudgeWhen`** (`merge-refused`), reversing what this comment said before
- * it — but until `#472` wires `nextOf` to propose it, nothing asks a judge
- * about them and a person is next, same as today (`merge-action.ts:64`,
- * `hold-of.ts:107`). Once it does: a judge for `MergeRefused{dirty-base}` can
- * rebase and retry, one for `SetupRefused` can restart, and one for
- * `BudgetExhausted` can restart from the kept work once something builds
- * that (#468; today's `restart` releases the ticket and starts from the base
- * in a fresh worktree, keeping nothing), with the restart counted in
- * `restartsSpent` like any other.
+ * it, and **`#472` wires `nextOf` to propose it**, so a judge declared for
+ * `merge-refused` is asked every time one of them arrives
+ * (`merge-action.ts:64`, `hold-of.ts:107`): a judge for
+ * `MergeRefused{dirty-base}` can rebase and retry, one for `SetupRefused` can
+ * restart, and one for `BudgetExhausted` can restart from the kept work once
+ * something builds that (#468; today's `restart` releases the ticket and
+ * starts from the base in a fresh worktree, keeping nothing), with the
+ * restart counted in `restartsSpent` like any other.
  * `conflict` and `verify-failed` stay the two exceptions inside
  * `RefusalReason` itself: those stop the lane before the diff is what is in
  * doubt, and `MergeConflict`/`VerifyRed` already have their own `JudgeWhen`.

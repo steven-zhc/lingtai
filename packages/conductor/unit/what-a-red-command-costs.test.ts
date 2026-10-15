@@ -13,10 +13,12 @@
  *
  * **The implication is one-way, and that is deliberate.** A row may say *no
  * round bought* for a reason `offerFor` knows nothing about: `merge` affords
- * `implement` and buys nothing all the same, because an `action-refused` there
- * is not a direction any `judge:` answers (`checkRefused`, `pass-next.ts`).
- * What this refuses is the other direction — a row promising a round at a step
- * the offer has nothing to give — which is the one that costs money.
+ * `implement` and buys nothing by default all the same, because no built-in
+ * `judge:` ever selects a `check-refused` (`BUILT_IN_FOR['check-refused'] ===
+ * null`, `checkRefused` in `pass-next.ts`) — a recipe that declares one for it
+ * does buy the round `offerFor` was already offering. What this refuses is the
+ * other direction — a row promising a round at a step the offer has nothing to
+ * give at all — which is the one that costs money whatever a recipe declares.
  *
  * Beside the code rather than beside the page, for the reason
  * `packages/actions/unit/tamper-watch.test.ts` reads `doc/tamper-watch.md`: the
