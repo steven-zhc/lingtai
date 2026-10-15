@@ -982,10 +982,12 @@ export interface PassResult {
    * `claim` early return, `outcomeOf`, the *merge it anyway* veto) and this
    * ticket adds one field rather than changing those readers.
    *
-   * Set only where the loop asked `nextOf` and it answered `WaitOnPerson` —
-   * never on the router's own rest (`rested === 'waiting'` with nothing in
-   * this field), which stays `holdOfPass`'s until #462 moves `proposed` onto
-   * `nextOf` too.
+   * Set wherever the loop asked `nextOf` directly and it answered
+   * `WaitOnPerson` (`AgentCrashed`, `SignoffRequired`), and — since `#472`
+   * moved every other `proposed` arrival onto `nextOf`/`pass.waitOn` too —
+   * on the router's own rest as well: `routeProposal`'s one `WaitOnPerson`
+   * cell sets this field in the same breath as `rested = 'waiting'`, wrapped
+   * as `ProposedEscalated` rather than left `null`.
    */
   readonly waitOn: WaitReason | null
 }

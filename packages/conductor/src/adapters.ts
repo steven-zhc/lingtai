@@ -917,11 +917,18 @@ function answerUnreadableHold(
     // The prefix is a short form of `pass.ts`'s own deleted sentence
     // (`pendingUnreadableReview`, `#472`), ahead of `raw` inside the same
     // `said(…, 400)` so it survives clipping where `raw` alone would not.
+    // `review`'s own cold reviewer and a judge declared at `proposed` are
+    // different actors, so the prefix names whichever one actually failed
+    // to parse rather than always naming the reviewer's findings.
+    const prefix =
+      step === 'review'
+        ? "`review`'s findings could not be read at all: "
+        : "the `proposed` step's own judge answer could not be read at all: "
     return {
       _tag: 'Routed',
       run,
       when: 'findings',
-      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(`the findings could not be read at all: ${raw}`, 400)}`,
+      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + raw, 400)}`,
       raw,
       findings: [...pass.findings],
       paths: null,

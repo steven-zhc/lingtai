@@ -3611,15 +3611,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
        * (`#466`) where the loop asked it (`pass.waitOn !== null`), and
-       * `holdOfPass` from what the pass reported otherwise: since `#462`
-       * moved every other `proposed` arrival onto `nextOf`/`pass.waitOn`,
-       * what is left for `holdOfPass` is the merge lane's own refusal with no
-       * direction, the two fixed waits 0120 *Two phases* carries without a
-       * route, and a `claim` decline (`hold-of.ts`'s own header). `rested`
-       * and `declined` are the two inputs `holdOfPass` needs beyond what the
-       * pass already reports on `stopped`. `legacyColumns` turns the result
-       * back into the `question`/`needs`/`diagnosis` every reader below
-       * still wants.
+       * `holdOfPass` from what the pass reported otherwise. `#462` moved most
+       * `proposed` arrivals onto `nextOf`/`pass.waitOn`, and `#472` moved the
+       * rest the same way — the merge lane's own refusal with no direction,
+       * and the two fixed waits 0120 *Two phases* used to carry without a
+       * route — so what is left for `holdOfPass` is a plugin's own `held`
+       * request for a person and a `claim` decline (`hold-of.ts`'s own
+       * header). `rested` and `declined` are the two inputs `holdOfPass`
+       * needs beyond what the pass already reports on `stopped`.
+       * `legacyColumns` turns the result back into the
+       * `question`/`needs`/`diagnosis` every reader below still wants.
        */
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {
