@@ -16,7 +16,18 @@ import { integrationStream } from '@lingtai/domain'
  * be a row. Deleting it would make the projection depend on when it last ran.
  */
 import type { ToAppend } from '@lingtai/domain'
-import { aRepairRequested, aRoute, aRun, aWait } from '@lingtai/domain/test/events'
+import {
+  aFixApplied,
+  aFixRound,
+  aLegacyHold,
+  anAnswer,
+  anApprovalGranted,
+  aRepairRequested,
+  aRoute,
+  aRun,
+  aStepWaived,
+  aWait,
+} from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { directPostgresUrl } from '@lingtai/env'
 import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
@@ -285,32 +296,22 @@ async function seed(): Promise<void> {
           ],
         })
         .map(toAppend),
-      // `StepWaived` has no dedicated builder, the same as `read-model.test.ts`'s
-      // own fixtures for it: `run.event` is `aRun`'s own writer, exposed for
-      // exactly this (`events.ts`'s `RunFixture.event` doc comment).
-      toAppend(
-        run8.event('StepWaived', {
-          step: 'proposed',
-          action: 'build',
-          runId: run(8),
-          onSha: 'sha-8',
-          by: 'human:steven',
-          reason: 'known flake',
-        }),
-      ),
+      ...aStepWaived(
+        { event: run8.event, step: 'proposed', action: 'build', runId: run(8) },
+        'sha-8',
+        'human:steven',
+        'known flake',
+      ).map(toAppend),
       // `aResolution`'s `Approve` case writes the same event with a fixed
-      // `by`/`note` ('steven'/'looks right') that nothing here reads; written
-      // directly instead, so the actor this fixture is about stays on the row.
-      toAppend(
-        run8.event('ApprovalGranted', {
-          step: 'merge',
-          action: 'human',
-          runId: run(8),
-          onSha: 'sha-8',
-          by: 'human:steven',
-          note: '',
-        }),
-      ),
+      // `by`/`note` ('steven'/'looks right') that nothing here reads;
+      // `anApprovalGranted` takes them explicitly instead, so the actor this
+      // fixture is about stays on the row.
+      ...anApprovalGranted(
+        { event: run8.event, step: 'merge', action: 'human', runId: run(8) },
+        'sha-8',
+        'human:steven',
+        '',
+      ).map(toAppend),
     ])
   }
 
@@ -346,16 +347,12 @@ async function seed(): Promise<void> {
         })
         .map(toAppend),
       { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
-      toAppend(
-        run9a.event('ApprovalGranted', {
-          step: 'merge',
-          action: 'approval',
-          runId: attempt(9, 'a'),
-          onSha: 'sha-9a',
-          by: 'human:steven',
-          note: '',
-        }),
-      ),
+      ...anApprovalGranted(
+        { event: run9a.event, step: 'merge', action: 'approval', runId: attempt(9, 'a') },
+        'sha-9a',
+        'human:steven',
+        '',
+      ).map(toAppend),
     ])
   }
   await append(lane, [
@@ -371,35 +368,30 @@ async function seed(): Promise<void> {
     },
   ])
   await append(wi(9), [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'conductor',
-      data: {
-        // A failure to acknowledge and not a judgement: the approval was spent
-        // and the merge still refused, so nothing is being asked of anybody's
-        // opinion — `legacyColumns` reads the diagnosis off `diagnoseRefusal`.
-        //
-        // **No builder reaches this shape.** `aWait`'s `holdOf` always writes
-        // `afterApproval: false` (`adapters.ts`'s `mergeRefusedHold`) — the
-        // pass's own refusal, nobody has approved this sha yet. `true` is
-        // `approve.ts`'s own producer: a person already approved this exact
-        // sha and the lane still refused (`hold.ts`'s own comment on the
-        // field) — a different code path than any `WaitReason` models, so the
-        // `Hold` is pinned directly rather than invented through one that does
-        // not produce it.
-        hold: {
-          _tag: 'MergeRefused' as const,
-          run: { runId: attempt(9, 'a') },
-          reason: 'conflict' as const,
-          why: 'agent/9 does not merge into develop.',
-          raw: 'agent/9 does not merge into develop: page.tsx',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: true,
-        },
-      },
-    },
+    // A failure to acknowledge and not a judgement: the approval was spent and
+    // the merge still refused, so nothing is being asked of anybody's opinion
+    // — `legacyColumns` reads the diagnosis off `diagnoseRefusal`.
+    //
+    // **No `WaitReason` reaches this shape.** `aWait`'s `holdOf` always writes
+    // `afterApproval: false` (`adapters.ts`'s `mergeRefusedHold`) — the pass's
+    // own refusal, nobody has approved this sha yet. `true` is `approve.ts`'s
+    // own producer: a person already approved this exact sha and the lane
+    // still refused (`hold.ts`'s own comment on the field) — a different code
+    // path than any `WaitReason` models, so `aLegacyHold` pins the `Hold`
+    // directly rather than inventing a `WaitReason` that does not produce it.
+    toAppend(
+      aLegacyHold(makeStream(wi(9)), {
+        _tag: 'MergeRefused',
+        run: { runId: attempt(9, 'a') },
+        reason: 'conflict',
+        why: 'agent/9 does not merge into develop.',
+        raw: 'agent/9 does not merge into develop: page.tsx',
+        paths: null,
+        baseSha: null,
+        headSha: null,
+        afterApproval: true,
+      })[0]!,
+    ),
   ])
 
   // 15 — a ticket from before #143: run-a finished, the lane refused, the old
@@ -492,57 +484,48 @@ async function seed(): Promise<void> {
   //      nobody is being asked about.
   await append(wi(11), [discovered(11, 'diagnosed, with a move'), claimed(11)])
   await append(wi(11), [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'conductor',
-      data: {
-        // No builder reaches this shape either — same gap as item 9's, a few
-        // lines up. `reason: 'conflict'` is excluded from
-        // `WaitReason.MergeRefused` outright (`wait.ts`); a conflict today
-        // escalates through `ProposedEscalated` to `Hold.Routed{when:
-        // 'conflict'}` instead (`escalatedHold`), a different tag with
-        // different composed text. This exact shape has been dead since
-        // `#472` (`hold-of.ts`'s own comment on `holdOfPass`'s `MergeRefused`
-        // branch); it is pinned directly because no `WaitReason`, dead or
-        // alive, produces it.
-        hold: {
-          _tag: 'MergeRefused' as const,
-          run: { runId: run(11) },
-          reason: 'conflict' as const,
-          why: 'agent/11 does not merge into develop.',
-          raw: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: false,
-        },
-      },
-    },
+    // No `WaitReason` reaches this shape either — same gap as item 9's, a few
+    // lines up. `reason: 'conflict'` is excluded from
+    // `WaitReason.MergeRefused` outright (`wait.ts`); a conflict today
+    // escalates through `ProposedEscalated` to `Hold.Routed{when: 'conflict'}`
+    // instead (`escalatedHold`), a different tag with different composed
+    // text. This exact shape has been dead since `#472` (`hold-of.ts`'s own
+    // comment on `holdOfPass`'s `MergeRefused` branch); `aLegacyHold` pins it
+    // directly because no `WaitReason`, dead or alive, produces it.
+    toAppend(
+      aLegacyHold(makeStream(wi(11)), {
+        _tag: 'MergeRefused',
+        run: { runId: run(11) },
+        reason: 'conflict',
+        why: 'agent/11 does not merge into develop.',
+        raw: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
+        paths: null,
+        baseSha: null,
+        headSha: null,
+        afterApproval: false,
+      })[0]!,
+    ),
   ])
 
   // 12 — diagnosed, then unblocked by a person.
   await append(wi(12), [discovered(12, 'diagnosed, then answered'), claimed(12)])
   await append(wi(12), [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'conductor',
-      data: {
-        // Same gap as 11's, two items up: dead since #472, no `WaitReason`
-        // reaches it.
-        hold: {
-          _tag: 'MergeRefused' as const,
-          run: { runId: run(12) },
-          reason: 'conflict' as const,
-          why: 'agent/12 does not merge into develop.',
-          raw: 'CONFLICT (content): Merge conflict in apps/web/src/other.tsx',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: false,
-        },
-      },
-    },
-    { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'requeued' } },
+    // Same gap as 11's, two items up: dead since #472, no `WaitReason`
+    // reaches it.
+    toAppend(
+      aLegacyHold(makeStream(wi(12)), {
+        _tag: 'MergeRefused',
+        run: { runId: run(12) },
+        reason: 'conflict',
+        why: 'agent/12 does not merge into develop.',
+        raw: 'CONFLICT (content): Merge conflict in apps/web/src/other.tsx',
+        paths: null,
+        baseSha: null,
+        headSha: null,
+        afterApproval: false,
+      })[0]!,
+    ),
+    ...anAnswer(makeStream(wi(12)), 'human:steven', 'requeued').map(toAppend),
   ])
 
   // 13 — a round in flight, so the note has to say which round *of how many*.
@@ -574,31 +557,13 @@ async function seed(): Promise<void> {
       // `FixRequested`/`FixApplied` with these exact round/cost figures have
       // no dedicated builder either — `aStepEnded`'s own round>0 bookkeeping
       // hardcodes `of: round` and `turns: 1, costUsd: null` (`events.ts`'s
-      // `openRound`/`contextFor`), so written directly, the same as
-      // `StepWaived` above.
-      toAppend(
-        run13.event('FixRequested', {
-          runId: run(13),
-          round: 1,
-          of: 3,
-          action: 'review',
-          onSha: 'sha-13',
-          findings: [],
-        }),
-      ),
+      // `openRound`/`contextFor`), so `aFixRound`/`aFixApplied` take them
+      // explicitly instead.
+      ...aFixRound(run13, 1, 3, 'review', 'sha-13').map(toAppend),
       // What the round cost, which is the only thing `repair_costs` holds since
       // `#143`: a run is never a repair, so a run's money is always the work's
       // and what answering a refusal cost is keyed by the round that bought it.
-      toAppend(
-        run13.event('FixApplied', {
-          runId: run(13),
-          round: 1,
-          headSha: 'sha-13b',
-          turns: 7,
-          costUsd: 0.75,
-          failure: null,
-        }),
-      ),
+      ...aFixApplied(run13, 1, 'sha-13b', 7, 0.75).map(toAppend),
       { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
     ])
   }
@@ -668,8 +633,8 @@ async function seed(): Promise<void> {
       })[0]!,
     ),
     // `aResolution`'s `AnswerQuestion` case hardcodes `by: 'steven'`; the
-    // assertion below needs the real actor, so this one is written directly.
-    { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'at the hook' } },
+    // assertion below needs the real actor, so `anAnswer` takes it explicitly.
+    ...anAnswer(makeStream(wi(18)), 'human:steven', 'at the hook').map(toAppend),
     claimed(18),
   ])
 }

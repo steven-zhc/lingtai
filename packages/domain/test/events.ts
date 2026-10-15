@@ -8,7 +8,7 @@
  * (`stepOutcomesOf(aStepEnded(...))` etc.) is a claim about one pair of
  * functions agreeing with itself, not about two independent tables.
  */
-import type { Action, Envelope, Finding, RefusalReason, RunRef, Step, StepOutcome } from '../src/index.ts'
+import type { Action, Envelope, Finding, Hold, RefusalReason, RunRef, Step, StepOutcome } from '../src/index.ts'
 import { eventOf, holdOf, STEPS } from '../src/index.ts'
 import type { Resolution, WaitReason } from '../src/wait.ts'
 import { makeStream } from './support.ts'
@@ -383,4 +383,62 @@ export function aRepairRequested(
   return [
     itemStream('RepairRequested', { runId, reason, detail: 'policy: exit 1', fingerprint: '0123456789ab', attempt: 1 }),
   ]
+}
+
+/** `StepWaived` — a person's override of a refusing check; no writer in `src` today. */
+export function aStepWaived(
+  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
+  onSha: string,
+  by: string,
+  reason: string,
+): Envelope[] {
+  return [run.event('StepWaived', { step: run.step, action: run.action, runId: run.runId, onSha, by, reason })]
+}
+
+/** `ApprovalGranted` carrying the fixture's own actor — `aResolution`'s `Approve` case hardcodes `by: 'steven'`/`note: 'looks right'`. */
+export function anApprovalGranted(
+  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
+  onSha: string,
+  by = 'steven',
+  note = '',
+): Envelope[] {
+  return [run.event('ApprovalGranted', { step: run.step, action: run.action, runId: run.runId, onSha, by, note })]
+}
+
+/** `FixRequested` with an explicit `of` — `aStepEnded`'s own `openRound` hardcodes `of: round`. */
+export function aFixRound(
+  run: { event: ReturnType<typeof makeStream>; runId: string },
+  round: number,
+  of: number,
+  action: string,
+  onSha: string,
+  findings: Finding[] = [],
+): Envelope[] {
+  return [run.event('FixRequested', { runId: run.runId, round, of, action, onSha, findings })]
+}
+
+/** `FixApplied` with an explicit cost/turns — `aStepEnded`'s own `contextFor` hardcodes `turns: 1, costUsd: null`. */
+export function aFixApplied(
+  run: { event: ReturnType<typeof makeStream>; runId: string },
+  round: number,
+  headSha: string | null,
+  turns: number,
+  costUsd: number | null,
+  failure: string | null = null,
+): Envelope[] {
+  return [run.event('FixApplied', { runId: run.runId, round, headSha, turns, costUsd, failure })]
+}
+
+/** `WorkItemUnblocked` carrying the fixture's own actor — `aResolution`'s cases hardcode `by: 'steven'`. */
+export function anAnswer(itemStream: ReturnType<typeof makeStream>, by: string, note: string): Envelope[] {
+  return [itemStream('WorkItemUnblocked', { by, note })]
+}
+
+/**
+ * `WorkItemBlocked{hold}`, the `Hold` pinned directly rather than built from a
+ * `WaitReason` — for the shapes a `WaitReason` cannot produce at all (see the
+ * callers' own comments on why each one is dead).
+ */
+export function aLegacyHold(itemStream: ReturnType<typeof makeStream>, hold: Hold): Envelope[] {
+  return [itemStream('WorkItemBlocked', { hold })]
 }

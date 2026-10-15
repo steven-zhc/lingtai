@@ -480,6 +480,12 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(taskOf(revoked.tasks, 'wi-pin-approval')).toMatchObject({ awaiting_sha: SHA })
   })
 
+  it("marks a granted sign-off's own verdict `approved`, not the pending it replaced", async () => {
+    const granted = await fold(afterApprovalGranted)
+    const row = taskOf(granted.tasks, 'wi-pin-approval') as { verdicts: string }
+    expect(JSON.parse(row.verdicts)).toMatchObject({ 'run-pin-approval:merge:human': 'approved' })
+  })
+
   it("keeps a round's cost out of repair_costs until it is actually charged", async () => {
     const uncharged = await fold(afterRoundUncharged)
     const charged = await fold(afterRoundCharged)

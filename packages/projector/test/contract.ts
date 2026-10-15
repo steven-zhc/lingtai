@@ -710,7 +710,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(entry.status).toBe('open')
         expect(entry.decidedBy).toBeNull()
         expect(entry.raisedAt).toBeInstanceOf(Date)
-        expect(entry.raisedSeq).toBe(written[1]!.seq.toString())
+        expect(entry.raisedSeq).toBe(written.at(-1)!.seq.toString())
 
         expect(await f.store.backlog({ project: f.project, key: entry.key })).toEqual(entries)
         expect(await f.store.backlog({ project: f.project, status: 'declined' })).toEqual([])
