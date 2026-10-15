@@ -157,6 +157,17 @@ function asInterrupt(kind: string | null | undefined): InterruptCause | null {
   return (INTERRUPT_KINDS as readonly string[]).includes(kind ?? '') ? (kind as InterruptCause) : null
 }
 
+/**
+ * `FixApplied.failure` is `` `${kind}: ${detail}` `` (`conduct.ts:3326`), never
+ * a bare kind — unlike `RunFailed.kind`, which already is one, and which this
+ * is safe to call on too since a bare kind has no `': '` to split at.
+ */
+function failureKindOf(failure: string | null | undefined): string | null {
+  if (failure === null || failure === undefined) return null
+  const sep = failure.indexOf(': ')
+  return sep === -1 ? failure : failure.slice(0, sep)
+}
+
 /** `head`/`cause` for a `commit`-yield action at `round`, from the run's own bookkeeping. */
 function commitContextFor(
   events: readonly Envelope[],
@@ -182,7 +193,7 @@ function commitContextFor(
   const fixApplied = onRun.find((e) => e.type === 'FixApplied' && (e.data as { round: number }).round === round)
   if (fixApplied === undefined) return { head: null, cause: null }
   const data = fixApplied.data as { headSha: string | null; failure: string | null }
-  return { head: data.headSha, cause: asInterrupt(data.failure) }
+  return { head: data.headSha, cause: asInterrupt(failureKindOf(data.failure)) }
 }
 
 function evidenceOf(e: Envelope): string {
@@ -808,7 +819,7 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
           ? (runFailed.data as { kind: string }).kind
           : fixApplied === undefined
             ? null
-            : (fixApplied.data as { failure: string | null }).failure
+            : failureKindOf((fixApplied.data as { failure: string | null }).failure)
       if (kind === 'crash' || kind === 'timeout' || kind === 'aborted') {
         return {
           _tag: 'AgentCrashed',
@@ -819,6 +830,16 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
         }
       }
       if (kind === 'no-commits') {
+        return { _tag: 'NothingProduced', run, said: hold.raw }
+      }
+      // **A turn/dollar ceiling cut a fix round off mid-way is not
+      // `AgentCrashed`** — `wait.ts:161` restricts its `cause` to `crash`,
+      // `timeout` and `aborted`, never `out-of-turns`/`out-of-usd` (those are
+      // 0120's own `BudgetExhausted`, `pass-next.ts:303-307`, which `holdOf`
+      // turns into a `Ceiling`, `adapters.ts:539-544` — a shape this
+      // `DidNotFinish` hold never carries). `NothingProduced` is the nearest
+      // cell that round-trips.
+      if ((kind === 'out-of-turns' || kind === 'out-of-usd') && hold.step === 'implement') {
         return { _tag: 'NothingProduced', run, said: hold.raw }
       }
       // **No `RunFailed`/`FixApplied.failure` at all** (`kind === null`): at

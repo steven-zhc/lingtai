@@ -991,6 +991,43 @@ describe('waitsOf', () => {
     })
   })
 
+  it('reads a fix round the turn ceiling cut off as NothingProduced, never AgentCrashed (14c of #461)', () => {
+    // `wait.ts:161`'s own `AgentCrashed.cause` is `crash`/`timeout`/`aborted`
+    // only — `out-of-turns` is 0120's `BudgetExhausted`, which folds to a
+    // `Ceiling` nobody paid for here (`adapters.ts:539-544`), a shape this
+    // `DidNotFinish` hold never carries. `NothingProduced` is the nearest cell
+    // that round-trips, and the step outcome this same round folds to is
+    // `Interrupted`, not the cleared `Completed{head: null}` a bare-kind
+    // comparison against `FixApplied.failure` used to answer.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const interrupted: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: 'spent all 7 turns mid-fix',
+      yields: 'commit',
+      result: { _tag: 'Interrupted', cause: 'out-of-turns', head: null },
+    }
+    const outcome = outcomeOf('implement', 1, [interrupted])
+    const events = [
+      ...run.aStepEnded(outcome),
+      ...aWait(itemStream, {
+        _tag: 'NothingProduced',
+        run: { runId: run.runId },
+        said: 'spent all 7 turns mid-fix',
+      }),
+    ]
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual({
+      _tag: 'NothingProduced',
+      run: { runId: run.runId },
+      said: 'spent all 7 turns mid-fix',
+    })
+  })
+
   it('reads a Routed{findings} hold back as ProposedEscalated/ReviewFindings', () => {
     const itemStream = makeStream('wi-473-1')
     const finding = {
