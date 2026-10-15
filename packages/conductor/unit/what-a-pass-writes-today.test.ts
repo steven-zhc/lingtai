@@ -1447,7 +1447,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 10, costUsd: 1.1 })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all14a = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all14a, hold!)
+    const implementOutcome = stepOutcomesOf(all14a).find((o) => o.step === 'implement')
+    expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns', head: null })
   })
 
   /**
@@ -1513,7 +1516,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'timeout: exceeded wall 2m' })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all14b = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all14b, hold!)
+    const implementOutcome = stepOutcomesOf(all14b).find((o) => o.step === 'implement')
+    expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'timeout', head: null })
   })
 
   /**

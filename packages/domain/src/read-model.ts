@@ -203,17 +203,8 @@ function commitContextFor(
   const onRun = events.filter((e) => e.streamId === runId)
   if (round === 0) {
     const completion = onRun.find((e) => e.type === 'RunProposedCompletion')
-    // `RunProducedDiff` is written whichever way the dispatch ended, where
-    // `RunProposedCompletion` is the clean-finish moment alone — the fallback
-    // a run that was interrupted after committing part of the fix still needs.
-    const producedDiff = onRun.find((e) => e.type === 'RunProducedDiff')
     const failed = onRun.find((e) => e.type === 'RunFailed')
-    const head =
-      completion !== undefined
-        ? (completion.data as { headSha: string }).headSha
-        : producedDiff === undefined
-          ? null
-          : (producedDiff.data as { headSha: string }).headSha
+    const head = completion === undefined ? null : (completion.data as { headSha: string }).headSha
     return {
       head,
       cause: failed === undefined ? null : asInterrupt((failed.data as { kind: string }).kind),
@@ -386,7 +377,7 @@ function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: strin
     case 'StepNeverRan':
       return { _tag: 'NeverStarted', scope: 'conductor' }
     case 'StepDidNotFinish': {
-      if (ctx.cause !== null) return { _tag: 'Interrupted', cause: ctx.cause, head: ctx.head }
+      if (ctx.cause !== null) return { _tag: 'Interrupted', cause: ctx.cause, head: round === 0 ? null : ctx.head }
       // **A round above 0 whose own `FixApplied` never landed never
       // dispatched an agent at all** — `fixRound`'s own early return for a
       // setup that broke before it ran (`conduct.ts:3250-3251`) is ahead of
