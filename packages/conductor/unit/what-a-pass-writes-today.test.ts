@@ -127,10 +127,19 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
  * **The check that `waitsOf` is `holdOf`'s own mapping and not a second
  * one** (the design's own `Watch out`): the last `WorkItemBlocked` on the
  * slice folds, through `waitsOf` and back through `holdOf`, to a `Hold`
- * whose `_tag` — and `step`/`when`, where the stored hold carries one —
+ * whose `_tag` — and `step`/`when`/`raw`, where the stored hold carries one —
  * agrees with what was actually written.
+ *
+ * **`stepOutcomesOf(all)` must not throw**, on every row — it already folds
+ * the whole slice `waitsOf` does, and a throw is the failure mode the
+ * defaults `shapeFor`/`recipeFor` answer `undefined` for guard against.
+ *
+ * `skipRaw`, with its own reason, is for the one row where `holdOf` itself
+ * cannot reproduce the stored `raw` — not a loosened assertion, a named
+ * exception (row 13, below).
  */
-function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold): void {
+function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold, skipRaw?: string): void {
+  expect(() => stepOutcomesOf(all)).not.toThrow()
   const waits = waitsOf(all)
   const wait = waits[waits.length - 1]
   expect(wait).toBeDefined()
@@ -139,6 +148,9 @@ function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold): void
   if (rebuilt._tag === 'Routed' && hold._tag === 'Routed') expect(rebuilt.when).toBe(hold.when)
   if ('step' in rebuilt && 'step' in hold) expect(rebuilt.step).toBe(hold.step)
   if ('reason' in rebuilt && 'reason' in hold) expect(rebuilt.reason).toBe(hold.reason)
+  if (skipRaw === undefined && 'raw' in rebuilt && 'raw' in hold && rebuilt.raw !== null && hold.raw !== null) {
+    expect(rebuilt.raw).toBe(hold.raw)
+  }
 }
 
 describe('what a pass writes today, one row per ending (#461)', () => {
@@ -1188,7 +1200,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
     expect((hold as { why: string }).why).toContain('was not readable as one of the steps')
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    // The judge's own sentence (`conduct.ts:2293`) lives only in this
+    // `PassRouted`'s own `why` — `routesOf`'s `waiting` branch answers
+    // `because: NotAsked` for any escalation with `ceiling: null`, judge's
+    // own unreadable answer included, so `holdOf`'s rebuild has no way back
+    // to that text and falls to `ReviewEmpty`'s own fallback, the review's
+    // raw findings. `_tag`/`when` still agree (0120's own 13 collapse to the
+    // one shape `Routed{when: 'findings'}` already is).
+    theWaitFoldsToTheStoredHold(
+      await allEvents(store),
+      hold!,
+      'the judge-unreadable sentence lives on PassRouted.why, which routesOf does not read back into `because`',
+    )
   })
 
   /**
