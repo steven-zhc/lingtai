@@ -2145,10 +2145,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *   taking work into a wall every queued item would meet, which is what §3
        *   is for, and about §5's resume happening without anybody watching.
        *
-       * **Nothing is dispatched for a set of one.** `waiting` is on every offer
-       * and is the whole of a refusal at `admit` or `prepared`, where no agent
-       * has run — paying a model to pick the only item on a list is the purchase
-       * `stepsOnOffer`'s criterion rule exists to refuse, one step further on.
+       * **Nothing is dispatched for a set of one**, but a refusal at `admit` or
+       * `prepared` is not that set — `offerFor`'s `SetupRefused` cell calls
+       * `restart(hasCriterion)` regardless of step (`routing.ts:173-178`), so
+       * with any evidence and a restart left, `available` is `['restart',
+       * 'hand-to-person']` even though no agent has run, and a declared judge
+       * is asked there same as anywhere else. What a set of one still excludes
+       * is the narrower case — no evidence, or no restart left to spend — where
+       * `stepsOnOffer`'s criterion rule has already refused the only purchase
+       * on offer, one step further on.
        *
        * **What it cost is in the sentence** rather than on an event of its own.
        * `PassRouted.why` is what a person reads beside the arriving step's
@@ -3611,15 +3616,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
        * (`#466`) where the loop asked it (`pass.waitOn !== null`), and
-       * `holdOfPass` from what the pass reported otherwise: since `#462`
-       * moved every other `proposed` arrival onto `nextOf`/`pass.waitOn`,
-       * what is left for `holdOfPass` is the merge lane's own refusal with no
-       * direction, the two fixed waits 0120 *Two phases* carries without a
-       * route, and a `claim` decline (`hold-of.ts`'s own header). `rested`
+       * `holdOfPass` from what the pass reported otherwise. `#462` moved most
+       * `proposed` arrivals onto `nextOf`/`pass.waitOn`, and `#472` moved the
+       * rest the same way — the merge lane's own refusal with no direction,
+       * the two fixed waits 0120 *Two phases* used to carry without a route,
+       * and a plugin's own `held` request for a person, which sets
+       * `pass.waitOn` exactly as a refusal does — so what is left for
+       * `holdOfPass` is `claim`'s own decline (never routed: it is not one of
+       * the seven `proposed` appeals to), a fix round's own decline, set
+       * directly here rather than through `pass.waitOn`, and a body — or
+       * `nextOf` itself — that threw (`hold-of.ts`'s own header). `rested`
        * and `declined` are the two inputs `holdOfPass` needs beyond what the
        * pass already reports on `stopped`. `legacyColumns` turns the result
-       * back into the `question`/`needs`/`diagnosis` every reader below
-       * still wants.
+       * back into the `question`/`needs`/`diagnosis` every reader below still
+       * wants.
        */
       const holdFor = async (): Promise<Hold> => {
         if (pass.waitOn !== null) {
@@ -3658,10 +3668,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? pass.waitOn.proposal.detail
                 : null
           if (budgetDetail !== null && ceilingHit === null) {
+            // **The step from the proposal, not `pass.stoppedAt`** (`#472`):
+            // `nextOf` no longer produces the direct `WaitOnPerson{BudgetExhausted}`
+            // — only the wrapped `ProposedEscalated{proposal: BudgetExhausted}`
+            // reaches here now, and its own `from` is the step that ran out,
+            // the same fact `pass.stoppedAt!.step` named before this ticket.
+            const step =
+              pass.waitOn._tag === 'ProposedEscalated' && pass.waitOn.proposal._tag === 'BudgetExhausted'
+                ? pass.waitOn.proposal.from
+                : pass.stoppedAt!.step
             return {
               _tag: 'DidNotFinish',
               run: runRef,
-              step: pass.stoppedAt!.step,
+              step,
               why: said(budgetDetail, 400),
               raw: budgetDetail,
             }
@@ -3681,6 +3700,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // differ from the fixer's actual last words on `FixApplied` (row 7).
           if (withRun._tag === 'Declined' && declined !== null) {
             return { ...withRun, said: declined.said }
+          }
+          // **`MergeRefused` loses `paths`/`baseSha`/`headSha` through
+          // `holdOf`** (`#472`): `mergeRefusedHold` writes `null` for all
+          // three, because neither `Proposal.MergeRefused` nor
+          // `WaitReason.MergeRefused` carries them — only the integration
+          // stream does. Filled in here the same way `holdOfPass`'s own
+          // step 2 already did for this reason, off the same
+          // `lastIntegrationRefusal`.
+          if (withRun._tag === 'MergeRefused') {
+            const refusal = await lastIntegrationRefusal(store, project, base, workItemId, branch)
+            return {
+              ...withRun,
+              paths: refusal?.paths ?? null,
+              baseSha: refusal?.baseSha ?? null,
+              headSha: refusal?.headSha ?? null,
+            }
           }
           return withRun
         }
@@ -3898,20 +3933,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * A `refused` ending is a step's own declared actions refusing, which is
          * the `build` gone red and the lane that would not take it.
          *
-         * **A third shape, since `#467` took the `merge` lane's own unreadable
-         * answer off the router** — `review`'s own unreadable answer still walks
-         * on to `proposed`'s own way-through visit (the one visit that also runs
-         * a declared `human:`/`watch:` action there), which routes it to a person
-         * with `stopped === null`, the first shape above. `merge` has no such
-         * visit left ahead of it: `endingOf` still reports every `merge` visit
-         * `passed` for the same reason it does `review`'s (`pass.ts:1928` — a
-         * reviewer's `failed` is findings, not a refusal), so an answer
-         * `parseFindings` cannot read at all there stops the pass with
-         * `stopped.ending.ending === 'passed'`, neither of the two shapes above —
-         * the lane's own re-verify read the diff and could not be understood,
-         * which is `judged` for the same reason a refusal is. `pass.waitOn`
-         * carries that it was this reason (`AnswerUnreadable`), which
-         * `stopped.ending.ending` alone does not.
+         * **An unreadable answer needs no third shape, since `#472` routes it
+         * through `nextOf`'s `Propose` like every other fall-short** — and the
+         * two shapes above already cover three of the four steps it can
+         * happen at (`AnswerUnreadable` is legal at `design`, `review`,
+         * `proposed` and `merge`, `pass-next.ts:316`, 0120 §2's table).
+         * `review`'s is special-cased `passed` by `endingOf` (a reviewer's
+         * `failed` is findings, not a refusal), so `routeProposal`'s `reported`
+         * is `null` and it lands on `stopped === null`, the first shape.
+         * `proposed` and `merge` are both `REFUSING_STEPS`, so `endingOf`
+         * reports either one's own unreadable answer `refused`, and both land
+         * on the second shape, `stopped.ending.ending === 'refused'`. `design`
+         * is neither — not special-cased and not a `REFUSING_STEPS` member —
+         * so its own unreadable draft is an ordinary `did-not-finish`, and
+         * `judged` is `false` for it: the next paragraph's rule, not a third
+         * shape, and correct here for the same reason it is at `admit` — no
+         * commit exists yet for *merge it anyway* to be an offer about.
          *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
@@ -3931,8 +3968,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * by the pipeline, which is what `held` excludes — and the request is only
          * worth making where origin is holding something to merge (`onOrigin`).
          */
-        const judged =
-          stopped === null || stopped.ending.ending === 'refused' || pass.waitOn?._tag === 'AnswerUnreadable'
+        const judged = stopped === null || stopped.ending.ending === 'refused'
         if (!held && judged && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that

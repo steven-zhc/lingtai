@@ -4,18 +4,21 @@
  * The page tells a person which of the five steps to write a command at by what
  * a red one costs there, so the column *is* the advice — and the first version
  * of it had `prepared` buying a fix round, where `nextOf` answers its own
- * refusal `WaitOnPerson{SetupRefused}` directly — never a `Propose` — and the
- * pass is held for a person with nothing bought. A reader who believed it moved
- * a precondition check there and paid a person for it. Nothing derived the
+ * refusal with a `Propose{SetupRefused}` whose offer never carries `implement`
+ * (`prepared` is not born at or after `implement`, `#472`) — and the pass is
+ * held for a person with nothing bought. A reader who believed it moved a
+ * precondition check there and paid a person for it. Nothing derived the
  * column, which is the failure `packages/recipe/unit/plugin-pages.test.ts`
  * names about a hand-kept table.
  *
  * **The implication is one-way, and that is deliberate.** A row may say *no
  * round bought* for a reason `offerFor` knows nothing about: `merge` affords
- * `implement` and buys nothing all the same, because an `action-refused` there
- * is not a direction any `judge:` answers (`checkRefused`, `pass-next.ts`).
- * What this refuses is the other direction — a row promising a round at a step
- * the offer has nothing to give — which is the one that costs money.
+ * `implement` and buys nothing by default all the same, because no built-in
+ * `judge:` ever selects a `check-refused` (`BUILT_IN_FOR['check-refused'] ===
+ * null`, `checkRefused` in `pass-next.ts`) — a recipe that declares one for it
+ * does buy the round `offerFor` was already offering. What this refuses is the
+ * other direction — a row promising a round at a step the offer has nothing to
+ * give at all — which is the one that costs money whatever a recipe declares.
  *
  * Beside the code rather than beside the page, for the reason
  * `packages/actions/unit/tamper-watch.test.ts` reads `doc/tamper-watch.md`: the
@@ -29,7 +32,8 @@ import { nextOf, offerFor, type Proposal, type Step, type StepOutcome } from '@l
 import { runPlugin } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { destinationOf } from '../src/proposed-route.ts'
+import { BUILT_IN_FOR } from '../src/judge.ts'
+import { destinationOf, whenOf } from '../src/proposed-route.ts'
 
 /**
  * A `run:` action's own refusal, as `nextOf` reads it — a `verdict`-yielding
@@ -115,10 +119,12 @@ describe('the run page says what a red command costs at each step it may be writ
    * promises one is a claim about two things: that the refusal reaches a
    * judge at all (`proposalOnRefusal`, above, asking `nextOf` rather than a
    * list kept beside it), and that `implement` is a candidate's destination
-   * once `offerFor` has built the offer from it. `prepared` fails both since
-   * `#467` — `nextOf` answers its own refusal `WaitOnPerson{SetupRefused}`
-   * directly — and `proposed`/`merge`'s own check fails the first
-   * (`CheckRefused`, row 9).
+   * once `offerFor` has built the offer from it. Since `#472` every refusal
+   * reaches `nextOf` as a `Propose`, so what tells the five apart is the
+   * second claim alone: `prepared`'s own `SetupRefused` and
+   * `proposed`/`merge`'s own `CheckRefused` both offer `implement` only when
+   * `offerFor`'s `bornAtOrAfterImplement` is true, and `prepared` and the two
+   * checks are not.
    */
   it('promises a fix round only where the refusal reaches a judge that can give one', () => {
     for (const row of costTable().filter((each) => each.bought)) {
@@ -134,18 +140,41 @@ describe('the run page says what a red command costs at each step it may be writ
   })
 
   /**
-   * And the steps the page says buy nothing are the steps nothing *could*:
-   * `prepared`'s refusal never reaches `offerFor` at all, and
-   * `proposed`/`merge`'s own check is `CheckRefused` rather than a direction
-   * any `judge:` answers (row 9). `implement` is excluded here — `nextOf`
-   * throws `a verdict refusal cannot happen at implement` (0120 §1's legality
-   * table: its `run:` yields `commit`, never `verdict`) — and proved instead
-   * by the doc's own row below, which the `## Where it may be declared` table
-   * is parsed against.
+   * And the steps the page says buy nothing by default are the steps nothing
+   * built in *could*: `prepared`'s own `SetupRefused` never offers
+   * `implement` at all (`offerFor`'s `bornAtOrAfterImplement`, `#472`), and
+   * `proposed`/`merge`'s own `CheckRefused` offers it unconditionally but no
+   * built-in judge ever selects it (`BUILT_IN_FOR['check-refused'] ===
+   * null`) — so without a recipe declaring one, none of the three buys a
+   * round. `implement` is excluded here — `nextOf` throws `a verdict refusal
+   * cannot happen at implement` (0120 §1's legality table: its `run:` yields
+   * `commit`, never `verdict`) — and proved instead by the doc's own row
+   * below, which the `## Where it may be declared` table is parsed against.
    */
-  it('says no round is bought where no ceiling would have bought one', () => {
+  it('says no round is bought by default where no ceiling would have bought one', () => {
     for (const step of ['prepared', 'proposed', 'merge'] as const) {
-      expect(proposalOnRefusal(step), `a red \`run:\` at \`${step}\` reaches a judge`).toBeNull()
+      expect(
+        proposalOnRefusal(step),
+        `a red \`run:\` at \`${step}\` never reaches \`nextOf\` as a \`Propose\``,
+      ).not.toBeNull()
+    }
+    const prepared = proposalOnRefusal('prepared')!
+    const preparedOffer = offerFor(prepared, { rounds: 2, restarts: 1 }, { rounds: 0, restarts: 0 })
+    expect(
+      preparedOffer.available.some((candidate) => destinationOf(candidate, prepared) === 'implement'),
+      '`prepared` is promised no round, and the offer there should have no `implement` on it',
+    ).toBe(false)
+    for (const step of ['proposed', 'merge'] as const) {
+      const proposal = proposalOnRefusal(step)!
+      const offer = offerFor(proposal, { rounds: 2, restarts: 1 }, { rounds: 0, restarts: 0 })
+      expect(
+        offer.available.some((candidate) => destinationOf(candidate, proposal) === 'implement'),
+        `\`${step}\` is promised no round for a different reason — the offer there should still have \`implement\` on it`,
+      ).toBe(true)
+      expect(
+        BUILT_IN_FOR[whenOf(proposal)],
+        `\`${step}\`'s own check refusal should have no built-in judge to buy a round without a recipe declaring one`,
+      ).toBeNull()
     }
     expect(
       costTable()

@@ -59,9 +59,12 @@ never report a fault.
      words; only the four refusing steps.
    - `asked` — `{ at, detail }`, the question in the agent's words and no
      `because`. Only `admit`, `design` and `implement` can ask.
-   - `did-not-finish` — `{ because, at, detail }`: a crash, a spent turn budget,
-     a body that threw (`because: "threw"`), or a mechanical decline. It has no
-     destination; the pass stops and a person looks.
+   - `did-not-finish` — `{ because, at, detail }`: a crash, a timeout or an
+     abort, a spent turn or dollar budget, a body that threw
+     (`because: "threw"`), or a mechanical decline. A crash, timeout or abort
+     stops the pass directly, with a person next (`AgentCrashed`); every other
+     cause routes through `proposed`'s router instead, carrying the reason
+     (`#472`, point 6 below).
    - `held` — a declared `human:` (or `watch:`) asked a person; the recipe has
      already decided, so it rests at `waiting` without a judge.
    - `never-ran` — the agent never started (quota, signed-out runtime); the
@@ -69,31 +72,30 @@ never report a fault.
    - `routed` — `proposed`'s one decision: `{ to, why }`.
 
 5. **Asked and crashed are different endings, not one ending and a string.**
-   `asked` reaches the router; `did-not-finish` does not. The `NEEDS_INPUT` token
-   is compared once, inside `runActionPipeline`, which answers `askedAt` beside
-   `didNotFinishAt`; above it nothing branches on a `because` string to decide
-   where a pass goes. They are separate events too: `StepAsked` and
-   `StepDidNotFinish`. Neither buys a fix round.
+   The `NEEDS_INPUT` token is compared once, inside `runActionPipeline`, which
+   answers `askedAt` beside `didNotFinishAt`; above it nothing branches on a
+   `because` string to decide where a pass goes. They are separate events too:
+   `StepAsked` and `StepDidNotFinish`. Both now reach `proposed`'s router,
+   same as point 6 below, except the one `did-not-finish` cause that answers
+   `AgentCrashed` directly. Neither buys a fix round.
 
-6. **Most of what does not simply pass arrives at `proposed`, carrying its
+6. **Every step that does not simply pass arrives at `proposed`, carrying its
    reason intact** — read off each visit's `StepOutcome` by `nextOf`
    (`packages/domain/src/pass-next.ts`), which answers `Propose` for `design`,
-   `implement`'s own question, `build`, a `review` whose answer parses, and
-   the merge lane's own refusal. **Four cells answer a person directly
-   instead, and never visit the router**: a refusal at `admit` (cutting the
-   worktree) or at `prepared` — both `worktreeFellShort`'s only arm, never
-   `Propose` — a check before the merge lane refusing, and an unreadable
-   answer at `merge` — none of which is a direction any `judge:` could be
-   declared at, so there is nothing to offer one. An unreadable answer at
-   `review` is `nextOf`'s own `WaitOnPerson` too, but the pass carries it on
-   to `proposed`'s own way-through visit rather than stopping at `review` —
-   that visit is the one that runs a declared `human:`/`watch:` action, and
-   the answer is still not a criterion any judge is paid to look at (0038
-   §2). `claim` has nothing to route (no item yet), `end` runs after the
-   decision, and a `proposed` that refuses has nowhere above it to appeal
-   to, so it rests at `waiting`. `proposed` also runs on the way through: a
-   pass that sailed past has a recorded decision saying so, and that visit is
-   where `review`'s findings are judged.
+   `implement`'s own question, `build`, `review`'s own answer (parsed or
+   not), the merge lane's own refusal, a refusal at `admit` (cutting the
+   worktree) or at `prepared`, and a check before the merge lane refusing.
+   The last three offer no judge a direction to choose without one declared,
+   but they still make the same trip to `proposed`'s own router as the rest.
+   **Two cells answer a person directly instead, and never visit the
+   router**: a crashed or interrupted agent (`AgentCrashed`) and a declared
+   `human:`/`watch:` action's own question (`SignoffRequired`) — neither is a
+   verdict about the diff for a judge to weigh. `claim` has nothing to route
+   (no item yet), `end` runs after the decision, and a `proposed` that
+   refuses routes to itself, a second visit with no direction above it to
+   appeal to, so it still rests at `waiting`. `proposed` also runs on the way
+   through: a pass that sailed past has a recorded decision saying so, and
+   that visit is where `review`'s findings are judged.
 
 7. **The workflow computes the offer; the judge picks from it.** `onOffer` in
    `pass.ts` (mirrored by `stepsOnOffer` in `packages/conductor/src/judge.ts`)

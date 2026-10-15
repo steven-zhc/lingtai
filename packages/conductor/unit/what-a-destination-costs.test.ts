@@ -7,7 +7,7 @@
  *
  * ```
  * the recipe is wrong          refused at resolve   nothing is claimed and nothing runs
- * briefly unreachable          did-not-finish       the pass stops; no round, no route
+ * briefly unreachable          did-not-finish       reaches `proposed`, buys no round (#472)
  * it needs a person            asked                reaches `proposed`, and a person
  * ```
  *
@@ -180,9 +180,13 @@ describe('a destination fails three ways, and a step has one way to say so', () 
   // ----------------------------------- the destination was unreachable ----
 
   /**
-   * **`did-not-finish`, and the pass stops.** Nothing was judged, so there is no
-   * judgement to route: `goesToTheRouter` lets no `did-not-finish` past, and the
-   * item is held for a person with nothing bought (0057 §1–3).
+   * **`did-not-finish`, and the pass still buys no round.** `nextOf` reads a
+   * `design` body's own `NotDone` as a `Propose{SetupRefused}` (`#472`), so it
+   * does reach `proposed`'s router now — but `design` is not born at or after
+   * `implement` (`offerFor`'s `bornAtOrAfterImplement`), so `fix-lines` is
+   * never on offer: only `restart` and `hand-to-person` are, and with no
+   * `judge:` declared nothing is spent and the pass still rests with a
+   * person, the same as before this ticket.
    *
    * 0066 §7 leaves *unreachable* and *needs a person* to measurement and says to
    * start everything here, so this is the row a destination's first failure
@@ -205,13 +209,14 @@ describe('a destination fails three ways, and a step has one way to say so', () 
           detail: 'confluence.example: ETIMEDOUT after 30s',
         },
       })
-      // It never reached the router, so no judge was asked and no round could
-      // have been spent — the cost row two is named for.
-      expect(result.routes).toEqual([])
-      expect(result.rested).toBeNull()
-      // And nothing after `design` ran: `implement` is not among the visits, so
-      // the expensive half of the pass was never bought.
-      expect(visited(result)).toEqual(['claim', 'admit', 'prepared', 'design', 'end'])
+      // It reaches the router (`#472`), but nothing a person did not already
+      // choose is spent: no `judge:` is declared, so the pass rests with one.
+      expect(result.routes).toHaveLength(1)
+      expect(result.routes[0]).toMatchObject({ from: 'design', chose: 'waiting', to: 'waiting' })
+      expect(result.rested).toBe('waiting')
+      // And nothing after the router ran: `implement` is not among the
+      // visits, so the expensive half of the pass was never bought.
+      expect(visited(result)).toEqual(['claim', 'admit', 'prepared', 'design', 'proposed', 'end'])
       // **`blocked` and never `failed`**, which is the whole of what the next
       // pass does about it: `failed` releases the claim and the backoff offers
       // the item again, where `blocked` folds to `state: "waiting"` and
@@ -243,7 +248,8 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       })
 
       expect(result.stoppedAt?.ending.ending).toBe('did-not-finish')
-      expect(result.routes).toEqual([])
+      expect(result.routes).toHaveLength(1)
+      expect(result.routes[0]).toMatchObject({ from: 'design', chose: 'waiting', to: 'waiting' })
       expect(outcomeOf(result)).toBe('blocked')
     })
   })

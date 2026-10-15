@@ -3,26 +3,38 @@
  * `conduct.ts`'s closure so the classification can be unit-tested on literals
  * rather than only through a whole pass.
  *
- * **Since `#462`, the only arrival this still classifies live is the merge
- * lane's own refusal with no direction** (0120 *Two phases*: `proposed`'s
- * real routing now reaches a person through `pass.waitOn`/`holdOf`, never
- * through here) — step 2 below. The old step 1 — a refusal the router sent on
- * with a direction (`red`, `verify-failed`, `conflict`) — is gone with
- * `arriveAtTheRouter`: every one of those is a `Propose` now, and reaches a
- * person as `WaitOnPerson{ProposedEscalated}` through `pass.waitOn`, never
- * through `stoppedAt`/`rested` alone.
+ * **Since `#472`, steps 2 and 4 below are dead too, and for the same reason
+ * as the `refused` case already was.** Every one of the seven `nextOf` can
+ * propose — the merge lane's own refusal with no direction (step 2) and
+ * `review`'s/`merge`'s own unreadable answer (step 4) included — now sets
+ * `pass.waitOn` through `routeProposal`'s `ProposedEscalated`, so `holdFor`
+ * takes the `holdOf` branch for them before `holdOfPass` is ever called. The
+ * old step 1 — a refusal the router sent on with a direction (`red`,
+ * `verify-failed`, `conflict`) — went the same way first, with `#462`'s
+ * `arriveAtTheRouter`.
  *
- * **The `refused` case in the switch below is dead for the same reason, not
- * a second live arrival.** A `prepared` refusal and a `proposed`/`merge`
- * check refusal now set `pass.waitOn` too (`SetupRefused`/`CheckRefused`), so
- * `holdFor` takes the `holdOf` branch for them before `holdOfPass` is ever
- * called — see that case's own comment, which proves the unreachability
- * rather than asserting it here.
+ * **The `refused` case in the switch below is dead for the same reason.** A
+ * `prepared` refusal and a `proposed`/`merge` check refusal now set
+ * `pass.waitOn` too (`SetupRefused`/`CheckRefused`), so `holdFor` takes the
+ * `holdOf` branch for them before `holdOfPass` is ever called — see that
+ * case's own comment, which proves the unreachability rather than asserting
+ * it here.
  *
- * Step 4 (`stopped === null`) survives for the one case that still rests
- * with neither: `review`'s own unreadable answer, which walks on to
- * `proposed`'s spine visit and leaves a fixed `PassRouted` row without ever
- * asking `offerFor` a question.
+ * **`case 'held'` is dead too, for the same reason as `refused`.** A `held`
+ * ending comes from one place, `endingOf`'s own `result.heldAt`, which is
+ * always the deciding action — a `signoff` yield answers
+ * `WaitOnPerson{SignoffRequired}`, a `verdict` yield answers
+ * `Propose{CheckRefused}`, and a `worktree` yield answers
+ * `Propose{SetupRefused}` (`pass-steps.test.ts`'s `holds the item when the
+ * cut asks a question`) — so `pass.waitOn` is set every time, and `holdFor`
+ * takes the `holdOf` branch before `holdOfPass` is ever called. What is left
+ * live is `case 'did-not-finish'` below: `claim`'s own decline (never
+ * routed — `claim` is not one of the seven `proposed` appeals to), a fix
+ * round's own decline, set directly by `conduct.ts` rather than through
+ * `pass.waitOn` (`declined`, read against `what-a-pass-writes-today.test.ts`'s
+ * own *`implement` changes nothing in a fix round*), and a body — or
+ * `nextOf` itself — that threw, which leaves `pass.waitOn` null with no route
+ * ever decided.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
 import {
@@ -103,12 +115,15 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     ...(input.repairOf === undefined ? {} : { repairOf: input.repairOf }),
   }
 
-  // 2. The merge lane refused with no direction — it stops the lane before
-  // the diff is what is in doubt. `merge-refused` is already `JudgeWhen`'s
-  // own name for these seven — dirty-base, unpushed-base, pending-migration,
-  // no-commits, wip-commit, push-rejected, unexpected (`#471`) — but until
-  // `#472` wires `nextOf` to turn this stop into a `MergeRefused` proposal,
-  // nothing routes it through `proposed`'s judge and a person is next here.
+  // 2. **Dead since `#472`, not a second live arrival.** The merge lane's own
+  // refusal with no direction used to stop the lane with `pass.waitOn ===
+  // null`, before the diff was what was in doubt; `merge-refused` is already
+  // `JudgeWhen`'s own name for these seven — dirty-base, unpushed-base,
+  // pending-migration, no-commits, wip-commit, push-rejected, unexpected
+  // (`#471`) — and `#472` wires `nextOf` to turn this stop into a
+  // `Propose{MergeRefused}`, so it sets `pass.waitOn` through
+  // `routeProposal`'s `ProposedEscalated` and `holdFor` takes the `holdOf`
+  // branch before `holdOfPass` is ever called.
   if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
     const why = detailOf(stopped.ending)
     const parsedReason = RefusalReasonSchema.safeParse(stopped.ending.because)
@@ -147,8 +162,14 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
     }
   }
 
-  // 4. The router sent the pass to a person on its own way through — nothing
-  // refused, and what it judged was `review`'s findings.
+  // 4. **Dead since `#472`, not a second live arrival.** `routeProposal`'s
+  // only `WaitOnPerson` branch (`pass.ts`) sets `pass.waitOn = next.reason` in
+  // the same breath it sets `rested = 'waiting'`, so a `stopped === null`
+  // arrival that reaches this far always has `pass.waitOn` set too — `holdFor`
+  // takes the `holdOf` branch for it before `holdOfPass` is ever called. This
+  // used to be the one way the router sent the pass to a person on its own
+  // way through, nothing refused, judging `review`'s findings or an
+  // unreadable answer at `review`/`merge` — both are `ProposedEscalated` now.
   if (stopped === null) {
     const why = input.lastRoute?.why ?? 'the pass was held for a person'
     return {

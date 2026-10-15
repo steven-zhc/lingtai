@@ -29,10 +29,6 @@
  *
  * **Disagreements with 0120 found by running the rows, not by reading it:**
  *
- * - **`NotDone` at `implement` is not routed** (row 6, the ticket's own
- *   *Watch out*): `implement` is not in `REFUSING_STEPS` (`pass.ts:120`), so
- *   `goesToTheRouter` never sees the ending and it holds as `DidNotFinish`
- *   straight off the step, with no `PassRouted` anywhere on the run.
  * - **The wall is not a `Ceiling`** (row 14b): only `out-of-turns` and
  *   `out-of-usd` set `ceilingHit` (`conduct.ts:2774–2781`); `timeout` falls to
  *   an ordinary `DidNotFinish` at the step it stopped, same shape as row 6.
@@ -62,6 +58,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { Envelope, Hold } from '@lingtai/domain'
+import { integrationStream, reduceIntegration } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -459,11 +456,15 @@ runtime:
   })
 
   /**
-   * **The ticket's own *Watch out*.** `implement` is not in `REFUSING_STEPS`
-   * (`pass.ts:120`), so an implementer that produced no commits at round 0
-   * never reaches `goesToTheRouter` — it holds straight off the step as
-   * `DidNotFinish`, with `StepDidNotFinish` on the run and no `PassRouted`
-   * anywhere. This is the ending #461's first run ended on, seq 368–371.
+   * **Since `#472` this routes too.** An implementer that produced no commits
+   * at round 0 is `NothingProduced`, one of the seven `nextOf` now answers
+   * `Propose` for, so `routeProposal` records a `PassRouted` right after
+   * `StepDidNotFinish` on the run. With no `judge:` declared the router's
+   * floor is the same person, and `holdOf`'s `ProposedEscalated{NothingProduced}`
+   * branch calls the same `nothingProducedHold` builder the direct form did,
+   * so the hold itself — `DidNotFinish`, `why: 'the agent produced no
+   * commits'` — is unchanged. This is the ending #461's first run ended on,
+   * seq 368–371.
    */
   it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFinish`)', async () => {
     const store = memoryStore()
@@ -505,12 +506,12 @@ runtime:
       'StepsResolved',
       'RunFinished',
       'StepDidNotFinish',
+      'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'the agent produced no commits' })
-    expect(typesOf(theRun(store))).not.toContain('PassRouted')
   })
 
   /**
@@ -518,6 +519,13 @@ runtime:
    * nothing, without crashing — `committed` is false and `fixed.failure` is
    * null, so `conduct.ts:2966` sets `declined` and `holdOfPass` reads the
    * `did-not-finish` ending as `Declined` rather than `DidNotFinish`.
+   *
+   * **Two `PassRouted`s, since `#472`**: `pass.routes` collects one decision
+   * per routed visit over the whole walk and `conduct.ts:3506-3525` appends
+   * all of them in one batch after the walk returns, so the review's own
+   * `ReviewFindings` route (into the fix round) and the round's own
+   * `FixerDisagrees` route (now one of the seven) land as two consecutive
+   * entries rather than one.
    */
   it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', async () => {
     const store = memoryStore()
@@ -573,6 +581,7 @@ runtime:
       'FixRequested',
       'FixApplied',
       'StepDidNotFinish',
+      'PassRouted',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
@@ -654,12 +663,14 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepRequested',
       'StepStarted',
       'StepFailed',
-      // No `PassRouted` (`#467`): `nextOf` reads the check's own refusal as
-      // `WaitOnPerson{CheckRefused}` directly, so the pass never takes a
-      // second visit to `proposed` to discover there is no direction a
-      // `judge:` could be declared at for it. The hold is still `CheckRed`,
-      // through `holdOf`'s `CheckRefused` arm — the same `Hold` this row
-      // pinned before this ticket, reached a different way.
+      // `PassRouted`, since `#472`: `CheckRefused` is one of the seven, so
+      // `nextOf` answers `Propose` and the check's own refusal takes a
+      // routing visit to `proposed` — with no `judge:` declared for
+      // `check-refused`, the router's floor holds it for a person exactly as
+      // the direct `WaitOnPerson{CheckRefused}` did before this ticket. The
+      // hold is still `CheckRed`, through `holdOf`'s `ProposedEscalated` arm
+      // calling the same `checkRedHold` builder.
+      'PassRouted',
       'RunRefsPublished',
       'ApprovalRequested',
       'RunRefsPublished',
@@ -736,15 +747,40 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
   /**
    * `dirty-base` is one of the lane's other six reasons — no direction exists
-   * for it, so it stays `MergeRefused` (`hold-of.ts`'s step 2).
+   * for it, so it stays `MergeRefused` (`conduct.ts`'s own `MergeRefused`
+   * patch, `#472`, filling `paths`/`baseSha`/`headSha` in from
+   * `lastIntegrationRefusal` since `holdOf` alone writes `null` for all
+   * three). The fake `integrate` appends a real `IntegrationRefused` row —
+   * carrying those three fields for a `dirty-base` reason, which the real
+   * lane (`packages/repo/src/integrate.ts`) only does for `conflict` — so
+   * this is the unit-level stand-in `doc/design/472.md`'s own *What nothing
+   * here can verify* section asks for: whether the patch actually reads them
+   * back onto the hold.
    */
   it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const ports = fakePorts(did, store, true)
-    ports.repo.integrate = () =>
-      Effect.sync(() => {
+    ports.repo.integrate = (o) =>
+      Effect.promise(async () => {
         did.push('integrate')
+        const stream = integrationStream(o.project, o.base)
+        const at = reduceIntegration(await store.read(stream)).version
+        await store.append(stream, at, [
+          {
+            type: 'IntegrationRefused',
+            actor: 'conductor',
+            data: {
+              workItemId: o.workItemId,
+              branch: o.branch,
+              reason: 'dirty-base',
+              detail: 'main moved under it',
+              paths: ['src/fix.ts'],
+              baseSha: 'b'.repeat(40),
+              headSha: 'c'.repeat(40),
+            },
+          },
+        ])
         return { ok: false, reason: 'dirty-base', detail: 'main moved under it' } as never
       })
 
@@ -795,7 +831,13 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'MergeRefused', reason: 'dirty-base' })
+    expect(hold).toMatchObject({
+      _tag: 'MergeRefused',
+      reason: 'dirty-base',
+      paths: ['src/fix.ts'],
+      baseSha: 'b'.repeat(40),
+      headSha: 'c'.repeat(40),
+    })
   })
 
   /**
@@ -1027,17 +1069,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * **The cold reviewer's own answer is unreadable, and still visits
-   * `proposed`'s own spine — the one visit that runs a declared
-   * `human:`/`watch:` action there** (`#467`'s fix round). `nextOf` answers
-   * `WaitOnPerson{AnswerUnreadable}` for a `review` whose findings do not
-   * parse at all, but the loop reads that answer at `review` as carrying the
-   * pass on to `proposed`'s own way-through visit rather than stopping —
-   * `pass.waitOn` stays `null`, and `proposed`'s own body (`reviewRefused` +
-   * `judged`'s `unreadable` branch) is what turns it into the same
-   * `Routed{when: 'findings'}` an unrouted `review` refusal always got. A
-   * recipe that declared a gate at `proposed:` would have it run here; this
-   * fixture declares none, so the visit's only effect is the routing.
+   * **The cold reviewer's own answer is unreadable, and since `#472` never
+   * runs `proposed`'s own declared `human:`/`watch:` action** (reversing
+   * `#467`'s own carry-forward). `nextOf` answers `Propose{AnswerUnreadable}`
+   * for a `review` whose findings do not parse at all, exactly as it does for
+   * the other six fall-shorts, and `review` always ends `passed` (`endingOf`),
+   * so `routeProposal`'s `reported` is `null` and it builds the routing visit
+   * itself (`#462`) without ever calling `proposed`'s own body. A recipe that
+   * declared a gate at `proposed:` would **not** have it run here; the hold —
+   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
+   * got, with the *could not be read at all* sentence ahead of the raw answer
+   * — comes from `holdOf`'s `answerUnreadableHold` builder instead.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()
@@ -1176,7 +1218,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   /**
    * `out-of-turns` with turns spent is the one failure kind that sets
    * `ceilingHit` (with `out-of-usd`, `conduct.ts:2774`), so it is the one
-   * `Ceiling` in this file.
+   * `Ceiling` in this file. **Since `#472`** `BudgetExhausted` is one of the
+   * seven, so the run gains a `PassRouted`, and `holdFor`'s ceiling branch
+   * takes the step from `pass.waitOn.proposal.from` rather than
+   * `pass.stoppedAt!` — the hold itself, with `turns`/`costUsd` patched in
+   * from `ceilingHit`, is unchanged.
    */
   it('14a. the turn ceiling is hit mid-run (`Ceiling`)', async () => {
     const store = memoryStore()
@@ -1231,6 +1277,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunFinished',
       'RunFailed',
       'StepDidNotFinish',
+      'PassRouted',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',

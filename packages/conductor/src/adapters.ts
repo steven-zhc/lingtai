@@ -35,8 +35,8 @@ import { NEEDS_INPUT, type Action, type ActionEvent, type PipelineResult } from 
  * still needs `plugin` — plus `threwRatherThanAnswered`.** A kept `run:`'s
  * clean failure, the work action's own setup that broke before it dispatched
  * an agent, and any commit-yielding action's dependency throwing, all answer
- * `NotDone` (0120 §4 sends every one of them to `WaitOnPerson{SetupRefused}`,
- * same as `nothing`/`worktree`/`design`/`signoff`). `commitEventOf` still has
+ * `NotDone` (0120 §4 sends every one of them to `Propose{SetupRefused}` since
+ * `#472`, same as `nothing`/`worktree`/`design`/`signoff`). `commitEventOf` still has
  * to tell the three apart to reproduce today's events: `plugin === 'run'` is
  * the kept run's own clean failure (`StepFailed`), and otherwise the work
  * action's — `StepDidNotFinish` for the setup that broke, `StepFailed` for a
@@ -270,8 +270,8 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       // A setup broken before any agent ran — `conduct.ts`'s four `the hook …`
       // sentences — and never a throw: `runActionPipeline`'s catch always
       // answers `verdict: 'failed'` (the case below), never `did-not-finish`.
-      // 0120 §4 assigns `commit`'s `NotDone` to `WaitOnPerson{SetupRefused}`
-      // regardless of cause, and this cell is squarely that: the hook never
+      // 0120 §4 assigns `commit`'s `NotDone` to `Propose{SetupRefused}` since
+      // `#472` regardless of cause, and this cell is squarely that: the hook never
       // ran at all, which is not one of the five words `Interrupted` names
       // (`#466` fix round — the prior `Interrupted{cause: 'crash'}` here read
       // a broken hook as a crashed agent and offered `Requeue`).
@@ -676,7 +676,7 @@ function declinedHold(run: RunRef, step: Step, saidText: string | null): Hold {
 
 function nothingProducedHold(run: RunRef, saidText: string | null): Hold {
   // No `Hold` today — the nearest is a `DidNotFinish` at `implement`, the
-  // step `nextOf` names for it (0120 §4's `WaitOnPerson`).
+  // step `nextOf`'s `Propose{NothingProduced}` names for it (0120 §4).
   return {
     _tag: 'DidNotFinish',
     run,
@@ -914,11 +914,21 @@ function answerUnreadableHold(
   // `merge` reads as the lane's own `CheckRed`; `design` has nothing but an
   // ordinary `DidNotFinish`.
   if (step === 'review' || step === 'proposed') {
+    // The prefix is a short form of `pass.ts`'s own deleted sentence
+    // (`pendingUnreadableReview`, `#472`), ahead of `raw` inside the same
+    // `said(…, 400)` so it survives clipping where `raw` alone would not.
+    // `review`'s own cold reviewer and a judge declared at `proposed` are
+    // different actors, so the prefix names whichever one actually failed
+    // to parse rather than always naming the reviewer's findings.
+    const prefix =
+      step === 'review'
+        ? "`review`'s findings could not be read at all: "
+        : "the `proposed` step's own judge answer could not be read at all: "
     return {
       _tag: 'Routed',
       run,
       when: 'findings',
-      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(raw, 400)}`,
+      why: `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + raw, 400)}`,
       raw,
       findings: [...pass.findings],
       paths: null,
