@@ -135,14 +135,15 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      * What does catch it is the line `conduct.ts` prints from `pass.steps`,
      * which is one entry per *visit the loop actually made* and is the only
      * caller-side view of the walk. The step names in it, in order, have to be
-     * `STEPS` — the ten `@lingtai/domain` exports so that nothing keeps a list
-     * of its own — and `end` has to be the last of them, because `runPass` runs
-     * it after the walk on every ending.
+     * `STEPS` minus `claim` — the nine `runPass` itself walks, `claim` having
+     * run before it (`#463`) — so that nothing keeps a list of its own, and
+     * `end` has to be the last of them, because `runPass` runs it after the
+     * walk on every ending.
      */
     const walked = lines.find((line) => line.startsWith('pass: '))
     expect(walked, `no pass line among:\n${lines.join('\n')}`).toBeDefined()
     const visits = walked!.slice('pass: '.length).split(' ')
-    expect(visits.map((v) => v.split('=')[0])).toEqual([...STEPS])
+    expect(visits.map((v) => v.split('=')[0])).toEqual(STEPS.filter((s) => s !== 'claim'))
     expect(visits.at(-1)).toBe('end=passed')
     // And the one that did not pass is the merge point, which is where the
     // injected `no-merge` action asked for a person.

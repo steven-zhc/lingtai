@@ -55,7 +55,7 @@ import { offerFor, type Proposal, type Step } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { outcomeOf, runPass, type Ceilings, type PassOptions, type PassResult } from '../src/pass.ts'
+import { outcomeOf, runPass, type Ceilings, type PassOptions, type PassOver } from '../src/pass.ts'
 import { destinationOf } from '../src/proposed-route.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
@@ -84,7 +84,7 @@ const answering = (result: ActionResult): PassOptions['actionsAt'] => {
 }
 
 /** One pass with a destination at `design`, and the events it appended. */
-async function passWith(result: ActionResult): Promise<{ result: PassResult; events: ActionEvent[] }> {
+async function passWith(result: ActionResult): Promise<{ result: PassOver; events: ActionEvent[] }> {
   const events: ActionEvent[] = []
   const passed = await runPass({
     recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
@@ -99,7 +99,7 @@ async function passWith(result: ActionResult): Promise<{ result: PassResult; eve
 }
 
 /** The visits, in order, which is the whole of *what did this pass pay for*. */
-const visited = (result: PassResult): readonly Step[] => result.steps.map((visit) => visit.step)
+const visited = (result: PassOver): readonly Step[] => result.steps.map((visit) => visit.step)
 
 /**
  * Why the schema refused this `design:` list — the issues themselves rather than
@@ -200,7 +200,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
         findings: [],
       })
 
-      expect(result.stoppedAt).toEqual({
+      expect(result.stopped).toEqual({
         step: 'design',
         ending: {
           ending: 'did-not-finish',
@@ -213,10 +213,11 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       // choose is spent: no `judge:` is declared, so the pass rests with one.
       expect(result.routes).toHaveLength(1)
       expect(result.routes[0]).toMatchObject({ from: 'design', chose: 'waiting', to: 'waiting' })
-      expect(result.rested).toBe('waiting')
-      // And nothing after the router ran: `implement` is not among the
-      // visits, so the expensive half of the pass was never bought.
-      expect(visited(result)).toEqual(['claim', 'admit', 'prepared', 'design', 'proposed', 'end'])
+      expect(result.end._tag).toBe('WaitOnPerson')
+      // And nothing after the router ran, and `claim` ran before this walk
+      // started rather than inside it: `implement` is not among the visits,
+      // so the expensive half of the pass was never bought.
+      expect(visited(result)).toEqual(['admit', 'prepared', 'design', 'proposed', 'end'])
       // **`blocked` and never `failed`**, which is the whole of what the next
       // pass does about it: `failed` releases the claim and the backoff offers
       // the item again, where `blocked` folds to `state: "waiting"` and
@@ -224,8 +225,8 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       // the backoff (`queue.ts`). So this row waits for a person and is not
       // retried, however cheap the failure was — the line `#299` corrected at
       // 0066 §6, about a configuration error that reaches run time.
-      expect(outcomeOf(result)).toBe('blocked')
-      expect(outcomeOf(result)).not.toBe('failed')
+      expect(outcomeOf(result.end)).toBe('blocked')
+      expect(outcomeOf(result.end)).not.toBe('failed')
       // `StepDidNotFinish` and not `StepAsked` — broken machinery, not a
       // question (0068).
       expect(events.filter((e) => e.type === 'StepAsked')).toEqual([])
@@ -247,10 +248,10 @@ describe('a destination fails three ways, and a step has one way to say so', () 
         findings: [],
       })
 
-      expect(result.stoppedAt?.ending.ending).toBe('did-not-finish')
+      expect(result.stopped?.ending.ending).toBe('did-not-finish')
       expect(result.routes).toHaveLength(1)
       expect(result.routes[0]).toMatchObject({ from: 'design', chose: 'waiting', to: 'waiting' })
-      expect(outcomeOf(result)).toBe('blocked')
+      expect(outcomeOf(result.end)).toBe('blocked')
     })
   })
 
@@ -287,8 +288,8 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       expect(result.routes.map((route) => ({ from: route.from, to: route.to }))).toEqual([
         { from: 'design', to: 'waiting' },
       ])
-      expect(result.rested).toBe('waiting')
-      expect(outcomeOf(result)).toBe('blocked')
+      expect(result.end._tag).toBe('WaitOnPerson')
+      expect(outcomeOf(result.end)).toBe('blocked')
       // The question is on `StepAsked.detail`, which is where a person reads it.
       expect(events.filter((e) => e.type === 'StepDidNotFinish')).toEqual([])
       expect(events.find((e) => e.type === 'StepAsked')?.data).toMatchObject({

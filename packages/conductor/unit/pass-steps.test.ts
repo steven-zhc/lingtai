@@ -49,7 +49,7 @@ import {
   type PassPorts,
   type Worked,
 } from '../src/pass-steps.ts'
-import { NEEDS_INPUT, outcomeOf, runPass, type PassOptions, type PassResult } from '../src/pass.ts'
+import { NEEDS_INPUT, claimStep, outcomeOf, runPass, type PassOptions, type PassOver } from '../src/pass.ts'
 
 // --------------------------------------------------------------- fixtures ----
 
@@ -378,7 +378,18 @@ function portsAnswering(answers: Answers = {}): {
   return { ports, judge, asked, taking, working }
 }
 
-/** One run of the whole pass, with whatever the recipe declares and the ports say. */
+/**
+ * One run of the whole pass, with whatever the recipe declares and the ports
+ * say.
+ *
+ * **`claim` runs first and separately** (0120 §6, `#463`): `claimStep` is
+ * called before `runPass`, over the same options, exactly as `conduct.ts`
+ * now calls it. The default answer always takes the item, so every one of
+ * this file's other tests sees the walk `runPass` itself runs — `admit`
+ * through `end` — and nothing about `claim`'s own three declines, which
+ * `describe('claim runs the \`queue:\` plugin, and cannot refuse', …)` below
+ * tests directly against `claimStep`.
+ */
 async function pass(
   options: {
     steps?: Record<string, unknown>
@@ -386,7 +397,7 @@ async function pass(
     actions?: Record<string, readonly Action[]>
     ceilings?: PassOptions['ceilings']
   } = {},
-): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
+): Promise<{ result: PassOver; asked: Asks; ports: PassPorts }> {
   const { ports, judge, asked, taking, working } = portsAnswering(options.answers)
   /**
    * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
@@ -469,7 +480,7 @@ async function pass(
         },
       },
     )
-  const result = await runPass({
+  const passOptions: PassOptions = {
     recipe: recipeWith(options.steps),
     context,
     emit: () => {},
@@ -494,12 +505,14 @@ async function pass(
       if (step === 'implement') return [writing()]
       return step === 'merge' ? [landing()] : []
     },
-  })
+  }
+  await claimStep(passOptions)
+  const result = await runPass(passOptions)
   return { result, asked, ports }
 }
 
 /** Every visit, as `<step>:<ending>`, which is the shape of the walk. */
-const walk = (result: PassResult): string[] => result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`)
+const walk = (result: PassOver): string[] => result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`)
 
 const endRow = (plan: readonly ToAppend[]): PayloadOf<'EndActionsResolved'> =>
   plan[0]?.data as PayloadOf<'EndActionsResolved'>
@@ -511,7 +524,6 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     const { result, asked } = await pass()
 
     expect(walk(result)).toEqual([
-      'claim:passed',
       'admit:passed',
       'prepared:passed',
       'design:passed',
@@ -533,28 +545,38 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
    * The two declines that leave nothing behind. Neither is a refusal — 0058 §2,
    * *there is no item to hold and no diff to fix* — so neither buys a fix round
    * and neither reaches the router: `claim` is not in `ARRIVE_AT_THE_ROUTER`.
+   *
+   * **Through `claimStep`, not `pass()`** (`#463`): `claim` runs before
+   * `runPass` now, so a decline is `claimStep`'s own answer and `runPass`
+   * never starts — `conduct.ts`'s early return on `ending !== 'passed'` is
+   * what makes that true in production, and this is the same call one layer
+   * down, with no walk to run after it.
    */
   it.each([
     { answer: { passedOver: 'excluded-label' } as TakeAnswer, because: 'passed-over' },
     { answer: { notClaimed: 'held by local:41' } as TakeAnswer, because: 'not-claimed' },
-  ])('stops the pass when the item was not taken ($because)', async ({ answer, because }) => {
-    const { result, asked } = await pass({ answers: { take: answer } })
+  ])('declines the claim when the item was not taken ($because)', async ({ answer, because }) => {
+    const { ports, asked, taking } = portsAnswering({ take: answer })
+    const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
 
-    expect(walk(result)).toEqual(['claim:did-not-finish', 'end:passed'])
+    const claimed = await claimStep({
+      recipe: recipeWith(),
+      context,
+      emit: () => {},
+      bodies: bodiesFor(ports),
+      actionsAt: (step) => (step === 'claim' ? [claiming] : []),
+    })
+
     // The action's own `because`, travelling — `endingOf` reads it off the result
     // and `at` is the action that said it, where the body used to answer `null`.
-    expect(result.stoppedAt).toEqual({
-      step: 'claim',
-      ending: {
-        ending: 'did-not-finish',
-        because,
-        at: 'take the ticket',
-        detail: expect.any(String),
-      },
+    expect(claimed.ending).toEqual({
+      ending: 'did-not-finish',
+      because,
+      at: 'take the ticket',
+      detail: expect.any(String),
     })
-    expect(result.routes).toEqual([])
-    // Nothing was cut, nothing was dispatched, and `end` had no stream to
-    // resolve onto — the whole of what *the pass is about no item* means.
+    // Nothing was cut, nothing was dispatched — `claim` is the whole of this
+    // walk, and there is no item for anything after it to be about.
     expect(asked.cut).toEqual([])
     expect(asked.dispatch).toEqual([])
     expect(asked.read).toEqual([])
@@ -562,26 +584,36 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
 
   /**
    * The third decline, and the one with a stream behind it: the claim's append
-   * may have committed. `end` resolves for the item even though no ticket was
-   * ever handed back, because an item this run may be holding is one somebody has
-   * to be told about.
+   * may have committed. `conduct.ts`'s own `onStream` (the closure `take`
+   * writes, not `PassPorts.onStream`) is what tells its `release` that this
+   * run may hold something to give back — `end` does **not** resolve for it
+   * any more (`#463`: `end` runs only inside `runPass`, and `runPass` never
+   * starts on a decline), which costs nothing observable, since
+   * `release` only ever appended `endPlan` when `endedAs === 'failed'` and a
+   * claim's own stop was never that outcome.
    */
-  it('names the item when the claim may have committed, and still resolves `end` for it', async () => {
-    const { result, asked } = await pass({
-      steps: { end: [HOLD_ON_BLOCKED] },
-      answers: { take: { mayHold: { workItemId: 'wi-lingtai-259', detail: 'connection reset' } } },
+  it('names the item when the claim may have committed, and leaves nothing for `runPass` to resolve', async () => {
+    const { ports, asked, taking } = portsAnswering({
+      take: { mayHold: { workItemId: 'wi-lingtai-259', detail: 'connection reset' } },
+    })
+    const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
+
+    const claimed = await claimStep({
+      recipe: recipeWith(),
+      context,
+      emit: () => {},
+      bodies: bodiesFor(ports),
+      actionsAt: (step) => (step === 'claim' ? [claiming] : []),
     })
 
-    expect(walk(result)).toEqual(['claim:did-not-finish', 'end:passed'])
-    const ending = result.stoppedAt?.ending
-    expect(ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
-    expect(ending && 'detail' in ending ? ending.detail : '').toContain('wi-lingtai-259')
-    expect(outcomeOf(result)).toBe('blocked')
-    expect(asked.read).toEqual(['wi-lingtai-259'])
-    expect(endRow(asked.record[0]?.plan ?? [])).toEqual({
-      outcome: 'blocked',
-      actions: [{ name: 'hold it', labels: ['agent:hold'] }],
-    })
+    expect(claimed.ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
+    const detail = 'detail' in claimed.ending ? claimed.ending.detail : ''
+    expect(detail).toContain('wi-lingtai-259')
+    // `PassPorts.onStream()` names it too — the one decline that leaves a
+    // stream behind, which is what lets a caller tell this run may be
+    // holding something rather than nothing at all.
+    expect(ports.onStream()).toBe('wi-lingtai-259')
+    expect(asked.read).toEqual([])
   })
 
   /**
@@ -607,19 +639,26 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     })
     const bodies = bodiesFor(ports)
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
-    const run = () =>
-      runPass({
-        recipe: recipeWith({ end: [CLOSE_ON_LANDED] }),
-        context,
-        emit: () => {},
-        bodies,
-        actionsAt: (step, actions) => (step === 'claim' ? [claiming] : actions.map((a) => canned(a.name, PASSED))),
-      })
+    const passOptions: PassOptions = {
+      recipe: recipeWith({ end: [CLOSE_ON_LANDED] }),
+      context,
+      emit: () => {},
+      bodies,
+      actionsAt: (step, actions) => (step === 'claim' ? [claiming] : actions.map((a) => canned(a.name, PASSED))),
+    }
+    // Mirrors `conduct.ts`: `runPass` runs only once `claimStep` answers `passed`.
+    const run = async () => {
+      const claimed = await claimStep(passOptions)
+      return claimed.ending.ending === 'passed' ? await runPass(passOptions) : null
+    }
 
     await run()
     const second = await run()
 
-    expect(walk(second)).toEqual(['claim:did-not-finish', 'end:passed'])
+    // The second claim took nothing, so there is no walk to run and no
+    // second `end` to resolve onto the item the first one landed.
+    expect(second).toBeNull()
+    expect(ports.onStream()).toBeNull()
     expect(asked.read).toEqual([ITEM.workItemId])
     expect(asked.record).toHaveLength(1)
   })
@@ -644,7 +683,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
       actions: { prepared: [watching('prepared')] },
     })
 
-    expect(result.steps[1]?.ending).toEqual({ ending: 'passed', head: CUT_AT })
+    expect(result.steps[0]?.ending).toEqual({ ending: 'passed', head: CUT_AT })
     // The pipeline at `prepared` and the agent at `implement` see the same head,
     // and it is the one the tree was cut at rather than the caller's base.
     expect(judged).toEqual([{ step: 'prepared', onSha: CUT_AT }])
@@ -681,7 +720,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
     })
 
     expect(asked).toEqual([{ base: '1.0', submodules: true }])
-    expect(result.steps[1]).toMatchObject({
+    expect(result.steps[0]).toMatchObject({
       step: 'admit',
       ending: { ending: 'passed', head: CUT_AT },
       results: [{ action: 'cut the branch', verdict: 'passed' }],
@@ -691,10 +730,10 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
   it('stops the pass when the tree could not be cut, and buys nothing', async () => {
     const { result, asked } = await pass({ answers: { cut: { notCut: 'no such base ref' } } })
 
-    expect(walk(result)).toEqual(['claim:passed', 'admit:did-not-finish', 'proposed:routed', 'end:passed'])
+    expect(walk(result)).toEqual(['admit:did-not-finish', 'proposed:routed', 'end:passed'])
     // The action's name rather than `null`, which is the one thing that changed
     // when the work left the body: `endingOf` names what did not finish.
-    expect(result.stoppedAt?.ending).toMatchObject({
+    expect(result.stopped?.ending).toMatchObject({
       ending: 'did-not-finish',
       because: 'did-not-finish',
       at: 'cut the branch',
@@ -707,7 +746,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
     // the base the caller handed in — nothing was cut.
     expect(result.routes).toHaveLength(1)
     expect(result.routes[0]).toMatchObject({ from: 'admit', chose: 'waiting', to: 'waiting' })
-    expect(result.stoppedAt?.ending).not.toHaveProperty('head')
+    expect(result.stopped?.ending).not.toHaveProperty('head')
     expect(asked.draft).toEqual([])
   })
 
@@ -728,8 +767,8 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
   it('holds the item when the cut asks a question', async () => {
     const { result } = await pass({ answers: { cut: { asked: 'which base — main or 1.0?' } } })
 
-    expect(walk(result)).toEqual(['claim:passed', 'admit:held', 'proposed:routed', 'end:passed'])
-    expect(result.stoppedAt).toEqual({
+    expect(walk(result)).toEqual(['admit:held', 'proposed:routed', 'end:passed'])
+    expect(result.stopped).toEqual({
       step: 'admit',
       ending: { ending: 'held', at: 'cut the branch', question: 'which base — main or 1.0?' },
     })
@@ -744,13 +783,13 @@ describe('prepared refuses, and the refusal reports like any other', () => {
   /**
    * **Since `#472` it does route, and still rests the same.** `endingOf`
    * still reads a `failed` verdict at a refusing step as a refusal —
-   * `result.stoppedAt` names the install exactly as it always did — and
+   * `result.stopped` names the install exactly as it always did — and
    * `nextOf` now answers `prepared`'s own refusal `Propose{SetupRefused}`,
    * so it visits `proposed`'s router: no agent has run, so `fix-lines` is
    * never on offer (`offerFor`'s `bornAtOrAfterImplement`), and with no
    * judge declared the pass rests with a person exactly as it did before
-   * this ticket — `result.waitOn` is `ProposedEscalated{SetupRefused}` now,
-   * not the direct `SetupRefused`, and `holdOf`'s own equality (`#471`) is
+   * this ticket — `result.end` is `WaitOnPerson{ProposedEscalated{SetupRefused}}`
+   * now, not the direct `SetupRefused`, and `holdOf`'s own equality (`#471`) is
    * what keeps the `Hold` the same either way.
    */
   it('carries a failed install to a person, naming the install and not the router', async () => {
@@ -759,8 +798,8 @@ describe('prepared refuses, and the refusal reports like any other', () => {
       actions: { prepared: [canned('install', RED)] },
     })
 
-    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:refused', 'proposed:routed', 'end:passed'])
-    expect(result.stoppedAt).toEqual({
+    expect(walk(result)).toEqual(['admit:passed', 'prepared:refused', 'proposed:routed', 'end:passed'])
+    expect(result.stopped).toEqual({
       step: 'prepared',
       ending: {
         ending: 'refused',
@@ -771,12 +810,11 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
     expect(result.routes).toHaveLength(1)
     expect(result.routes[0]).toMatchObject({ from: 'prepared', chose: 'waiting', to: 'waiting' })
-    expect(result.rested).toBe('waiting')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'SetupRefused', from: 'prepared' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused', from: 'prepared' } },
     })
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -796,9 +834,9 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
 
     expect(asked.judge[0]?.offering).not.toContain('implement')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'SetupRefused', from: 'prepared' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused', from: 'prepared' } },
     })
   })
 
@@ -818,7 +856,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
 
     expect(asked.judge[0]?.when).toBe('setup-refused')
-    expect(result.rested).toBe('requeued')
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
   })
 
   it('passes on a green install, and adds nothing of its own', async () => {
@@ -826,10 +864,10 @@ describe('prepared refuses, and the refusal reports like any other', () => {
       steps: { prepared: [{ name: 'install', run: 'true' }] },
     })
 
-    expect(result.steps[2]?.ending).toEqual({ ending: 'passed' })
+    expect(result.steps[1]?.ending).toEqual({ ending: 'passed' })
     // The body added no head, no reason and no findings — the visit is its
     // plugins' and nothing else.
-    expect(result.steps[2]?.results.map((r) => r.verdict)).toEqual(['passed'])
+    expect(result.steps[1]?.results.map((r) => r.verdict)).toEqual(['passed'])
   })
 })
 
@@ -853,7 +891,7 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
   it('runs nothing where the recipe declares nothing, and briefs `implement` from the issue', async () => {
     const { result, asked } = await pass()
 
-    expect(result.steps[3]).toEqual({
+    expect(result.steps[2]).toEqual({
       step: 'design',
       ending: { ending: 'passed' },
       results: [],
@@ -862,8 +900,8 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
     expect(asked.draft).toEqual([])
     expect(asked.dispatch[0]?.design).toEqual({ document: '' })
     expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body)
-    expect(result.stoppedAt).toBeNull()
-    expect(outcomeOf(result)).toBe('landed')
+    expect(result.stopped).toBeNull()
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -875,13 +913,13 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
   it('passes on an empty document, and `implement` is still briefed from the issue', async () => {
     const { result, asked } = await pass({ steps: DECLARED, answers: { draft: { text: '' } } })
 
-    expect(result.steps[3]?.ending).toEqual({ ending: 'passed', design: { document: '' } })
+    expect(result.steps[2]?.ending).toEqual({ ending: 'passed', design: { document: '' } })
     expect(asked.draft).toHaveLength(1)
     // The ticket is in the prompt, and the rule that makes the empty answer real.
     expect(asked.draft[0]).toContain(ITEM.ticket.body)
     expect(asked.draft[0]).toContain('Answering with nothing is a real answer')
     expect(asked.dispatch[0]?.design).toEqual({ document: '' })
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   it('hands a document it did write to the agent at `implement`', async () => {
@@ -911,8 +949,8 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
       },
     })
 
-    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:passed', 'design:never-ran', 'end:passed'])
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(walk(result)).toEqual(['admit:passed', 'prepared:passed', 'design:never-ran', 'end:passed'])
+    expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
       // The action's name rather than the runtime's, which is what changed when
       // the work left the body: `endingOf` names what did not run.
@@ -920,7 +958,7 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
       detail: 'session limit',
     })
     expect(result.routes).toEqual([])
-    expect(outcomeOf(result)).toBe('failed')
+    expect(outcomeOf(result.end)).toBe('failed')
   })
 
   /**
@@ -936,14 +974,8 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
       answers: { draft: { failure: { kind: 'crash', detail: 'the runtime exited 1' } } },
     })
 
-    expect(walk(result)).toEqual([
-      'claim:passed',
-      'admit:passed',
-      'prepared:passed',
-      'design:did-not-finish',
-      'end:passed',
-    ])
-    expect(result.stoppedAt?.ending).toMatchObject({
+    expect(walk(result)).toEqual(['admit:passed', 'prepared:passed', 'design:did-not-finish', 'end:passed'])
+    expect(result.stopped?.ending).toMatchObject({
       ending: 'did-not-finish',
       because: 'did-not-finish',
       at: 'draft the design',
@@ -953,7 +985,7 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
     // was implemented off a design that was never written.
     expect(result.routes).toEqual([])
     expect(asked.dispatch).toEqual([])
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 })
 
@@ -986,7 +1018,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
       },
     })
 
-    expect(result.steps[4]?.ending).toEqual({ ending: 'passed', head: COMMITTED })
+    expect(result.steps[3]?.ending).toEqual({ ending: 'passed', head: COMMITTED })
     expect(judged).toEqual([COMMITTED])
   })
 
@@ -1015,8 +1047,8 @@ describe('implement dispatches the one agent, and reports what it committed', ()
   ])('reports an agent that $what', async ({ answer, ending, routed }) => {
     const { result } = await pass({ answers: { dispatch: answer } })
 
-    expect(result.stoppedAt?.step).toBe('implement')
-    expect(result.stoppedAt?.ending).toMatchObject(ending)
+    expect(result.stopped?.step).toBe('implement')
+    expect(result.stopped?.ending).toMatchObject(ending)
     expect(result.routes.length).toBe(routed ? 1 : 0)
     // `end` runs on all three, which is the whole of 0058 §3.
     expect(result.steps.at(-1)?.step).toBe('end')
@@ -1047,7 +1079,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
     // And the pass carries on to the end rather than stopping for the missing
     // receipt: `implement`'s head is the action's, so a step with no action
     // leaves `onSha` where `admit` put it.
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   it('is handed the round it is in and the findings it was bought on', async () => {
@@ -1102,7 +1134,6 @@ describe('implement dispatches the one agent, and reports what it committed', ()
     })
 
     expect(walk(result)).toEqual([
-      'claim:passed',
       'admit:passed',
       'prepared:passed',
       'design:passed',
@@ -1123,7 +1154,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
       printed: null,
     })
     expect(asked.dispatch[1]?.context.round).toBe(1)
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 })
 
@@ -1153,7 +1184,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
     const { result } = await pass({ actions: { implement: [agent, kept] } })
 
     expect(result.steps.find((v) => v.step === 'implement')?.ending).toEqual({ ending: 'passed', head: RUN_HEAD })
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   it("the agent's own head stands when the run: finds nothing to commit", async () => {
@@ -1168,7 +1199,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
     const { result } = await pass({ actions: { implement: [agent, kept] } })
 
     expect(result.steps.find((v) => v.step === 'implement')?.ending).toEqual({ ending: 'passed', head: COMMITTED })
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -1214,7 +1245,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(walk(result).slice(5)).toEqual([
+    expect(walk(result).slice(4)).toEqual([
       'build:refused',
       'proposed:routed',
       'implement:passed',
@@ -1235,7 +1266,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
     // The build that follows each round is judged against that round's `run:`
     // commit, not the agent's own and not the other round's.
     expect(buildSaw).toEqual([RUN_HEAD, RUN_HEAD_2])
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 })
 
@@ -1252,7 +1283,6 @@ describe('build is its own step, and a red one skips review', () => {
     const { result, asked } = await pass({ actions: { build: [canned('typecheck', RED)] } })
 
     expect(walk(result)).toEqual([
-      'claim:passed',
       'admit:passed',
       'prepared:passed',
       'design:passed',
@@ -1326,7 +1356,7 @@ describe('review returns findings and judges nothing', () => {
     // a reason to hold a change back, so no judge was asked and nothing was paid.
     expect(asked.judge).toEqual([])
     expect(asked.land).toHaveLength(1)
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 })
 
@@ -1399,7 +1429,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(walk(result).slice(5)).toEqual([
+    expect(walk(result).slice(4)).toEqual([
       'build:refused',
       'proposed:routed',
       'implement:passed',
@@ -1433,7 +1463,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       printed: { step: 'build', detail: RED.evidence },
     })
     expect(asked.dispatch[1]?.context.recheck).toEqual([])
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -1477,7 +1507,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(walk(result).slice(5)).toEqual([
+    expect(walk(result).slice(4)).toEqual([
       'build:refused',
       'proposed:routed',
       'implement:passed',
@@ -1506,7 +1536,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // The agent that bought the round was shown what failed, which is the whole
     // of what the round is for.
     expect(asked.dispatch[1]?.again?.printed).toEqual({ step: 'build', detail: RED.evidence })
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -1538,7 +1568,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // person, so no judge is asked a second time either (the ticket's own
     // rule: a judge is paid, and one that cannot help is not asked) — a
     // declared judge is bounded by the ceiling, never above it (0064 §7).
-    expect(declared.result.rested).toBe('waiting')
+    expect(declared.result.end._tag).toBe('WaitOnPerson')
     expect(declared.result.routes[1]?.why).toContain('`rounds` is spent')
 
     const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} })
@@ -1599,7 +1629,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // got to choose.
     expect(result.routes[1]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
     expect(result.routes[1]?.why).toContain('`rounds` is spent')
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1633,8 +1663,8 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]).toMatchObject({ to: 'waiting', ceiling: null })
     expect(result.routes[0]?.why).toContain('did not answer (timeout)')
     expect(asked.dispatch).toHaveLength(1)
-    expect(result.rested).toBe('waiting')
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -1663,7 +1693,7 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(result.routes[0]).toMatchObject({ chose: 'implement', to: 'waiting' })
     expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1684,9 +1714,9 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(asked.judge[0]?.offering).toEqual(['implement', 'waiting'])
     expect(result.routes[0]?.to).toBe('waiting')
     expect(result.routes[0]?.why).toContain('the judge named "claim", which was not offered')
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
     // The item is held for a person, never released.
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -1713,9 +1743,9 @@ describe('proposed is the only step that routes, and one judge answers each when
     const late = await pass({ ...checked(RED, PASSED), ceilings: spare })
 
     expect(early.asked.judge[0]?.offering).not.toContain('implement')
-    expect(early.result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'SetupRefused', from: 'prepared' },
+    expect(early.result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused', from: 'prepared' } },
     })
     expect(late.asked.judge[0]?.offering).toEqual(['implement', 'waiting'])
     // And a judge is never told what it is answering for, nor what is left to
@@ -1749,11 +1779,11 @@ describe('proposed is the only step that routes, and one judge answers each when
         ceiling: null,
       },
     ])
-    expect(result.rested).toBe('requeued')
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     // Nothing refused, so nothing is named as having stopped it — and a requeue
     // releases the item, which is `failed` at `end`.
-    expect(result.stoppedAt).toBeNull()
-    expect(outcomeOf(result)).toBe('failed')
+    expect(result.stopped).toBeNull()
+    expect(outcomeOf(result.end)).toBe('failed')
     expect(asked.land).toEqual([])
   })
 
@@ -1781,9 +1811,9 @@ describe('proposed is the only step that routes, and one judge answers each when
         'the pass is held for a person rather than the workflow choosing from `implement`, ' +
         '`waiting` on its own (0061 §3)',
     )
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
     // The person is shown the step that asked, not the router that sent it.
-    expect(result.stoppedAt?.step).toBe('implement')
+    expect(result.stopped?.step).toBe('implement')
   })
 
   /**
@@ -1805,7 +1835,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]?.to).toBe('waiting')
     expect(result.routes[0]?.chose).toBe('implement')
     expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1825,7 +1855,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(asked.judge).toEqual([])
     expect(result.routes[0]).toMatchObject({ to: 'waiting' })
     expect(result.routes[0]?.why).toContain('nothing holds an agent to it')
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1864,11 +1894,10 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
     expect(result.routes[0]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
     expect(result.routes[0]?.why).not.toContain('nothing an agent could be held to')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'AnswerUnreadable', from: 'review' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
     })
-    expect(result.rested).toBe('waiting')
     expect(asked.land).toEqual([])
   })
 
@@ -1908,12 +1937,11 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.steps.filter((visit) => visit.step === 'proposed')).toHaveLength(2)
     expect(result.routes).toEqual([expect.objectContaining({ from: 'merge', to: 'waiting', ceiling: null })])
     expect(result.routes[0]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'AnswerUnreadable', from: 'merge' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'merge' } },
     })
-    expect(result.rested).toBe('waiting')
-    expect(outcomeOf(result)).not.toBe('landed')
+    expect(outcomeOf(result.end)).not.toBe('landed')
   })
 
   /**
@@ -1934,7 +1962,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.routes).toEqual([])
     expect(asked.judge).toEqual([])
     expect(asked.land).toHaveLength(1)
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -1998,8 +2026,8 @@ describe('proposed is the only step that routes, and one judge answers each when
       passes.push({
         walk: walk(result),
         routes: result.routes,
-        rested: result.rested,
-        outcome: outcomeOf(result),
+        end: result.end,
+        outcome: outcomeOf(result.end),
         dispatched: asked.dispatch.length,
         judged: asked.judge.map((on) => on.when),
       })
@@ -2010,7 +2038,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // The second refusal offers nothing but a person (`rounds` is spent), so
     // the judge is asked only once (`#462`'s own rule).
     expect(passes[0]).toMatchObject({
-      rested: 'waiting',
+      end: { _tag: 'WaitOnPerson' },
       dispatched: 2,
       judged: ['findings'],
     })
@@ -2157,7 +2185,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
     // `#268` took off when the cut became a plugin's.
     expect(asked.land).toEqual([{ strategy: 'merge-commit', onSha: COMMITTED }])
     expect(result.steps.find((visit) => visit.step === 'merge')?.ending).toEqual({ ending: 'passed' })
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -2220,7 +2248,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
       evidence: 'pnpm test failed on the new base',
     })
     expect(result.routes).toMatchObject([{ from: 'merge', to: 'implement' }])
-    expect(outcomeOf(result)).toBe('landed')
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**
@@ -2242,7 +2270,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(walk(result).slice(8)).toEqual(['merge:refused', 'proposed:routed', 'end:passed'])
+    expect(walk(result).slice(7)).toEqual(['merge:refused', 'proposed:routed', 'end:passed'])
     expect(result.routes).toEqual([
       {
         from: 'merge',
@@ -2252,9 +2280,11 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
         ceiling: null,
       },
     ])
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', because: { _tag: 'UnknownCandidate' } })
-    expect(result.rested).toBe('waiting')
-    expect(outcomeOf(result)).not.toBe('landed')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', because: { _tag: 'UnknownCandidate' } },
+    })
+    expect(outcomeOf(result.end)).not.toBe('landed')
   })
 
   /**
@@ -2275,13 +2305,12 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
     expect(asked.judge).toEqual([expect.objectContaining({ when: 'merge-refused' })])
     expect(result.routes[0]).toMatchObject({ from: 'merge', to: 'waiting' })
     expect(result.routes[0]?.why).toContain('no `judge:` is declared for a "merge-refused"')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'MergeRefused', reason: 'pending-migration' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'MergeRefused', reason: 'pending-migration' } },
     })
-    expect(result.rested).toBe('waiting')
-    expect(result.stoppedAt?.step).toBe('merge')
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(result.stopped?.step).toBe('merge')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 })
 
@@ -2333,7 +2362,7 @@ describe('every step that does not simply pass reports a reason', () => {
 
     const held = result.steps.map((visit) => visit.ending).filter((e) => e.ending === 'held')
     expect(held).toEqual([{ ending: 'held', at: 'cut the branch', question: 'which base?' }])
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -2384,7 +2413,7 @@ describe('end runs on every ending and cannot refuse', () => {
       answers,
     })
 
-    expect(outcomeOf(result)).toBe(outcome)
+    expect(outcomeOf(result.end)).toBe(outcome)
     expect(result.steps.at(-1)).toEqual({ step: 'end', ending: { ending: 'passed' }, results: [] })
     expect(endRow(asked.record[0]?.plan ?? [])).toEqual({ outcome, actions })
   })
@@ -2459,8 +2488,8 @@ describe('end runs on every ending and cannot refuse', () => {
     expect(ending).toMatchObject({ ending: 'did-not-finish', because: END_UNRESOLVED, at: null })
     expect(ending && 'detail' in ending ? ending.detail : '').toContain(`\`${act}\` threw`)
     // The landing stands, and the pass reports it as one.
-    expect(result.stoppedAt).toBeNull()
-    expect(outcomeOf(result)).toBe('landed')
+    expect(result.stopped).toBeNull()
+    expect(outcomeOf(result.end)).toBe('landed')
   })
 
   /**

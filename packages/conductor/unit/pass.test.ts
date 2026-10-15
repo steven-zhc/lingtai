@@ -317,20 +317,28 @@ describe('the file may omit a step; the resolved recipe may not', () => {
     expect(Object.values(steps)).toEqual(STEPS.map(() => []))
   })
 
-  it('carries on through every one of them, and reports all ten', async () => {
+  it('carries on through every one of them, and reports the nine the walk runs', async () => {
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
-    expect(result.rested).toBeNull()
+    expect(result.stopped).toBeNull()
+    expect(result.unanswered).toBe(false)
     expect(result.routes).toEqual([])
-    expect(result.steps.map((s) => s.step)).toEqual([...STEPS])
+    // `claim` ran before this walk started (`claimStep`), so the walk itself
+    // is `admit` through `end` — nine entries, not ten.
+    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
     expect(result.steps.every((s) => s.ending.ending === 'passed')).toBe(true)
     // Nine times out of ten the loop meets `[]`, and an empty step is a pass.
-    expect(seen.map((s) => s.step)).toEqual([...STEPS])
+    expect(seen.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
+    // Nobody declared a `merge:` lane, so nothing actually landed — and `end`
+    // says so rather than reading a silent walk-through as a landing
+    // (`#463`): this is the one behaviour this ticket changes rather than
+    // preserves (the design's own *the last row of the table*).
+    expect(result.end).toEqual({ _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'work-item' } })
+    expect(outcomeOf(result.end)).toBe('failed')
   })
 })
 
@@ -359,13 +367,13 @@ describe('a step that was configured is never skipped', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
-    // The nine steps whose plugins are verdicts, each with what it declared —
-    // except `admit` and `implement`: this recipe declares nothing at either,
-    // so each gets the fixture's own stand-in for `defaultsAt`'s cut and
-    // commit rather than an empty step (`#469`).
+    expect(result.stopped).toBeNull()
+    // The eight steps `runPass` itself hands to `actionsAt` — `claim` ran
+    // before this walk started (`claimStep`) — each with what it declared,
+    // except `admit` and `implement`: this recipe declares nothing at
+    // either, so each gets the fixture's own stand-in for `defaultsAt`'s cut
+    // and commit rather than an empty step (`#469`).
     expect(ran).toEqual([
-      { step: 'claim', actions: [] },
       { step: 'admit', actions: ['cut the branch'] },
       { step: 'prepared', actions: ['install'] },
       { step: 'design', actions: [] },
@@ -477,27 +485,31 @@ describe('four steps may refuse, and the other six may not', () => {
    * at all. The words are on `detail`, where a person reads them.
    */
   it("reports a body's refusal at a step that may not refuse, and still reaches end", async () => {
+    // `admit`, not `claim`: `claim` runs before this walk starts now (`#463`,
+    // `claimStep`), so it is no longer one of the steps `runPass` can be
+    // handed a misbehaving body for — `admit` makes the same point and stays
+    // inside the walk this file is testing.
     const { bodies, seen } = watching({
-      claim: async () => ({ ending: 'refused', because: 'action-refused', at: null, detail: 'nope' }) as never,
+      admit: async () => ({ ending: 'refused', because: 'action-refused', at: null, detail: 'nope' }) as never,
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toMatchObject({
-      step: 'claim',
+    expect(result.stopped).toMatchObject({
+      step: 'admit',
       ending: {
         ending: 'did-not-finish',
         because: 'threw',
         detail: expect.stringContaining(
-          'the `claim` step refused, and only prepared, build, proposed, merge may refuse',
+          'the `admit` step refused, and only prepared, build, proposed, merge may refuse',
         ),
       },
     })
     // No fix round bought — and `end` reached, with an outcome for the item.
     expect(seen.at(-1)?.step).toBe('end')
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /** And the same for a body that tries to route from somewhere else. */
@@ -510,7 +522,7 @@ describe('four steps may refuse, and the other six may not', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toMatchObject({
+    expect(result.stopped).toMatchObject({
       step: 'merge',
       ending: {
         ending: 'did-not-finish',
@@ -563,7 +575,7 @@ describe('four steps may refuse, and the other six may not', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toEqual({
+    expect(result.stopped).toEqual({
       step: 'implement',
       ending: {
         ending: 'did-not-finish',
@@ -577,11 +589,10 @@ describe('four steps may refuse, and the other six may not', () => {
     // Routed, but no round was bought for it: nothing chose `implement` off
     // the offer, because no judge is declared.
     expect(result.routes).toMatchObject([{ from: 'implement', to: 'waiting' }])
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'SetupRefused', from: 'implement' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused', from: 'implement' } },
     })
-    expect(result.rested).toBe('waiting')
   })
 
   /**
@@ -620,12 +631,12 @@ describe('four steps may refuse, and the other six may not', () => {
     // Nothing refused, so nothing stopped the pass. `review`'s own `StepFailed`
     // reaches `nextOf` as a `Propose{ReviewFindings}` right there (0120 §2),
     // and the router finds no judge for `findings` (no declared one, no
-    // built-in) — `NotAsked`, rested at `waiting` with `stoppedAt` still null.
+    // built-in) — `NotAsked`, a `WaitOnPerson` end with `stopped` still null.
     // `merge` is never reached: the route is taken the moment `review`
     // reports, not after a walk through every later step.
-    expect(result.stoppedAt).toBeNull()
-    expect(result.rested).toBe('waiting')
-    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'merge'))
+    expect(result.stopped).toBeNull()
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'merge' && s !== 'claim'))
   })
 
   /** And at one of the four the same verdict is a refusal, with all it buys. */
@@ -638,7 +649,7 @@ describe('four steps may refuse, and the other six may not', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(result.stopped?.ending).toEqual({
       ending: 'refused',
       because: 'action-refused',
       at: 'cold reviewer',
@@ -655,7 +666,7 @@ describe('four steps may refuse, and the other six may not', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toEqual({
+    expect(result.stopped).toEqual({
       step: 'prepared',
       ending: {
         ending: 'refused',
@@ -668,8 +679,9 @@ describe('four steps may refuse, and the other six may not', () => {
     // `proposed`'s**, even though the refusal routes since `#472` —
     // `routeProposal` builds the routing visit directly rather than through a
     // second call to `proposed`'s own body, so `seen` (body calls alone)
-    // stays `['claim', 'admit', 'end']` either way.
-    expect(seen.map((s) => s.step)).toEqual(['claim', 'admit', 'end'])
+    // stays `['admit', 'end']` either way — `claim` ran before this walk
+    // started.
+    expect(seen.map((s) => s.step)).toEqual(['admit', 'end'])
   })
 
   /**
@@ -692,10 +704,9 @@ describe('four steps may refuse, and the other six may not', () => {
 
     expect(result.steps.map((s) => s.step)).toContain('proposed')
     expect(result.routes).toMatchObject([{ from: 'prepared', to: 'waiting' }])
-    expect(result.rested).toBe('waiting')
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'SetupRefused', from: 'prepared' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused', from: 'prepared' } },
     })
     expect(seen.some((s) => s.step === 'proposed')).toBe(false)
   })
@@ -731,7 +742,7 @@ describe('a refusal reports what the action that refused said', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(result.stopped?.ending).toEqual({
       ending: 'refused',
       because: 'action-refused',
       at: 'check',
@@ -763,7 +774,7 @@ describe('a refusal reports what the action that refused said', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
+    expect(result.stopped?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
   })
 })
 
@@ -804,7 +815,6 @@ describe('every step that does not pass arrives at proposed', () => {
     expect(build?.results).toEqual([{ action: 'tests', verdict: 'failed', evidence: '3 failing', findings: [] }])
     // `proposed` is visited for the routing, and the visit is in `steps`.
     expect(result.steps.map((s) => s.step)).toEqual([
-      'claim',
       'admit',
       'prepared',
       'design',
@@ -862,11 +872,11 @@ describe('every step that does not pass arrives at proposed', () => {
         ceiling: null,
       },
     ])
-    expect(result.stoppedAt).toMatchObject({
+    expect(result.stopped).toMatchObject({
       step: 'implement',
       ending: { ending: 'asked' },
     })
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -943,7 +953,7 @@ describe('every step that does not pass arrives at proposed', () => {
     expect(told[1]).toMatchObject({ asked: question, why: 'because a test said so', printed: null })
     // And the second draft is what `implement` works from, so the round produced
     // the document the first visit could not.
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(result.steps.filter((visit) => visit.step === 'design').at(-1)?.ending).toMatchObject({
       ending: 'passed',
       design: { document: 'assume the first reading' },
@@ -997,6 +1007,9 @@ describe('every step that does not pass arrives at proposed', () => {
             },
           },
         ],
+        // A real `merge:` lane, so the pass lands for real rather than
+        // reading a silent walk-through as a landing (`#463`).
+        merge: [lands('land it')],
       })
       const { emit } = events()
       const result = await runPass({
@@ -1029,7 +1042,7 @@ describe('every step that does not pass arrives at proposed', () => {
       ])
 
       expect(handed).toEqual({ document: '## The shape\n\nSix bodies.', locator: 'doc/design/x.md' })
-      expect(outcomeOf(result)).toBe('landed')
+      expect(outcomeOf(result.end)).toBe('landed')
     })
 
     /**
@@ -1110,6 +1123,9 @@ describe('every step that does not pass arrives at proposed', () => {
             },
           },
         ],
+        // A real `merge:` lane, so the pass lands for real rather than
+        // reading a silent walk-through as a landing (`#463`).
+        merge: [lands('land it')],
       })
       const { emit } = events()
 
@@ -1122,8 +1138,8 @@ describe('every step that does not pass arrives at proposed', () => {
       })
 
       expect(read).toEqual(['## The shape'])
-      expect(result.stoppedAt).toBeNull()
-      expect(outcomeOf(result)).toBe('landed')
+      expect(result.stopped).toBeNull()
+      expect(outcomeOf(result.end)).toBe('landed')
     })
 
     /**
@@ -1148,6 +1164,9 @@ describe('every step that does not pass arrives at proposed', () => {
             },
           },
         ],
+        // A real `merge:` lane, so the pass lands for real rather than
+        // reading a silent walk-through as a landing (`#463`).
+        merge: [lands('land it')],
       })
       const { emit } = events()
 
@@ -1156,7 +1175,7 @@ describe('every step that does not pass arrives at proposed', () => {
       expect(seen[0]).toEqual(NO_DESIGN)
       expect(seen[0]?.locator).toBeUndefined()
       expect(result.steps.find((visit) => visit.step === 'design')?.ending).toEqual({ ending: 'passed' })
-      expect(outcomeOf(result)).toBe('landed')
+      expect(outcomeOf(result.end)).toBe('landed')
     })
   })
 
@@ -1184,9 +1203,9 @@ describe('every step that does not pass arrives at proposed', () => {
     // `build` refused before the spine ever reached `proposed`'s own
     // inspection, so the declared `human:` action was never built and nobody
     // was asked twice.
-    expect(ran.map((r) => r.step)).toEqual(['claim', 'admit', 'prepared', 'design', 'implement', 'build'])
+    expect(ran.map((r) => r.step)).toEqual(['admit', 'prepared', 'design', 'implement', 'build'])
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1231,8 +1250,10 @@ describe('every step that does not pass arrives at proposed', () => {
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable' } })
-    expect(result.rested).toBe('waiting')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable' } },
+    })
   })
 
   /**
@@ -1257,8 +1278,10 @@ describe('every step that does not pass arrives at proposed', () => {
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused' } })
-    expect(result.rested).toBe('waiting')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused' } },
+    })
   })
 
   /**
@@ -1288,8 +1311,10 @@ describe('every step that does not pass arrives at proposed', () => {
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
     expect(result.steps.filter((s) => s.step === 'proposed').at(-1)?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'CheckRefused' } })
-    expect(result.rested).toBe('waiting')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'CheckRefused' } },
+    })
   })
 
   it("does not run proposed's own declared human: for an implementer that produced nothing", async () => {
@@ -1304,8 +1329,10 @@ describe('every step that does not pass arrives at proposed', () => {
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'NothingProduced' } })
-    expect(result.rested).toBe('waiting')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'NothingProduced' } },
+    })
   })
 
   /**
@@ -1364,8 +1391,10 @@ describe('every step that does not pass arrives at proposed', () => {
     })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
-    expect(result.waitOn).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } })
-    expect(result.rested).toBe('waiting')
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } },
+    })
   })
 
   /** Same shape as the check before it: one ordinary visit, then one routing visit, never two calls to the body. */
@@ -1397,11 +1426,10 @@ describe('every step that does not pass arrives at proposed', () => {
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
     expect(result.steps.filter((s) => s.step === 'proposed').at(-1)?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'MergeRefused', reason: 'dirty-base' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'MergeRefused', reason: 'dirty-base' } },
     })
-    expect(result.rested).toBe('waiting')
   })
 
   it("does not run proposed's own declared human: for an implementer that ran out of turns", async () => {
@@ -1428,11 +1456,10 @@ describe('every step that does not pass arrives at proposed', () => {
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
-    expect(result.waitOn).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'BudgetExhausted', kind: 'out-of-turns' },
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'BudgetExhausted', kind: 'out-of-turns' } },
     })
-    expect(result.rested).toBe('waiting')
   })
 
   /**
@@ -1462,12 +1489,12 @@ describe('every step that does not pass arrives at proposed', () => {
       ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
     })
 
-    expect(result.stoppedAt).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
+    expect(result.stopped).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
     expect(result.routes).toMatchObject([{ from: 'proposed', to: 'waiting' }])
     // Two visits to `proposed`: the spine visit that failed, and the routing
     // visit `routeProposal` takes to answer that same failure.
     expect(result.steps.filter((s) => s.step === 'proposed')).toHaveLength(2)
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
     expect(seen.at(-1)?.step).toBe('end')
   })
 
@@ -1510,7 +1537,7 @@ describe('every step that does not pass arrives at proposed', () => {
         ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
       })
 
-      expect(result.stoppedAt).toMatchObject({ step: 'merge', ending: { ending } })
+      expect(result.stopped).toMatchObject({ step: 'merge', ending: { ending } })
       expect(result.routes).toEqual(routes ? [expect.objectContaining({ from: 'merge' })] : [])
     }
   })
@@ -1534,7 +1561,7 @@ describe('every step that does not pass arrives at proposed', () => {
       ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
     })
 
-    expect(result.stoppedAt).toMatchObject({
+    expect(result.stopped).toMatchObject({
       step: 'implement',
       ending: { ending: 'did-not-finish', because: 'threw' },
     })
@@ -1573,7 +1600,11 @@ describe('proposed routes on the way through as well as on the way back', () => 
           ]
         : step === 'implement'
           ? [committedSomething('write the change')]
-          : []
+          : // A real `merge:` lane, so the pass lands for real rather than
+            // reading a silent walk-through as a landing (`#463`).
+            step === 'merge'
+            ? [lands('land it')]
+            : []
     const { emit } = events()
 
     const result = await runPass({
@@ -1599,11 +1630,10 @@ describe('proposed routes on the way through as well as on the way back', () => 
         ceiling: null,
       },
     ])
-    expect(result.stoppedAt).toBeNull()
-    expect(result.rested).toBeNull()
-    expect(outcomeOf(result)).toBe('landed')
+    expect(result.stopped).toBeNull()
+    expect(result.unanswered).toBe(false)
+    expect(outcomeOf(result.end)).toBe('landed')
     expect(result.steps.map((s) => s.step)).toEqual([
-      'claim',
       'admit',
       'prepared',
       'design',
@@ -1629,7 +1659,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
     const result = await runPass({ recipe: recipeWith({}), context, emit, actionsAt })
 
     expect(result.routes).toEqual([])
-    expect(result.steps.map((s) => s.step)).toEqual([...STEPS])
+    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
   })
 })
 
@@ -1666,8 +1696,8 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(result.stoppedAt).toBeNull()
-    expect(result.rested).toBeNull()
+    expect(result.stopped).toBeNull()
+    expect(result.unanswered).toBe(false)
     // No judge declared, so the mechanical built-in answers `red` (`BUILT_IN_FOR`).
     expect(result.routes).toEqual([
       {
@@ -1679,7 +1709,6 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       },
     ])
     expect(result.steps.map((s) => s.step)).toEqual([
-      'claim',
       'admit',
       'prepared',
       'design',
@@ -1730,10 +1759,10 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
 
     expect(result.routes.map((r) => r.to)).toEqual(['implement', 'implement', 'waiting'])
     expect(result.steps.filter((s) => s.step === 'build')).toHaveLength(3)
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
     // The refusal a person is handed is the build's, not the router's.
-    expect(result.stoppedAt).toMatchObject({ step: 'build', ending: { ending: 'refused' } })
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(result.stopped).toMatchObject({ step: 'build', ending: { ending: 'refused' } })
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -1769,7 +1798,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
 
     expect(dispatched).toBe(0)
     expect(result.routes[0]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
-    expect(result.rested).toBe('waiting')
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   /**
@@ -1805,13 +1834,16 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
     })
 
-    expect(result.rested).toBe('requeued')
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     expect(result.routes).toEqual([
       { from: 'proposed', chose: 'claim', to: 'claim', why: 'because a test said so', ceiling: null },
     ])
-    expect(result.steps.filter((s) => s.step === 'claim')).toHaveLength(1)
+    // The loop does not walk back to `claim` itself (that ran before this
+    // walk started, and will not run again until the next pass), so `claim`
+    // never appears in `steps` at all.
+    expect(result.steps.filter((s) => s.step === 'claim')).toHaveLength(0)
     // Released rather than held: `failed` is *put the item back in the queue*.
-    expect(outcomeOf(result)).toBe('failed')
+    expect(outcomeOf(result.end)).toBe('failed')
     expect(result.steps.at(-1)?.step).toBe('end')
   })
 
@@ -1845,11 +1877,10 @@ describe('a visit is judged against the head the walk has reached', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(judged.map((j) => [j.step, j.onSha])).toEqual([
       // Before the agent, including `implement`'s own plugins: the base is what
       // they are about, because nothing has been written yet.
-      ['claim', 'abc1234def'],
       ['admit', 'abc1234def'],
       ['prepared', 'abc1234def'],
       ['design', 'abc1234def'],
@@ -1901,7 +1932,7 @@ describe('a visit is judged against the head the walk has reached', () => {
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(judged.filter((j) => j.step === 'build').map((j) => j.onSha)).toEqual(['b2b2b2b', 'c3c3c3c'])
     expect(judged.filter((j) => j.step === 'review').map((j) => j.onSha)).toEqual(['c3c3c3c'])
   })
@@ -1922,7 +1953,7 @@ describe('a visit is judged against the head the walk has reached', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'c3c3c3c' })
     expect(seen.find((s) => s.step === 'build')?.context.onSha).toBe('c3c3c3c')
   })
@@ -1937,7 +1968,7 @@ describe('a visit is judged against the head the walk has reached', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'b2b2b2b' })
     expect(seen.find((s) => s.step === 'build')?.context.onSha).toBe('b2b2b2b')
   })
@@ -1956,7 +1987,7 @@ describe('a visit is judged against the head the walk has reached', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({
       ending: 'passed',
       head: 'bodyreported',
@@ -2002,7 +2033,6 @@ describe('a visit is judged in the round the pass is in', () => {
       },
     ])
     expect(judged.map((j) => [j.step, j.round])).toEqual([
-      ['claim', 0],
       ['admit', 0],
       ['prepared', 0],
       ['design', 0],
@@ -2062,7 +2092,7 @@ describe('the round a pass buys is bought on something', () => {
       judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 
-    expect(result.stoppedAt).toBeNull()
+    expect(result.stopped).toBeNull()
     // The first review was asked about nothing; the second is asked about the
     // scenario the first wrote, by name.
     expect(judged.filter((j) => j.step === 'review').map((j) => j.recheck)).toEqual([[], [finding]])
@@ -2138,15 +2168,7 @@ describe('a body can read what the steps before it said', () => {
 
     await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(atProposed.map((s) => s.step)).toEqual([
-      'claim',
-      'admit',
-      'prepared',
-      'design',
-      'implement',
-      'build',
-      'review',
-    ])
+    expect(atProposed.map((s) => s.step)).toEqual(['admit', 'prepared', 'design', 'implement', 'build', 'review'])
     expect(atProposed.find((s) => s.step === 'prepared')?.results).toEqual([
       { action: 'install', verdict: 'passed', evidence: '1200 packages', findings: [finding] },
     ])
@@ -2170,7 +2192,7 @@ describe('a body can read what the steps before it said', () => {
     // `prepared`'s own refusal takes since `#472` — `SetupRefused` is one of
     // the seven, so it reaches `proposed` before `end` even with no judge
     // declared to answer it.
-    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'proposed'])
+    expect(seen.at(-1)?.reached.map((s) => s.step)).toEqual(['admit', 'prepared', 'proposed'])
   })
 })
 
@@ -2190,7 +2212,7 @@ describe('a step that did not finish is not a step that refused', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(result.stopped?.ending).toEqual({
       ending: 'did-not-finish',
       // Deliberately not `needs-input`: nobody was asked anything, so there is
       // nothing for the router to route.
@@ -2213,7 +2235,7 @@ describe('a step that did not finish is not a step that refused', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
       at: 'review',
       detail: 'usage limit reached · resets 9pm',
@@ -2231,7 +2253,7 @@ describe('a step that did not finish is not a step that refused', () => {
 
     const result = await runPass({ recipe, context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
+    expect(result.stopped?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
   })
 })
 
@@ -2270,7 +2292,7 @@ describe('end runs on every ending and cannot refuse', () => {
    * A body that throws rather than returning: T4b's `implement` when the agent
    * runtime raises, `merge`'s when `git push` throws. Nothing else in the pass
    * catches it, so without the loop's own guard the promise rejects with
-   * `steps` and `stoppedAt` discarded and `end` never reached — no resolved
+   * `steps` and `stopped` discarded and `end` never reached — no resolved
    * effects, no terminal outcome, and an item waiting on a run that vanished.
    * `action.ts` guards the same hole one layer down and says why.
    */
@@ -2285,7 +2307,7 @@ describe('end runs on every ending and cannot refuse', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toEqual({
+    expect(result.stopped).toEqual({
       step: 'implement',
       ending: {
         ending: 'did-not-finish',
@@ -2294,7 +2316,7 @@ describe('end runs on every ending and cannot refuse', () => {
         detail: 'the `implement` step threw: the agent runtime raised: ECONNRESET',
       },
     })
-    expect(result.steps.map((s) => s.step)).toEqual(['claim', 'admit', 'prepared', 'design', 'implement', 'end'])
+    expect(result.steps.map((s) => s.step)).toEqual(['admit', 'prepared', 'design', 'implement', 'end'])
     expect(seen.at(-1)).toMatchObject({ step: 'end', outcome: 'blocked' })
   })
 
@@ -2309,7 +2331,7 @@ describe('end runs on every ending and cannot refuse', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(result.stoppedAt).toMatchObject({
+    expect(result.stopped).toMatchObject({
       step: 'prepared',
       ending: { ending: 'did-not-finish', because: 'threw' },
     })
@@ -2345,7 +2367,7 @@ describe('end runs on every ending and cannot refuse', () => {
    * **And it is not what stopped the pass.** `end` is reached after a walk that
    * got through — so the merge landed, and its body was handed `landed` and has
    * already resolved its `when: landed` effects, closing the issue and labelling
-   * the item. Naming `end` on `stoppedAt` would leave one pass with two readings
+   * the item. Naming `end` on `stopped` would leave one pass with two readings
    * that disagree: `outcomeOf` would say `blocked`, and a T5 caller appending
    * from it — the mapping this file exports for exactly that — would write
    * `WorkItemBlocked` for an item whose `main` moved, and sit it on *Waiting on
@@ -2357,15 +2379,17 @@ describe('end runs on every ending and cannot refuse', () => {
     const { bodies, seen } = watching({
       end: async () => ({ ending: 'did-not-finish', because: 'threw', at: null, detail: 'tell.ts: 404' }),
     })
-    const { actionsAt } = watchingActions()
+    // A real `merge:` lane, so the pass lands for real rather than reading a
+    // silent walk-through as a landing (`#463`).
+    const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     // What the body was told and what a caller reads back are one answer.
     expect(seen.at(-1)).toMatchObject({ step: 'end', outcome: 'landed' })
-    expect(result.stoppedAt).toBeNull()
-    expect(outcomeOf(result)).toBe('landed')
+    expect(result.stopped).toBeNull()
+    expect(outcomeOf(result.end)).toBe('landed')
     expect(result.steps.at(-1)).toMatchObject({
       step: 'end',
       ending: { ending: 'did-not-finish', because: 'threw', detail: 'tell.ts: 404' },
@@ -2400,7 +2424,9 @@ describe('end is told which of the four endings it is running for', () => {
   const oneAtProposed = { proposed: [{ name: 'check', run: 'true' }] }
 
   it('says landed when every step passed', async () => {
-    expect(await endSaw({})).toBe('landed')
+    // A real `merge:` lane, so the pass lands for real rather than reading a
+    // silent walk-through as a landing (`#463`).
+    expect(await endSaw({}, { merge: [lands('land it')] })).toBe('landed')
   })
 
   it('says blocked when a step refused, held for a person, or did not finish', async () => {
@@ -2426,26 +2452,16 @@ describe('end is told which of the four endings it is running for', () => {
 
   /** And the rule on its own, since it is the pass's and not a body's (0058 §2b). */
   it("is outcomeOf, and closed is nobody's pass to reach", () => {
-    expect(outcomeOf({ stoppedAt: null, rested: null })).toBe('landed')
+    expect(outcomeOf({ _tag: 'Landed', integrated: 'c0ffee' })).toBe('landed')
     expect(
       outcomeOf({
-        stoppedAt: { step: 'merge', ending: { ending: 'held', at: 'sign off', question: '?' } },
-        rested: null,
+        _tag: 'WaitOnPerson',
+        reason: { _tag: 'AgentCrashed', run: { runId: 'run-1' }, step: 'merge', cause: 'crash', detail: '…' },
       }),
     ).toBe('blocked')
-    expect(
-      outcomeOf({
-        stoppedAt: { step: 'prepared', ending: { ending: 'never-ran', at: 'install', detail: '…' } },
-        rested: null,
-      }),
-    ).toBe('failed')
-    // A requeue releases the item too, for the opposite reason (0040).
-    expect(
-      outcomeOf({
-        stoppedAt: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'tests', detail: '…' } },
-        rested: 'requeued',
-      }),
-    ).toBe('failed')
+    expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } })).toBe('failed')
+    // A restart releases the item too, for the opposite reason (0040).
+    expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } })).toBe('failed')
   })
 })
 
@@ -2456,8 +2472,8 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, actionsAt })
 
-    expect(result.stoppedAt).toBeNull()
-    expect(result.steps.map((s) => s.step)).toEqual([...STEPS])
+    expect(result.stopped).toBeNull()
+    expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
   })
 
   /**
@@ -2480,7 +2496,6 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     const result = await runPass({ recipe, context, emit, actionsAt })
 
     expect(result.steps.map((s) => s.step)).toEqual([
-      'claim',
       'admit',
       'prepared',
       'design',
@@ -2491,8 +2506,8 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     ])
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
     expect(result.routes[0]?.why).toContain('nothing but a person was on offer')
-    expect(result.rested).toBe('waiting')
-    expect(outcomeOf(result)).toBe('blocked')
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(outcomeOf(result.end)).toBe('blocked')
   })
 
   /**
@@ -2503,7 +2518,9 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
    */
   it('refuses to pass an end step whose effects it cannot carry out', async () => {
     const recipe = recipeWith({ end: [{ name: 'close it', close: true }] })
-    const { actionsAt } = watchingActions()
+    // A real `merge:` lane, so the pass lands for real rather than reading a
+    // silent walk-through as a landing (`#463`).
+    const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
     const result = await runPass({ recipe, context, emit, actionsAt })

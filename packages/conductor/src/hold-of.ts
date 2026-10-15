@@ -7,7 +7,7 @@
  * as the `refused` case already was.** Every one of the seven `nextOf` can
  * propose — the merge lane's own refusal with no direction (step 2) and
  * `review`'s/`merge`'s own unreadable answer (step 4) included — now sets
- * `pass.waitOn` through `routeProposal`'s `ProposedEscalated`, so `holdFor`
+ * `pass.end` through `routeProposal`'s `ProposedEscalated`, so `holdFor`
  * takes the `holdOf` branch for them before `holdOfPass` is ever called. The
  * old step 1 — a refusal the router sent on with a direction (`red`,
  * `verify-failed`, `conflict`) — went the same way first, with `#462`'s
@@ -15,7 +15,7 @@
  *
  * **The `refused` case in the switch below is dead for the same reason.** A
  * `prepared` refusal and a `proposed`/`merge` check refusal now set
- * `pass.waitOn` too (`SetupRefused`/`CheckRefused`), so `holdFor` takes the
+ * `pass.end` too (`SetupRefused`/`CheckRefused`), so `holdFor` takes the
  * `holdOf` branch for them before `holdOfPass` is ever called — see that
  * case's own comment, which proves the unreachability rather than asserting
  * it here.
@@ -26,14 +26,14 @@
  * `WaitOnPerson{SignoffRequired}`, a `verdict` yield answers
  * `Propose{CheckRefused}`, and a `worktree` yield answers
  * `Propose{SetupRefused}` (`pass-steps.test.ts`'s `holds the item when the
- * cut asks a question`) — so `pass.waitOn` is set every time, and `holdFor`
+ * cut asks a question`) — so `pass.end` is set every time, and `holdFor`
  * takes the `holdOf` branch before `holdOfPass` is ever called. What is left
  * live is `case 'did-not-finish'` below: `claim`'s own decline (never
  * routed — `claim` is not one of the seven `proposed` appeals to), a fix
  * round's own decline, set directly by `conduct.ts` rather than through
- * `pass.waitOn` (`declined`, read against `what-a-pass-writes-today.test.ts`'s
+ * `pass.end` (`declined`, read against `what-a-pass-writes-today.test.ts`'s
  * own *`implement` changes nothing in a fix round*), and a body — or
- * `nextOf` itself — that threw, which leaves `pass.waitOn` null with no route
+ * `nextOf` itself — that threw, which leaves `pass.end` null with no route
  * ever decided.
  */
 import type { CeilingKind, Finding, Hold, RunRef, Step } from '@lingtai/domain'
@@ -45,9 +45,9 @@ import {
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
-import type { Destination, PassResult, Rest } from './pass.ts'
+import type { Destination, PassOver } from './pass.ts'
 
-export type StoppedAt = PassResult['stoppedAt']
+export type StoppedAt = PassOver['stopped']
 
 export interface LastRoute {
   readonly from: Step
@@ -72,13 +72,6 @@ export interface HoldOfPassInput {
   stopped: StoppedAt
   lastRoute: LastRoute | null
   ceilingHit: CeilingHit | null
-  /**
-   * Where the pass came to rest (`PassResult.rested`) — `'waiting'` is the
-   * one value that says the router sent this arrival to a person, which
-   * `stopped` alone cannot: a refusal the router judged and sent on reports
-   * the step that did not pass, not the router that sent it.
-   */
-  rested: Rest | null
   /**
    * Set when a fix round committed nothing and did not fail — a fixer that
    * read the findings and judged, not one that crashed. `said` is
@@ -116,12 +109,12 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
   }
 
   // 2. **Dead since `#472`, not a second live arrival.** The merge lane's own
-  // refusal with no direction used to stop the lane with `pass.waitOn ===
+  // refusal with no direction used to stop the lane with `pass.end ===
   // null`, before the diff was what was in doubt; `merge-refused` is already
   // `JudgeWhen`'s own name for these seven — dirty-base, unpushed-base,
   // pending-migration, no-commits, wip-commit, push-rejected, unexpected
   // (`#471`) — and `#472` wires `nextOf` to turn this stop into a
-  // `Propose{MergeRefused}`, so it sets `pass.waitOn` through
+  // `Propose{MergeRefused}`, so it sets `pass.end` through
   // `routeProposal`'s `ProposedEscalated` and `holdFor` takes the `holdOf`
   // branch before `holdOfPass` is ever called.
   if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
@@ -163,10 +156,10 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
   }
 
   // 4. **Dead since `#472`, not a second live arrival.** `routeProposal`'s
-  // only `WaitOnPerson` branch (`pass.ts`) sets `pass.waitOn = next.reason` in
-  // the same breath it sets `rested = 'waiting'`, so a `stopped === null`
-  // arrival that reaches this far always has `pass.waitOn` set too — `holdFor`
-  // takes the `holdOf` branch for it before `holdOfPass` is ever called. This
+  // only `WaitOnPerson` branch (`pass.ts`) sets `pass.end = next`, so a
+  // `stopped === null` arrival that reaches this far always has a
+  // `WaitOnPerson` end too — `holdFor` takes the `holdOf` branch for it
+  // before `holdOfPass` is ever called. This
   // used to be the one way the router sent the pass to a person on its own
   // way through, nothing refused, judging `review`'s findings or an
   // unreadable answer at `review`/`merge` — both are `ProposedEscalated` now.
@@ -209,11 +202,11 @@ export function holdOfPass(input: HoldOfPassInput): Hold {
 
     // **Dead since `#462`, and kept only so this switch stays exhaustive over
     // `StepEnding['ending']` — not because an older log can still produce
-    // one.** `holdOfPass` is handed a live `PassResult.stoppedAt`, built in
+    // one.** `holdOfPass` is handed a live `PassOver.stopped`, built in
     // the same call that invokes it (`conduct.ts`'s `holdFor`), and never a
     // value read back off the log — there is no "log old enough" for this
     // case to still answer to. What makes it unreachable: `nextOf` now sets
-    // `pass.waitOn` for every `refused` ending that can stop a pass —
+    // `pass.end` for every `refused` ending that can stop a pass —
     // `prepared` as `SetupRefused`, `proposed`/`merge`'s own check as
     // `CheckRefused`, `build` as a `Propose{BuildRed}` that routes — so
     // `holdFor` takes the `holdOf` branch for them, before `holdOfPass` is

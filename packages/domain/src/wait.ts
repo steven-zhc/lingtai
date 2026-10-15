@@ -143,11 +143,21 @@ const BudgetExhausted = z.object({
   call: CallId.nullable(),
 })
 
-/** An agent that crashed, timed out or was aborted. */
+/**
+ * An agent that crashed, timed out or was aborted.
+ *
+ * **Every step but `claim` and `end`**, since #463: `claim` and `end` run
+ * outside `runPass` (0120 §6), and the walk itself — `nextOf` throwing, or a
+ * body answering something other than `passed` with no deciding action to
+ * read — can stop at `admit`, `prepared` or `build` too, none of which an
+ * *agent's own* `Interrupted` could ever name (`pass-next.ts:309`'s guard is
+ * narrower, and stays narrower: it is still about what an agent's outcome may
+ * claim, not about where the shell itself may stop).
+ */
 const AgentCrashed = z.object({
   _tag: z.literal('AgentCrashed'),
   run: RunRef,
-  step: Step.extract(['design', 'implement', 'review', 'proposed', 'merge']),
+  step: Step.extract(['admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge']),
   cause: z.enum(RUN_FAILURE_KINDS).extract(['crash', 'timeout', 'aborted']),
   detail: z.string(),
 })

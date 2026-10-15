@@ -36,7 +36,7 @@ import { expect } from 'vitest'
 
 import { eventOf } from '../src/adapters.ts'
 import { runOnce } from '../src/conduct.ts'
-import type { PassResult } from '../src/pass.ts'
+import type { PassOver } from '../src/pass.ts'
 import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
 
 /**
@@ -87,7 +87,7 @@ export const withPorts = (ports: RunPorts) =>
 
 /**
  * **The proof against #461's fixture, run on every call rather than once**
- * (`#466`). `onPass` hands this the `PassResult` the moment `runOnce` has it,
+ * (`#466`). `onPass` hands this the `PassOver` the moment `runOnce` has it,
  * and after the call returns, the one `run-*` stream this attempt opened is
  * checked against `eventOf` of the very same `pass.steps` — so a mismatch is
  * `adapters.ts` disagreeing with the pipeline it is adapting, caught here
@@ -100,7 +100,7 @@ export const withPorts = (ports: RunPorts) =>
  */
 export const once = async (options: Parameters<typeof runOnce>[0] & { client: GitHubClient }, ports: RunPorts) => {
   const before = options.store === undefined ? new Set<string>() : new Set(streams(options.store).keys())
-  const captured: { pass: PassResult | null } = { pass: null }
+  const captured: { pass: PassOver | null } = { pass: null }
 
   const result = await Effect.runPromise(
     runOnce({

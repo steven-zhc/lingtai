@@ -155,6 +155,7 @@ export const NOWHERE = '/nowhere'
 const DECLARED = {
   design: [{ name: 'keep it', agent: 'claude-code', prompt: 'write the shape down' }],
   implement: [{ name: 'read it back', agent: 'claude-code', prompt: 'build it' }],
+  merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }],
 }
 
 /**
@@ -238,6 +239,20 @@ export const writingBeside = (): Action => ({
 })
 
 /**
+ * **A real `merge:` lane, so the pass lands for real** (`#463`) — `nextOf`
+ * reads a `merge` visit's deciding action by its `yields` alone, and a
+ * walk with nothing declared there never produces a `Landed` terminal, which
+ * would read this file's own locator-carrying pass as `failed` rather than
+ * as the landing it is meant to be.
+ */
+export const landingBeside = (): Action => ({
+  name: 'land the branch',
+  kind: 'merge',
+  yields: 'merge',
+  run: async (): Promise<ActionResult> => ({ verdict: 'passed', evidence: 'merged', findings: [] }),
+})
+
+/**
  * The ten bodies, each passing.
  *
  * `proposed` passes rather than routing to a person, so the walk is the ordinary
@@ -292,6 +307,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
   const at: Record<string, readonly Action[]> = {
     design: [keeping(locator)],
     implement: [readingBack(briefed), writingBeside()],
+    merge: [landingBeside()],
   }
   const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
     at[step] ??
@@ -322,7 +338,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
     endedWith: designOn('design'),
     briefed: briefed.at(0),
     handedBack: designOn('implement'),
-    outcome: outcomeOf(result),
+    outcome: outcomeOf(result.end),
     visits: result.steps.map((visit) => ({ step: visit.step, ending: visit.ending })),
     events,
   }

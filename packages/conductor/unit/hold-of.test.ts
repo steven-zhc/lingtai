@@ -2,14 +2,6 @@
  * `holdOfPass` against literals, classified by who sent the item to a
  * person (0118 §1, `8a669849`, #452) rather than by whether `stopped` is
  * set.
- *
- * `rested: 'waiting'` is the base's default because that is what every real
- * arrival the router sent on carries — a `refused` or `asked` ending only
- * ever reaches `stopped` by being routed there (`pass.ts`'s `take`), and
- * `holdFor` only builds a `Hold` on a blocked outcome, which excludes the
- * other value `rested` can take (`requeued`). Cases that test what happens
- * when the router itself never ran — `proposed`'s own plugins refusing —
- * override it to `null`.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -19,7 +11,6 @@ const BASE_INPUT: HoldOfPassInput = {
   stopped: null,
   lastRoute: null,
   ceilingHit: null,
-  rested: 'waiting',
   declined: null,
   findings: [],
   runId: 'run-1',
@@ -142,10 +133,6 @@ describe('holdOfPass', () => {
   })
 
   it('reads a `prepared` refusal as SetupRefused, lifts: person — excluded from step 1 by name', () => {
-    // `rested` stays `'waiting'` (BASE_INPUT's default — the router does send
-    // this on, same as a `build` red would be) and `directionOf` would answer
-    // `'red'` for it too; `prepared` is excluded by name regardless, per 0120
-    // §2 and the ticket's own variant table.
     const hold = holdOfPass({
       ...BASE_INPUT,
       stopped: {
@@ -165,12 +152,8 @@ describe('holdOfPass', () => {
   })
 
   it('reads a `proposed` refusal — the router itself, never routed — as CheckRed', () => {
-    // `rested` stays null here: a step outside `ARRIVE_AT_THE_ROUTER` (`proposed`
-    // is the router) or whose own plugins refused on the arrival visit ends the
-    // pass without ever calling `take()` (`pass.ts:1429-1454`).
     const hold = holdOfPass({
       ...BASE_INPUT,
-      rested: null,
       stopped: { step: 'proposed', ending: { ending: 'refused', because: 'action-refused', at: null, detail: 'boom' } },
     })
     expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'proposed', why: 'boom', raw: 'boom' })

@@ -201,7 +201,16 @@ import {
   type Worked,
   bodiesFor,
 } from './pass-steps.ts'
-import { type Ceilings, type PassResult, type StepReached, outcomeOf, runPass } from './pass.ts'
+import {
+  type Ceilings,
+  type PassEnd,
+  type PassOver,
+  type StepReached,
+  type StepReport,
+  claimStep,
+  outcomeOf,
+  runPass,
+} from './pass.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipe } from './projects.ts'
 import { signedInHere } from './projects.ts'
@@ -407,7 +416,7 @@ export interface RunOnceOptions {
   merge?: boolean
   log?: (line: string) => void
   /**
-   * **An observer, called with the `PassResult` the moment `runPass` returns
+   * **An observer, called with the `PassOver` the moment `runPass` returns
    * it** (`#466`). It branches on nothing and the pass does not wait for it —
    * the one caller today is `test/one-pass.ts`'s `once()`, which checks
    * `adapters.ts`'s `eventOf` against the run stream `conduct.ts` itself is
@@ -416,7 +425,7 @@ export interface RunOnceOptions {
    * for production use. A throw from it is caught and noted on `runLog`
    * rather than skipping the ending below.
    */
-  onPass?: (pass: PassResult) => void
+  onPass?: (pass: PassOver) => void
 }
 
 export type RunOnceResult =
@@ -474,13 +483,13 @@ function headReached(steps: readonly StepReached[]): string {
  * the step's *own* work having refused rather than a declared action, which
  * `pass-steps.ts` says at each of the bodies that set it.
  */
-function whatRefused(stopped: PassResult['stoppedAt']): string | null {
+function whatRefused(stopped: PassOver['stopped']): string | null {
   if (stopped === null) return null
   return 'at' in stopped.ending ? stopped.ending.at : null
 }
 
 /** What a step said when it did not pass, in the words a person reads (0043). */
-function detailOf(ending: PassResult['stoppedAt']): string {
+function detailOf(ending: PassOver['stopped']): string {
   if (ending === null) return ''
   const said = ending.ending
   if ('detail' in said) return said.detail
@@ -3425,34 +3434,105 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       // ---- the pass ----------------------------------------------------------
-      // Ten steps, and the claim is the first of them. Everything above this line
-      // is refusals that cost nothing and state the pass will need; everything
-      // below it is the ending, written once.
+      // The claim, then nine steps. Everything above this line is refusals
+      // that cost nothing and state the pass will need; everything below it
+      // is the ending, written once.
+      //
+      // `context`, `bodies` and `ceilings` are one object and one call each,
+      // held here rather than reconstructed, so the claim and the walk are
+      // judged against the same tree in the same pass. `actionsAt` and `judge`
+      // are already named above this line (`#462`'s own move for the second).
+      /**
+       * What the walk starts from. `cwd` and `env` are the pass's throughout;
+       * `onSha` is empty until `admit` has something to report, `round` starts
+       * at zero and `recheck` at nothing, and the loop rebuilds all three per
+       * visit (`contextFor`).
+       */
+      const passContext: ActionContext = { runId, onSha: '', cwd, env: runnableEnv(env.values), log: runLog }
+      const passBodies = bodiesFor(ports)
+
+      /**
+       * **The claim runs before the walk, and a store that refuses one of its
+       * own appends is read here rather than as the claim's own ending** — the
+       * same reason the second check below exists (`unappended`'s own doc).
+       * `claimed.ending.ending !== 'passed'` is one of the three declines
+       * `#463` moved out here, never a defect: `queue:` answers `did-not-finish`
+       * at this step, never `refused` (`claim` is not one of `REFUSING_STEPS`).
+       */
+      const claimed = yield* Effect.promise(() =>
+        claimStep({ recipe, context: passContext, emit, actionsAt, bodies: passBodies, ceilings, judge }),
+      )
+      if (unappended !== null) {
+        log(`the store refused an append during the claim: ${whyOf(unappended)}`)
+        return yield* Effect.die(unappended)
+      }
+
+      /**
+       * **`claim` took nothing, so there is no item here to write on** — and
+       * this is the one ending that must reach none of the three below.
+       *
+       * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
+       * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`.
+       * Left to fall through, a blocked branch appends `ApprovalRequested` to a
+       * run stream with no `RunStarted`, appends `WorkItemBlocked` to
+       * `workItemId`, comments **Lingtai is waiting on you** and sets
+       * `lingtai:waiting` — for an item this pass never claimed.
+       *
+       * Both declines are worse than noise. `passedOver` is `runnableNow` saying
+       * GitHub is not offering it — `agent:hold`, a blocker, an assignee — and a
+       * block there takes the ticket out of `queued`, which is the state
+       * `selectRunnable` requires (`queue.ts`), so removing the label no longer
+       * makes it runnable. `notClaimed: held` is **another conductor's live
+       * item**: the block replaces that item's lifecycle and relabels its issue
+       * while its agent is still working. The old engine returned `discover`/
+       * `claim` here and wrote nothing at all.
+       *
+       * So: nothing is appended and nothing is told. `released` is set because
+       * the `ensuring` at the bottom would otherwise append `WorkItemReleased`
+       * and write `lingtai:queued` over exactly those two items —
+       * `releaseWorkItem` appends whoever holds it.
+       *
+       * **`claim-unconfirmed` is the exception, and it is the reason `Taken` has
+       * four cases.** The append may have committed and then lost its
+       * connection, so the item may be held *by this run* — and giving back
+       * something this run may hold is the one honest move. `end` has already
+       * resolved against that stream (`onStream` is set for this decline alone),
+       * and the release does **not** record that resolution: the outcome the pass
+       * would have computed for a stop at `claim` is `blocked`, and what the
+       * release makes true is that the item is back in the queue. Nothing is
+       * recorded and nothing is carried out, so the pass that does reach an
+       * ending resolves it (`endPlan`, `release`).
+       */
+      if (claimed.ending.ending !== 'passed') {
+        // `claim` is not `RefusingStep`, so `endingOf` never answers `refused`
+        // here — the cast is the same one `EndingAt<'claim'>` makes for every
+        // reader of a claim visit's own ending.
+        const stopped = { step: 'claim' as const, ending: claimed.ending as StepReport }
+        const why = detailOf(stopped)
+        const mayHold = stopped.ending.ending === 'did-not-finish' && stopped.ending.because === 'claim-unconfirmed'
+        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`)
+        released = true
+        log(`nothing claimed: ${said(why)}`)
+        return {
+          ok: false,
+          workItemId,
+          runId,
+          stage: 'claim',
+          detail: why,
+        } satisfies RunOnceResult
+      }
+
       const pass = yield* Effect.promise(() =>
-        runPass({
-          recipe,
-          /**
-           * What the walk starts from. `cwd` and `env` are the pass's throughout;
-           * `onSha` is empty until `admit` has something to report, `round` starts
-           * at zero and `recheck` at nothing, and the loop rebuilds all three per
-           * visit (`contextFor`).
-           */
-          context: { runId, onSha: '', cwd, env: runnableEnv(env.values), log: runLog },
-          emit,
-          actionsAt,
-          bodies: bodiesFor(ports),
-          ceilings,
-          // `#462`: the judge port moved off `PassPorts` onto `PassOptions`,
-          // since `proposed`'s own body never asks one any more — `runPass`'s
-          // loop does, through `routeProposal`.
-          judge,
-        }),
+        runPass({ recipe, context: passContext, emit, actionsAt, bodies: passBodies, ceilings, judge }),
       )
       // An observer's own bug must not cost the ending: `runLog` is a trace,
       // not a record (its own header), so a throw here is noted and the
       // ending below still gets written.
       try {
-        options.onPass?.(pass)
+        // The claim's own visit put back at the front — `runPass` no longer
+        // carries it (`#463`), and `test/one-pass.ts`'s `once()` checks every
+        // visit's own outcome against the run stream, claim's included.
+        options.onPass?.({ ...pass, steps: [claimed, ...pass.steps] })
       } catch (err) {
         runLog.note('pass', `onPass threw: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -3536,7 +3616,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         })
       }
 
-      const outcome = outcomeOf(pass)
+      const outcome = outcomeOf(pass.end)
       // For `release`, which is declared above this scope and has to know which
       // outcome the plan it is holding is about (`endedAs`).
       endedAs = outcome
@@ -3592,13 +3672,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * commit.
        */
       const onOrigin = published
-      const stopped = pass.stoppedAt
+      const stopped = pass.stopped
       /** What the router decided last, which is what sent a pass to a person. */
       const lastRoute = pass.routes.at(-1) ?? null
       /** Every finding the pass's plugins raised, for a card and for a restart. */
       const findings = pass.steps.flatMap((visit) => visit.results.flatMap((result) => result.findings))
       /** How many rounds the pass actually bought — a route back into the spine. */
       const roundsSpent = pass.routes.filter((route) => route.to !== 'waiting' && route.to !== 'claim').length
+      /** Whether `pass.end` is the one `Requeued` cause a route spends — the rest of the requeued section's own test. */
+      const restarted = pass.end._tag === 'Requeued' && pass.end.cause._tag === 'Restart'
 
       /**
        * **The `run` `holdOfPass` builds today** (`hold-of.ts:97-102`) — the two
@@ -3615,24 +3697,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       /**
        * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
-       * (`#466`) where the loop asked it (`pass.waitOn !== null`), and
+       * (`#466`) where the walk itself answered `WaitOnPerson`, and
        * `holdOfPass` from what the pass reported otherwise. `#462` moved most
-       * `proposed` arrivals onto `nextOf`/`pass.waitOn`, and `#472` moved the
-       * rest the same way — the merge lane's own refusal with no direction,
-       * the two fixed waits 0120 *Two phases* used to carry without a route,
-       * and a plugin's own `held` request for a person, which sets
-       * `pass.waitOn` exactly as a refusal does — so what is left for
-       * `holdOfPass` is `claim`'s own decline (never routed: it is not one of
-       * the seven `proposed` appeals to), a fix round's own decline, set
-       * directly here rather than through `pass.waitOn`, and a body — or
-       * `nextOf` itself — that threw (`hold-of.ts`'s own header). `rested`
-       * and `declined` are the two inputs `holdOfPass` needs beyond what the
-       * pass already reports on `stopped`. `legacyColumns` turns the result
-       * back into the `question`/`needs`/`diagnosis` every reader below still
-       * wants.
+       * `proposed` arrivals onto `nextOf`, and `#472` moved the rest the same
+       * way — the merge lane's own refusal with no direction, the two fixed
+       * waits 0120 *Two phases* used to carry without a route, and a plugin's
+       * own `held` request for a person, which sets `pass.end` to a
+       * `WaitOnPerson` exactly as a refusal does — so what is left for
+       * `holdOfPass` is `claim`'s own decline (handled above `holdFor` is ever
+       * called), a fix round's own decline, set directly here rather than
+       * through `pass.end`, and a body — or `nextOf` itself — that threw.
+       *
+       * **`pass.unanswered` is the split, not `pass.end._tag`** (`#463`):
+       * `end` is forced to a `WaitOnPerson` even where this file never
+       * classified the stop (`unansweredEnd` in `pass.ts`), and that
+       * manufactured `AgentCrashed` is not the richer sentence `stopped`
+       * already carries — so a true `unanswered` takes the `holdOfPass`
+       * branch below exactly as it did before `end` existed. `declined` is
+       * the one input `holdOfPass` needs beyond what the pass already reports
+       * on `stopped`. `legacyColumns` turns the result back into the
+       * `question`/`needs`/`diagnosis` every reader below still wants.
        */
       const holdFor = async (): Promise<Hold> => {
-        if (pass.waitOn !== null) {
+        if (!pass.unanswered) {
+          // `outcomeOf` answers `blocked` for `WaitOnPerson` alone, and
+          // `holdFor` only runs on a `blocked` outcome — so an answered stop
+          // that reaches here is always one, which the loop's own type cannot
+          // see across the `pass.unanswered` check above.
+          const waitOn = (pass.end as Extract<PassEnd, { _tag: 'WaitOnPerson' }>).reason
           /**
            * **`ceilingHit` is `firstDispatch`'s own receipt, not every
            * agent's** (`#466`'s patch, read against `hold-of.ts`'s step 3).
@@ -3657,26 +3749,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * `proposed:` declares nothing for `budget-exhausted` (0061 §3,
            * `BUILT_IN_FOR`). Both name the same situation — some agent other
            * than `firstDispatch` ran out — so both are read off the same
-           * `ceilingHit === null` test; gating on `pass.waitOn._tag` alone
-           * would miss the wrapped form and let it through to `holdOf`'s
-           * `Ceiling`.
+           * `ceilingHit === null` test; gating on `waitOn._tag` alone would
+           * miss the wrapped form and let it through to `holdOf`'s `Ceiling`.
            */
           const budgetDetail =
-            pass.waitOn._tag === 'BudgetExhausted'
-              ? pass.waitOn.detail
-              : pass.waitOn._tag === 'ProposedEscalated' && pass.waitOn.proposal._tag === 'BudgetExhausted'
-                ? pass.waitOn.proposal.detail
+            waitOn._tag === 'BudgetExhausted'
+              ? waitOn.detail
+              : waitOn._tag === 'ProposedEscalated' && waitOn.proposal._tag === 'BudgetExhausted'
+                ? waitOn.proposal.detail
                 : null
           if (budgetDetail !== null && ceilingHit === null) {
-            // **The step from the proposal, not `pass.stoppedAt`** (`#472`):
+            // **The step from the proposal, not `stopped`** (`#472`):
             // `nextOf` no longer produces the direct `WaitOnPerson{BudgetExhausted}`
             // — only the wrapped `ProposedEscalated{proposal: BudgetExhausted}`
             // reaches here now, and its own `from` is the step that ran out,
-            // the same fact `pass.stoppedAt!.step` named before this ticket.
+            // the same fact `stopped!.step` named before this ticket.
             const step =
-              pass.waitOn._tag === 'ProposedEscalated' && pass.waitOn.proposal._tag === 'BudgetExhausted'
-                ? pass.waitOn.proposal.from
-                : pass.stoppedAt!.step
+              waitOn._tag === 'ProposedEscalated' && waitOn.proposal._tag === 'BudgetExhausted'
+                ? waitOn.proposal.from
+                : stopped!.step
             return {
               _tag: 'DidNotFinish',
               run: runRef,
@@ -3685,7 +3776,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               raw: budgetDetail,
             }
           }
-          const hold = holdOf(pass.waitOn, { branch, base, findings })
+          const hold = holdOf(waitOn, { branch, base, findings })
           if (hold._tag === 'Question') return hold
           const withRun: Hold = { ...hold, run: runRef }
           // 0118 §3's rule: `null` rather than an invented zero — `holdOf`
@@ -3727,7 +3818,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stopped,
           lastRoute,
           ceilingHit,
-          rested: pass.rested,
           declined,
           findings,
           runId,
@@ -3737,59 +3827,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
           integrationRefusal,
         })
-      }
-
-      /**
-       * **`claim` took nothing, so there is no item here to write on** — and
-       * this is the one ending that must reach none of the three below.
-       *
-       * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
-       * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`,
-       * and the loop never asks `nextOf` about `claim` — so `stoppedAt` is
-       * `{step: "claim"}` and `outcomeOf` reads any non-`never-ran` stop as
-       * `blocked`. Left to fall through, the blocked branch appends
-       * `ApprovalRequested` to a run stream with no `RunStarted`, appends
-       * `WorkItemBlocked` to `workItemId`, comments **Lingtai is waiting on you**
-       * and sets `lingtai:waiting` — for an item this pass never claimed.
-       *
-       * Both declines are worse than noise. `passedOver` is `runnableNow` saying
-       * GitHub is not offering it — `agent:hold`, a blocker, an assignee — and a
-       * block there takes the ticket out of `queued`, which is the state
-       * `selectRunnable` requires (`queue.ts`), so removing the label no longer
-       * makes it runnable. `notClaimed: held` is **another conductor's live
-       * item**: the block replaces that item's lifecycle and relabels its issue
-       * while its agent is still working. The old engine returned `discover`/
-       * `claim` here and wrote nothing at all.
-       *
-       * So: nothing is appended and nothing is told. `released` is set because
-       * the `ensuring` at the bottom would otherwise append `WorkItemReleased`
-       * and write `lingtai:queued` over exactly those two items —
-       * `releaseWorkItem` appends whoever holds it.
-       *
-       * **`claim-unconfirmed` is the exception, and it is the reason `Taken` has
-       * four cases.** The append may have committed and then lost its
-       * connection, so the item may be held *by this run* — and giving back
-       * something this run may hold is the one honest move. `end` has already
-       * resolved against that stream (`onStream` is set for this decline alone),
-       * and the release does **not** record that resolution: the outcome the pass
-       * computed for a stop at `claim` is `blocked`, and what the release makes
-       * true is that the item is back in the queue. Nothing is recorded and
-       * nothing is carried out, so the pass that does reach an ending resolves it
-       * (`endPlan`, `release`).
-       */
-      if (stopped?.step === 'claim') {
-        const why = detailOf(stopped)
-        const mayHold = stopped.ending.ending === 'did-not-finish' && stopped.ending.because === 'claim-unconfirmed'
-        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`)
-        released = true
-        log(`nothing claimed: ${said(why)}`)
-        return {
-          ok: false,
-          workItemId,
-          runId,
-          stage: 'claim',
-          detail: why,
-        } satisfies RunOnceResult
       }
 
       // ---- landed -------------------------------------------------------------
@@ -3875,14 +3912,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const armIsUp =
         armPublished !== null &&
         (armPublished === headSha || (wipNow !== null && armPublished === wipNow.sha && wipNow.parent === headSha))
-      if (pass.rested === 'requeued' && !armIsUp) {
+      if (restarted && !armIsUp) {
         runLog.note(
           'restart',
           `no restart was recorded — ${arm} is not on origin at ${headSha.slice(0, 7) || 'the base'}`,
         )
         log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
-      if (pass.rested === 'requeued' && armIsUp) {
+      if (restarted && armIsUp) {
         const restart = folded.restarts.length + 1
         const reason = restartReason({
           action: lastRoute?.from ?? 'review',
