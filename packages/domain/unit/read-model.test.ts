@@ -142,6 +142,14 @@ it('READ names every type some builder in events.ts actually produces', () => {
     ...run.aStepEnded(outcomeOf('implement', 1, [fixedCommit])),
     ...run.aStepEnded(outcomeOf('review', 0, [neverStarted])),
     ...run.aStepEnded(outcomeOf('build', 0, [refused])),
+    run.event('StepWaived', {
+      step: 'build',
+      action: 'tsc',
+      runId: run.runId,
+      onSha,
+      by: 'steven',
+      reason: 'known flake',
+    }),
     ...run.aStepEnded(outcomeOf('proposed', 0, [askedForSignoff])),
     ...run.aStepEnded(outcomeOf('design', 0, [askedForDesign])),
     ...secondRun.aStepEnded(outcomeOf('implement', 0, [completedCommit])),
@@ -957,6 +965,43 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     expect(outcomes[0]?.runId).toBe(outcomes[1]?.runId)
     expect(outcomes[0]?.actions[0]?.plugin).not.toBe('conductor')
     expect(outcomes[1]?.actions[0]?.plugin).toBe('conductor')
+  })
+
+  it('reads a StepWaived after a refusing check as Waived, cleared, in its own StepOutcome', () => {
+    // Row 9's own ending (#461): a `check` at `merge` refuses, the item
+    // holds, and a person runs `lingtai approve --note "known flake"`.
+    // `approve.ts:313` appends `StepWaived{step:'merge', action:'check'}`
+    // ahead of `ApprovalGranted` — before this fix, `StepWaived` was in
+    // neither `TERMINAL_TYPES` nor `READ`, so `stepOutcomesOf` never saw it
+    // and the fold still answered `Completed{assessment:{verdict:'refused'}}`
+    // for the waived check, which `cleared()` reads as still refusing.
+    const run = aRun('run-1')
+    const refusingCheck: Action = {
+      plugin: 'run',
+      name: 'check',
+      onSha,
+      call: null,
+      evidence: 'blocker src/fix.ts:12',
+      yields: 'verdict',
+      result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+    }
+    // `aStepEnded` is what declares `check` as a `run:` (verdict-yielding) entry
+    // on the run's own `StepsResolved` — without a recipe, `shapeFor` falls
+    // back to `STEP_DEFAULTS['merge']`, the merge lane's own default, and the
+    // waiver would be read as the lane's result rather than the check's.
+    const refusalEvents = run.aStepEnded(outcomeOf('merge', 0, [refusingCheck]))
+    const waived = run.event('StepWaived', {
+      step: 'merge',
+      action: 'check',
+      runId: run.runId,
+      onSha,
+      by: 'steven',
+      reason: 'known flake',
+    })
+    const outcomes = stepOutcomesOf([...refusalEvents, waived])
+    expect(outcomes).toHaveLength(2)
+    expect(outcomes[1]?.actions[0]?.result).toEqual({ _tag: 'Waived', waitId: `${run.runId}:${waived.seq}` })
+    for (const outcome of outcomes) expect(wellFormed(outcome)).toBe(true)
   })
 })
 

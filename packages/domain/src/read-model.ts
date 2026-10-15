@@ -20,7 +20,7 @@
  * those same two functions, so a divergence between the two directions is a
  * failing round-trip test rather than a silent drift.
  */
-import { cleared, type Action, type StepOutcome } from './action.ts'
+import { cleared, type Action, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Hold } from './hold.ts'
 import type { Restart } from './pass-next.ts'
@@ -32,7 +32,11 @@ import type { EscalationBecause, Resolution, RunRef, WaitReason } from './wait.t
 
 // ---------------------------------------------------------- stepOutcomesOf ----
 
-/** The event types `eventOf` ever appends for one action. */
+/**
+ * The event types `eventOf` ever appends for one action, plus `StepWaived` —
+ * a person's own escape hatch (`approve.ts:313,646`), never written by
+ * `eventOf` because 0120 §6's `Waived` result is person-only, not a pass's.
+ */
 const TERMINAL_TYPES = new Set([
   'StepPassed',
   'StepFailed',
@@ -40,6 +44,7 @@ const TERMINAL_TYPES = new Set([
   'StepAsked',
   'StepNeverRan',
   'ApprovalRequested',
+  'StepWaived',
 ])
 
 /** Every `WaitReason`/`StepOutcome`-adjacent type `stepOutcomesOf`, `routesOf`, `waitsOf` and `releaseCauseOf` read. */
@@ -50,6 +55,7 @@ export const READ = [
   'StepAsked',
   'StepNeverRan',
   'ApprovalRequested',
+  'StepWaived',
   'ApprovalGranted',
   'StepsResolved',
   'RunProposedCompletion',
@@ -231,9 +237,23 @@ function evidenceOf(e: Envelope): string {
       return (e.data as { detail: string }).detail
     case 'ApprovalRequested':
       return (e.data as { question: string }).question
+    case 'StepWaived':
+      return (e.data as { reason: string }).reason
     default:
       return ''
   }
+}
+
+/**
+ * No real `WaitId` exists on today's wire — `StepWaived` (`events.ts:1100`)
+ * carries `{by, reason}` and nothing that names the wait it overruled;
+ * `WaitStarted{waitId, …}` is 0118 §1's event and does not exist until #464.
+ * A stand-in keyed by this event's own position on the log, so 0120 §6's
+ * `Waived{waitId}` arm is reachable at all rather than this event being
+ * unreadable here — nothing downstream branches on the value.
+ */
+function syntheticWaitId(e: Envelope): WaitId {
+  return `${e.streamId}:${e.seq}` as WaitId
 }
 
 function verdictResultFrom(e: Envelope): Action['result'] {
@@ -256,6 +276,13 @@ function verdictResultFrom(e: Envelope): Action['result'] {
       // (`adapters.ts:215`) defaults the same way on the forward side, for the
       // same reason — nothing on a `verdict` action's event names it.
       return { _tag: 'Interrupted', cause: 'crash' }
+    case 'StepWaived':
+      // A person overruled this gate (`lingtai approve`/`lingtai waive`) —
+      // 0120 §6's own person-only `Waived` arm, which `cleared()` already
+      // reads as cleared. Without this case the refusing `StepFailed` ahead
+      // of it on the wire was the last event `stepOutcomesOf` ever saw for
+      // this action, so the waiver never reached the fold at all.
+      return { _tag: 'Waived', waitId: syntheticWaitId(e) }
     default:
       throw new Error(`stepOutcomesOf: "${e.type}" cannot end a verdict action`)
   }
@@ -269,6 +296,8 @@ function signoffResultFrom(e: Envelope): Action['result'] {
       return { _tag: 'Completed', requested: { question: (e.data as { question: string }).question } }
     case 'StepFailed':
       return { _tag: 'NotDone' }
+    case 'StepWaived':
+      return { _tag: 'Waived', waitId: syntheticWaitId(e) }
     default:
       throw new Error(`stepOutcomesOf: "${e.type}" cannot end a signoff action`)
   }
@@ -620,7 +649,18 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
 
 // --------------------------------------------------------------- routesOf ----
 
-const CANDIDATE_FOR_CEILING = { claim: 'restart', other: 'fix-lines' } as const
+/**
+ * The candidate a spent ceiling excluded, by what the judge `chose` —
+ * mirroring the `Selected` branch's own `data.to === 'design' ?
+ * 'state-assumption' : 'fix-lines'` rule below, since an excluded candidate
+ * is named the same way a selected one is: by the step it would have gone
+ * to, not only by whether it was `claim`.
+ */
+function candidateIdFor(chose: string): string {
+  if (chose === 'claim') return 'restart'
+  if (chose === 'design') return 'state-assumption'
+  return 'fix-lines'
+}
 
 /** One `PassRouted` folded to 0120 §3's `RouteDecision` and `CandidateNext`. */
 export type RoutedPass = {
@@ -684,7 +724,7 @@ export function routesOf(events: readonly Envelope[]): RoutedPass[] {
                 because: {
                   _tag: 'CandidateUnavailable',
                   excluded: {
-                    id: data.chose === 'claim' ? CANDIDATE_FOR_CEILING.claim : CANDIDATE_FOR_CEILING.other,
+                    id: candidateIdFor(data.chose),
                     because: { _tag: 'CeilingReached', ceiling: data.ceiling },
                   },
                 },
