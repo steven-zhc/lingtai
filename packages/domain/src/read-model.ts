@@ -262,11 +262,15 @@ function verdictResultFrom(e: Envelope): Action['result'] {
     }
     case 'StepNeverRan':
       return { _tag: 'NeverStarted', scope: 'conductor' }
-    case 'StepDidNotFinish':
-      // Lost on the wire: which of the five causes this was. `verdictResultOf`
-      // (`adapters.ts:215`) defaults the same way on the forward side, for the
-      // same reason — nothing on a `verdict` action's event names it.
-      return { _tag: 'Interrupted', cause: 'crash' }
+    case 'StepDidNotFinish': {
+      // The kind is on the wire in `detail`'s own prefix (`AGENT_DID_NOT_FINISH`,
+      // below) — read it back the way `reasonFromHold` does. `crash` is the
+      // fallback only when that prefix is missing, the same default
+      // `verdictResultOf` (`adapters.ts:167`) answers on the forward side when
+      // `outcome.interrupted` is unset.
+      const { detail } = e.data as { detail: string }
+      return { _tag: 'Interrupted', cause: asInterrupt(agentDidNotFinishKind(detail)) ?? 'crash' }
+    }
     case 'StepWaived':
       // A person overruled this gate (`lingtai approve`/`lingtai waive`) —
       // 0120 §6's own person-only `Waived` arm, which `cleared()` already
@@ -351,15 +355,22 @@ function committedNothing(detail: string): boolean {
  * timeout or turn/cost wall never writes one, and the sentence on the wire
  * is the sole carrier.
  *
+ * Three readers now: `reasonFromHold` (a live hold), and `verdictResultFrom`
+ * and `designResultFrom`'s own agent cell (#478) — a reviewer or designer
+ * that ran out of turns or budget folds to that cause here too, rather than
+ * `crash`, so `nextOf` proposes `BudgetExhausted` again instead of
+ * `WaitOnPerson{AgentCrashed}`.
+ *
  * The match is anchored at `^`, so the same `boundedEvidence` clipping that
  * `committedNothing` above works around can drop this prefix too: a long
  * enough reviewer or design-agent crash loses `the reviewer did not finish
- * (` off the front, this regexp finds nothing, and the hold folds to
- * `SetupRefused` — "no agent ran" — for one that ran and crashed. There is
- * no fixed literal to recover the kind here the way there is for
- * `committedNothing`, because `RunFailed` is written only for the
- * implementer's own dispatch (`conduct.ts:3114`); building a wider match is
- * its own finding, not this one.
+ * (` off the front, this regexp finds nothing, and every reader above folds
+ * to its own "no kind on the wire" default — `SetupRefused` for
+ * `reasonFromHold`, `crash` for `verdictResultFrom`/`designResultFrom` — for
+ * one that ran and crashed. There is no fixed literal to recover the kind
+ * here the way there is for `committedNothing`, because `RunFailed` is
+ * written only for the implementer's own dispatch (`conduct.ts:3114`);
+ * building a wider match is its own finding, not this one.
  */
 const AGENT_DID_NOT_FINISH = /^the (?:reviewer|design agent) did not finish \(([a-z-]+)\):/
 
@@ -418,13 +429,17 @@ function designResultFrom(e: Envelope, plugin: string): Action['result'] {
       return { _tag: 'AnswerUnreadable', raw: (e.data as { evidence: string }).evidence }
     case 'StepNeverRan':
       return { _tag: 'NeverStarted', scope: 'conductor' }
-    case 'StepDidNotFinish':
-      // Lost on the wire, the same as `verdict`'s own `StepDidNotFinish`
-      // (above): an `agent:` drafter crashed (`Interrupted`) and a `file:`
+    case 'StepDidNotFinish': {
+      // An `agent:` drafter that crashed (`Interrupted`) and a `file:`
       // destination that could not write (`NotDone`) write the same event.
       // `plugin` is the one fact this file has that `adapters.ts` does not
-      // need in the forward direction, so it is used to tell them apart.
-      return plugin === 'file' ? { _tag: 'NotDone' } : { _tag: 'Interrupted', cause: 'crash' }
+      // need in the forward direction, so it is used to tell them apart. For
+      // the agent cell, the kind is on the wire the same way `verdict`'s own
+      // `StepDidNotFinish` reads it, above.
+      if (plugin === 'file') return { _tag: 'NotDone' }
+      const { detail } = e.data as { detail: string }
+      return { _tag: 'Interrupted', cause: asInterrupt(agentDidNotFinishKind(detail)) ?? 'crash' }
+    }
     case 'StepWaived':
       // Same arm as `commit`'s own above — a person overruled this gate too.
       return { _tag: 'Waived', waitId: syntheticWaitId(e) }
