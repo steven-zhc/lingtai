@@ -1078,11 +1078,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * `endedWithoutEndActions` finds the row and reports nothing wrong.
      *
      * **And only a plan about `failed`**, because that is the outcome a release
-     * makes true. A `landed` plan reaching here means the landing's own append
-     * died, and appending it would be the orphan row this ordering exists to
-     * prevent; a `blocked` plan reaching here is the `claim-unconfirmed` decline,
-     * where the item goes back to the queue and nothing was blocked. Neither is
-     * recorded, so a later pass resolves whichever ending it actually reaches.
+     * makes true. A `landed` or `blocked` plan reaching here means that ending's
+     * own append died, and appending it would be the orphan row this ordering
+     * exists to prevent. **Not `claim-unconfirmed`**, since `#463`: that decline
+     * calls `release` straight from `conduct.ts`'s early return on the claim,
+     * before `end` has run at all, so `endPlan` is still `[]` and `endedAs` still
+     * `null` there. Neither a landed nor a blocked plan is recorded, so a later
+     * pass resolves whichever ending it actually reaches.
      */
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -3495,11 +3497,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * **`claim-unconfirmed` is the exception, and it is the reason `Taken` has
        * four cases.** The append may have committed and then lost its
        * connection, so the item may be held *by this run* — and giving back
-       * something this run may hold is the one honest move. `end` has already
-       * resolved against that stream (`onStream` is set for this decline alone),
-       * and the release does **not** record that resolution: the outcome the pass
-       * would have computed for a stop at `claim` is `blocked`, and what the
-       * release makes true is that the item is back in the queue. Nothing is
+       * something this run may hold is the one honest move. A decline runs no
+       * `end` (`onStream` is set for this decline alone, so `release` has
+       * something to act on): nothing resolves and no outcome is computed, so
+       * the release gives the item back with no plan to record. Nothing is
        * recorded and nothing is carried out, so the pass that does reach an
        * ending resolves it (`endPlan`, `release`).
        */
