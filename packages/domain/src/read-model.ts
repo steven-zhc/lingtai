@@ -1012,22 +1012,14 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
       }
     }
     case 'MergeRefused':
-      // **`hold.paths`/`hold.baseSha`/`hold.headSha` are dropped here, not
-      // carried through.** `Hold.MergeRefused` gained those three fields for
-      // a `dirty-base` refusal (`#472`'s own triage evidence), but
-      // `WaitReason.MergeRefused` (`wait.ts:125-132`) has no field for any of
-      // them — that evidence belongs to the conflict case, which folds
-      // through `Routed{when:'conflict'}`/`Proposal.MergeConflict` instead,
-      // never through this one. A reader who needs the three fields back off
-      // a `MergeRefused` wait cannot get them from `waitsOf`; `holdForRun`
-      // above is the one place in this file that still reads the stored
-      // `Hold` directly, rather than through `WaitReason`, for exactly this
-      // reason.
       return {
         _tag: 'MergeRefused',
         run: toRunRef(hold.run),
         reason: hold.reason as Exclude<RefusalReason, 'conflict' | 'verify-failed'>,
         raw: hold.raw ?? '',
+        ...(hold.paths === null ? {} : { paths: hold.paths }),
+        ...(hold.baseSha === null ? {} : { baseSha: hold.baseSha }),
+        ...(hold.headSha === null ? {} : { headSha: hold.headSha }),
       }
     case 'Ceiling':
       return {

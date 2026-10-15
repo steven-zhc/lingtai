@@ -3794,12 +3794,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return { ...withRun, said: declined.said }
           }
           // **`MergeRefused` loses `paths`/`baseSha`/`headSha` through
-          // `holdOf`** (`#472`): `mergeRefusedHold` writes `null` for all
-          // three, because neither `Proposal.MergeRefused` nor
-          // `WaitReason.MergeRefused` carries them — only the integration
-          // stream does. Filled in here the same way `holdOfPass`'s own
-          // step 2 already did for this reason, off the same
-          // `lastIntegrationRefusal`.
+          // `holdOf`** (`#472`): the forward `WaitReason.MergeRefused` never
+          // fills them — only the integration stream does. Filled in here
+          // the same way `holdOfPass`'s own step 2 already did for this
+          // reason, off the same `lastIntegrationRefusal`.
           if (withRun._tag === 'MergeRefused') {
             const refusal = await lastIntegrationRefusal(store, project, base, workItemId, branch)
             return {

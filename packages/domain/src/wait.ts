@@ -129,6 +129,9 @@ const MergeRefused = z.object({
   // gains tomorrow fails this at the type level rather than slipping past.
   reason: RefusalReason.exclude(['conflict', 'verify-failed']),
   raw: z.string(),
+  paths: z.array(z.string()).nullable().optional(),
+  baseSha: z.string().nullable().optional(),
+  headSha: z.string().nullable().optional(),
 })
 
 /** A turn or dollar ceiling. */

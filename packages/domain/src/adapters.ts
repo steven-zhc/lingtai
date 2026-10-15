@@ -318,6 +318,7 @@ function mergeRefusedHold(
   reason: RefusalReason,
   raw: string,
   pass: { branch: string; base: string },
+  conflictFields?: { paths: string[] | null; baseSha: string | null; headSha: string | null },
 ): Hold {
   return {
     _tag: 'MergeRefused',
@@ -326,9 +327,9 @@ function mergeRefusedHold(
     // `holdOfPass` reads this cell's `why` from `diagnoseRefusal`
     // (`hold-of.ts:143-155`), not from the lane's own raw detail.
     why: diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base }).what,
-    paths: null,
-    baseSha: null,
-    headSha: null,
+    paths: conflictFields?.paths ?? null,
+    baseSha: conflictFields?.baseSha ?? null,
+    headSha: conflictFields?.headSha ?? null,
     raw,
     afterApproval: false,
   }
@@ -381,7 +382,11 @@ export function holdOf(reason: WaitReason, pass: { branch: string; base: string;
     case 'CheckRefused':
       return checkRedHold(reason.run, reason.step, reason.evidence)
     case 'MergeRefused':
-      return mergeRefusedHold(reason.run, reason.reason, reason.raw, pass)
+      return mergeRefusedHold(reason.run, reason.reason, reason.raw, pass, {
+        paths: reason.paths ?? null,
+        baseSha: reason.baseSha ?? null,
+        headSha: reason.headSha ?? null,
+      })
     case 'BudgetExhausted':
       // 0118 §3's rule: `null` rather than an invented zero. `#455`'s receipt
       // is what would fill `turns`/`costUsd`, and nothing mints one yet.

@@ -137,29 +137,8 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
  * `skipRaw`, with its own reason, is for the one row where `holdOf` itself
  * cannot reproduce the stored `raw` — not a loosened assertion, a named
  * exception (row 13, below).
- *
- * `skipConflictFields`, same rule, is for row 10b alone: its stored hold is
- * `MergeRefused`, and `paths`/`baseSha`/`headSha` are `#472`'s own addition
- * to that `Hold` for a `dirty-base` refusal — `WaitReason.MergeRefused`
- * (`wait.ts:125-132`) has no field for any of the three at all, because that
- * evidence belongs to the conflict case, which routes through
- * `Routed{when:'conflict'}`/`Proposal.MergeConflict` instead. `waitsOf`
- * cannot read back a fact the type it folds onto was never given — so rather
- * than skipping the comparison (which proved nothing about what `waitsOf`
- * actually answers), this asserts the loss directly: the rebuilt hold's
- * three fields come back `null`, which is the one thing a reader taking
- * `#472`'s own triage evidence off a `waitsOf` wait, rather than off the
- * stored `Hold`, would lose today. A future fix to `WaitReason.MergeRefused`
- * that carries the three fields through would make this fail, which is the
- * point: the exemption is a named claim about today's behaviour, not a
- * silent skip.
  */
-function theWaitFoldsToTheStoredHold(
-  all: readonly Envelope[],
-  hold: Hold,
-  skipRaw?: string,
-  skipConflictFields?: string,
-): void {
+function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold, skipRaw?: string): void {
   expect(() => stepOutcomesOf(all)).not.toThrow()
   const waits = waitsOf(all)
   const wait = waits[waits.length - 1]
@@ -173,15 +152,9 @@ function theWaitFoldsToTheStoredHold(
     expect(rebuilt.raw).toBe(hold.raw)
   }
   if ('paths' in rebuilt && 'paths' in hold) {
-    if (skipConflictFields === undefined) {
-      expect(rebuilt.paths).toEqual(hold.paths)
-      expect(rebuilt.baseSha).toBe(hold.baseSha)
-      expect(rebuilt.headSha).toBe(hold.headSha)
-    } else {
-      expect(rebuilt.paths).toBeNull()
-      expect(rebuilt.baseSha).toBeNull()
-      expect(rebuilt.headSha).toBeNull()
-    }
+    expect(rebuilt.paths).toEqual(hold.paths)
+    expect(rebuilt.baseSha).toBe(hold.baseSha)
+    expect(rebuilt.headSha).toBe(hold.headSha)
   }
 }
 
@@ -1009,12 +982,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       headSha: 'c'.repeat(40),
     })
     const all10b = await allEvents(store)
-    theWaitFoldsToTheStoredHold(
-      all10b,
-      hold!,
-      undefined,
-      "WaitReason.MergeRefused carries no paths/baseSha/headSha fields at all — that's #472's own addition to this Hold alone",
-    )
+    theWaitFoldsToTheStoredHold(all10b, hold!)
     expect(stepOutcomesOf(all10b).every(wellFormed)).toBe(true)
   })
 
