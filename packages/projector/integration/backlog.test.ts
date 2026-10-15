@@ -5,7 +5,9 @@
  * does; the same finding on a second attempt is the same entry; a decision
  * closes it; and dropping the table and replaying the log gives the same rows.
  */
+import type { Envelope, Finding, ToAppend } from '@lingtai/domain'
 import { backlogStream, findingKey } from '@lingtai/domain'
+import { aRun } from '@lingtai/domain/test/events'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -22,7 +24,7 @@ const track = (id: string) => {
 const wi = (n: number) => track(`wi-${PROJECT}-${n}`)
 const run = (n: number, attempt: number) => track(`run-${PROJECT}-${n}-${attempt}`)
 
-const minor = (claim: string, line: number) => ({
+const minor = (claim: string, line: number): Finding => ({
   file: 'src/a.ts',
   line,
   claim,
@@ -30,8 +32,35 @@ const minor = (claim: string, line: number) => ({
   severity: 'minor' as const,
 })
 
-async function attempt(n: number, a: number, findings: unknown[], verdict = 'StepPassed') {
-  await store.append(run(n, a), 0, [
+/** `{ type, actor, data }` — what `append` wants — off a builder's own `Envelope` (`contract.ts`'s own `toAppend`). */
+const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, data: e.data })
+
+/**
+ * A verdict, built through `aRun(…).aStepEnded` rather than the wire shape
+ * directly — 0120 retires `StepPassed`/`StepFailed`, so this goes through the
+ * builder (#481). `RunStarted` stays hand-written: it is unchanged by 0120's
+ * appendix.
+ */
+async function attempt(n: number, a: number, findings: Finding[], verdict: 'accepted' | 'refused' = 'accepted') {
+  const runId = run(n, a)
+  const verdictEvents = aRun(runId)
+    .aStepEnded({
+      step: 'proposed',
+      round: 0,
+      actions: [
+        {
+          plugin: 'agent',
+          name: 'review',
+          onSha: `sha-${a}`,
+          call: null,
+          evidence: 'ok',
+          yields: 'verdict',
+          result: { _tag: 'Completed', assessment: { verdict, findings } },
+        },
+      ],
+    })
+    .map(toAppend)
+  await store.append(runId, 0, [
     {
       type: 'RunStarted',
       actor: 'conductor',
@@ -46,11 +75,7 @@ async function attempt(n: number, a: number, findings: unknown[], verdict = 'Ste
         invocation: null,
       },
     },
-    {
-      type: verdict,
-      actor: 'conductor',
-      data: { step: 'proposed', action: 'review', runId: run(n, a), onSha: `sha-${a}`, evidence: 'ok', findings },
-    },
+    ...verdictEvents,
   ])
 }
 
@@ -86,7 +111,7 @@ beforeAll(async () => {
     { ...minor('a major is not backlog', 30), severity: 'major' },
   ])
   // A failing gate's findings go to a fix round, not here.
-  await attempt(2, 1, [minor('on a failing gate', 5)], 'StepFailed')
+  await attempt(2, 1, [minor('on a failing gate', 5)], 'refused')
   await fold()
 
   // The second attempt says the first thing again, lines moved and spacing changed.
