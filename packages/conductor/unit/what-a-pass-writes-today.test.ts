@@ -144,7 +144,15 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
  * (`wait.ts:125-132`) has no field for any of the three at all, because that
  * evidence belongs to the conflict case, which routes through
  * `Routed{when:'conflict'}`/`Proposal.MergeConflict` instead. `waitsOf`
- * cannot read back a fact the type it folds onto was never given.
+ * cannot read back a fact the type it folds onto was never given — so rather
+ * than skipping the comparison (which proved nothing about what `waitsOf`
+ * actually answers), this asserts the loss directly: the rebuilt hold's
+ * three fields come back `null`, which is the one thing a reader taking
+ * `#472`'s own triage evidence off a `waitsOf` wait, rather than off the
+ * stored `Hold`, would lose today. A future fix to `WaitReason.MergeRefused`
+ * that carries the three fields through would make this fail, which is the
+ * point: the exemption is a named claim about today's behaviour, not a
+ * silent skip.
  */
 function theWaitFoldsToTheStoredHold(
   all: readonly Envelope[],
@@ -164,10 +172,16 @@ function theWaitFoldsToTheStoredHold(
   if (skipRaw === undefined && 'raw' in rebuilt && 'raw' in hold && rebuilt.raw !== null && hold.raw !== null) {
     expect(rebuilt.raw).toBe(hold.raw)
   }
-  if (skipConflictFields === undefined && 'paths' in rebuilt && 'paths' in hold) {
-    expect(rebuilt.paths).toEqual(hold.paths)
-    expect(rebuilt.baseSha).toBe(hold.baseSha)
-    expect(rebuilt.headSha).toBe(hold.headSha)
+  if ('paths' in rebuilt && 'paths' in hold) {
+    if (skipConflictFields === undefined) {
+      expect(rebuilt.paths).toEqual(hold.paths)
+      expect(rebuilt.baseSha).toBe(hold.baseSha)
+      expect(rebuilt.headSha).toBe(hold.headSha)
+    } else {
+      expect(rebuilt.paths).toBeNull()
+      expect(rebuilt.baseSha).toBeNull()
+      expect(rebuilt.headSha).toBeNull()
+    }
   }
 }
 
@@ -722,6 +736,15 @@ runtime:
 
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
+    // `stepOutcomesOf` and `waitsOf` must agree about this round: the fixer
+    // read the findings and declined (`FixApplied{failure: null}`), which is
+    // a commit action that *cleared* having committed nothing — never the
+    // `NotDone` 0120 §4 sends to `Propose{SetupRefused}` for a work action
+    // whose own setup broke before any agent ran. `waitsOf` already answers
+    // `Declined`/`FixerDisagrees` off the stored hold regardless; this is the
+    // other half, read off the run's own wire events.
+    const implementRound1 = stepOutcomesOf(all).find((o) => o.step === 'implement' && o.round === 1)
+    expect(implementRound1?.actions[0]?.result).toEqual({ _tag: 'Completed', head: null, question: null })
     const routes = routesOf(all)
     expect(routes).toHaveLength(2)
     expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })

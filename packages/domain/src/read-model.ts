@@ -304,29 +304,49 @@ function signoffResultFrom(e: Envelope): Action['result'] {
 }
 
 /**
- * `conduct.ts:3180`'s own fixed sentence for a commit action that ran to
- * completion and left nothing on the branch — `'the agent produced no
- * commits'`, with no variable suffix, so `boundedEvidence` never clips it
- * (`work-action.ts:184`; `tail()`, `command.ts:158`, only clips a string
- * that overruns its own line/byte budget, and this literal never does).
+ * The two fixed sentences a commit action's own clean "nothing to show"
+ * ending writes, one per round: `conduct.ts:3180`'s round-0 `'the agent
+ * produced no commits'`, and `conduct.ts:3358`'s fix-round `'the fixing
+ * agent committed nothing, so there is nothing new for the review to
+ * read'` — written when `fixed.failure` is undefined (`committedNothing:
+ * true` on `conduct.ts`'s own `Stopped`, which `commitResultOf`
+ * (`adapters.ts:219`) reads structurally rather than off this string).
+ * Neither carries a variable suffix, so `boundedEvidence` never clips
+ * either (`work-action.ts:184`; `tail()`, `command.ts:158`, only clips a
+ * string that overruns its own line/byte budget, and these two never do).
  *
  * **Every other `StepDidNotFinish` either cell below ever sees is one of
  * `conduct.ts`'s own four hook-setup sentences** (`conduct.ts:2948-3085`,
- * `work-action.ts`'s own header) — each carries a runtime's own error text
- * after the colon, which can be arbitrarily long, and `boundedEvidence`
- * clips a long one with `tail()`, which keeps the *end* of a long single
- * line and drops the leading sentence entirely. Matching against the four
- * prefixes directly (`startsWith`) used to fail exactly when a detail was
- * long enough to need that clipping, folding a setup break to
- * `Completed{head: null, question: null}` — a commit action that cleared —
- * instead of `NotDone`. The fixed sentence is the one text this cell can
- * recognise whether or not it was clipped, so this checks for *that* and
- * reads everything else — clipped or not — as the hook having broken.
+ * `work-action.ts`'s own header), at round 0, or the fix round's own
+ * `` `the fixing agent did not finish (${kind}: ${detail}), ...` `` for a
+ * crash/timeout/wall (`ctx.cause` catches that one first, above) — each
+ * carries a runtime's own error text after the colon, which can be
+ * arbitrarily long, and `boundedEvidence` clips a long one with `tail()`,
+ * which keeps the *end* of a long single line and drops the leading
+ * sentence entirely. Matching against the four prefixes directly
+ * (`startsWith`) used to fail exactly when a detail was long enough to
+ * need that clipping, folding a setup break to `Completed{head: null,
+ * question: null}` — a commit action that cleared — instead of `NotDone`.
+ * The two fixed sentences are the one text this cell can recognise whether
+ * or not either was clipped, so this checks for *those* and reads
+ * everything else — clipped or not — as the hook having broken.
+ *
+ * **Missing the fix-round sentence read a fixer's own reasoned decline —
+ * `FixApplied{failure: null}`, the run's own evidence is its `said`, not
+ * this detail — as `NotDone`, which 0120 §4 sends to
+ * `Propose{SetupRefused}` (`pass-next.ts:183`) rather than the
+ * `changedNothing` cell `nextOf` reserves for a round above 0
+ * (`Propose{FixerDisagrees}`, `pass-next.ts:105-110`) — the fixer having
+ * run and declined read as the work action's own setup never having
+ * dispatched it at all.**
  */
-const NO_COMMITS_SENTENCE = 'the agent produced no commits'
+const NO_COMMITS_SENTENCES = [
+  'the agent produced no commits',
+  'the fixing agent committed nothing, so there is nothing new for the review to read',
+] as const
 
 function committedNothing(detail: string): boolean {
-  return detail === NO_COMMITS_SENTENCE
+  return (NO_COMMITS_SENTENCES as readonly string[]).includes(detail)
 }
 
 /**

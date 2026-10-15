@@ -460,6 +460,32 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
   })
 
+  it('a commit action in a fix round that cleared having committed nothing (row 7 of #461, #473 major finding)', () => {
+    // The fixer read the review's findings and declined, committing nothing
+    // (`conduct.ts:3358`'s own sentence, written when `fixed.failure` is
+    // undefined) — a commit action that *cleared*, the same cell round 0's
+    // own fixed sentence (`conduct.ts:3180`) reads back as, and never the
+    // `NotDone` a work action's own broken setup writes. Before this fix,
+    // `committedNothing` matched only the round-0 literal and this detail
+    // read as `NotDone`, which 0120 §4 sends to `Propose{SetupRefused}`
+    // rather than the `changedNothing` cell `nextOf` reserves for round > 0
+    // (`Propose{FixerDisagrees}`) — the fixer having run and declined read as
+    // the work action's own setup never having dispatched it at all.
+    const run = aRun('run-1')
+    const action: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: 'the fixing agent committed nothing, so there is nothing new for the review to read',
+      yields: 'commit',
+      result: { _tag: 'Completed', head: null, question: null },
+    }
+    const outcome = outcomeOf('implement', 1, [action])
+    const events = run.aStepEnded(outcome)
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+  })
+
   it('a design action that drafted', () => {
     const run = aRun('run-1')
     const action: Action = {
