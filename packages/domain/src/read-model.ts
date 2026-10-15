@@ -22,7 +22,9 @@
  */
 import { cleared, type Action, type NeverStarted, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
+import type { PayloadOf } from './events.ts'
 import type { Hold } from './hold.ts'
+import { legacyColumns, type LegacyColumns } from './legacy-columns.ts'
 import type { Restart } from './pass-next.ts'
 import type { Proposal } from './proposal.ts'
 import type { CandidateNext, RouteDecision as RouteDecisionT } from './routing.ts'
@@ -1249,4 +1251,179 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
       }
       return null
     })
+}
+
+// -------------------------------------------------------------- cardFactOf ----
+
+/**
+ * What a card counts a gate event as.
+ *
+ * Nine events, eight verdicts, and the distinctions are the point. `waived` and
+ * `approved` used to both be `passed`, which made a person overriding a red
+ * build indistinguishable from a green one — the distinction a waiver records
+ * who and why for (#78). A machine ran it and it went green, a machine ran it
+ * and it went red, and a person said so anyway are three different facts.
+ *
+ * Moved here from `packages/projector/src/task-view.ts` by #480, unchanged.
+ */
+export const VERDICT: Record<string, string> = {
+  StepPassed: 'passed',
+  StepFailed: 'failed',
+  // Neither, and that is the point: the gate's agent never started, so nothing
+  // about this diff was judged (#133). Counted as neither passed nor failed, so
+  // a card does not wear the red stripe for a review that never happened.
+  StepNeverRan: 'never-ran',
+  // Neither either, and a different neither: the agent started and ended with
+  // no receipt, so nothing about this diff was judged and nothing about the
+  // account was learned (0057). Drawn as its own state rather than as a refusal
+  // — 0016 §4's rule, which is what `#133` applied one row up.
+  StepDidNotFinish: 'did-not-finish',
+  // A third neither, and the only one that is not a fault: the agent stopped and
+  // asked something (`#296`, 0058 §3c). Its own state because it is its own
+  // sentence to a person — *answer this* rather than *look at this* — which is
+  // 0016 §4's rule again, and the reason the card draws it in the held colour
+  // rather than in the fail hatch `did-not-finish` wears.
+  StepAsked: 'asked',
+  StepWaived: 'waived',
+  ApprovalRequested: 'pending',
+  ApprovalGranted: 'approved',
+  ApprovalRevoked: 'pending',
+}
+
+/** What an approval-shaped event does to a card's `awaiting_sha`/`note`, beside the verdict itself. */
+export type ApprovalEffect =
+  | { readonly _tag: 'Requested'; readonly question: string; readonly onSha: string }
+  | { readonly _tag: 'Granted' }
+  | { readonly _tag: 'Revoked'; readonly onSha: string }
+  | null
+
+/**
+ * What `task_view` folds that 0120's appendix retires or reshapes (#480) —
+ * the one place left, after #464, that still names an old event type or a
+ * `Hold`. `cardFactOf` answers `null` for any type it does not own, which a
+ * fold reads as "no fact, no write" rather than a gap.
+ *
+ * **Not `stepOutcomesOf`/`routesOf`/`waitsOf`/`releaseCauseOf`.** Those answer
+ * about a whole slice's history — a round's denominator, a route's candidate,
+ * a wait's resolution — and are not callable on the one event a fold is
+ * folding at a time (`routesOf`'s own header: `PassRouted` is appended after
+ * the `FixRequested`/`PassRestarted` it explains). Each `CardFact` variant
+ * below carries exactly what `task_view`'s old direct match read off the
+ * event itself, so a rebuild stays byte-identical to what the direct match
+ * wrote.
+ */
+export type CardFact =
+  | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: string; readonly approval: ApprovalEffect }
+  | {
+      readonly _tag: 'RoundOpened'
+      readonly round: number
+      readonly of: number
+      readonly findings: number
+      readonly action: string
+    }
+  | { readonly _tag: 'RoundSpent'; readonly runId: string; readonly round: number; readonly costUsd: number }
+  | { readonly _tag: 'RoundsDeclined'; readonly round: number; readonly why: string }
+  | { readonly _tag: 'Restarted'; readonly restart: Restart; readonly of: number }
+  | {
+      readonly _tag: 'WaitStarted'
+      readonly reason: WaitReason
+      readonly card: Pick<LegacyColumns, 'question' | 'needs' | 'diagnosis'>
+    }
+  | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly withdrawn: boolean }
+  | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
+  | { readonly _tag: 'RepairBought' }
+
+function approvalEffectOf(event: Envelope): ApprovalEffect {
+  if (event.type === 'ApprovalRequested') {
+    const d = event.data as PayloadOf<'ApprovalRequested'>
+    return { _tag: 'Requested', question: d.question, onSha: d.onSha }
+  }
+  if (event.type === 'ApprovalGranted') return { _tag: 'Granted' }
+  if (event.type === 'ApprovalRevoked') {
+    const d = event.data as PayloadOf<'ApprovalRevoked'>
+    return { _tag: 'Revoked', onSha: d.onSha }
+  }
+  return null
+}
+
+/** `cardFactOf`'s one entry point — see the section header for what it does and does not answer. */
+export function cardFactOf(event: Envelope): CardFact | null {
+  switch (event.type) {
+    case 'StepPassed':
+    case 'StepFailed':
+    case 'StepNeverRan':
+    case 'StepDidNotFinish':
+    case 'StepAsked':
+    case 'StepWaived':
+    case 'ApprovalRequested':
+    case 'ApprovalGranted':
+    case 'ApprovalRevoked': {
+      const d = event.data as { step: string; action: string }
+      return {
+        _tag: 'Verdict',
+        key: `${d.step}:${d.action}`,
+        verdict: VERDICT[event.type]!,
+        approval: approvalEffectOf(event),
+      }
+    }
+
+    case 'FixRequested': {
+      const d = event.data as PayloadOf<'FixRequested'>
+      return { _tag: 'RoundOpened', round: d.round, of: d.of, findings: d.findings.length, action: d.action }
+    }
+
+    case 'FixApplied': {
+      const d = event.data as PayloadOf<'FixApplied'>
+      // `null` is "no fact" here, the same as `task_view`'s old `if (d.costUsd
+      // !== null)` guard — a round that was never charged writes nothing.
+      if (d.costUsd === null) return null
+      return { _tag: 'RoundSpent', runId: d.runId, round: d.round, costUsd: d.costUsd }
+    }
+
+    case 'FixDeclined': {
+      const d = event.data as PayloadOf<'FixDeclined'>
+      return { _tag: 'RoundsDeclined', round: d.round, why: d.why }
+    }
+
+    case 'PassRestarted': {
+      const d = event.data as PayloadOf<'PassRestarted'>
+      return { _tag: 'Restarted', restart: { _tag: 'Restart', restart: d.restart }, of: d.of }
+    }
+
+    case 'WorkItemBlocked': {
+      const d = event.data as PayloadOf<'WorkItemBlocked'>
+      // A one-element slice is safe here: `reasonFromHold`'s own lookups
+      // (`refusingStepFailed`, `becauseFor`, `approvalActionFor`) find nothing
+      // and fall back, and the one thing `task_view` reads off the answer —
+      // whether it is a person's own question — depends only on `_tag`.
+      const reason = reasonFromHold(d.hold, [event], event.seq)
+      const cols = legacyColumns(d.hold)
+      return {
+        _tag: 'WaitStarted',
+        reason,
+        card: { question: cols.question, needs: cols.needs, diagnosis: cols.diagnosis },
+      }
+    }
+
+    case 'WorkItemUnblocked': {
+      const d = event.data as PayloadOf<'WorkItemUnblocked'>
+      return { _tag: 'WaitResolved', by: d.by, note: d.note, withdrawn: d.withdrawn === true }
+    }
+
+    case 'RunFailed': {
+      const d = event.data as PayloadOf<'RunFailed'>
+      return { _tag: 'RunEnded', kind: d.kind, detail: d.detail }
+    }
+
+    /**
+     * A failure bought an agent — retired (`#143`), and still folded: a log
+     * that holds it is replayed by every rebuild. See `task_view`'s own
+     * comment on the case this answers for what the fact exempts.
+     */
+    case 'RepairRequested':
+      return { _tag: 'RepairBought' }
+
+    default:
+      return null
+  }
 }

@@ -48,7 +48,7 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { legacyColumns, parseWorkItemStream } from '@lingtai/domain'
+import { cardFactOf, parseWorkItemStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
@@ -318,99 +318,6 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'WorkItemBlocked': {
-          const d = event.data as PayloadOf<'WorkItemBlocked'>
-          // An upsert, because since #147 this can be a task's first event:
-          // `lingtai ask` blocks an item before anything has claimed it, and an
-          // UPDATE would leave the question on no row — the board would not
-          // show it and the queue, which reads this table, would not pass the
-          // item over. The same reason `DispatchRefused` upserts.
-          const { project: p, issue: i } = splitTaskId(event.streamId)
-          await upsert(ctx, event.streamId, seq, at, {
-            project: p,
-            issue: i,
-            title: null,
-            kind: null,
-            state: 'waiting',
-          })
-          // The question is still the card's line, unchanged — now rebuilt
-          // from the `Hold` the event carries rather than read off the
-          // payload directly (#445). `legacyColumns` is the one place that
-          // does the reconstruction.
-          const cols = legacyColumns(d.hold)
-          await set(ctx, event.streamId, seq, at, {
-            state: 'waiting',
-            note: cols.question,
-            waiting: true,
-            asked: cols.runId === null,
-            needs: cols.needs,
-            diagnosis: cols.diagnosis === null ? null : JSON.stringify(cols.diagnosis),
-          })
-          break
-        }
-
-        case 'WorkItemUnblocked': {
-          const d = event.data as PayloadOf<'WorkItemUnblocked'>
-          // The answer, beside the question it answered — which is the row's
-          // `note` right up until this statement clears it, so both are written
-          // in one statement over the row rather than read back first. A
-          // question withdrawn was never answered, so the last answer stands.
-          await ctx.query(
-            `update task_view
-             set answer = case when $6::boolean then answer else jsonb_build_object(
-                   'question', case when waiting then note end,
-                   'answer', $4::text,
-                   'by', $5::text) end,
-                 state = 'queued',
-                 note = null,
-                 awaiting_sha = null,
-                 waiting = false,
-                 asked = false,
-                 -- The hold is answered, so the diagnosis of it goes with the
-                 -- question. Leaving it would put last week's failure on a card
-                 -- nobody is being asked about.
-                 needs = null,
-                 diagnosis = null,
-                 updated_at = $3,
-                 updated_seq = $2::bigint
-             where task_id = $1 and updated_seq <= $2::bigint`,
-            [event.streamId, seq, at, d.note, d.by, d.withdrawn === true],
-          )
-          break
-        }
-
-        /**
-         * A failure bought an agent — **retired** (`#143`), and still folded.
-         *
-         * Nothing appends it now, and a log that holds it is replayed by every
-         * rebuild. The row is still `running` here; what this records is the
-         * exemption from the backoff, which the claim below consumes into
-         * `repair_run_id` so that the repair's spend lands apart from the
-         * work's. Dropping the case would move an old repair's money into
-         * `cost_usd` on the next rebuild, and make an item released for a
-         * repair just before a deploy wait out a backoff it was exempt from.
-         */
-        case 'RepairRequested':
-          await set(ctx, event.streamId, seq, at, { repair_pending: true })
-          break
-
-        /**
-         * A pass spent its rounds and the ticket is starting over (0040).
-         *
-         * The row is still `running` here — the release that follows moves it to
-         * `queued` and writes the reason as the note — so what this records is
-         * only which arm the item is now on. **Not `repair_pending`**: a restart
-         * is an ordinary claim and `source.backoff` is exactly the guard that
-         * should apply to it: an arm
-         * that comes straight back is the whole queue on a repository running
-         * one ticket at a time.
-         */
-        case 'PassRestarted': {
-          const d = event.data as PayloadOf<'PassRestarted'>
-          await set(ctx, event.streamId, seq, at, { restarts: d.restart, restarts_of: d.of })
-          break
-        }
-
         case 'WorkItemClosed': {
           const d = event.data as PayloadOf<'WorkItemClosed'>
           await set(ctx, event.streamId, seq, at, {
@@ -597,119 +504,6 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'RunFailed': {
-          // Always followed by a `WorkItemBlocked` or a release back to
-          // `queued` (`conduct.ts`) — this is the note for the moment before
-          // either lands, and it leaves `state` for whichever one writes it.
-          const d = event.data as PayloadOf<'RunFailed'>
-          await viaRun(ctx, event.streamId, seq, at, {
-            note: `${d.kind}: ${d.detail}`,
-          })
-          break
-        }
-
-        /**
-         * A fix is bought, so it is folded.
-         *
-         * These three reached no case at all, which had two costs. **The card
-         * showed no sign a fix was running** — an item sat on `running` with
-         * nothing saying a second agent had been dispatched into it. And **the
-         * spend landed in no column**: `RunFinished` writes the run's own cost,
-         * and a fixer is not a run of its own.
-         *
-         * It goes to `repair_costs` rather than to `cost_usd`, for `#84`'s
-         * argument unchanged: *a repair was default-on and spent an agent
-         * without being asked again*, so its money was kept apart from the
-         * work's. A fix is default-on and spends an agent without being asked
-         * again. Same bucket, keyed by the run it was spent inside — and since
-         * `#143` it is the only thing in it.
-         */
-        case 'FixRequested': {
-          const d = event.data as PayloadOf<'FixRequested'>
-          // `of` is zero on every event written before the field existed, and
-          // the reading of zero is *not recorded* — so the round is named
-          // without a denominator rather than as `round 2 of 0`.
-          const round = d.of > 0 ? `round ${d.round} of ${d.of}` : `round ${d.round}`
-          await viaRun(ctx, event.streamId, seq, at, {
-            state: 'running',
-            note: `fixing ${round}: ${d.findings.length} finding(s) from ${d.action}`,
-          })
-          break
-        }
-
-        case 'FixApplied': {
-          const d = event.data as PayloadOf<'FixApplied'>
-          if (d.costUsd !== null) {
-            await viaRunQuery(
-              ctx,
-              event.streamId,
-              // `$1` is the task id, `$2` the seq, `$3` the timestamp, and the
-              // caller's own start at `$4` — see `viaRunQuery`.
-              `update task_view
-                 set repair_costs = repair_costs || jsonb_build_object($4::text, $5::double precision),
-                     updated_at = $3,
-                     updated_seq = $2::bigint
-               where task_id = $1 and updated_seq <= $2::bigint`,
-              // Keyed by run and round: a second round inside one run is a
-              // second purchase, and keying by run alone would lose the first.
-              [seq, at, `${d.runId}#fix${d.round}`, d.costUsd],
-            )
-          }
-          break
-        }
-
-        case 'FixDeclined': {
-          const d = event.data as PayloadOf<'FixDeclined'>
-          await viaRun(ctx, event.streamId, seq, at, {
-            state: 'running',
-            note: `no fix bought after ${d.round} round(s): ${d.why}`,
-          })
-          break
-        }
-
-        case 'StepPassed':
-        case 'StepFailed':
-        case 'StepNeverRan':
-        case 'StepDidNotFinish':
-        case 'StepAsked':
-        case 'StepWaived':
-        case 'ApprovalRequested':
-        case 'ApprovalGranted':
-        case 'ApprovalRevoked': {
-          // Keyed `run:point:action`. The point is there because two points can
-          // run an action of the same name; the run is there because two
-          // attempts can run the same point, and without it the second silently
-          // inherited the first's verdicts (#78).
-          const d = event.data as { step: string; action: string; onSha: string; question?: string }
-          const verdict = VERDICT[event.type]
-          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict)
-          if (event.type === 'ApprovalRequested') {
-            // A `WorkItemBlocked` always follows — the conductor's own request
-            // sits inside the `if` that guards it, and a plugin's `heldAt`
-            // reaches the same unconditional append (`conduct.ts`, `pass.ts`)
-            // — so `state` is left for that event to write.
-            await viaRun(ctx, event.streamId, seq, at, {
-              note: (event.data as PayloadOf<'ApprovalRequested'>).question,
-              // The card may offer Approve, and this is the sha it must send:
-              // the one the run is asking about, not the one it produced. A
-              // re-request on a repaired head moves this and leaves `head_sha`
-              // where it was, which is the divergence #92 is about.
-              awaiting_sha: d.onSha,
-            })
-          }
-          // Granted spends it; revoked opens it again — the run reducer says the
-          // same, and the card has to agree with the thing that will refuse it.
-          if (event.type === 'ApprovalGranted') {
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: null })
-          }
-          if (event.type === 'ApprovalRevoked') {
-            // On the sha the withdrawal names, which is the one the reducer puts
-            // the run back to awaiting.
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: d.onSha })
-          }
-          break
-        }
-
         // ---- the integration lane ----
 
         case 'IntegrationRefused': {
@@ -745,44 +539,204 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        default:
+        /**
+         * Every type 0120's appendix retires or reshapes, and the one `Hold`
+         * match — `cardFactOf` is the one place left that still names an old
+         * event type or a `Hold`, and #464's switch to the stored read model
+         * changes that function and leaves this file untouched (the design
+         * for #480).
+         */
+        default: {
+          const fact = cardFactOf(event)
+          if (fact === null) break
+
+          switch (fact._tag) {
+            // Keyed `run:point:action`. The point is there because two points
+            // can run an action of the same name; the run is there because two
+            // attempts can run the same point, and without it the second
+            // silently inherited the first's verdicts (#78).
+            case 'Verdict': {
+              await setStep(ctx, event.streamId, seq, at, fact.key, fact.verdict)
+              if (fact.approval?._tag === 'Requested') {
+                // A `WorkItemBlocked` always follows — the conductor's own
+                // request sits inside the `if` that guards it, and a plugin's
+                // `heldAt` reaches the same unconditional append
+                // (`conduct.ts`, `pass.ts`) — so `state` is left for that
+                // event to write.
+                await viaRun(ctx, event.streamId, seq, at, {
+                  note: fact.approval.question,
+                  // The card may offer Approve, and this is the sha it must
+                  // send: the one the run is asking about, not the one it
+                  // produced. A re-request on a repaired head moves this and
+                  // leaves `head_sha` where it was, which is the divergence
+                  // #92 is about.
+                  awaiting_sha: fact.approval.onSha,
+                })
+              }
+              // Granted spends it; revoked opens it again — the run reducer
+              // says the same, and the card has to agree with the thing that
+              // will refuse it.
+              if (fact.approval?._tag === 'Granted') {
+                await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: null })
+              }
+              if (fact.approval?._tag === 'Revoked') {
+                // On the sha the withdrawal names, which is the one the
+                // reducer puts the run back to awaiting.
+                await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: fact.approval.onSha })
+              }
+              break
+            }
+
+            /**
+             * A fix is bought, so it is folded.
+             *
+             * It goes to `repair_costs` rather than to `cost_usd`, for `#84`'s
+             * argument unchanged: *a repair was default-on and spent an agent
+             * without being asked again*, so its money was kept apart from the
+             * work's. A fix is default-on and spends an agent without being
+             * asked again. Same bucket, keyed by the run it was spent inside —
+             * and since `#143` it is the only thing in it.
+             */
+            case 'RoundOpened': {
+              // `of` is zero on every event written before the field existed,
+              // and the reading of zero is *not recorded* — so the round is
+              // named without a denominator rather than as `round 2 of 0`.
+              const round = fact.of > 0 ? `round ${fact.round} of ${fact.of}` : `round ${fact.round}`
+              await viaRun(ctx, event.streamId, seq, at, {
+                state: 'running',
+                note: `fixing ${round}: ${fact.findings} finding(s) from ${fact.action}`,
+              })
+              break
+            }
+
+            case 'RoundSpent': {
+              await viaRunQuery(
+                ctx,
+                event.streamId,
+                // `$1` is the task id, `$2` the seq, `$3` the timestamp, and
+                // the caller's own start at `$4` — see `viaRunQuery`.
+                `update task_view
+                   set repair_costs = repair_costs || jsonb_build_object($4::text, $5::double precision),
+                       updated_at = $3,
+                       updated_seq = $2::bigint
+                 where task_id = $1 and updated_seq <= $2::bigint`,
+                // Keyed by run and round: a second round inside one run is a
+                // second purchase, and keying by run alone would lose the first.
+                [seq, at, `${fact.runId}#fix${fact.round}`, fact.costUsd],
+              )
+              break
+            }
+
+            case 'RoundsDeclined':
+              await viaRun(ctx, event.streamId, seq, at, {
+                state: 'running',
+                note: `no fix bought after ${fact.round} round(s): ${fact.why}`,
+              })
+              break
+
+            /**
+             * A pass spent its rounds and the ticket is starting over (0040).
+             *
+             * The row is still `running` here — the release that follows
+             * moves it to `queued` and writes the reason as the note — so
+             * what this records is only which arm the item is now on. **Not
+             * `repair_pending`**: a restart is an ordinary claim and
+             * `source.backoff` is exactly the guard that should apply to it:
+             * an arm that comes straight back is the whole queue on a
+             * repository running one ticket at a time.
+             */
+            case 'Restarted':
+              await set(ctx, event.streamId, seq, at, { restarts: fact.restart.restart, restarts_of: fact.of })
+              break
+
+            case 'WaitStarted': {
+              // An upsert, because since #147 this can be a task's first
+              // event: `lingtai ask` blocks an item before anything has
+              // claimed it, and an UPDATE would leave the question on no row
+              // — the board would not show it and the queue, which reads
+              // this table, would not pass the item over. The same reason
+              // `DispatchRefused` upserts.
+              const { project: p, issue: i } = splitTaskId(event.streamId)
+              await upsert(ctx, event.streamId, seq, at, {
+                project: p,
+                issue: i,
+                title: null,
+                kind: null,
+                state: 'waiting',
+              })
+              // The question is still the card's line, unchanged — now
+              // rebuilt from the `Hold` the event carries rather than read
+              // off the payload directly (#445).
+              await set(ctx, event.streamId, seq, at, {
+                state: 'waiting',
+                note: fact.card.question,
+                waiting: true,
+                asked: fact.reason._tag === 'OwnQuestion',
+                needs: fact.card.needs,
+                diagnosis: fact.card.diagnosis === null ? null : JSON.stringify(fact.card.diagnosis),
+              })
+              break
+            }
+
+            case 'WaitResolved':
+              // The answer, beside the question it answered — which is the
+              // row's `note` right up until this statement clears it, so
+              // both are written in one statement over the row rather than
+              // read back first. A question withdrawn was never answered, so
+              // the last answer stands.
+              await ctx.query(
+                `update task_view
+                 set answer = case when $6::boolean then answer else jsonb_build_object(
+                       'question', case when waiting then note end,
+                       'answer', $4::text,
+                       'by', $5::text) end,
+                     state = 'queued',
+                     note = null,
+                     awaiting_sha = null,
+                     waiting = false,
+                     asked = false,
+                     -- The hold is answered, so the diagnosis of it goes with
+                     -- the question. Leaving it would put last week's
+                     -- failure on a card nobody is being asked about.
+                     needs = null,
+                     diagnosis = null,
+                     updated_at = $3,
+                     updated_seq = $2::bigint
+                 where task_id = $1 and updated_seq <= $2::bigint`,
+                [event.streamId, seq, at, fact.note, fact.by, fact.withdrawn],
+              )
+              break
+
+            case 'RunEnded':
+              // Always followed by a `WorkItemBlocked` or a release back to
+              // `queued` (`conduct.ts`) — this is the note for the moment
+              // before either lands, and it leaves `state` for whichever one
+              // writes it.
+              await viaRun(ctx, event.streamId, seq, at, { note: `${fact.kind}: ${fact.detail}` })
+              break
+
+            /**
+             * A failure bought an agent — **retired** (`#143`), and still
+             * folded.
+             *
+             * Nothing appends it now, and a log that holds it is replayed by
+             * every rebuild. The row is still `running` here; what this
+             * records is the exemption from the backoff, which the claim
+             * above consumes into `repair_run_id` so that the repair's spend
+             * lands apart from the work's. Dropping it would move an old
+             * repair's money into `cost_usd` on the next rebuild, and make an
+             * item released for a repair just before a deploy wait out a
+             * backoff it was exempt from.
+             */
+            case 'RepairBought':
+              await set(ctx, event.streamId, seq, at, { repair_pending: true })
+              break
+          }
           break
+        }
       }
     }
   },
-}
-
-/**
- * What a card counts a gate event as.
- *
- * Nine events, eight verdicts, and the distinctions are the point. `waived` and
- * `approved` used to both be `passed`, which made a person overriding a red
- * build indistinguishable from a green one — the distinction a waiver records
- * who and why for (#78). A machine ran it and it went green, a machine ran it
- * and it went red, and a person said so anyway are three different facts.
- */
-const VERDICT: Record<string, string> = {
-  StepPassed: 'passed',
-  StepFailed: 'failed',
-  // Neither, and that is the point: the gate's agent never started, so nothing
-  // about this diff was judged (#133). Counted as neither passed nor failed, so
-  // a card does not wear the red stripe for a review that never happened.
-  StepNeverRan: 'never-ran',
-  // Neither either, and a different neither: the agent started and ended with
-  // no receipt, so nothing about this diff was judged and nothing about the
-  // account was learned (0057). Drawn as its own state rather than as a refusal
-  // — 0016 §4's rule, which is what `#133` applied one row up.
-  StepDidNotFinish: 'did-not-finish',
-  // A third neither, and the only one that is not a fault: the agent stopped and
-  // asked something (`#296`, 0058 §3c). Its own state because it is its own
-  // sentence to a person — *answer this* rather than *look at this* — which is
-  // 0016 §4's rule again, and the reason the card draws it in the held colour
-  // rather than in the fail hatch `did-not-finish` wears.
-  StepAsked: 'asked',
-  StepWaived: 'waived',
-  ApprovalRequested: 'pending',
-  ApprovalGranted: 'approved',
-  ApprovalRevoked: 'pending',
 }
 
 // ----------------------------------------------------------------- write ----
