@@ -712,6 +712,30 @@ function refusingStepFailed(
     : (last.data as { action: string; evidence: string; findings: Finding[]; unreadable?: true })
 }
 
+/**
+ * The last `StepFailed{unreadable: true}` on the run, at `review` or at
+ * `proposed` — whichever actor's answer actually failed to parse.
+ * `answerUnreadableHold` (`adapters.ts:558-567`) keeps the two apart with a
+ * different prefix on the same `Routed{when: 'findings'}` hold, because
+ * `review`'s own cold reviewer and a judge declared at `proposed` are
+ * different actors; this is that distinction's own reverse.
+ */
+function lastUnreadableAt(
+  events: readonly Envelope[],
+  runId: string,
+  steps: readonly string[],
+): { step: string; action: string; evidence: string } | undefined {
+  const found = events.filter(
+    (e) =>
+      e.type === 'StepFailed' &&
+      e.streamId === runId &&
+      steps.includes((e.data as { step: string }).step) &&
+      (e.data as { unreadable?: true }).unreadable === true,
+  )
+  const last = found[found.length - 1]
+  return last === undefined ? undefined : (last.data as { step: string; action: string; evidence: string })
+}
+
 /** The `because` of that run's last escalated route (`routesOf`) — never a second fold of `PassRouted`. */
 function becauseFor(events: readonly Envelope[], runId: string): EscalationBecause {
   const escalated = routesOf(events).filter((r) => r.runId === runId && r.decision._tag === 'Escalated')
@@ -724,9 +748,17 @@ function routedToReason(hold: Extract<Hold, { _tag: 'Routed' }>, events: readonl
   const because = becauseFor(events, hold.run.runId)
 
   if (hold.when === 'findings') {
-    const failed = refusingStepFailed(events, hold.run.runId, 'review')
-    if (failed?.unreadable === true) {
-      return { _tag: 'AnswerUnreadable', run, step: 'review', action: failed.action, raw: failed.evidence }
+    const unreadable = lastUnreadableAt(events, hold.run.runId, ['review', 'proposed'])
+    if (unreadable !== undefined) {
+      if (unreadable.step === 'review') {
+        return { _tag: 'AnswerUnreadable', run, step: 'review', action: unreadable.action, raw: unreadable.evidence }
+      }
+      return {
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'AnswerUnreadable', from: 'proposed', raw: unreadable.evidence },
+        because,
+      }
     }
     const proposal: Proposal =
       hold.findings.length > 0

@@ -1145,6 +1145,37 @@ describe('waitsOf', () => {
     expect((rebuiltHold as { when?: string }).when).toBe((storedHold as { when?: string }).when)
   })
 
+  it('reads an unreadable answer from a judge declared at proposed as ProposedEscalated/AnswerUnreadable, never naming review', () => {
+    // `review`'s own cold reviewer and a judge declared at `proposed` are
+    // different actors (`adapters.ts:558-567`'s own "the prefix names
+    // whichever one actually failed to parse"), and both store the same
+    // `Routed{when: 'findings'}` hold. `routedToReason` used to look for the
+    // `unreadable: true` `StepFailed` at `review` alone, so this one — the
+    // judge's own, at `proposed` — read back as the cold reviewer's.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const judge: Action = {
+      plugin: 'agent',
+      name: 'judge the direction',
+      onSha,
+      call: null,
+      evidence: 'maybe fix it? idk',
+      yields: 'verdict',
+      result: { _tag: 'AnswerUnreadable', raw: 'maybe fix it? idk' },
+    }
+    const outcome = outcomeOf('proposed', 0, [judge])
+    const reason = {
+      _tag: 'ProposedEscalated' as const,
+      run: { runId: run.runId },
+      proposal: { _tag: 'AnswerUnreadable' as const, from: 'proposed' as const, raw: 'maybe fix it? idk' },
+      because: { _tag: 'NotAsked' as const },
+    }
+    const events = [...run.aStepEnded(outcome), ...aWait(itemStream, reason)]
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual(reason)
+  })
+
   it('answers the Resolution once one lands: Requeue', () => {
     // Not an `OwnQuestion`: an unwithdrawn unblock of one of those is always
     // `AnswerQuestion` (the next `it`), since the two write the same event
