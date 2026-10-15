@@ -366,7 +366,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // with `tail()`, which keeps only the *end* of the text — so a hook-setup
     // sentence long enough to need clipping never reaches this cell with its
     // "the hook ... " prefix intact at all, and `hookSetupBroke`'s old
-    // prefix match failed on every one of them. `work-action.ts:3180`'s own
+    // prefix match failed on every one of them. `conduct.ts:3180`'s own
     // "the agent produced no commits" is the one sentence this cell ever
     // sees with no variable suffix, so it is never clipped — `committedNothing`
     // checks for that literal instead of the four open-ended prefixes, so a

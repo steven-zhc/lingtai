@@ -310,6 +310,16 @@ function committedNothing(detail: string): boolean {
  * (`conduct.ts:3114`), so a reviewer's or a drafting agent's own crash,
  * timeout or turn/cost wall never writes one, and the sentence on the wire
  * is the sole carrier.
+ *
+ * The match is anchored at `^`, so the same `boundedEvidence` clipping that
+ * `committedNothing` above works around can drop this prefix too: a long
+ * enough reviewer or design-agent crash loses `the reviewer did not finish
+ * (` off the front, this regexp finds nothing, and the hold folds to
+ * `SetupRefused` — "no agent ran" — for one that ran and crashed. There is
+ * no fixed literal to recover the kind here the way there is for
+ * `committedNothing`, because `RunFailed` is written only for the
+ * implementer's own dispatch (`conduct.ts:3114`); building a wider match is
+ * its own finding, not this one.
  */
 const AGENT_DID_NOT_FINISH = /^the (?:reviewer|design agent) did not finish \(([a-z-]+)\):/
 
@@ -1013,9 +1023,11 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
       // `RunFailed` to read a cause off (that event is the implementer's
       // alone), so `kind` is `null` here regardless of whether an agent ran
       // at all. `agentDidNotFinishKind` reads the run's own sentence instead:
-      // row 14d's cold reviewer spent five turns and $0.33 before its own
-      // wall, and without this it read as `SetupRefused` — 0118's "the setup
-      // broke before any agent ran" for an agent that ran.
+      // a reviewer or design agent that crashed, timed out or was aborted
+      // mid-run, and without this read as `SetupRefused` — 0118's "the setup
+      // broke before any agent ran" — for an agent that ran. (Row 14d's cold
+      // reviewer hits its turn ceiling rather than crashing, so its own
+      // ending is the exclusion below, not this branch.)
       const agentKind = agentDidNotFinishKind(hold.raw ?? hold.why)
       if (agentKind === 'crash' || agentKind === 'timeout' || agentKind === 'aborted') {
         return { _tag: 'AgentCrashed', run, step: crashStep, cause: agentKind, detail: hold.raw ?? hold.why }
