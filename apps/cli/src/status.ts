@@ -196,10 +196,10 @@ export async function status(
     // **A question asked before any run is printed, not counted** (#147). It is
     // the one hold whose whole content is a sentence a person has to read, and
     // `1 waiting on you` would say there is a question without saying which.
-    const askedBefore = known.filter((t) => t.blocked && t.asked)
+    const askedBefore = known.filter((t) => t.waiting && t.asked)
     for (const t of known) {
       if (t.state === 'queued') continue
-      if (t.blocked && t.asked) continue
+      if (t.waiting && t.asked) continue
       const label = NAMES[t.state] ?? t.state
       elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1)
     }
@@ -233,7 +233,7 @@ export async function status(
       /** The card's line: what it is waiting on, or why it stopped. */
       note?: string | null
       /** Whether a person is holding a question, as opposed to merely waiting. */
-      blocked?: boolean
+      waiting?: boolean
       /** Asked before any run, and the sha a review is about. Absent on a GitHub offer. */
       asked?: boolean
       awaitingSha?: string | null
@@ -286,7 +286,7 @@ export async function status(
       // Which wait, where it is one of the two a person can tell apart at a
       // glance — the board's chip, in the same words (#147).
       const wait = describeWait({
-        blocked: t.blocked === true,
+        waiting: t.waiting === true,
         asked: t.asked === true,
         awaitingSha: t.awaitingSha ?? null,
         needs: t.needs ?? null,
@@ -325,11 +325,11 @@ export async function status(
       // that carries only a question prints one line, exactly as its card
       // shows one.
       //
-      // Only where a person is actually holding a question — `blocked`, not the
+      // Only where a person is actually holding a question — `waiting`, not the
       // state — for the reason the card's controls use the same test: the
       // waiting lane also holds a refused dispatch and a run that asked
       // something mid-flight.
-      if (t.blocked) {
+      if (t.waiting) {
         if (t.note) log(`             ${oneLine(t.note)}`)
         for (const line of describeHold({ needs: t.needs ?? null, diagnosis: t.diagnosis ?? null })) {
           log(`             ${oneLine(line.text)}`)

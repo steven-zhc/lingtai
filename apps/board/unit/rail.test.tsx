@@ -343,7 +343,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
-    blocked: false,
+    waiting: false,
     needs: null,
     diagnosis: null,
     asked: false,
@@ -576,7 +576,7 @@ describe('all ten steps, in every lane', () => {
   })
 
   it('draws ten segments on a blocked card', () => {
-    const html = render({ state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
+    const html = render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
 
     expect(segments(html)).toHaveLength(10)
     expect(segments(html)[STEPS.indexOf('proposed')]).toBe('failed')
@@ -603,7 +603,7 @@ describe('all ten steps, in every lane', () => {
  * under the bar has to agree with the segment above it.
  */
 describe('a card stopped on a person', () => {
-  const blocked = () => render({ state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
+  const blocked = () => render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
 
   /**
    * The elapsed pill used to branch on *is there a rail*, which was the same
@@ -746,7 +746,7 @@ describe('a card answering a refusal', () => {
    * what it says is what refused it.
    */
   it('goes back to the refusal when the round is spent', () => {
-    const html = render({ state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent())
+    const html = render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent())
 
     // The round `fixSpent()` bought is now on the budget line too.
     expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 0 restarts left')
@@ -763,7 +763,7 @@ describe('a card answering a refusal', () => {
 describe("a held item's budget", () => {
   it('reads the rounds a bought round named, and the restarts the card itself carries', () => {
     const html = render(
-      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
+      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
       fixSpent(),
     )
 
@@ -778,7 +778,7 @@ describe("a held item's budget", () => {
    */
   it("falls back to the recipe's own ceiling when the run never bought one", () => {
     const html = render(
-      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
+      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
       refused(),
       PLAN,
       false,
@@ -796,7 +796,7 @@ describe("a held item's budget", () => {
    */
   it('drops the arm from the pill wherever the rail carries it, and keeps it on a queued card', () => {
     const waiting = render(
-      { state: 'waiting', blocked: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
+      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
       refused(),
     )
     // Not the arm's own words — the held line beside it says "restarts left"
@@ -825,7 +825,7 @@ describe("a held item's budget", () => {
    */
   it('carries the budget line on an open approval, not just a refusal', () => {
     const html = render(
-      { state: 'waiting', blocked: true, restarts: 1, restartsOf: 1 },
+      { state: 'waiting', waiting: true, restarts: 1, restartsOf: 1 },
       [
         ...refusedByTheLane(),
         at('2026-09-15T17:23:00Z', 'ApprovalRequested', {

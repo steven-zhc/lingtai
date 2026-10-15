@@ -48,7 +48,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     restartsOf: 0,
     awaitingSha: null,
     awaitingApproval: false,
-    blocked: false,
+    waiting: false,
     needs: null,
     diagnosis: null,
     asked: false,
@@ -132,7 +132,7 @@ describe('the four lanes', () => {
   it('renders all four even when three of them are empty', () => {
     // A board showing only the lanes with something in it is a board that
     // hides "Waiting on you" on exactly the days it matters.
-    const board = take([task({ state: 'waiting', blocked: true })])
+    const board = take([task({ state: 'waiting', waiting: true })])
     expect(board.lanes.map((l) => l.id)).toEqual(['queued', 'running', 'waiting', 'landed'])
   })
 })

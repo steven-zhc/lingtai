@@ -359,7 +359,7 @@ export function Card({
           actually has — back to the queue, where the next attempt is cut from a
           base that has since moved — rather than a control that cannot act.
 
-          `blocked` and not the column, for the same reason: the lane also holds
+          `waiting` and not the column, for the same reason: the lane also holds
           a run that asked a question mid-flight, and it is not an item
           anybody can hand back.
 
@@ -375,7 +375,7 @@ export function Card({
           off the run, where this card once sent a literal `"build"` for a
           refused `review`. `failed` only decides whether to ask why
           before the click. */}
-      {card.blocked ? (
+      {card.waiting ? (
         <div className="btnrow">
           {card.awaitingSha ? (
             <Decide

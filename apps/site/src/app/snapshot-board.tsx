@@ -153,11 +153,11 @@ function Card({ card }: { card: SnapshotCard }) {
       </div>
       <div className="ti">{card.title ?? <span className="withheld">title withheld</span>}</div>
       <ul className="meta">
-        {age !== null && <li className={`pill${card.blocked ? ' sig' : ''}`}>{age}</li>}
+        {age !== null && <li className={`pill${card.waiting ? ' sig' : ''}`}>{age}</li>}
         {card.turns !== null && <li className="pill">{card.turns} turns</li>}
         {cost !== null && <li className="pill">{cost}</li>}
         {card.attempts > 1 && <li className="pill hold">attempt {card.attempts}</li>}
-        {card.blocked && <li className="pill sig">blocked on you</li>}
+        {card.waiting && <li className="pill sig">blocked on you</li>}
       </ul>
       {card.note !== null && <div style={{ color: 'var(--ink-2)', fontSize: 11.5 }}>{card.note}</div>}
     </article>
@@ -184,7 +184,7 @@ function ref(card: SnapshotCard): string {
  * version of it.
  */
 function accent(card: SnapshotCard): string {
-  if (card.blocked) return 'a-sig'
+  if (card.waiting) return 'a-sig'
   if (card.lane === 'running') return 'a-run'
   if (card.lane === 'landed') return 'a-pass'
   if (card.attempts > 1) return 'a-hold'

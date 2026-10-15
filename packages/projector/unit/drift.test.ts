@@ -132,6 +132,53 @@ describe('the board, reading a task_view built before the rename', () => {
 })
 
 /**
+ * A store whose `task_view` is the real one, optionally aged back to the shape
+ * it had before #477 renamed the boolean column `blocked` to `waiting` — the
+ * lane's own id, and not GitHub's `blocked` label or `blocked-by` count, which
+ * this rename leaves untouched.
+ */
+async function storeWithWaitingColumn(column: 'waiting' | 'blocked'): Promise<ProjectionStore> {
+  const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
+  await store.transact(async (ctx) => {
+    await taskViewProjection.create(ctx)
+    if (column === 'blocked') {
+      await ctx.query('alter table task_view rename column waiting to blocked')
+    }
+    await ctx.query(
+      `insert into task_view
+         (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      ['wi-drift-2', 'drift', '2', 'waiting', RUN, true, new Date().toISOString(), 1],
+    )
+  })
+  return store
+}
+
+describe('the board, reading a task_view built before #477 renamed blocked to waiting', () => {
+  it('refuses the read rather than reporting every waiting card as answered', async () => {
+    const store = await storeWithWaitingColumn('blocked')
+    try {
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(ProjectionShapeError)
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(/lingtai projection rebuild task_view/)
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('reads the hold once the column is the declared one', async () => {
+    // The control, for the reason given above: without it the refusal above
+    // would pass on a store that refuses every read.
+    const store = await storeWithWaitingColumn('waiting')
+    try {
+      const [card] = await store.tasks({ retentionDays: 2 })
+      expect(card!.waiting).toBe(true)
+    } finally {
+      await store.close()
+    }
+  })
+})
+
+/**
  * The columns `finding_backlog` is declared with, and the value each one holds
  * in the row below. Written as the entry a reader is owed, so that the two names
  * for one column — `gate` in the table, `step` on the entry — are the only place

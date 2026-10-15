@@ -672,7 +672,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // **Released, not waiting.** A question for a person sits in the waiting
       // lane; a restarted ticket is back in the queue for an ordinary claim.
       expect(over.state).toBe('queued')
-      expect(over.blocked).toBe(false)
+      expect(over.waiting).toBe(false)
       expect(over.note).toContain('restart 1 of 2')
 
       // Nothing on a ticket that has only ever had one approach, so a card on a
@@ -759,7 +759,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(nine.awaitingApproval).toBe(false)
       // Somebody's question, with the reason on it.
       expect(nine.state).toBe('waiting')
-      expect(nine.blocked).toBe(true)
+      expect(nine.waiting).toBe(true)
       expect(nine.needs).toBe('acknowledgement')
       expect(nine.diagnosis?.done).toContain('No agent was bought')
       expect(nine.diagnosis?.recommendation?.action).toBe('requeue')
@@ -768,7 +768,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // after it leaves `state` alone — #406 — so card 4 is whatever
       // `WorkItemDiscovered` wrote, with the refusal as its note.
       expect(card(tasks, 4)!.state).toBe('queued')
-      expect(card(tasks, 4)!.blocked).toBe(false)
+      expect(card(tasks, 4)!.waiting).toBe(false)
     })
 
     /**
@@ -789,7 +789,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // And a question is open exactly when there is a sha it is about, so the
       // card cannot offer Approve without the value Approve needs.
       expect(ten.awaitingApproval).toBe(true)
-      expect(ten.blocked).toBe(true)
+      expect(ten.waiting).toBe(true)
 
       // Granted spends it: #84's row is asking nothing and carries nothing.
       expect(card(tasks, 9)!.awaitingSha).toBeNull()
@@ -809,7 +809,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     it("surfaces a block's diagnosis and its recommended action", async () => {
       const eleven = card(await readTasks({ project: PROJECT }), 11)!
 
-      expect(eleven.blocked).toBe(true)
+      expect(eleven.waiting).toBe(true)
       expect(eleven.needs).toBe('acknowledgement')
       expect(eleven.diagnosis?.what).toBe('agent/11 does not merge into develop.')
       expect(eleven.diagnosis?.done).toContain('No agent was bought')
@@ -832,7 +832,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     it('renders a Human hold from its question, with the merge recommendation', async () => {
       const ten = card(await readTasks({ project: PROJECT }), 10)!
 
-      expect(ten.blocked).toBe(true)
+      expect(ten.waiting).toBe(true)
       expect(ten.note).toBe('the `merge` step held: a repair is waiting on you')
       expect(ten.needs).toBe('judgement')
       expect(ten.diagnosis?.recommendation?.action).toBe('approve')
@@ -844,7 +844,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const twelve = card(await readTasks({ project: PROJECT }), 12)!
 
       expect(twelve.state).toBe('queued')
-      expect(twelve.blocked).toBe(false)
+      expect(twelve.waiting).toBe(false)
       expect(twelve.needs).toBeNull()
       expect(twelve.diagnosis).toBeNull()
     })
@@ -861,7 +861,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       const seventeen = card(tasks, 17)!
       expect(seventeen.state).toBe('waiting')
-      expect(seventeen.blocked).toBe(true)
+      expect(seventeen.waiting).toBe(true)
       expect(seventeen.asked).toBe(true)
       expect(seventeen.note).toBe('Which of the three designs should the tripwire use?')
       expect(describeWait(seventeen)).toBe('waiting for your answer')
@@ -899,7 +899,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
      */
     it('does not call an acknowledgement a review, even when it holds a sha', () => {
       const stopped = {
-        blocked: true,
+        waiting: true,
         asked: false,
         awaitingSha: 'a7663f9000000000',
         needs: 'acknowledgement' as const,

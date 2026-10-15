@@ -107,7 +107,10 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     lastAttemptAt: row.last_attempt_at,
     restarts: row.restarts ?? 0,
     restartsOf: row.restarts_of ?? 0,
-    blocked: row.blocked === true,
+    // Through `columnOf`, for `verdicts`'s reason above: a row from a table
+    // created before the rename has no `waiting` key, and reading it off the
+    // row directly would count that drift as a card with nothing to answer.
+    waiting: columnOf(row, 'task_view', 'waiting') === true,
     needs: row.needs ?? null,
     // Written from a parsed payload and read back as it was written, so the
     // shape is the event's rather than this reader's guess about it.

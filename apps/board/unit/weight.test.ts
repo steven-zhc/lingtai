@@ -47,7 +47,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
-    blocked: false,
+    waiting: false,
     needs: null,
     diagnosis: null,
     asked: false,

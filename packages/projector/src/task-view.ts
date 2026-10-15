@@ -160,7 +160,7 @@ export const taskViewProjection: Projection = {
         -- because the refusal is the pass's rather than this item's), and
         -- never this column: only WorkItemUnblocked may answer a question
         -- already standing on an item, so a refusal found one leaves it be.
-        blocked      boolean not null default false,
+        waiting      boolean not null default false,
 
         -- Whether that question was asked **before any run** — a
         -- WorkItemBlocked with runId null, which only lingtai ask writes
@@ -310,7 +310,7 @@ export const taskViewProjection: Projection = {
             state: 'queued',
             run_id: null,
             note: d.reason,
-            blocked: false,
+            waiting: false,
             asked: false,
             needs: null,
             diagnosis: null,
@@ -341,7 +341,7 @@ export const taskViewProjection: Projection = {
           await set(ctx, event.streamId, seq, at, {
             state: 'waiting',
             note: cols.question,
-            blocked: true,
+            waiting: true,
             asked: cols.runId === null,
             needs: cols.needs,
             diagnosis: cols.diagnosis === null ? null : JSON.stringify(cols.diagnosis),
@@ -358,13 +358,13 @@ export const taskViewProjection: Projection = {
           await ctx.query(
             `update task_view
              set answer = case when $6::boolean then answer else jsonb_build_object(
-                   'question', case when blocked then note end,
+                   'question', case when waiting then note end,
                    'answer', $4::text,
                    'by', $5::text) end,
                  state = 'queued',
                  note = null,
                  awaiting_sha = null,
-                 blocked = false,
+                 waiting = false,
                  asked = false,
                  -- The hold is answered, so the diagnosis of it goes with the
                  -- question. Leaving it would put last week's failure on a card
@@ -420,7 +420,7 @@ export const taskViewProjection: Projection = {
             note: d.reason,
             closed_at: at,
             awaiting_sha: null,
-            blocked: false,
+            waiting: false,
             asked: false,
             // Closing answers whatever was being held, for `landed`'s reason: a
             // diagnosis that outlived the decision reports a failure on work
@@ -438,7 +438,7 @@ export const taskViewProjection: Projection = {
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
-            blocked: false,
+            waiting: false,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -456,10 +456,10 @@ export const taskViewProjection: Projection = {
           // what the queue should offer once the pause lifts.
           //
           // **Conditional on the standing hold.** Only `WorkItemUnblocked` may
-          // clear `blocked`, and only a person's answer may replace the
+          // clear `waiting`, and only a person's answer may replace the
           // question `note` holds — a dispatch refused on top of a block
           // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
-          // is not an event about *this item*, so where `blocked` is already
+          // is not an event about *this item*, so where `waiting` is already
           // true this leaves state, note and every hold column exactly as
           // they were. Writing `state: 'queued'` and clearing the hold here
           // regardless put `task_view` and the domain fold
@@ -478,12 +478,12 @@ export const taskViewProjection: Projection = {
              on conflict (task_id) do update
                set title = coalesce(excluded.title, task_view.title),
                    kind = coalesce(excluded.kind, task_view.kind),
-                   state = case when task_view.blocked then task_view.state else excluded.state end,
-                   note = case when task_view.blocked then task_view.note else excluded.note end,
-                   awaiting_sha = case when task_view.blocked then task_view.awaiting_sha else null end,
-                   asked = case when task_view.blocked then task_view.asked else false end,
-                   needs = case when task_view.blocked then task_view.needs else null end,
-                   diagnosis = case when task_view.blocked then task_view.diagnosis else null end,
+                   state = case when task_view.waiting then task_view.state else excluded.state end,
+                   note = case when task_view.waiting then task_view.note else excluded.note end,
+                   awaiting_sha = case when task_view.waiting then task_view.awaiting_sha else null end,
+                   asked = case when task_view.waiting then task_view.asked else false end,
+                   needs = case when task_view.waiting then task_view.needs else null end,
+                   diagnosis = case when task_view.waiting then task_view.diagnosis else null end,
                    updated_at = excluded.updated_at,
                    updated_seq = excluded.updated_seq
              where task_view.updated_seq < excluded.updated_seq`,
@@ -735,7 +735,7 @@ export const taskViewProjection: Projection = {
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
-            blocked: false,
+            waiting: false,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -851,7 +851,7 @@ async function upsert(
            note = case when $10::int > 0 then null else task_view.note end,
            -- A fresh attempt is nobody's question yet.
            awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
-           blocked = case when $10::int > 0 then false else task_view.blocked end,
+           waiting = case when $10::int > 0 then false else task_view.waiting end,
            asked = case when $10::int > 0 then false else task_view.asked end,
            -- And nobody's failure yet either. The diagnosis belongs to the block
            -- it explained; carrying it into the next attempt would put the last
@@ -1021,10 +1021,10 @@ export interface TaskCard {
   restarts: number
   restartsOf: number
   /**
-   * Whether a person is holding a question. `waiting` says which lane the card
+   * Whether a person is holding a question. `state` says which lane the card
    * is in; this says whether there is anything on it to answer.
    */
-  blocked: boolean
+  waiting: boolean
   /**
    * Which kind of hold it is: a person's `judgement`, or a failure that needs
    * `acknowledgement`. Null on a block that did not say, which is every one
@@ -1161,9 +1161,9 @@ export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldL
  * status` both say it, and must say it in the same words.
  */
 export function describeWait(
-  card: Pick<TaskCard, 'blocked' | 'asked' | 'awaitingSha' | 'needs'>,
+  card: Pick<TaskCard, 'waiting' | 'asked' | 'awaitingSha' | 'needs'>,
 ): 'waiting for your answer' | 'waiting for your review' | null {
-  if (!card.blocked) return null
+  if (!card.waiting) return null
   if (card.asked) return 'waiting for your answer'
   // Before the sha, because a block can now carry both and only one of them is
   // a question to the person: an acknowledgement is `describeHold`'s to word.

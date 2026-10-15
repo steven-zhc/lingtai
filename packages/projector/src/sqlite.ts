@@ -298,7 +298,10 @@ function toCard(row: ProjectionRow): TaskCard {
     lastAttemptAt: parseAt(row.last_attempt_at),
     restarts: Number(row.restarts ?? 0),
     restartsOf: Number(row.restarts_of ?? 0),
-    blocked: parseBool(row.blocked),
+    // Through `columnOf`, for `postgres.ts`'s reason: a row from a table
+    // created before the rename has no `waiting` key, and reading it off the
+    // row directly would count that drift as a card with nothing to answer.
+    waiting: parseBool(columnOf(row, 'task_view', 'waiting')),
     needs: (row.needs as TaskCard['needs']) ?? null,
     diagnosis: (parseJson(row.diagnosis) as BlockDiagnosis | null) ?? null,
     asked: parseBool(row.asked),

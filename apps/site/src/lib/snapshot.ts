@@ -66,7 +66,7 @@ export interface SnapshotCard {
    */
   hoursSinceUpdate: number | null
   /** Whether a person is holding a question on it. The lane says where; this says whether. */
-  blocked: boolean
+  waiting: boolean
 }
 
 export interface SnapshotLane {
@@ -257,7 +257,7 @@ function reduce(t: TaskCard, open: boolean, now: number): SnapshotCard {
     turns: t.turns,
     costUsd: t.costUsd,
     hoursSinceUpdate: Number.isFinite(hours) ? Math.max(0, Math.round(hours * 10) / 10) : null,
-    blocked: t.blocked,
+    waiting: t.waiting,
   }
 }
 

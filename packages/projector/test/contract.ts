@@ -457,7 +457,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(card.failed).toBe(0)
         expect(card.updatedAt).toBeInstanceOf(Date)
         expect(card.closedAt).toBeNull()
-        expect(card.blocked).toBe(false)
+        expect(card.waiting).toBe(false)
         expect(card.awaitingApproval).toBe(false)
         expect(card.repairCostUsd).toBeNull()
 
@@ -479,7 +479,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.note).toBe('the `proposed` step asked: which base branch?')
-        expect(card.blocked).toBe(true)
+        expect(card.waiting).toBe(true)
         expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
         expect(card.diagnosis?.what).toBe('the `proposed` step asked: which base branch?')
@@ -535,7 +535,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
      *
      * Only `WorkItemUnblocked` may answer a question `WorkItemBlocked` put on
      * an item, and only a person's answer may replace it. A build that let
-     * `DispatchRefused` write `state: 'queued'` and clear `blocked`, `asked`,
+     * `DispatchRefused` write `state: 'queued'` and clear `waiting`, `asked`,
      * `needs` and `diagnosis` here put `task_view` and the domain fold
      * (`packages/domain/src/work-item.ts`, which `WorkItemBlocked` alone
      * moves to `blocked` and only `WorkItemUnblocked` moves off it) in
@@ -558,7 +558,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.note).toBe('the `proposed` step asked: which base branch?')
-        expect(card.blocked).toBe(true)
+        expect(card.waiting).toBe(true)
         expect(card.asked).toBe(false)
         expect(card.needs).toBe('judgement')
         expect(card.diagnosis).not.toBeNull()
@@ -588,7 +588,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('running')
         expect(card.note).toBe('which base branch?')
-        expect(card.blocked).toBe(false)
+        expect(card.waiting).toBe(false)
       } finally {
         await f.close()
       }
@@ -616,7 +616,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('running')
         expect(card.note).toBe('crash: out of memory')
-        expect(card.blocked).toBe(false)
+        expect(card.waiting).toBe(false)
       } finally {
         await f.close()
       }
@@ -636,7 +636,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.blocked).toBe(true)
+        expect(card.waiting).toBe(true)
         expect(card.note).toBe('the `proposed` step asked: why did this crash?')
       } finally {
         await f.close()

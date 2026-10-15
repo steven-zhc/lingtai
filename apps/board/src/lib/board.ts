@@ -153,7 +153,7 @@ export interface BoardCard {
    * pass's rather than this item's) and never disturbs this column on an item
    * already holding a question — only a person's answer does that.
    */
-  blocked: boolean
+  waiting: boolean
   /**
    * Whether this item reached its end by a person's decision rather than by
    * landing (`#151`). It shares Landed's column because both are over and
@@ -509,7 +509,7 @@ export function toCard(
             restarts: t.restarts,
             restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? null),
           }),
-    blocked: t.blocked,
+    waiting: t.waiting,
     asked: t.asked,
     wait: describeWait(t),
     needs: t.needs,
@@ -722,7 +722,7 @@ export async function queuedCards(
         arm: null,
         // Nothing has run, so there is no rail and nothing held on it.
         held: null,
-        blocked: false,
+        waiting: false,
         // Never, and by construction rather than by luck: these cards are the
         // queue's own answer — what GitHub offers *minus* what the log says
         // Lingtai is doing — and `selectRunnable` drops every row whose state
