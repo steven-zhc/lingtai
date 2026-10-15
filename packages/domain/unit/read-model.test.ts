@@ -1028,6 +1028,100 @@ describe('waitsOf', () => {
     })
   })
 
+  it('reads a fix round whose own setup broke before any agent ran as NotDone/SetupRefused, never NothingProduced', () => {
+    // No `FixApplied` for round 1 at all — `fixRound`'s own early return
+    // (`conduct.ts:3250-3251`) is ahead of the append (`:3314`), so no agent
+    // was ever dispatched for this round. The sentence does not start with
+    // "the hook " (`hookSetupBroke`'s own four), which is exactly why that
+    // check cannot tell this apart from an ordinary cleared-nothing ending —
+    // `ctx.ran`/the round's own `FixApplied` is what does.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const noSettings: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: 'the fixing agent had no settings: HOME was not readable',
+      yields: 'commit',
+      result: { _tag: 'NotDone' },
+    }
+    const outcome = outcomeOf('implement', 1, [noSettings])
+    const events = [
+      ...run.aStepEnded(outcome),
+      ...aWait(itemStream, {
+        _tag: 'SetupRefused',
+        run: { runId: run.runId },
+        step: 'implement',
+        action: '',
+        why: 'the fixing agent had no settings: HOME was not readable',
+      }),
+    ]
+    expect(stepOutcomesOf(events)).toEqual([{ ...outcome, runId: run.runId }])
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual({
+      _tag: 'SetupRefused',
+      run: { runId: run.runId },
+      step: 'implement',
+      action: '',
+      why: 'the fixing agent had no settings: HOME was not readable',
+    })
+  })
+
+  it('reads round 2`s own setup break by round 2`s own FixApplied, never round 1`s cleared one (the .pop() bug)', () => {
+    // A clean round 1 (`FixApplied{round:1, failure:null}`) must not be read
+    // back for round 2's own ending — `.filter(FixApplied).pop()` picked
+    // whichever `FixApplied` landed last on the run regardless of round, so
+    // round 2's own "no settings" DidNotFinish answered `NothingProduced` off
+    // round 1's clean one.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const head1 = 'd'.repeat(40)
+    const round1: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha,
+      call: null,
+      evidence: `committed ${head1.slice(0, 7)}`,
+      yields: 'commit',
+      result: { _tag: 'Completed', head: head1, question: null },
+    }
+    const round2: Action = {
+      plugin: 'agent',
+      name: 'write the change',
+      onSha: head1,
+      call: null,
+      evidence: 'the fixing agent had no settings: HOME was not readable',
+      yields: 'commit',
+      result: { _tag: 'NotDone' },
+    }
+    const outcome1 = outcomeOf('implement', 1, [round1])
+    const outcome2 = outcomeOf('implement', 2, [round2])
+    const events = [
+      ...run.aStepEnded(outcome1),
+      ...run.aStepEnded(outcome2),
+      ...aWait(itemStream, {
+        _tag: 'SetupRefused',
+        run: { runId: run.runId },
+        step: 'implement',
+        action: '',
+        why: 'the fixing agent had no settings: HOME was not readable',
+      }),
+    ]
+    expect(stepOutcomesOf(events)).toEqual([
+      { ...outcome1, runId: run.runId },
+      { ...outcome2, runId: run.runId },
+    ])
+    const [wait] = waitsOf(events)
+    expect(wait?.reason).toEqual({
+      _tag: 'SetupRefused',
+      run: { runId: run.runId },
+      step: 'implement',
+      action: '',
+      why: 'the fixing agent had no settings: HOME was not readable',
+    })
+  })
+
   it('reads a Routed{findings} hold back as ProposedEscalated/ReviewFindings', () => {
     const itemStream = makeStream('wi-473-1')
     const finding = {

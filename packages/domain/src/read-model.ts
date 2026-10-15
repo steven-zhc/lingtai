@@ -168,12 +168,22 @@ function failureKindOf(failure: string | null | undefined): string | null {
   return sep === -1 ? failure : failure.slice(0, sep)
 }
 
-/** `head`/`cause` for a `commit`-yield action at `round`, from the run's own bookkeeping. */
+/**
+ * `head`/`cause` for a `commit`-yield action at `round`, from the run's own
+ * bookkeeping — plus `ran`, whether this round's own agent was ever
+ * dispatched. Round 0 is always `ran: true`: nothing ever writes a round-0
+ * `FixApplied` (that event is `fixRound`'s own, `conduct.ts:3314`), so there
+ * is no "never dispatched" cell to tell apart there, only the `hookSetupBroke`
+ * one `commitResultFrom` already reads. A round above 0 is `ran` exactly when
+ * its own `FixApplied` exists — `conduct.ts:3250`'s own early return (no
+ * settings) is *before* that append, so a round that never got that far
+ * leaves nothing on the run to read a `head`/`cause` off at all.
+ */
 function commitContextFor(
   events: readonly Envelope[],
   runId: string,
   round: number,
-): { head: string | null; cause: InterruptCause | null } {
+): { head: string | null; cause: InterruptCause | null; ran: boolean } {
   const onRun = events.filter((e) => e.streamId === runId)
   if (round === 0) {
     const completion = onRun.find((e) => e.type === 'RunProposedCompletion')
@@ -188,12 +198,16 @@ function commitContextFor(
         : producedDiff === undefined
           ? null
           : (producedDiff.data as { headSha: string }).headSha
-    return { head, cause: failed === undefined ? null : asInterrupt((failed.data as { kind: string }).kind) }
+    return {
+      head,
+      cause: failed === undefined ? null : asInterrupt((failed.data as { kind: string }).kind),
+      ran: true,
+    }
   }
   const fixApplied = onRun.find((e) => e.type === 'FixApplied' && (e.data as { round: number }).round === round)
-  if (fixApplied === undefined) return { head: null, cause: null }
+  if (fixApplied === undefined) return { head: null, cause: null, ran: false }
   const data = fixApplied.data as { headSha: string | null; failure: string | null }
-  return { head: data.headSha, cause: asInterrupt(failureKindOf(data.failure)) }
+  return { head: data.headSha, cause: asInterrupt(failureKindOf(data.failure)), ran: true }
 }
 
 function evidenceOf(e: Envelope): string {
@@ -266,11 +280,17 @@ function commitResultFrom(e: Envelope, events: readonly Envelope[], runId: strin
       return { _tag: 'NeverStarted', scope: 'conductor' }
     case 'StepDidNotFinish': {
       if (ctx.cause !== null) return { _tag: 'Interrupted', cause: ctx.cause, head: ctx.head }
+      // **A round above 0 whose own `FixApplied` never landed never
+      // dispatched an agent at all** — `fixRound`'s own early return for a
+      // setup that broke before it ran (`conduct.ts:3250-3251`) is ahead of
+      // the append (`:3314`), so there is nothing here to read a sentence
+      // off; `ctx.ran` already says so without one.
+      if (round > 0 && !ctx.ran) return { _tag: 'NotDone' }
       const detail = (e.data as { detail: string }).detail
-      // No `RunFailed`/`FixApplied.failure` on this run at this round: either
-      // the work action's own setup broke before any agent ran (`NotDone`,
-      // `hookSetupBroke`'s four sentences) or it ran cleanly to the end and
-      // left nothing on the branch (`Completed{head: null, question: null}`,
+      // `ctx.ran` and no failure: either the work action's own setup broke
+      // before any agent ran, at round 0 (`NotDone`, `hookSetupBroke`'s four
+      // sentences), or an agent ran to the end and left nothing on the
+      // branch, at any round (`Completed{head: null, question: null}`,
       // `conduct.ts:3180`'s own words, `work-action.ts`'s own `committedNothing`).
       return hookSetupBroke(detail) ? { _tag: 'NotDone' } : { _tag: 'Completed', head: null, question: null }
     }
@@ -812,43 +832,65 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
     case 'DidNotFinish': {
       const run = toRunRef(hold.run)
       const onRun = events.filter((e) => e.streamId === hold.run.runId)
-      const runFailed = onRun.find((e) => e.type === 'RunFailed')
-      const fixApplied = onRun.filter((e) => e.type === 'FixApplied').pop()
-      const kind =
-        runFailed !== undefined
-          ? (runFailed.data as { kind: string }).kind
-          : fixApplied === undefined
-            ? null
-            : failureKindOf((fixApplied.data as { failure: string | null }).failure)
-      if (kind === 'crash' || kind === 'timeout' || kind === 'aborted') {
-        return {
-          _tag: 'AgentCrashed',
-          run,
-          step: hold.step as 'admit' | 'prepared' | 'design' | 'implement' | 'build' | 'review' | 'proposed' | 'merge',
-          cause: kind,
-          detail: hold.raw ?? hold.why,
+      const crashStep = hold.step as
+        | 'admit'
+        | 'prepared'
+        | 'design'
+        | 'implement'
+        | 'build'
+        | 'review'
+        | 'proposed'
+        | 'merge'
+
+      // **The run's *latest* fix round decides, never its latest
+      // `FixApplied` regardless of round** (`.filter(FixApplied).pop()`'s own
+      // bug): a clean round 1 followed by a round 2 whose own setup broke
+      // must not read round 1's `failure: null` back for round 2's ending.
+      // `fixRoundsOf` is the same ordering `stepOutcomesOf` keys a round off.
+      const fixRounds = fixRoundsOf(events, hold.run.runId)
+      const lastRound = fixRounds[fixRounds.length - 1]
+      if (lastRound !== undefined) {
+        const fixApplied = onRun.find(
+          (e) => e.type === 'FixApplied' && (e.data as { round: number }).round === lastRound.round,
+        )
+        // **No `FixApplied` for this round at all** — the same gap
+        // `commitContextFor`'s own `ran` reads for the step outcome side:
+        // `fixRound`'s early return for a setup that broke before any agent
+        // ran (`conduct.ts:3250-3251`) is ahead of the append (`:3314`), so
+        // there is nothing here to read a cause off; no agent was ever
+        // dispatched.
+        if (fixApplied === undefined) {
+          return { _tag: 'SetupRefused', run, step: hold.step, action: '', why: hold.raw ?? hold.why }
         }
+        const kind = failureKindOf((fixApplied.data as { failure: string | null }).failure)
+        if (kind === 'crash' || kind === 'timeout' || kind === 'aborted') {
+          return { _tag: 'AgentCrashed', run, step: crashStep, cause: kind, detail: hold.raw ?? hold.why }
+        }
+        // `out-of-turns`/`out-of-usd` (`wait.ts:161` disallows them on
+        // `AgentCrashed`) and `null` (a round that ran and cleared with
+        // nothing to show — reachable only through a path other than
+        // `pass-next.ts:109`'s own `Declined`-bound ending, which this hold
+        // never is) both read as `NothingProduced`, the nearest cell either
+        // round-trips to.
+        return { _tag: 'NothingProduced', run, said: hold.raw }
+      }
+
+      // No fix round was ever bought — round 0's own ending.
+      const runFailed = onRun.find((e) => e.type === 'RunFailed')
+      const kind = runFailed === undefined ? null : (runFailed.data as { kind: string }).kind
+      if (kind === 'crash' || kind === 'timeout' || kind === 'aborted') {
+        return { _tag: 'AgentCrashed', run, step: crashStep, cause: kind, detail: hold.raw ?? hold.why }
       }
       if (kind === 'no-commits') {
         return { _tag: 'NothingProduced', run, said: hold.raw }
       }
-      // **A turn/dollar ceiling cut a fix round off mid-way is not
-      // `AgentCrashed`** — `wait.ts:161` restricts its `cause` to `crash`,
-      // `timeout` and `aborted`, never `out-of-turns`/`out-of-usd` (those are
-      // 0120's own `BudgetExhausted`, `pass-next.ts:303-307`, which `holdOf`
-      // turns into a `Ceiling`, `adapters.ts:539-544` — a shape this
-      // `DidNotFinish` hold never carries). `NothingProduced` is the nearest
-      // cell that round-trips.
-      if ((kind === 'out-of-turns' || kind === 'out-of-usd') && hold.step === 'implement') {
-        return { _tag: 'NothingProduced', run, said: hold.raw }
-      }
-      // **No `RunFailed`/`FixApplied.failure` at all** (`kind === null`): at
-      // `implement`, `hold-of.ts`'s own `did-not-finish` ending collapses
-      // the same two causes `commitResultFrom` already tells apart above —
-      // the work action's own setup breaking before any agent ran, and the
-      // agent running to completion with nothing on the branch (row 6 of
-      // #461). The agent's own "no commits" sentence never starts with "the
-      // hook " (`work-action.ts`'s own four setup sentences do), so the same
+      // **No `RunFailed` at all** (`kind === null`): at `implement`,
+      // `hold-of.ts`'s own `did-not-finish` ending collapses the same two
+      // causes `commitResultFrom` already tells apart above — the work
+      // action's own setup breaking before any agent ran, and the agent
+      // running to completion with nothing on the branch (row 6 of #461).
+      // The agent's own "no commits" sentence never starts with "the hook "
+      // (`work-action.ts`'s own four setup sentences do), so the same
       // `hookSetupBroke` check that reads the forward event back for
       // `commitResultFrom` tells this one apart too.
       if (kind === null && hold.step === 'implement' && !hookSetupBroke(hold.raw ?? hold.why)) {
