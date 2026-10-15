@@ -4,13 +4,15 @@
  * §5, `#137`).
  *
  * A `minor` does not refuse, and that is right. Before this it went from a
- * `StepPassed`'s `findings` into nothing at all: the gate passed, so nobody
- * opened it. This is the destination 0038 gives it — **a backlog a person
- * triages in batches, where accepting one opens an issue.**
+ * passing gate's accepted assessment's `findings` into nothing at all: the
+ * gate passed, so nobody opened it. This is the destination 0038 gives it —
+ * **a backlog a person triages in batches, where accepting one opens an
+ * issue.**
  *
  * **It is a fold and nothing else.** No command writes here. An entry exists
- * because a `StepPassed` carried a minor; it is closed because a
- * `FindingAccepted` or `FindingDeclined` says so, and an accepted one names
+ * because a passing gate's assessment carried a minor — read off `StepPassed`
+ * through `findingsRaisedOf` (`@lingtai/domain`, #481) — it is closed because
+ * a `FindingAccepted` or `FindingDeclined` says so, and an accepted one names
  * its issue once `FindingProposed` does. Dropping the table and
  * replaying the log produces the same rows, which is what
  * `lingtai projection rebuild finding_backlog` does.
@@ -23,12 +25,13 @@
  * sighting — the run and gate an accepted issue cites as its origin. A declined
  * entry therefore stays declined, which is the whole of *does not ask again*.
  *
- * Only `StepPassed`. A `StepFailed`'s findings have somewhere to go already —
- * a fix round, and then a person (0038 §1–§4) — and a minor on a failing gate
- * is in the prompt the fixing agent is handed.
+ * Only a passing gate's assessment, through `findingsRaisedOf`. A refusing
+ * one's findings have somewhere to go already — a fix round, and then a
+ * person (0038 §1–§4) — and a minor on a failing gate is in the prompt the
+ * fixing agent is handed.
  */
 import type { Finding, PayloadOf } from '@lingtai/domain'
-import { findingKey, parseWorkItemStream } from '@lingtai/domain'
+import { findingKey, findingsRaisedOf, parseWorkItemStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection } from './store.ts'
@@ -135,54 +138,6 @@ export const backlogProjection: Projection = {
           break
         }
 
-        case 'StepPassed': {
-          const d = event.data as PayloadOf<'StepPassed'>
-          const minors = d.findings.filter((f) => f.severity === 'minor')
-          if (minors.length === 0) break
-          const [link] = await ctx.query<{ task_id: string }>(
-            'select task_id from finding_backlog_run where run_id = $1',
-            [d.runId],
-          )
-          const task = link ? parseWorkItemStream(link.task_id) : null
-          // A pass on a run nothing started names no ticket, and an entry that
-          // cannot say which ticket it is about cannot open one that cites it.
-          if (!link || !task) break
-          for (const f of minors) {
-            const key = findingKey({
-              issue: task.issue,
-              step: d.step,
-              action: d.action,
-              file: f.file,
-              claim: f.claim,
-            })
-            await ctx.query(
-              `insert into finding_backlog
-                 (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
-                  severity, claim, failure_scenario, raised_seq, raised_at)
-               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-               on conflict (project, key) do nothing`,
-              [
-                task.project,
-                key,
-                task.issue,
-                link.task_id,
-                d.runId,
-                d.step,
-                d.action,
-                d.onSha,
-                f.file,
-                f.line,
-                f.severity,
-                f.claim,
-                f.failureScenario,
-                seq,
-                event.at,
-              ],
-            )
-          }
-          break
-        }
-
         case 'FindingAccepted': {
           const d = event.data as PayloadOf<'FindingAccepted'>
           await ctx.query(
@@ -213,6 +168,62 @@ export const backlogProjection: Projection = {
              where project = $1 and key = $2`,
             [d.project, d.key, d.by, event.at, seq, d.reason],
           )
+          break
+        }
+
+        /**
+         * A passing gate's accepted assessment — the one event type 0120's
+         * appendix retires here (`StepPassed, StepFailed, … → StepEnded`).
+         * `findingsRaisedOf` (`@lingtai/domain`) is where that rule now lives,
+         * so #464's switch to the stored read model only has to change that
+         * function, leaving this file untouched (the design for #481).
+         */
+        default: {
+          const raised = findingsRaisedOf(event)
+          if (raised === null) break
+          const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
+          if (minors.length === 0) break
+          const [link] = await ctx.query<{ task_id: string }>(
+            'select task_id from finding_backlog_run where run_id = $1',
+            [raised.runId],
+          )
+          const task = link ? parseWorkItemStream(link.task_id) : null
+          // A pass on a run nothing started names no ticket, and an entry that
+          // cannot say which ticket it is about cannot open one that cites it.
+          if (!link || !task) break
+          for (const f of minors) {
+            const key = findingKey({
+              issue: task.issue,
+              step: raised.step,
+              action: raised.action,
+              file: f.file,
+              claim: f.claim,
+            })
+            await ctx.query(
+              `insert into finding_backlog
+                 (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
+                  severity, claim, failure_scenario, raised_seq, raised_at)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+               on conflict (project, key) do nothing`,
+              [
+                task.project,
+                key,
+                task.issue,
+                link.task_id,
+                raised.runId,
+                raised.step,
+                raised.action,
+                raised.onSha,
+                f.file,
+                f.line,
+                f.severity,
+                f.claim,
+                f.failureScenario,
+                seq,
+                event.at,
+              ],
+            )
+          }
           break
         }
       }
