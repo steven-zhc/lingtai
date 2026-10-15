@@ -6,12 +6,12 @@
  * Each function takes one item's slice of the log — its own events together
  * with its runs' and, where present, its integration stream's, in `seq`
  * order — rather than one stream, because the facts each needs are spread
- * across all three (`PassRestarted`/`FixRequested` on the run, `ApprovalGranted`
- * on the run, `IntegrationRefused`'s three optional fields on the integration
- * stream, the merge sha on the work item). Every function is correct on any
- * superset of that slice: it filters by `type` and keys by `runId`/`streamId`,
- * which is also what the projections see, since they fold in global `seq`
- * order too.
+ * across all three (`FixRequested`/`ApprovalGranted` on the run, `PassRestarted`
+ * on the work item (`conduct.ts:3936`), `IntegrationRefused`'s three optional
+ * fields on the integration stream, the merge sha on the work item). Every
+ * function is correct on any superset of that slice: it filters by `type`
+ * and keys by `runId`/`streamId`, which is also what the projections see,
+ * since they fold in global `seq` order too.
  *
  * **No reader moves onto this yet, and no event changes.** `stepOutcomesOf`,
  * `routesOf` and `waitsOf` are built from the reverse of `adapters.ts`'s own
@@ -20,7 +20,7 @@
  * those same two functions, so a divergence between the two directions is a
  * failing round-trip test rather than a silent drift.
  */
-import type { Action, StepOutcome } from './action.ts'
+import { cleared, type Action, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Hold } from './hold.ts'
 import type { Restart } from './pass-next.ts'
@@ -308,21 +308,61 @@ function workItemIdFor(events: readonly Envelope[], runId: string): string | und
   return claimed?.streamId
 }
 
+/**
+ * The `Hold` this run's own `WorkItemBlocked` recorded, or `undefined` where
+ * none did — the fallback `mergeResultFrom` reads when the integration
+ * stream's own refusal row never reached the log (`integrate.ts:280-283`'s
+ * "the ordinary case, because the store is usually what failed"). Matched by
+ * the hold's own `run.runId`, never by position: a requeued item's later
+ * `WorkItemBlocked` must not answer for an earlier attempt's merge.
+ */
+function holdForRun(events: readonly Envelope[], workItemId: string | undefined, runId: string): Hold | undefined {
+  const blocked = events.find((x) => {
+    if (x.type !== 'WorkItemBlocked' || x.streamId !== workItemId) return false
+    const hold = (x.data as { hold: Hold }).hold
+    return 'run' in hold && hold.run.runId === runId
+  })
+  return blocked === undefined ? undefined : (blocked.data as { hold: Hold }).hold
+}
+
 function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: string | undefined): Action['result'] {
   if (e.type === 'StepPassed') {
     const landed = events.find((x) => x.type === 'WorkItemLanded' && x.streamId === workItemId)
     const mergeSha = landed === undefined ? '' : (landed.data as { mergeCommit: string }).mergeCommit
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } }
   }
-  // **By `workItemId`, never by type alone** — the integration stream
-  // (`int-<project>-<base>`) is shared by every work item on that base, so
-  // `events.find` on type alone answers with whichever refusal happens to
-  // sit first in the slice, not this run's own.
+  const runId = (e.data as { runId: string }).runId
+  // **By `workItemId`, and bounded to at-or-before this merge's own
+  // `StepFailed`** — the integration stream (`int-<project>-<base>`) is
+  // shared by every work item on that base, and one item claimed twice
+  // (requeue after an earlier refusal) writes one refusal per attempt. Only
+  // one run is ever claimed against an item at a time and the lane appends
+  // `IntegrationRefused` before `conduct.ts` turns that into this `StepFailed`
+  // (`integrate.ts`'s own `refuse`, called before the caller acts on its
+  // result), so the latest refusal at or before `e.seq` is this attempt's
+  // own — never a later requeue's, which picking the newest overall answered
+  // with instead.
   const matching = events.filter(
-    (x) => x.type === 'IntegrationRefused' && (x.data as { workItemId: string }).workItemId === workItemId,
+    (x) =>
+      x.type === 'IntegrationRefused' && x.seq <= e.seq && (x.data as { workItemId: string }).workItemId === workItemId,
   )
   const refused = matching[matching.length - 1]
   if (refused === undefined) {
+    // **An absent row is an unknown, not `'unexpected'`** — when the
+    // refusal itself failed to reach the log, the true reason still sits on
+    // this run's own `WorkItemBlocked.hold` (`MergeRefused.reason`, or
+    // `Routed{when:'conflict', paths, baseSha, headSha}`), read back here
+    // rather than invented.
+    const hold = holdForRun(events, workItemId, runId)
+    if (hold?._tag === 'MergeRefused' && hold.reason !== 'conflict') {
+      return { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: hold.reason } }
+    }
+    if (hold?._tag === 'Routed' && hold.when === 'conflict') {
+      return {
+        _tag: 'Completed',
+        integration: { _tag: 'Conflicted', paths: hold.paths, baseSha: hold.baseSha, headSha: hold.headSha },
+      }
+    }
     return { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'unexpected' } }
   }
   const data = refused.data as {
@@ -437,7 +477,21 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
       const e = runEvents[i]!
       const data = e.data as { step: Step }
       const round = roundAt(e.seq, fixRounds)
-      if (current === null || current.step !== data.step || current.round !== round) {
+      // **A group never grows past its own deciding action.** There is no
+      // `NotReached` on this backward path — every terminal event is a real
+      // action that ran — so `wellFormed` (`action.ts:496`) reduces to
+      // *every action but the last one in a `StepOutcome` must have
+      // cleared*. `conduct.ts:4038`'s own injected `ApprovalRequested`
+      // (`merge`'s "merge it anyway" offer) is appended at whichever step
+      // just refused, with the same `step`/`round` as the refusal it
+      // follows — grouping it in behind that refusal would leave the
+      // refusing action neither last nor cleared. Starting a fresh group
+      // the moment the previous action did not clear holds for the real
+      // pipeline too: 0120's own invariant never lets a second action run
+      // after one that failed to clear.
+      const lastAction = current === null ? undefined : current.actions[current.actions.length - 1]
+      const settled = lastAction !== undefined && !cleared(lastAction)
+      if (current === null || current.step !== data.step || current.round !== round || settled) {
         if (current !== null) result.push({ ...current, runId })
         current = { step: data.step, round, actions: [] }
       }
@@ -739,26 +793,40 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[]): WaitReason {
 }
 
 /**
- * Bounded by the *next* `WorkItemBlocked`, not just by `blockedSeq` —
- * otherwise an answer to a later wait (approve.ts's documented sequence:
- * `Blocked` → `ApprovalGranted` → a second `Blocked` → that one's own
- * `Unblocked`) reads back as this wait's own resolution, because an
- * unbounded search for the first `WorkItemUnblocked` after `blockedSeq`
- * finds the second wait's answer rather than nothing. Within the window,
- * the earliest of `WorkItemUnblocked`/`ApprovalGranted`/`WorkItemClosed` is
- * the one that actually ended this wait — never `WorkItemUnblocked`
- * unconditionally ahead of `ApprovalGranted`.
+ * Bounded by the *next* `WorkItemBlocked` **on this item's own stream**, not
+ * just by `blockedSeq` — otherwise an answer to a later wait (approve.ts's
+ * documented sequence: `Blocked` → `ApprovalGranted` → a second `Blocked` →
+ * that one's own `Unblocked`) reads back as this wait's own resolution,
+ * because an unbounded search for the first `WorkItemUnblocked` after
+ * `blockedSeq` finds the second wait's answer rather than nothing. Within
+ * the window, the earliest of
+ * `WorkItemUnblocked`/`ApprovalGranted`/`WorkItemClosed` is the one that
+ * actually ended this wait — never `WorkItemUnblocked` unconditionally ahead
+ * of `ApprovalGranted`.
+ *
+ * **`itemStreamId`, not type alone, bounds `nextBlocked`/`unblocked`/
+ * `closed`** — the module header's own "correct on any superset" promise
+ * means a slice may carry another item's events too, and a different item's
+ * `WorkItemBlocked`/`WorkItemUnblocked`/`WorkItemClosed` must neither answer
+ * for this one's wait nor cut its search window short.
  */
-function resolutionAfter(events: readonly Envelope[], blockedSeq: bigint, reason: WaitReason): Resolution | null {
-  const nextBlocked = events.find((e) => e.type === 'WorkItemBlocked' && e.seq > blockedSeq)
+function resolutionAfter(
+  events: readonly Envelope[],
+  itemStreamId: string,
+  blockedSeq: bigint,
+  reason: WaitReason,
+): Resolution | null {
+  const nextBlocked = events.find(
+    (e) => e.type === 'WorkItemBlocked' && e.streamId === itemStreamId && e.seq > blockedSeq,
+  )
   const inWindow = (seq: bigint) => seq > blockedSeq && (nextBlocked === undefined || seq < nextBlocked.seq)
 
-  const unblocked = events.find((e) => e.type === 'WorkItemUnblocked' && inWindow(e.seq))
+  const unblocked = events.find((e) => e.type === 'WorkItemUnblocked' && e.streamId === itemStreamId && inWindow(e.seq))
   const granted =
     'run' in reason
       ? events.find((e) => e.type === 'ApprovalGranted' && e.streamId === reason.run.runId && inWindow(e.seq))
       : undefined
-  const closed = events.find((e) => e.type === 'WorkItemClosed' && inWindow(e.seq))
+  const closed = events.find((e) => e.type === 'WorkItemClosed' && e.streamId === itemStreamId && inWindow(e.seq))
 
   const candidates = [unblocked, granted, closed].filter((e): e is Envelope => e !== undefined)
   if (candidates.length === 0) return null
@@ -781,7 +849,7 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
     .map((e) => {
       const hold = (e.data as { hold: Hold }).hold
       const reason = reasonFromHold(hold, events)
-      return { reason, resolution: resolutionAfter(events, e.seq, reason) }
+      return { reason, resolution: resolutionAfter(events, e.streamId, e.seq, reason) }
     })
 }
 
@@ -811,12 +879,19 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
   return events
     .filter((e) => e.type === 'WorkItemReleased')
     .map((release) => {
-      const before = events.filter((e) => e.seq < release.seq)
-      const lastBefore = before[before.length - 1]
+      // **On this item's own stream, not the last event on any stream** —
+      // `PassRestarted` lives on the work item (`conduct.ts:3936`), same as
+      // `WorkItemClaimed`/`WorkItemReleased`/`WorkItemLanded` do by
+      // construction, so a run-stream or another item's event interleaved
+      // in global `seq` order (the module header's own "correct on any
+      // superset") must not stand in as "the last thing before this
+      // release".
+      const beforeOnItem = events.filter((e) => e.seq < release.seq && e.streamId === release.streamId)
+      const lastBefore = beforeOnItem[beforeOnItem.length - 1]
       if (lastBefore?.type === 'PassRestarted') {
         return { _tag: 'Restart', restart: (lastBefore.data as { restart: number }).restart }
       }
-      if (!sinceLastBoundary(before).some((e) => e.type === 'WorkItemClaimed')) {
+      if (!sinceLastBoundary(beforeOnItem).some((e) => e.type === 'WorkItemClaimed')) {
         return { _tag: 'ClaimUnconfirmed' }
       }
       const runId = (release.data as { runId: string }).runId

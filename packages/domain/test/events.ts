@@ -99,7 +99,22 @@ export function aRun(runId: string): RunFixture {
         return [event('RunProposedCompletion', { headSha: action.result.head })]
       }
       if (action.result._tag === 'Interrupted') {
-        return [event('RunFailed', { kind: action.result.cause, detail: action.evidence })]
+        const failed = event('RunFailed', { kind: action.result.cause, detail: action.evidence })
+        // `RunProducedDiff` is written whichever way the dispatch ended
+        // (`read-model.ts`'s own comment on `commitContextFor`) — the
+        // fallback a round interrupted after committing part of the fix
+        // still needs, since `RunFailed` itself carries no `headSha`.
+        if (action.result.head === null) return [failed]
+        return [
+          failed,
+          event('RunProducedDiff', {
+            branch: 'agent/473',
+            headSha: action.result.head,
+            files: 1,
+            insertions: 1,
+            deletions: 0,
+          }),
+        ]
       }
       return []
     }
@@ -200,7 +215,17 @@ export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, note = 'a
   return [itemStream('WorkItemUnblocked', { by: 'steven', note, withdrawn: true })]
 }
 
-/** `PassRouted`, plus the `FixRequested`/`PassRestarted` it is paired with — `routesOf`'s own reverse. */
+/**
+ * `PassRouted`, plus the `FixRequested`/`PassRestarted` it is paired with —
+ * `routesOf`'s own reverse.
+ *
+ * `itemStream`, when given, is where `PassRestarted` is written —
+ * `conduct.ts:3936`'s own `appendNow(workItemId, …)` puts it on the work
+ * item's stream, never the run's, and `releaseCauseOf` reads it there
+ * (`read-model.ts`). Omitted where a test only reads `routesOf`, which keys
+ * `PassRestarted` by its own `data.runId` rather than by stream and so does
+ * not care; there it falls back to the run's own stream as before.
+ */
 export function aRoute(
   run: RunFixture,
   route: {
@@ -213,6 +238,7 @@ export function aRoute(
     restart?: number
     of?: number
   },
+  itemStream?: ReturnType<typeof makeStream>,
 ): Envelope[] {
   const envelopes: Envelope[] = [
     run.event('PassRouted', {
@@ -235,8 +261,9 @@ export function aRoute(
       }),
     )
   } else if (route.to === 'claim') {
+    const append = itemStream ?? run.event
     envelopes.push(
-      run.event('PassRestarted', {
+      append('PassRestarted', {
         runId: run.runId,
         restart: route.restart ?? 1,
         of: route.of ?? 1,

@@ -66,6 +66,7 @@ import {
   routesOf,
   stepOutcomesOf,
   waitsOf,
+  wellFormed,
 } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -784,7 +785,13 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'CheckRed', step: 'merge' })
     expect((hold as { why: string }).why).toContain('blocker src/fix.ts:12')
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all9 = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all9, hold!)
+    // The `check` that refuses at `merge` and `conduct.ts:4038`'s own
+    // injected "merge it anyway" offer share this step and round on the
+    // wire — `stepOutcomesOf` must not group them into one `StepOutcome`
+    // with the refusal neither last nor cleared.
+    expect(stepOutcomesOf(all9).every(wellFormed)).toBe(true)
   })
 
   /**
@@ -850,7 +857,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'Routed', when: 'conflict', raw: 'both sides touched src/fix.ts' })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all10a = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all10a, hold!)
+    expect(stepOutcomesOf(all10a).every(wellFormed)).toBe(true)
   })
 
   /**
@@ -946,7 +955,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       baseSha: 'b'.repeat(40),
       headSha: 'c'.repeat(40),
     })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const all10b = await allEvents(store)
+    theWaitFoldsToTheStoredHold(all10b, hold!)
+    expect(stepOutcomesOf(all10b).every(wellFormed)).toBe(true)
   })
 
   /**

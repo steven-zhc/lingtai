@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { Action, StepOutcome } from '../src/action.ts'
+import { wellFormed, type Action, type StepOutcome } from '../src/action.ts'
 import { holdOf } from '../src/adapters.ts'
 import { READ, releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
 import {
@@ -32,8 +32,121 @@ function outcomeOf(step: StepOutcome['step'], round: number, actions: Action[]):
   return { step, round, actions }
 }
 
-it('READ names every type commitContextFor reads, including RunProducedDiff', () => {
-  expect(READ).toContain('RunProducedDiff')
+/**
+ * **The design's actual request**: "have a unit test assert that each one
+ * [in `READ`] is produced by some builder." Asserting `READ.toContain(...)`
+ * on a single name (as this test once did) checks `READ` against itself,
+ * not against the builders — dropping a type from `READ`, or adding a fifth
+ * type to a reader without listing it, left this green either way. Building
+ * one slice that exercises every builder and comparing its own types against
+ * `READ` is what actually holds the list to the code.
+ */
+it('READ names every type some builder in events.ts actually produces', () => {
+  const run = aRun('run-read-coverage')
+  const secondRun = aRun('run-read-coverage-2')
+  const itemStream = makeStream('wi-read-coverage')
+  const integrationStream = makeStream('int-read-coverage-main')
+
+  const worktree: Action = {
+    plugin: 'worktree',
+    name: 'cut the branch',
+    onSha,
+    call: null,
+    evidence: 'cut',
+    yields: 'worktree',
+    result: { _tag: 'Completed', head: onSha },
+  }
+  const interruptedCommit: Action = {
+    plugin: 'agent',
+    name: 'write the change',
+    onSha,
+    call: null,
+    evidence: 'spent all turns with a partial diff',
+    yields: 'commit',
+    result: { _tag: 'Interrupted', cause: 'timeout', head: 'd'.repeat(40) },
+  }
+  const fixedCommit: Action = {
+    plugin: 'agent',
+    name: 'write the change',
+    onSha: 'd'.repeat(40),
+    call: null,
+    evidence: 'committed the fix',
+    yields: 'commit',
+    result: { _tag: 'Completed', head: 'e'.repeat(40), question: null },
+  }
+  const neverStarted: Action = {
+    plugin: 'agent',
+    name: 'cold reviewer',
+    onSha,
+    call: null,
+    evidence: 'account-wide wall',
+    yields: 'verdict',
+    result: { _tag: 'NeverStarted', scope: 'conductor' },
+  }
+  const refused: Action = {
+    plugin: 'agent',
+    name: 'tsc',
+    onSha,
+    call: null,
+    evidence: 'type error',
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+  }
+  const askedForSignoff: Action = {
+    plugin: 'human',
+    name: 'approval',
+    onSha,
+    call: null,
+    evidence: 'Merge this?',
+    yields: 'signoff',
+    result: { _tag: 'Completed', requested: { question: 'Merge this?' } },
+  }
+  const askedForDesign: Action = {
+    plugin: 'agent',
+    name: 'draft',
+    onSha,
+    call: null,
+    evidence: 'which design wins?',
+    yields: 'design',
+    result: { _tag: 'Asked', question: 'which design wins?', draft: null },
+  }
+  const completedCommit: Action = {
+    plugin: 'agent',
+    name: 'write the change',
+    onSha,
+    call: null,
+    evidence: 'committed',
+    yields: 'commit',
+    result: { _tag: 'Completed', head: 'f'.repeat(40), question: null },
+  }
+
+  const events = [
+    ...aClaim(itemStream, run.runId),
+    ...run.aStepEnded(outcomeOf('admit', 0, [worktree])),
+    ...run.aStepEnded(outcomeOf('implement', 0, [interruptedCommit])),
+    ...run.aStepEnded(outcomeOf('implement', 1, [fixedCommit])),
+    ...run.aStepEnded(outcomeOf('review', 0, [neverStarted])),
+    ...run.aStepEnded(outcomeOf('build', 0, [refused])),
+    ...run.aStepEnded(outcomeOf('proposed', 0, [askedForSignoff])),
+    ...run.aStepEnded(outcomeOf('design', 0, [askedForDesign])),
+    ...secondRun.aStepEnded(outcomeOf('implement', 0, [completedCommit])),
+    ...aResolution(
+      itemStream,
+      { _tag: 'Approve', onSha },
+      { event: secondRun.event, step: 'proposed', action: 'approval', runId: secondRun.runId },
+    ),
+    ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
+    ...anIntegrationRefusal(integrationStream, 'wi-read-coverage', 'agent/read', { reason: 'dirty-base' }),
+    ...aLanding(itemStream, 'c'.repeat(40)),
+    ...aWait(itemStream, { _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
+    ...aWithdrawal(itemStream),
+    ...aResolution(itemStream, { _tag: 'Close' }),
+    ...aRelease(itemStream, run.runId),
+  ]
+
+  const types = new Set(events.map((e) => e.type))
+  const missing = READ.filter((type) => !types.has(type))
+  expect(missing).toEqual([])
 })
 
 describe('stepOutcomesOf round-trips through aStepEnded', () => {
@@ -468,6 +581,125 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' },
     })
   })
+
+  it("a second claim after a release reads its own refusal, never the first attempt's newer-looking one", () => {
+    // The requeue-after-a-refusal path: run-1 conflicts, the item releases
+    // and is reclaimed by run-2, and run-2's own refusal is a plain
+    // `dirty-base` with no `paths`/`baseSha`/`headSha`. Picking "whichever
+    // refusal is newest for this workItemId" (rather than bounding to each
+    // attempt's own `StepFailed`) would read run-1's own conflict back onto
+    // run-1's merge the moment run-2's later refusal lands on the shared
+    // integration stream.
+    const integrationStream = makeStream('int-473-main')
+    const itemStream = makeStream('wi-473-7')
+    const run1 = aRun('run-1')
+    const conflictAction: Action = {
+      plugin: 'merge',
+      name: 'land the branch',
+      onSha,
+      call: null,
+      evidence: 'conflict',
+      yields: 'merge',
+      result: {
+        _tag: 'Completed',
+        integration: { _tag: 'Conflicted', paths: ['src/mine.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+      },
+    }
+    // `integrate.ts:240-253`'s own order: the lane appends `IntegrationRefused`
+    // *before* returning to the caller, and `conduct.ts` only turns that
+    // result into the merge step's own `StepFailed` afterwards — so each
+    // refusal is built, as its own statement, ahead of the `aStepEnded` call
+    // whose `StepFailed` it explains, the same relative order the real log
+    // carries.
+    const refusal1 = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+      reason: 'conflict',
+      detail: 'both sides touched src/mine.ts',
+      paths: ['src/mine.ts'],
+      baseSha: 'b'.repeat(40),
+      headSha: 'c'.repeat(40),
+    })
+    const events1 = [
+      ...aClaim(itemStream, run1.runId),
+      ...refusal1,
+      ...run1.aStepEnded(outcomeOf('merge', 0, [conflictAction])),
+    ]
+
+    const run2 = aRun('run-2')
+    const dirtyBaseAction: Action = {
+      plugin: 'merge',
+      name: 'land the branch',
+      onSha,
+      call: null,
+      evidence: 'dirty base',
+      yields: 'merge',
+      result: { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' } },
+    }
+    const refusal2 = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+      reason: 'dirty-base',
+      detail: 'origin moved',
+    })
+    const events2 = [
+      ...aRelease(itemStream, run1.runId),
+      ...aClaim(itemStream, run2.runId),
+      ...refusal2,
+      ...run2.aStepEnded(outcomeOf('merge', 0, [dirtyBaseAction])),
+    ]
+
+    const all = [...events1, ...events2]
+    const outcomes = stepOutcomesOf(all)
+    const run1Merge = outcomes.find((o) => o.runId === run1.runId && o.step === 'merge')
+    const run2Merge = outcomes.find((o) => o.runId === run2.runId && o.step === 'merge')
+    expect(run1Merge?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      integration: { _tag: 'Conflicted', paths: ['src/mine.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+    })
+    expect(run2Merge?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' },
+    })
+  })
+
+  it('a refusal never recorded (the store defect integrate.ts:280-283 names) is answered from the hold, not "unexpected"', () => {
+    // When `IntegrationRefused` never reaches the integration stream — the
+    // ordinary failure mode `integrate.ts`'s own comment names, because the
+    // store is usually what is down — the true reason still sits on this
+    // run's own `WorkItemBlocked.hold`. Here that hold is `Routed{when:
+    // 'conflict'}`, the shape a conflict refusal takes once the router has
+    // seen it (`holdOf`'s own `escalatedHold`).
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-473-1')
+    const action: Action = {
+      plugin: 'merge',
+      name: 'land the branch',
+      onSha,
+      call: null,
+      evidence: 'conflict',
+      yields: 'merge',
+      result: {
+        _tag: 'Completed',
+        integration: { _tag: 'Conflicted', paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+      },
+    }
+    const blocked = itemStream('WorkItemBlocked', {
+      hold: {
+        _tag: 'Routed',
+        run: { runId: run.runId },
+        when: 'conflict',
+        why: 'agent/1 into main is waiting on you.',
+        raw: 'both sides touched src/fix.ts',
+        findings: [],
+        paths: ['src/fix.ts'],
+        baseSha: 'b'.repeat(40),
+        headSha: 'c'.repeat(40),
+      },
+    })
+    const events = [...aClaim(itemStream, run.runId), ...run.aStepEnded(outcomeOf('merge', 0, [action])), blocked]
+    const [got] = stepOutcomesOf(events)
+    expect(got?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      integration: { _tag: 'Conflicted', paths: ['src/fix.ts'], baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+    })
+  })
 })
 
 describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseudo-action', () => {
@@ -524,6 +756,37 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     expect(() => stepOutcomesOf(events)).not.toThrow()
     const [got] = stepOutcomesOf(events)
     expect(got?.actions[0]?.result).toEqual({ _tag: 'Asked', question: asked, draft: null })
+  })
+
+  it('splits the injected offer into its own `StepOutcome`, never behind the refusal it follows', () => {
+    // 0120's own invariant (`action.ts:484-494`): at most one action in a
+    // `StepOutcome` fails to clear, and nothing real follows it. A `check`
+    // that refuses at `merge` and the injected `unfixed` offer right after
+    // it share the same `step`/`round` on the wire (rows 9, 10a, 10b of
+    // #461) — grouping them into one `StepOutcome` leaves the refusing
+    // `check` neither last nor cleared, which `wellFormed` rejects.
+    const run = aRun('run-1')
+    const refusingCheck = run.event('StepFailed', {
+      step: 'merge',
+      action: 'check',
+      runId: run.runId,
+      onSha,
+      evidence: 'blocker src/fix.ts:12',
+      findings: [],
+    })
+    const injectedOffer = run.event('ApprovalRequested', {
+      step: 'merge',
+      action: 'unfixed',
+      runId: run.runId,
+      onSha,
+      question: 'Merge agent/1 into main anyway?',
+      artifacts: [],
+    })
+    const outcomes = stepOutcomesOf([refusingCheck, injectedOffer])
+    expect(outcomes).toHaveLength(2)
+    expect(outcomes[0]?.actions).toHaveLength(1)
+    expect(outcomes[1]?.actions).toHaveLength(1)
+    for (const outcome of outcomes) expect(wellFormed(outcome)).toBe(true)
   })
 })
 
@@ -745,6 +1008,36 @@ describe('waitsOf', () => {
     const [wait] = waitsOf([stepFailed, blocked])
     expect(wait?.reason).toMatchObject({ _tag: 'CheckRefused', findings: [finding] })
   })
+
+  it("a different item's own unblock does not resolve this item's wait", () => {
+    // One person requeuing `wi-p-8` must not read back as an answer to
+    // `wi-p-7`'s own wait — `resolutionAfter` has to scope `WorkItemUnblocked`
+    // by stream, not just by type, the way a projection folding every item's
+    // events in one global `seq` order would see them interleaved.
+    const thisItem = makeStream('wi-p-7')
+    const otherItem = makeStream('wi-p-8')
+    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'run-1' }, said: 'the approach cannot work' }
+    const events = [...aWait(thisItem, reason), ...aWithdrawal(otherItem, 'requeuing wi-p-8, not this one')]
+    const [wait] = waitsOf(events)
+    expect(wait?.resolution).toBeNull()
+  })
+
+  it("a different item's own block does not cut off this item's own resolution window", () => {
+    // The mirror case: `wi-p-7` blocks, `wi-p-8` blocks, then `wi-p-7` is
+    // unblocked. Bounding the search window by the next `WorkItemBlocked` of
+    // any stream would read `wi-p-8`'s own block as the end of `wi-p-7`'s
+    // window and miss `wi-p-7`'s real resolution sitting past it.
+    const thisItem = makeStream('wi-p-7')
+    const otherItem = makeStream('wi-p-8')
+    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'run-1' }, said: 'the approach cannot work' }
+    const events = [
+      ...aWait(thisItem, reason),
+      ...aWait(otherItem, { _tag: 'FixerDisagrees' as const, run: { runId: 'run-2' }, said: 'unrelated' }),
+      ...aResolution(thisItem, { _tag: 'Requeue' }),
+    ]
+    const [thisWait] = waitsOf(events)
+    expect(thisWait?.resolution).toEqual({ _tag: 'Requeue' })
+  })
 })
 
 describe('releaseCauseOf', () => {
@@ -752,7 +1045,22 @@ describe('releaseCauseOf', () => {
     const run = aRun('run-1')
     const itemStream = makeStream('wi-473-1')
     const events = [
-      ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }),
+      ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
+      ...aRelease(itemStream, run.runId),
+    ]
+    expect(releaseCauseOf(events)).toEqual([{ _tag: 'Restart', restart: 1 }])
+  })
+
+  it("an unrelated item's event interleaved between the restart and the release does not hide the restart", () => {
+    // `PassRestarted` lives on the work item's own stream (`conduct.ts:3936`)
+    // — a second item appending in between, in global `seq` order, must not
+    // make `releaseCauseOf` read the release as an ordinary failed pass.
+    const run = aRun('run-1')
+    const itemStream = makeStream('wi-p-7')
+    const otherItem = makeStream('wi-p-8')
+    const events = [
+      ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
+      ...aClaim(otherItem, 'run-9'),
       ...aRelease(itemStream, run.runId),
     ]
     expect(releaseCauseOf(events)).toEqual([{ _tag: 'Restart', restart: 1 }])
