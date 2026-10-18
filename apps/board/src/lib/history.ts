@@ -27,8 +27,8 @@
  * Pure, and its own module for that reason: `task.ts` reaches the database and
  * GitHub, and what a row *says* is testable without either.
  */
-import type { Envelope, EventType } from '@lingtai/domain'
-import { Hold, legacyColumns } from '@lingtai/domain'
+import type { BoardFact, Envelope, EventType } from '@lingtai/domain'
+import { boardFactOf } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -141,37 +141,6 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   WorkItemDiscovered: (d) => `#${need(d, 'externalRef')} ${need(d, 'kind')} — ${clip(need(d, 'title'))}`,
   WorkItemClaimed: (d) => `run ${runShort(d, 'runId')}`,
   WorkItemReleased: (d) => `run ${runShort(d, 'runId')}: ${clip(need(d, 'reason'))}`,
-  /**
-   * Which kind of hold, then the question, then the move that was recommended.
-   *
-   * The kind leads because it is what the log could not say (#83): *held at the
-   * merge gate* and *conflict: agent/112 does not merge into develop* were both
-   * `WorkItemBlocked` with a string, and they are opposite kinds of thing.
-   *
-   * Since #445 the event carries `{hold}` rather than the question and the kind
-   * as their own fields, so `Hold.safeParse` and `legacyColumns` rebuild the
-   * columns this row has always printed. A payload whose `hold` does not parse
-   * — a v1 or v2 block, or anything else not yet understood — falls to `need`,
-   * which throws and sends `summarise` to `describePayload`, exactly as a
-   * formatter that does not recognise what it is given always has.
-   */
-  WorkItemBlocked: (d) => {
-    const parsed = Hold.safeParse(d['hold'])
-    const cols = parsed.success ? legacyColumns(parsed.data) : null
-    const question = cols ? cols.question : need(d, 'question')
-    const needs = cols ? cols.needs : (d['needs'] as string | null)
-    const rec = cols
-      ? cols.diagnosis?.recommendation
-      : (d['diagnosis'] as { recommendation?: { action?: string } } | null)?.recommendation
-    const said = [needs ? `${needs}:` : null, clip(question)]
-    if (rec?.action) said.push(`— recommends ${rec.action}`)
-    return said.filter((s) => s !== null).join(' ')
-  },
-  WorkItemUnblocked: (d) => {
-    const by = need(d, 'by')
-    const note = clip(d['note'])
-    return note ? `${by}: ${note}` : by
-  },
   WorkItemLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
   WorkItemLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
   DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
@@ -252,7 +221,6 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
   RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
   RunFinished: (d) => `${need(d, 'turns')} turns, $${Number(d['costUsd'] ?? 0).toFixed(2)}`,
-  RunFailed: (d) => `${need(d, 'kind')}: ${clip(d['detail'])}`,
 
   // ----------------------------------------------------------------- gate --
   /**
@@ -284,78 +252,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     )
     return `${outcome}: ${said.join(' · ')}`
   },
-  StepRequested: stepAt,
   StepStarted: stepAt,
-  StepPassed: stepAt,
-  /**
-   * **And *the answer could not be read* rather than the silence a zero is**
-   * (`#279`).
-   *
-   * `0 findings` renders as the bare step, which is the same row a reviewer that
-   * read the diff and had nothing to refuse it on writes. `#269`'s third review
-   * said four things and ended one closing brace short of valid JSON, and this
-   * row was the only place on the page it appeared at all — as nothing.
-   *
-   * The count is not printed beside it, because there is none to print: an answer
-   * that did not parse carries no findings by construction, and a `0` next to the
-   * sentence would invite the reading that the reviewer found nothing.
-   */
-  StepFailed: (d) => {
-    if (d['unreadable'] === true) return `${stepAt(d)} — the answer could not be read`
-    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
-    return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? '' : 's'}` : stepAt(d)
-  },
-  StepNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d['detail'])}`,
-  // One line, because the action ran once: 0057 §4's retry is deleted (`#234`),
-  // and with it the *attempt 2, no more attempts* this line used to print about
-  // a second attempt that never left the starting block.
-  StepDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d['detail'])}`,
-  // Its own line since `#296`, and the verb is the whole of it: this row read
-  // *did not finish* over a question for as long as the two shared an event.
-  StepAsked: (d) => `${stepAt(d)} — asked: ${clip(d['detail'])}`,
-  StepWaived: (d) => `${stepAt(d)} — ${need(d, 'by')}: ${clip(d['reason'])}`,
-  ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, 'question'))}`,
-  ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, 'by')}${d['note'] ? `: ${clip(d['note'])}` : ''}`,
-  ApprovalRevoked: (d) => `${stepAt(d)} — ${need(d, 'by')}: ${clip(d['reason'])}`,
 
   // ---------------------------------------------------------- integration --
   IntegrationAttempted: (d) => `${need(d, 'branch')} at ${sha(d, 'headSha')}`,
   IntegrationRefused: (d) => `${need(d, 'reason')}: ${clip(d['detail'])}`,
   IntegrationSucceeded: (d) => `${need(d, 'branch')} → ${need(d, 'base')} as ${sha(d, 'mergeCommit')}`,
-
-  // --------------------------------------------------------------- repair --
-  // Both of a failure's outcomes read on the history, including the one where
-  // nothing happened: "no agent was bought, and here is the rule that said
-  // so" is the half an operator otherwise has to guess at.
-  //
-  // **Retired, and still read for ever** (0019, `#143`), exactly as the outbox
-  // pair below is. A refusal buys no run now, so nothing appends either of
-  // these — and a row that renders nothing is as unreadable whether or not
-  // anything appends the type again.
-  RepairRequested: (d) => `attempt ${need(d, 'attempt')} on ${need(d, 'reason')}`,
-  RepairDeclined: (d) => `${need(d, 'reason')} — ${clip(d['why'])}`,
-
-  // ------------------------------------------------------------------ fix --
-  // The other purse (0038 §4). A round says how many findings it was bought for,
-  // because that is the size of what the fixer was asked to do; the scenarios
-  // themselves are in the disclosure, verbatim, where the contract lives.
-  FixRequested: (d) => {
-    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
-    // `of` is zero on an event written before the field existed, and the
-    // reading of zero is *not recorded* — so the round is named without a
-    // denominator rather than as `round 1 of 0`.
-    const of = typeof d['of'] === 'number' && d['of'] > 0 ? ` of ${d['of']}` : ''
-    return `round ${need(d, 'round')}${of} for ${need(d, 'action')} — ${n} finding${n === 1 ? '' : 's'}`
-  },
-  // The cost is on the row because a fix is bought without being asked again,
-  // the same argument `#84` made for a repair's. A default-on agent whose spend
-  // appears nowhere is one nobody can audit, and the payload carries it.
-  FixApplied: (d) =>
-    `round ${need(d, 'round')}: ${d['headSha'] === null ? 'committed nothing' : sha(d, 'headSha')}` +
-    ` · ${need(d, 'turns')} turns` +
-    (typeof d['costUsd'] === 'number' ? ` · $${d['costUsd'].toFixed(2)}` : '') +
-    (d['failure'] === null ? '' : ` · ${clip(d['failure'])}`),
-  FixDeclined: (d) => `${need(d, 'action')} — ${clip(d['why'])}`,
 
   // ---------------------------------------------------------------- route --
   /**
@@ -377,21 +279,6 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const ceiling = typeof d['ceiling'] === 'string' ? d['ceiling'] : null
     const wanted = chose === null ? '' : ` (wanted ${chose}${ceiling === null ? '' : `, ${ceiling} spent`})`
     return `${need(d, 'from')} → ${to}${wanted} — ${clip(d['why'])}`
-  },
-
-  // -------------------------------------------------------------- restart --
-  // The row a person reads to learn that the ticket, and not just this diff, is
-  // what was in doubt (0040). It says which arm and what the spent arm cost in
-  // rounds; the findings it carries are in the disclosure, verbatim, because
-  // they are the only copy — the run they refused is on a stream no later pass
-  // reads.
-  PassRestarted: (d) => {
-    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
-    return (
-      `restart ${need(d, 'restart')} of ${need(d, 'of')} — ${need(d, 'action')} refused ` +
-      `${need(d, 'branch')} after ${need(d, 'rounds')} round(s), ` +
-      `${n} finding${n === 1 ? '' : 's'} left live`
-    )
   },
 
   // -------------------------------------------------------------- control --
@@ -478,15 +365,150 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     const who = tagged._tag === 'Agent' ? `${need(tagged, 'runtime')}/${need(tagged, 'model')}` : 'mechanical'
     return `attempt ${need(d, 'attempt')} · ${who}`
   },
-  HoldTriaged: (d) => {
-    const result = d['result'] as
-      | { _tag: 'Failed'; failure?: string }
-      | { _tag: 'Advised'; cause?: { _tag?: string }; move?: { _tag?: string }; sentence?: string }
-      | undefined
-    if (result?._tag === 'Failed') return `attempt ${need(d, 'attempt')} · failed: ${clip(result.failure)}`
-    if (result?._tag !== 'Advised' || !result.cause?._tag || !result.move?._tag) throw new Error('no result')
-    return `attempt ${need(d, 'attempt')} · ${result.cause._tag} → ${result.move._tag}: ${clip(result.sentence)}`
+}
+
+type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { _tag: Tag }>) => string
+
+/**
+ * The sentence for a `boardFactOf` fact — `summarise`'s first table, tried
+ * before `FORMAT` above. One entry per `BoardFact` tag, so this is as total
+ * as the fact type itself; `summarise` still wraps a call in the same
+ * try/catch `FORMAT` gets, so a fact a formatter cannot fill (`WaitStarted`
+ * with no `question` at all) falls to the raw payload exactly as before.
+ */
+const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
+  ActionRequested: (f) => stepAt({ step: f.step, action: f.action }),
+
+  StepEnded: (f) => {
+    const head = stepAt({ step: f.step, action: f.action })
+    switch (f.ending) {
+      case 'Passed':
+        return head
+      /**
+       * **And *the answer could not be read* rather than the silence a zero
+       * is** (`#279`).
+       *
+       * `0 findings` renders as the bare step, which is the same row a
+       * reviewer that read the diff and had nothing to refuse it on writes.
+       * `#269`'s third review said four things and ended one closing brace
+       * short of valid JSON, and this row was the only place on the page it
+       * appeared at all — as nothing.
+       *
+       * The count is not printed beside it, because there is none to print:
+       * an answer that did not parse carries no findings by construction,
+       * and a `0` next to the sentence would invite the reading that the
+       * reviewer found nothing.
+       */
+      case 'Failed': {
+        if (f.unreadable === true) return `${head} — the answer could not be read`
+        const n = f.findings?.length ?? 0
+        return n > 0 ? `${head} — ${n} finding${n === 1 ? '' : 's'}` : head
+      }
+      case 'NeverRan':
+        return `${head} — never ran: ${clip(f.detail)}`
+      // One line, because the action ran once: 0057 §4's retry is deleted
+      // (`#234`), and with it the *attempt 2, no more attempts* this line
+      // used to print about a second attempt that never left the starting
+      // block.
+      case 'DidNotFinish':
+        return `${head} — did not finish: ${clip(f.detail)}`
+      // Its own line since `#296`, and the verb is the whole of it: this row
+      // read *did not finish* over a question for as long as the two shared
+      // an event.
+      case 'Asked':
+        return `${head} — asked: ${clip(f.detail)}`
+    }
   },
+
+  Waived: (f) => `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}: ${clip(f.reason)}`,
+
+  SignoffRequested: (f) =>
+    `${stepAt({ step: f.step, action: f.action })} — ${clip(need({ question: f.question }, 'question'))}`,
+  SignoffGranted: (f) =>
+    `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}${f.note ? `: ${clip(f.note)}` : ''}`,
+  SignoffRevoked: (f) =>
+    `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}: ${clip(f.reason)}`,
+
+  // The other purse (0038 §4). A round says how many findings it was bought
+  // for, because that is the size of what the fixer was asked to do; the
+  // scenarios themselves are in the disclosure, verbatim, where the contract
+  // lives.
+  RoundOpened: (f) => {
+    const n = f.findings.length
+    // `of` is zero on an event written before the field existed, and the
+    // reading of zero is *not recorded* — so the round is named without a
+    // denominator rather than as `round 1 of 0`.
+    const of = f.of > 0 ? ` of ${f.of}` : ''
+    return `round ${f.round}${of} for ${f.action} — ${n} finding${n === 1 ? '' : 's'}`
+  },
+  // The cost is on the row because a fix is bought without being asked
+  // again, the same argument `#84` made for a repair's. A default-on agent
+  // whose spend appears nowhere is one nobody can audit, and the payload
+  // carries it.
+  RoundEnded: (f) =>
+    `round ${f.round}: ${f.headSha === null ? 'committed nothing' : f.headSha.slice(0, 7)}` +
+    ` · ${f.turns} turns` +
+    (typeof f.costUsd === 'number' ? ` · $${f.costUsd.toFixed(2)}` : '') +
+    (f.failure === null ? '' : ` · ${clip(f.failure)}`),
+  RoundsDeclined: (f) => `${f.action} — ${clip(f.why)}`,
+
+  // The row a person reads to learn that the ticket, and not just this diff,
+  // is what was in doubt (0040). It says which arm and what the spent arm
+  // cost in rounds; the findings it carries are in the disclosure, verbatim,
+  // because they are the only copy — the run they refused is on a stream no
+  // later pass reads.
+  Restarted: (f) => {
+    const n = f.findings.length
+    return (
+      `restart ${f.restart} of ${f.of} — ${f.action} refused ` +
+      `${f.branch} after ${f.rounds} round(s), ` +
+      `${n} finding${n === 1 ? '' : 's'} left live`
+    )
+  },
+
+  /**
+   * Which kind of hold, then the question, then the move that was
+   * recommended.
+   *
+   * The kind leads because it is what the log could not say (#83): *held at
+   * the merge gate* and *conflict: agent/112 does not merge into develop*
+   * were both the same shape of wait, and they are opposite kinds of thing.
+   *
+   * `boardFactOf` already tried to parse the wait and read it through
+   * `legacyColumns` (or, where that did not parse, read the v1/v2 fields
+   * instead) — `question` is `undefined` only where neither had anything,
+   * which this throws on, the same way `need` does, so `summarise` falls to
+   * `describePayload`.
+   */
+  WaitStarted: (f) => {
+    if (f.question === undefined) throw new Error('no question')
+    const said = [f.needs ? `${f.needs}:` : null, clip(f.question)]
+    if (f.recommendation?.action) said.push(`— recommends ${f.recommendation.action}`)
+    return said.filter((s) => s !== null).join(' ')
+  },
+  WaitResolved: (f) => {
+    const note = clip(f.note)
+    return note ? `${f.by}: ${note}` : f.by
+  },
+  WaitTriaged: (f) => {
+    const result = f.result
+    if (result._tag === 'Failed') return `attempt ${f.attempt} · failed: ${clip(result.failure)}`
+    if (result._tag !== 'Advised' || !result.cause?._tag || !result.move?._tag) throw new Error('no result')
+    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.move._tag}: ${clip(result.sentence)}`
+  },
+
+  RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,
+
+  // Both of a failure's outcomes read on the history, including the one
+  // where nothing happened: "no agent was bought, and here is the rule that
+  // said so" is the half an operator otherwise has to guess at.
+  //
+  // **Retired, and still read for ever** (0019, `#143`), exactly as the
+  // outbox pair above is. A refusal buys no run now, so nothing appends
+  // either of these — and a row that renders nothing is as unreadable
+  // whether or not anything appends the type again.
+  RepairBought: (f) => `attempt ${f.attempt} on ${f.reason}`,
+  RepairRefused: (f) => `${f.reason} — ${clip(f.why)}`,
 }
 
 /**
@@ -520,9 +542,24 @@ function scalar(v: unknown): string {
  * not recognise is the one an operator most needs to see raw. It is also why
  * this is a reader that cannot break the page — a throw here costs a sentence,
  * not a render.
+ *
+ * `boardFactOf` is tried first: a type it owns answers through `FACT_FORMAT`,
+ * and a type it does not own (`null`) falls to `FORMAT`, exactly as it did
+ * before this read-model fact existed.
  */
 export function summarise(event: Envelope): string {
   const data = event.data ?? {}
+  try {
+    const fact = boardFactOf(event)
+    if (fact) {
+      const said = (FACT_FORMAT[fact._tag] as (f: typeof fact) => string)(fact).trim()
+      return said || describePayload(data)
+    }
+  } catch {
+    // A malformed payload for a type `boardFactOf` owns — fall through to
+    // the payload, the same as a formatter that cannot fill its sentence.
+    return describePayload(data)
+  }
   const format = FORMAT[event.type as EventType]
   if (format) {
     try {
@@ -574,11 +611,11 @@ function mark(bytes: number): string {
  * on the stream rendered as the least readable thing on the page (#101).
  *
  * **The rule is a newline in a string, not a list of field names.** A payload
- * that carries a document is not a property of `RunPrompted`: `RunFailed.detail`
- * is a gate's stdout, `RepairRequested.detail` is a whole typecheck run, and
- * `WorkItemBlocked.question` has a build log inside it. An allowlist would fail
- * the same way for the next type that starts carrying one — which is rule 2 at
- * the top of this file, one level down.
+ * that carries a document is not a property of `RunPrompted`: a failed run's
+ * own detail is a gate's stdout, a bought repair's detail is a whole
+ * typecheck run, and a wait's own question has a build log inside it. An
+ * allowlist would fail the same way for the next type that starts carrying
+ * one — which is rule 2 at the top of this file, one level down.
  *
  * Nested and inside arrays too, labelled by path (`diagnosis.raw`), because
  * whether a document sits at the top of the payload or one key in is an
