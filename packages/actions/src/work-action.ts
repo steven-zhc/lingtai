@@ -92,6 +92,8 @@ export type WorkedAnswer =
  * existed.
  */
 export interface WorkDispatch {
+  /** The action's own name — what finds its `RunSpent` (0110 §9). */
+  readonly name: string
   /** Appended to the implementer's brief, never substituted for it. */
   readonly prompt: string
   /** The recipe's `model:`; absent is the runtime's own default (0063 §2). */
@@ -139,6 +141,7 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
       // seam invents a default (`#245`, `#314`).
       const answer = await deps.work(
         {
+          name: spec.name,
           prompt: spec.prompt,
           ...(spec.model === undefined ? {} : { model: spec.model }),
           ...(spec.agent === undefined ? {} : { agent: spec.agent }),
