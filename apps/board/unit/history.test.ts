@@ -1,5 +1,7 @@
 import { EVENTS } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
+import { aLegacyHold, anAnswer, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 /**
  * Every event type renders something, and the ones the ticket named render the
  * thing they carry.
@@ -54,10 +56,11 @@ describe('a line of history', () => {
    * what `${by}: ${note}` would leave behind for an empty one.
    */
   it('renders a note-free unblock as just who, with no trailing colon', () => {
-    const said = summarise(e('WorkItemUnblocked', { by: 'human:steven', note: '' }))
+    const itemStream = makeStream('wi-lingtai-59')
+    const said = summarise(anAnswer(itemStream, 'human:steven', '')[0]!)
     expect(said).toBe('human:steven')
 
-    const withNote = summarise(e('WorkItemUnblocked', { by: 'human:steven', note: 'main has moved' }))
+    const withNote = summarise(anAnswer(itemStream, 'human:steven', 'main has moved')[0]!)
     expect(withNote).toBe('human:steven: main has moved')
   })
 
@@ -239,32 +242,32 @@ describe('a line of history', () => {
    * `WorkItemBlocked` with a string, and the history printed the string.
    */
   it('says which kind of block it was, and what it recommends', () => {
-    const said = summarise(
-      e('WorkItemBlocked', {
-        hold: {
-          _tag: 'MergeRefused',
-          run: { runId: 'run-1' },
-          reason: 'conflict',
-          why: 'agent/112 does not merge into develop.',
-          raw: 'CONFLICT (content): …',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: false,
-        },
-      }),
-    )
+    const itemStream = makeStream('wi-lingtai-59')
+    const [blocked] = aLegacyHold(itemStream, {
+      _tag: 'MergeRefused',
+      run: { runId: 'run-1' },
+      reason: 'conflict',
+      why: 'agent/112 does not merge into develop.',
+      raw: 'CONFLICT (content): …',
+      paths: null,
+      baseSha: null,
+      headSha: null,
+      afterApproval: false,
+    })
+    const said = summarise(blocked!)
     expect(said).toContain('acknowledgement:')
     expect(said).toContain('conflict: CONFLICT (content): …')
     expect(said).toContain('recommends requeue')
   })
 
   it('prints the bare question when nothing is recommended', () => {
-    const said = summarise(
-      e('WorkItemBlocked', {
-        hold: { _tag: 'Question', question: 'held at the merge gate: agent/112 into develop', by: 'human:steven' },
-      }),
-    )
+    const itemStream = makeStream('wi-lingtai-59')
+    const [blocked] = aWait(itemStream, {
+      _tag: 'OwnQuestion',
+      question: 'held at the merge gate: agent/112 into develop',
+      by: 'human:steven',
+    })
+    const said = summarise(blocked!)
     expect(said).toContain('held at the merge gate: agent/112 into develop')
     expect(said).not.toContain('recommends')
   })
@@ -291,14 +294,15 @@ describe('a line of history', () => {
    * had this row as its only appearance on the page.
    */
   it('says the answer could not be read, where a zero would have said nothing', () => {
-    const step = { step: 'review', action: 'cold reviewer', runId: 'run-1', onSha: 'abc' }
-    const dropped = summarise(e('StepFailed', { ...step, evidence: '…', findings: [], unreadable: true }))
+    const event = makeStream('run-1')
+    const step = { step: 'review' as const, action: 'cold reviewer', runId: 'run-1', onSha: 'a'.repeat(40) }
+    const dropped = summarise(event('StepFailed', { ...step, evidence: '…', findings: [], unreadable: true }))
 
     expect(dropped).toBe('review · cold reviewer — the answer could not be read')
     // The row it was, and still is for every failure whose answer was read: a
     // refusal with no findings is silent and a refusal with them counts them.
-    expect(summarise(e('StepFailed', { ...step, evidence: 'exit 1', findings: [] }))).toBe('review · cold reviewer')
-    expect(dropped).not.toBe(summarise(e('StepFailed', { ...step, evidence: 'exit 1', findings: [] })))
+    expect(summarise(event('StepFailed', { ...step, evidence: 'exit 1', findings: [] }))).toBe('review · cold reviewer')
+    expect(dropped).not.toBe(summarise(event('StepFailed', { ...step, evidence: 'exit 1', findings: [] })))
   })
 
   it('renders the plan StepsResolved carries, including the empty points', () => {
