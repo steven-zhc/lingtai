@@ -7,10 +7,11 @@ import { CONTROL_STREAM, type ControlState, type ShutdownRequest, parsePayload, 
  * kinds of question ([0013](../../../doc/decisions-archive/0013-daemon-hosts-the-work.md)):
  *
  * **Control goes through the log.** Pausing is a decision somebody made, and
- * `ApprovalGranted` is already that shape — "who stopped the conductor at four
- * o'clock" should not need a different mechanism than "who approved this
- * merge". It also means a command issued while the daemon is down is waiting
- * when it comes back, which is the behaviour you want rather than a race.
+ * a person approving a merge is already that shape — "who stopped the
+ * conductor at four o'clock" should not need a different mechanism than "who
+ * approved this merge". It also means a command issued while the daemon is
+ * down is waiting when it comes back, which is the behaviour you want rather
+ * than a race.
  *
  * **Liveness does not.** A heartbeat every few seconds, forever, fails the
  * log's admission test — *is this worth remembering later* — and would bury

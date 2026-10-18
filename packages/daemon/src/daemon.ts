@@ -82,9 +82,9 @@ export type DaemonStart =
    */
   | { ok: false; reason: 'already-running'; holder: string | null }
   /**
-   * The log holds a `WorkItemBlocked` from before #445's reset of its
-   * payload. `detail` is `LogPredatesHoldError`'s own message, naming the
-   * seq and the remedy — reset the log, never upgrade it (0118 §1).
+   * The log holds a wait recorded in the payload shape from before #445's
+   * reset. `detail` is `LogPredatesHoldError`'s own message, naming the seq
+   * and the remedy — reset the log, never upgrade it (0118 §1).
    */
   | { ok: false; reason: 'log-predates-hold'; detail: string }
 
