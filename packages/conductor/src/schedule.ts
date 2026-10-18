@@ -271,7 +271,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
  * lifecycle already is:
  *
  *   landed   `WorkItemLanded` — by this run or by anyone else, since
- *   held     `WorkItemBlocked` — a question a person now holds
+ *   held     `blocked` — a question a person now holds
  *   stopped  neither: released back into the queue, or never claimed at all
  *
  * A run that held at a gate and a run that a merge conflict blocked both end
