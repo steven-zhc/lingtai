@@ -21,7 +21,15 @@ import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { Projection } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { type DoctorReach, nodeRow, postgresOnlyRows, recipeRow, runDoctor, unconvergedRow } from '../src/doctor.ts'
+import {
+  type DoctorReach,
+  nodeRow,
+  postgresOnlyRows,
+  recipeRow,
+  runDoctor,
+  schemaChecks,
+  unconvergedRow,
+} from '../src/doctor.ts'
 
 /** `database.store: sqlite`, as `storeChoice()` reads it off a written `config.yml`. */
 const wroteSqlite = (): StoreChoice => ({
@@ -227,5 +235,83 @@ describe('nodeRow, running below or at the floor .node-version names', () => {
     const row = nodeRow('26.0.0', undefined)
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('.node-version')
+  })
+})
+
+/**
+ * #500: an archive schema beside `public` — made by #448's reset procedure —
+ * carries its own copy of every index, rule and trigger `pg_indexes`,
+ * `pg_rules` and `pg_trigger` name across every schema. These three checks
+ * must judge `public` alone.
+ */
+describe('schemaChecks, a second events schema beside public', () => {
+  const uniqueIndex = (schemaname: string) => ({ schemaname })
+  const rule = (schemaname: string, rulename: string) => ({ schemaname, rulename })
+  const trigger = (schemaname: string) => ({ schemaname })
+
+  it('is ok on all three when public is whole, archive alongside it notwithstanding', () => {
+    const results = schemaChecks(
+      [uniqueIndex('public'), uniqueIndex('archive_20261012')],
+      [
+        rule('public', 'lingtai_events_no_update'),
+        rule('public', 'lingtai_events_no_delete'),
+        rule('archive_20261012', 'lingtai_events_no_update'),
+        rule('archive_20261012', 'lingtai_events_no_delete'),
+      ],
+      [trigger('public'), trigger('archive_20261012')],
+      'public',
+    )
+    expect(results.map((r) => r.status)).toEqual(['ok', 'ok', 'ok'])
+  })
+
+  it('fails optimistic concurrency when only the archive has the unique index', () => {
+    const results = schemaChecks(
+      [uniqueIndex('archive_20261012')],
+      [
+        rule('public', 'lingtai_events_no_update'),
+        rule('public', 'lingtai_events_no_delete'),
+        rule('archive_20261012', 'lingtai_events_no_update'),
+        rule('archive_20261012', 'lingtai_events_no_delete'),
+      ],
+      [trigger('public'), trigger('archive_20261012')],
+      'public',
+    )
+    expect(results.find((r) => r.name === 'schema: optimistic concurrency')?.status).toBe('fail')
+    expect(results.find((r) => r.name === 'schema: append-only')?.status).toBe('ok')
+    expect(results.find((r) => r.name === 'schema: notify trigger')?.status).toBe('ok')
+  })
+
+  it('fails notify trigger when only the archive has it', () => {
+    const results = schemaChecks(
+      [uniqueIndex('public'), uniqueIndex('archive_20261012')],
+      [
+        rule('public', 'lingtai_events_no_update'),
+        rule('public', 'lingtai_events_no_delete'),
+        rule('archive_20261012', 'lingtai_events_no_update'),
+        rule('archive_20261012', 'lingtai_events_no_delete'),
+      ],
+      [trigger('archive_20261012')],
+      'public',
+    )
+    expect(results.find((r) => r.name === 'schema: optimistic concurrency')?.status).toBe('ok')
+    expect(results.find((r) => r.name === 'schema: append-only')?.status).toBe('ok')
+    expect(results.find((r) => r.name === 'schema: notify trigger')?.status).toBe('fail')
+  })
+
+  it('fails append-only and names only the public rule that is present, when public is missing one and the archive has both', () => {
+    const results = schemaChecks(
+      [uniqueIndex('public'), uniqueIndex('archive_20261012')],
+      [
+        rule('public', 'lingtai_events_no_delete'),
+        rule('archive_20261012', 'lingtai_events_no_update'),
+        rule('archive_20261012', 'lingtai_events_no_delete'),
+      ],
+      [trigger('public'), trigger('archive_20261012')],
+      'public',
+    )
+    const appendOnly = results.find((r) => r.name === 'schema: append-only')
+    expect(appendOnly?.status).toBe('fail')
+    expect(appendOnly?.detail).toContain('lingtai_events_no_delete')
+    expect(appendOnly?.detail).not.toContain('lingtai_events_no_update')
   })
 })

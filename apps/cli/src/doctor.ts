@@ -464,6 +464,59 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
   }
 }
 
+/** The schema the log's own tables live in; an archive made by #448's reset
+ * procedure sits beside it under a different one, and must change nothing
+ * here. */
+const EVENTS_SCHEMA = 'public'
+
+/**
+ * Judges the three catalogue-shaped checks against `schema` alone, so a second
+ * `events` table elsewhere — an archive schema beside the log, made by #448's
+ * reset procedure — changes none of their results. Split out from `schema()`
+ * so a unit test can hand it a fake catalogue without a database (#500).
+ */
+export function schemaChecks(
+  indexRows: readonly { schemaname: string }[],
+  ruleRows: readonly { schemaname: string; rulename: string }[],
+  triggerRows: readonly { schemaname: string }[],
+  schema: string = EVENTS_SCHEMA,
+): CheckResult[] {
+  const out: CheckResult[] = []
+
+  const hasUnique = indexRows.some((r) => r.schemaname === schema)
+  out.push({
+    name: 'schema: optimistic concurrency',
+    status: hasUnique ? 'ok' : 'fail',
+    detail: hasUnique
+      ? 'UNIQUE (stream_id, version) present — the whole of the concurrency control'
+      : 'UNIQUE (stream_id, version) is MISSING; two workers can claim one work item',
+  })
+
+  const ruleNames = ruleRows
+    .filter((r) => r.schemaname === schema)
+    .map((r) => r.rulename)
+    .sort()
+  out.push({
+    name: 'schema: append-only',
+    status: ruleNames.length === 2 ? 'ok' : 'fail',
+    detail:
+      ruleNames.length === 2
+        ? 'UPDATE and DELETE on events do nothing'
+        : `only ${ruleNames.join(', ') || 'no'} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
+  })
+
+  const hasTrigger = triggerRows.some((r) => r.schemaname === schema)
+  out.push({
+    name: 'schema: notify trigger',
+    status: hasTrigger ? 'ok' : 'fail',
+    detail: hasTrigger
+      ? 'every append announces itself on the lingtai channel'
+      : 'lingtai_events_notify is MISSING; nothing would wake on an append — run db:bootstrap',
+  })
+
+  return out
+}
+
 /**
  * The write model, read from the catalogue rather than exercised.
  *
@@ -482,7 +535,7 @@ async function schema(url: string): Promise<CheckResult[]> {
       // was arguing for: everything else is computed on demand.
       const tables = await c.query<{ table_name: string }>(
         `select table_name from information_schema.tables
-         where table_schema = 'public' and table_name in ('events','checkpoints')`,
+         where table_schema = '${EVENTS_SCHEMA}' and table_name in ('events','checkpoints')`,
       )
       const found = tables.rows.map((r) => r.table_name).sort()
       out.push({
@@ -491,49 +544,31 @@ async function schema(url: string): Promise<CheckResult[]> {
         detail: found.length === 2 ? found.join(', ') : `found ${found.join(', ') || 'none'} — expected both`,
       })
 
-      const uq = await c.query(
-        `select 1 from pg_indexes where tablename = 'events'
+      // These three match on `tablename`/`relname` across every schema — not
+      // just `EVENTS_SCHEMA` — because `schemaChecks` is what judges the
+      // result; see its own docstring for why that split exists (#500).
+      const uq = await c.query<{ schemaname: string }>(
+        `select schemaname from pg_indexes where tablename = 'events'
          and indexdef like '%UNIQUE%stream_id%version%'`,
       )
-      out.push({
-        name: 'schema: optimistic concurrency',
-        status: uq.rowCount === 1 ? 'ok' : 'fail',
-        detail:
-          uq.rowCount === 1
-            ? 'UNIQUE (stream_id, version) present — the whole of the concurrency control'
-            : 'UNIQUE (stream_id, version) is MISSING; two workers can claim one work item',
-      })
 
-      const rules = await c.query<{ rulename: string }>(
-        `select rulename from pg_rules where tablename = 'events'
+      const rules = await c.query<{ schemaname: string; rulename: string }>(
+        `select schemaname, rulename from pg_rules where tablename = 'events'
          and rulename in ('lingtai_events_no_update','lingtai_events_no_delete')`,
       )
-      const ruleNames = rules.rows.map((r) => r.rulename).sort()
-      out.push({
-        name: 'schema: append-only',
-        status: ruleNames.length === 2 ? 'ok' : 'fail',
-        detail:
-          ruleNames.length === 2
-            ? 'UPDATE and DELETE on events do nothing'
-            : `only ${ruleNames.join(', ') || 'no'} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
-      })
 
-      const trig = await c.query(
-        `select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+      const trig = await c.query<{ schemaname: string }>(
+        `select n.nspname as schemaname from pg_trigger t
+         join pg_class c on c.oid = t.tgrelid
+         join pg_namespace n on n.oid = c.relnamespace
          where c.relname = 'events' and t.tgname = 'lingtai_events_notify' and not t.tgisinternal`,
       )
-      out.push({
-        name: 'schema: notify trigger',
-        status: trig.rowCount === 1 ? 'ok' : 'fail',
-        detail:
-          trig.rowCount === 1
-            ? 'every append announces itself on the lingtai channel'
-            : 'lingtai_events_notify is MISSING; nothing would wake on an append — run db:bootstrap',
-      })
+
+      out.push(...schemaChecks(uq.rows, rules.rows, trig.rows, EVENTS_SCHEMA))
 
       const jsonb = await c.query<{ table_name: string; column_name: string; data_type: string }>(
         `select table_name, column_name, data_type from information_schema.columns
-         where table_schema = 'public'
+         where table_schema = '${EVENTS_SCHEMA}'
            and (table_name, column_name) in (('events','data'))`,
       )
       const wrong = jsonb.rows.filter((r) => r.data_type !== 'jsonb')
