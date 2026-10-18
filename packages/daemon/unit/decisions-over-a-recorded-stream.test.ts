@@ -32,9 +32,9 @@ import { COMPLETION_EVENTS } from '../src/work-loop.ts'
  *
  * **This is unit, by 0060 §1** (`createMemoryEventStore()`, no Postgres, no
  * network) and it is the only check inside the pass of what wakes the loop:
- * `work-loop.test.ts` covers the same ground with the hand-written wire
- * events and is integration, which `pnpm test` does not run; so is
- * `converge.test.ts`. `converge-refs.test.ts` is unit and does run under
+ * `work-loop.test.ts` covers the same ground at the wire level and is
+ * integration, which `pnpm test` does not run; so is `converge.test.ts`.
+ * `converge-refs.test.ts` is unit and does run under
  * `pnpm test`, but its `oneStream()` answers a fixed id regardless of
  * `query.types` (`converge-refs.test.ts:48-50`), so it never exercises the
  * type filter `candidates()` applies — the decision this file's second half
