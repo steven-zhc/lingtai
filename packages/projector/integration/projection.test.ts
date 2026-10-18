@@ -163,9 +163,10 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // behind, on a database the whole suite asserts is green.
       for (const table of CONTRACT_TABLES) await c.query(`drop table if exists "${table}"`)
       await c.query('delete from checkpoints where name = any($1::text[])', [[...CONTRACT_CHECKPOINTS]])
-      for (const table of ['task_view', 'finding_backlog']) {
+      for (const table of ['task_view', 'finding_backlog', 'spend']) {
         await c.query(`delete from "${table}" where project like 'esctest-pg-%'`)
       }
+      await c.query(`delete from spend_stream where ticket like 'wi-esctest-pg-%'`)
     })
   })
 
