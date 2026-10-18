@@ -257,8 +257,10 @@ describe('requeue', () => {
 
     await requeueHolding({ by: 'human:steven', note: '   ' }, store, workItemId)
 
-    const last = (await store.read(workItemId)).at(-1)!
-    expect(last.data).toMatchObject({ note: '' })
+    const answers = reduceWorkItem(await store.read(workItemId)).answers
+    expect(answers).toEqual([
+      { question: 'the `implement` step asked: which helper?', runId: 'run-13', answer: '', by: 'human:steven' },
+    ])
   })
 })
 

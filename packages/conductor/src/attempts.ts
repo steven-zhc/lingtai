@@ -151,6 +151,21 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
   const byRun = new Map<string, PriorAttempt>()
 
   for (const event of itemEvents) {
+    // Read through `cardFactOf` before any switch on `event.type`, so this
+    // file names no event type for a wait starting — `cardFactOf`'s own
+    // switch (`read-model.ts`, shared with `task_view`) is the one place
+    // that has to move when #464 renames the event, rather than this file
+    // also carrying a case label that would silently stop matching.
+    const card = cardFactOf(event)
+    if (card !== null && card._tag === 'WaitStarted') {
+      const runId = 'run' in card.reason ? card.reason.run.runId : null
+      const attempt = runId === null ? undefined : byRun.get(runId)
+      // An attempt that ended by asking a person ended just as much as one
+      // that was released, and the question is the reason.
+      if (attempt) attempt.ended = `blocked, asking: ${card.card.question}`
+      continue
+    }
+
     switch (event.type) {
       case 'WorkItemClaimed': {
         const d = event.data as PayloadOf<'WorkItemClaimed'>
@@ -175,17 +190,6 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         const d = event.data as PayloadOf<'WorkItemReleased'>
         const attempt = byRun.get(d.runId)
         if (attempt) attempt.ended = d.reason
-        break
-      }
-
-      case 'WorkItemBlocked': {
-        const fact = cardFactOf(event)
-        if (fact === null || fact._tag !== 'WaitStarted') break
-        const runId = 'run' in fact.reason ? fact.reason.run.runId : null
-        const attempt = runId === null ? undefined : byRun.get(runId)
-        // An attempt that ended by asking a person ended just as much as one
-        // that was released, and the question is the reason.
-        if (attempt) attempt.ended = `blocked, asking: ${fact.card.question}`
         break
       }
 

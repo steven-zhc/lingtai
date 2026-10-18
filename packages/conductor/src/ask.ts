@@ -2,7 +2,7 @@
  * Asking a person something **before** a run, and recording what they said.
  *
  * `WorkItemLifecycle` has carried `runId: string | null` since the beginning,
- * and all three appenders of `WorkItemBlocked` ran inside a pass (#147). So the
+ * and all three callers that start a wait ran inside a pass (#147). So the
  * one question that must be asked before anything is spent — *which of these
  * designs?* — was the one the model could not ask: every path to `blocked`
  * began by claiming the ticket and cutting a worktree. What stood in for it was
@@ -90,7 +90,7 @@ export async function ask(options: {
 /**
  * Answers a question asked before a run, and hands the item back to the queue.
  *
- * The same event `requeue` appends — `WorkItemUnblocked`, whose `note` is the
+ * The same event `requeue` appends — resolving the wait, whose `note` is the
  * answer — and the fold keeps it, so a replay can say what was decided and
  * every later attempt's prompt carries it. A question that should not have been
  * asked is withdrawn instead — `requeue()`, which writes the unblock

@@ -383,13 +383,13 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
      * takes, from here or from a pass.
      */
     const blocked = await store.read(workItemId)
-    // `approvedMergeRefusedOf` is the one function behind both tags: a pass's
-    // own `conflict`/`verify-failed` refusal is `Routed` rather than this
-    // variant since #452 (`hold-of.ts`'s step 1), carrying its own composed
-    // `why` — but the card-column reading inside `approvedMergeRefusedOf`
-    // reads both through the same function, so `done` and `recommendation`,
-    // the owner sentence and the move, cannot describe the same conflict
-    // differently (#83).
+    // `diagnoseRefusal` is the one function behind both tags: a pass's own
+    // `conflict`/`verify-failed` refusal is `Routed` rather than this variant
+    // since #452 (`hold-of.ts`'s step 1), carrying its own composed `why` —
+    // but `approvedMergeRefusedOf` below and the domain's own card-column
+    // reading of a `Routed` hold each reach `diagnoseRefusal` independently,
+    // so `done` and `recommendation`, the owner sentence and the move, cannot
+    // describe the same conflict differently (#83).
     const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, workItemId, branch)
     const { event, question } = approvedMergeRefusedOf({
       // No `unpushed`: the run is bound to `onSha`, already on origin.
@@ -456,7 +456,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
  * buying a run instead — so this is the move the commonest failure in the
  * system waits on, and not the leftover it was written as.
  *
- * The move is not a new mechanism. `WorkItemUnblocked` has been in the
+ * The move is not a new mechanism. Resolving a wait has been in the
  * catalogue since the beginning and means exactly this: a person answered the
  * question, and the item is queueable again. The next pass cuts a fresh branch
  * from a base that has since moved, which for the commonest case — a conflict

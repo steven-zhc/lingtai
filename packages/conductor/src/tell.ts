@@ -336,8 +336,8 @@ async function record(
  * `lingtai:working` while the board showed it in *Waiting on you*, and
  * `lingtai:waiting` was never once written. `442f513` preserved that on purpose
  * — a replacement that also changes behaviour cannot be reviewed as one — and
- * `#71` is where it changed. The three callers that append `WorkItemBlocked`
- * pass `labelsFor("waiting")` alongside the question.
+ * `#71` is where it changed. The three callers that start a wait pass
+ * `labelsFor("waiting")` alongside the question.
  *
  * The order below is why they pass it rather than this function inferring it:
  * the recipe's own `end` actions run last and may set labels of their own, and

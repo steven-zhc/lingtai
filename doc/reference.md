@@ -676,8 +676,8 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 224 occurrences in
-46 files**, counted 2026-10-18 — down from 661 in 62 because `#247` had to
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 226 occurrences in
+47 files**, counted 2026-10-18 — down from 661 in 62 because `#247` had to
 carry the halves as far as compiling and asserting against a `src/` whose event
 types, payload fields and refusal reason had all moved, and no further. They are
 out because a name that survives only in a test is one no

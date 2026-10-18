@@ -13,14 +13,15 @@ import type { Action, StepOutcome } from './action.ts'
  * `@lingtai/actions`' own `ActionResult`, so it stays in `@lingtai/conductor`
  * and that file now re-exports these two under the same names.
  *
- * **Only `eventOf` and `holdOf` are exported.** Every helper below is the
- * conductor file's own, unchanged, and none of it is any file outside this
- * one's to call directly — a second caller of `said` or `escalatedHold`
- * would be a second place those rules have to stay in sync.
+ * **`eventOf` and `holdOf`, plus `#487`'s five wait writers, are exported.**
+ * Every other helper below is the conductor file's own, unchanged, and none
+ * of it is any file outside this one's to call directly — a second caller of
+ * `said` or `escalatedHold` would be a second place those rules have to stay
+ * in sync.
  *
- * **No cycle inside domain.** This file imports `action.ts`, `attribution.ts`
- * and `wait.ts`, and none of those import it back (`wait.ts:33-35`,
- * `hold.ts:15-19`).
+ * **No cycle inside domain.** This file imports `action.ts`, `attribution.ts`,
+ * `events.ts`, `legacy-columns.ts` and `wait.ts`, and none of those import it
+ * back (`wait.ts:33-35`, `hold.ts:15-19`).
  *
  * Imports `./wait.ts` directly rather than through `./index.ts`'s subpath:
  * both live in this package, and the subpath exists only for callers outside
