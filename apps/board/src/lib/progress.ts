@@ -88,13 +88,13 @@ export type StepState =
    * wants the account has to know which it has.
    *
    * The point was reached and its agent never started, so it judged nothing:
-   * `StepNeverRan`, and the evidence is on that event (#133). Or the plan the
-   * log recorded named actions here, the run recorded *none* of them, and the
-   * item landed — `stateOf`'s rule since #170, and since `#257` the only place
-   * that comparison is made. There is no gate event at this point
-   * at all in the second, so there is nothing to read evidence off: anything
-   * reaching for one must find the `StepNeverRan` and cope with its absence,
-   * the way `task.ts`'s `never` line does.
+   * a `StepEnded{ending: 'NeverRan'}`, and the evidence is on that event
+   * (#133). Or the plan the log recorded named actions here, the run
+   * recorded *none* of them, and the item landed — `stateOf`'s rule since
+   * #170, and since `#257` the only place that comparison is made. There is
+   * no gate event at this point at all in the second, so there is nothing to
+   * read evidence off: anything reaching for one must find the never-ran
+   * ending and cope with its absence, the way `task.ts`'s `never` line does.
    *
    * Not `failed` — a refusal is a sentence about the diff — and not `running`,
    * which is what a point with no verdict line used to read as.
@@ -198,13 +198,13 @@ export interface RunProgress {
    * What a bought round has spent against its ceiling, for a held item's
    * budget line (`describeHeld`, `#415`).
    *
-   * `spent` is the highest `round` any `FixRequested` or `FixDeclined`
-   * recorded — `FixDeclined.round` is "rounds already spent when this was
-   * decided", so it is read the same way a request's is. `of` is the last
-   * `FixRequested.of` that was above zero, or null where nothing on this
-   * stream named a ceiling — every event written before the field existed,
-   * and every run that never bought a round — in which case the recipe is
-   * this budget's only source for one.
+   * `spent` is the highest `round` a round opened or declined recorded — a
+   * decline's own round is "rounds already spent when this was decided", so
+   * it is read the same way an opened round's is. `of` is the last opened
+   * round's `of` that was above zero, or null where nothing on this stream
+   * named a ceiling — every event written before the field existed, and
+   * every run that never bought a round — in which case the recipe is this
+   * budget's only source for one.
    */
   rounds: { spent: number; of: number | null }
 }
@@ -492,9 +492,9 @@ export function foldProgress(
            * **A bought round is an agent running inside the pass**, and it is the
            * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
            *
-           * It opens with `FixRequested`, runs a fixing agent against the
-           * findings, and ends with `FixApplied` when that agent is done
-           * (`conduct.ts`'s fix round). No `RunStarted` between them, because a
+           * It opens a round, runs a fixing agent against the findings, and
+           * ends that round when that agent is done (`conduct.ts`'s fix
+           * round). No `RunStarted` between them, because a
            * round is a step inside a run and not a run of its own — so without
            * this the fold had nothing in flight for the whole of that agent's
            * run, and a card spending money to answer a refusal said the

@@ -500,7 +500,7 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
  *
  * Listed rather than inferred, because *when the state began* is the second
  * half of this block and nothing else on the item's stream may move it: a
- * a `WorkItemLinked`, a `PassRestarted` or a gate reporting late are all
+ * `WorkItemLinked`, a restarted pass or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
 const LIFECYCLE_MOVES = new Set(['WorkItemClaimed', 'WorkItemReleased', ...WAIT_EVENTS, 'WorkItemLanded'])
