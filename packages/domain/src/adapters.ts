@@ -40,6 +40,13 @@ import type { EscalationBecause, Resolution, RunRef, WaitReason } from './wait.t
  * package has no dependency on that one (0101 §4) — structurally identical,
  * so every caller on the other side of the package boundary can hand this
  * back without a cast.
+ *
+ * **`RunSpent` is deliberately not in this list** (`#494`). `eventOf` turns a
+ * `StepOutcome` back into the events a verdict produces, and no `StepOutcome`
+ * carries spend — `ActionResult.spent` is attached by `runActionPipeline`
+ * itself, never by the action's own answer this type mirrors. Adding it here
+ * would be a third place spend could be written from, where 0110 §2 means
+ * there is exactly one.
  */
 export type StepEvent =
   | { type: 'StepRequested'; data: PayloadOf<'StepRequested'> }
