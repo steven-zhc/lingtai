@@ -20,7 +20,7 @@ import type { ActionResult } from '@/lib/diff'
 import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from './actions.ts'
 
 /**
- * The recommended move, as `WorkItemBlocked.diagnosis.recommendation` named it.
+ * The recommended move, as the diagnosis's own recommendation named it.
  *
  * It decides which button is primary and nothing else. A recommendation is not
  * an action taken — the click is still a person's — but a card that recommends
@@ -47,9 +47,9 @@ function primaryMove(recommended: Recommended | undefined): 'approve' | 'requeue
  * Approve, and the reason it needs when a gate still refuses.
  *
  * **One button, and the waiver is inside it** (#150). There were three beside
- * it: Reject appended `ApprovalRevoked` and the run asked again; Waive appended
- * `StepWaived`, which `approve()` never read — so explaining an overruled
- * refusal took two clicks and not explaining it took one. Now `approve()` reads
+ * it: Reject appended a wait that started again and Waive appended a waiver
+ * which `approve()` never read — so explaining an overruled refusal took two
+ * clicks and not explaining it took one. Now `approve()` reads
  * the refusing gates off the run itself, waives each with this reason in the
  * same append, and refuses without one. Nothing here names a gate.
  */
@@ -405,8 +405,8 @@ export function Close({
  * Named for what it sends, and numbered: `Send attempt 3` agrees with the box
  * above it, which is stamped `attempt 3 only` because that is how long the edit
  * lasts (0032 §5). The click appends `PromptEdited` — when the editor handed a
- * sentence with it — and then `WorkItemUnblocked`; `sendAttempt` keeps that
- * order, and why.
+ * sentence with it — and then the append that resolves the wait; `sendAttempt`
+ * keeps that order, and why.
  *
  * **Beside it, the move that is not sending.** *Leave blocked* is here, and it
  * appends nothing on purpose: *I read it and I am not acting* is an answer, and
