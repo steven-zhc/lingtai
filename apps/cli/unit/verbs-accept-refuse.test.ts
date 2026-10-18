@@ -172,7 +172,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
    * `note: options.note`, which is `undefined` when `--note` is not given,
    * the same as this test omits it entirely.
    */
-  it('refuses a refusing gate with no reason, and no --note was given', async () => {
+  it('refuses a refusing step with no reason, and no --note was given', async () => {
     const store = createMemoryEventStore()
     const workItemId = workItemStream(PROJECT, 112)
     const item = makeStream(workItemId)
@@ -357,7 +357,7 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
     expect(result.detail).toContain('landed')
   })
 
-  it('closes a backlog item, with no end point to resolve', async () => {
+  it('closes a backlog item, with no end step to resolve', async () => {
     const store = createMemoryEventStore()
     const workItemId = workItemStream(PROJECT, 133)
 
