@@ -160,11 +160,13 @@ add(
   (item) => [
     ...aClaim(item, 'run-pin-pe-buildred'),
     // `conduct.ts`'s `judged = stopped === null || …` is true for every
-    // `Routed` hold (the router handing `proposed` to a person), and
-    // `onOrigin !== null` always holds here — `proposed` only runs once
-    // `implement` has committed something — so production always pairs this
-    // ending with an `ApprovalRequested{step:'proposed',action:'judge'}`
-    // (RUN_5/RUN_13 in `what-a-pass-shows-today.test.tsx`).
+    // `Routed` hold (the router handing `proposed` to a person), and this
+    // fixture's run reached origin (`onOrigin !== null`), so production
+    // pairs this ending with an `ApprovalRequested{step:'proposed',
+    // action:'judge'}` (RUN_5/RUN_13 in `what-a-pass-shows-today.test.tsx`).
+    // That is not unconditional, though: a push to origin that itself failed
+    // leaves `onOrigin` null and no `ApprovalRequested` at all — the
+    // `proposedescalated-unpushed` fixture below is that case.
     makeStream('run-pin-pe-buildred')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
@@ -269,6 +271,31 @@ add(
   'waiting for your review',
   'agent/473 into main is waiting on you. bug',
   ['Approve', 'Back to the queue', 'Close'],
+)
+
+add(
+  'ProposedEscalated',
+  'proposedescalated-unpushed',
+  (item) => [
+    ...aClaim(item, 'run-pin-pe-unpushed'),
+    // `conduct.ts:3696` sets `unpushed` on the hold whenever the branch's own
+    // push to origin failed, which makes `onOrigin` null — so
+    // `conduct.ts:4008`'s `!held && judged && onOrigin !== null` is false and
+    // no `ApprovalRequested` is ever appended here, unlike the sibling
+    // fixtures above. `awaiting_sha` stays null (`task-view.ts:567`), so
+    // `describeWait` draws no pill (`task-view.ts:1125`) and the page draws
+    // no Approve button (`page.tsx:380`) — `Approve{onSha}` would otherwise
+    // name a sha that reached nowhere.
+    ...aWait(item, {
+      _tag: 'ProposedEscalated',
+      run: { runId: 'run-pin-pe-unpushed', unpushed: { branch: 'agent/473', said: 'remote rejected the push' } },
+      proposal: { _tag: 'BuildRed', output: 'tsc failed' },
+      because: { _tag: 'NotAsked' },
+    }),
+  ],
+  null,
+  'agent/473 into main is waiting on you. tsc failed',
+  ['Back to the queue', 'Close'],
 )
 
 add(

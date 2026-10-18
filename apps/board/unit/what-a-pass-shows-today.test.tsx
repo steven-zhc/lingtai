@@ -35,13 +35,16 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * cut for the same reason). **It also drops `documents`** — the multi-line
  * blocks `splitPayload` lifts out of a payload string for `<Document>` to
  * render (`history.ts:53`, `history-row.tsx:32`), which several rows below
- * carry on `StepFailed.evidence` or `PassRouted.why`. Left out of this
- * reduction because `summary` already carries the same text unsplit, so
- * nothing a person reads is lost by the drop — but a rewrite that stops
+ * carry on `StepFailed.evidence` or `PassRouted.why`. That is a real text a
+ * person loses: `StepFailed`'s own `summary` is `${stepAt(d)} — N finding(s)`
+ * and never repeats `evidence` (`history.ts:303-307`), and `PassRouted`'s
+ * `summary` runs its `why` through `clip`'s 160-character cut
+ * (`history.ts:90-97`), so a long `why` loses its tail on the summary line
+ * even where it survives on the document. `documentsOf` below checks the
+ * `field` path separately for exactly that reason — a rewrite that stops
  * lifting a document, or relabels its `field`, is not something comparing
- * `summary` strings here would catch; that is this helper's own blind spot,
- * not clock or log noise, and is named here so the next reader knows not to
- * trust this file for it. `stripOf` reduces the rendered `<Segs>` markup to
+ * `summary` strings would catch, so it is not left to them. `stripOf` reduces
+ * the rendered `<Segs>` markup to
  * one `{step, state}` pair per segment — the rail's own information content —
  * rather than pinning the raw HTML, which would fail on an incidental
  * attribute change that pins nothing real.
@@ -58,22 +61,23 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * plan is inert except for `claim`, `admit` and `implement`'s own defaults,
  * whose `planned` is `[]` by the recipe's own `steps: {}` and whose state is
  * read off the verdict regardless (the big comment on `StepState`,
- * `progress.ts:60-76`). **Rows 15, 15b and 15c carry no `StepsResolved` at
- * all** — a decline at `claim` never reaches it — so for them the plan
- * argument is the *only* source of `planned`, and `stripOf` takes one of its
- * own rather than the file's shared empty one: a real project's recipe is
- * known to the task page (`planFor`/`projectFilter`, `task.ts:1408`,
- * `task.ts:1542`) whether or not this particular run ever got past `claim`,
- * so `review`, `proposed` and `merge` read `pending`, not `skipped`, wherever
- * that recipe plans an action there — `stateOf`'s own fallback at
- * `progress.ts:338`, reached because `planned.length > 0` and `seen.length
- * === 0`.
+ * `progress.ts:60-76`).
  *
- * **Rows 15 and 15b pin the run-only history**: `claim` runs outside
- * `runPass` and a declined claim writes nothing on the work-item stream
- * (file header, `what-a-pass-writes-today.test.ts:49-54`) — the pre-existing
- * `WorkItemClaimed` row 15b's own run reads past is somebody else's claim,
- * not this run's write, so it is left out rather than pinned as if it were.
+ * **Rows 15, 15b and 15c pin no strip and no run-side history at all.** A
+ * decline at `claim` never writes a `WorkItemClaimed`, so `claimsOf(own)`
+ * (`task.ts:973`) is `[]` for this run; `loadTask` reads a run's own stream
+ * only through `streams = claims.map((c) => eventStore.read(c.runId))`
+ * (`task.ts:1485`), so that stream is never read, and `foldProgress` is never
+ * called for it either (`task.ts:1541-1542` gates on `folded.length - 1 >=
+ * 0`, and `folded = claims.map(...)` is `[]`). `history: groupHistory([...own,
+ * ...streams.flat()], attempts)` (`task.ts:1578`) therefore folds `own`
+ * alone — empty for rows 15 and 15b, whose item stream carries nothing of
+ * this run's (row 15b's item stream does carry a `WorkItemClaimed`, but by
+ * `run-somebody-else`, left out here per the note on `RUN_15b` below rather
+ * than pinned as if this run had written it), and just the two
+ * `WorkItemReleased`/`IssueUpdated` events for row 15c. None of the three
+ * calls `stripOf`, and none hands `historyOf` a fabricated `attempts` entry
+ * for this run — either would pin a page view this ending never produces.
  */
 import type { Envelope, EventType } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -104,25 +108,20 @@ function historyOf(events: readonly Envelope[], attempts: ReadonlyMap<string, nu
   }))
 }
 
-const EMPTY_PLAN: StepPlan = new Map()
-
 /**
- * A recipe with `review` and `proposed` declared, matching row 2's own — the
- * one non-empty plan this file needs, for the three rows whose `StepsResolved`
- * never lands (see the header's own paragraph on this).
+ * `historyOf`'s own blind spot (header): the `field` path of every document
+ * `splitPayload` lifted out of a line's payload, in the order the lines
+ * themselves appear. `summary` does not carry this text, so a rewrite that
+ * stops lifting one of these, or relabels its `field`, is caught here rather
+ * than nowhere.
  */
-const REVIEW_AND_PROPOSED_PLAN: StepPlan = new Map([
-  ['claim', []],
-  ['admit', []],
-  ['prepared', []],
-  ['design', []],
-  ['implement', []],
-  ['build', []],
-  ['review', [{ name: 'cold reviewer', budgetMs: null }]],
-  ['proposed', [{ name: 'the lines, until the rounds are spent', budgetMs: null }]],
-  ['merge', []],
-  ['end', []],
-])
+function documentsOf(events: readonly Envelope[], attempts: ReadonlyMap<string, number>) {
+  return groupHistory(events, attempts)
+    .flatMap((g) => g.lines)
+    .flatMap((l) => l.documents.map((d) => ({ type: l.type, field: d.field })))
+}
+
+const EMPTY_PLAN: StepPlan = new Map()
 
 /** `foldProgress` + `<Segs labels>`, reduced to one `{step, state}` pair per segment — the rail's own information content. */
 function stripOf(
@@ -764,6 +763,10 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([
+    { type: 'StepFailed', field: 'evidence' },
+    { type: 'StepPassed', field: 'evidence' },
+  ])
   expect(stripOf(runEvents, true)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -1096,6 +1099,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -1491,6 +1495,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -2123,6 +2128,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -2454,6 +2460,10 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         },
       ],
     },
+  ])
+  expect(documentsOf(all, attempts)).toEqual([
+    { type: 'WorkItemBlocked', field: 'hold.raw' },
+    { type: 'StepFailed', field: 'evidence' },
   ])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
@@ -3904,6 +3914,11 @@ it('13. a judge answer is unreadable', () => {
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([
+    { type: 'WorkItemBlocked', field: 'hold.raw' },
+    { type: 'StepFailed', field: 'evidence' },
+    { type: 'PassRouted', field: 'why' },
+  ])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -4234,6 +4249,10 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         },
       ],
     },
+  ])
+  expect(documentsOf(all, attempts)).toEqual([
+    { type: 'WorkItemBlocked', field: 'hold.raw' },
+    { type: 'StepFailed', field: 'evidence' },
   ])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
@@ -5156,6 +5175,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
       ],
     },
   ])
+  expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
     { step: 'admit', state: 'passed' },
@@ -5502,31 +5522,10 @@ const RUN_15: EventSpec[] = [
 ]
 
 it('15. a claim decline (`passed-over`) writes no work-item events', () => {
-  const runEvents = envelopesFor('run-70c33732-0ef1-4a73-bc8a-2ee675b35354', RUN_15)
-  const all = [...runEvents]
-  const attempts = new Map([['run-70c33732-0ef1-4a73-bc8a-2ee675b35354', 1]])
-  expect(historyOf(all, attempts)).toEqual([
-    {
-      label: 'attempt 1',
-      lines: [
-        { type: 'StepRequested', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepStarted', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepFailed', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-      ],
-    },
-  ])
-  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
-    { step: 'claim', state: 'failed' },
-    { step: 'admit', state: 'skipped' },
-    { step: 'prepared', state: 'skipped' },
-    { step: 'design', state: 'skipped' },
-    { step: 'implement', state: 'skipped' },
-    { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'pending' },
-    { step: 'proposed', state: 'pending' },
-    { step: 'merge', state: 'skipped' },
-    { step: 'end', state: 'skipped' },
-  ])
+  // Validates the fixture's shape; `claimsOf([])` is `[]`, so none of it
+  // reaches `loadTask`'s own reads (header).
+  envelopesFor('run-70c33732-0ef1-4a73-bc8a-2ee675b35354', RUN_15)
+  expect(historyOf([], new Map())).toEqual([])
 })
 
 // Row 15b, `what-a-pass-writes-today.test.ts:1582` — a claim decline (`not-claimed`) writes no work-item events
@@ -5558,31 +5557,11 @@ const RUN_15b: EventSpec[] = [
 ]
 
 it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
-  const runEvents = envelopesFor('run-219a4221-af5e-4e54-a5d1-16508af6b7e4', RUN_15b)
-  const all = [...runEvents]
-  const attempts = new Map([['run-219a4221-af5e-4e54-a5d1-16508af6b7e4', 1]])
-  expect(historyOf(all, attempts)).toEqual([
-    {
-      label: 'attempt 1',
-      lines: [
-        { type: 'StepRequested', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepStarted', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepFailed', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-      ],
-    },
-  ])
-  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
-    { step: 'claim', state: 'failed' },
-    { step: 'admit', state: 'skipped' },
-    { step: 'prepared', state: 'skipped' },
-    { step: 'design', state: 'skipped' },
-    { step: 'implement', state: 'skipped' },
-    { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'pending' },
-    { step: 'proposed', state: 'pending' },
-    { step: 'merge', state: 'skipped' },
-    { step: 'end', state: 'skipped' },
-  ])
+  // Validates the fixture's shape; `claimsOf` on the real item stream here
+  // yields `run-somebody-else`'s claim, never this run's, so this run's own
+  // stream is still never read by `loadTask` (header).
+  envelopesFor('run-219a4221-af5e-4e54-a5d1-16508af6b7e4', RUN_15b)
+  expect(historyOf([], new Map())).toEqual([])
 })
 
 // Row 15c, `what-a-pass-writes-today.test.ts:1626` — a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing
@@ -5619,19 +5598,12 @@ const RUN_15c: EventSpec[] = [
 ]
 
 it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing', () => {
-  const runEvents = envelopesFor('run-a694ff5c-3f7c-461a-8349-675bf58b1863', RUN_15c)
+  // Validates the fixture's shape; `claimsOf(itemEvents)` is still `[]` \u2014 a
+  // `WorkItemReleased` with no matching `WorkItemClaimed` opens nothing \u2014 so
+  // this run's own stream is never read by `loadTask` either (header).
+  envelopesFor('run-a694ff5c-3f7c-461a-8349-675bf58b1863', RUN_15c)
   const itemEvents = envelopesFor('wi-purecheck-7', ITEM_15c)
-  const all = [...runEvents, ...itemEvents]
-  const attempts = new Map([['run-a694ff5c-3f7c-461a-8349-675bf58b1863', 1]])
-  expect(historyOf(all, attempts)).toEqual([
-    {
-      label: 'attempt 1',
-      lines: [
-        { type: 'StepRequested', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepStarted', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-        { type: 'StepFailed', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
-      ],
-    },
+  expect(historyOf(itemEvents, new Map())).toEqual([
     {
       label: 'the ticket',
       lines: [
@@ -5644,18 +5616,6 @@ it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resol
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels:' },
       ],
     },
-  ])
-  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
-    { step: 'claim', state: 'failed' },
-    { step: 'admit', state: 'skipped' },
-    { step: 'prepared', state: 'skipped' },
-    { step: 'design', state: 'skipped' },
-    { step: 'implement', state: 'skipped' },
-    { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'pending' },
-    { step: 'proposed', state: 'pending' },
-    { step: 'merge', state: 'skipped' },
-    { step: 'end', state: 'skipped' },
   ])
 })
 
@@ -6141,6 +6101,10 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         },
       ],
     },
+  ])
+  expect(documentsOf(all, attempts)).toEqual([
+    { type: 'StepFailed', field: 'evidence' },
+    { type: 'StepFailed', field: 'evidence' },
   ])
   expect(stripOf(runEvents, false)).toEqual([
     { step: 'claim', state: 'passed' },
