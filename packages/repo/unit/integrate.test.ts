@@ -94,6 +94,7 @@ describe('the merge lane fetches into refs only it uses (#438)', () => {
 
     const merge = fake.calls.find((c) => c.args[0] === 'merge' && c.args[1] !== '--abort')
     expect(merge).toBeDefined()
+    expect(merge!.args).toContain('--no-ff')
     const mIndex = merge!.args.indexOf('-m')
     expect(mIndex).toBeGreaterThan(-1)
     expect(merge!.args[mIndex + 1]).toBe(`Merge branch '${BRANCH}' into HEAD`)
