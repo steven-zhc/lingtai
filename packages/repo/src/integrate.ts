@@ -469,8 +469,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // writing to the base branch. `-m` names the branch rather than the
       // lane ref it is fetched to, so `git log --merges` on the base still
       // reads `Merge branch '<branch>' into HEAD` and never a lane id.
+      // `--no-ff` is why `git log --first-parent <base>` reads one line per
+      // landing, whether or not the base moved.
       const mergedIn = yield* Effect.either(
-        at(['merge', '-m', `Merge branch '${options.branch}' into HEAD`, laneBranch], cwd),
+        at(['merge', '--no-ff', '-m', `Merge branch '${options.branch}' into HEAD`, laneBranch], cwd),
       )
       if (Either.isLeft(mergedIn)) {
         // `-z`: git's own quoting of a path with a non-ASCII, backslash,
