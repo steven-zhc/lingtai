@@ -127,7 +127,6 @@ type ActionBase = {
   plugin: string // 'run', 'agent', 'watch', 'file', …: open (principle 8)
   name: string // as the recipe writes it
   onSha: string // where the branch stood when this action's turn came, run or not
-  call: CallId | null // the paid call behind it, whose receipt #455 defines; null for commands, merges, signoffs
   evidence: string // what the plugin said, for a person; nothing branches on it; "" when not run
 }
 
@@ -253,12 +252,13 @@ by arithmetic.
 step leaves no `StepEnded`; the next one resumes from the last `StepEnded`
 and runs the interrupted step again. The verdicts of actions that had
 finished are not on the log, and per-action events would lose the action that
-was running all the same. Spend is unaffected: each paid call writes its own
-receipt when it ends (#455).
+was running all the same. Spend is unaffected: each paid call appends its own
+`RunSpent` when it returns ([0110](0110-tokens-on-the-event-money-at-display.md)).
 
-**Spend has one source.** An `Action` carries no `usage` or `costUsd`, only
-`call`, a reference to the receipt. `RunFinished`'s and the other events'
-`costUsd` go with #455, or every dollar is counted twice.
+**Spend has one source.** An `Action` carries no `usage`, no `costUsd` and no
+reference to its spend: its run's `RunSpent` is on the same pass stream with the
+same `step`, `name` and `round` (0110 §9). `RunFinished`'s and the other events'
+cost fields go in the reset, or every dollar is counted twice.
 
 ### 2. `Proposal`: why the pass is at `proposed`
 
@@ -645,7 +645,7 @@ What each event becomes in phase 2.
 | `HoldTriaged`                                                                                                      | `WaitTriaged` (0118)                                            | principle 5                                                                                                                                                                                                                                               |
 | `WorkItemReleased{runId, reason}`                                                                                  | adds `cause`                                                    | §5                                                                                                                                                                                                                                                        |
 | `IntegrationRefused{paths?, baseSha?, headSha?}`                                                                   | without the three conflict fields                               | only `hold-of.ts:188` reads them, and they are on `StepEnded`'s `Conflicted`; the lane's serialising (`laneIsBusy`), the daemon's wake (`work-loop.ts:98`) and the board (`task-view.ts:715`) read the rest                                               |
-| `RunFinished.costUsd` and the other cost fields                                                                    | #455's receipts                                                 | one source of spend                                                                                                                                                                                                                                       |
+| `RunFinished.costUsd` and the other cost fields                                                                    | `RunSpent` (0110)                                               | one source of spend                                                                                                                                                                                                                                       |
 
 **Unchanged**: `RunAwaitingInput` (a runtime's own notification, written by
 the hook, `hook-socket.ts:249`, and read by nothing that decides),

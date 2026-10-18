@@ -1,12 +1,17 @@
-# 0110 — Cost and tokens: a paid call records its tokens on the event it ends on, and money is computed only where it is displayed
+# 0110 — Spend: every paid call appends one `RunSpent`, the `spend` projection holds them, and money is computed only where it is displayed
 
-**Status** accepted · 2026-10-01
+**Status** accepted · 2026-10-01, revised 2026-10-18
 
-Every paid call records what it consumed on the event that call ends on. That
-record has two parts: the dollars the runtime itself reported (`costUsd`), and
-the token counts, kept separately rather than summed, together with the model and mode needed to price them. `costUsd` is always written, and `null` when the runtime did not say; every token field is optional, and absent means the same. Neither is ever zero for _not said_. Lingtai never computes money on the way
-into the log and never computes it inside a fold. Money is computed where it is
-displayed, from the event's own counts and occurrence time, using
+Every paid call appends one `RunSpent` when it returns, and nothing else on the
+log carries spend. A paid call is one process: one _run_. `RunSpent` records
+what the run consumed, in two parts: the dollars the runtime itself reported
+(`costUsd`), and the token counts, kept separately rather than summed, together
+with the model and mode needed to price them. `costUsd` is always written, and
+`null` when the runtime did not say; every token field is optional, and absent
+means the same. Neither is ever zero for _not said_. The `spend` projection
+folds one row per `RunSpent`. Lingtai never computes money on the way into the
+log and never computes it inside a fold. Money is computed where it is
+displayed, from the row's own counts and occurrence time, using
 [`doc/rate-card.md`](../rate-card.md), a dated table that a person appends to.
 
 ## Context
@@ -20,24 +25,41 @@ carry more than one price (Claude Opus 5 has a standard rate and a fast mode).
 The run log is deleted when a ticket lands, so a number that only reaches the
 run log is gone by the time anyone asks what the work cost.
 
+Lingtai starts a paid process in six places, and they do not end on the same
+kind of event. The implementer ends on `RunFinished`, a fix round on
+`FixApplied`, a discussion on `DiscussionAnswered`. The cold reviewer and the
+designer end inside a step's verdict, and a judge ends inside a route's
+decision, neither of which is about money. Spend written onto whichever event a
+call happens to end on has no single owner, and the three calls whose ending is
+about something else are the three whose spend is not recorded.
+
 ## Decision
 
-1. **`costUsd` is a statement the runtime made, and null means it made none.**
-   `RunFinished`, `FixApplied`, `DiscussionAnswered`, `DiscussionHeld` and
-   `HoldTriaged` ([0118](0118-a-hold-explains-itself.md) §3) in
-   `packages/domain/src/events.ts` carry `costUsd: number | null`. Claude Code
-   fills it from its receipt. Codex always records `null`, never `0`.
+1. **`RunSpent { for, runtime, turns, durationMs, usage, costUsd }`, and `costUsd` is a statement the runtime made: `null` means it made none.**
+   Claude Code fills it from its receipt; Codex always records `null`, never
+   `0`. `usage` is decision 3's five counts. `runtime` is the runtime's id.
+   There is no field for a price: it would be money on the way into the log,
+   which decision 5 forbids.
 
-2. **A paid call records its spend on the event it ends on.** For the
-   implementer that event is `RunFinished`, for the fixer `FixApplied`, and for
-   a discussion `DiscussionAnswered` and `DiscussionHeld`, and for triage
-   `HoldTriaged`, whether it advised or failed. For a reviewer or a
-   design agent it is the step event it ends on: `StepPassed`, `StepFailed`,
-   `StepDidNotFinish` or `StepNeverRan`. A runtime judge's spend goes on an
-   event, never only on a run-log line. `ActionResult`
-   (`packages/actions/src/action.ts`) carries the spend so the conductor can
-   append it. Spend is a structured field on the event and is never
-   interpolated into `evidence` prose.
+2. **One `RunSpent` per paid call, and nothing else carries spend.** Every
+   place that starts a paid process appends it; no other event has a spend
+   field. A reason may quote a number as evidence (`BudgetExhausted`'s
+   `costUsd` in [0120](0120-a-reason-is-a-type.md) §2 says how far a run got
+   before its ceiling stopped it); that is evidence about a stop, not spend,
+   and nothing sums it.
+
+   **A paid call is one process.** One `Runtime.run`, one _run_ in the
+   glossary, one `RunSpent`. A fix round is one run. A discussion question that
+   takes three processes is three runs and three `RunSpent`s.
+
+   **A run that returned a result records its spend, failed or not; a process
+   killed with no result records nothing.** Out of turns, out of dollars, a
+   failed review, an unreadable answer and a crash that still returned a
+   `RunOutcome` all append `RunSpent`. A process killed before it returned
+   anything (the wall clock, a second Ctrl+C, a crash of the conductor itself)
+   has nothing to record, and records nothing. **So spend on the log is a lower
+   bound**, and the runs it misses are the long ones: whoever reads a total
+   reads it as _at least_.
 
 3. **Tokens are recorded as five counts, accumulated across turns, never
    summed, and disjoint.** `usage` is `Usage` (`packages/domain/src/spend.ts`):
@@ -87,39 +109,114 @@ run log is gone by the time anyone asks what the work cost.
    `request.model` was absent and the run fell through to `~/.codex/config.toml`'s
    default.** A reader pricing or asserting on `usage[].model` as a runtime-reported
    fact is only safe doing so for claude-code; for Codex it is the request
-   echoed back. Entries merge by `(model, mode)` when tokens from two turns or
-   two rounds are added together (`addUsage`); a differently-keyed entry is a
-   second line in the bill, not a second count of the same one. `mode` names a
-   premium speed at the same model id, where a runtime has one. Events take
-   one array rather than loose fields, because nobody writes events by hand.
+   echoed back. Entries merge by `(model, mode)` when tokens from two turns are
+   added together (`addUsage`); a differently-keyed entry is a second line in
+   the bill, not a second count of the same one. `mode` names a premium speed
+   at the same model id, where a runtime has one. Events take one array rather
+   than loose fields, because nobody writes events by hand.
 
-4. **Every token field is optional, and none defaults to zero; `costUsd` is written, and `null` when not said.** A `.default(0)`
-   anywhere in these groups would report unknown cost as free. Optional also
-   keeps widened event types safe: a constructor that misses the field still
-   compiles and still parses, and the event reads as _not said_.
+4. **Every token field is optional, and none defaults to zero; `costUsd` is
+   written, and `null` when not said.** A `.default(0)` anywhere in these
+   groups would report unknown cost as free. That is also why there is no
+   `Reading<T>` wrapper: `null` and an absent count already say _not said_,
+   and a reported `0` is a `0`.
 
 5. **Money is never stored, and never computed in a fold.** A reducer may read
    the event and nothing else: no clock, no network, no rate table. If a fold
    priced tokens, `lingtai projection rebuild` would silently disagree with the
    live fold the day a price changed, or the day a row was added for a model
    that had none. A projection may carry the facts, `costUsd` and `usage`, as
-   columns; it never carries a price computed from them. The board, `lingtai status` and any
-   report may each price tokens at display time, from the event's counts and
-   its occurrence time.
+   columns; it never carries a price computed from them.
 
 6. **The rate card is a file that a person appends to.** `doc/rate-card.md`
    holds one row per (model, mode, `from` date), with input, output, cache-read
    and cache-write rates per million tokens. Reasoning output is charged at the
    output rate. A price change adds a new row and never edits an old one, so an
-   old event still prices at the rate in force when it happened. A model with no
-   row is _unpriced_, and that is what the reader is shown. Codex has no rows
-   today. The card is not fetched from the Models API, which carries no price,
-   and is not scraped from a pricing page.
+   old run still prices at the rate in force when it happened. A model with no
+   row is _unpriced_, and its runs are unknown under decision 7. Codex has no
+   rows today. The card is not fetched from the Models API, which carries no
+   price, and is not scraped from a pricing page.
 
-7. **`/spend` shows reported dollars, split by purpose.** `apps/board/src/app/spend/page.tsx`
-   shows one row per project for the cards currently on the board. _Work_, _Answering_ (repair spend) and _Triage_ (0118's advice on a
-   hold) are separate columns and are never folded together. The recipe limits that authorised the spend are shown beneath the
-   bill. The totals come from `ledger` in `apps/board/src/lib/board.ts`.
+7. **`/spend` shows the `spend` projection, split by purpose.**
+   `apps/board/src/app/spend/page.tsx` shows one row per project, with the
+   purposes read off `for` and never folded together, each total kept apart by
+   the rule below. The recipe limits that authorised the spend are shown beneath
+   the bill.
+
+   **A reader shows a reported dollar as fact, an estimate as an estimate, and
+   an unknown as unknown, never as $0.** Where `costUsd` was reported, that is
+   the figure. Where it was not, but the tokens were and the rate card has a
+   row for the model and mode in force at `at`, the figure is priced from the
+   tokens and marked as an estimate. Where neither holds, the run's cost is
+   unknown, and is shown as unknown. **A total keeps the three apart: the
+   reported total, the estimates listed beside it and never added into it, and
+   a count of unknown runs.** The board, `lingtai status` and any report price
+   at display time, from the row's counts and its occurrence time.
+
+8. **`RunSpent` is appended to the stream its run belongs to, and carries no
+   ticket id.** A run inside a pass (implement, a fix round, the reviewer, the
+   designer, the judge) is on the pass stream, whose `RunStarted` names its
+   ticket once. Triage is on the ticket stream. A discussion is on its
+   `chat-…` stream, whose `DiscussionRequested` names its ticket. There is no
+   transaction id: the stream already says whose history the run belongs to.
+
+9. **`for` says what the run was for**, as a tagged union:
+
+   ```ts
+   type SpentFor =
+     | { _tag: 'Action'; step: Step; name: string; round: number } // a recipe action: implement, a fix round, the reviewer, the designer
+     | { _tag: 'Judge'; when: JudgeWhen } // the judge at proposed
+     | { _tag: 'Triage'; waitId: WaitId }
+     | { _tag: 'Discussion' }
+   ```
+
+   An action's spend is the `RunSpent` on its pass stream with the same
+   `step`, `name` and `round`, so an action carries no reference to its spend
+   and there is no call id: `step`, `name` and `round` find it, which holds
+   while an action's `name` is unique within its step. A wait that a ceiling
+   stopped finds its run's spend the same way, through its `run`.
+
+10. **The six paid calls** are every place that calls `Runtime.run`:
+
+    | Run               | Where                                                            | `for`                 |
+    | ----------------- | ---------------------------------------------------------------- | --------------------- |
+    | implement         | `packages/conductor/src/conduct.ts`, the dispatch at `implement` | `Action`              |
+    | a fix round       | `conduct.ts`, the round dispatch                                 | `Action`, `round` ≥ 1 |
+    | the judge         | `conduct.ts`, `askTheAgent`                                      | `Judge`               |
+    | the cold reviewer | `packages/actions/src/agent-action.ts`, the review dispatch      | `Action`              |
+    | the designer      | `agent-action.ts`, the design dispatch                           | `Action`              |
+    | a discussion      | `apps/cli/src/discuss.ts`, `discussionAsk`                       | `Discussion`          |
+
+    Triage has no dispatch yet; when it has one, it is the seventh and appends
+    `RunSpent { for: Triage }`. A new place that starts a paid process appends
+    `RunSpent` and changes no other event.
+
+11. **The `spend` projection holds one row per `RunSpent`**: `seq`, `at`,
+    `ticket`, `pass` (null off a pass stream), `for` with its `step`, `action`
+    and `round`, `runtime`, `turns`, `duration_ms`, `cost_usd` and `usage`
+    (jsonb). The fold fills `ticket` from the pass stream's `RunStarted`, the
+    ticket stream itself, or the discussion's `DiscussionRequested`, each of
+    which it has read by then. A card's total, `/spend`'s rows and the task
+    page's list of calls are all queries over it. It is a row per run, not a
+    total per ticket, because an estimate (decision 7) needs each run's model,
+    tokens and time.
+
+12. **Ceilings are the runtime's, and read nothing on the log.**
+    `runtime.limits.usd` bounds one run and is enforced by the runtime
+    (`--max-budget-usd`) on its own count, as `turns` and `wall` are. Lingtai
+    enforces no dollar ceiling of its own — per pass, per ticket or per day.
+
+13. **Until the log's reset, the old fields are written beside `RunSpent`, and
+    every reader reads exactly one of the two.** `RunFinished`, `FixApplied`,
+    `DiscussionAnswered`, `DiscussionHeld` and `TriageAgent` keep their `turns`,
+    `costUsd` and `usage` until the reset that changes the stored events
+    ([0120](0120-a-reason-is-a-type.md)'s phase 2) removes them, with
+    `task_view`'s `cost_usd` and `repair_costs`. The `spend` fold reads
+    `RunSpent` and no other event; `task_view` reads the old fields and not
+    `RunSpent`; the card, `/spend` and the task page move to `spend` together.
+    No reader adds the two, so a dollar is never counted twice. What the old
+    fields recorded is not carried into `spend`: the reset forgets it with the
+    rest of the log.
 
 ## Consequences
 
@@ -129,18 +226,32 @@ run log is gone by the time anyone asks what the work cost.
 - Every estimate from the rate card is an estimate. The provider's own billing
   (for Claude, the Admin API's usage and cost reports) is the authority, and
   reconciling against it is a separate question.
-- Adding the groups widens several event schemas and a type that four kinds of
-  action construct. This is cheap only because every field is optional.
+- Spend on the log undercounts by exactly the runs that were killed, and those
+  are the long ones. A total is a floor, and the page says so.
+- A judge's spend is a `RunSpent` like any other. The judge still has no event
+  for its decision of its own: that is `PassRouted`.
+- There are three projections to rebuild, not two.
+- A Lingtai-enforced dollar ceiling, if one is wanted, is a new decision. It
+  would read `spend` at dispatch time and price by decision 7, which decision
+  5 allows because it is not a fold.
 
 ## Not built yet
 
-- **Reviewer and judge spend is not on an event.** `ActionResult` has no spend
-  field. The cold reviewer's turns and dollars appear only inside `evidence`
-  prose (`packages/actions/src/agent-action.ts`), and a judge's spend appears
-  only in the run log. The step events carry no spend. (#324)
-- **Nothing reads the rate card.** No code prices tokens, so a Codex step
-  shows no cost. `ledger` adds a null `costUsd` as 0 in its totals, and does not
-  show it as unknown. (#208)
+- **`RunSpent` and the `spend` projection are not built.** Every paid call
+  still records spend on the event it ends on, under decision 13's old fields.
+  The cold reviewer's and the designer's turns and dollars appear only inside
+  `evidence` prose (`packages/actions/src/agent-action.ts`), and are dropped
+  on every failure branch. A judge's spend appears only inside `PassRouted.why`
+  and the run log. Implement drops its spend when the run crashes. A
+  discussion sums its processes into one `DiscussionAnswered`.
+- **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
+  and `wait.ts`, unset.
+- **`task_view.cost_usd` is assigned, not added,** by each `RunFinished`, so a
+  card shows its latest pass's implement and nothing else; `ledger` in
+  `apps/board/src/lib/board.ts` adds a null `costUsd` as 0.
+- **Nothing reads the rate card.** No code prices tokens, so under decision 7
+  every run without a reported `costUsd`, every Codex run among them, is
+  unknown until it does. (#208)
 
 ---
 
