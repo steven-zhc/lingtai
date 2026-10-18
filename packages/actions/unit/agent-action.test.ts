@@ -1459,6 +1459,314 @@ describe("an agent's evidence on the log", () => {
 })
 
 /**
+ * **`RunSpent`, on every branch a dispatch returned a `RunOutcome` for**
+ * (`#494`, 0110 §2, §9, §10). Before this ticket only the parsed answer's
+ * `evidence` prose said what a review or design call cost, and every failure
+ * branch dropped it entirely — #485's third review round, $7.40, nowhere on
+ * `/spend`.
+ *
+ * Asserted through `runActionPipeline`, never on the bare `ActionResult`:
+ * `spent` is the action's own half of the claim, and the event the pipeline
+ * turns it into — with `step`, `name` and `round` attached — is the half a
+ * person or a fold actually reads.
+ */
+describe('RunSpent, on every branch (#494)', () => {
+  const runSpentEvents = (events: readonly ActionEvent[]): Extract<ActionEvent, { type: 'RunSpent' }>[] =>
+    events.filter((e): e is Extract<ActionEvent, { type: 'RunSpent' }> => e.type === 'RunSpent')
+
+  describe('the cold reviewer', () => {
+    it('on a pass, exactly once and before StepPassed', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: '{"findings":[]}' }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepPassed'])
+      const spent = runSpentEvents(events)
+      expect(spent).toHaveLength(1)
+      expect(spent[0]!.data).toEqual({
+        for: { _tag: 'Action', step: 'review', name: 'review', round: 0 },
+        runtime: 'claude-code',
+        turns: 7,
+        durationMs: 1234,
+        costUsd: 0.42,
+        usage: [],
+      })
+      expect(parsePayload('RunSpent', spent[0]!.data)).toEqual(spent[0]!.data)
+    })
+
+    it('on a failed verdict (findings), exactly once and before StepFailed', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+      // The step event's own schema does not change (0110 §2): spend is
+      // `RunSpent` and nothing else.
+      const failed = events.at(-1)!
+      if (failed.type !== 'StepFailed') throw new Error('expected StepFailed')
+      expect(failed.data).not.toHaveProperty('spent')
+    })
+
+    it('on an unreadable answer, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: 'looks fine to me' }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('on no-structured-answer, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [
+          actionWith(outcome({ text: null, failure: { kind: 'no-structured-answer', detail: 'retries exhausted' } })),
+        ],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('on a did-not-finish, exactly once, whatever the cause', async () => {
+      for (const kind of ['crash', 'timeout', 'out-of-turns', 'out-of-usd'] as const) {
+        const events: ActionEvent[] = []
+        await runActionPipeline({
+          step: 'review',
+          actions: [actionWith(outcome({ text: null, failure: { kind, detail: 'detail' } }))],
+          context,
+          emit: (e) => void events.push(e),
+        })
+
+        expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepDidNotFinish'])
+        expect(runSpentEvents(events)).toHaveLength(1)
+      }
+    })
+
+    it('on never-started, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: null, failure: { kind: 'never-started', detail: 'quota' } }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepNeverRan'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('carries the context round, not 0, once a fix round was bought', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: '{"findings":[]}' }))],
+        context: { ...context, round: 2 },
+        emit: (e) => void events.push(e),
+      })
+
+      expect(runSpentEvents(events)[0]!.data.for).toEqual({ _tag: 'Action', step: 'review', name: 'review', round: 2 })
+    })
+
+    it("carries the dispatched runtime's own id, not a constant", async () => {
+      const codex: Runtime = {
+        capabilities: {
+          id: 'codex',
+          hooks: [],
+          canFailClosed: true,
+          canRewriteToolCall: true,
+          providesTier: 'guarded',
+          enforces: ['turns', 'wall'],
+        },
+        run: async () => outcome({ text: '{"findings":[]}' }),
+      }
+      const action = createAgentAction(
+        { name: 'review', prompt: '' },
+        {
+          runtime: codex,
+          issue: async () => ISSUE,
+          diff: async () => 'diff --git a/x b/x\n+1',
+          settingsPath: '/tmp/settings.json',
+          limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+        },
+      )
+
+      const events: ActionEvent[] = []
+      await runActionPipeline({ step: 'review', actions: [action], context, emit: (e) => void events.push(e) })
+
+      expect(runSpentEvents(events)[0]!.data.runtime).toBe('codex')
+    })
+
+    it('writes costUsd null and usage [] through rather than defaulting either', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome({ text: '{"findings":[]}', costUsd: null }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      const spent = runSpentEvents(events)[0]!.data
+      expect(spent.costUsd).toBeNull()
+      expect(spent.usage).toEqual([])
+    })
+
+    it('writes none for an empty diff — there is no outcome to bill', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'review',
+        actions: [actionWith(outcome(), '')],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(runSpentEvents(events)).toHaveLength(0)
+    })
+
+    it('writes none when the runtime rejects — the pipeline makes up a failed with nothing to bill', async () => {
+      const rejecting: Runtime = {
+        capabilities: {
+          id: 'claude-code',
+          hooks: [],
+          canFailClosed: true,
+          canRewriteToolCall: false,
+          providesTier: 'guarded',
+          enforces: ['turns', 'wall'],
+        },
+        run: async () => {
+          throw new Error('the process died')
+        },
+      }
+      const action = createAgentAction(
+        { name: 'review', prompt: '' },
+        {
+          runtime: rejecting,
+          issue: async () => ISSUE,
+          diff: async () => 'diff --git a/x b/x\n+1',
+          settingsPath: '/tmp/settings.json',
+          limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+        },
+      )
+
+      const events: ActionEvent[] = []
+      const result = await runActionPipeline({
+        step: 'review',
+        actions: [action],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(result.failedAt).toBe('review')
+      expect(runSpentEvents(events)).toHaveLength(0)
+    })
+  })
+
+  describe('the designer', () => {
+    const drafter = (reply: RunOutcome) =>
+      createDraftAction(
+        { name: 'draft', prompt: '' },
+        {
+          runtime: reviewer(reply),
+          issue: async () => ISSUE,
+          diff: async () => '',
+          settingsPath: '/tmp/settings.json',
+          limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+        },
+      )
+
+    it('on a pass (a document), exactly once and before StepPassed', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'design',
+        actions: [drafter(outcome({ text: 'put it in packages/recipe' }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepPassed'])
+      const spent = runSpentEvents(events)
+      expect(spent).toHaveLength(1)
+      expect(spent[0]!.data).toEqual({
+        for: { _tag: 'Action', step: 'design', name: 'draft', round: 0 },
+        runtime: 'claude-code',
+        turns: 7,
+        durationMs: 1234,
+        costUsd: 0.42,
+        usage: [],
+      })
+    })
+
+    it('on a question (StepAsked), exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'design',
+        actions: [drafter(outcome({ text: '```question\nwhich reading?\n```' }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepAsked'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('on an unreadable answer, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'design',
+        actions: [drafter(outcome({ text: '```question\n\n```' }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('on a did-not-finish, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'design',
+        actions: [drafter(outcome({ text: null, failure: { kind: 'timeout', detail: 'no result within 60000ms' } }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepDidNotFinish'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+
+    it('on never-started, exactly once', async () => {
+      const events: ActionEvent[] = []
+      await runActionPipeline({
+        step: 'design',
+        actions: [drafter(outcome({ text: null, failure: { kind: 'never-started', detail: 'quota' } }))],
+        context,
+        emit: (e) => void events.push(e),
+      })
+
+      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepNeverRan'])
+      expect(runSpentEvents(events)).toHaveLength(1)
+    })
+  })
+})
+
+/**
  * **`ActionFinding` and the schema cannot diverge, because one declaration is
  * the source of both** (`#369`). `ActionFinding` is a re-export of domain's
  * `Finding` type, and `REVIEW_ANSWER_JSON_SCHEMA` is generated from the same
