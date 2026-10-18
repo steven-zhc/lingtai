@@ -436,6 +436,14 @@ async function pass(
       { name: 'draft the design', prompt: '' },
       {
         runtime: {
+          capabilities: {
+            id: 'claude-code',
+            hooks: [],
+            canFailClosed: true,
+            canRewriteToolCall: false,
+            providesTier: 'guarded',
+            enforces: ['turns', 'wall'],
+          },
           run: async (request: { prompt: string }) => {
             asked.draft.push(request.prompt)
             return {

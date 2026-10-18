@@ -276,6 +276,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       'StepRequested',
       'StepStarted',
@@ -286,6 +287,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepPassed',
       'StepRequested',
       'StepStarted',
@@ -295,21 +297,32 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     const fixApplied = theRun(store)!.find((e) => e.type === 'FixApplied')!
     expect(fixApplied.data).toMatchObject({ round: 1, said: 'done' })
 
-    // **#493**: one `RunSpent` per dispatch that returned an outcome — the
-    // first visit's at round 0, the fix round's own at the round `FixApplied`
-    // itself carries.
+    // **#493**: one `RunSpent` per `implement` dispatch that returned an
+    // outcome — the first visit's at round 0, the fix round's own at the
+    // round `FixApplied` itself carries.
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
-    expect(spent).toHaveLength(2)
-    expect(spent[0]!.data).toMatchObject({
+    const implementSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
+    expect(implementSpent).toHaveLength(2)
+    expect(implementSpent[0]!.data).toMatchObject({
       for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
     })
-    expect(spent[1]!.data).toMatchObject({
+    expect(implementSpent[1]!.data).toMatchObject({
       for: {
         _tag: 'Action',
         step: 'implement',
         name: 'write the change',
         round: (fixApplied.data as { round: number }).round,
       },
+    })
+
+    // **#494**: the cold reviewer's own `RunSpent`, one per visit, and the
+    // second visit's round is the fix round `FixApplied` carries -- the same
+    // number `implement`'s own second `RunSpent` just asserted above.
+    const reviewSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
+    expect(reviewSpent).toHaveLength(2)
+    expect(reviewSpent[0]!.data).toMatchObject({ for: { _tag: 'Action', step: 'review', round: 0 } })
+    expect(reviewSpent[1]!.data).toMatchObject({
+      for: { _tag: 'Action', step: 'review', round: (fixApplied.data as { round: number }).round },
     })
 
     const runId = theRun(store)![0]!.streamId
@@ -418,6 +431,7 @@ runtime:
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       'PassRouted',
       'RunRefsPublished',
@@ -559,6 +573,7 @@ runtime:
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       'PassRouted',
       'RunRefsPublished',
@@ -716,6 +731,7 @@ runtime:
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       'StepRequested',
       'StepStarted',
@@ -748,12 +764,16 @@ runtime:
     expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
     expect(routes[1]).toMatchObject({ from: 'implement', decision: { _tag: 'Escalated' } })
     // **#493**: a fix round that declines still returned a `RunOutcome`, so it
-    // still gets a `RunSpent` — at the round `FixApplied` itself carries.
+    // still gets a `RunSpent` — at the round `FixApplied` itself carries. And
+    // `#494`: the one review dispatch above it gets its own, at round 0.
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
-    expect(spent).toHaveLength(2)
-    expect(spent[1]!.data).toMatchObject({
+    const implementSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
+    expect(implementSpent).toHaveLength(2)
+    expect(implementSpent[1]!.data).toMatchObject({
       for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
     })
+    const reviewSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
+    expect(reviewSpent).toHaveLength(1)
   })
 
   /**
@@ -828,6 +848,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       // `PassRouted`, since `#472`: `CheckRefused` is one of the seven, so
       // `nextOf` answers `Propose` and the check's own refusal takes a
@@ -1099,6 +1120,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepAsked',
       'PassRouted',
       'RunRefsPublished',
@@ -1242,6 +1264,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepPassed',
       'StepRequested',
       'StepStarted',
+      'RunSpent',
       'StepFailed',
       'PassRouted',
       'RunRefsPublished',
@@ -1865,13 +1888,20 @@ runtime:
     // returned an outcome — a `RunSpent` at this round's own number, beside
     // the first dispatch's own at round 0.
     const spent16 = run.filter((e) => e.type === 'RunSpent')
-    expect(spent16).toHaveLength(2)
-    expect(spent16[1]!.data).toMatchObject({
+    const implementSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
+    expect(implementSpent16).toHaveLength(2)
+    expect(implementSpent16[1]!.data).toMatchObject({
       for: { _tag: 'Action', step: 'implement', round: 1 },
       turns: 8,
       costUsd: 1.5,
       usage: [],
     })
+
+    // **#494**: the cold reviewer dispatches again over the kept-but-dirty
+    // tree before the pass notices it and restarts — so its own `RunSpent`
+    // appears twice too, one per visit, the same shape `implement`'s does.
+    const reviewSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
+    expect(reviewSpent16).toHaveLength(2)
 
     // The durable row must never offer the WIP sha as something origin judged.
     const refs = run.filter((e) => e.type === 'RunRefsPublished')
