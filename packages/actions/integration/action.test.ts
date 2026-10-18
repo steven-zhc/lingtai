@@ -213,7 +213,12 @@ describe('the pipeline', () => {
     // force-push invalidates the approval instead of inheriting it.
     expect(events).toHaveLength(3)
     expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'StepPassed'])
-    for (const e of events) expect(e.data.onSha).toBe('sha-a')
+    // `RunSpent`'s own data carries no `onSha` — it is about a call, not a
+    // diff — so this excludes it rather than widening the check to match.
+    for (const e of events) {
+      if (e.type === 'RunSpent') continue
+      expect(e.data.onSha).toBe('sha-a')
+    }
   })
 
   it('runs in recipe order', async () => {
@@ -254,7 +259,10 @@ describe('the pipeline', () => {
     expect(result.ok).toBe(false)
     expect(result.failedAt).toBe('lint')
     expect(result.skipped).toEqual(['test'])
-    expect(events.map((e) => e.data.step)).not.toContain('test')
+    // `RunSpent`'s own data carries no `step` field — it names its action's
+    // step inside `for`, not beside it — so this excludes it rather than
+    // widening the check to match.
+    expect(events.filter((e) => e.type !== 'RunSpent').map((e) => e.data.step)).not.toContain('test')
     expect(events.at(-1)?.type).toBe('StepFailed')
   })
 

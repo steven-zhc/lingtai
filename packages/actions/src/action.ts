@@ -96,6 +96,13 @@ export type ActionFinding = Finding
  */
 export type InterruptedCause = Interrupted['cause']
 
+/**
+ * **What a dispatch billed, for the pipeline to turn into a `RunSpent`** —
+ * `PayloadOf<'RunSpent'>` with `for` left off, because the action knows
+ * neither its step nor its round and the pipeline knows both (#494).
+ */
+export type ActionSpent = Omit<PayloadOf<'RunSpent'>, 'for'>
+
 export interface ActionResult {
   verdict: ActionVerdict
   /**
@@ -287,6 +294,19 @@ export interface ActionResult {
    * `refuse`'s own call at `packages/repo/src/integrate.ts`.
    */
   conflict?: { paths: string[]; baseSha: string; headSha: string }
+  /**
+   * **What this dispatch billed, on every branch a runtime returned a
+   * `RunOutcome` for** (#494, 0110 §2). Absent means no process ran — the
+   * empty-diff review and a `run`/`watch`/`human`/`worktree`/`merge`/`queue`
+   * action all leave it unset, and so does a dispatch whose promise rejected:
+   * the pipeline's own `catch` makes up a `failed` with nothing to bill.
+   *
+   * The reviewer and the designer set it beside every verdict they return,
+   * never only the parsed one: a crash, a timeout, an unreadable answer and a
+   * question all come from a call that still cost money, and `evidence`'s
+   * prose has been the only record of that since the branch was written.
+   */
+  spent?: ActionSpent
 }
 
 /**
@@ -552,6 +572,9 @@ export type ActionEvent =
   | { type: 'StepAsked'; data: PayloadOf<'StepAsked'> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
   | { type: 'ApprovalRequested'; data: PayloadOf<'ApprovalRequested'> }
+  /** What a dispatch billed, on every branch that ran a process (#494). Never
+   *  a step event's field: spend is `RunSpent` and nothing else (0110 §2). */
+  | { type: 'RunSpent'; data: PayloadOf<'RunSpent'> }
 
 export interface PipelineResult {
   /** True when every action passed. Never true when one is waiting on a person. */
@@ -736,6 +759,16 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       }
     }
     context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`)
+
+    // Before any verdict branch, so none of the five can skip it (#494): a
+    // dispatch that crashed, timed out or came back unreadable still billed,
+    // and for months that cost was readable only inside `evidence`.
+    if (result.spent !== undefined) {
+      await emit({
+        type: 'RunSpent',
+        data: { for: { _tag: 'Action', step, name: action.name, round: context.round ?? 0 }, ...result.spent },
+      })
+    }
 
     results.push({
       action: action.name,
