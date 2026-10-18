@@ -31,7 +31,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { STEPS, type Envelope, type Step } from '@lingtai/domain'
+import { boardFactOf, STEPS, type BoardFact, type Envelope, type Step } from '@lingtai/domain'
 
 /**
  * What a point has come to on *this* run.
@@ -259,6 +259,15 @@ function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null 
   return step?.find((a) => a.name === String(data['action']))?.budgetMs ?? null
 }
 
+/** `StepEnded.ending` → the `StepState` it closes a point on. */
+const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['ending'], StepState> = {
+  Passed: 'passed',
+  Failed: 'failed',
+  NeverRan: 'never-ran',
+  DidNotFinish: 'did-not-finish',
+  Asked: 'asked',
+}
+
 /**
  * One point's state, from what the plan said and what the log reports.
  *
@@ -390,12 +399,20 @@ export function foldProgress(
   let roundsSpent = 0
   let roundsOf: number | null = null
 
-  const close = (data: Record<string, unknown>, state: StepState) => {
-    const key = keyOf(data)
+  const close = (key: string, state: StepState) => {
     verdicts.set(key, state)
     // Only the phase this verdict is about. A verdict for something else means
     // the log is out of order, and clearing on it would blank a live gate.
     if (now?.label === key) now = null
+  }
+
+  // The agent phase is over; the next one announces itself. Guarded on the
+  // label because a `proposed` gate can outlive the event that ended the
+  // agent, and clearing unconditionally would lose it. Shared by `RunFinished`
+  // (direct below) and the fact a `RunFailed` answers (`RunEnded`), which end
+  // the agent phase the same way.
+  const clearAgentPhase = () => {
+    if (now?.label === AGENT) now = null
   }
 
   for (const event of events) {
@@ -410,66 +427,13 @@ export function foldProgress(
         break
       }
 
-      /**
-       * **A bought round is an agent running inside the pass**, and it is the
-       * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
-       *
-       * It appends `FixRequested`, runs a fixing agent against the findings,
-       * and appends `FixApplied` when that agent is done (`conduct.ts`'s fix
-       * round). No `RunStarted` between them, because a round is a step
-       * inside a run and not a run of its own — so without this the fold had
-       * nothing in flight for the whole of that agent's run, and a card
-       * spending money to answer a refusal said the refusal was what the pass
-       * came to and that a person was being waited on. `task_view` has said
-       * `running` on this event since the day it was added (`task-view.ts:554`).
-       */
-      case 'FixRequested': {
-        // `of` is zero on every event written before the field existed, and the
-        // reading of zero is *not recorded* — the same reading, and the same
-        // sentence, as the note `task_view` writes from it.
-        const of = Number(data['of'] ?? 0)
-        const round = Number(data['round'])
-        fixing = `${FIXING} round ${String(round)}${of > 0 ? ` of ${of}` : ''}`
-        now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
-        roundsSpent = Math.max(roundsSpent, round)
-        if (of > 0) roundsOf = of
-        break
-      }
-
-      case 'FixApplied':
-        // Guarded on the label for the reason `RunFinished` is: only the phase
-        // this event is about. What follows is the point being asked again, or
-        // the refusal standing — both announce themselves.
-        if (fixing !== null && now?.label === fixing) now = null
-        break
-
-      case 'FixDeclined':
-        // No phase to clear: a decline is appended instead of a round being
-        // bought, never after one — the pass asks a person rather than going
-        // round again. `round` is "rounds already spent", the same reading
-        // `RunProgress.rounds` documents.
-        roundsSpent = Math.max(roundsSpent, Number(data['round']))
-        break
-
       case 'RunFinished':
-      case 'RunFailed':
-        // The agent phase is over; the next one announces itself. Guarded on the
-        // label because a `proposed` gate can outlive the event that ended the
-        // agent, and clearing unconditionally would lose it.
-        if (now?.label === AGENT) now = null
+        clearAgentPhase()
         break
 
       case 'StepsResolved': {
         const steps = (data['steps'] ?? []) as { step: string; actions: string[] }[]
         resolved = new Map(steps.map((p) => [p.step, p.actions]))
-        break
-      }
-
-      case 'StepRequested': {
-        const key = keyOf(data)
-        // Never over a verdict: requested and started are appended back to back,
-        // and a re-request after a force-push carries its own start.
-        if (!verdicts.has(key)) verdicts.set(key, 'pending')
         break
       }
 
@@ -480,54 +444,95 @@ export function foldProgress(
         break
       }
 
-      case 'StepPassed':
-        close(data, 'passed')
-        break
+      default: {
+        const fact = boardFactOf(event)
+        if (fact === null) break
+        switch (fact._tag) {
+          case 'ActionRequested': {
+            const key = `${fact.step}:${fact.action}`
+            // Never over a verdict: requested and started are appended back to
+            // back, and a re-request after a force-push carries its own start.
+            if (!verdicts.has(key)) verdicts.set(key, 'pending')
+            break
+          }
 
-      case 'StepFailed':
-        close(data, 'failed')
-        break
+          // One per action, because the action is run once (`#234`). `Asked`
+          // is not always the ending — a judge can send the asking step round
+          // again — but every other ending here is the pass's last word on
+          // this point.
+          case 'StepEnded':
+            close(`${fact.step}:${fact.action}`, STEP_ENDING_STATE[fact.ending])
+            break
 
-      case 'StepNeverRan':
-        close(data, 'never-ran')
-        break
+          case 'Waived':
+            close(`${fact.step}:${fact.action}`, 'waived')
+            break
 
-      case 'StepDidNotFinish':
-        // One of these per action, because the action is run once (`#234`). A
-        // point that ends here is one whose last word was this, which is what
-        // the pass stopped on.
-        close(data, 'did-not-finish')
-        break
+          case 'SignoffRequested': {
+            // A person is what this is waiting on, and a person has no
+            // timeout. The phase is still named, because "waiting, on the
+            // merge point" is the answer somebody opened the card for.
+            const key = `${fact.step}:${fact.action}`
+            verdicts.set(key, 'pending')
+            now = { label: key, since: event.at.toISOString(), budgetMs: null }
+            break
+          }
 
-      case 'StepAsked':
-        // One per action for the same reason, and its own state rather than the
-        // one above: the pass may well have gone on from here — a judge can send
-        // the asking step round again — so this is not always the ending.
-        close(data, 'asked')
-        break
+          // Maps to `passed`, not `approved` — the board's own word for a
+          // point that cleared, however it cleared.
+          case 'SignoffGranted':
+            close(`${fact.step}:${fact.action}`, 'passed')
+            break
 
-      case 'StepWaived':
-        close(data, 'waived')
-        break
+          case 'SignoffRevoked':
+            verdicts.set(`${fact.step}:${fact.action}`, 'pending')
+            break
 
-      case 'ApprovalRequested':
-        // A person is what this is waiting on, and a person has no timeout. The
-        // phase is still named, because "waiting, on the merge point" is the
-        // answer somebody opened the card for.
-        verdicts.set(keyOf(data), 'pending')
-        now = { label: keyOf(data), since: event.at.toISOString(), budgetMs: null }
-        break
+          /**
+           * **A bought round is an agent running inside the pass**, and it is the
+           * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
+           *
+           * It opens with `FixRequested`, runs a fixing agent against the
+           * findings, and ends with `FixApplied` when that agent is done
+           * (`conduct.ts`'s fix round). No `RunStarted` between them, because a
+           * round is a step inside a run and not a run of its own — so without
+           * this the fold had nothing in flight for the whole of that agent's
+           * run, and a card spending money to answer a refusal said the
+           * refusal was what the pass came to and that a person was being
+           * waited on. `task_view` has said `running` on this event since the
+           * day it was added (`task-view.ts:554`).
+           */
+          case 'RoundOpened': {
+            fixing = `${FIXING} round ${String(fact.round)}${fact.of > 0 ? ` of ${fact.of}` : ''}`
+            now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
+            roundsSpent = Math.max(roundsSpent, fact.round)
+            if (fact.of > 0) roundsOf = fact.of
+            break
+          }
 
-      case 'ApprovalGranted':
-        close(data, 'passed')
-        break
+          // Guarded on the label for the reason `RunFinished` is: only the
+          // phase this event is about. What follows is the point being asked
+          // again, or the refusal standing — both announce themselves.
+          case 'RoundEnded':
+            if (fixing !== null && now?.label === fixing) now = null
+            break
 
-      case 'ApprovalRevoked':
-        verdicts.set(keyOf(data), 'pending')
-        break
+          // No phase to clear: a decline is appended instead of a round being
+          // bought, never after one — the pass asks a person rather than going
+          // round again. `round` is "rounds already spent", the same reading
+          // `RunProgress.rounds` documents.
+          case 'RoundsDeclined':
+            roundsSpent = Math.max(roundsSpent, fact.round)
+            break
 
-      default:
-        break
+          case 'RunEnded':
+            clearAgentPhase()
+            break
+
+          default:
+            break
+        }
+      }
     }
   }
 
