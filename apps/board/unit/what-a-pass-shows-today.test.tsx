@@ -8,13 +8,19 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * **Mirrored, not imported.** #461's rows are `it`s inside a conductor test
  * that drives a real pass through fakes with ~1000 lines of its own setup;
  * none of it is exported (`doc/design/466.md:116`). Every row below rebuilds
- * the same two type sequences `what-a-pass-writes-today.test.ts` asserts —
- * `typesOf(theItem)` and `typesOf(theRun)` — captured by actually running
- * that file's own fixtures once (`packages/conductor/test/one-pass.ts`) and
- * copying the full payloads back, so every field below is a real wire shape
- * today's pass wrote and not an invented one. The row number and the
- * conductor test's own line number are on each fixture's declaration; that
- * file is the authority if the two ever disagree.
+ * `typesOf(theItem)` and `typesOf(theRun)` wherever that conductor test's own
+ * `it` block asserts them — captured by actually running that file's own
+ * fixtures once (`packages/conductor/test/one-pass.ts`) and copying the full
+ * payloads back, so every field below is a real wire shape today's pass wrote
+ * and not an invented one. **Not every row asserts both sequences there**: row
+ * 5 has no run-side assertion, 13b no item-side, 14c and 14d neither, 15/15b/15c
+ * no item-side (a declined `claim` writes nothing on the work-item stream, see
+ * below), and row 16 (`:1786`) asserts individual payload fields rather than
+ * either sequence — for those, the payloads below are still copied from the
+ * same captured run, there is simply no `typesOf` call in the companion file
+ * to point a disagreement at. The row number and the conductor test's own line
+ * number are on each fixture's declaration; that file is the authority if the
+ * two ever disagree.
  *
  * **Two helpers, so #484 edits two bodies and not forty literals.** `historyOf`
  * routes through `groupHistory` (`task.ts`) and `stripOf` through
@@ -26,7 +32,16 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  *
  * `historyOf` drops `at`, `seq` and `raw`: clock and log noise, not something
  * a person reads as meaning (`waiting-card.test.tsx`'s header makes the same
- * cut for the same reason). `stripOf` reduces the rendered `<Segs>` markup to
+ * cut for the same reason). **It also drops `documents`** — the multi-line
+ * blocks `splitPayload` lifts out of a payload string for `<Document>` to
+ * render (`history.ts:53`, `history-row.tsx:32`), which several rows below
+ * carry on `StepFailed.evidence` or `PassRouted.why`. Left out of this
+ * reduction because `summary` already carries the same text unsplit, so
+ * nothing a person reads is lost by the drop — but a rewrite that stops
+ * lifting a document, or relabels its `field`, is not something comparing
+ * `summary` strings here would catch; that is this helper's own blind spot,
+ * not clock or log noise, and is named here so the next reader knows not to
+ * trust this file for it. `stripOf` reduces the rendered `<Segs>` markup to
  * one `{step, state}` pair per segment — the rail's own information content —
  * rather than pinning the raw HTML, which would fail on an incidental
  * attribute change that pins nothing real.
@@ -36,13 +51,23 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `summarise`'s own `need()` throws on an empty string (`history.ts:108`) —
  * a real fact about today's code against this fixture, not a mistake in it.
  *
- * One `StepPlan`, empty, for the whole file: `foldProgress` reads a step's
- * planned actions off the run's own `StepsResolved` first and the passed-in
- * plan only as a fallback before that event lands (`progress.ts:539`) — every
- * fixture here carries a real `StepsResolved`, so the plan parameter is inert
- * except for `claim`, `admit` and `implement`'s own defaults, whose `planned`
- * is `[]` by the recipe's own `steps: {}` and whose state is read off the
- * verdict regardless (the big comment on `StepState`, `progress.ts:60-76`).
+ * One `StepPlan`, empty, for every fixture that carries a real
+ * `StepsResolved`: `foldProgress` reads a step's planned actions off the
+ * run's own `StepsResolved` first and the passed-in plan only as a fallback
+ * before that event lands (`progress.ts:539`), so for those rows the empty
+ * plan is inert except for `claim`, `admit` and `implement`'s own defaults,
+ * whose `planned` is `[]` by the recipe's own `steps: {}` and whose state is
+ * read off the verdict regardless (the big comment on `StepState`,
+ * `progress.ts:60-76`). **Rows 15, 15b and 15c carry no `StepsResolved` at
+ * all** — a decline at `claim` never reaches it — so for them the plan
+ * argument is the *only* source of `planned`, and `stripOf` takes one of its
+ * own rather than the file's shared empty one: a real project's recipe is
+ * known to the task page (`planFor`/`projectFilter`, `task.ts:1408`,
+ * `task.ts:1542`) whether or not this particular run ever got past `claim`,
+ * so `review`, `proposed` and `merge` read `pending`, not `skipped`, wherever
+ * that recipe plans an action there — `stateOf`'s own fallback at
+ * `progress.ts:338`, reached because `planned.length > 0` and `seen.length
+ * === 0`.
  *
  * **Rows 15 and 15b pin the run-only history**: `claim` runs outside
  * `runPass` and a declined claim writes nothing on the work-item stream
@@ -81,9 +106,31 @@ function historyOf(events: readonly Envelope[], attempts: ReadonlyMap<string, nu
 
 const EMPTY_PLAN: StepPlan = new Map()
 
+/**
+ * A recipe with `review` and `proposed` declared, matching row 2's own — the
+ * one non-empty plan this file needs, for the three rows whose `StepsResolved`
+ * never lands (see the header's own paragraph on this).
+ */
+const REVIEW_AND_PROPOSED_PLAN: StepPlan = new Map([
+  ['claim', []],
+  ['admit', []],
+  ['prepared', []],
+  ['design', []],
+  ['implement', []],
+  ['build', []],
+  ['review', [{ name: 'cold reviewer', budgetMs: null }]],
+  ['proposed', [{ name: 'the lines, until the rounds are spent', budgetMs: null }]],
+  ['merge', []],
+  ['end', []],
+])
+
 /** `foldProgress` + `<Segs labels>`, reduced to one `{step, state}` pair per segment — the rail's own information content. */
-function stripOf(runEvents: readonly Envelope[], landed: boolean): { step: string; state: string }[] {
-  const progress = foldProgress(runEvents, EMPTY_PLAN, landed)
+function stripOf(
+  runEvents: readonly Envelope[],
+  landed: boolean,
+  plan: StepPlan = EMPTY_PLAN,
+): { step: string; state: string }[] {
+  const progress = foldProgress(runEvents, plan, landed)
   const html = renderToStaticMarkup(<Segs steps={progress?.steps ?? []} at={null} labels />)
   return [...html.matchAll(/<li class="seg s-([a-z-]+)"[^>]*>.*?<span class="slab [^"]*">([a-z]+)<\/span><\/li>/g)].map(
     (m) => ({ step: m[2]!, state: m[1]! }),
@@ -5468,15 +5515,15 @@ it('15. a claim decline (`passed-over`) writes no work-item events', () => {
       ],
     },
   ])
-  expect(stripOf(runEvents, false)).toEqual([
+  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
     { step: 'claim', state: 'failed' },
     { step: 'admit', state: 'skipped' },
     { step: 'prepared', state: 'skipped' },
     { step: 'design', state: 'skipped' },
     { step: 'implement', state: 'skipped' },
     { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'skipped' },
-    { step: 'proposed', state: 'skipped' },
+    { step: 'review', state: 'pending' },
+    { step: 'proposed', state: 'pending' },
     { step: 'merge', state: 'skipped' },
     { step: 'end', state: 'skipped' },
   ])
@@ -5524,15 +5571,15 @@ it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
       ],
     },
   ])
-  expect(stripOf(runEvents, false)).toEqual([
+  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
     { step: 'claim', state: 'failed' },
     { step: 'admit', state: 'skipped' },
     { step: 'prepared', state: 'skipped' },
     { step: 'design', state: 'skipped' },
     { step: 'implement', state: 'skipped' },
     { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'skipped' },
-    { step: 'proposed', state: 'skipped' },
+    { step: 'review', state: 'pending' },
+    { step: 'proposed', state: 'pending' },
     { step: 'merge', state: 'skipped' },
     { step: 'end', state: 'skipped' },
   ])
@@ -5598,15 +5645,15 @@ it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resol
       ],
     },
   ])
-  expect(stripOf(runEvents, false)).toEqual([
+  expect(stripOf(runEvents, false, REVIEW_AND_PROPOSED_PLAN)).toEqual([
     { step: 'claim', state: 'failed' },
     { step: 'admit', state: 'skipped' },
     { step: 'prepared', state: 'skipped' },
     { step: 'design', state: 'skipped' },
     { step: 'implement', state: 'skipped' },
     { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'skipped' },
-    { step: 'proposed', state: 'skipped' },
+    { step: 'review', state: 'pending' },
+    { step: 'proposed', state: 'pending' },
     { step: 'merge', state: 'skipped' },
     { step: 'end', state: 'skipped' },
   ])

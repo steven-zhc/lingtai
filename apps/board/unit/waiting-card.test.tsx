@@ -159,6 +159,20 @@ add(
   'proposedescalated-buildred',
   (item) => [
     ...aClaim(item, 'run-pin-pe-buildred'),
+    // `conduct.ts`'s `judged = stopped === null || …` is true for every
+    // `Routed` hold (the router handing `proposed` to a person), and
+    // `onOrigin !== null` always holds here — `proposed` only runs once
+    // `implement` has committed something — so production always pairs this
+    // ending with an `ApprovalRequested{step:'proposed',action:'judge'}`
+    // (RUN_5/RUN_13 in `what-a-pass-shows-today.test.tsx`).
+    makeStream('run-pin-pe-buildred')('ApprovalRequested', {
+      step: 'proposed',
+      action: 'judge',
+      runId: 'run-pin-pe-buildred',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. tsc failed',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'run-pin-pe-buildred' },
@@ -166,9 +180,9 @@ add(
       because: { _tag: 'NotAsked' },
     }),
   ],
-  null,
+  'waiting for your review',
   'agent/473 into main is waiting on you. tsc failed',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -176,6 +190,14 @@ add(
   'proposedescalated-verifyred',
   (item) => [
     ...aClaim(item, 'run-pin-pe-verifyred'),
+    makeStream('run-pin-pe-verifyred')('ApprovalRequested', {
+      step: 'proposed',
+      action: 'judge',
+      runId: 'run-pin-pe-verifyred',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. verify red output',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'run-pin-pe-verifyred' },
@@ -183,9 +205,9 @@ add(
       because: { _tag: 'NotAsked' },
     }),
   ],
-  null,
+  'waiting for your review',
   'agent/473 into main is waiting on you. verify red output',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -193,6 +215,14 @@ add(
   'proposedescalated-mergeconflict',
   (item) => [
     ...aClaim(item, 'run-pin-pe-mergeconflict'),
+    makeStream('run-pin-pe-mergeconflict')('ApprovalRequested', {
+      step: 'proposed',
+      action: 'judge',
+      runId: 'run-pin-pe-mergeconflict',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. conflict output',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'run-pin-pe-mergeconflict' },
@@ -206,9 +236,9 @@ add(
       because: { _tag: 'NotAsked' },
     }),
   ],
-  null,
+  'waiting for your review',
   'agent/473 into main is waiting on you. conflict output',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -216,6 +246,14 @@ add(
   'proposedescalated-reviewfindings',
   (item) => [
     ...aClaim(item, 'run-pin-pe-reviewfindings'),
+    makeStream('run-pin-pe-reviewfindings')('ApprovalRequested', {
+      step: 'proposed',
+      action: 'judge',
+      runId: 'run-pin-pe-reviewfindings',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. bug',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'run-pin-pe-reviewfindings' },
@@ -228,9 +266,9 @@ add(
       because: { _tag: 'NotAsked' },
     }),
   ],
-  null,
+  'waiting for your review',
   'agent/473 into main is waiting on you. bug',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -238,6 +276,21 @@ add(
   'checkrefused',
   (item) => [
     ...aClaim(item, 'run-pin-checkrefused'),
+    // `CheckRed`'s hold reads `needs: 'acknowledgement'` (`legacy-columns.ts`),
+    // so `describeWait` still answers null for the pill — but `conduct.ts`'s
+    // `judged` is true for a `stopped.ending.ending === 'refused'` hold same as
+    // this one, and `onOrigin !== null` (the diff reached origin before
+    // `merge` ran), so production pairs this ending with
+    // `ApprovalRequested{step:'merge',action:'unfixed'}` regardless (RUN_9),
+    // which still turns on the Approve button.
+    makeStream('run-pin-checkrefused')('ApprovalRequested', {
+      step: 'merge',
+      action: 'unfixed',
+      runId: 'run-pin-checkrefused',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? the `merge` step refused: ci red (`ci`)',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'CheckRefused',
       run: { runId: 'run-pin-checkrefused' },
@@ -249,7 +302,7 @@ add(
   ],
   null,
   'the `merge` step refused: ci red',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -257,6 +310,18 @@ add(
   'mergerefused',
   (item) => [
     ...aClaim(item, 'run-pin-mergerefused'),
+    // Same shape as `CheckRefused` above — `needs: 'acknowledgement'` keeps
+    // the pill null, but `onOrigin !== null` and the refused lane's own
+    // ending still pair an `ApprovalRequested{step:'merge',action:'unfixed'}`
+    // (RUN_10b), so Approve is offered.
+    makeStream('run-pin-mergerefused')('ApprovalRequested', {
+      step: 'merge',
+      action: 'unfixed',
+      runId: 'run-pin-mergerefused',
+      onSha: SHA,
+      question: 'Merge agent/473 into main anyway? dirty-base: uncommitted changes present (`land the branch`)',
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'MergeRefused',
       run: { runId: 'run-pin-mergerefused' },
@@ -266,7 +331,7 @@ add(
   ],
   null,
   'dirty-base: uncommitted changes present',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 add(
@@ -328,6 +393,21 @@ add(
   'answerunreadable',
   (item) => [
     ...aClaim(item, 'run-pin-answerunreadable'),
+    // This variant (`step: 'review'`) only arises through `routedToReason`'s
+    // `hold.when === 'findings'` branch — a `Routed` hold, same as
+    // `ProposedEscalated` — so it reads `needs: 'judgement'` and `conduct.ts`
+    // treats it as `stopped === null`: the request it writes names
+    // `step: 'proposed', action: 'judge'` (never `'review'`/`'reviewer'`,
+    // which are the failure's own step/action, not the request's — RUN_13b).
+    makeStream('run-pin-answerunreadable')('ApprovalRequested', {
+      step: 'proposed',
+      action: 'judge',
+      runId: 'run-pin-answerunreadable',
+      onSha: SHA,
+      question:
+        "Merge agent/473 into main anyway? agent/473 into main is waiting on you. `review`'s findings could not be read at all: not json",
+      artifacts: [],
+    }),
     ...aWait(item, {
       _tag: 'AnswerUnreadable',
       run: { runId: 'run-pin-answerunreadable' },
@@ -336,9 +416,9 @@ add(
       raw: 'not json',
     }),
   ],
-  null,
+  'waiting for your review',
   'agent/473 into main is waiting on you. `review`&#x27;s findings could not be read at all: not json',
-  ['Back to the queue', 'Close'],
+  ['Approve', 'Back to the queue', 'Close'],
 )
 
 /** `<p class="question">…</p>` — `card.note`, where there is one. */
