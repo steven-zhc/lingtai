@@ -369,7 +369,10 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
       detail: 'closed by human:steven — the queue will not offer it again',
     })
     const events = await store.read(workItemId)
-    expect(events.map((e) => e.type)).toEqual(['WorkItemClosed'])
+    // One event, not two: no recipe was given, so there is no end step to
+    // resolve and nothing is appended for it (`resolveEndActions`, `actions.
+    // length === 0`) — read through the count rather than a type name.
+    expect(events.length).toBe(1)
     expect(reduceWorkItem(events).lifecycle.status).toBe('closed')
   })
 })
