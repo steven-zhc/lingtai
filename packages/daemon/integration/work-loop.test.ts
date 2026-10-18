@@ -1,4 +1,4 @@
-import { SUBSCRIBER_STREAM } from '@lingtai/domain'
+import { SUBSCRIBER_STREAM, type Envelope, type ToAppend } from '@lingtai/domain'
 /**
  * The loop, against the real log.
  *
@@ -9,6 +9,8 @@ import { SUBSCRIBER_STREAM } from '@lingtai/domain'
  * opened — and "it does not replay history" is a claim about where the
  * subscription started.
  */
+import { aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -22,6 +24,8 @@ const landed = (_id: string) => ({
   actor: 'conductor',
   data: { mergeCommit: 'abc1234', base: 'develop' },
 })
+
+const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, data: e.data })
 
 /** Waits for a condition rather than for a duration. */
 async function until(what: () => boolean, ms = 20_000): Promise<void> {
@@ -67,13 +71,11 @@ describe('the work loop', () => {
       // A run appends steadily — touched files, guard trips, gate verdicts —
       // and waking on those would start a pass while the last one is still
       // mid-agent. This one must be ignored.
-      await store.append(id, 0, [
-        {
-          type: 'WorkItemBlocked',
-          actor: 'conductor',
-          data: { hold: { _tag: 'Question', question: '?', by: 'conductor' } },
-        },
-      ])
+      await store.append(
+        id,
+        0,
+        aWait(makeStream(id), { _tag: 'OwnQuestion', question: '?', by: 'conductor' }).map(toAppend),
+      )
       await until(() => reasons.length >= 2)
       expect(reasons[1]).toBe('completion')
     } finally {

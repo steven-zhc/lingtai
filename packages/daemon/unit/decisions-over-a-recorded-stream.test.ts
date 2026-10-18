@@ -31,10 +31,14 @@ import { COMPLETION_EVENTS } from '../src/work-loop.ts'
  * change, and they are the builders' own job to keep current.
  *
  * **This is unit, by 0060 §1** (`createMemoryEventStore()`, no Postgres, no
- * network) and it is the only check of these two decisions inside the pass:
- * `work-loop.test.ts` and `converge.test.ts`/`converge-refs.test.ts` cover the
- * same ground with the hand-written wire events and are integration, which
- * `pnpm test` does not run.
+ * network) and it is the only check inside the pass of what wakes the loop:
+ * `work-loop.test.ts` covers the same ground with the hand-written wire
+ * events and is integration, which `pnpm test` does not run; so is
+ * `converge.test.ts`. `converge-refs.test.ts` is unit and does run under
+ * `pnpm test`, but its `oneStream()` answers a fixed id regardless of
+ * `query.types` (`converge-refs.test.ts:48-50`), so it never exercises the
+ * type filter `candidates()` applies — the decision this file's second half
+ * pins.
  *
  * **A red here means the reader changed.** Fix `converge.ts` or
  * `work-loop.ts` to keep agreeing with this file — never adjust what this
@@ -178,7 +182,10 @@ describe('what wakes the loop', () => {
       ['requeued', aResolution(item, { _tag: 'Requeue' })],
       ['withdrawn', aWithdrawal(item)],
       ['routed to implement', aRoute(run, { from: 'review', to: 'implement' })],
-      ['restarted at claim', aRoute(run, { from: 'proposed', to: 'claim' }, item)],
+      [
+        'restarted at claim',
+        [...aRoute(run, { from: 'proposed', to: 'claim' }, item), ...aRelease(item, run.runId, 'starting over')],
+      ],
       ['released', aRelease(item, run.runId)],
       [
         'integration refused',
@@ -190,17 +197,21 @@ describe('what wakes the loop', () => {
     const triggers = new Set<string>(COMPLETION_EVENTS)
     const woken = rows.filter(([, es]) => es.some((e) => triggers.has(e.type))).map(([label]) => label)
 
-    // `routed to implement` and `restarted at claim` stay asleep today —
-    // `PassRouted`, `FixRequested` and `PassRestarted` wake nothing. The
-    // design for #486 flags `restarted at claim` as #464's own question: the
-    // appendix gives a restart a `WorkItemReleased{cause: Restart}`, and
-    // that is the row where this list would gain one, not this ticket's.
+    // `routed to implement` stays asleep — `PassRouted` and `FixRequested`
+    // wake nothing. `restarted at claim` already wakes today: `conduct.ts`'s
+    // restart branch (`release(reason)` at `conduct.ts:3951`) calls
+    // `releaseWorkItem` (`claim.ts:143`), which appends `WorkItemReleased` on
+    // the item's own stream right after `PassRestarted` — so the row carries
+    // both, the same as a plain release. #464's appendix gives that release a
+    // `cause: Restart`; it does not decide whether this row wakes, only what
+    // the release it already makes is tagged with.
     expect(woken).toEqual([
       'own question',
       'agent question',
       'answered',
       'requeued',
       'withdrawn',
+      'restarted at claim',
       'released',
       'integration refused',
       'landed',

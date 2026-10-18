@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { selectRunnable } from '@lingtai/conductor/queue'
-import type { ProjectState } from '@lingtai/domain'
+import type { Envelope, ProjectState, ToAppend } from '@lingtai/domain'
+import { aClaim, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -50,6 +52,8 @@ const claim = (runId: string, worker: string, title: string | null = null) => ({
 /** This conductor, and the one it replaced. Two pids, one at a time. */
 const ME = 'local:11111'
 const DEAD = 'local:22222'
+
+const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, data: e.data })
 
 const started = (taskId: string) => ({
   type: 'RunStarted',
@@ -176,16 +180,21 @@ describe('reconciliation', () => {
 
     // Blocked on a person. The log is half of what they answer the question
     // with, so it must survive a reconcile that runs while they think.
-    await store.append(waitingTask, 0, [
-      claim(waiting, ME),
-      {
-        type: 'WorkItemBlocked',
-        actor: 'conductor',
-        data: {
-          hold: { _tag: 'Asked', run: { runId: waiting }, step: 'merge', question: 'merge it?' },
-        },
-      },
-    ])
+    const waitingItem = makeStream(waitingTask)
+    await store.append(
+      waitingTask,
+      0,
+      [
+        ...aClaim(waitingItem, waiting, ME),
+        ...aWait(waitingItem, {
+          _tag: 'SignoffRequired',
+          run: { runId: waiting },
+          step: 'merge',
+          action: '--no-merge',
+          question: 'merge it?',
+        }),
+      ].map(toAppend),
+    )
     await store.append(waiting, 0, [started(waitingTask)])
 
     for (const id of [landed, waiting, nameless]) await plantLog(id)
