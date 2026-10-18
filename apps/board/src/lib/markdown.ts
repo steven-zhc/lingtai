@@ -8,7 +8,7 @@
  * |---|---|
  * | `ticket-body` — a GitHub issue body | **rendered**, sanitised, no raw HTML, remote images blocked |
  * | `prompt` — the document an agent was given | **raw**, with a rendered view one click away |
- * | `log` — gate output, `RunFailed.detail`, `RepairRequested.detail`, everything else | **never** |
+ * | `log` — gate output, a failed run's detail, a retired repair's detail, everything else | **never** |
  *
  * **Never sniffed.** A build log is full of things that parse as markdown and
  * are not:
