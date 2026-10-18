@@ -898,10 +898,11 @@ export const worktreePlugin = definePlugin('worktree', {
  * today and that no amount of checking would be as good as not having.
  *
  * `strategy` has one legal value because `integrate.ts` offers one: `git merge
- * --no-edit` of the branch into the base, then a push that is a fast-forward
- * where it can be one. A second value here would be a behaviour this repository
- * does not have, declared as though it did — `#61` one level down — so the
- * enum says what the code does and grows when the code does.
+ * --no-ff` of the branch into the base, so every landing makes a merge
+ * commit, then a push that is always a fast-forward of the remote base. A
+ * second value here would be a behaviour this repository does not have,
+ * declared as though it did — `#61` one level down — so the enum says what
+ * the code does and grows when the code does.
  */
 export const mergePlugin = definePlugin('merge', {
   fields: {

@@ -109,6 +109,9 @@ describe('integrate', () => {
   it('merges a clean branch and records the merge commit', async () => {
     await branchWith('agent/1', { 'src/a.ts': 'export const a = 1;\n' })
 
+    const baseBefore = (await exec('git', ['rev-parse', 'develop'], { cwd: originPath })).stdout.trim()
+    const branchHead = (await exec('git', ['rev-parse', 'agent/1'], { cwd: originPath })).stdout.trim()
+
     const before = (await lane()).length
     const result = await integrate({ ...base(), branch: 'agent/1' })
 
@@ -122,6 +125,13 @@ describe('integrate', () => {
     // And it really landed on the base branch at origin.
     const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
     expect(log.stdout).toContain('work on agent/1')
+
+    // The base had not moved since the branch was cut, so a fast-forward was
+    // possible — and `--no-ff` is the only reason it did not happen: the
+    // landing is a merge commit with the pre-integrate base and the branch's
+    // own head as its two parents.
+    const parents = await exec('git', ['rev-list', '--parents', '-n1', result.mergeCommit], { cwd: originPath })
+    expect(parents.stdout.trim().split(' ')).toEqual([result.mergeCommit, baseBefore, branchHead])
   })
 
   /**
