@@ -33,6 +33,7 @@ import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-en
 import {
   type Hold,
   type RunRef,
+  type SpentFor,
   type Tier,
   WIP_COMMIT_PREFIX,
   legacyColumns,
@@ -2137,6 +2138,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * **One `RunSpent` per paid call that returned a `RunOutcome`** (`#493`,
+       * `#495`, 0110 §2, §9, §10) — `firstDispatch`, `fixRound` and `askTheAgent`
+       * below all call this, so none of the three can write a different shape.
+       * `for` names what the call was for, built by each caller; `usage` is `[]`
+       * rather than absent, since `RunSpent.usage` is required unlike
+       * `RunFinished.usage`; `costUsd` is copied through as the runtime reported
+       * it, `null` included, and is never defaulted to zero.
+       */
+      const runSpentFrom = (outcome: RunOutcome, forSpent: SpentFor, runtime: RuntimeId): ToAppend => ({
+        type: 'RunSpent',
+        actor: 'conductor',
+        data: parsePayload('RunSpent', {
+          for: forSpent,
+          runtime,
+          turns: outcome.turns,
+          durationMs: outcome.durationMs,
+          costUsd: outcome.costUsd,
+          usage: outcome.usage ?? [],
+        }),
+      })
+
+      /**
        * **An agent, paid for a judgement** — the dispatch a `judge: claude-code`
        * is (`#277`, [the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
        *
@@ -2176,11 +2199,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `stepsOnOffer`'s criterion rule has already refused the only purchase
        * on offer, one step further on.
        *
-       * **What it cost is in the sentence** rather than on an event of its own.
-       * `PassRouted.why` is what a person reads beside the arriving step's
-       * detail, and a judgement with no price on it is the reading `#98` is
-       * about; there is no `JudgeAsked` to fold and the route is already the
-       * record of what was decided.
+       * **What it cost is on `RunSpent`, and the decision stays in the
+       * sentence** (`#495`, 0110 *Consequences*). `PassRouted.why` is what a
+       * person reads beside the arriving step's detail, and a judgement with
+       * no price on it is the reading `#98` is about; there is still no
+       * `JudgeAsked` to fold — the route is already the record of what was
+       * decided, and what it spent is a `RunSpent` beside it.
        */
       const askTheAgent = async (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> => {
         const named = declared.named
@@ -2199,11 +2223,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // claude-code` a thing the recipe can say.
         const dispatched = runtimeNamed(declared.runtime)
         const runtime = dispatched.capabilities.id
-        // **The model is in the sentence or it is nowhere.** A judge has no event
-        // of its own by decision — *what it cost is in the sentence* — so a
-        // `judge:` whose whole point is a cheap model must say which one it
-        // bought here, where `PassRouted.why` and the run log can be read after
-        // the fact (`#314`, 0070 §2).
+        // **The model is in the sentence or it is nowhere.** `RunSpent` carries
+        // `runtime` and never `model`, so a `judge:` whose whole point is a
+        // cheap model must still say which one it bought here, where
+        // `PassRouted.why` and the run log can be read after the fact (`#314`,
+        // 0070 §2).
         const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
         const settings = await Effect.runPromise(Effect.either(host.unhookedSettings({ runId, label: 'judge', home })))
         if (Either.isLeft(settings)) {
@@ -2213,6 +2237,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`judging a "${on.when}" with ${asKnown} — ${named}`)
         runLog.note('judge', `${on.when}: asking ${asKnown}`)
 
+        // Set inside the `.catch` below: `dispatched.run` threw rather than
+        // returning, so the `RunOutcome` beneath it is made up by this
+        // function and not reported by the process — the `RunSpent` the
+        // ticket asks for is "whose process returned a `RunOutcome`", and
+        // this one did not.
+        let threw = false
         const outcome = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
@@ -2243,27 +2273,41 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     limits: spendFor(declared.limits),
                     signal: abort.signal,
                   })
-                  .catch((err) => ({
-                    exitCode: null,
-                    turns: 0,
-                    durationMs: 0,
-                    costUsd: null,
-                    failure: { kind: 'crash' as const, detail: (err as Error).message },
-                    text: null,
-                    sessionId: '',
-                    usage: undefined,
-                  })),
+                  .catch((err) => {
+                    threw = true
+                    return {
+                      exitCode: null,
+                      turns: 0,
+                      durationMs: 0,
+                      costUsd: null,
+                      failure: { kind: 'crash' as const, detail: (err as Error).message },
+                      text: null,
+                      sessionId: '',
+                      usage: undefined,
+                    }
+                  }),
               )
             }),
           ),
         )
 
-        // **Who was asked is part of what it cost** (`#314`). This string is the
-        // whole record of a judgement — there is no `JudgeAsked` to fold — and a
-        // `judge:` bought from a cheap model is one whose model has to be
-        // readable on `PassRouted.why` afterwards, or the saving is unprovable.
+        // **Who was asked is part of what it cost** (`#314`). This string is
+        // still the whole record of the *decision* — there is no `JudgeAsked`
+        // to fold — and a `judge:` bought from a cheap model is one whose
+        // model has to be readable on `PassRouted.why` afterwards, or the
+        // saving is unprovable.
         const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? '' : `, $${outcome.costUsd.toFixed(2)}`}`
         runLog.note('judge', `${on.when}: ${outcome.failure?.kind ?? 'answered'} · ${spent}`)
+        // **One `RunSpent` per dispatch whose process returned a `RunOutcome`**
+        // (`#495`, 0110 *Consequences*) — whether the judge answered, answered
+        // something the offer did not contain, or answered nothing. `threw`
+        // excludes the one path where nothing came back to report: the
+        // `.catch` above makes up a `RunOutcome` so the rest of this function
+        // can read one, and `RunSpent.turns`/`.costUsd` may never be invented
+        // numbers (`events.ts`'s own doc on `RunSpent`).
+        if (!threw) {
+          await appendNow(runId, [runSpentFrom(outcome, { _tag: 'Judge', when: on.when }, runtime)])
+        }
         /**
          * **A quota wall is the account's, so it stops the conductor rather than
          * this item** (0031 §3) — the third depth that wall is met at, after the
@@ -2930,28 +2974,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const alsoSays = (prompt: string, extra: string): string =>
         extra === '' ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`
 
-      /**
-       * **One `RunSpent` per `implement` dispatch that returned a `RunOutcome`**
-       * (`#493`, 0110 §2, §9, §10) — `firstDispatch` and `fixRound` both call
-       * this, so the two cannot write a different shape. `round` is `0` for the
-       * first visit and the fix round's own number otherwise; `usage` is `[]`
-       * rather than absent, since `RunSpent.usage` is required unlike
-       * `RunFinished.usage`; `costUsd` is copied through as the runtime reported
-       * it, `null` included, and is never defaulted to zero.
-       */
-      const runSpentFrom = (outcome: RunOutcome, name: string, round: number, runtime: RuntimeId): ToAppend => ({
-        type: 'RunSpent',
-        actor: 'conductor',
-        data: parsePayload('RunSpent', {
-          for: { _tag: 'Action', step: 'implement', name, round },
-          runtime,
-          turns: outcome.turns,
-          durationMs: outcome.durationMs,
-          costUsd: outcome.costUsd,
-          usage: outcome.usage ?? [],
-        }),
-      })
-
       const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
         const tree = cutTree()
         /**
@@ -3147,7 +3169,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               actor: 'conductor',
               data: parsePayload('RunFailed', outcome.failure),
             },
-            runSpentFrom(outcome, spec.name, 0, dispatched.capabilities.id),
+            runSpentFrom(
+              outcome,
+              { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+              dispatched.capabilities.id,
+            ),
           ])
           if (outcome.failure.kind === 'never-started') {
             // That agent touched nothing, so there is nothing in the worktree
@@ -3196,7 +3222,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
             }),
           },
-          runSpentFrom(outcome, spec.name, 0, dispatched.capabilities.id),
+          runSpentFrom(
+            outcome,
+            { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+            dispatched.capabilities.id,
+          ),
         ])
         log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
         runLog.note('run', `finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
@@ -3360,7 +3390,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
             }),
           },
-          runSpentFrom(fixed, spec.name, round, dispatched.capabilities.id),
+          runSpentFrom(
+            fixed,
+            { _tag: 'Action', step: 'implement', name: spec.name, round },
+            dispatched.capabilities.id,
+          ),
         ])
         runLog.note(
           'fix',
