@@ -15,28 +15,41 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * exported for exactly this (`#487`). `ask()`, `answer()` and `close()` take
  * no lock and are called directly.
  *
- * **Not a copy of `wait-handlers-answer-as-today.test.ts`.** That file pins
- * the same two functions called with a card's own `onSha` (`:302`'s stale-sha
- * case) and an explicit `question` (`:150`). Neither CLI wrapper sends
- * either: `apps/cli/src/approve.ts` never sets `onSha`, and
- * `apps/cli/src/ask.ts`'s `answerCommand` never sets `question`. Each
- * `describe` below says which field the CLI omits and why that changes what
- * the call accepts.
+ * **Not a reduced copy of `wait-handlers-answer-as-today.test.ts`.** Most
+ * cases below land on the same assertions as that file's, because most of
+ * its own fixtures already omit `onSha`, `question` and `onQuestion` — the
+ * CLI's shape is already their default, not something only this file builds.
+ * Keeping `not-blocked` and the stale-remote refusal here is not duplication
+ * for its own sake: both sit on `approveHolding`'s #150 guard
+ * (`approve.ts:225`), and a CLI maintainer reading only this file for what
+ * `lingtai approve`/`requeue` accept needs both gates, not only the ones the
+ * CLI's own omissions change. Three of that file's cases *are* left out on
+ * purpose, because each needs a field the CLI never builds: a card's own
+ * `onSha` (`:302`'s stale-sha case), an explicit `question` (`:150`), and
+ * `onQuestion: 'refuse'` (`:196`). Each `describe` below says which field the
+ * CLI omits and why that changes what the call accepts.
  *
  * Builders from `@lingtai/domain/test/events`, assertions through
  * `waitsOf`/`reduceWorkItem(...)`, never through a type name — the same rule
  * `wait-handlers-answer-as-today.test.ts` states for itself.
  *
- * **Two things this file does not reach:**
+ * **Three things this file does not reach:**
  * - `lingtai status`. `status()` reaches the log through `selectRunnable`/
  *   `readTasks` and is not unit-reachable (`status.test.ts`'s own header);
  *   `task-view-rebuild.test.ts` and `status.test.ts` cover it.
  * - The `busy` arm `approve()`/`requeue()` return when the lock is already
  *   held (`approve.ts:180-189`, `:501-507`). That is lock behaviour, reads
  *   no event and no `Hold`, and no read-model move changes it.
+ * - The `recipe` refusal line (`reason: 'recipe'`). `approveCommand` resolves
+ *   the recipe itself before calling `approveRun` (`approve.ts:41` and
+ *   `:54-56`) and hands it `recipe: async () => resolved` (`:72`) — a thunk
+ *   over an already-resolved value, which cannot throw. So that refusal is
+ *   unreachable from the CLI; `wait-handlers-answer-as-today.test.ts:26`
+ *   already pins `approveHolding`'s own behaviour when the thunk it is given
+ *   does throw.
  */
 import { type Envelope, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
-import { aClaim, aLanding, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { aClaim, aLanding, aRun, aRunRef, aWait, aWithdrawal } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -44,6 +57,7 @@ import { describe, expect, it } from 'vitest'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
+const SHA2 = 'b'.repeat(40)
 
 async function seed(store: EventStore, streamId: string, events: readonly Envelope[]): Promise<void> {
   await store.append(streamId, (await store.read(streamId)).length, events)
@@ -168,6 +182,28 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
   })
 
   /**
+   * **The gate `#464` could silently drop.** `approveHolding`'s #150 guard
+   * reads `item.lifecycle.status !== 'blocked'` off the fold — if a
+   * `Requeue` resolution stopped leaving a requeued item off `blocked`,
+   * this would start passing where it must refuse, and `lingtai approve`
+   * would merge a held diff onto an item a new run has already claimed.
+   */
+  it('refuses when the item is not blocked (requeued after the request)', async () => {
+    const store = createMemoryEventStore()
+    const workItemId = workItemStream(PROJECT, 114)
+    const run = aRun('run-114')
+    await seed(store, workItemId, aClaim(makeStream(workItemId), 'run-114'))
+    await seed(store, 'run-114', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
+
+    const result = await approveHolding(
+      { project: PROJECT, issue: 114, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      workItemId,
+    )
+
+    expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
+  })
+
+  /**
    * **`note` is optional here too** — `apps/cli/src/approve.ts:76` passes
    * `note: options.note`, which is `undefined` when `--note` is not given,
    * the same as this test omits it entirely.
@@ -214,47 +250,38 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
   })
 
   /**
-   * **What omitting `onSha` buys.** With it set and stale (`:302` in
-   * `wait-handlers-answer-as-today.test.ts`), `approveHolding` refuses before
-   * reading anything else. The CLI never sets it, so a card-staleness check
-   * never runs at that line — the branch's own head, read through
-   * `client.refSha`, is the only staleness check this call can ever reach.
-   * Here it agrees with the run's `onSha`, so this reaches as far as a unit
-   * test can: reading the recipe for the `end` point.
+   * **What omitting `onSha` buys, and what it does not take away.** With an
+   * explicit `onSha` set and stale (`:302` in
+   * `wait-handlers-answer-as-today.test.ts`), `approveHolding` refuses on
+   * that card-sha check before reading anything else. The CLI never sets
+   * `onSha`, so that check can never fire through this call — but the
+   * branch's own head, read through `client.refSha`, is a second staleness
+   * check this call does still reach: the remote moved since the request was
+   * recorded, with no explicit `onSha` in the way.
    */
-  it('reaches the recipe step with no card-sha check in the way', async () => {
+  it('refuses a stale remote — the branch moved since the approval was recorded', async () => {
     const store = createMemoryEventStore()
-    const workItemId = workItemStream(PROJECT, 113)
+    const workItemId = workItemStream(PROJECT, 115)
     const item = makeStream(workItemId)
-    const run = aRun('run-113')
+    const run = aRun('run-115')
     await seed(store, workItemId, [
-      ...aClaim(item, 'run-113'),
+      ...aClaim(item, 'run-115'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('run-113'),
+        run: aRunRef('run-115'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
       }),
     ])
-    await seed(store, 'run-113', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
+    await seed(store, 'run-115', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      {
-        project: PROJECT,
-        issue: 113,
-        base: 'main',
-        by: 'human:steven',
-        client: fakeClient(SHA),
-        recipe: async () => {
-          throw new Error('no recipe here')
-        },
-        store,
-      },
+      { project: PROJECT, issue: 115, base: 'main', by: 'human:steven', client: fakeClient(SHA2), store },
       workItemId,
     )
 
-    expect(result).toMatchObject({ ok: false, reason: 'recipe' })
+    expect(result).toMatchObject({ ok: false, reason: 'stale' })
   })
 })
 
@@ -296,18 +323,20 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
    * question that has moved on since is refused
    * (`wait-handlers-answer-as-today.test.ts:150`, `ask.ts:147`). The CLI
    * never sets it (`ask.ts`'s own `answerCommand`), so `options.question !==
-   * undefined` is false and that check can never fire through this call —
-   * an answer lands against whatever is currently asked, whether or not it
-   * is the question a person last read.
+   * undefined` is false and that check can never fire through this call.
+   * Withdrawing one wording and re-asking a different one is what makes
+   * "currently asked" and "the question last read" two different strings —
+   * answering the first wording still lands, against the second.
    */
   it('answers whatever is currently asked, with no check that it is the question last read', async () => {
     const store = createMemoryEventStore()
     const workItemId = workItemStream(PROJECT, 123)
-    await seed(
-      store,
-      workItemId,
-      aWait(makeStream(workItemId), { _tag: 'OwnQuestion', question: 'first wording', by: 'human:steven' }),
-    )
+    const item = makeStream(workItemId)
+    await seed(store, workItemId, [
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'first wording', by: 'human:steven' }),
+      ...aWithdrawal(item),
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'second wording', by: 'human:steven' }),
+    ])
 
     const result = await answer({ project: PROJECT, issue: 123, answer: 'the first', by: 'human:steven', store })
 
@@ -321,12 +350,16 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
   /**
    * **Pinned without `state`/`client` here.** `closeCommand` never omits
    * them — `hasGitHubApp()` refuses first (`close.ts:50-55`) — so the shape
-   * this `describe` exercises is not literally the CLI's own call. But the
-   * four refusals below (blank reason, already closed, landed, and the bare
-   * append) read no field `state`/`client` touch, so a fake recipe-reading
-   * GitHub client would pin nothing these do not; `packages/conductor/unit/
-   * close.test.ts`'s "closing runs the end point" describe already covers
-   * the `state`/`client` half, against this repository's own recipe.
+   * this `describe` exercises is not literally the CLI's own call. The first
+   * three cases below (blank reason, already closed, landed) are genuine
+   * refusals that read no field `state`/`client` touch, so a fake
+   * recipe-reading GitHub client would pin nothing these do not. The fourth
+   * is not a refusal, and is not shape-independent: its `events.length` of 1
+   * holds only because `recipe` is omitted too, so there is no `end` step to
+   * resolve. With the CLI's own `state`/`client`/`recipe` the same close
+   * appends two events — `packages/conductor/unit/close.test.ts:192`'s
+   * "resolves the point in the same append as the outcome" pins that count
+   * against this repository's own recipe.
    */
   it('refuses a blank reason', async () => {
     const store = createMemoryEventStore()
