@@ -22,12 +22,13 @@
  */
 import { cleared, type Action, type Assessment, type NeverStarted, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
-import type { PayloadOf } from './events.ts'
-import type { Hold } from './hold.ts'
+import type { BlockRecommendation, PayloadOf } from './events.ts'
+import { Hold } from './hold.ts'
 import { legacyColumns, type LegacyColumns } from './legacy-columns.ts'
 import type { Restart } from './pass-next.ts'
 import type { Proposal } from './proposal.ts'
 import type { CandidateNext, RouteDecision as RouteDecisionT } from './routing.ts'
+import type { TriageResult } from './triage.ts'
 import type { Finding, RefusalReason, Step } from './vocabulary.ts'
 import { STEPS } from './vocabulary.ts'
 import type { EscalationBecause, Resolution, RunRef, WaitReason } from './wait.ts'
@@ -1544,6 +1545,292 @@ export function attemptFactOf(event: Envelope): AttemptFact | null {
         key: `${d.step}:${d.action}`,
         refused: { evidence: d.evidence, findings: d.findings },
       }
+    }
+
+    default:
+      return null
+  }
+}
+
+// -------------------------------------------------------------- boardFactOf ----
+
+/**
+ * What the board's history, progress strip and task fold (`#484`) read off
+ * one event at a time — never `stepOutcomesOf`/`routesOf`/`waitsOf`/
+ * `releaseCauseOf`, for `findingsRaisedOf`'s own reasons above, and never
+ * `cardFactOf`: that fact answers for `task_view`, and three of its variants
+ * disagree with what the board has always meant by the same event —
+ * `FixApplied` is `null` where `cardFactOf` reads no cost, and the board
+ * clears its fixing phase on every one; `ApprovalGranted` is `'approved'`
+ * there and `'passed'` here; and `StepRequested` is not `cardFactOf`'s at
+ * all, though the board's progress strip and task fold both read it.
+ *
+ * **Copy, never default.** Every field below is the payload's own value,
+ * unconverted — a caller's own fallback (`history.ts`'s `need`/`clip`) is
+ * what a missing field still gets, exactly as it did before this existed.
+ */
+export type BoardFact =
+  | { readonly _tag: 'ActionRequested'; readonly step: Step; readonly action: string }
+  | {
+      readonly _tag: 'StepEnded'
+      readonly ending: 'Passed' | 'Failed' | 'NeverRan' | 'DidNotFinish' | 'Asked'
+      readonly step: Step
+      readonly action: string
+      readonly evidence: string | undefined
+      readonly detail: string | undefined
+      readonly findings: readonly Finding[] | undefined
+      readonly unreadable: true | undefined
+    }
+  | {
+      readonly _tag: 'Waived'
+      readonly step: Step
+      readonly action: string
+      readonly by: string
+      readonly reason: string
+    }
+  | {
+      readonly _tag: 'SignoffRequested'
+      readonly step: Step
+      readonly action: string
+      readonly question: string
+      readonly onSha: string
+    }
+  | {
+      readonly _tag: 'SignoffGranted'
+      readonly step: Step
+      readonly action: string
+      readonly by: string
+      readonly note: string
+    }
+  | {
+      readonly _tag: 'SignoffRevoked'
+      readonly step: Step
+      readonly action: string
+      readonly by: string
+      readonly reason: string
+      readonly onSha: string
+    }
+  | {
+      readonly _tag: 'RoundOpened'
+      readonly round: number
+      readonly of: number
+      readonly action: string
+      readonly findings: readonly Finding[]
+    }
+  | {
+      readonly _tag: 'RoundEnded'
+      readonly round: number
+      readonly headSha: string | null
+      readonly turns: number
+      readonly costUsd: number | null
+      readonly failure: string | null
+    }
+  | { readonly _tag: 'RoundsDeclined'; readonly round: number; readonly action: string; readonly why: string }
+  | {
+      readonly _tag: 'Restarted'
+      readonly restart: number
+      readonly of: number
+      readonly action: string
+      readonly branch: string
+      readonly rounds: number
+      readonly findings: readonly Finding[]
+    }
+  | {
+      readonly _tag: 'WaitStarted'
+      readonly question: string | undefined
+      readonly needs: string | null | undefined
+      readonly recommendation: BlockRecommendation | null | undefined
+    }
+  | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly withdrawn: boolean }
+  | { readonly _tag: 'WaitTriaged'; readonly attempt: number; readonly result: TriageResult }
+  | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
+  | { readonly _tag: 'RepairBought'; readonly attempt: number; readonly reason: string }
+  | { readonly _tag: 'RepairRefused'; readonly reason: string; readonly why: string }
+
+/**
+ * `WorkItemBlocked`'s `question`/`needs`/`recommendation`, read the way
+ * `history.ts`'s own formatter did before this existed — `Hold.safeParse`
+ * then `legacyColumns`, or (the hold did not parse) the v1/v2 fields it
+ * carried instead — moved verbatim rather than reinvented, so an
+ * unparseable hold with no v1 `question` field still answers `undefined`
+ * here and the caller's own `need`, which throws on that, is what sends the
+ * row to the raw payload — exactly as it did inline.
+ */
+function waitStartedOf(data: Record<string, unknown>): Extract<BoardFact, { _tag: 'WaitStarted' }> {
+  const parsed = Hold.safeParse(data['hold'])
+  const cols = parsed.success ? legacyColumns(parsed.data) : null
+  const fallbackQuestion = data['question']
+  const question = cols
+    ? cols.question
+    : typeof fallbackQuestion === 'string' && fallbackQuestion !== ''
+      ? fallbackQuestion
+      : undefined
+  const needs = cols ? cols.needs : (data['needs'] as string | null | undefined)
+  const recommendation = cols
+    ? (cols.diagnosis?.recommendation ?? null)
+    : (data['diagnosis'] as { recommendation?: BlockRecommendation | null } | null | undefined)?.recommendation
+  return { _tag: 'WaitStarted', question, needs, recommendation }
+}
+
+/** `boardFactOf`'s one entry point — see the section header for what it does and does not answer. */
+export function boardFactOf(event: Envelope): BoardFact | null {
+  switch (event.type) {
+    case 'StepRequested': {
+      const d = event.data as PayloadOf<'StepRequested'>
+      return { _tag: 'ActionRequested', step: d.step, action: d.action }
+    }
+
+    case 'StepPassed': {
+      const d = event.data as PayloadOf<'StepPassed'>
+      return {
+        _tag: 'StepEnded',
+        ending: 'Passed',
+        step: d.step,
+        action: d.action,
+        evidence: d.evidence,
+        detail: undefined,
+        findings: d.findings,
+        unreadable: undefined,
+      }
+    }
+
+    case 'StepFailed': {
+      const d = event.data as PayloadOf<'StepFailed'>
+      return {
+        _tag: 'StepEnded',
+        ending: 'Failed',
+        step: d.step,
+        action: d.action,
+        evidence: d.evidence,
+        detail: undefined,
+        findings: d.findings,
+        unreadable: d.unreadable,
+      }
+    }
+
+    case 'StepNeverRan': {
+      const d = event.data as PayloadOf<'StepNeverRan'>
+      return {
+        _tag: 'StepEnded',
+        ending: 'NeverRan',
+        step: d.step,
+        action: d.action,
+        evidence: undefined,
+        detail: d.detail,
+        findings: undefined,
+        unreadable: undefined,
+      }
+    }
+
+    case 'StepDidNotFinish': {
+      const d = event.data as PayloadOf<'StepDidNotFinish'>
+      return {
+        _tag: 'StepEnded',
+        ending: 'DidNotFinish',
+        step: d.step,
+        action: d.action,
+        evidence: undefined,
+        detail: d.detail,
+        findings: undefined,
+        unreadable: undefined,
+      }
+    }
+
+    case 'StepAsked': {
+      const d = event.data as PayloadOf<'StepAsked'>
+      return {
+        _tag: 'StepEnded',
+        ending: 'Asked',
+        step: d.step,
+        action: d.action,
+        evidence: undefined,
+        detail: d.detail,
+        findings: undefined,
+        unreadable: undefined,
+      }
+    }
+
+    case 'StepWaived': {
+      const d = event.data as PayloadOf<'StepWaived'>
+      return { _tag: 'Waived', step: d.step, action: d.action, by: d.by, reason: d.reason }
+    }
+
+    case 'ApprovalRequested': {
+      const d = event.data as PayloadOf<'ApprovalRequested'>
+      return { _tag: 'SignoffRequested', step: d.step, action: d.action, question: d.question, onSha: d.onSha }
+    }
+
+    case 'ApprovalGranted': {
+      const d = event.data as PayloadOf<'ApprovalGranted'>
+      return { _tag: 'SignoffGranted', step: d.step, action: d.action, by: d.by, note: d.note }
+    }
+
+    case 'ApprovalRevoked': {
+      const d = event.data as PayloadOf<'ApprovalRevoked'>
+      return { _tag: 'SignoffRevoked', step: d.step, action: d.action, by: d.by, reason: d.reason, onSha: d.onSha }
+    }
+
+    case 'FixRequested': {
+      const d = event.data as PayloadOf<'FixRequested'>
+      return { _tag: 'RoundOpened', round: d.round, of: d.of, action: d.action, findings: d.findings }
+    }
+
+    case 'FixApplied': {
+      const d = event.data as PayloadOf<'FixApplied'>
+      return {
+        _tag: 'RoundEnded',
+        round: d.round,
+        headSha: d.headSha,
+        turns: d.turns,
+        costUsd: d.costUsd,
+        failure: d.failure,
+      }
+    }
+
+    case 'FixDeclined': {
+      const d = event.data as PayloadOf<'FixDeclined'>
+      return { _tag: 'RoundsDeclined', round: d.round, action: d.action, why: d.why }
+    }
+
+    case 'PassRestarted': {
+      const d = event.data as PayloadOf<'PassRestarted'>
+      return {
+        _tag: 'Restarted',
+        restart: d.restart,
+        of: d.of,
+        action: d.action,
+        branch: d.branch,
+        rounds: d.rounds,
+        findings: d.findings,
+      }
+    }
+
+    case 'RunFailed': {
+      const d = event.data as PayloadOf<'RunFailed'>
+      return { _tag: 'RunEnded', kind: d.kind, detail: d.detail }
+    }
+
+    case 'WorkItemBlocked':
+      return waitStartedOf(event.data as Record<string, unknown>)
+
+    case 'WorkItemUnblocked': {
+      const d = event.data as PayloadOf<'WorkItemUnblocked'>
+      return { _tag: 'WaitResolved', by: d.by, note: d.note, withdrawn: d.withdrawn === true }
+    }
+
+    case 'HoldTriaged': {
+      const d = event.data as PayloadOf<'HoldTriaged'>
+      return { _tag: 'WaitTriaged', attempt: d.attempt, result: d.result }
+    }
+
+    case 'RepairRequested': {
+      const d = event.data as PayloadOf<'RepairRequested'>
+      return { _tag: 'RepairBought', attempt: d.attempt, reason: d.reason }
+    }
+
+    case 'RepairDeclined': {
+      const d = event.data as PayloadOf<'RepairDeclined'>
+      return { _tag: 'RepairRefused', reason: d.reason, why: d.why }
     }
 
     default:

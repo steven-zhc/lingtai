@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import { wellFormed, type Action, type StepOutcome } from '../src/action.ts'
 import { holdOf } from '../src/adapters.ts'
-import { READ, releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
+import { boardFactOf, READ, releaseCauseOf, routesOf, stepOutcomesOf, waitsOf } from '../src/read-model.ts'
 import { STEPS } from '../src/vocabulary.ts'
 import {
   aClaim,
@@ -1807,5 +1807,370 @@ describe('releaseCauseOf', () => {
       ...aRelease(itemStream, run.runId),
     ]
     expect(releaseCauseOf(events)).toEqual([{ _tag: 'NeverStarted', scope: 'conductor' }])
+  })
+})
+
+/**
+ * `boardFactOf` — #484's one-per-event fact for the board's history,
+ * progress strip and task fold. One case per owned type, `null` for a type
+ * it does not own, and one case where a missing field stays `undefined`
+ * rather than defaulted.
+ */
+describe('boardFactOf', () => {
+  it('answers ActionRequested for StepRequested', () => {
+    const stream = makeStream('run-board-1')
+    const event = stream('StepRequested', { step: 'build', action: 'typecheck', runId: 'run-board-1', onSha })
+    expect(boardFactOf(event)).toEqual({ _tag: 'ActionRequested', step: 'build', action: 'typecheck' })
+  })
+
+  it('answers StepEnded{ending: "Passed"} for StepPassed, findings carried verbatim', () => {
+    const stream = makeStream('run-board-2')
+    const event = stream('StepPassed', {
+      step: 'review',
+      action: 'cold reviewer',
+      runId: 'run-board-2',
+      onSha,
+      evidence: 'looks right',
+      findings: [],
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'StepEnded',
+      ending: 'Passed',
+      step: 'review',
+      action: 'cold reviewer',
+      evidence: 'looks right',
+      detail: undefined,
+      findings: [],
+      unreadable: undefined,
+    })
+  })
+
+  it('answers StepEnded{ending: "Failed"}, carrying unreadable when the answer could not be read', () => {
+    const stream = makeStream('run-board-3')
+    const event = stream('StepFailed', {
+      step: 'review',
+      action: 'cold reviewer',
+      runId: 'run-board-3',
+      onSha,
+      evidence: 'not valid JSON',
+      findings: [],
+      unreadable: true,
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'StepEnded',
+      ending: 'Failed',
+      step: 'review',
+      action: 'cold reviewer',
+      evidence: 'not valid JSON',
+      detail: undefined,
+      findings: [],
+      unreadable: true,
+    })
+  })
+
+  it('answers StepEnded{ending: "NeverRan"}, carrying detail rather than evidence', () => {
+    const stream = makeStream('run-board-4')
+    const event = stream('StepNeverRan', {
+      step: 'review',
+      action: 'cold reviewer',
+      runId: 'run-board-4',
+      onSha,
+      detail: 'the account was over budget',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'StepEnded',
+      ending: 'NeverRan',
+      step: 'review',
+      action: 'cold reviewer',
+      evidence: undefined,
+      detail: 'the account was over budget',
+      findings: undefined,
+      unreadable: undefined,
+    })
+  })
+
+  it('answers StepEnded{ending: "DidNotFinish"}', () => {
+    const stream = makeStream('run-board-5')
+    const event = stream('StepDidNotFinish', {
+      step: 'implement',
+      action: 'write the change',
+      runId: 'run-board-5',
+      onSha,
+      detail: 'the reviewer did not finish (crash): segfault',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'StepEnded',
+      ending: 'DidNotFinish',
+      step: 'implement',
+      action: 'write the change',
+      evidence: undefined,
+      detail: 'the reviewer did not finish (crash): segfault',
+      findings: undefined,
+      unreadable: undefined,
+    })
+  })
+
+  it('answers StepEnded{ending: "Asked"}', () => {
+    const stream = makeStream('run-board-6')
+    const event = stream('StepAsked', {
+      step: 'design',
+      action: 'drafter',
+      runId: 'run-board-6',
+      onSha,
+      detail: 'which assumption should I state?',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'StepEnded',
+      ending: 'Asked',
+      step: 'design',
+      action: 'drafter',
+      evidence: undefined,
+      detail: 'which assumption should I state?',
+      findings: undefined,
+      unreadable: undefined,
+    })
+  })
+
+  it('answers Waived for StepWaived', () => {
+    const stream = makeStream('run-board-7')
+    const event = stream('StepWaived', {
+      step: 'merge',
+      action: 'lane',
+      runId: 'run-board-7',
+      onSha,
+      by: 'steven',
+      reason: 'already reviewed by hand',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'Waived',
+      step: 'merge',
+      action: 'lane',
+      by: 'steven',
+      reason: 'already reviewed by hand',
+    })
+  })
+
+  it('answers SignoffRequested for ApprovalRequested', () => {
+    const stream = makeStream('run-board-8')
+    const event = stream('ApprovalRequested', {
+      step: 'merge',
+      action: 'lane',
+      runId: 'run-board-8',
+      onSha,
+      question: 'merge this?',
+      artifacts: [],
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'SignoffRequested',
+      step: 'merge',
+      action: 'lane',
+      question: 'merge this?',
+      onSha,
+    })
+  })
+
+  it('answers SignoffGranted for ApprovalGranted', () => {
+    const stream = makeStream('run-board-9')
+    const event = stream('ApprovalGranted', {
+      step: 'merge',
+      action: 'lane',
+      runId: 'run-board-9',
+      onSha,
+      by: 'steven',
+      note: 'looks right',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'SignoffGranted',
+      step: 'merge',
+      action: 'lane',
+      by: 'steven',
+      note: 'looks right',
+    })
+  })
+
+  it('answers SignoffRevoked for ApprovalRevoked', () => {
+    const stream = makeStream('run-board-10')
+    const event = stream('ApprovalRevoked', {
+      step: 'merge',
+      action: 'lane',
+      runId: 'run-board-10',
+      onSha,
+      by: 'steven',
+      reason: 'withdrawn',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'SignoffRevoked',
+      step: 'merge',
+      action: 'lane',
+      by: 'steven',
+      reason: 'withdrawn',
+      onSha,
+    })
+  })
+
+  it('answers RoundOpened for FixRequested', () => {
+    const stream = makeStream('run-board-11')
+    const event = stream('FixRequested', {
+      runId: 'run-board-11',
+      round: 1,
+      of: 2,
+      action: 'cold reviewer',
+      onSha,
+      findings: [],
+    })
+    expect(boardFactOf(event)).toEqual({ _tag: 'RoundOpened', round: 1, of: 2, action: 'cold reviewer', findings: [] })
+  })
+
+  it('answers RoundEnded for every FixApplied, including one that cost nothing', () => {
+    const stream = makeStream('run-board-12')
+    const event = stream('FixApplied', {
+      runId: 'run-board-12',
+      round: 1,
+      headSha: null,
+      turns: 1,
+      costUsd: null,
+      failure: null,
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'RoundEnded',
+      round: 1,
+      headSha: null,
+      turns: 1,
+      costUsd: null,
+      failure: null,
+    })
+  })
+
+  it('answers RoundsDeclined for FixDeclined', () => {
+    const stream = makeStream('run-board-13')
+    const event = stream('FixDeclined', {
+      runId: 'run-board-13',
+      round: 2,
+      action: 'cold reviewer',
+      why: 'two agents disagreed',
+      findings: [],
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'RoundsDeclined',
+      round: 2,
+      action: 'cold reviewer',
+      why: 'two agents disagreed',
+    })
+  })
+
+  it('answers Restarted for PassRestarted', () => {
+    const stream = makeStream('wi-board-14')
+    const event = stream('PassRestarted', {
+      runId: 'run-board-14',
+      restart: 1,
+      of: 2,
+      action: 'cold reviewer',
+      rounds: 3,
+      branch: 'agent/14',
+      headSha: onSha,
+      findings: [],
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'Restarted',
+      restart: 1,
+      of: 2,
+      action: 'cold reviewer',
+      branch: 'agent/14',
+      rounds: 3,
+      findings: [],
+    })
+  })
+
+  it('answers RunEnded for RunFailed', () => {
+    const stream = makeStream('run-board-15')
+    const event = stream('RunFailed', { kind: 'crash', detail: 'segfault' })
+    expect(boardFactOf(event)).toEqual({ _tag: 'RunEnded', kind: 'crash', detail: 'segfault' })
+  })
+
+  it('answers WaitStarted for WorkItemBlocked, through Hold.safeParse and legacyColumns', () => {
+    const itemStream = makeStream('wi-board-16')
+    const [event] = aWait(itemStream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' })
+    expect(boardFactOf(event!)).toEqual({
+      _tag: 'WaitStarted',
+      question: 'which base?',
+      needs: 'judgement',
+      recommendation: null,
+    })
+  })
+
+  it('answers WaitStarted{question: undefined} when the hold does not parse and there is no v1 question field', () => {
+    // Bypasses `parsePayload` on purpose — the v1/v2 fallback this exercises
+    // is for a payload that predates the `{hold}` schema `WorkItemBlocked`
+    // enforces today, which `makeStream` cannot construct.
+    const event = {
+      seq: 999_999n,
+      streamId: 'wi-board-17',
+      version: 1,
+      type: 'WorkItemBlocked' as const,
+      schemaVer: 1,
+      data: { hold: { _tag: 'SomethingThisBuildHasNeverHeardOf' } },
+      actor: 'conductor',
+      causation: null,
+      at: new Date('2026-08-31T12:00:00.000Z'),
+    }
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'WaitStarted',
+      question: undefined,
+      needs: undefined,
+      recommendation: undefined,
+    })
+  })
+
+  it('answers WaitResolved for WorkItemUnblocked', () => {
+    const itemStream = makeStream('wi-board-18')
+    const event = itemStream('WorkItemUnblocked', { by: 'steven', note: 'requeue', withdrawn: true })
+    expect(boardFactOf(event)).toEqual({ _tag: 'WaitResolved', by: 'steven', note: 'requeue', withdrawn: true })
+  })
+
+  it('answers WaitTriaged for HoldTriaged', () => {
+    const itemStream = makeStream('wi-board-19')
+    const result = { _tag: 'Failed' as const, failure: 'could not read the diff' }
+    const event = itemStream('HoldTriaged', {
+      attempt: 1,
+      blocked: 1,
+      headSha: onSha,
+      result,
+      by: { _tag: 'Mechanical' },
+    })
+    expect(boardFactOf(event)).toEqual({ _tag: 'WaitTriaged', attempt: 1, result })
+  })
+
+  it('answers RepairBought for RepairRequested', () => {
+    const itemStream = makeStream('wi-board-20')
+    const event = itemStream('RepairRequested', {
+      runId: 'run-board-20',
+      reason: 'verify-failed',
+      detail: 'exit 1',
+      fingerprint: '0123456789ab',
+      attempt: 1,
+    })
+    expect(boardFactOf(event)).toEqual({ _tag: 'RepairBought', attempt: 1, reason: 'verify-failed' })
+  })
+
+  it('answers RepairRefused for RepairDeclined', () => {
+    const itemStream = makeStream('wi-board-21')
+    const event = itemStream('RepairDeclined', {
+      runId: 'run-board-21',
+      reason: 'verify-failed',
+      detail: 'exit 1',
+      fingerprint: '0123456789ab',
+      why: 'a repair was already bought for this',
+    })
+    expect(boardFactOf(event)).toEqual({
+      _tag: 'RepairRefused',
+      reason: 'verify-failed',
+      why: 'a repair was already bought for this',
+    })
+  })
+
+  it('answers null for a type it does not own', () => {
+    const itemStream = makeStream('wi-board-22')
+    const [event] = aClaim(itemStream, 'run-board-22')
+    expect(boardFactOf(event!)).toBeNull()
   })
 })
