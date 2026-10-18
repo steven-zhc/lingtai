@@ -241,9 +241,9 @@ export async function askKinds(
  */
 export async function liveHistory(project: string): Promise<readonly string[]> {
   const { log, processTicketSql } = await import('@lingtai/event-store')
-  const { parseWorkItemStream } = await import('@lingtai/domain')
+  const { parseWorkItemStream, workItemStreamsOf } = await import('@lingtai/domain')
   const { dbTickets } = await import('@lingtai/conductor/db-tickets')
-  const streams = await log.queries.projectStreams(`wi-${project}-`)
+  const streams = await log.queries.projectStreams(workItemStreamsOf(project))
   const wiStreams = streams.filter((id) => parseWorkItemStream(id)?.project === project)
   const sql = await processTicketSql()
   const dbTicketRows = await dbTickets(sql, project).listIssuesSince(new Date(0))

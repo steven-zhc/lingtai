@@ -23,7 +23,7 @@
  * GitHub, the kind is a label, so is a hold, and the key is a comment in the
  * body.
  */
-import { parseWorkItemStream, type ProjectState } from '@lingtai/domain'
+import { parseWorkItemStream, type ProjectState, workItemStreamsOf } from '@lingtai/domain'
 import type { LogQueries, TicketSql } from '@lingtai/event-store'
 import { BodyChanged, type GitHubClient } from '@lingtai/github'
 import type { Recipe } from '@lingtai/recipe'
@@ -262,7 +262,7 @@ export async function ticketsFor(
   const already = await tickets.listIssuesSince(new Date(0))
   if (already.length === 0) {
     const log = options.log ?? (await defaultLogQueries())
-    const streams = (await log.projectStreams(`wi-${project}-`)).filter(
+    const streams = (await log.projectStreams(workItemStreamsOf(project))).filter(
       (id) => parseWorkItemStream(id)?.project === project,
     )
     if (streams.length > 0) throw new TicketSourceConflict(project, streams)

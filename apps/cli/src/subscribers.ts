@@ -37,7 +37,7 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  */
 import { runnableEnv, extensionEnv, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { type Envelope, type PayloadOf, workItemOf } from '@lingtai/domain'
+import { type Envelope, isPassStream, type PayloadOf, workItemOf } from '@lingtai/domain'
 import { BOARD_PORT, boardUrl } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -114,7 +114,7 @@ export function createSubjectResolver(
   return async (event) => {
     const named = workItemOf(event)
     if (named !== null) return subjectOf(named.project, named.issue)
-    if (!event.streamId.startsWith('run-')) return null
+    if (!isPassStream(event.streamId)) return null
     return runSubject(event.streamId, store)
   }
 }

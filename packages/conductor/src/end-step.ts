@@ -38,7 +38,7 @@
  * A project that configures no `end` at all still writes nothing. There the
  * skip is the user's decision, and `StepsResolved` already records it.
  */
-import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
+import { type Envelope, parsePayload, parseWorkItemStream, type PayloadOf, type ToAppend } from '@lingtai/domain'
 import type { LogQueries } from '@lingtai/event-store/log'
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
@@ -204,12 +204,11 @@ export interface UnresolvedEnd {
  * does not need it.
  */
 export function splitWorkItem(streamId: string): { project: string; issue: number } | null {
-  const body = streamId.startsWith('wi-') ? streamId.slice(3) : streamId
-  const cut = body.lastIndexOf('-')
-  if (cut < 0) return null
-  const issue = Number(body.slice(cut + 1))
+  const split = parseWorkItemStream(streamId)
+  if (split === null) return null
+  const issue = Number(split.issue)
   if (!Number.isInteger(issue)) return null
-  return { project: body.slice(0, cut), issue }
+  return { project: split.project, issue }
 }
 
 /**

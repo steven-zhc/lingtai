@@ -72,6 +72,7 @@ import {
   parsePayload,
   reduceWorkItem,
   WAIT_EVENTS,
+  WORK_ITEM_STREAM_PREFIX,
   type LabelState,
   type PayloadOf,
   type ProjectState,
@@ -287,7 +288,7 @@ function logOf(options: ConvergeOptions): EventStore {
 async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
-      prefixes: ['wi-%'],
+      prefixes: [`${WORK_ITEM_STREAM_PREFIX}%`],
       types: ['WorkItemClaimed', ...WAIT_EVENTS, 'WorkItemReleased', 'WorkItemLanded'],
     }),
   )
