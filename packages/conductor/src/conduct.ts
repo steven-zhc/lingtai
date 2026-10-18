@@ -20,7 +20,15 @@ import {
   createWorkAction,
   createWorktreeAction,
 } from '@lingtai/actions'
-import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, taggedTrace } from '@lingtai/agent'
+import {
+  NO_RUN_LOG,
+  type RunLog,
+  type RunOutcome,
+  type Runtime,
+  createRuntime,
+  missingForTier,
+  taggedTrace,
+} from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
   type Hold,
@@ -2922,6 +2930,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const alsoSays = (prompt: string, extra: string): string =>
         extra === '' ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`
 
+      /**
+       * **One `RunSpent` per `implement` dispatch that returned a `RunOutcome`**
+       * (`#493`, 0110 §2, §9, §10) — `firstDispatch` and `fixRound` both call
+       * this, so the two cannot write a different shape. `round` is `0` for the
+       * first visit and the fix round's own number otherwise; `usage` is `[]`
+       * rather than absent, since `RunSpent.usage` is required unlike
+       * `RunFinished.usage`; `costUsd` is copied through as the runtime reported
+       * it, `null` included, and is never defaulted to zero.
+       */
+      const runSpentFrom = (outcome: RunOutcome, name: string, round: number, runtime: RuntimeId): ToAppend => ({
+        type: 'RunSpent',
+        actor: 'conductor',
+        data: parsePayload('RunSpent', {
+          for: { _tag: 'Action', step: 'implement', name, round },
+          runtime,
+          turns: outcome.turns,
+          durationMs: outcome.durationMs,
+          costUsd: outcome.costUsd,
+          usage: outcome.usage ?? [],
+        }),
+      })
+
       const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
         const tree = cutTree()
         /**
@@ -3117,6 +3147,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               actor: 'conductor',
               data: parsePayload('RunFailed', outcome.failure),
             },
+            runSpentFrom(outcome, spec.name, 0, dispatched.capabilities.id),
           ])
           if (outcome.failure.kind === 'never-started') {
             // That agent touched nothing, so there is nothing in the worktree
@@ -3165,6 +3196,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
             }),
           },
+          runSpentFrom(outcome, spec.name, 0, dispatched.capabilities.id),
         ])
         log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
         runLog.note('run', `finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
@@ -3328,6 +3360,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
             }),
           },
+          runSpentFrom(fixed, spec.name, round, dispatched.capabilities.id),
         ])
         runLog.note(
           'fix',
