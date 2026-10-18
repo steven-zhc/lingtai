@@ -56,7 +56,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network.
  */
-import type { Runtime } from '@lingtai/agent'
+import { AgentHostFailed, type Runtime } from '@lingtai/agent'
 import type { Envelope, Hold } from '@lingtai/domain'
 import {
   holdOf,
@@ -192,6 +192,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -269,6 +270,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -279,6 +281,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepStarted',
       'FixRequested',
       'FixApplied',
+      'RunSpent',
       'RunProducedDiff',
       'StepPassed',
       'StepRequested',
@@ -291,6 +294,23 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     ])
     const fixApplied = theRun(store)!.find((e) => e.type === 'FixApplied')!
     expect(fixApplied.data).toMatchObject({ round: 1, said: 'done' })
+
+    // **#493**: one `RunSpent` per dispatch that returned an outcome — the
+    // first visit's at round 0, the fix round's own at the round `FixApplied`
+    // itself carries.
+    const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
+    expect(spent).toHaveLength(2)
+    expect(spent[0]!.data).toMatchObject({
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
+    })
+    expect(spent[1]!.data).toMatchObject({
+      for: {
+        _tag: 'Action',
+        step: 'implement',
+        name: 'write the change',
+        round: (fixApplied.data as { round: number }).round,
+      },
+    })
 
     const runId = theRun(store)![0]!.streamId
     // `from` is `'proposed'`, not `'review'`: `review` always ends `passed`
@@ -392,6 +412,7 @@ runtime:
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -532,6 +553,7 @@ runtime:
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -621,6 +643,7 @@ runtime:
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'StepDidNotFinish',
       'PassRouted',
       'RunRefsPublished',
@@ -687,6 +710,7 @@ runtime:
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -697,6 +721,7 @@ runtime:
       'StepStarted',
       'FixRequested',
       'FixApplied',
+      'RunSpent',
       'StepDidNotFinish',
       'PassRouted',
       'PassRouted',
@@ -722,6 +747,13 @@ runtime:
     expect(routes).toHaveLength(2)
     expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
     expect(routes[1]).toMatchObject({ from: 'implement', decision: { _tag: 'Escalated' } })
+    // **#493**: a fix round that declines still returned a `RunOutcome`, so it
+    // still gets a `RunSpent` — at the round `FixApplied` itself carries.
+    const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
+    expect(spent).toHaveLength(2)
+    expect(spent[1]!.data).toMatchObject({
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
+    })
   })
 
   /**
@@ -790,6 +822,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -870,6 +903,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -962,6 +996,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -1129,6 +1164,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -1200,6 +1236,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFinished',
+      'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
       'StepPassed',
@@ -1446,6 +1483,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepsResolved',
       'RunFinished',
       'RunFailed',
+      'RunSpent',
       'StepDidNotFinish',
       'PassRouted',
       'RunRefsPublished',
@@ -1458,6 +1496,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     theWaitFoldsToTheStoredHold(all14a, hold!)
     const implementOutcome = stepOutcomesOf(all14a).find((o) => o.step === 'implement')
     expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns', head: null })
+    // **#493**: `out-of-turns` still returned an outcome, so it still gets a
+    // `RunSpent` — what it reported, never a made-up zero.
+    const spent14a = theRun(store)!.filter((e) => e.type === 'RunSpent')
+    expect(spent14a).toHaveLength(1)
+    expect(spent14a[0]!.data).toEqual({
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
+      runtime: 'claude-code',
+      turns: 10,
+      durationMs: 5_000,
+      costUsd: 1.1,
+      usage: [],
+    })
   })
 
   /**
@@ -1516,6 +1566,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunStarted',
       'StepsResolved',
       'RunFailed',
+      'RunSpent',
       'StepDidNotFinish',
       'RunRefsPublished',
       'RunProducedDiff',
@@ -1810,6 +1861,18 @@ runtime:
     expect(kept).toBeDefined()
     expect(kept!.data).toMatchObject({ sha: fixture.WIP_SHA, parentSha: fixture.FIX_SHA, stoppedBy: 'out-of-turns' })
 
+    // **#493**: the fix round's own `out-of-turns`, with a commit kept, still
+    // returned an outcome — a `RunSpent` at this round's own number, beside
+    // the first dispatch's own at round 0.
+    const spent16 = run.filter((e) => e.type === 'RunSpent')
+    expect(spent16).toHaveLength(2)
+    expect(spent16[1]!.data).toMatchObject({
+      for: { _tag: 'Action', step: 'implement', round: 1 },
+      turns: 8,
+      costUsd: 1.5,
+      usage: [],
+    })
+
     // The durable row must never offer the WIP sha as something origin judged.
     const refs = run.filter((e) => e.type === 'RunRefsPublished')
     expect(refs.length).toBeGreaterThan(0)
@@ -1854,5 +1917,91 @@ runtime:
       { _tag: 'Restart', restart: 1 },
       { _tag: 'Restart', restart: 2 },
     ])
+  })
+
+  /**
+   * **#493**: a crash is a `RunOutcome` too — `firstDispatch` never reaches
+   * the hook-not-served early return (`Either.isLeft(ran)`), so the failure
+   * batch is the one `appendFrom` call that writes `RunFailed` and
+   * `RunSpent` together. `costUsd: null` is carried through rather than
+   * defaulted to zero (0110 §4).
+   */
+  it('17. a crash still returns an outcome, so it still gets a `RunSpent`', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const crashingRuntime: Runtime = {
+      ...runtime,
+      run: async () => ({
+        exitCode: 1,
+        turns: 2,
+        durationMs: 500,
+        costUsd: null,
+        failure: { kind: 'crash', detail: 'the runtime exited 1' },
+        text: null,
+        sessionId: 'sess-crash',
+      }),
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([]),
+        runtime: crashingRuntime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).toMatchObject({ ok: 'held', step: 'implement' })
+    expect(typesOf(theRun(store))).toContain('RunFailed')
+    const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
+    expect(spent).toHaveLength(1)
+    expect(spent[0]!.data).toEqual({
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
+      runtime: 'claude-code',
+      turns: 2,
+      durationMs: 500,
+      costUsd: null,
+      usage: [],
+    })
+  })
+
+  /**
+   * **#493**: a run the hook never served is the reachable unit case for *a
+   * process killed with no outcome records nothing* (0110 §2) — `ran` is a
+   * `Left` and `firstDispatch` returns before either append. There is no way
+   * from the fakes to reach the actually-killed-mid-run case (a real
+   * process), so this is the nearest the unit half gets.
+   */
+  it('18. the hook socket is never served, so nothing is appended — no `RunSpent` either', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const ports = fakePorts(did, store)
+    ports.agent.serve = () => Effect.fail(new AgentHostFailed({ operation: 'serve', detail: 'the socket refused' }))
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([]),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      ports,
+    )
+
+    expect(result).toMatchObject({ ok: 'held', step: 'implement' })
+    const run = theRun(store)
+    expect(typesOf(run)).not.toContain('RunStarted')
+    expect(typesOf(run)).not.toContain('RunSpent')
   })
 })

@@ -100,6 +100,20 @@ describe('when a run never starts', () => {
     )
     expect(endings).toEqual(Array.from({ length: 6 }, () => 'never-started'))
 
+    // **#493**: `never-started` still returned an outcome — zero turns, zero
+    // cost, as the runtime actually said — so each attempt still gets its own
+    // `RunSpent`, carrying what was reported rather than a made-up zero.
+    const spent = runs.flatMap(([, events]) => events.filter((e) => e.type === 'RunSpent'))
+    expect(spent).toHaveLength(6)
+    for (const s of spent) {
+      expect(s.data).toMatchObject({
+        for: { _tag: 'Action', step: 'implement', round: 0 },
+        turns: 0,
+        costUsd: 0,
+        usage: [],
+      })
+    }
+
     // The items keep their place: each attempt released, as any failed run does.
     const item = await store.read(`wi-${PROJECT}-7`)
     expect(item.filter((e) => e.type === 'WorkItemReleased')).toHaveLength(6)
