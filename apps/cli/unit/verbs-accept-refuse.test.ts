@@ -44,12 +44,12 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  *   the recipe itself before calling `approveRun` (`approve.ts:41` and
  *   `:54-56`) and hands it `recipe: async () => resolved` (`:72`) — a thunk
  *   over an already-resolved value, which cannot throw. So that refusal is
- *   unreachable from the CLI; `wait-handlers-answer-as-today.test.ts:26`
- *   already pins `approveHolding`'s own behaviour when the thunk it is given
- *   does throw.
+ *   unreachable from the CLI; `wait-handlers-answer-as-today.test.ts:377`
+ *   and `:419` already pin `approveHolding`'s own behaviour when the thunk
+ *   it is given does throw.
  */
 import { type Envelope, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
-import { aClaim, aLanding, aRun, aRunRef, aWait, aWithdrawal } from '@lingtai/domain/test/events'
+import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWithdrawal } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -186,14 +186,30 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
    * reads `item.lifecycle.status !== 'blocked'` off the fold — if a
    * `Requeue` resolution stopped leaving a requeued item off `blocked`,
    * this would start passing where it must refuse, and `lingtai approve`
-   * would merge a held diff onto an item a new run has already claimed.
+   * would merge a held diff onto an item a new run has already claimed. So
+   * the item is actually blocked here — `aWait` appends the `WorkItemBlocked`
+   * a real signoff request writes — and then actually requeued, through
+   * `aResolution(item, { _tag: 'Requeue' })`, before `approveHolding` is
+   * asked for the same run: an item that was simply never held would refuse
+   * for the same reason and prove nothing about the requeue.
    */
   it('refuses when the item is not blocked (requeued after the request)', async () => {
     const store = createMemoryEventStore()
     const workItemId = workItemStream(PROJECT, 114)
+    const item = makeStream(workItemId)
     const run = aRun('run-114')
-    await seed(store, workItemId, aClaim(makeStream(workItemId), 'run-114'))
+    await seed(store, workItemId, [
+      ...aClaim(item, 'run-114'),
+      ...aWait(item, {
+        _tag: 'SignoffRequired',
+        run: aRunRef('run-114'),
+        step: 'proposed',
+        action: 'unfixed',
+        question: 'approve this merge?',
+      }),
+    ])
     await seed(store, 'run-114', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
+    await seed(store, workItemId, aResolution(item, { _tag: 'Requeue' }))
 
     const result = await approveHolding(
       { project: PROJECT, issue: 114, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
