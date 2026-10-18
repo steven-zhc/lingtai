@@ -10,9 +10,10 @@
  * An event store offers resumption. It does not remember its readers.
  *
  * Since #219 the runner holds a `ProjectionStore` rather than a pool of its
- * own: one interface over `task_view`, `task_view_run`, `finding_backlog` and
- * `finding_backlog_run`, with `postgres.ts` beside `sqlite.ts` and
- * `test/contract.ts` — which neither owns — deciding whether they agree.
+ * own: one interface over `task_view`, `task_view_run`, `finding_backlog`,
+ * `finding_backlog_run`, `spend` and `spend_stream` (`#497`), with
+ * `postgres.ts` beside `sqlite.ts` and `test/contract.ts` — which neither
+ * owns — deciding whether they agree.
  *
  * **`choose.ts` is what picks between them, and it is the only file that does**
  * (#179). It reads the one value `~/.lingtai/config.yml` holds, through
@@ -55,6 +56,7 @@ export {
   type BacklogStatus,
   type ReadBacklogOptions,
 } from './backlog.ts'
+export { SPEND_TABLE, spendProjection } from './spend.ts'
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,

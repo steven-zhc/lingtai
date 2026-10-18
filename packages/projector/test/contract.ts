@@ -1,4 +1,4 @@
-import type { Envelope, Finding, ToAppend } from '@lingtai/domain'
+import type { Envelope, Finding, PayloadOf, ToAppend } from '@lingtai/domain'
 import { aRun, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
@@ -32,6 +32,7 @@ import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
 import { createProjectionRunner } from '../src/projection.ts'
+import { spendProjection } from '../src/spend.ts'
 import type { Projection, ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -224,6 +225,12 @@ const dispatchRefused = () => ({
   type: 'DispatchRefused',
   actor: 'conductor',
   data: { requiredTier: 'sandboxed' as const, runtime: 'claude-code' as const, missing: ['filesystem-sandbox'] },
+})
+
+const runSpent = (spentFor: PayloadOf<'RunSpent'>['for']) => ({
+  type: 'RunSpent',
+  actor: 'conductor',
+  data: { for: spentFor, runtime: 'claude-code' as const, turns: 3, durationMs: 1000, usage: [], costUsd: 0.1 },
 })
 
 const minor = {
@@ -712,6 +719,29 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         expect(await f.store.backlog({ project: f.project, key: entry.key })).toEqual(entries)
         expect(await f.store.backlog({ project: f.project, status: 'declined' })).toEqual([])
+      } finally {
+        await f.close()
+      }
+    })
+
+    it('fills ticket and project on a RunSpent through the RunStarted on its own stream', async () => {
+      const f = await make()
+      const task = f.stream('wi', '44')
+      const run = f.stream('run', 'spend')
+      try {
+        const written = await f.events.append(run, 0, [
+          started(task),
+          runSpent({ _tag: 'Action', step: 'proposed', name: 'build', round: 0 }),
+        ])
+        await made(f, spendProjection, written)
+
+        const rows = await f.store.transact((ctx) =>
+          ctx.query<{ ticket: string; project: string; pass: string; purpose: string }>(
+            'select ticket, project, pass, purpose from spend where stream_id = $1',
+            [run],
+          ),
+        )
+        expect(rows).toEqual([{ ticket: task, project: f.project, pass: run, purpose: 'Action' }])
       } finally {
         await f.close()
       }

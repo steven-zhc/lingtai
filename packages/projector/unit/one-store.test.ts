@@ -39,7 +39,16 @@ describe('one store, and one place that knows which', () => {
     // A rename that emptied this list would leave every assertion below
     // vacuously true, which is the failure mode a source-reading test has.
     expect(sources.map((s) => s.file)).toEqual(
-      expect.arrayContaining(['projection.ts', 'shape.ts', 'task-view.ts', 'backlog.ts', POSTGRES, SQLITE, CHOICE]),
+      expect.arrayContaining([
+        'projection.ts',
+        'shape.ts',
+        'task-view.ts',
+        'backlog.ts',
+        'spend.ts',
+        POSTGRES,
+        SQLITE,
+        CHOICE,
+      ]),
     )
   })
 
