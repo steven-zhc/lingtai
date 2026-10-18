@@ -246,9 +246,9 @@ export function Rail({
    *
    * **Appended in every non-live reading**: after `{refused} refused`, after
    * `nothing running`, and after a phase that is itself a hold rather than
-   * work in flight — an approval, whose `now` persists with no clock on it
-   * (`progress.ts`'s `ApprovalRequested` case) for as long as nobody has
-   * answered it. Never where `live` is true: a running phase's own line
+   * work in flight — a sign-off was requested, and its `now` persists with no
+   * clock on it for as long as nobody has answered it. Never where `live` is
+   * true: a running phase's own line
    * already says its depth (`fixing round 2 of 3`, `build 2m34s / 20m`), and a
    * budget beside it would say the same fact twice in two words. Composed by
    * the caller from the log and the recipe — this component only places the
