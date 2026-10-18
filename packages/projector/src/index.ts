@@ -55,6 +55,7 @@ export {
   type BacklogStatus,
   type ReadBacklogOptions,
 } from './backlog.ts'
+export { SPEND_TABLE, spendProjection } from './spend.ts'
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,

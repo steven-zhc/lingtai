@@ -45,7 +45,7 @@ import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
 import { log } from '@lingtai/event-store'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
-import { backlogProjection, taskViewProjection } from '@lingtai/projector'
+import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 
 import { addFlow, liveAddWorld, parseFlags } from './add.ts'
@@ -93,11 +93,11 @@ import { WALL_LIMIT } from './wall-limit.ts'
 /**
  * Every projection this system runs, named here in the open.
  *
- * A second one exists now (`finding_backlog`, `#137`), and the comment in
- * `projectionCommand` says where it has to be added: here, visibly, or it
- * does not exist.
+ * A second one exists now (`finding_backlog`, `#137`), and a third (`spend`,
+ * `#497`), and the comment in `projectionCommand` says where it has to be
+ * added: here, visibly, or it does not exist.
  */
-const PROJECTIONS = [taskViewProjection, backlogProjection] as const
+const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
