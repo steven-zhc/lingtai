@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { claudeClose, createClaudeCodeRuntime, usageFromModelUsage } from '../src/claude-code.ts'
+import { claudeClose, createClaudeCodeRuntime, spawnEnvFor, usageFromModelUsage } from '../src/claude-code.ts'
 
 describe('usageFromModelUsage', () => {
   it('is absent where the receipt carried no modelUsage at all', () => {
@@ -152,6 +152,38 @@ describe('claudeClose', () => {
 
     expect(result?.kind).toBe('crash')
     expect(result?.detail).toContain('command not found')
+  })
+})
+
+/**
+ * `spawnEnvFor` — the one place `#492` sets
+ * `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so no unit test needs a process to
+ * pin it.
+ */
+describe('spawnEnvFor', () => {
+  it('sets the variable when the request env is empty', () => {
+    expect(spawnEnvFor({})).toEqual({ CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' })
+  })
+
+  it("overrides a request env that said the variable was '0'", () => {
+    expect(spawnEnvFor({ CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0' })).toEqual({
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+    })
+  })
+
+  it('passes every other key through unchanged', () => {
+    expect(spawnEnvFor({ PATH: '/usr/bin', LINGTAI_RUN_ID: 'run-1' })).toEqual({
+      PATH: '/usr/bin',
+      LINGTAI_RUN_ID: 'run-1',
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+    })
+  })
+
+  it("adds exactly one key — the input's own keys plus this one", () => {
+    const input = { PATH: '/usr/bin', LINGTAI_RUN_ID: 'run-1' }
+    expect(Object.keys(spawnEnvFor(input)).sort()).toEqual(
+      [...Object.keys(input), 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'].sort(),
+    )
   })
 })
 

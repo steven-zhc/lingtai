@@ -193,6 +193,30 @@ export function usageFromModelUsage(modelUsage: Record<string, ClaudeModelUsage>
 export const PROMPT_ELIDED = '<prompt: recorded as RunPrompted>'
 
 /**
+ * Forces a Claude Code subagent (`Agent`) into the foreground, so the turn
+ * that launched it cannot end before it does (`#492`).
+ *
+ * Set by `spawnEnvFor`, after the recipe's own env and the hook's wiring have
+ * already been merged into `request.env` upstream — so nothing a recipe says
+ * can turn this back off. #482's implement run handed a 398-line, 16-test
+ * file to a background subagent and ended its turn; ten minutes later Claude
+ * Code killed the subagent and the run finished with no commits at all.
+ */
+const DISABLE_BACKGROUND_TASKS = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'
+
+/**
+ * `request.env`, with background tasks forced off.
+ *
+ * Pure so a unit test can pin it without spawning a process — `Spawned`
+ * carries only `command` and `args`, never the env, because the env holds the
+ * recipe's secrets and widening `Spawned` to test through it would put those
+ * secrets on the run's own stream.
+ */
+export function spawnEnvFor(env: Record<string, string>): Record<string, string> {
+  return { ...env, [DISABLE_BACKGROUND_TASKS]: '1' }
+}
+
+/**
  * argv, in one place.
  *
  * `run` and `invocation` call this with the only thing that differs between
@@ -402,9 +426,10 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         const child = spawn(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited. The agent gets what the recipe allows plus
-          // the hook's wiring, and nothing else — one of the three real
+          // the hook's wiring and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` set by
+          // `spawnEnvFor` (`#492`), and nothing else — one of the three real
           // boundaries (doc/decisions-archive/0007).
-          env: request.env as NodeJS.ProcessEnv,
+          env: spawnEnvFor(request.env) as NodeJS.ProcessEnv,
           stdio: ['ignore', 'pipe', 'pipe'],
           // Its own process group
           // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).
