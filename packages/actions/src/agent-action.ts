@@ -52,7 +52,7 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import type { Runtime } from '@lingtai/agent'
+import type { RunOutcome, Runtime } from '@lingtai/agent'
 import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, type RefusedAbout, type Severity } from '@lingtai/domain'
 
 import {
@@ -61,9 +61,31 @@ import {
   type ActionContext,
   type ActionFinding,
   type ActionResult,
+  type ActionSpent,
   type SentBack,
 } from './action.ts'
 import { boundedEvidence } from './command.ts'
+
+/**
+ * **What a dispatch billed, attached once after every branch** (#494). The
+ * runtime is the dispatched one and not a pass-wide default — `from-recipe.ts`'s
+ * `dispatchDeps` swaps in the action's own runtime, so a `review:` or `design:`
+ * declared with its own `agent:` bills under its own id.
+ *
+ * `usage: outcome.usage ?? []` because `RunSpent.usage` is required where
+ * `RunOutcome.usage` is optional: a runtime that reported no tokens writes
+ * `[]`, and `costUsd` is copied through as reported, `null` included, and
+ * never defaulted to zero.
+ */
+function spentOf(outcome: RunOutcome, runtime: Runtime): ActionSpent {
+  return {
+    runtime: runtime.capabilities.id,
+    turns: outcome.turns,
+    durationMs: outcome.durationMs,
+    costUsd: outcome.costUsd,
+    usage: outcome.usage ?? [],
+  }
+}
 
 export interface AgentActionSpec {
   name: string
@@ -497,151 +519,162 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         signal: context.signal,
       })
 
-      if (outcome.failure) {
-        /**
-         * A reviewer that never started has not reviewed anything, and saying
-         * so is not the same as refusing the diff.
-         *
-         * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1
-         * was written for runs, because when it landed the only agent in a pass
-         * was the implementer — the `agent` action existed and had never once run
-         * (`d4fbd1a`). The second agent in a pass became reachable and met a
-         * quota wall in its first afternoon, and the action turned it into a
-         * failed verdict: a sentence about this diff, produced by a condition
-         * that has nothing to do with any diff (`#133`).
-         *
-         * **The classification is the adapter's, not read again here.** `kind`
-         * is `neverStarted`'s three checkable facts — at most the one turn the
-         * runtime's own refusal counts as, zero cost, an error — and 0031 §1's whole point is that no reading of the
-         * message may decide this. Re-deriving it from `outcome.turns` and
-         * `outcome.costUsd` at this seam would give the classification a second
-         * home, and the second home is where the two would drift: a receipt
-         * that would not parse leaves turns at zero out of ignorance, which is
-         * a crash and must stay one.
-         */
-        if (outcome.failure.kind === 'never-started') {
-          return {
-            verdict: 'never-ran',
-            // The runtime's own words, whole. `conduct.ts` reads a reset time
-            // out of them (0031 §4) and the board shows them as what they are:
-            // evidence about the account, never about the diff.
-            evidence: boundedEvidence(outcome.failure.detail),
-            findings: [],
-          }
-        }
-        /**
-         * **The runtime forced the schema and could not make an answer fit it
-         * after retrying** — `error_max_structured_output_retries`, Claude
-         * Code's own silence under `--json-schema` (`#369`). The agent answered
-         * something; the runtime is what dropped it, which is `unreadable` in
-         * the same sense a reviewer whose prose would not parse is (`#279`),
-         * answered the same way: `failed`, and it buys no round (0038 §2) —
-         * never `did-not-finish`, which would reach `proposed` with the wrong
-         * sentence and no `unreadable` for the log to count.
-         */
-        if (outcome.failure.kind === 'no-structured-answer') {
-          return {
-            verdict: 'failed',
-            evidence: boundedEvidence(
-              `the reviewer's runtime could not fit its answer to the schema: ${outcome.failure.detail}`,
-            ),
-            findings: [],
-            unreadable: true,
-          }
-        }
-        /**
-         * **And a reviewer that *started* and did not finish has not reviewed
-         * anything either** — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
-         *
-         * The sentence below has said `the reviewer did not finish` since this
-         * branch was written, and the verdict beside it said `failed` — which
-         * is the verdict a reviewer that read the diff and refused it returns.
-         * So the conductor bought a fix round, and on `run-9e510ffc` an agent
-         * was paid fourteen seconds to write *I'm not fixing anything this
-         * round … the review never looked at the change* (`#196`). The
-         * difference was real and lived only in this string, and a string is
-         * not something `decideFix` or the board reads.
-         *
-         * **The whole branch, and not a second reading of `kind`.** Every
-         * failure that is not `never-started` reaches here without a receipt:
-         * a crash, a timeout, a turn budget spent without an answer, an abort.
-         * None of them judged the diff, so none of them may buy an agent to
-         * answer a judgement. Splitting `crash` out from its neighbours would
-         * put a second classification at this seam, which is exactly what
-         * 0031 §1 forbids — the adapter's `kind` is the answer, and what the
-         * answer *costs* is the pipeline's (0057 §4).
-         *
-         * The runtime's own words stay in it, whole and prefixed, because the
-         * prefix is what says they are about the machinery.
-         */
-        const cause = outcome.failure.kind
-        return {
-          verdict: 'did-not-finish',
-          evidence: boundedEvidence(`the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`),
-          findings: [],
-          // Every kind that reaches here is one of the five `#466` added a
-          // token for, except `no-commits` — a word this action never has
-          // reason to report, since a reviewer commits nothing either way.
-          ...(cause === 'no-commits' ? {} : { interrupted: cause }),
-        }
-      }
-
-      // The runtime's own parse first, where it sent one — `outcome.structured`
-      // is never missing a `findings` key, only ever absent, so there is no
-      // second reading of it to fall back to on the way to `unreadable`
-      // (`#369`). `parseFindings` runs only where the runtime answered in
-      // prose instead.
-      const { findings, parsed, about } =
-        outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text)
-      if (!parsed) {
-        /**
-         * A reviewer whose answer cannot be read has not reviewed anything. The
-         * alternative is a green action for a diff nobody assessed.
-         *
-         * **`unreadable` is the same fact in a word rather than in the sentence**
-         * (`#279`). Both of the ways this returns `findings: []` — this branch and
-         * a review that read the diff and had nothing to say — reached `proposed`
-         * as the same shape, and `carriesACriterion` answered the only thing it
-         * could: *nothing an agent could be held to*. `#269`'s third review said
-         * four things, one of them a `major` with a failure scenario, and stopped
-         * one closing brace short of valid JSON; the pass parked as though the
-         * reviewer had held an opinion, and 61 turns and $8.97 went with it.
-         *
-         * It is still a `failed`, and it still buys nothing: an answer nobody can
-         * read is not a criterion (0038 §2). What the flag changes is which
-         * sentence a person is handed and what the log can be asked.
-         */
-        return {
-          verdict: 'failed',
-          evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ''}`),
-          findings: [],
-          unreadable: true,
-        }
-      }
-
-      const verdict = verdictFor(findings)
-      const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
-      return {
-        verdict,
-        evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns${cost})`),
-        findings,
-        /**
-         * **The reviewer's own classification of its refusal, and only of a
-         * refusal** (`#293`).
-         *
-         * On the `failed` verdict because that is the only thing there is to
-         * classify: a review that passed refused nothing, so an `about` it
-         * volunteered anyway is about a change that is going ahead, and
-         * `StepPassed` has no field for it. `#223`'s question is *of the reviews
-         * that stopped a change, how many said the approach was wrong*, and a
-         * denominator with passes in it does not answer it.
-         *
-         * Spread, so *the reviewer did not say* stays an absent key — the rule
-         * this whole field is under.
-         */
-        ...(verdict === 'failed' && about !== undefined ? { about } : {}),
-      }
+      return { ...reviewAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
     },
+  }
+}
+
+/**
+ * **Every branch `createAgentAction` can return, pulled out so `spent` can be
+ * attached once after every one of them rather than copied into each**
+ * (`#494`). Moved unchanged: the branches below are byte-for-byte what `run`
+ * used to return directly, so `evidence`'s `(N turns · $X)` suffixes stay
+ * exactly as they were.
+ */
+function reviewAnswer(outcome: RunOutcome): ActionResult {
+  if (outcome.failure) {
+    /**
+     * A reviewer that never started has not reviewed anything, and saying
+     * so is not the same as refusing the diff.
+     *
+     * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1
+     * was written for runs, because when it landed the only agent in a pass
+     * was the implementer — the `agent` action existed and had never once run
+     * (`d4fbd1a`). The second agent in a pass became reachable and met a
+     * quota wall in its first afternoon, and the action turned it into a
+     * failed verdict: a sentence about this diff, produced by a condition
+     * that has nothing to do with any diff (`#133`).
+     *
+     * **The classification is the adapter's, not read again here.** `kind`
+     * is `neverStarted`'s three checkable facts — at most the one turn the
+     * runtime's own refusal counts as, zero cost, an error — and 0031 §1's whole point is that no reading of the
+     * message may decide this. Re-deriving it from `outcome.turns` and
+     * `outcome.costUsd` at this seam would give the classification a second
+     * home, and the second home is where the two would drift: a receipt
+     * that would not parse leaves turns at zero out of ignorance, which is
+     * a crash and must stay one.
+     */
+    if (outcome.failure.kind === 'never-started') {
+      return {
+        verdict: 'never-ran',
+        // The runtime's own words, whole. `conduct.ts` reads a reset time
+        // out of them (0031 §4) and the board shows them as what they are:
+        // evidence about the account, never about the diff.
+        evidence: boundedEvidence(outcome.failure.detail),
+        findings: [],
+      }
+    }
+    /**
+     * **The runtime forced the schema and could not make an answer fit it
+     * after retrying** — `error_max_structured_output_retries`, Claude
+     * Code's own silence under `--json-schema` (`#369`). The agent answered
+     * something; the runtime is what dropped it, which is `unreadable` in
+     * the same sense a reviewer whose prose would not parse is (`#279`),
+     * answered the same way: `failed`, and it buys no round (0038 §2) —
+     * never `did-not-finish`, which would reach `proposed` with the wrong
+     * sentence and no `unreadable` for the log to count.
+     */
+    if (outcome.failure.kind === 'no-structured-answer') {
+      return {
+        verdict: 'failed',
+        evidence: boundedEvidence(
+          `the reviewer's runtime could not fit its answer to the schema: ${outcome.failure.detail}`,
+        ),
+        findings: [],
+        unreadable: true,
+      }
+    }
+    /**
+     * **And a reviewer that *started* and did not finish has not reviewed
+     * anything either** — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
+     *
+     * The sentence below has said `the reviewer did not finish` since this
+     * branch was written, and the verdict beside it said `failed` — which
+     * is the verdict a reviewer that read the diff and refused it returns.
+     * So the conductor bought a fix round, and on `run-9e510ffc` an agent
+     * was paid fourteen seconds to write *I'm not fixing anything this
+     * round … the review never looked at the change* (`#196`). The
+     * difference was real and lived only in this string, and a string is
+     * not something `decideFix` or the board reads.
+     *
+     * **The whole branch, and not a second reading of `kind`.** Every
+     * failure that is not `never-started` reaches here without a receipt:
+     * a crash, a timeout, a turn budget spent without an answer, an abort.
+     * None of them judged the diff, so none of them may buy an agent to
+     * answer a judgement. Splitting `crash` out from its neighbours would
+     * put a second classification at this seam, which is exactly what
+     * 0031 §1 forbids — the adapter's `kind` is the answer, and what the
+     * answer *costs* is the pipeline's (0057 §4).
+     *
+     * The runtime's own words stay in it, whole and prefixed, because the
+     * prefix is what says they are about the machinery.
+     */
+    const cause = outcome.failure.kind
+    return {
+      verdict: 'did-not-finish',
+      evidence: boundedEvidence(`the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`),
+      findings: [],
+      // Every kind that reaches here is one of the five `#466` added a
+      // token for, except `no-commits` — a word this action never has
+      // reason to report, since a reviewer commits nothing either way.
+      ...(cause === 'no-commits' ? {} : { interrupted: cause }),
+    }
+  }
+
+  // The runtime's own parse first, where it sent one — `outcome.structured`
+  // is never missing a `findings` key, only ever absent, so there is no
+  // second reading of it to fall back to on the way to `unreadable`
+  // (`#369`). `parseFindings` runs only where the runtime answered in
+  // prose instead.
+  const { findings, parsed, about } =
+    outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text)
+  if (!parsed) {
+    /**
+     * A reviewer whose answer cannot be read has not reviewed anything. The
+     * alternative is a green action for a diff nobody assessed.
+     *
+     * **`unreadable` is the same fact in a word rather than in the sentence**
+     * (`#279`). Both of the ways this returns `findings: []` — this branch and
+     * a review that read the diff and had nothing to say — reached `proposed`
+     * as the same shape, and `carriesACriterion` answered the only thing it
+     * could: *nothing an agent could be held to*. `#269`'s third review said
+     * four things, one of them a `major` with a failure scenario, and stopped
+     * one closing brace short of valid JSON; the pass parked as though the
+     * reviewer had held an opinion, and 61 turns and $8.97 went with it.
+     *
+     * It is still a `failed`, and it still buys nothing: an answer nobody can
+     * read is not a criterion (0038 §2). What the flag changes is which
+     * sentence a person is handed and what the log can be asked.
+     */
+    return {
+      verdict: 'failed',
+      evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ''}`),
+      findings: [],
+      unreadable: true,
+    }
+  }
+
+  const verdict = verdictFor(findings)
+  const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
+  return {
+    verdict,
+    evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns${cost})`),
+    findings,
+    /**
+     * **The reviewer's own classification of its refusal, and only of a
+     * refusal** (`#293`).
+     *
+     * On the `failed` verdict because that is the only thing there is to
+     * classify: a review that passed refused nothing, so an `about` it
+     * volunteered anyway is about a change that is going ahead, and
+     * `StepPassed` has no field for it. `#223`'s question is *of the reviews
+     * that stopped a change, how many said the approach was wrong*, and a
+     * denominator with passes in it does not answer it.
+     *
+     * Spread, so *the reviewer did not say* stays an absent key — the rule
+     * this whole field is under.
+     */
+    ...(verdict === 'failed' && about !== undefined ? { about } : {}),
   }
 }
 
@@ -949,109 +982,116 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         signal: context.signal,
       })
 
-      if (outcome.failure) {
-        // The adapter's classification and never a second reading of it
-        // (0031 §1), exactly as the reviewer above: at most one turn, no cost
-        // and an error is `never-started`, and everything else started.
-        if (outcome.failure.kind === 'never-started') {
-          return { verdict: 'never-ran', evidence: boundedEvidence(outcome.failure.detail), findings: [] }
-        }
-        const cause = outcome.failure.kind
-        return {
-          verdict: 'did-not-finish',
-          evidence: boundedEvidence(
-            `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
-          ),
-          findings: [],
-          // The reviewer above carries the same two exclusions: a drafting
-          // agent commits nothing, so `no-commits` never names what happened
-          // here, and it carries no `outputSchema`, so neither does
-          // `no-structured-answer`.
-          ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
-        }
-      }
-
-      const drafted = parseDraft(outcome.text)
-      const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
-
-      if (drafted.kind === 'question') {
-        /**
-         * **0058 §3c, reachable** (`#294`). `did-not-finish` and not `failed`: the
-         * agent judged nothing, so no round is charged for the asking, and
-         * `because` is what `nextOf` reads to send it to `proposed` —
-         * where `BUILT_IN_FOR["needs-input"]` is null, so a person holds it with
-         * the question unless a recipe declared a judge for the direction.
-         *
-         * **The question first on `evidence`, with no turn count spliced in.**
-         * This string is three things at once: the sentence a person reads off the
-         * card, the evidence a judge weighs, and — where the judge sends the pass
-         * back here — `SentBack.asked`, which is quoted verbatim into the next
-         * design prompt. A cost appended to it would be read back to an agent as
-         * part of its own question. `createWorkAction` carries `asked` the same
-         * bare way, and what the turns cost is on the run log.
-         *
-         * **And the draft rides with it, under a rule, where the agent wrote one**
-         * (`#294`, the fix round). `WroteTheDesign` in `pass.ts` is *only on a
-         * pass* and `StepDidNotFinish` carries one field, so `evidence` is the one
-         * channel a question's draft can reach both a person and the log through —
-         * and a design note that reached neither would be in nothing but the run
-         * log, which 0034 deletes when the ticket lands. The question leads because
-         * the question is what has to be answered; the draft follows because an
-         * agent that wrote one and asked anyway has told its reader, its judge and
-         * the round it may buy something all three of them want. Absent, and not
-         * an empty rule, where it asked and wrote nothing.
-         */
-        return {
-          verdict: 'did-not-finish',
-          because: NEEDS_INPUT,
-          evidence: boundedEvidence(
-            drafted.draft === ''
-              ? drafted.question
-              : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
-          ),
-          findings: [],
-        }
-      }
-
-      if (drafted.kind === 'unreadable') {
-        /**
-         * The reviewer's branch one function up, in this step's spelling
-         * (`#279`): an announced question that was never asked is neither of the
-         * two answers, and the branch that does not exist is the one where it
-         * becomes a silently empty document — or worse, a document whose first
-         * line is a fence and whose body is the difficulty the agent could not
-         * state.
-         *
-         * `failed` and `unreadable: true` rather than a bare `did-not-finish`,
-         * because the flag is what a log can be asked and a sentence is not. It
-         * costs nothing extra: `design` does not refuse (`REFUSING_STEPS`), so
-         * `endingOf` reports the step `did-not-finish` with no route to the
-         * router, and the pass rests for a person carrying the answer.
-         */
-        return {
-          verdict: 'failed',
-          evidence: boundedEvidence(
-            'the design agent announced a question and did not ask one — the `question` block was ' +
-              `empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer}`,
-          ),
-          findings: [],
-          unreadable: true,
-        }
-      }
-
-      const document = drafted.document
-      return {
-        verdict: 'passed',
-        // The distinction the board wants and `implement` does not: an empty
-        // document and a document are one brief to the agent — it works from
-        // the issue either way — and two different things to a person reading
-        // what this pass spent its turns on.
-        evidence: boundedEvidence(
-          (document === '' ? 'no design: this change needs none' : document) + `\n\n(${outcome.turns} turns${cost})`,
-        ),
-        findings: [],
-        document,
-      }
+      return { ...draftAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
     },
+  }
+}
+
+/**
+ * **Every branch `createDraftAction` can return, pulled out for `spent`'s
+ * sake** (`#494`) — `reviewAnswer`'s reason, one function up. Moved
+ * unchanged.
+ */
+function draftAnswer(outcome: RunOutcome): ActionResult {
+  if (outcome.failure) {
+    // The adapter's classification and never a second reading of it
+    // (0031 §1), exactly as the reviewer above: at most one turn, no cost
+    // and an error is `never-started`, and everything else started.
+    if (outcome.failure.kind === 'never-started') {
+      return { verdict: 'never-ran', evidence: boundedEvidence(outcome.failure.detail), findings: [] }
+    }
+    const cause = outcome.failure.kind
+    return {
+      verdict: 'did-not-finish',
+      evidence: boundedEvidence(`the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`),
+      findings: [],
+      // The reviewer above carries the same two exclusions: a drafting
+      // agent commits nothing, so `no-commits` never names what happened
+      // here, and it carries no `outputSchema`, so neither does
+      // `no-structured-answer`.
+      ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
+    }
+  }
+
+  const drafted = parseDraft(outcome.text)
+  const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
+
+  if (drafted.kind === 'question') {
+    /**
+     * **0058 §3c, reachable** (`#294`). `did-not-finish` and not `failed`: the
+     * agent judged nothing, so no round is charged for the asking, and
+     * `because` is what `nextOf` reads to send it to `proposed` —
+     * where `BUILT_IN_FOR["needs-input"]` is null, so a person holds it with
+     * the question unless a recipe declared a judge for the direction.
+     *
+     * **The question first on `evidence`, with no turn count spliced in.**
+     * This string is three things at once: the sentence a person reads off the
+     * card, the evidence a judge weighs, and — where the judge sends the pass
+     * back here — `SentBack.asked`, which is quoted verbatim into the next
+     * design prompt. A cost appended to it would be read back to an agent as
+     * part of its own question. `createWorkAction` carries `asked` the same
+     * bare way, and what the turns cost is on the run log.
+     *
+     * **And the draft rides with it, under a rule, where the agent wrote one**
+     * (`#294`, the fix round). `WroteTheDesign` in `pass.ts` is *only on a
+     * pass* and `StepDidNotFinish` carries one field, so `evidence` is the one
+     * channel a question's draft can reach both a person and the log through —
+     * and a design note that reached neither would be in nothing but the run
+     * log, which 0034 deletes when the ticket lands. The question leads because
+     * the question is what has to be answered; the draft follows because an
+     * agent that wrote one and asked anyway has told its reader, its judge and
+     * the round it may buy something all three of them want. Absent, and not
+     * an empty rule, where it asked and wrote nothing.
+     */
+    return {
+      verdict: 'did-not-finish',
+      because: NEEDS_INPUT,
+      evidence: boundedEvidence(
+        drafted.draft === ''
+          ? drafted.question
+          : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
+      ),
+      findings: [],
+    }
+  }
+
+  if (drafted.kind === 'unreadable') {
+    /**
+     * The reviewer's branch one function up, in this step's spelling
+     * (`#279`): an announced question that was never asked is neither of the
+     * two answers, and the branch that does not exist is the one where it
+     * becomes a silently empty document — or worse, a document whose first
+     * line is a fence and whose body is the difficulty the agent could not
+     * state.
+     *
+     * `failed` and `unreadable: true` rather than a bare `did-not-finish`,
+     * because the flag is what a log can be asked and a sentence is not. It
+     * costs nothing extra: `design` does not refuse (`REFUSING_STEPS`), so
+     * `endingOf` reports the step `did-not-finish` with no route to the
+     * router, and the pass rests for a person carrying the answer.
+     */
+    return {
+      verdict: 'failed',
+      evidence: boundedEvidence(
+        'the design agent announced a question and did not ask one — the `question` block was ' +
+          `empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer}`,
+      ),
+      findings: [],
+      unreadable: true,
+    }
+  }
+
+  const document = drafted.document
+  return {
+    verdict: 'passed',
+    // The distinction the board wants and `implement` does not: an empty
+    // document and a document are one brief to the agent — it works from
+    // the issue either way — and two different things to a person reading
+    // what this pass spent its turns on.
+    evidence: boundedEvidence(
+      (document === '' ? 'no design: this change needs none' : document) + `\n\n(${outcome.turns} turns${cost})`,
+    ),
+    findings: [],
+    document,
   }
 }
