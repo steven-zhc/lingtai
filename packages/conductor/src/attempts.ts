@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, Envelope, PayloadOf } from '@lingtai/domain'
+import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
 import { attemptFactOf, cardFactOf } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -287,11 +287,7 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
-function findingsAppended(
-  output: string,
-  findings: readonly PayloadOf<'StepFailed'>['findings'][number][],
-  max: number,
-): string {
+function findingsAppended(output: string, findings: readonly Finding[], max: number): string {
   if (findings.length === 0) return output
   const shown = findings.slice(0, max).map((f) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`
