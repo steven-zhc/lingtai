@@ -110,8 +110,8 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
 export interface BackoffInput {
   lastAttemptAt: Date | null
   /**
-   * A repair bought and not yet claimed. Only a retired `RepairRequested` sets
-   * it (`#143`), so it is false on every new ticket.
+   * A repair bought and not yet claimed — a fact only a log written before
+   * `#143` can state, so it is false on every new ticket.
    */
   repairPending: boolean
 }
