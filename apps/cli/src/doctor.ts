@@ -1299,11 +1299,11 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
 }
 
 /**
- * Whether the log holds a `WorkItemBlocked` from before #445's reset of its
- * payload — the same guard daemon start and `lingtai projection rebuild` run
- * before they fold the log at all (#451). Doctor runs it as a plain check
- * instead of a refusal: a reset here is the operator's own call, not
- * something worth holding a report over.
+ * Whether the log holds a wait written before #445's reset of its payload —
+ * the same guard daemon start and `lingtai projection rebuild` run before
+ * they fold the log at all (#451). Doctor runs it as a plain check instead
+ * of a refusal: a reset here is the operator's own call, not something worth
+ * holding a report over.
  */
 async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
   const name = 'log: predates the Hold event'
@@ -1313,7 +1313,7 @@ async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
   } catch {
     return { name, status: 'ok', detail: 'no log to read yet' }
   }
-  if (found === null) return { name, status: 'ok', detail: 'no WorkItemBlocked row predates it' }
+  if (found === null) return { name, status: 'ok', detail: 'no wait predates it' }
   return { name, status: 'fail', detail: found.message }
 }
 

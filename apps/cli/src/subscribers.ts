@@ -17,13 +17,13 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  * hears about that repository and nothing else — that is what makes "a project
  * with no `subscribers:` gets no notifications" true rather than approximately
  * true. The old subscription was `{ project: "*" }` and never had to answer
- * this; a per-recipe one does, and **three of the four types Lingtai's own
+ * this; a per-recipe one does, and **three of the four kinds Lingtai's own
  * recipe names cannot answer it from their own bytes**:
  *
- *   `WorkItemBlocked`      `wi-lingtai-123`      the stream says it
- *   `IntegrationRefused`   `int-lingtai-main`    `data.workItemId` says it
- *   `ApprovalRequested`    `run-<uuid>`          neither: only `runId`
- *   `RunAwaitingInput`     `run-<uuid>`          neither
+ *   a wait                  `wi-lingtai-123`    the stream says it
+ *   an integration refusal  `int-lingtai-main`  `data.workItemId` says it
+ *   an approval request     `run-<uuid>`        neither: only `runId`
+ *   `RunAwaitingInput`      `run-<uuid>`        neither
  *
  * So the last two are answered by the log: a run stream opens with
  * `RunStarted`, which carries `workItemId`, and `runSubject` reads it. That is

@@ -410,8 +410,8 @@ async function projectionCommand(args: string[]): Promise<number> {
     }
     // Drop the table, reset the checkpoint, replay — which is what makes a
     // projection's shape free to change, a rebuild rather than a migration.
-    // `rebuildProjection` refuses before any of that if the log predates the
-    // Hold event (#451).
+    // `rebuildProjection` refuses before any of that if the log predates
+    // #445's payload reset (#451).
     return rebuildProjection({
       name,
       queries: log.queries,
@@ -1247,8 +1247,8 @@ async function main(argv: string[]): Promise<number> {
         return 2
       }
       if ('reject' in flags) {
-        // Gone (#150): it appended `ApprovalRevoked` and put the run straight
-        // back into `awaiting-approval`, so the wait it seemed to end went on.
+        // Gone (#150): it revoked the approval and put the run straight back
+        // into `awaiting-approval`, so the wait it seemed to end went on.
         console.error('--reject is gone: it asked the same question again and ended nothing.')
         console.error(`lingtai requeue ${positional[0]} --issue ${issue} ends the wait with a new run`)
         return 2
