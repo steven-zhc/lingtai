@@ -239,7 +239,7 @@ export function Standing({
    * drops it, and a block with no diagnosis renders exactly as it always has,
    * which is #83's requirement and every block written before it.
    *
-   * Nothing is lost: `WorkItemBlocked.question` is verbatim in the history row
+   * Nothing is lost: the wait's own question is verbatim in the history row
    * for the event that carries it.
    */
   const question = standing.diagnosis === null ? standing.question : null
