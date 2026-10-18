@@ -706,9 +706,9 @@ export type SpentFor = z.infer<typeof SpentFor>
  * the runtime did not say. Neither field ever defaults to zero (0110 §4's
  * `.default(0)` is the bug this schema exists to refuse).
  *
- * Nothing writes or reads this yet, and no fold may start reading it until
- * its own ticket (0110 §13): `task_view` and `finding_backlog` must keep
- * treating a stream that carries one exactly as they treat one that does not.
+ * `spend` (`#497`) is the one fold that reads this (0110 §13, §11).
+ * `task_view` and `finding_backlog` must keep treating a stream that carries
+ * one exactly as they treat one that does not.
  */
 export const RunSpent = z.object({
   for: SpentFor,
