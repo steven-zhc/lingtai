@@ -12,15 +12,15 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `it` block asserts them — captured by actually running that file's own
  * fixtures once (`packages/conductor/test/one-pass.ts`) and copying the full
  * payloads back, so every field below is a real wire shape today's pass wrote
- * and not an invented one. **Not every row asserts both sequences there**: row
- * 5 has no run-side assertion, 13b no item-side, 14c and 14d neither, 15/15b/15c
- * no item-side (a declined `claim` writes nothing on the work-item stream, see
- * below), and row 16 (`:1786`) asserts individual payload fields rather than
- * either sequence — for those, the payloads below are still copied from the
- * same captured run, there is simply no `typesOf` call in the companion file
- * to point a disagreement at. The row number and the conductor test's own line
- * number are on each fixture's declaration; that file is the authority if the
- * two ever disagree.
+ * and not an invented one. **Not every row asserts both sequences there**:
+ * 13b no item-side, 14c and 14d neither, 15/15b/15c no item-side (a declined
+ * `claim` writes nothing on the work-item stream, see below), and row 16
+ * (`:1786`) asserts individual payload fields rather than either sequence —
+ * for those, the payloads below are still copied from the same captured run,
+ * there is simply no `typesOf` call in the companion file to point a
+ * disagreement at. The row number and the conductor test's own line number
+ * are on each fixture's declaration; that file is the authority if the two
+ * ever disagree.
  *
  * **Two helpers, so #484 edits two bodies and not forty literals.** `historyOf`
  * routes through `groupHistory` (`task.ts`) and `stripOf` through
@@ -78,6 +78,18 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `WorkItemReleased`/`IssueUpdated` events for row 15c. None of the three
  * calls `stripOf`, and none hands `historyOf` a fabricated `attempts` entry
  * for this run — either would pin a page view this ending never produces.
+ *
+ * **Rows 4 and 16 pin no strip either, for the same reason.** Both items end
+ * on `WorkItemReleased`, which `work-item.ts:329` folds to `lifecycle.status:
+ * 'backlog'` and `standingOf` reports as `'queued'` (`task.ts:692`).
+ * `loadTask` calls `planFor` only for `'running'` or `'blocked'`
+ * (`task.ts:1525-1527`), so `plan` stays `undefined`; `landed` is `false`
+ * (the item never lands here); and `task.ts:1541`'s gate,
+ * `last >= 0 && (landed || plan !== undefined)`, is false — `foldProgress` is
+ * never called on the last attempt, `run.progress` stays `null`, and the task
+ * page draws the empty-stream paragraph instead of a `<Segs>` strip. Pinning
+ * a strip for either row would be the same invented page view the paragraph
+ * above refuses for 15/15b/15c.
  */
 import type { Envelope, EventType } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -1100,18 +1112,8 @@ it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
     },
   ])
   expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
-  expect(stripOf(runEvents, false)).toEqual([
-    { step: 'claim', state: 'passed' },
-    { step: 'admit', state: 'passed' },
-    { step: 'prepared', state: 'skipped' },
-    { step: 'design', state: 'skipped' },
-    { step: 'implement', state: 'passed' },
-    { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'failed' },
-    { step: 'proposed', state: 'pending' },
-    { step: 'merge', state: 'skipped' },
-    { step: 'end', state: 'skipped' },
-  ])
+  // No `stripOf` here — the item ends on `WorkItemReleased` (`queued`), so
+  // the task page draws no strip for this ending at all (file header).
 })
 
 // Row 5, `what-a-pass-writes-today.test.ts:445` — restarts spent: the second arrival holds, not requeues
@@ -1414,7 +1416,15 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
   const itemEvents = envelopesFor('wi-purecheck-7', ITEM_5)
   const runEvents = envelopesFor('run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', RUN_5)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', 1]])
+  // `attempt: 2`, not 1: ITEM_5 carries two `WorkItemClaimed` (run-b1ad92a9
+  // first, run-9ad6ce9b second), so `claimsOf(own)` (`task.ts:966`) returns
+  // both, and `loadTask`'s `claims.map((c, i) => foldRun(c, i + 1, ...))`
+  // (`task.ts:1494`) numbers run-9ad6ce9b's attempt 2. Production also folds
+  // a third group, `attempt 1`, from run-b1ad92a9's own run stream — but this
+  // fixture carries no events for that stream, so that group is left out
+  // here rather than pinned on invented events, the same way `RUN_15b`'s
+  // other claim is left out below.
+  const attempts = new Map([['run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', 2]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
@@ -1445,7 +1455,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
       ],
     },
     {
-      label: 'attempt 1',
+      label: 'attempt 2',
       lines: [
         { type: 'StepRequested', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
         { type: 'StepStarted', actor: 'conductor', summary: 'claim \u00b7 take the ticket' },
@@ -6106,16 +6116,6 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
     { type: 'StepFailed', field: 'evidence' },
     { type: 'StepFailed', field: 'evidence' },
   ])
-  expect(stripOf(runEvents, false)).toEqual([
-    { step: 'claim', state: 'passed' },
-    { step: 'admit', state: 'passed' },
-    { step: 'prepared', state: 'skipped' },
-    { step: 'design', state: 'skipped' },
-    { step: 'implement', state: 'passed' },
-    { step: 'build', state: 'skipped' },
-    { step: 'review', state: 'failed' },
-    { step: 'proposed', state: 'pending' },
-    { step: 'merge', state: 'skipped' },
-    { step: 'end', state: 'skipped' },
-  ])
+  // No `stripOf` here — the item ends on `WorkItemReleased` (`queued`), so
+  // the task page draws no strip for this ending at all (file header).
 })
