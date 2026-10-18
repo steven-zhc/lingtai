@@ -10,9 +10,18 @@
  * imports nothing, so everything can import `domain`.
  */
 
+export const WORK_ITEM_STREAM_PREFIX = 'wi-'
+
+export const PASS_STREAM_PREFIX = 'run-'
+
+/** `wi-{project}-`, every work item's stream for one project. */
+export function workItemStreamsOf(project: string): string {
+  return `${WORK_ITEM_STREAM_PREFIX}${project}-`
+}
+
 /** `wi-{project}-{n}`, the work item's own stream. */
 export function workItemStream(project: string, externalRef: string | number): string {
-  return `wi-${project}-${externalRef}`
+  return `${workItemStreamsOf(project)}${externalRef}`
 }
 
 /**
@@ -24,13 +33,33 @@ export function workItemStream(project: string, externalRef: string | number): s
  * a fourth.
  */
 export function parseWorkItemStream(id: string): { project: string; issue: string } | null {
-  const body = id.startsWith('wi-') ? id.slice(3) : id
+  const body = id.startsWith(WORK_ITEM_STREAM_PREFIX) ? id.slice(WORK_ITEM_STREAM_PREFIX.length) : id
   const cut = body.lastIndexOf('-')
   if (cut < 0) return null
   const project = body.slice(0, cut)
   const issue = body.slice(cut + 1)
   if (!project || !issue) return null
   return { project, issue }
+}
+
+/** Whether `id` is a work item's own stream. */
+export function isWorkItemStream(id: string): boolean {
+  return id.startsWith(WORK_ITEM_STREAM_PREFIX)
+}
+
+/** `run-{uuid}` — a pass's own stream. The uuid is a caller's to make. */
+export function passStream(id: string): string {
+  return `${PASS_STREAM_PREFIX}${id}`
+}
+
+/** Whether `id` is a pass's own stream. */
+export function isPassStream(id: string): boolean {
+  return id.startsWith(PASS_STREAM_PREFIX)
+}
+
+/** The inverse of `passStream`, beside it so the two cannot drift. */
+export function passIdOf(runId: string): string {
+  return runId.slice(PASS_STREAM_PREFIX.length)
 }
 
 export const CHAT_STREAM_PREFIX = 'chat-'
@@ -135,8 +164,8 @@ export function workItemOf(event: { streamId: string; data?: unknown }): {
   project: string
   issue: string
 } | null {
-  if (event.streamId.startsWith('wi-')) return parseWorkItemStream(event.streamId)
+  if (isWorkItemStream(event.streamId)) return parseWorkItemStream(event.streamId)
   const named = (event.data as { workItemId?: unknown } | null | undefined)?.workItemId
-  if (typeof named !== 'string' || !named.startsWith('wi-')) return null
+  if (typeof named !== 'string' || !isWorkItemStream(named)) return null
   return parseWorkItemStream(named)
 }

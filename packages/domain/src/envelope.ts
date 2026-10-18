@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { CHAT_STREAM_PREFIX, PASS_STREAM_PREFIX, PROJECT_STREAM_PREFIX, WORK_ITEM_STREAM_PREFIX } from './streams.ts'
+
 /**
  * What wraps every event. The store fills `seq` and `at`; everything else is
  * supplied by whoever appends.
@@ -28,8 +30,23 @@ export const Actor = z
     'actor must be conductor, daemon, github, agent:<runId> or human:<id>',
   )
 
+/** Drops a prefix constant's trailing `-`, for building the alternation below. */
+function noDash(prefix: string): string {
+  return prefix.slice(0, -1)
+}
+
+/**
+ * Built from the prefix constants that have one. `int`, `ctl`, `ext` and
+ * `bkl` have no constant of their own ([streams.ts](./streams.ts)) and stay
+ * literal here; the alternation order is otherwise unchanged, so this
+ * pattern's `.source` is byte-identical to the one it replaced.
+ */
+export const STREAM_ID_PATTERN = new RegExp(
+  `^(${noDash(WORK_ITEM_STREAM_PREFIX)}|${noDash(PASS_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl)-[\\w.-]+$`,
+)
+
 export const StreamId = z.string().regex(
-  /^(wi|run|int|prj|ctl|chat|ext|bkl)-[\w.-]+$/,
+  STREAM_ID_PATTERN,
   // `bkl` is one minor finding's decision
   // ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
   // §5, `#137`). Not the work item's stream: a person triages the backlog
