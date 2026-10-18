@@ -36,6 +36,8 @@ import {
   type RuntimeId,
   type Step,
   type ToAppend,
+  passIdOf,
+  passStream,
   reduceControl,
   reduceWorkItem,
   workItemStream,
@@ -902,7 +904,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
     }
 
-    const runId = `run-${crypto.randomUUID()}`
+    const runId = passStream(crypto.randomUUID())
     const branch = agentBranch(options.issue)
     /**
      * **Where the pass works, known before it starts.**
@@ -1674,11 +1676,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const kept = await commitWipExceptPlanted(
           gitAsked,
           recipe.env.plantAt,
-          // `runId` always starts `run-` (its one constructor, above), which
-          // `WIP_COMMIT_PREFIX` already carries — sliced off here so the
-          // message reads `wip: run-<uuid> stopped by …` rather than
-          // doubling it.
-          `${WIP_COMMIT_PREFIX}${runId.slice('run-'.length)} stopped by ${stoppedBy}`,
+          // `runId` is always `passStream`'s (its one constructor, above),
+          // which `WIP_COMMIT_PREFIX` already carries — `passIdOf` strips it
+          // back off here so the message reads `wip: run-<uuid> stopped by …`
+          // rather than doubling it.
+          `${WIP_COMMIT_PREFIX}${passIdOf(runId)} stopped by ${stoppedBy}`,
         )
         if ('failed' in kept) {
           wipFailure = `the dirty tree was not kept — ${kept.failed}`

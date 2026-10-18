@@ -38,7 +38,7 @@ import { spawn } from 'node:child_process'
  * seventh: a run the runtime stopped retrying to fit `--json-schema` is
  * `no-structured-answer`, which is Lingtai's own, not the ticket's.
  */
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 
 import type { RunFailureKind, TokenCounts, Usage } from '@lingtai/domain'
@@ -755,9 +755,4 @@ export function lineReader(onLine: (line: string) => void): (chunk: string) => v
       nl = pending.indexOf('\n')
     }
   }
-}
-
-/** A run id. ULIDs are not in the dependency budget; a UUID sorts well enough. */
-export function newRunId(): string {
-  return `run-${randomUUID()}`
 }

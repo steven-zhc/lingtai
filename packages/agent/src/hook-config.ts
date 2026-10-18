@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 
+import { passStream } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 /**
  * The hook wiring, rendered by the conductor **outside the worktree**.
@@ -198,7 +199,7 @@ export async function smokeTestFailClosed(
   const nowhere = join(stateDir(), 'sockets', `smoke-${Date.now()}.sock`)
   const { code, stderr } = await run(
     hookBinary,
-    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: 'run-smoke' },
+    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: passStream('smoke') },
     JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }),
   )
 

@@ -31,7 +31,6 @@ export {
   RECEIPT_TAIL_CHARS,
   TRACE_LINE_CHARS,
   createClaudeCodeRuntime,
-  newRunId,
   parseResult,
   sessionIdFor,
   traceOf,
