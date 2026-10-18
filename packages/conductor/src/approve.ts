@@ -189,7 +189,14 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
   )
 }
 
-async function approveHolding(options: ApproveOptions, workItemId: string): Promise<ApproveResult> {
+/**
+ * **Exported for the unit half alone** (`#487`). `approve()` above takes
+ * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1
+ * the whole of `approve()` cannot be unit-tested — this function underneath
+ * it can, and `index.ts` does not re-export it, so nothing outside this
+ * module or a test gains a second way to grant an approval unlocked.
+ */
+export async function approveHolding(options: ApproveOptions, workItemId: string): Promise<ApproveResult> {
   const store = options.store ?? eventStore
   const log = options.log ?? (() => {})
 
@@ -502,7 +509,8 @@ export async function requeue(options: {
   )
 }
 
-async function requeueHolding(
+/** Exported for the unit half alone — see `approveHolding`'s own comment. */
+export async function requeueHolding(
   options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse' },
   store: EventStore,
   workItemId: string,
