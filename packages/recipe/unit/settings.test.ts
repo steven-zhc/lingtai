@@ -242,6 +242,27 @@ describe('the accessors', () => {
   })
 
   /**
+   * **A name is unique within its step** (0110 §9, `#499`): `step`, `name`
+   * and `round` are what find the `RunSpent` for an action, which holds only
+   * while no two actions in one step share a name.
+   */
+  it('refuses two actions of one name in one step by name', () => {
+    const twice = Recipe.safeParse({
+      ...WRITTEN,
+      steps: {
+        build: [
+          { name: 'check', run: 'pnpm lint' },
+          { name: 'check', run: 'pnpm test' },
+        ],
+      },
+    })
+    expect(twice.success).toBe(false)
+    const said = JSON.stringify(twice.error?.issues)
+    expect(said).toContain('already names an action')
+    expect(said).toContain('unique within its step')
+  })
+
+  /**
    * **The lane is the last action at `merge`, and the refusal says why rather than
    * where** (0065 §8, `#270`).
    *

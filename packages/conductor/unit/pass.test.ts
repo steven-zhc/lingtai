@@ -714,67 +714,25 @@ describe('four steps may refuse, and the other six may not', () => {
 
 describe('a refusal reports what the action that refused said', () => {
   /**
-   * The reason a step is what stopped and an action is what refused: nothing
-   * makes an action's *name* unique within a step. `actionsAt` (`recipe.ts:1093`)
-   * validates the plugin and the kind, and no refinement in `recipe.ts` or
-   * `resolve.ts` asks for distinct names, so a lookup by name returns whichever
-   * was declared first — and *refused at `check` — tests green* is a refusal
-   * reporting the passing check's evidence.
+   * **The trap this block used to document twice is now refused before any
+   * pass runs.** A refusal is reported by looking an action's evidence up by
+   * *name*, and nothing made that name unique within a step — so a lookup
+   * returned whichever action was declared first, and *refused at `check` —
+   * tests green* could be a refusal reporting the wrong action's evidence
+   * without anybody noticing. `actionsAt` now refuses two actions of one name
+   * within a step when the recipe resolves (0110 §9, `#499`), so the
+   * ambiguous recipe this block used to build to prove the point can no
+   * longer reach `recipeWith`, let alone `runPass`.
    */
-  it('reads the evidence by verdict rather than by the first action of that name', async () => {
-    const recipe = recipeWith({
-      proposed: [
-        { name: 'check', run: 'pnpm test' },
-        { name: 'check', run: 'pnpm typecheck' },
-      ],
-    })
-    // The schema takes both, which is the premise the rest of this rests on.
-    expect(recipe.steps.proposed).toHaveLength(2)
-
-    const { bodies } = watching()
-    const { actionsAt } = watchingActions({
-      proposed: [
-        canned('check', { verdict: 'passed', evidence: 'tests green', findings: [] }),
-        canned('check', { verdict: 'failed', evidence: 'typecheck: 3 errors', findings: [] }),
-      ],
-    })
-    const { emit } = events()
-
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
-
-    expect(result.stopped?.ending).toEqual({
-      ending: 'refused',
-      because: 'action-refused',
-      at: 'check',
-      detail: 'typecheck: 3 errors',
-    })
-  })
-
-  /**
-   * The same lookup and the same trap, and this one is worse: a person is being
-   * asked, and the question is the whole of what they are answering.
-   */
-  it('asks the question the held action asked, under a duplicated name', async () => {
-    // `proposed:` and not `merge:`: a hold is `proposed`'s since `#270` — 0058 §3b
-    // gives `merge` three ways out and only `proposed` may send one to a person.
-    const recipe = recipeWith({
-      proposed: [
-        { name: 'sign off', run: 'pnpm test' },
-        { name: 'sign off', human: 'ship it?' },
-      ],
-    })
-    const { bodies } = watching()
-    const { actionsAt } = watchingActions({
-      proposed: [
-        canned('sign off', { verdict: 'passed', evidence: 'tests green', findings: [] }),
-        canned('sign off', { verdict: 'needs-approval', evidence: 'ship it?', findings: [] }),
-      ],
-    })
-    const { emit } = events()
-
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
-
-    expect(result.stopped?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
+  it('refuses a recipe naming the same action twice in one step', () => {
+    expect(() =>
+      recipeWith({
+        proposed: [
+          { name: 'check', run: 'pnpm test' },
+          { name: 'check', run: 'pnpm typecheck' },
+        ],
+      }),
+    ).toThrow(/already names an action/)
   })
 })
 

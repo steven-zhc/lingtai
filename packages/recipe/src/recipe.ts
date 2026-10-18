@@ -2255,19 +2255,20 @@ function nameOf(action: unknown): string {
  * halted at the first bad field would make a person fix one thing per attempt,
  * which is `#222`'s lesson about the build step applied to configuration.
  *
- * **Then five questions about the list rather than about one action**, asked
+ * **Then six questions about the list rather than about one action**, asked
  * last because each is only answerable once the entries either side have been
  * accepted: *does this step cut twice* (`#268`), *does it take twice* (`#269`),
  * *is anything written after the lane* and *is a step written with no lane at
- * all* (both `#270`), and *is a destination written before the thing it keeps*
- * (`#300`). They are the only rules here about an action's
- * neighbours, and each exists because the plugin it is about does something the
- * rest do not — two of them *make* what the pass is about, the worktree and the
- * work item, two are the one action that changes the base branch,
- * asked from both sides (nothing may follow the lane, and a written step that
- * could land may not omit it), and the last is the one that keeps rather than
- * makes or judges, so its place in the list is the whole of whether it has
- * anything to keep.
+ * all* (both `#270`), *is a destination written before the thing it keeps*
+ * (`#300`), and *does a name repeat within the step* (0110 §9, `#499`). They
+ * are the only rules here about an action's neighbours, and each exists
+ * because the plugin it is about does something the rest do not — two of them
+ * *make* what the pass is about, the worktree and the work item, two are the
+ * one action that changes the base branch, asked from both sides (nothing may
+ * follow the lane, and a written step that could land may not omit it), one
+ * is the one that keeps rather than makes or judges, so its place in the list
+ * is the whole of whether it has anything to keep, and the last is what later
+ * finds an action's spend on the log, which only a unique name can do.
  *
  * `z.unknown()` rather than the union, so the dispatch is the key's and not
  * zod's: a union tries six schemas and reports six failures about one action.
@@ -2287,6 +2288,8 @@ function actionsAt(step: Step) {
       const implementRuns: number[] = []
       /** Whether `implement:` accepted an `agent:` — the refusal below asks only this. */
       let implementHasAgent = false
+      /** The first index of each accepted entry's `name` — the refusal below. */
+      const namesAt = new Map<string, number>()
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS)
         const plugin = pluginNaming(action, PLUGINS)
@@ -2417,6 +2420,34 @@ function actionsAt(step: Step) {
           })
           return
         }
+
+        /**
+         * **An action's `name` is unique within its step** (0110 §9): `step`,
+         * `name` and `round` are what find the `RunSpent` for an action, and
+         * that holds only while no two actions in one step share a name.
+         *
+         * Checked here, where `cuts` and `takes` are filled, so a refused
+         * entry — one that never reached `resolved` — is never compared.
+         */
+        const entryName = nameOf(action)
+        const firstAt = namesAt.get(entryName)
+        if (firstAt !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              entryName,
+              `the "${step}" step already names an action "${entryName}" at entry ${firstAt}, and an ` +
+                "action's name must be unique within its step — `step`, `name` and `round` are what " +
+                'find its spend on the log (0110 §9). Give this one a different name',
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          })
+          return
+        }
+        namesAt.set(entryName, i)
 
         if (kind === 'worktree') cuts.push(i)
         if (kind === 'queue') takes.push(i)
