@@ -48,7 +48,6 @@ function verdictAction(name: string, verdict: 'accepted' | 'refused', findings: 
     plugin: 'agent',
     name,
     onSha,
-    call: null,
     evidence: verdict === 'accepted' ? 'looks right' : 'blocker found',
     yields: 'verdict',
     result: { _tag: 'Completed', assessment: { verdict, findings } },

@@ -105,7 +105,7 @@ function refusalReasonOf(because: string | undefined): RefusalReasonNoConflict {
 export function actionOf(action: Action, outcome: ActionOutcomeEntry | undefined, onSha: string): DomainAction {
   if (outcome === undefined) return notReachedOf(action, onSha)
 
-  const base = { plugin: action.kind, name: action.name, onSha, call: null, evidence: outcome.evidence }
+  const base = { plugin: action.kind, name: action.name, onSha, evidence: outcome.evidence }
   switch (action.yields) {
     case 'verdict':
       return { ...base, yields: 'verdict', result: verdictResultOf(outcome) }
@@ -125,7 +125,7 @@ export function actionOf(action: Action, outcome: ActionOutcomeEntry | undefined
 }
 
 function notReachedOf(action: Action, onSha: string): DomainAction {
-  const base = { plugin: action.kind, name: action.name, onSha, call: null, evidence: '' }
+  const base = { plugin: action.kind, name: action.name, onSha, evidence: '' }
   const result = { _tag: 'NotReached' } as const
   switch (action.yields) {
     case 'verdict':

@@ -15,7 +15,7 @@ import { Finding, RefusalReason, Step } from '../src/vocabulary.ts'
 import type { RunRef } from '../src/wait.ts'
 
 const run: RunRef = { runId: 'run-1' }
-const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', call: null as string | null, evidence: '' }
+const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', evidence: '' }
 
 function action(yields: Action['yields'], result: unknown, overrides: Partial<typeof base> = {}): Action {
   return Action.parse({ ...base, ...overrides, yields, result })
@@ -162,9 +162,7 @@ describe('nextOf: §4 Fell short as table', () => {
 
   it('verdict, Interrupted{out-of-turns}: Propose{BudgetExhausted}', () => {
     const result = next(
-      outcome('review', [
-        action('verdict', { _tag: 'Interrupted', cause: 'out-of-turns' }, { evidence: 'ran out', call: 'call-1' }),
-      ]),
+      outcome('review', [action('verdict', { _tag: 'Interrupted', cause: 'out-of-turns' }, { evidence: 'ran out' })]),
     )
     expect(result).toEqual({
       _tag: 'Propose',

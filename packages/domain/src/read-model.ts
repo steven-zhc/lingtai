@@ -585,7 +585,7 @@ function actionFromEvent(
   workItemId: string | undefined,
 ): Action | undefined {
   const data = e.data as { step: Step; action: string; onSha: string }
-  const base = { name: data.action, onSha: data.onSha, call: null, evidence: evidenceOf(e) }
+  const base = { name: data.action, onSha: data.onSha, evidence: evidenceOf(e) }
   if (e.type === 'ApprovalRequested' && INJECTED_APPROVAL_ACTIONS.has(data.action)) {
     return { ...base, plugin: 'conductor', yields: 'signoff', result: signoffResultFrom(e) as never }
   }
@@ -1039,7 +1039,6 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
         run: toRunRef(hold.run),
         cause: hold.kind,
         detail: hold.detail,
-        call: null,
       }
     case 'DidNotFinish': {
       const run = toRunRef(hold.run)

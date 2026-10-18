@@ -52,7 +52,6 @@ async function attempt(n: number, a: number, findings: Finding[], verdict: 'acce
           plugin: 'agent',
           name: 'review',
           onSha: `sha-${a}`,
-          call: null,
           evidence: 'ok',
           yields: 'verdict',
           result: { _tag: 'Completed', assessment: { verdict, findings } },

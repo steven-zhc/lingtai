@@ -138,7 +138,6 @@ describe('allowedResolutions', () => {
       run,
       cause: 'out-of-turns',
       detail: 'ran out of turns',
-      call: null,
     })
     expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
   })
@@ -222,7 +221,6 @@ describe('recommendedResolution', () => {
       run,
       cause: 'out-of-turns',
       detail: 'ran out of turns',
-      call: null,
     })
     expect(recommendedResolution(reason, queued)).toBe('Requeue')
   })

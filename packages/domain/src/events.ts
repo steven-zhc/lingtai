@@ -17,7 +17,8 @@
  */
 import { z } from 'zod'
 
-import { Hold } from './hold.ts'
+import { WaitId } from './action.ts'
+import { Hold, JudgeWhen } from './hold.ts'
 import { Usage } from './spend.ts'
 import { TriageResult } from './triage.ts'
 import {
@@ -675,6 +676,49 @@ export const RunFailed = z.object({
   kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
 })
+
+/**
+ * What a paid run was for — [0110](../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
+ * §9's tagged union, one variant per place `Runtime.run` is called.
+ *
+ * `Action`'s `round` is non-negative rather than ≥ 1: implement is round 0,
+ * and only a fix round counts from 1 (0110 §10). `step`, `name` and `round`
+ * together find the `RunSpent` for one action — there is no call id — which
+ * holds only while an action's `name` is unique within its step; `actionsAt`
+ * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
+ */
+export const SpentFor = z.discriminatedUnion('_tag', [
+  z.object({ _tag: z.literal('Action'), step: Step, name: z.string(), round: z.number().int().nonnegative() }),
+  z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
+  z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
+  z.object({ _tag: z.literal('Discussion') }),
+])
+export type SpentFor = z.infer<typeof SpentFor>
+
+/**
+ * One `RunSpent` per paid call (0110 §1, §2): what the call was for, what it
+ * billed, and what the runtime said it cost.
+ *
+ * **`usage` is required, not optional as `RunFinished.usage` is.** A runtime
+ * that reported no tokens writes `[]`; *not said* lives in `TokenCounts`'s
+ * own optional fields, so this does not add a second spelling of absence.
+ * **`costUsd` is required and nullable** — 0110 §4: written, and `null` when
+ * the runtime did not say. Neither field ever defaults to zero (0110 §4's
+ * `.default(0)` is the bug this schema exists to refuse).
+ *
+ * Nothing writes or reads this yet, and no fold may start reading it until
+ * its own ticket (0110 §13): `task_view` and `finding_backlog` must keep
+ * treating a stream that carries one exactly as they treat one that does not.
+ */
+export const RunSpent = z.object({
+  for: SpentFor,
+  runtime: RuntimeId,
+  turns: z.number().int(),
+  durationMs: z.number().int(),
+  usage: Usage,
+  costUsd: z.number().nullable(),
+})
+export type RunSpent = z.infer<typeof RunSpent>
 
 // --------------------------------------------------------------- verdicts ----
 
@@ -2283,6 +2327,7 @@ export const EVENTS = {
   RunProposedCompletion,
   RunFinished,
   RunFailed,
+  RunSpent,
   StepsResolved,
   EndActionsResolved,
   StepRequested,

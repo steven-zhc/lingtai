@@ -48,7 +48,6 @@ function refusedRun(step: Step, name: string): StepOutcome {
         plugin: 'run',
         name,
         onSha: 'a'.repeat(40),
-        call: null,
         evidence: '…',
         yields: 'verdict',
         result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },

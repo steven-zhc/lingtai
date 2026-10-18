@@ -23,7 +23,7 @@ import {
 } from '../src/action.ts'
 import { STEPS, Step } from '../src/vocabulary.ts'
 
-const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', call: null, evidence: '' }
+const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', evidence: '' }
 
 // Every `${yields}/${result._tag}` combination the `cleared` tests below
 // actually exercised, populated by `parseAction` — never a literal that

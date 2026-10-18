@@ -371,7 +371,6 @@ add(
       run: { runId: 'run-pin-budgetexhausted' },
       cause: 'out-of-turns',
       detail: 'spent 80 turns',
-      call: null,
     }),
   ],
   null,

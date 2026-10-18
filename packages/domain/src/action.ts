@@ -20,13 +20,6 @@ import { z } from 'zod'
 import { Finding, RefusalReason, Step } from './vocabulary.ts'
 
 /**
- * The paid call behind an action, whose receipt #455 defines. Declared here,
- * branded, because nothing else owns it yet.
- */
-export const CallId = z.string().brand<'CallId'>()
-export type CallId = z.infer<typeof CallId>
-
-/**
  * A wait's own id, 0118 §6's. Declared here, branded, because nothing else
  * owns it yet.
  */
@@ -115,8 +108,6 @@ export const ActionBase = z.object({
   name: z.string(),
   /** Where the branch stood when this action's turn came, run or not. */
   onSha: z.string(),
-  /** The paid call behind it; `null` for commands, merges, signoffs. */
-  call: CallId.nullable(),
   /** What the plugin said, for a person; nothing branches on it; `""` when not run. */
   evidence: z.string(),
 })

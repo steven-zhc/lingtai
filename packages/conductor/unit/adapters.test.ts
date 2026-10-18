@@ -360,7 +360,7 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     },
     { _tag: 'CheckRefused', run, step: 'merge', action: 'check', evidence: 'blocker found', findings: [] },
     { _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'main moved' },
-    { _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: 'spent all 10 turns', call: null },
+    { _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: 'spent all 10 turns' },
     { _tag: 'AgentCrashed', run, step: 'review', cause: 'crash', detail: 'Session ID already in use' },
     { _tag: 'SetupRefused', run, step: 'prepared', action: 'install', why: 'pnpm install failed' },
     { _tag: 'SetupRefused', run, step: 'implement', action: 'the hook', why: 'the hook was not wired' },
@@ -621,7 +621,7 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
     expect((holdOf({ _tag: 'NothingProduced', run, said: messy }, pass) as { why: string }).why).toBe(clean)
     expect(
       (
-        holdOf({ _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: messy, call: null }, pass) as {
+        holdOf({ _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: messy }, pass) as {
           detail: string
         }
       ).detail,
@@ -744,7 +744,6 @@ describe('holdOf: an escalated #471 proposal equals its direct WaitReason', () =
       run,
       cause: 'out-of-turns',
       detail: 'spent all 10 turns',
-      call: null,
     }
     const proposal: Proposal = {
       _tag: 'BudgetExhausted',

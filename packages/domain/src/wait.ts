@@ -36,7 +36,6 @@
  */
 import { z } from 'zod'
 
-import { CallId } from './action.ts'
 import { Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
 import {
@@ -143,7 +142,6 @@ const BudgetExhausted = z.object({
   // (see this file's own header) without closing the ESM cycle it avoids.
   cause: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
   detail: z.string(),
-  call: CallId.nullable(),
 })
 
 /**
