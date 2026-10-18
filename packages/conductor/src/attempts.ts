@@ -38,7 +38,7 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, PayloadOf } from '@lingtai/domain'
-import { legacyColumns } from '@lingtai/domain'
+import { attemptFactOf, cardFactOf } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -179,31 +179,23 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
       }
 
       case 'WorkItemBlocked': {
-        const d = event.data as PayloadOf<'WorkItemBlocked'>
-        const runId = 'run' in d.hold ? d.hold.run.runId : null
+        const fact = cardFactOf(event)
+        if (fact === null || fact._tag !== 'WaitStarted') break
+        const runId = 'run' in fact.reason ? fact.reason.run.runId : null
         const attempt = runId === null ? undefined : byRun.get(runId)
         // An attempt that ended by asking a person ended just as much as one
         // that was released, and the question is the reason.
-        if (attempt) attempt.ended = `blocked, asking: ${legacyColumns(d.hold).question}`
+        if (attempt) attempt.ended = `blocked, asking: ${fact.card.question}`
         break
       }
 
-      // **Retired, and still read for ever** (0019, `#143`). Nothing appends
-      // either of these since a lane refusal stopped buying a run, and a log
-      // that holds them still has the integrator's own words on them — which
-      // the release reason only summarises. Dropping the case would make an old
-      // ticket's later attempt read as though nothing had refused the one
-      // before it.
-      case 'RepairRequested':
-      case 'RepairDeclined': {
-        const d = event.data as PayloadOf<'RepairRequested'>
-        const attempt = byRun.get(d.runId)
-        if (attempt) attempt.refusal = { reason: d.reason, detail: d.detail }
+      default: {
+        const fact = attemptFactOf(event)
+        if (fact?._tag !== 'RepairRefused') break
+        const attempt = byRun.get(fact.runId)
+        if (attempt) attempt.refusal = { reason: fact.reason, detail: fact.detail }
         break
       }
-
-      default:
-        break
     }
   }
 
@@ -253,81 +245,31 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
         break
       }
 
-      case 'StepStarted': {
-        const d = event.data as PayloadOf<'StepStarted'>
-        unfinished.add(`${d.step}:${d.action}`)
-        break
-      }
-
-      case 'StepPassed':
-      case 'StepWaived': {
-        const d = event.data as PayloadOf<'StepStarted'>
-        unfinished.delete(`${d.step}:${d.action}`)
-        break
-      }
-
       /**
-       * The point was reached, its agent never started, and it is **not**
-       * evidence for the next attempt (#133).
-       *
-       * Cleared from `unfinished` because the gate did end — leaving it there
-       * would tell the next agent that a review *died inside* this diff, which
-       * is a fact about the diff that nobody established. And no `evidence`,
-       * because a quota has nothing to say to an agent about the code: the
-       * attempt is being tried again for the same reason a run that never
-       * started is, and the failure block for it is empty on purpose.
+       * Everything else a step ends with — `StepStarted` opens `unfinished`;
+       * `StepPassed`/`StepWaived`/`StepNeverRan`/`StepDidNotFinish`/`StepAsked`
+       * close it with nothing to show (a quota, a crash, a question — none of
+       * them judged the code, so the failure block for each is empty on
+       * purpose, `#133`/0057 §1/`#296`); `StepFailed` closes it **with**
+       * evidence, the most specific thing on the stream, so the last one wins
+       * over anything else recorded here.
        */
-      case 'StepNeverRan': {
-        const d = event.data as PayloadOf<'StepNeverRan'>
-        unfinished.delete(`${d.step}:${d.action}`)
+      default: {
+        const fact = attemptFactOf(event)
+        if (fact === null || fact._tag === 'RepairRefused') break
+        if (fact._tag === 'StepStarted') {
+          unfinished.add(fact.key)
+          break
+        }
+        unfinished.delete(fact.key)
+        if (fact.refused !== null) {
+          evidence = {
+            what: fact.key,
+            text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
+          }
+        }
         break
       }
-
-      /**
-       * The point was reached, its agent started and ended with no receipt, and
-       * it is **not** evidence for the next attempt either
-       * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1).
-       *
-       * The paragraph above holds word for word: a crashed reviewer has nothing
-       * to say to an agent about the code, and leaving it in `unfinished` would
-       * tell the next one that a review died *inside* this diff — a fact about
-       * the diff that nobody established.
-       */
-      case 'StepDidNotFinish': {
-        const d = event.data as PayloadOf<'StepDidNotFinish'>
-        unfinished.delete(`${d.step}:${d.action}`)
-        break
-      }
-
-      /**
-       * And a step that stopped and asked, for the same reason once more
-       * (`#296`).
-       *
-       * A question is not evidence about the code either: the agent asked
-       * something and judged nothing, so leaving it in `unfinished` would tell
-       * the next one that a step died inside this diff. **Nor is the question
-       * itself `evidence` here** — it reaches a person, or the step that asked it
-       * via `SentBack.asked`, and a fresh attempt is not the reader either of
-       * those was written for.
-       */
-      case 'StepAsked': {
-        const d = event.data as PayloadOf<'StepAsked'>
-        unfinished.delete(`${d.step}:${d.action}`)
-        break
-      }
-
-      case 'StepFailed': {
-        const d = event.data as PayloadOf<'StepFailed'>
-        const what = `${d.step}:${d.action}`
-        unfinished.delete(what)
-        // A gate's refusal is the most specific thing on the stream, so the last
-        // one wins over anything else recorded here.
-        evidence = { what, text: findingsAppended(d.evidence, d.findings, budget.findings) }
-        break
-      }
-
-      default:
-        break
     }
   }
 
@@ -345,7 +287,11 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
-function findingsAppended(output: string, findings: PayloadOf<'StepFailed'>['findings'], max: number): string {
+function findingsAppended(
+  output: string,
+  findings: readonly PayloadOf<'StepFailed'>['findings'][number][],
+  max: number,
+): string {
   if (findings.length === 0) return output
   const shown = findings.slice(0, max).map((f) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`

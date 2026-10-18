@@ -28,10 +28,11 @@ import type { Action, StepOutcome } from './action.ts'
  * `WaitReason` there until #464).
  */
 import { diagnoseRefusal } from './attribution.ts'
-import type { PayloadOf } from './events.ts'
+import { parsePayload, type PayloadOf } from './events.ts'
 import type { CeilingKind, Hold } from './hold.ts'
+import { legacyColumns } from './legacy-columns.ts'
 import type { Finding, RefusalReason, Step } from './vocabulary.ts'
-import type { EscalationBecause, RunRef, WaitReason } from './wait.ts'
+import type { EscalationBecause, Resolution, RunRef, WaitReason } from './wait.ts'
 
 /**
  * `@lingtai/actions`' own `ActionEvent`, declared again here because this
@@ -605,4 +606,141 @@ function answerUnreadableHold(
     return { _tag: 'CheckRed', run, step: 'merge', why: said(raw, 400), raw }
   }
   return { _tag: 'DidNotFinish', run, step, why: said(raw, 400), raw }
+}
+
+// ------------------------------------------------------- the wait writers ----
+
+/**
+ * `#487`'s writer-side adapters: 0118 §1's `WaitReason`/`Resolution` turned
+ * back into the `WorkItemBlocked`/`StepWaived`/`ApprovalGranted`/
+ * `WorkItemUnblocked` payloads a real pass or `approve.ts`/`ask.ts` still
+ * write today, through `holdOf` above — the one mapping, used in both
+ * directions, rather than a second transcription in each caller.
+ *
+ * Temporary, the same as `eventOf`/`holdOf`: until #464 puts 0118 §1's model
+ * on the log directly, these are where a caller that now thinks in
+ * `WaitReason`/`Resolution` meets the payload the log still wants.
+ */
+
+/** `WorkItemBlocked{hold}` for a wait that is starting — `lingtai ask`'s own `OwnQuestion`. */
+export function waitStartedOf(
+  reason: WaitReason,
+  pass: { branch: string; base: string; findings: readonly Finding[] },
+): { type: 'WorkItemBlocked'; data: PayloadOf<'WorkItemBlocked'> } {
+  return { type: 'WorkItemBlocked', data: parsePayload('WorkItemBlocked', { hold: holdOf(reason, pass) }) }
+}
+
+/**
+ * `WorkItemUnblocked` for `Requeue` and `AnswerQuestion` — the only two
+ * resolutions that answer a wait this way (`Approve` appends
+ * `ApprovalGranted`/`StepWaived` through `approvalOf` below; `Close` and
+ * `EditBodyAndRequeue` are not either caller's today).
+ *
+ * `withdrawn` is set exactly when an `OwnQuestion` is resolved by `Requeue`
+ * (0118 §1's appendix) — a person taking back a question asked before any
+ * run, rather than answering it. `note` is `resolution.choice` for
+ * `AnswerQuestion`, and the caller's own `note` for `Requeue`.
+ */
+export function waitResolvedOf(
+  reason: WaitReason,
+  resolution: Extract<Resolution, { _tag: 'Requeue' | 'AnswerQuestion' }>,
+  by: string,
+  note: string,
+): { type: 'WorkItemUnblocked'; data: PayloadOf<'WorkItemUnblocked'> } {
+  const withdrawn = reason._tag === 'OwnQuestion' && resolution._tag === 'Requeue'
+  const written = resolution._tag === 'AnswerQuestion' ? resolution.choice : note
+  return {
+    type: 'WorkItemUnblocked',
+    data: parsePayload('WorkItemUnblocked', { by, note: written, ...(withdrawn ? { withdrawn: true } : {}) }),
+  }
+}
+
+/** One `StepWaived` — a person overruling a gate's own refusal, named and reasoned (`approve.ts`'s `waive()`). */
+export function waiverOf(params: {
+  step: string
+  action: string
+  runId: string
+  onSha: string
+  by: string
+  reason: string
+}): { type: 'StepWaived'; data: PayloadOf<'StepWaived'> } {
+  return { type: 'StepWaived', data: parsePayload('StepWaived', params) }
+}
+
+/**
+ * `Approve`'s own append: one waiver per gate still refusing the sha, then
+ * `ApprovalGranted` — in that order, so the fold reads the refusal overruled
+ * before the diff approved (`approve.ts`'s own comment on absorbing the
+ * waiver).
+ */
+export function approvalOf(params: {
+  refusing: readonly { step: string; action: string }[]
+  step: string
+  action: string
+  runId: string
+  onSha: string
+  by: string
+  note: string
+}): Array<
+  | { type: 'StepWaived'; data: PayloadOf<'StepWaived'> }
+  | { type: 'ApprovalGranted'; data: PayloadOf<'ApprovalGranted'> }
+> {
+  return [
+    ...params.refusing.map((r) =>
+      waiverOf({
+        step: r.step,
+        action: r.action,
+        runId: params.runId,
+        onSha: params.onSha,
+        by: params.by,
+        reason: params.note,
+      }),
+    ),
+    {
+      type: 'ApprovalGranted',
+      data: parsePayload('ApprovalGranted', {
+        step: params.step,
+        action: params.action,
+        runId: params.runId,
+        onSha: params.onSha,
+        by: params.by,
+        note: params.note,
+      }),
+    },
+  ]
+}
+
+/**
+ * The `Hold` an approved merge's own refusal still writes — `approve.ts`'s
+ * `afterApproval: true`, which `holdOf` cannot produce (see this function's
+ * callers' own comment): `mergeRefusedHold` hard-codes `afterApproval: false`,
+ * and `wait.ts`'s `MergeRefused` excludes `conflict`/`verify-failed`, which an
+ * approved merge can still hit. Built literally, the way `approve.ts` built it
+ * before this existed, and kept until #464 deletes `Hold` itself.
+ */
+export function approvedMergeRefusedOf(params: {
+  runId: string
+  reason: RefusalReason
+  raw: string
+  branch: string
+  base: string
+  paths: string[] | null
+  baseSha: string | null
+  headSha: string | null
+}): { event: { type: 'WorkItemBlocked'; data: PayloadOf<'WorkItemBlocked'> }; question: string } {
+  const hold: Hold = {
+    _tag: 'MergeRefused',
+    run: { runId: params.runId },
+    afterApproval: true,
+    reason: params.reason,
+    why: diagnoseRefusal({ reason: params.reason, detail: params.raw, branch: params.branch, base: params.base }).what,
+    raw: params.raw,
+    paths: params.paths,
+    baseSha: params.baseSha,
+    headSha: params.headSha,
+  }
+  return {
+    event: { type: 'WorkItemBlocked', data: parsePayload('WorkItemBlocked', { hold }) },
+    question: legacyColumns(hold).question,
+  }
 }

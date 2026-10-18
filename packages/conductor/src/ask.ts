@@ -21,7 +21,8 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { reduceWorkItem, waitResolvedOf, waitsOf, waitStartedOf, workItemStream } from '@lingtai/domain'
+import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
 export interface AskOutcome {
@@ -29,6 +30,9 @@ export interface AskOutcome {
   workItemId: string
   detail: string
 }
+
+/** `holdOf`'s `OwnQuestion` arm reads none of this — there is no branch, base or finding to carry. */
+const NO_PASS = { branch: '', base: '', findings: [] }
 
 /**
  * Holds an item on a question, before any run has claimed it.
@@ -67,11 +71,8 @@ export async function ask(options: {
   try {
     await store.append(workItemId, item.version, [
       {
-        type: 'WorkItemBlocked',
+        ...waitStartedOf({ _tag: 'OwnQuestion', question: options.question, by: options.by }, NO_PASS),
         actor: options.by,
-        data: parsePayload('WorkItemBlocked', {
-          hold: { _tag: 'Question', question: options.question, by: options.by },
-        }),
       },
     ])
   } catch (err) {
@@ -124,32 +125,38 @@ export async function answer(options: {
     return { ok: false, workItemId, detail: 'an answer needs an answer' }
   }
 
-  const item = reduceWorkItem(await store.read(workItemId))
-  const life = item.lifecycle
-  if (life.status !== 'blocked') {
-    return { ok: false, workItemId, detail: `${workItemId} is ${life.status}, not asking anything` }
+  const events = await store.read(workItemId)
+  const item = reduceWorkItem(events)
+  if (item.lifecycle.status !== 'blocked') {
+    return { ok: false, workItemId, detail: `${workItemId} is ${item.lifecycle.status}, not asking anything` }
   }
-  if (life.runId !== null) {
+
+  // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
+  // — every other wait carries a run, which is exactly `life.runId !== null`
+  // today: a hold with no `run` field is `Question`'s alone.
+  const wait = waitsOf(events).at(-1)
+  const reason = wait?.reason
+  if (reason === undefined || !allowedResolutions(reason).includes('AnswerQuestion')) {
+    const runId = reason !== undefined && 'run' in reason ? reason.run.runId : null
     return {
       ok: false,
       workItemId,
-      detail: `${workItemId} is held by ${life.runId}, not asking before a run — lingtai approve or lingtai requeue`,
+      detail: `${workItemId} is held by ${runId}, not asking before a run — lingtai approve or lingtai requeue`,
     }
   }
-  if (options.question !== undefined && options.question !== life.question) {
+  if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {
     return {
       ok: false,
       workItemId,
-      detail: `${workItemId} is asking a different question now — "${life.question}" — read it again`,
+      detail: `${workItemId} is asking a different question now — "${reason.question}" — read it again`,
     }
   }
 
   try {
     await store.append(workItemId, item.version, [
       {
-        type: 'WorkItemUnblocked',
+        ...waitResolvedOf(reason, { _tag: 'AnswerQuestion', choice: options.answer }, options.by, options.answer),
         actor: options.by,
-        data: parsePayload('WorkItemUnblocked', { by: options.by, note: options.answer }),
       },
     ])
   } catch (err) {

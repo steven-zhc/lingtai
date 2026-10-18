@@ -1484,3 +1484,69 @@ export function findingsRaisedOf(event: Envelope): FindingsRaised | null {
   if (result._tag !== 'Completed' || !('assessment' in result)) return null
   return { runId: d.runId, step: d.step, action: d.action, onSha: d.onSha, assessment: result.assessment }
 }
+
+// ----------------------------------------------------------- attemptFactOf ----
+
+/**
+ * What `attempts.ts` (`@lingtai/conductor`) reads off one event at a time to
+ * tell a later attempt what an earlier one did (`#487`).
+ *
+ * **Not `stepOutcomesOf`**, for `#481`'s own reasons (see that function's
+ * header on `findingsRaisedOf`): a `prepared:install` refusal has no recipe
+ * entry and no `STEP_DEFAULTS` row, so `stepOutcomesOf` would skip it
+ * outright, and `attempts.ts` is written for exactly that case (`#82`'s own
+ * example).
+ */
+export type AttemptFact =
+  | { readonly _tag: 'RepairRefused'; readonly runId: string; readonly reason: string; readonly detail: string }
+  | { readonly _tag: 'StepStarted'; readonly key: string }
+  | {
+      readonly _tag: 'StepEnded'
+      readonly key: string
+      readonly refused: { readonly evidence: string; readonly findings: readonly Finding[] } | null
+    }
+
+/** `attemptFactOf`'s one entry point — see the section header for what it does and does not answer. */
+export function attemptFactOf(event: Envelope): AttemptFact | null {
+  switch (event.type) {
+    /**
+     * **Retired, and still read for ever** (0019, `#143`). Nothing appends
+     * either of these since a lane refusal stopped buying a run, and a log
+     * that holds them still has the integrator's own words on them — which
+     * the release reason only summarises. Dropping the case would make an
+     * old ticket's later attempt read as though nothing had refused the one
+     * before it.
+     */
+    case 'RepairRequested':
+    case 'RepairDeclined': {
+      const d = event.data as PayloadOf<'RepairRequested'>
+      return { _tag: 'RepairRefused', runId: d.runId, reason: d.reason, detail: d.detail }
+    }
+
+    case 'StepStarted': {
+      const d = event.data as PayloadOf<'StepStarted'>
+      return { _tag: 'StepStarted', key: `${d.step}:${d.action}` }
+    }
+
+    case 'StepPassed':
+    case 'StepWaived':
+    case 'StepNeverRan':
+    case 'StepDidNotFinish':
+    case 'StepAsked': {
+      const d = event.data as { step: string; action: string }
+      return { _tag: 'StepEnded', key: `${d.step}:${d.action}`, refused: null }
+    }
+
+    case 'StepFailed': {
+      const d = event.data as PayloadOf<'StepFailed'>
+      return {
+        _tag: 'StepEnded',
+        key: `${d.step}:${d.action}`,
+        refused: { evidence: d.evidence, findings: d.findings },
+      }
+    }
+
+    default:
+      return null
+  }
+}

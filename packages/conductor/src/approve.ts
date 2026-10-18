@@ -1,10 +1,12 @@
 import {
-  diagnoseRefusal,
-  type Hold,
-  legacyColumns,
+  approvalOf,
+  approvedMergeRefusedOf,
   parsePayload,
   reduceRun,
   reduceWorkItem,
+  waitResolvedOf,
+  waitsOf,
+  waiverOf,
   type RunState,
 } from '@lingtai/domain'
 import { workItemStream } from '@lingtai/domain'
@@ -305,30 +307,20 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
   // At the version read above, so a run that moved since it was read — a
   // second approval, a re-request on a new head — is not approved unread.
   try {
-    await store.append(runId, run.version, [
+    await store.append(
+      runId,
+      run.version,
       // One waiver per refusing gate, each under the name the run recorded it
-      // with, carrying the approval's own reason — before the approval, so the
-      // fold reads the refusal overruled and then the diff approved.
-      ...refusing.map((key) => ({
-        type: 'StepWaived' as const,
-        actor: options.by,
-        data: parsePayload('StepWaived', { ...splitStep(key), runId, onSha, by: options.by, reason: note }),
-      })),
-      {
-        type: 'ApprovalGranted',
-        // The approver *is* the actor. `by` is already `human:<id>`, which is the
-        // shape the envelope demands, and recording it in both places keeps the
-        // payload readable without the two ever disagreeing.
-        actor: options.by,
-        data: parsePayload('ApprovalGranted', {
-          ...splitStep(step),
-          runId,
-          onSha,
-          by: options.by,
-          note,
-        }),
-      },
-    ])
+      // with, carrying the approval's own reason, then `ApprovalGranted` —
+      // in that order, so the fold reads the refusal overruled and then the
+      // diff approved. The approver *is* the actor on every one of these:
+      // `by` is already `human:<id>`, which is the shape the envelope
+      // demands, and recording it in both places keeps the payload readable
+      // without the two ever disagreeing.
+      approvalOf({ refusing: refusing.map(splitStep), ...splitStep(step), runId, onSha, by: options.by, note }).map(
+        (e) => ({ ...e, actor: options.by }),
+      ),
+    )
   } catch (err) {
     if (!(err instanceof ConcurrencyError)) throw err
     return {
@@ -365,8 +357,8 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
     /**
      * **This is the dead end `#84` is about.**
      *
-     * The approval has been consumed — `ApprovalGranted` is three lines above —
-     * and the run is back to `gating`, which `approve()` refuses. No command
+     * The approval has been consumed — `ApprovalGranted` is in the append
+     * above — and the run is back to `gating`, which `approve()` refuses. No command
      * anywhere re-requested one, so once an approved merge failed on a conflict
      * that item could never be approved again. Three items sat here, one of
      * them for four days.
@@ -384,34 +376,30 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
      * takes, from here or from a pass.
      */
     const blocked = await store.read(workItemId)
-    // `diagnoseRefusal` is the one function behind both tags: a pass's own
-    // `conflict`/`verify-failed` refusal is `Routed` rather than `MergeRefused`
-    // since #452 (`hold-of.ts`'s step 1), carrying its own composed `why` —
-    // but `legacyColumns` reads both `Routed` and `MergeRefused` through this
-    // same function, so `done` and `recommendation`, the owner sentence and
-    // the move, cannot describe the same conflict differently (#83).
+    // `approvedMergeRefusedOf` is the one function behind both tags: a pass's
+    // own `conflict`/`verify-failed` refusal is `Routed` rather than this
+    // variant since #452 (`hold-of.ts`'s step 1), carrying its own composed
+    // `why` — but the card-column reading inside `approvedMergeRefusedOf`
+    // reads both through the same function, so `done` and `recommendation`,
+    // the owner sentence and the move, cannot describe the same conflict
+    // differently (#83).
     const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, workItemId, branch)
-    const hold: Hold = {
-      _tag: 'MergeRefused',
+    const { event, question } = approvedMergeRefusedOf({
       // No `unpushed`: the run is bound to `onSha`, already on origin.
-      run: { runId },
-      // `ApprovalGranted` was already appended above: this approval is spent.
-      afterApproval: true,
+      runId,
       reason: merged.reason,
-      why: diagnoseRefusal({ reason: merged.reason, detail: merged.detail, branch, base: options.base }).what,
       raw: merged.detail,
+      branch,
+      base: options.base,
       paths: integrationRefusal?.paths ?? null,
       baseSha: integrationRefusal?.baseSha ?? null,
       headSha: integrationRefusal?.headSha ?? null,
-    }
-    const question = legacyColumns(hold).question
+    })
     const ended = resolveEndActions(blocked, end, 'blocked')
     await store.append(workItemId, blocked.length, [
-      {
-        type: 'WorkItemBlocked',
-        actor: 'conductor',
-        data: parsePayload('WorkItemBlocked', { hold }),
-      },
+      // `ApprovalGranted` was already appended above: this approval is spent,
+      // which is `approvedMergeRefusedOf`'s own `afterApproval: true`.
+      { ...event, actor: 'conductor' },
       ...ended,
     ])
     await tellGitHubAbout({
@@ -537,7 +525,12 @@ async function requeueHolding(
   // written `withdrawn`, which the fold keeps nothing of. Answering is
   // `answer()`'s. Refusing here instead left a mistaken question no way out
   // but an answer every attempt would be told.
-  const withdrawn = item.lifecycle.runId === null
+  //
+  // **An `OwnQuestion` is the only wait a requeue withdraws** — every other
+  // wait carries a run, which is exactly `item.lifecycle.runId === null` read
+  // the old way.
+  const wait = waitsOf(events).at(-1)!
+  const withdrawn = wait.reason._tag === 'OwnQuestion'
   if (withdrawn && options.onQuestion === 'refuse') {
     return {
       ok: false,
@@ -551,15 +544,7 @@ async function requeueHolding(
   const note = options.note.trim() ? options.note : ''
 
   await store.append(workItemId, item.version, [
-    {
-      type: 'WorkItemUnblocked',
-      actor: options.by,
-      data: parsePayload('WorkItemUnblocked', {
-        by: options.by,
-        note,
-        ...(withdrawn ? { withdrawn: true } : {}),
-      }),
-    },
+    { ...waitResolvedOf(wait.reason, { _tag: 'Requeue' }, options.by, note), actor: options.by },
   ])
 
   return {
@@ -643,15 +628,8 @@ export async function waive(options: {
 
   await store.append(runId, run.version, [
     {
-      type: 'StepWaived',
+      ...waiverOf({ ...splitStep(options.step), runId, onSha: run.headSha, by: options.by, reason: options.reason }),
       actor: options.by,
-      data: parsePayload('StepWaived', {
-        ...splitStep(options.step),
-        runId,
-        onSha: run.headSha,
-        by: options.by,
-        reason: options.reason,
-      }),
     },
   ])
 
