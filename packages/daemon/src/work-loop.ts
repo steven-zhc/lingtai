@@ -77,7 +77,7 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from '@lingtai/domain'
+import { type Envelope, SUBSCRIBER_STREAM, WAIT_EVENTS, parsePayload, workItemOf } from '@lingtai/domain'
 import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
 
 import { withDaemonStore } from './choose.ts'
@@ -93,8 +93,7 @@ import type { DaemonStore } from './store.ts'
 export const COMPLETION_EVENTS = [
   'WorkItemLanded',
   'WorkItemReleased',
-  'WorkItemBlocked',
-  'WorkItemUnblocked',
+  ...WAIT_EVENTS,
   'IntegrationSucceeded',
   'IntegrationRefused',
   // Control, for the same reason: resuming has to start work without anybody

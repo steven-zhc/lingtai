@@ -71,6 +71,7 @@ import {
   parseWorkItemStream,
   parsePayload,
   reduceWorkItem,
+  WAIT_EVENTS,
   type LabelState,
   type PayloadOf,
   type ProjectState,
@@ -287,7 +288,7 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
       prefixes: ['wi-%'],
-      types: ['WorkItemClaimed', 'WorkItemBlocked', 'WorkItemReleased', 'WorkItemLanded', 'WorkItemUnblocked'],
+      types: ['WorkItemClaimed', ...WAIT_EVENTS, 'WorkItemReleased', 'WorkItemLanded'],
     }),
   )
 }

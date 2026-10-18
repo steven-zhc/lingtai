@@ -79,6 +79,9 @@ export const READ = [
 /** A `StepOutcome` from a particular run — `StepOutcome` itself carries no `runId` (0120 §1's own shape). */
 export type RunStepOutcome = StepOutcome & { readonly runId: string }
 
+/** The types that start and resolve a wait: 0118's `WaitStarted`/`WaitResolved` at #464. */
+export const WAIT_EVENTS = ['WorkItemBlocked', 'WorkItemUnblocked'] as const
+
 const STEP_DEFAULTS: Partial<Record<Step, { plugin: string; yields: Action['yields'] }>> = {
   admit: { plugin: 'worktree', yields: 'worktree' },
   implement: { plugin: 'agent', yields: 'commit' },
