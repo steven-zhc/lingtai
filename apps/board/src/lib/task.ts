@@ -2,12 +2,15 @@ import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conducto
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import {
   applyWorkItem,
+  boardFactOf,
   chatStream,
   emptyWorkItem,
   reduceControl,
   CONTROL_STREAM,
   parseWorkItemStream,
+  WAIT_EVENTS,
   type BlockDiagnosis,
+  type BoardFact,
   type Envelope,
   type WorkItemLifecycle,
 } from '@lingtai/domain'
@@ -210,7 +213,7 @@ export interface RunView {
   /** When the claim landed, ISO. */
   at: string
   /**
-   * True when this attempt is the one a `RepairRequested` bought.
+   * True when this attempt is the one a bought repair paid for.
    *
    * There is no event saying so — 0025 refuses a repair a vocabulary of its own,
    * and the claim is what consumes the pending repair. This is that fold, and it
@@ -218,7 +221,7 @@ export interface RunView {
    * agent's spend into the work's and make it an invisible bill (#84).
    *
    * **Never true of an attempt started after `#143`**, and still read for ever.
-   * A refusal buys no run now, so nothing appends `RepairRequested` and
+   * A refusal buys no run now, so nothing appends one any more, and
    * `work-item.ts` has dropped the fold this mirrored; `task-view.ts` keeps its
    * own for the same reason this one stays: a log that holds the event holds a
    * second attempt that *was* a repair, and reading it as ordinary work would
@@ -392,7 +395,7 @@ export interface StandingView {
   /**
    * The question, as its one deciding line. Null when nothing was asked.
    *
-   * **Not verbatim, and that is the fix.** `WorkItemBlocked.question` is a
+   * **Not verbatim, and that is the fix.** A wait's own question is a
    * sentence with a gate's tail appended to it — `pnpm typecheck` with fifteen
    * workspace projects announcing themselves — and a `<p>` collapses its
    * newlines, so the block opened with an entire build log flattened into prose.
@@ -500,13 +503,7 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
  * a `WorkItemLinked`, a `PassRestarted` or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
-const LIFECYCLE_MOVES = new Set([
-  'WorkItemClaimed',
-  'WorkItemReleased',
-  'WorkItemBlocked',
-  'WorkItemUnblocked',
-  'WorkItemLanded',
-])
+const LIFECYCLE_MOVES = new Set(['WorkItemClaimed', 'WorkItemReleased', ...WAIT_EVENTS, 'WorkItemLanded'])
 
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
@@ -526,8 +523,8 @@ function oneLine(text: string | null): string | null {
  * repaired and failed again is one attempt with two refusals, and the one being
  * decided is the most recent. Falls back to the attempt's own outcome, so a run
  * that died before any gate reported still points somewhere — that case
- * (`claimed`, `released`, a `RunFailed` with no verdicts) is exactly the one a
- * gate-shaped summary could never name.
+ * (`claimed`, `released`, a run that failed with no verdicts) is exactly the
+ * one a gate-shaped summary could never name.
  */
 function refusalOn(run: RunView): Deciding | null {
   /**
@@ -622,7 +619,7 @@ function refusalOn(run: RunView): Deciding | null {
  * verdict and no outcome detail, and the failure everybody is looking at —
  * `proposed / build`, `error TS2741` — is attempt 1's. Pointing only at the
  * named run left the block with nothing, which is how the whole flattened
- * `WorkItemBlocked.question` came to be the only evidence on screen (#111).
+ * a wait's own question came to be the only evidence on screen (#111).
  *
  * So: the named attempt first, then back through the earlier ones. That is the
  * design's own example read literally — *from attempt 2 of 2* at the top and
@@ -928,26 +925,21 @@ export interface Claim {
   released: string | null
 }
 
-const VERDICT: Record<string, string> = {
-  StepRequested: 'pending',
-  StepStarted: 'running',
-  StepPassed: 'passed',
-  StepFailed: 'failed',
-  /** No verdict, because the agent never started (#133) — not a refusal, and
-   *  not a gate still running, which is what the absence of a line said. */
-  StepNeverRan: 'never-ran',
-  /** No verdict either, and not the same absence: the agent started and ended
-   *  with no receipt, which is local and ends the pass (0057 §1–3; §4's retry
-   *  is deleted, `#234`). */
-  StepDidNotFinish: 'did-not-finish',
-  /** No verdict either, and a question rather than a fault: the agent stopped and
-   *  asked something, which reaches `proposed` and may end at a person (`#296`,
-   *  0058 §3c). */
-  StepAsked: 'asked',
-  StepWaived: 'waived',
-  ApprovalRequested: 'pending',
-  ApprovalGranted: 'passed',
-  ApprovalRevoked: 'pending',
+/**
+ * `StepEnded.ending` → the verdict it closes a point on.
+ *
+ * No verdict for `NeverRan` (the agent never started, #133), `DidNotFinish`
+ * (it started and ended with no receipt, local and ends the pass, 0057 §1–3;
+ * §4's retry is deleted, `#234`) or `Asked` (a question rather than a fault —
+ * it reaches `proposed` and may end at a person, `#296`, 0058 §3c) — but each
+ * still closes the point, exactly as `Passed`/`Failed` do.
+ */
+const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['ending'], string> = {
+  Passed: 'passed',
+  Failed: 'failed',
+  NeverRan: 'never-ran',
+  DidNotFinish: 'did-not-finish',
+  Asked: 'asked',
 }
 
 /**
@@ -956,7 +948,7 @@ const VERDICT: Record<string, string> = {
  * Deduplicated by `runId` the way `work-item.ts` deduplicates `runs`: a second
  * claim naming a run already claimed is the same attempt, not a fourth one.
  *
- * The repair walk mirrored a fold in `work-item.ts` — `RepairRequested` left a
+ * The repair walk mirrored a fold in `work-item.ts` — a bought repair left a
  * repair pending and the next claim consumed it — and was written here rather
  * than borrowed because this needs it for *every* run, where the aggregate kept
  * only the current one. The aggregate's half is gone with the purchase (`#143`)
@@ -969,7 +961,7 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
 
   for (const e of own) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'RepairRequested') pendingRepair = true
+    if (boardFactOf(e)?._tag === 'RepairBought') pendingRepair = true
     if (e.type === 'WorkItemClaimed') {
       const runId = String(d['runId'] ?? '')
       if (runId && !claims.some((c) => c.runId === runId)) {
@@ -1024,6 +1016,13 @@ export function foldRun(
   const files = new Map<string, TouchedFile>()
   const steps = new Map<string, StepVerdict>()
 
+  // `point:action` — see task-view. Two points may run an action of the same
+  // name, and the page has to show both.
+  const setStep = (step: string, action: string, state: string, evidence: string | null, findings: Finding[]) => {
+    const key = `${step}:${action}`
+    steps.set(key, { step: key, state, current: true, evidence, findings })
+  }
+
   for (const e of run) {
     const d = (e.data ?? {}) as Record<string, unknown>
     switch (e.type) {
@@ -1073,40 +1072,71 @@ export function foldRun(
         costUsd = d['costUsd'] === null || d['costUsd'] === undefined ? null : Number(d['costUsd'])
         exitCode = Number(d['exitCode'] ?? 0)
         break
-      case 'RunFailed':
-        failure = String(d['kind'] ?? '') || 'failed'
-        break
-      // The three that decide whether anything is being asked. Requested opens
-      // the question, granted spends it, revoked opens it again on the sha the
-      // withdrawal names — the same three lines `task_view` folds, so the page
-      // and the card cannot come to disagree about whether Approve can work.
-      case 'ApprovalRequested':
-      case 'ApprovalRevoked':
-        awaitingSha = String(d['onSha'] ?? '') || null
-        break
-      case 'ApprovalGranted':
-        awaitingSha = null
-        break
-    }
 
-    const verdict = VERDICT[e.type]
-    if (verdict && typeof d['step'] === 'string') {
-      // `point:action` — see task-view. Two points may run an action of the
-      // same name, and the page has to show both.
-      const key = `${String(d['step'])}:${String(d['action'] ?? '')}`
-      steps.set(key, {
-        step: key,
-        state: verdict,
-        current: true,
-        // `StepNeverRan` calls it `detail` and not `evidence`, because it is
-        // evidence about the *account* and never about the diff — the same
-        // distinction `RunFailed.detail` draws (#133). Read here rather than
-        // renamed at the seam, because `Evidence` shows only gates that said
-        // something (`evidence.tsx:114`): reading the wrong key would drop the
-        // one gate that stopped the run off the page ADR 0041 §2 wrote it for.
-        evidence: (d['evidence'] as string) ?? (d['detail'] as string) ?? null,
-        findings: (d['findings'] as Finding[]) ?? [],
-      })
+      // No verdict and no side effect here either: the board reads it
+      // directly, the one place this fold still matches an event's own type
+      // rather than `boardFactOf`'s fact.
+      case 'StepStarted':
+        setStep(String(d['step']), String(d['action'] ?? ''), 'running', null, [])
+        break
+
+      default: {
+        const fact = boardFactOf(e)
+        if (fact === null) break
+        switch (fact._tag) {
+          case 'ActionRequested':
+            setStep(fact.step, fact.action, 'pending', null, [])
+            break
+
+          case 'StepEnded':
+            setStep(
+              fact.step,
+              fact.action,
+              STEP_ENDING_STATE[fact.ending],
+              // Called `detail` rather than `evidence` on the ending that is
+              // not `Passed`/`Failed`, because it is evidence about the
+              // *account* and never about the diff (#133). Read here rather
+              // than renamed at the seam, because `Evidence` shows only gates
+              // that said something (`evidence.tsx:114`): reading the wrong
+              // key would drop the one gate that stopped the run off the page
+              // ADR 0041 §2 wrote it for.
+              fact.evidence ?? fact.detail ?? null,
+              [...(fact.findings ?? [])],
+            )
+            break
+
+          case 'Waived':
+            setStep(fact.step, fact.action, 'waived', null, [])
+            break
+
+          // The three that decide whether anything is being asked. Requested
+          // opens the question, granted spends it, revoked opens it again on
+          // the sha the withdrawal names — the same three lines `task_view`
+          // folds, so the page and the card cannot come to disagree about
+          // whether Approve can work.
+          case 'SignoffRequested':
+            awaitingSha = fact.onSha || null
+            setStep(fact.step, fact.action, 'pending', null, [])
+            break
+
+          case 'SignoffGranted':
+            awaitingSha = null
+            setStep(fact.step, fact.action, 'passed', null, [])
+            break
+
+          case 'SignoffRevoked':
+            awaitingSha = fact.onSha || null
+            setStep(fact.step, fact.action, 'pending', null, [])
+            break
+
+          case 'RunEnded':
+            failure = fact.kind || 'failed'
+            break
+
+          default:
+            break
+        }
+      }
     }
   }
 
