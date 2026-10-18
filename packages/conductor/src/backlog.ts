@@ -70,7 +70,7 @@ import type { ProposedRef, ProposedTicket, TicketStore } from './ticket-store.ts
  *
  * So **whoever wires `backlog:` has to hand its value to both**. Replace the
  * fold's literal alone and a `major` still fails at `verdictFor`, the step still
- * emits `StepFailed`, the fold never sees the finding — and a recipe that said a
+ * ends refused, the fold never sees the finding — and a recipe that said a
  * major costs nothing has bought a fix round while reading as honoured. That
  * trap is in `CALLED_DIRECTLY.backlog` (`packages/recipe/src/recipe.ts`) too,
  * because the refusal is what somebody about to wire it actually reads.

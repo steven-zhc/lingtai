@@ -26,9 +26,9 @@
  * the item has claims.** The push is what makes the next prompt's `git fetch
  * origin agent/<n>` true (0040 §2) — but the claim after it pushes the same
  * name, force, from a history with no ancestor in common. So `agent/<n>` is the
- * *newest* arm and this is every arm: `PassRestarted` names one of these, and
- * the claim that an arm on the log is an arm that can be read is then true of
- * all of them and not only the last.
+ * *newest* arm and this is every arm: a restart's own record on the log names
+ * one of these, and the claim that an arm on the log is an arm that can be
+ * read is then true of all of them and not only the last.
  *
  * **`n` is the claim's attempt ordinal (`attempts.ts`), not its restart
  * ordinal** ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md)
