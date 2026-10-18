@@ -1,21 +1,20 @@
 /**
  * `doc/design/the-waiting-lane.md`'s table, read back as tests: one `it` per
- * row of that table, for each of `allowedMoves` and `triageRuns`.
+ * row of that table, for `allowedMoves`.
  */
 import { describe, expect, it } from 'vitest'
 
 import { Hold } from '../src/hold.ts'
-import { allowedMoves, triageRuns } from '../src/moves.ts'
+import { allowedMoves } from '../src/moves.ts'
 
 const run = { runId: 'run-1' }
 const unpushedRun = { runId: 'run-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
 
-// One set per function, populated by `parseHold` below, so "every Hold tag is
-// covered above" checks the tags each function's own describe actually
-// exercised — never a literal that could drift from them, and never a count
-// shared between the two functions that could go green on one alone.
+// Populated by `parseHold` below, so "every Hold tag is covered above" checks
+// the tags the describe below actually exercised — never a literal that
+// could drift from them, and never passing on an updated literal nobody
+// wrote an `it` for.
 const allowedMovesTags = new Set<string>()
-const triageRunsTags = new Set<string>()
 
 function parseHold(input: unknown, exercised: Set<string>): Hold {
   const hold = Hold.parse(input)
@@ -195,130 +194,5 @@ describe('allowedMoves', () => {
     // tag `Hold.options` has and `allowedMovesTags` doesn't, so this goes red
     // rather than passing on an updated literal nobody wrote an `it` for.
     expect(new Set(tags)).toEqual(allowedMovesTags)
-  })
-})
-
-describe('triageRuns', () => {
-  const parse = (input: unknown) => parseHold(input, triageRunsTags)
-
-  it('Question: false — the person wrote the question', () => {
-    const hold = parse({ _tag: 'Question', question: 'which design?', by: 'steven' })
-    expect(triageRuns(hold)).toBe(false)
-  })
-
-  it('Judgement.Asked: true', () => {
-    const hold = parse({ _tag: 'Asked', run, step: 'implement', question: 'rename to X or Y?' })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Judgement.Human at proposed: true', () => {
-    const hold = parse({ _tag: 'Human', run, step: 'proposed', source: 'declared', question: 'ship it?' })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Judgement.Human at merge (injected by --no-merge): true', () => {
-    const hold = parse({ _tag: 'Human', run, step: 'merge', source: 'injected', question: 'land it?' })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Judgement.Declined: true', () => {
-    const hold = parse({ _tag: 'Declined', run, step: 'implement', said: 'nothing here answers the finding' })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Judgement.Routed: true', () => {
-    const hold = parse({
-      _tag: 'Routed',
-      run,
-      when: 'findings',
-      why: 'the cold review found something',
-      raw: null,
-      findings: [],
-      paths: null,
-      baseSha: null,
-      headSha: null,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.MergeRefused (the pass producer): true — a conflict past 20 hunks is still a triage, answered Mechanical', () => {
-    const hold = parse({
-      _tag: 'MergeRefused',
-      run,
-      reason: 'conflict',
-      why: 'apps/web/foo.ts conflicts',
-      paths: ['apps/web/foo.ts'],
-      baseSha: 'abc',
-      headSha: 'def',
-      raw: 'CONFLICT ...',
-      afterApproval: false,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.MergeRefused (the approval producer): true — the moves narrow, triage still runs', () => {
-    const hold = parse({
-      _tag: 'MergeRefused',
-      run,
-      reason: 'conflict',
-      why: 'apps/web/foo.ts conflicts',
-      paths: ['apps/web/foo.ts'],
-      baseSha: 'abc',
-      headSha: 'def',
-      raw: 'CONFLICT ...',
-      afterApproval: true,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.Ceiling: true', () => {
-    const hold = parse({
-      _tag: 'Ceiling',
-      run,
-      kind: 'out-of-turns',
-      detail: 'ran out of turns',
-      turns: 150,
-      costUsd: null,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.DidNotFinish: true', () => {
-    const hold = parse({ _tag: 'DidNotFinish', run, step: 'implement', why: 'the agent crashed', raw: null })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.SetupRefused, lifts: by-itself: true', () => {
-    const hold = parse({
-      _tag: 'SetupRefused',
-      run,
-      step: 'prepared',
-      lifts: 'by-itself',
-      why: 'usage limit',
-      raw: null,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.SetupRefused, lifts: person: true', () => {
-    const hold = parse({
-      _tag: 'SetupRefused',
-      run,
-      step: 'prepared',
-      lifts: 'person',
-      why: 'no runtime for this tier',
-      raw: null,
-    })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('Failure.CheckRed: true', () => {
-    const hold = parse({ _tag: 'CheckRed', run, step: 'build', why: 'pnpm test failed', raw: 'FAIL ...' })
-    expect(triageRuns(hold)).toBe(true)
-  })
-
-  it('every Hold tag is covered above', () => {
-    const tags = Hold.options.map((option) => option.shape._tag.value)
-    expect(new Set(tags)).toEqual(triageRunsTags)
   })
 })

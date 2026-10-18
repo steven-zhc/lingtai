@@ -1,8 +1,7 @@
 /**
- * Which moves a held card offers, and whether triage runs on it — 0118 §1's
- * one place for a question five callers used to answer each for themselves
- * (#442, #443). Both are exhaustive over `Hold`'s ten tags, following
- * `doc/design/the-waiting-lane.md`'s table.
+ * Which moves a held card offers — 0118 §1's one place for a question five
+ * callers used to answer each for themselves (#442, #443). Exhaustive over
+ * `Hold`'s ten tags, following `doc/design/the-waiting-lane.md`'s table.
  *
  * `import type` only: a `Move` value is a bare `{ _tag: '...' }` literal, so
  * this file needs no runtime import from `./triage.ts` or `./hold.ts`, which
@@ -48,26 +47,5 @@ export function allowedMoves(hold: Hold): Move[] {
     case 'DidNotFinish':
     case 'SetupRefused':
       return [{ _tag: 'Requeue' }, { _tag: 'Close' }]
-  }
-}
-
-/**
- * Same table, its other column. No `default`, for the same reason as
- * {@link allowedMoves}.
- */
-export function triageRuns(hold: Hold): boolean {
-  switch (hold._tag) {
-    case 'Question':
-      return false
-    case 'Asked':
-    case 'Human':
-    case 'Declined':
-    case 'Routed':
-    case 'MergeRefused':
-    case 'Ceiling':
-    case 'DidNotFinish':
-    case 'SetupRefused':
-    case 'CheckRed':
-      return true
   }
 }
