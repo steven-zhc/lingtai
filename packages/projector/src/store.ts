@@ -216,8 +216,9 @@ export interface BacklogQuery {
 }
 
 /**
- * Every read and write of `task_view`, `task_view_run`, `finding_backlog` and
- * `finding_backlog_run`, and of the checkpoint that says how far each has got.
+ * Every read and write of `task_view`, `task_view_run`, `finding_backlog`,
+ * `finding_backlog_run`, `spend` and `spend_stream` (`#497`), and of the
+ * checkpoint that says how far each has got.
  *
  * Grouped as the five things the ticket names, in this order: read the
  * checkpoint, apply a batch atomically, rebuild from zero, read for the board,

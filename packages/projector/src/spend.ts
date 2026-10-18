@@ -16,23 +16,33 @@
  *
  * `RunSpent` names no ticket directly — it names the stream it is paid on, and
  * which ticket that stream is about is recorded by an earlier event on the
- * same stream, or on the control stream for a discussion. `spend_stream` is
- * that link, kept here rather than read from `task_view_run` or
- * `finding_backlog_run` for `backlog.ts`'s own reason: another projection's
- * table is at another projection's checkpoint.
+ * same stream, on the ticket's own stream, or on the control stream for a
+ * discussion. `spend_stream` is that link, kept here rather than read from
+ * `task_view_run` or `finding_backlog_run` for `backlog.ts`'s own reason:
+ * another projection's table is at another projection's checkpoint.
  *
- *   `run-…`  (action, judge)  — linked by this stream's own `RunStarted`
+ *   `run-…`  (action, judge)  — linked by this stream's own `RunStarted`, and
+ *                               by `WorkItemClaimed` on the ticket's stream
+ *                               (below), whichever lands first
  *   `wi-…`   (triage)         — needs no link; the stream id is the ticket
  *   `chat-…` (discussion)     — linked by `DiscussionRequested`, keyed on
  *                               `chatStream(chatId)` because that event lands
  *                               on `ctl-conductor`, not on the chat stream
  *
+ * **`WorkItemClaimed` links a run stream before `RunStarted` can.** `claim`
+ * appends it to the `wi-…` stream carrying the run stream's id as `runId`,
+ * and `admit` — which can refuse the pass outright, leaving no `RunStarted`
+ * ever appended to that run stream — runs after `claim`. A `Judge` `RunSpent`
+ * dispatched on such a refusal still names that run stream, so without this
+ * link it would read as untraceable when the claim already said whose ticket
+ * it was.
+ *
  * **A `RunSpent` with no link keeps its row, `ticket` and `project` null
- * rather than dropped.** The link is always written before the `RunSpent`
- * that would need it — `RunStarted` opens the pass stream it is about, and a
- * discussion is only ever dispatched in reaction to its own
- * `DiscussionRequested` — so a null here means the source event is missing,
- * and there is nothing to backfill from later.
+ * rather than dropped.** That happens only when neither link event was ever
+ * appended — there is nothing to backfill a null from later, since both links
+ * are always written before the `RunSpent` that would need them: `claim`
+ * precedes `admit` precedes dispatch, and a discussion is only ever dispatched
+ * in reaction to its own `DiscussionRequested`.
  */
 import type { PayloadOf } from '@lingtai/domain'
 import { chatStream, isPassStream, isWorkItemStream, parseWorkItemStream } from '@lingtai/domain'
@@ -92,6 +102,16 @@ export const spendProjection: Projection = {
             `insert into spend_stream (stream_id, ticket) values ($1, $2)
              on conflict (stream_id) do nothing`,
             [event.streamId, d.workItemId],
+          )
+          break
+        }
+
+        case 'WorkItemClaimed': {
+          const d = event.data as PayloadOf<'WorkItemClaimed'>
+          await ctx.query(
+            `insert into spend_stream (stream_id, ticket) values ($1, $2)
+             on conflict (stream_id) do nothing`,
+            [d.runId, event.streamId],
           )
           break
         }

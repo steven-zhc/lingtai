@@ -87,6 +87,16 @@ const discussionStream = makeStream(chatStream('chat-pin-1'))
 const discussionSpent = aRunSpent(discussionStream, { _tag: 'Discussion' })
 events.push(discussionSpent)
 
+// ---- Judge, on a run stream admit refused before any RunStarted landed ----
+// `claim` appends `WorkItemClaimed` to the ticket's own stream, carrying the
+// run stream's id, before `admit` runs — so a `Judge` `RunSpent` dispatched on
+// a refusal there still finds its ticket, with no `RunStarted` ever appended.
+const claimedStream = makeStream(wi(5))
+const refusedRunId = 'run-pin-admit-refused'
+events.push(claimedStream('WorkItemClaimed', { runId: refusedRunId, worker: 'local:1', title: null, kind: null }))
+const adminRefusedJudgeSpent = aRunSpent(makeStream(refusedRunId), { _tag: 'Judge', when: 'setup-refused' })
+events.push(adminRefusedJudgeSpent)
+
 // ---- A run stream with no RunStarted — kept, ticket and project null ------
 const orphanSpent = aRunSpent(makeStream('run-pin-orphan'), { _tag: 'Action', step: 'build', name: 'build', round: 0 })
 events.push(orphanSpent)
@@ -100,10 +110,12 @@ const nullCostSpent = aRunSpent(
 events.push(nullCostSpent)
 
 /**
- * `seq` is this table's primary key, so SQLite stores it as the rowid itself
- * and hands it back as a number rather than the text `translate` bound it
- * as — unlike `finding_backlog.raised_seq`, which is an ordinary bigint
- * column and keeps the text it was given.
+ * `seq` is declared `bigint`, which `translate`'s `rewrite` turns into
+ * `integer` for SQLite before the table is created. SQLite's INTEGER affinity
+ * then converts any well-formed numeric text bound to that column into a
+ * number on read — for every row, not only because `seq` happens to be the
+ * primary key here. The same holds for this table's other `bigint` columns
+ * (`duration_ms` included).
  */
 function rowFor(rows: readonly ProjectionRow[], seq: bigint): ProjectionRow | undefined {
   return rows.find((r) => BigInt(r.seq as number) === seq)
@@ -200,6 +212,19 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
     expect(links.find((l) => l.stream_id === chatStream('chat-pin-1'))).toMatchObject({ ticket: wi(4) })
   })
 
+  it('fills ticket through WorkItemClaimed when admit refused before any RunStarted was appended', async () => {
+    const { spend, links } = await fold(events)
+    const row = rowFor(spend, adminRefusedJudgeSpent.seq)!
+    expect(row).toMatchObject({
+      stream_id: refusedRunId,
+      ticket: wi(5),
+      project: PROJECT,
+      pass: refusedRunId,
+      purpose: 'Judge',
+    })
+    expect(links.find((l) => l.stream_id === refusedRunId)).toMatchObject({ ticket: wi(5) })
+  })
+
   it('keeps a RunSpent row whose run stream has no RunStarted, with ticket and project null', async () => {
     const { spend } = await fold(events)
     const row = rowFor(spend, orphanSpent.seq)!
@@ -214,7 +239,7 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
 
   it('writes one row per RunSpent and no more', async () => {
     const { spend } = await fold(events)
-    expect(spend).toHaveLength(6)
+    expect(spend).toHaveLength(7)
   })
 
   it('folds in two batches split around the first RunStarted the same as one batch', async () => {
