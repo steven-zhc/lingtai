@@ -424,6 +424,19 @@ events.push(
   }),
 )
 
+// ---- row 27: a RunSpent on an existing stream, which must change nothing --
+const beforeRunSpent = events.length
+events.push(
+  stepPassedRun.event('RunSpent', {
+    for: { _tag: 'Action', step: 'review', name: 'reviewer', round: 0 },
+    runtime: 'claude-code',
+    turns: 3,
+    durationMs: 1000,
+    usage: [],
+    costUsd: 0.1,
+  }),
+)
+
 function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow | undefined {
   return rows.find((r) => r.task_id === taskId)
 }
@@ -536,5 +549,12 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
       note: 'crash: crashed partway through',
       verdicts: JSON.stringify({ 'run-pin-didnotfinish:implement:write the change': 'did-not-finish' }),
     })
+  })
+
+  /** #499: nothing reads `RunSpent` yet, and `task_view` must not start now. */
+  it('leaves task_view unchanged by a RunSpent on the stream', async () => {
+    const baseline = await fold(beforeRunSpent)
+    const withSpent = await fold(events.length)
+    expect(withSpent).toEqual(baseline)
   })
 })

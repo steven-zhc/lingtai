@@ -441,4 +441,21 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     const split = await foldInTwoBatches(afterCase1RunStarted)
     expect(split).toEqual(whole)
   })
+
+  /** #499: nothing reads `RunSpent` yet, and `finding_backlog` must not start now. */
+  it('leaves finding_backlog unchanged by a RunSpent on the stream', async () => {
+    const baseline = await fold(events)
+    const withSpent = await fold([
+      ...events,
+      run1.event('RunSpent', {
+        for: { _tag: 'Action', step: 'proposed', name: 'review', round: 0 },
+        runtime: 'claude-code',
+        turns: 3,
+        durationMs: 1000,
+        usage: [],
+        costUsd: 0.1,
+      }),
+    ])
+    expect(withSpent).toEqual(baseline)
+  })
 })
