@@ -252,16 +252,55 @@ describe('holding one question', () => {
           }
         },
       },
-      { chatId: 'chat-1', evidence: EVIDENCE, question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
-    expect(store.types()).toEqual(['DiscussionAsked', 'DiscussionAnswered'])
+    // A process that returned an outcome is recorded even though it failed —
+    // only a killed one (the `crash` test below) records nothing (#496).
+    expect(store.types()).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
     expect(held).toEqual({ costUsd: 0.42, answered: false, proposal: null })
-    const answer = store.appended[1]?.data as { costUsd: number; failure: string }
+    const answer = answerOf(store.appended)
     expect(answer.costUsd).toBe(0.42)
     expect(answer.failure).toContain('timeout')
     // Every round — and here, the only one — receives the `HoldOptions.call` it was handed.
     expect(calls).toEqual([CALL])
+  })
+
+  /**
+   * A killed process has nothing to record, and records nothing (0110 §2) —
+   * the other half of `#496` from the test above, where a process that
+   * answered with a failure still billed one `RunSpent`.
+   */
+  it('appends no RunSpent for a process that was killed before it answered anything', async () => {
+    const store = fakeStore()
+    const held = await holdDiscussion(
+      {
+        store: store.store,
+        serve: async () => null,
+        ask: async (): Promise<Answered> => {
+          throw new Error('killed')
+        },
+      },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
+    )
+
+    expect(store.types()).toEqual(['DiscussionAsked', 'DiscussionAnswered'])
+    expect(held.answered).toBe(false)
+    expect(answerOf(store.appended).failure).toContain('crash')
   })
 
   it('serves the files it is asked for, then answers with them', async () => {
@@ -291,7 +330,14 @@ describe('holding one question', () => {
           }
         },
       },
-      { chatId: 'chat-1', evidence: EVIDENCE, question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
     expect(served).toEqual(['main:a.ts'])
@@ -299,9 +345,83 @@ describe('holding one question', () => {
     // Both rounds, on one event. A person watching the meter is watching what
     // the question cost, not what one of its rounds did.
     expect(held.costUsd).toBeCloseTo(0.3)
-    const second = store.appended[1]
-    expect(second).toBeDefined()
-    expect((second!.data as { read: string[] }).read).toEqual(['main:a.ts'])
+    const answer = answerOf(store.appended)
+    expect(answer.read).toEqual(['main:a.ts'])
+  })
+
+  /**
+   * One `RunSpent` per process, not one per question (#496, 0110 §2). A
+   * question that takes three processes — two reads, then an answer — leaves
+   * three `RunSpent`s on the chat stream, each carrying its own round's
+   * figures, and `DiscussionAnswered` still sums them exactly as before.
+   */
+  it('appends one RunSpent per process, and still sums them onto DiscussionAnswered', async () => {
+    const store = fakeStore()
+    const rounds: Answered[] = [
+      {
+        turns: 1,
+        durationMs: 10,
+        costUsd: 0.1,
+        text: '{"read":["main:a.ts"]}',
+        failure: null,
+        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 10 } }],
+      },
+      {
+        turns: 2,
+        durationMs: 20,
+        costUsd: null,
+        text: '{"read":["main:b.ts"]}',
+        failure: null,
+        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 20 } }],
+      },
+      {
+        turns: 3,
+        durationMs: 30,
+        costUsd: 0.3,
+        text: '{"answer":"done","cannot":[],"proposal":null}',
+        failure: null,
+        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 30 } }],
+      },
+    ]
+    let round = 0
+
+    const held = await holdDiscussion(
+      {
+        store: store.store,
+        serve: async () => 'x',
+        ask: async (): Promise<Answered> => rounds[round++]!,
+      },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
+    )
+
+    expect(store.types()).toEqual(['DiscussionAsked', 'RunSpent', 'RunSpent', 'RunSpent', 'DiscussionAnswered'])
+    const spents = store.appended
+      .filter((e) => e.type === 'RunSpent')
+      .map(
+        (e) => e.data as { for: unknown; runtime: unknown; turns: number; durationMs: number; costUsd: number | null },
+      )
+    expect(spents.map((s) => [s.turns, s.durationMs, s.costUsd])).toEqual([
+      [1, 10, 0.1],
+      [2, 20, null],
+      [3, 30, 0.3],
+    ])
+    for (const s of spents) {
+      expect(s.for).toEqual({ _tag: 'Discussion' })
+      expect(s.runtime).toBe('claude-code')
+    }
+
+    expect(held.costUsd).toBeCloseTo(0.4)
+    const answer = answerOf(store.appended)
+    expect(answer.turns).toBe(6)
+    expect(answer.durationMs).toBe(60)
+    expect(answer.costUsd).toBeCloseTo(0.4)
   })
 
   /**
@@ -339,10 +459,17 @@ describe('holding one question', () => {
               }
         },
       },
-      { chatId: 'chat-1', evidence: EVIDENCE, question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
-    const answer = store.appended[1]?.data as { usage?: unknown }
+    const answer = answerOf(store.appended)
     expect(answer.usage).toEqual([{ model: 'claude-sonnet-5', tokens: { fresh: 15, output: 3 } }])
   })
 
@@ -360,10 +487,17 @@ describe('holding one question', () => {
           failure: null,
         }),
       },
-      { chatId: 'chat-1', evidence: EVIDENCE, question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
-    const answer = store.appended[1]?.data as { usage?: unknown }
+    const answer = answerOf(store.appended)
     expect(answer.usage).toBeUndefined()
   })
 
@@ -381,10 +515,17 @@ describe('holding one question', () => {
           failure: null,
         }),
       },
-      { chatId: 'chat-1', evidence: EVIDENCE, question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId: 'chat-1',
+        evidence: EVIDENCE,
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
-    const answer = store.appended[1]?.data as { failure: string }
+    const answer = answerOf(store.appended)
     expect(answer.failure).toContain(`${MAX_READ_ROUNDS} rounds`)
   })
 })
@@ -444,6 +585,17 @@ function envelope(type: string, data: unknown): Envelope {
     causation: null,
     at: new Date('2026-09-09T10:00:00Z'),
   }
+}
+
+/**
+ * The one `DiscussionAnswered` among what a turn appended, found by type
+ * rather than by index — a `RunSpent` per process (#496) sits between the ask
+ * and the answer now, so the answer's position shifts with the round count.
+ */
+function answerOf(appended: ToAppend[]): Record<string, unknown> {
+  const answer = appended.find((e) => e.type === 'DiscussionAnswered')
+  if (answer === undefined) throw new Error('no DiscussionAnswered was appended')
+  return answer.data as Record<string, unknown>
 }
 
 /** Enough of an `EventStore` for a fold that only reads and appends one stream. */

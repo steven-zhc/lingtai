@@ -85,13 +85,15 @@ describe('a discussion, on the log', () => {
         question: 'why did attempt 2 produce nothing?',
         by: 'human:steven',
         call: CALL,
+        runtime: 'claude-code',
       },
     )
 
     const chat = await store.read(chatId)
-    expect(chat.map((e) => e.type)).toEqual(['DiscussionAsked', 'DiscussionAnswered'])
+    // A `RunSpent` per process, beside the ask and the answer (#496).
+    expect(chat.map((e) => e.type)).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
     // 0033's first consequence: a third actor appears on the log.
-    expect(chat[1]?.actor).toBe(`agent:${chatId}`)
+    expect(chat[2]?.actor).toBe(`agent:${chatId}`)
     // Lingtai's sentence, on the ask, before the assistant said anything.
     const asked = chat[0]?.data as { reading: string[] }
     expect(asked.reading.join(' ')).toContain('attempt 2 left no branch')
@@ -107,7 +109,14 @@ describe('a discussion, on the log', () => {
 
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId, evidence: evidence(workItemId), question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId,
+        evidence: evidence(workItemId),
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
     const result = await concludeDiscussion({
@@ -139,7 +148,14 @@ describe('a discussion, on the log', () => {
     const chatId = id('chat')
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId, evidence: evidence(workItemId), question: 'why?', by: 'human:steven', call: CALL },
+      {
+        chatId,
+        evidence: evidence(workItemId),
+        question: 'why?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
 
     let written: string | null = null
@@ -173,7 +189,14 @@ describe('a discussion, on the log', () => {
     const second = id('chat')
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId: second, evidence: evidence(workItemId), question: 'again?', by: 'human:steven', call: CALL },
+      {
+        chatId: second,
+        evidence: evidence(workItemId),
+        question: 'again?',
+        by: 'human:steven',
+        call: CALL,
+        runtime: 'claude-code',
+      },
     )
     const refused = await concludeDiscussion({
       store,

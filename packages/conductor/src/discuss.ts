@@ -60,7 +60,15 @@
  * — because nothing repository-specific decides them yet, and a knob with no
  * measurement behind it is a knob nobody can set.
  */
-import { addUsage, chatStream, parsePayload, Usage, type Envelope, type ToAppend } from '@lingtai/domain'
+import {
+  addUsage,
+  chatStream,
+  parsePayload,
+  Usage,
+  type Envelope,
+  type RuntimeId,
+  type ToAppend,
+} from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
 import { editHash } from './attempts.ts'
@@ -464,6 +472,12 @@ export interface HoldOptions {
   call: { model?: string; turns: number; wallMs: number }
   /** The recipe's `discuss.prompt`, forwarded to `buildBrief` on every round. */
   prompt?: string
+  /**
+   * Which runtime is dispatched, for `RunSpent.runtime` (#496). `discuss.agent`
+   * resolved by the caller — `DiscussAgent` is a subset of `RuntimeId`, so it
+   * type-checks straight through.
+   */
+  runtime: RuntimeId
 }
 
 /** What one question cost and what it concluded. */
@@ -543,14 +557,34 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
       prompt: options.prompt,
     })
 
-    const outcome = await ports.ask(prompt, round, call).catch((err: unknown): Answered => ({
-      turns: 0,
-      durationMs: 0,
-      costUsd: null,
-      text: null,
-      failure: { kind: 'crash', detail: (err as Error).message },
-    }))
+    // Set inside the `.catch` below: `ports.ask` threw rather than returning, so
+    // the `Answered` beneath it is made up by this function and not reported by
+    // the process. The one `RunSpent` per process the ticket asks for (#496,
+    // 0110 §2) is for a process that returned an outcome — a killed one has
+    // nothing to record, and records nothing.
+    let threw = false
+    const outcome = await ports.ask(prompt, round, call).catch((err: unknown): Answered => {
+      threw = true
+      return {
+        turns: 0,
+        durationMs: 0,
+        costUsd: null,
+        text: null,
+        failure: { kind: 'crash', detail: (err as Error).message },
+      }
+    })
     spend(outcome)
+
+    if (!threw) {
+      await append(ports.store, stream, -1, 'conductor', 'RunSpent', {
+        for: { _tag: 'Discussion' },
+        runtime: options.runtime,
+        turns: outcome.turns,
+        durationMs: outcome.durationMs,
+        costUsd: outcome.costUsd,
+        usage: outcome.usage ?? [],
+      })
+    }
 
     if (outcome.failure) {
       log(`discussion ${options.chatId}: ${outcome.failure.kind} — ${outcome.failure.detail}`)
@@ -794,7 +828,7 @@ async function append(
   stream: string,
   at: number,
   actor: string,
-  type: 'DiscussionAsked' | 'DiscussionAnswered',
+  type: 'DiscussionAsked' | 'DiscussionAnswered' | 'RunSpent',
   data: unknown,
 ): Promise<void> {
   const version = at >= 0 ? at : (await store.read(stream)).length
