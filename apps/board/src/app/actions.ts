@@ -11,10 +11,10 @@ import { close } from '@lingtai/conductor/close'
  * Two of them decide a card — approve and requeue — and one decides the whole
  * installation: resume. They are the same shape, which is the point.
  *
- * **Two, and not four** (#150). Reject appended `ApprovalRevoked` and the run
- * went straight back to asking, and Waive appended `StepWaived` and nothing
- * read it: two buttons that left the card where it was. A waiver is now what
- * Approve records, with its reason, for every gate still refusing.
+ * **Two, and not four** (#150). Reject appended a wait that went straight back
+ * to asking, and Waive appended a waiver and nothing read it: two buttons that
+ * left the card where it was. A waiver is now what Approve records, with its
+ * reason, for every gate still refusing.
  *
  * This is the ticket the whole project is a bet on. The old review queue
  * reached 45 items growing at 14 a day against zero processed, and the reason
@@ -45,8 +45,16 @@ import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/
 import { editHash } from '@lingtai/conductor/prompt'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
-import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import {
+  CONTROL_STREAM,
+  parsePayload,
+  parseWorkItemStream,
+  reduceWorkItem,
+  waitsOf,
+  workItemStream,
+} from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
+import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
@@ -536,8 +544,8 @@ export async function editPrompt(input: {
  * into *yes, but*.
  *
  * **Two appends, one click, in that order.** `PromptEdited` first — when a
- * sentence came with the click — then `WorkItemUnblocked`, which is what makes
- * the item claimable again. The order is the safe one: an edit committed
+ * sentence came with the click — then the append that resolves the wait,
+ * which is what makes the item claimable again. The order is the safe one: an edit committed
  * against an item that is still blocked is a sentence waiting for a pass that
  * may never come, and an unblock with the edit lost is the attempt running
  * without the thing it was sent for. The first failure is recoverable by
@@ -570,8 +578,12 @@ export async function sendAttempt(input: {
     // edit so nothing is appended. `requeue()` would withdraw the question under
     // a note about a document, and the person pressing Send meant neither to
     // withdraw it nor to answer it. The page offers Answer there instead.
-    const life = reduceWorkItem(await eventStore.read(input.taskId)).lifecycle
-    if (life.status === 'blocked' && life.runId === null) {
+    // Mirrors `answer()`'s own read (`ask.ts`): only an `OwnQuestion` offers
+    // `AnswerQuestion`, and only a wait with no run is one.
+    const events = await eventStore.read(input.taskId)
+    const life = reduceWorkItem(events).lifecycle
+    const wait = waitsOf(events).at(-1)
+    if (life.status === 'blocked' && wait !== undefined && allowedResolutions(wait.reason).includes('AnswerQuestion')) {
       return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` }
     }
     if (typeof input.text === 'string' && input.text.trim() !== '') {
