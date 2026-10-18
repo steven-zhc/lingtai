@@ -393,6 +393,7 @@ export async function answerDiscussion(
         question: request.question,
         by: request.by,
         call,
+        runtime: discuss.agent,
         ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
       },
     )
