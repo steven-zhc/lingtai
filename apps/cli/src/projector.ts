@@ -35,36 +35,46 @@
 import {
   backlogProjection,
   createProjectionRunner,
+  type Projection,
   type ProjectionRunner,
+  spendProjection,
   taskViewProjection,
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
 
 /**
- * The backlog follows too (`#137`): a passing review's minors belong on it by
- * the time the run that raised them ends.
+ * The backlog and `spend` follow too (`#137`, `#498`): a passing review's
+ * minors belong on the backlog by the time the run that raised them ends, and
+ * what it spent belongs on `/spend` and the card by the same moment — the
+ * terminal path this file is for is the one place money would otherwise sit
+ * frozen at whatever a daemon last folded, while every other figure on the
+ * same board was current (`#498`'s review).
  *
  * A second runner rather than a second projection inside the first, because
  * each has its own checkpoint. Its failure is reported and never fatal, for
  * the reason the board's is not: the log is intact either way.
  */
-async function followBacklog(log: (line: string) => void): Promise<ProjectionRunner | null> {
-  const runner = createProjectionRunner({ projection: backlogProjection })
+async function followSecondary(projection: Projection, log: (line: string) => void): Promise<ProjectionRunner | null> {
+  const runner = createProjectionRunner({ projection })
   try {
     await runner.start()
     return runner
   } catch (err) {
-    log(`the backlog will not follow this run: ${(err as Error).message}`)
+    log(`${projection.name} will not follow this run: ${(err as Error).message}`)
     await runner.close().catch(() => {})
     return null
   }
 }
 
-async function releaseBacklog(runner: ProjectionRunner | null, log: (line: string) => void): Promise<void> {
+async function releaseSecondary(
+  name: string,
+  runner: ProjectionRunner | null,
+  log: (line: string) => void,
+): Promise<void> {
   if (!runner) return
   if (runner.failure) {
-    log(`the backlog projection stopped during this run: ${String(runner.failure)}`)
-    log('the backlog is behind until it is rebuilt — lingtai projection rebuild finding_backlog')
+    log(`the ${name} projection stopped during this run: ${String(runner.failure)}`)
+    log(`${name} is behind until it is rebuilt — lingtai projection rebuild ${name}`)
   }
   await runner.close().catch(() => {})
 }
@@ -90,7 +100,8 @@ export async function withProjector<T>(log: (line: string) => void, work: () => 
     log(`the board will not follow this run: ${(err as Error).message}`)
     log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
   }
-  const backlog = await followBacklog(log)
+  const backlog = await followSecondary(backlogProjection, log)
+  const spend = await followSecondary(spendProjection, log)
 
   try {
     return await work()
@@ -103,7 +114,8 @@ export async function withProjector<T>(log: (line: string) => void, work: () => 
       log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
     }
     await runner.close().catch(() => {})
-    await releaseBacklog(backlog, log)
+    await releaseSecondary(backlogProjection.name, backlog, log)
+    await releaseSecondary(spendProjection.name, spend, log)
   }
 }
 
@@ -138,17 +150,19 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
           log(`the board will not follow this run: ${(err as Error).message}`)
           log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
         }
-        const backlog = await followBacklog(log)
-        return { runner, following, backlog }
+        const backlog = await followSecondary(backlogProjection, log)
+        const spend = await followSecondary(spendProjection, log)
+        return { runner, following, backlog, spend }
       }),
-      ({ runner, following, backlog }) =>
+      ({ runner, following, backlog, spend }) =>
         Effect.promise(async () => {
           if (following && runner.failure) {
             log(`the projection stopped during this run: ${String(runner.failure)}`)
             log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
           }
           await runner.close().catch(() => {})
-          await releaseBacklog(backlog, log)
+          await releaseSecondary(backlogProjection.name, backlog, log)
+          await releaseSecondary(spendProjection.name, spend, log)
         }),
     ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner.failure }))),
   )
