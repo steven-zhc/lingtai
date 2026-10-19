@@ -21,7 +21,7 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { reduceWorkItem, waitResolvedOf, waitsOf, waitStartedOf, workItemStream } from '@lingtai/domain'
+import { parsePayload, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -30,9 +30,6 @@ export interface AskOutcome {
   ticketId: string
   detail: string
 }
-
-/** `holdOf`'s `OwnQuestion` arm reads none of this — there is no branch, base or finding to carry. */
-const NO_PASS = { branch: '', base: '', findings: [] }
 
 /**
  * Holds an item on a question, before any run has claimed it.
@@ -71,8 +68,12 @@ export async function ask(options: {
   try {
     await store.append(ticketId, item.version, [
       {
-        ...waitStartedOf({ _tag: 'OwnQuestion', question: options.question, by: options.by }, NO_PASS),
+        type: 'WaitStarted',
         actor: options.by,
+        data: parsePayload('WaitStarted', {
+          waitId: crypto.randomUUID(),
+          reason: { _tag: 'OwnQuestion', question: options.question, by: options.by },
+        }),
       },
     ])
   } catch (err) {
@@ -135,9 +136,12 @@ export async function answer(options: {
   // — every other wait carries a run, which is exactly `life.runId !== null`
   // today: a hold with no `run` field is `Question`'s alone.
   const wait = waitsOf(events).at(-1)
-  const reason = wait?.reason
-  if (reason === undefined || !allowedResolutions(reason).includes('AnswerQuestion')) {
-    const runId = reason !== undefined && 'run' in reason ? reason.run.runId : null
+  if (wait === undefined) {
+    return { ok: false, ticketId, detail: `${ticketId} is not asking anything` }
+  }
+  const reason = wait.reason
+  if (!allowedResolutions(reason).includes('AnswerQuestion')) {
+    const runId = 'run' in reason ? reason.run.runId : null
     return {
       ok: false,
       ticketId,
@@ -155,8 +159,14 @@ export async function answer(options: {
   try {
     await store.append(ticketId, item.version, [
       {
-        ...waitResolvedOf(reason, { _tag: 'AnswerQuestion', choice: options.answer }, options.by, options.answer),
+        type: 'WaitResolved',
         actor: options.by,
+        data: parsePayload('WaitResolved', {
+          waitId: wait.waitId,
+          by: options.by,
+          resolution: { _tag: 'AnswerQuestion', choice: options.answer },
+          note: options.answer,
+        }),
       },
     ])
   } catch (err) {

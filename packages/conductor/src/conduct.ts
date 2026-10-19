@@ -6,7 +6,6 @@ import {
   NO_DESIGN,
   type Action,
   type ActionContext,
-  type ActionEvent,
   type CutAnswer,
   type KeptAnswer,
   type LandAnswer,
@@ -31,17 +30,16 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
-  type Hold,
-  type RunRef,
   type SpentFor,
   type Tier,
   WIP_COMMIT_PREFIX,
   legacyColumns,
   parsePayload,
-  retiredRepairPending,
 } from '@lingtai/domain'
+import type { RunRef, WaitReason } from '@lingtai/domain/wait'
 import {
   CONTROL_STREAM,
+  type ReleaseCause,
   type RuntimeId,
   type Step,
   type ToAppend,
@@ -188,7 +186,6 @@ import { isBuiltInJudge } from '@lingtai/recipe'
 import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
-import { holdOf } from './adapters.ts'
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
 import { agentBranch, armBranch } from './branches.ts'
@@ -197,7 +194,6 @@ import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
-import { type CeilingHit, holdOfPass, lastIntegrationRefusal } from './hold-of.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort } from './kept-run-port.ts'
@@ -215,6 +211,7 @@ import {
 import {
   type Ceilings,
   type PassEnd,
+  type PassEvent,
   type PassOver,
   type StepReached,
   type StepReport,
@@ -939,15 +936,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const folded = reduceWorkItem(before)
     const edit = folded.pendingPrompt
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
-    /**
-     * A repair the old code bought, released, and never claimed — **only on a log
-     * written before `#143`**. Honoured rather than dropped: it was bought
-     * already, so honouring it spends nothing new.
-     */
-    const repairOf = retiredRepairPending(before)
-    if (repairOf) {
-      log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt}), bought before #143`)
-    }
     const previous = priorAttempts(before).at(-1)
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
@@ -1097,7 +1085,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * `null` there. Neither a landed nor a blocked plan is recorded, so a later
      * pass resolves whichever ending it actually reaches.
      */
-    const release = (reason: string): Effect.Effect<void> =>
+    const release = (reason: string, cause: ReleaseCause | null = null): Effect.Effect<void> =>
       Effect.suspend(() => {
         if (released) return Effect.void
         /**
@@ -1128,7 +1116,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           try: async () => {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseWorkItem(ticketId, runId, reason, store).catch((err: unknown) => {
+            await releaseWorkItem(ticketId, runId, reason, store, cause).catch((err: unknown) => {
               backInTheQueue = false
               log(`the item was not released: ${whyOf(err)}`)
             })
@@ -1281,19 +1269,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let judgements = 0
       /**
-       * A reached ceiling's own words, where that is what stopped the agent —
-       * turns or dollars (`#370`), carrying which.
-       *
-       * The pass reports an agent that ran out of turns or dollars as a
-       * `did-not-finish` and says nothing about *why* it did not finish —
-       * `Worked`'s `Stopped` is one string. Either limit is a **scope alarm**
-       * and the recommendation that follows from it is *narrow or split the
-       * ticket*, which is different from every other way a dispatch can stop,
-       * so the distinction is kept here rather than pushed into a vocabulary
-       * the pass would then have to carry.
-       */
-      let ceilingHit: CeilingHit | null = null
-      /**
        * **Why the agent stopped mid-run, where it did — and null everywhere
        * else** (`#468`).
        *
@@ -1311,18 +1286,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
-      /**
-       * **A fix round that read the findings or the refusal and judged, not
-       * crashed** — set exactly when it committed nothing and reported no
-       * failure (`fixRound`, below). `said` is `FixApplied.said`, so the hold
-       * and the event cannot disagree about what the fixer said last.
-       *
-       * Kept here for the reason `ceilingHit` is: the pass cannot tell a
-       * decline from a crash from its own vocabulary, so the distinction is
-       * kept where it is made rather than pushed into one the pass would then
-       * have to carry (0118 §1, #452).
-       */
-      let declined: { said: string | null } | null = null
       /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
@@ -2721,17 +2684,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
-       * **`--no-merge`, and a repair bought before `#143`, as the `human:` action
-       * they always were.**
+       * **`--no-merge`, as the `human:` action it always was.**
        *
-       * This is not a second mechanism (#20). Both ask for the same
+       * This is not a second mechanism (#20). It asks for the same
        * `ApprovalRequested` a declared `human:` at `merge` asks for, and the way to
        * ask for it is to be one: `runActionPipeline` emits the event for a
        * `needs-approval` verdict, `endingOf` reads it as `held`, the pass stops,
-       * and `outcomeOf` says `blocked`. A recipe that declares nothing at `merge`
-       * still holds under the flag; one that declares a person there holds whether
-       * or not the flag was passed. And the hold is bound to `onSha` like any other
-       * verdict, so a force-push invalidates it by arithmetic.
+       * and `outcomeOf` says `blocked`. A recipe that declares a person there holds
+       * whether or not the flag was passed. And the hold is bound to `onSha` like
+       * any other verdict, so a force-push invalidates it by arithmetic.
        *
        * Placed after the declared checks and before whatever lands, which is where
        * the old loop asked: the recipe's own actions run first and the flag holds
@@ -2739,14 +2700,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const alsoHeldAtMerge = (): Action[] => {
         const held: Action[] = []
-        if (repairOf !== null) {
-          held.push(
-            createHumanAction({
-              name: 'repair',
-              question: `A repair for ${repairOf.reason}. Merge ${branch} into ${base}?`,
-            }),
-          )
-        }
         if (options.merge === false) {
           held.push(
             createHumanAction({
@@ -2925,14 +2878,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
-       * Every event the pipeline produces, in order, before the next action starts.
+       * Every event the pipeline produces, in order, before the next action
+       * starts — and since `#502` the `StepStarted`/`StepEnded` pair
+       * `runStep` writes around it (`PassEvent`).
        *
        * On the run's own stream, which is where every verdict has always gone. The
        * pipeline does not touch the store and neither does the pass, for the reason
        * `PipelineOptions` gives — *an action that ran but whose verdict was never
        * recorded is the failure this design exists to remove.*
        */
-      const emit = async (event: ActionEvent): Promise<void> => {
+      const emit = async (event: PassEvent): Promise<void> => {
         await appendNow(runId, [
           {
             type: event.type,
@@ -3190,14 +3145,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // mid-run (`#468`): `interrupted`, set before the dispatch above, is
           // replaced with the runtime's own word for why.
           stoppedBy = outcome.failure.kind
-          if (outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd') {
-            ceilingHit = {
-              kind: outcome.failure.kind,
-              detail: outcome.failure.detail,
-              turns: outcome.turns,
-              costUsd: outcome.costUsd,
-            }
-          }
           const cause = outcome.failure.kind
           return {
             stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
@@ -3267,8 +3214,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * findings on `context.recheck` (0038 §2), the lane's paths from a `merge`
        * that refused, and a command's own output for everything else.
        *
-       * `FixRequested` and `FixApplied` are the events the board already reads, so
-       * they are appended here, from the step that spends the round.
+       * **`FixRequested` is gone (#502): the route that bought this round
+       * already said so.** `PassRouted{next: {_tag: 'FixRound', round}}` is
+       * appended by `routeProposal` before this is ever called, and carries
+       * `from`/`round` already — a second event naming the same decision
+       * would be the round's own fact told twice.
        */
       const fixRound = async (
         brief: Brief,
@@ -3291,20 +3241,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ? ({ on: 'conflict', base, paths: said } as const)
               : ({ on: 'output', output: said } as const)
 
-        await appendNow(runId, [
-          {
-            type: 'FixRequested',
-            actor: 'conductor',
-            data: parsePayload('FixRequested', {
-              runId,
-              round,
-              of: ceiling.rounds,
-              action: from,
-              onSha: brief.context.onSha,
-              findings,
-            }),
-          },
-        ])
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
         runLog.note('fix', `round ${round} for ${from}`)
 
@@ -3371,25 +3307,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const committed = after !== brief.context.onSha
 
         // A judge or a person reads this verdict, not a transcript — bounded the
-        // same way claude-code.ts clips a crash's `detail`.
+        // same way claude-code.ts clips a crash's `detail`. Carried as `stopped`
+        // below on a decline, so the fixer's own words reach `StepEnded`'s
+        // evidence directly: `FixApplied.said` was the only place they used to
+        // land, and `#502` drops that event.
         const FIX_SAID_MAX_CHARS = 500
         const fixSaid = fixed.text === null ? null : fixed.text.slice(0, FIX_SAID_MAX_CHARS)
 
+        // **`FixApplied` is gone (#502): `StepEnded`'s own outcome carries the
+        // round's commit and evidence now** — `runStep`'s wrapper around this
+        // dispatch writes it once the pipeline reads `fixed` back through
+        // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
+        // spend is never folded into a step's own outcome (0110).
         await appendNow(runId, [
-          {
-            type: 'FixApplied',
-            actor: 'conductor',
-            data: parsePayload('FixApplied', {
-              runId,
-              round,
-              headSha: committed ? after : null,
-              turns: fixed.turns,
-              costUsd: fixed.costUsd,
-              failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
-              ...(fixSaid === null ? {} : { said: fixSaid }),
-              ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
-            }),
-          },
           runSpentFrom(
             fixed,
             { _tag: 'Action', step: 'implement', name: spec.name, round },
@@ -3413,22 +3343,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
         }
         if (!committed) {
-          if (!fixed.failure) declined = { said: fixSaid }
           // A decline judged the findings or the refusal rather than being cut
-          // off mid-run — `declined`, just above — so `interrupted` does not
-          // stand for it either; a crash or a wall does, in the runtime's own
-          // word for it (`#468`).
+          // off mid-run, so `interrupted` does not stand for it either; a
+          // crash or a wall does, in the runtime's own word for it (`#468`).
           stoppedBy = fixed.failure ? fixed.failure.kind : null
           const cause = fixed.failure?.kind
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                 'so there is nothing new for the review to read'
-              : 'the fixing agent committed nothing, so there is nothing new for the review to read',
+              : fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read',
             // **`committed` false and no `failure`** is the fixer reading the
-            // findings and declining, not crashing (`declined`, two lines up) —
-            // the `commit Completed{head: null, question: null}` cell rather
-            // than `Interrupted`. `never-started` cannot reach here (handled
+            // findings and declining, not crashing — the `commit
+            // Completed{head: null, question: null}` cell rather than
+            // `Interrupted`. `never-started` cannot reach here (handled
             // above), and `no-commits`/`no-structured-answer` are never this
             // agent's own failure kind.
             ...(cause === undefined
@@ -3753,148 +3681,45 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const restarted = pass.end._tag === 'Requeued' && pass.end.cause._tag === 'Restart'
 
       /**
-       * **The `run` `holdOfPass` builds today** (`hold-of.ts:97-102`) — the two
-       * facts only `conduct.ts` holds and neither `nextOf` nor `holdOf` can
-       * know: `wait.ts`'s `RunRef` has no `repairOf`, and `unpushed` is known
-       * only after the pass, from `notPushed`. Built once so both `holdFor`
-       * branches below patch the same object onto whichever `Hold` they build.
+       * **The `run` every `WaitReason` carries, patched on here** — the one
+       * fact only `conduct.ts` holds and `nextOf`/`routeNext` cannot:
+       * `unpushed`, known only after the pass, from `notPushed`.
        */
       const runRef: RunRef = {
         runId,
-        ...(repairOf === null ? {} : { repairOf: { after: repairOf.after, reason: repairOf.reason } }),
         ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
       }
 
       /**
-       * The `Hold` a person is owed — `nextOf`'s own answer through `holdOf`
-       * (`#466`) where the walk itself answered `WaitOnPerson`, and
-       * `holdOfPass` from what the pass reported otherwise. `#462` moved most
-       * `proposed` arrivals onto `nextOf`, and `#472` moved the rest the same
-       * way — the merge lane's own refusal with no direction, the two fixed
-       * waits 0120 *Two phases* used to carry without a route, and a plugin's
-       * own `held` request for a person, which sets `pass.end` to a
-       * `WaitOnPerson` exactly as a refusal does — so what is left for
-       * `holdOfPass` is `claim`'s own decline (handled above `holdFor` is ever
-       * called), a fix round's own decline, set directly here rather than
-       * through `pass.end`, and a body — or `nextOf` itself — that threw.
+       * **The `WaitReason` a person is owed — `pass.end.reason` verbatim, with
+       * `run` patched on** (#502, 0118 §1's own header: *a `WaitReason` is
+       * built by `routeNext` and `nextOf`, and nothing else does*).
        *
        * **`pass.unanswered` is the split, not `pass.end._tag`** (`#463`):
        * `end` is forced to a `WaitOnPerson` even where this file never
        * classified the stop (`unansweredEnd` in `pass.ts`), and that
        * manufactured `AgentCrashed` is not the richer sentence `stopped`
-       * already carries — so a true `unanswered` takes the `holdOfPass`
-       * branch below exactly as it did before `end` existed. `declined` is
-       * the one input `holdOfPass` needs beyond what the pass already reports
-       * on `stopped`. `legacyColumns` turns the result back into the
+       * already carries — but both branches now reach the same `WaitOnPerson`
+       * shape, so there is nothing left for this file to rebuild: `holdOf`,
+       * `holdOfPass` and `hold-of.ts` are gone, and so is the patching they
+       * did — `ceilingHit`'s turns/dollars and `declined`'s `said` are spend,
+       * which lives on `RunSpent`/`FixApplied` and not on the wait (0110), and
+       * `MergeRefused`'s `paths`/`baseSha`/`headSha` go with `IntegrationRefused`'s
+       * own fields, which 0120 drops in favour of the merge action's own
+       * `Conflicted` result. `legacyColumns` turns the reason back into the
        * `question`/`needs`/`diagnosis` every reader below still wants.
        */
-      const holdFor = async (): Promise<Hold> => {
-        if (!pass.unanswered) {
-          // `outcomeOf` answers `blocked` for `WaitOnPerson` alone, and
-          // `holdFor` only runs on a `blocked` outcome — so an answered stop
-          // that reaches here is always one, which the loop's own type cannot
-          // see across the `pass.unanswered` check above.
-          const waitOn = (pass.end as Extract<PassEnd, { _tag: 'WaitOnPerson' }>).reason
-          /**
-           * **`ceilingHit` is `firstDispatch`'s own receipt, not every
-           * agent's** (`#466`'s patch, read against `hold-of.ts`'s step 3).
-           * It is set only there — never by a fix round's own dispatch, a
-           * cold reviewer, a declared `agent:` elsewhere, or the router's own
-           * judge — because only the implementer's first attempt is a signal
-           * about the ticket's own scope; a round bought back into `implement`
-           * ran out on the round's own budget, not the ticket's, and reads as
-           * an ordinary `DidNotFinish` the same way the reviewer's wall does.
-           * `holdOfPass`'s step 3 read that absence as *nobody decided, and
-           * the account did* only where `ceilingHit !== null`; everywhere else
-           * a `did-not-finish` fell to the ordinary `DidNotFinish` case in its
-           * switch, unconditionally on the step. The same read has to survive
-           * `nextOf`'s uniform `BudgetExhausted`, which carries no step and so
-           * cannot gate itself: without this, every one of those other agents'
-           * wall would read as the *ticket's own scope is wrong, requeue it*
-           * `Ceiling` sentence, with the numbers that sentence promises read as
-           * `null` besides.
-           *
-           * **A `BudgetExhausted` reaches here two ways** (`#471`): directly,
-           * or wrapped as `ProposedEscalated{proposal: BudgetExhausted}` once
-           * `proposed:` declares nothing for `budget-exhausted` (0061 §3,
-           * `BUILT_IN_FOR`). Both name the same situation — some agent other
-           * than `firstDispatch` ran out — so both are read off the same
-           * `ceilingHit === null` test; gating on `waitOn._tag` alone would
-           * miss the wrapped form and let it through to `holdOf`'s `Ceiling`.
-           */
-          const budgetDetail =
-            waitOn._tag === 'BudgetExhausted'
-              ? waitOn.detail
-              : waitOn._tag === 'ProposedEscalated' && waitOn.proposal._tag === 'BudgetExhausted'
-                ? waitOn.proposal.detail
-                : null
-          if (budgetDetail !== null && ceilingHit === null) {
-            // **The step from the proposal, not `stopped`** (`#472`):
-            // `nextOf` no longer produces the direct `WaitOnPerson{BudgetExhausted}`
-            // — only the wrapped `ProposedEscalated{proposal: BudgetExhausted}`
-            // reaches here now, and its own `from` is the step that ran out,
-            // the same fact `stopped!.step` named before this ticket.
-            const step =
-              waitOn._tag === 'ProposedEscalated' && waitOn.proposal._tag === 'BudgetExhausted'
-                ? waitOn.proposal.from
-                : stopped!.step
-            return {
-              _tag: 'DidNotFinish',
-              run: runRef,
-              step,
-              why: said(budgetDetail, 400),
-              raw: budgetDetail,
-            }
-          }
-          const hold = holdOf(waitOn, { branch, base, findings })
-          if (hold._tag === 'Question') return hold
-          const withRun: Hold = { ...hold, run: runRef }
-          // 0118 §3's rule: `null` rather than an invented zero — `holdOf`
-          // already writes that, and `ceilingHit` is the one place left that
-          // knows what was actually spent (row 14a, `#466`'s own header).
-          if (withRun._tag === 'Ceiling' && ceilingHit !== null) {
-            return { ...withRun, turns: ceilingHit.turns, costUsd: ceilingHit.costUsd }
-          }
-          // `declined.said` is `FixApplied.said` (#453), read here the same
-          // way `holdOfPass`'s own caller reads it — `nextOf`'s own `said`
-          // (`lastCommitEvidence`, skipping a kept `run:`'s evidence) can
-          // differ from the fixer's actual last words on `FixApplied` (row 7).
-          if (withRun._tag === 'Declined' && declined !== null) {
-            return { ...withRun, said: declined.said }
-          }
-          // **`MergeRefused` loses `paths`/`baseSha`/`headSha` through
-          // `holdOf`** (`#472`): the forward `WaitReason.MergeRefused` never
-          // fills them — only the integration stream does. Filled in here
-          // the same way `holdOfPass`'s own step 2 already did for this
-          // reason, off the same `lastIntegrationRefusal`.
-          if (withRun._tag === 'MergeRefused') {
-            const refusal = await lastIntegrationRefusal(store, project, base, ticketId, branch)
-            return {
-              ...withRun,
-              paths: refusal?.paths ?? null,
-              baseSha: refusal?.baseSha ?? null,
-              headSha: refusal?.headSha ?? null,
-            }
-          }
-          return withRun
-        }
-        const integrationRefusal =
-          stopped?.step === 'merge' && stopped.ending.ending === 'refused'
-            ? await lastIntegrationRefusal(store, project, base, ticketId, branch)
-            : null
-        return holdOfPass({
-          stopped,
-          lastRoute,
-          ceilingHit,
-          declined,
-          findings,
-          runId,
-          branch,
-          base,
-          ...(repairOf === null ? {} : { repairOf: { after: repairOf.after, reason: repairOf.reason } }),
-          ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
-          integrationRefusal,
-        })
+      const waitReasonFor = (): WaitReason => {
+        // `outcomeOf` answers `blocked` for `WaitOnPerson` alone, and this is
+        // only read on a `blocked` outcome — so the loop's own type cannot see
+        // it, but `pass.end` is always one here. `OwnQuestion` is excluded by
+        // hand: it carries no `run` at all, and nothing a pass ends with is
+        // ever that variant — only `ask.ts`'s pre-claim question is.
+        const reason = (pass.end as Extract<PassEnd, { _tag: 'WaitOnPerson' }>).reason as Exclude<
+          WaitReason,
+          { _tag: 'OwnQuestion' }
+        >
+        return { ...reason, run: runRef }
       }
 
       // ---- landed -------------------------------------------------------------
@@ -3995,37 +3820,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           n: restart,
           of: ceiling.restarts,
         })
-        yield* Effect.promise(() =>
-          appendNow(ticketId, [
-            {
-              type: 'PassRestarted',
-              actor: 'conductor',
-              data: parsePayload('PassRestarted', {
-                runId,
-                restart,
-                of: ceiling.restarts,
-                action: lastRoute?.from ?? 'review',
-                rounds: roundsSpent,
-                // The arm and not `agent/<n>`: this approach stays fetchable when
-                // the next claim overwrites the branch (0062 §2).
-                branch: arm,
-                headSha,
-                findings,
-              }),
-            },
-          ]),
-        )
+        // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}`
+        // is the one event now** — what it also carried (the arm, its head,
+        // the findings still live) is on the previous run's own stream,
+        // which the next prompt already reads (`attempts.ts`'s `lastRun`,
+        // `work-item.ts`'s own header on `RestartRecord`).
         log(`starting over — restart ${restart} of ${ceiling.restarts}`)
         runLog.note('restart', reason)
-        yield* release(reason)
+        yield* release(reason, { _tag: 'Restart', restart })
         return { ok: false, ticketId, runId, stage: 'restart', detail: reason } satisfies RunOnceResult
       }
 
       // ---- blocked: a person now holds it -------------------------------------
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
-        const hold = yield* Effect.promise(holdFor)
-        const said_ = legacyColumns(hold)
+        const reason = waitReasonFor()
+        const said_ = legacyColumns(reason, { branch, base, findings })
         /**
          * **Something judged this diff and said no** — the second half of when a
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
@@ -4074,57 +3884,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * worth making where origin is holding something to merge (`onOrigin`).
          */
         const judged = stopped === null || stopped.ending.ending === 'refused'
-        if (!held && judged && onOrigin !== null) {
-          /**
-           * **The request is named for itself, never for the action that
-           * refused** — and naming it after that action destroys the thing it
-           * exists to report.
-           *
-           * `task-view.ts` folds `StepFailed` and `ApprovalRequested` through one
-           * `setStep`, keyed `${runId}:${gate}:${action}`, with
-           * `VERDICT.ApprovalRequested = "pending"`. So a `build` refused by a
-           * `run:` action called `test` writes `verdicts[<run>:build:test] =
-           * "failed"`, and a request carrying that same pair overwrites it with
-           * `pending`: the card's `failed` count drops to zero and the board
-           * shows a change that was refused as merely waiting — on every
-           * projection and every rebuild. The old engine named its request
-           * `unfixed` for exactly this reason, and wrote the collision out at
-           * the append.
-           *
-           * The pointer travels in the question instead, which is what a person
-           * reads.
-           */
-          const refusedBy = whatRefused(stopped)
-          yield* Effect.promise(() =>
-            appendNow(runId, [
-              {
-                type: 'ApprovalRequested',
-                actor: 'conductor',
-                data: parsePayload('ApprovalRequested', {
-                  step: stopped?.step ?? 'proposed',
-                  action: stopped === null ? 'judge' : 'unfixed',
-                  runId,
-                  // What is on origin, never what the walk last reported: see
-                  // `onOrigin`. The two are the same sha wherever a declared
-                  // action refused, which since `judged` is the only ending that
-                  // reaches here — and this stays the field that says so, because
-                  // that is a fact about the push and not about the walk.
-                  onSha: onOrigin,
-                  question:
-                    `Merge ${branch} into ${base} anyway? ${said_.question}` +
-                    (refusedBy === null ? '' : ` (\`${refusedBy}\`)`),
-                  artifacts: [`${branch}@${onOrigin}`],
-                }),
-              },
-            ]),
-          )
-        }
+        /**
+         * **`ApprovalRequested` is gone (#502), and so is the run-level
+         * signal it carried** — `approve.ts`'s own fallback (`run.headSha`,
+         * gated on `allowedResolutions`) is what still lets this through.
+         * What survives is the richer sentence, which never needed an event
+         * of its own: a person reading the ticket's own question is told the
+         * commit is still on origin and could be merged as it stands, named
+         * for itself rather than for the action that refused (naming it
+         * after that action would be the pointer a person reads, not the
+         * question) — `whatRefused` still supplies which runtime, where one
+         * answers.
+         */
+        const question =
+          !held && judged && onOrigin !== null
+            ? `Merge ${branch} into ${base} anyway? ${said_.question}` +
+              (whatRefused(stopped) === null ? '' : ` (\`${whatRefused(stopped)}\`)`)
+            : said_.question
         yield* Effect.promise(() =>
           appendNow(ticketId, [
             {
-              type: 'WorkItemBlocked',
+              type: 'WaitStarted',
               actor: 'conductor',
-              data: parsePayload('WorkItemBlocked', { hold }),
+              data: parsePayload('WaitStarted', { waitId: crypto.randomUUID(), reason }),
             },
             // In the same append as the block, for the landing's reason: a
             // `when: blocked` action recorded as carried out for a block the log
@@ -4139,12 +3921,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             store,
             github: options.client,
             ticketId,
-            question: said_.question,
+            question,
             labels: labelsFor('waiting'),
             appended: endResolved,
           }),
         )
-        log(`held at ${headSha.slice(0, 7) || 'the base'} — ${said_.question}`)
+        log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
           ok: 'held',
           ticketId,

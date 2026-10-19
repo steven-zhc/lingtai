@@ -189,3 +189,33 @@ export function fromOf(proposal: Proposal): Step {
       return 'merge'
   }
 }
+
+/**
+ * **What the merge lane's own refusal becomes — one mapping, two callers**
+ * (`#502`). `pass-next.ts`'s `mergeCompletedRefused` reads it off a live
+ * `Integration` result; `approve.ts`'s own re-attempt after an approval reads
+ * it off `IntegrateResult` instead, never off the log — both land here so a
+ * conflict is classified the same way whichever one ran the lane.
+ *
+ * `conflict` is the three fields a real conflict carries, or `null` where the
+ * caller has none (`IntegrateResult.conflict` is set only for `reason:
+ * 'conflict'`, and `Integration.IntegrationRefused` never carries them at
+ * all).
+ */
+export function mergeRefusalProposal(
+  reason: RefusalReason,
+  output: string,
+  conflict: { paths: string[] | null; baseSha: string | null; headSha: string | null } | null,
+): Proposal {
+  if (reason === 'conflict') {
+    return {
+      _tag: 'MergeConflict',
+      output,
+      paths: conflict?.paths ?? null,
+      baseSha: conflict?.baseSha ?? null,
+      headSha: conflict?.headSha ?? null,
+    }
+  }
+  if (reason === 'verify-failed') return { _tag: 'VerifyRed', output }
+  return { _tag: 'MergeRefused', reason, output }
+}

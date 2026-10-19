@@ -1,4 +1,4 @@
-import { parsePayload, reduceWorkItem } from '@lingtai/domain'
+import { parsePayload, reduceWorkItem, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -130,16 +130,28 @@ export async function claimWorkItem(ticketId: string, options: ClaimOptions): Pr
   }
 }
 
-/** Hands the item back. The only way back: there is no expiry (0027). */
+/**
+ * Hands the item back. The only way back: there is no expiry (0027).
+ *
+ * `cause` is `null` for every caller here and the reconciler's own release of
+ * a dead worker — neither has one of 0120's causes to name (#502, 464.md
+ * choice 4) — and `{_tag: 'Restart', restart}` for `conduct.ts`'s own restart,
+ * which calls this directly rather than through a second function.
+ */
 export async function releaseWorkItem(
   ticketId: string,
   runId: string,
   reason: string,
   store: EventStore = eventStore,
+  cause: ReleaseCause | null = null,
 ): Promise<void> {
   const events = await store.read(ticketId)
   const state = reduceWorkItem(events)
   await store.append(ticketId, state.version, [
-    { type: 'TicketReleased', actor: 'conductor', data: parsePayload('TicketReleased', { runId, reason }) },
+    {
+      type: 'TicketReleased',
+      actor: 'conductor',
+      data: parsePayload('TicketReleased', { runId, reason, cause }),
+    },
   ])
 }

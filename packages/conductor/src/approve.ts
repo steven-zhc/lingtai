@@ -1,15 +1,14 @@
 import {
-  approvalOf,
-  approvedMergeRefusedOf,
+  legacyColumns,
+  mergeRefusalProposal,
   parsePayload,
   reduceRun,
   reduceWorkItem,
-  waitResolvedOf,
   waitsOf,
-  waiverOf,
   type RunState,
 } from '@lingtai/domain'
 import { workItemStream } from '@lingtai/domain'
+import { allowedResolutions, type WaitReason } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { GitHubClient } from '@lingtai/github'
@@ -37,7 +36,6 @@ import { integrate, type TokenSource } from '@lingtai/repo'
 
 import { agentBranch } from './branches.ts'
 import { resolveEndActions } from './end-step.ts'
-import { lastIntegrationRefusal } from './hold-of.ts'
 import { labelsFor } from './labels.ts'
 import { signedInHere } from './projects.ts'
 import { tellGitHubAbout, type RefChannel } from './tell.ts'
@@ -69,30 +67,6 @@ async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T
   } finally {
     await got.lock.release()
   }
-}
-
-/**
- * `proposed:build` → the point and the action.
- *
- * A person decides about the thing the card names, which is the composite key
- * (`step:action`); the event carries the two fields separately, because "the
- * build failed" and "something at the `proposed` step failed" are different
- * questions. Splitting at the first colon, since a step never contains one.
- *
- * **It returns `step`, and `stepBase` is spelled `step` to match** — both since
- * `#247`, in the same diff, because they have to move together. Every caller
- * spreads this straight into `parsePayload`, which takes `unknown`, so a
- * disagreement between the two type-checks at all three call sites and is then
- * refused by Zod at run time: `Invalid option: expected one of "claim"|…` on
- * every `approve` and every `waive`, which is a held run nobody can land.
- *
- * That is the failure this comment used to describe as a reason *not* to rename.
- * It is now the reason the two names may not drift apart again.
- */
-function splitStep(key: string): { step: string; action: string } {
-  const cut = key.indexOf(':')
-  if (cut < 0) return { step: 'merge', action: key }
-  return { step: key.slice(0, cut), action: key.slice(cut + 1) }
 }
 
 /**
@@ -207,16 +181,6 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   }
 
   const run = reduceRun(await store.read(runId))
-  if (run.lifecycle.status !== 'awaiting-approval') {
-    // Including "already merged". Saying which state it is in is more useful
-    // than saying it is not the right one.
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-awaiting-approval',
-      detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
-    }
-  }
 
   // **The item has to be holding this run, too** (#150). Requeue is offered
   // beside Approve now, so a card left open in a second tab — or `lingtai
@@ -231,7 +195,32 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     }
   }
 
-  const { step, onSha } = run.lifecycle
+  /**
+   * **The sha an approval is about.** `run.lifecycle.onSha` for a declared
+   * `human:`/`--no-merge` signoff — still a `signoff` action, so it still
+   * reaches `awaiting-approval` through `StepEnded` (`run.ts`). The "merge it
+   * anyway" offer `conduct.ts` makes after an unrelated refusal is not one of
+   * those: it never runs a pipeline action, so nothing sets `run.lifecycle`
+   * for it now that `ApprovalRequested` is gone (#502) — a reader `#474`–`#476`
+   * missed. Falls back to `run.headSha`, gated on the ticket's own wait still
+   * allowing `Approve` (0118 §1's `allowedResolutions`), which an `unpushed`
+   * run or a wait that never offered it both already refuse.
+   */
+  let onSha: string
+  if (run.lifecycle.status === 'awaiting-approval') {
+    onSha = run.lifecycle.onSha
+  } else if (run.headSha !== null && allowedResolutions(item.lifecycle.reason).includes('Approve')) {
+    onSha = run.headSha
+  } else {
+    // Including "already merged". Saying which state it is in is more useful
+    // than saying it is not the right one.
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-awaiting-approval',
+      detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
+    }
+  }
   const branch = agentBranch(options.issue)
 
   if (options.onSha && options.onSha !== onSha) {
@@ -313,28 +302,33 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
 
   // At the version read above, so a run that moved since it was read — a
   // second approval, a re-request on a new head — is not approved unread.
+  //
+  // **A single `WaitResolved{Approve}`, on the ticket stream, replaces the
+  // per-gate waivers and `ApprovalGranted`** (#502, 0118 §11): nothing on
+  // 0120's catalogue brings the waivers back (that is #465's, continuing the
+  // run), so what still refuses this sha is overruled without a second event
+  // naming it. The reason a person gave still has to exist — `refusing`,
+  // above — it is just carried on `note` alone now.
   try {
-    await store.append(
-      runId,
-      run.version,
-      // One waiver per refusing gate, each under the name the run recorded it
-      // with, carrying the approval's own reason, then `ApprovalGranted` —
-      // in that order, so the fold reads the refusal overruled and then the
-      // diff approved. The approver *is* the actor on every one of these:
-      // `by` is already `human:<id>`, which is the shape the envelope
-      // demands, and recording it in both places keeps the payload readable
-      // without the two ever disagreeing.
-      approvalOf({ refusing: refusing.map(splitStep), ...splitStep(step), runId, onSha, by: options.by, note }).map(
-        (e) => ({ ...e, actor: options.by }),
-      ),
-    )
+    await store.append(ticketId, item.version, [
+      {
+        type: 'WaitResolved',
+        actor: options.by,
+        data: parsePayload('WaitResolved', {
+          waitId: item.lifecycle.waitId,
+          by: options.by,
+          resolution: { _tag: 'Approve', onSha },
+          note,
+        }),
+      },
+    ])
   } catch (err) {
     if (!(err instanceof ConcurrencyError)) throw err
     return {
       ok: false,
       ticketId,
       reason: 'stale',
-      detail: `${runId} moved while this was being approved. Nothing was merged — reload and read it again.`,
+      detail: `${ticketId} moved while this was being approved. Nothing was merged — reload and read it again.`,
     }
   }
   if (refusing.length > 0) log(`waived ${refusing.join(', ')} on ${onSha.slice(0, 7)}: ${note}`)
@@ -383,30 +377,32 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
      * takes, from here or from a pass.
      */
     const blocked = await store.read(ticketId)
-    // `diagnoseRefusal` is the one function behind both tags: a pass's own
-    // `conflict`/`verify-failed` refusal is `Routed` rather than this variant
-    // since #452 (`hold-of.ts`'s step 1), carrying its own composed `why` —
-    // but `approvedMergeRefusedOf` below and the domain's own card-column
-    // reading of a `Routed` hold each reach `diagnoseRefusal` independently,
-    // so `done` and `recommendation`, the owner sentence and the move, cannot
-    // describe the same conflict differently (#83).
-    const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, ticketId, branch)
-    const { event, question } = approvedMergeRefusedOf({
+    // **Choice 1's one exception** (#502, 0118 §1): every other escalation
+    // routes through `proposed` first, but no route ran here — the approval
+    // already spent the only decision there was to make, and this is just
+    // the lane refusing a second time. `mergeRefusalProposal` is the same
+    // mapping `pass-next.ts`'s `mergeCompletedRefused` uses, fed from this
+    // `integrate()` call's own `IntegrateResult.conflict` rather than from the
+    // log — `IntegrationRefused` carries no conflict fields any more.
+    const proposal = mergeRefusalProposal(merged.reason, merged.detail, merged.conflict ?? null)
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
       // No `unpushed`: the run is bound to `onSha`, already on origin.
-      runId,
-      reason: merged.reason,
-      raw: merged.detail,
-      branch,
-      base: options.base,
-      paths: integrationRefusal?.paths ?? null,
-      baseSha: integrationRefusal?.baseSha ?? null,
-      headSha: integrationRefusal?.headSha ?? null,
-    })
+      run: { runId },
+      proposal,
+      because: { _tag: 'NotAsked' },
+    }
+    const question = legacyColumns(reason, { branch, base: options.base, findings: [] }).question
     const ended = resolveEndActions(blocked, end, 'blocked')
     await store.append(ticketId, blocked.length, [
-      // `ApprovalGranted` was already appended above: this approval is spent,
-      // which is `approvedMergeRefusedOf`'s own `afterApproval: true`.
-      { ...event, actor: 'conductor' },
+      // `WaitResolved{Approve}` was already appended above: a reader sees the
+      // approval spent and this wait starting right after it, with no
+      // `afterApproval` flag needed to say so (0118 §11).
+      {
+        type: 'WaitStarted',
+        actor: 'conductor',
+        data: parsePayload('WaitStarted', { waitId: crypto.randomUUID(), reason }),
+      },
       ...ended,
     ])
     await tellGitHubAbout({
@@ -552,7 +548,16 @@ export async function requeueHolding(
   const note = options.note.trim() ? options.note : ''
 
   await store.append(ticketId, item.version, [
-    { ...waitResolvedOf(wait.reason, { _tag: 'Requeue' }, options.by, note), actor: options.by },
+    {
+      type: 'WaitResolved',
+      actor: options.by,
+      data: parsePayload('WaitResolved', {
+        waitId: wait.waitId,
+        by: options.by,
+        resolution: { _tag: 'Requeue' },
+        note,
+      }),
+    },
   ])
 
   return {
@@ -564,86 +569,10 @@ export async function requeueHolding(
   }
 }
 
-/**
- * Waiving a step: merging past a verdict, on the record.
- *
- * **A waiver is never silent.** It records who and why, and both go on the
- * card. That is the entire difference between this and the thing it replaces —
- * a person deciding "the build failure is unrelated, land it" is legitimate and
- * happens; a person doing it by deleting a label and telling nobody is how a
- * system stops being able to explain itself.
- *
- * Bound to the sha like every other verdict. A waiver for a commit that is no
- * longer the head stops counting the moment the branch moves, without anyone
- * revoking it.
- */
-export async function waive(options: {
-  project: string
-  issue: number
-  step: string
-  by: string
-  reason: string
-  onSha?: string
-  store?: EventStore
-}): Promise<{ ok: boolean; ticketId: string; detail: string }> {
-  const store = options.store ?? eventStore
-  const ticketId = workItemStream(options.project, options.issue)
-
-  if (!options.reason.trim()) {
-    // The one rule. A waiver with no reason is the silent waiver by another
-    // name, and the field being present is not the same as it being filled in.
-    return { ok: false, ticketId, detail: 'a waiver needs a reason' }
-  }
-
-  const item = reduceWorkItem(await store.read(ticketId))
-  const runId = item.runs[item.runs.length - 1]
-  if (!runId) return { ok: false, ticketId, detail: `${ticketId} has never been run` }
-
-  const events = await store.read(runId)
-  const run = reduceRun(events)
-  if (!run.headSha) return { ok: false, ticketId, detail: `${runId} has produced no diff to waive` }
-
-  // **A waiver names a gate the run reported, or it is refused** (#150). The
-  // board's card once sent `"build"` for whatever had refused, so a waived
-  // `review` was recorded as a waived `build` — a verdict about a gate that
-  // never said anything. Reported means a verdict on any sha, or a place in the
-  // run's last `StepsResolved` plan: `lingtai waive` exists to close a planned
-  // gate that never reported, and `end` is left out because it has no verdict.
-  const plan = events.filter((e) => e.type === 'StepsResolved').at(-1)
-  const planned = plan
-    ? parsePayload('StepsResolved', plan.data).steps.flatMap((p) =>
-        p.step === 'end' ? [] : p.actions.map((a) => `${p.step}:${a}`),
-      )
-    : []
-  if (!run.steps[options.step] && !planned.includes(options.step)) {
-    return {
-      ok: false,
-      ticketId,
-      detail: `${runId} reported no step named "${options.step}" — a waiver can only name one it did`,
-    }
-  }
-
-  // The sha the person was looking at, when they said so. If the branch has
-  // moved since the card rendered, they are waiving something they have not
-  // seen.
-  if (options.onSha && options.onSha !== run.headSha) {
-    return {
-      ok: false,
-      ticketId,
-      detail: `the card showed ${options.onSha.slice(0, 7)} and the branch is now ${run.headSha.slice(0, 7)}`,
-    }
-  }
-
-  await store.append(runId, run.version, [
-    {
-      ...waiverOf({ ...splitStep(options.step), runId, onSha: run.headSha, by: options.by, reason: options.reason }),
-      actor: options.by,
-    },
-  ])
-
-  return {
-    ok: true,
-    ticketId,
-    detail: `${options.step} waived on ${run.headSha.slice(0, 7)} by ${options.by}: ${options.reason}`,
-  }
-}
+// **`waive()` is gone (#502).** It appended `StepWaived`, which 0120's
+// appendix retires with no replacement — the standalone waiver `waive()`
+// built is "has no caller" there, and nothing in this codebase called it
+// either (`index.ts` re-exported it and nothing imported that). `approve()`
+// still absorbs a waiver as part of granting an approval (`refusingOn`,
+// above); what is gone is waiving a step on its own, with no approval beside
+// it.

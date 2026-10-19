@@ -1,26 +1,10 @@
 import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
 /**
- * The one module where 0120's shapes and today's events meet (`#466`).
- *
  * `actionOf` turns one plugin's `ActionResult` (`@lingtai/actions`) into a
  * typed `Action` (`@lingtai/domain`'s `action.ts`); `outcomeOf` zips a whole
  * step's `actions` and `PipelineResult` into the `StepOutcome` that step
- * ended with.
- *
- * **`eventOf` and `holdOf` moved to `@lingtai/domain/src/adapters.ts` by
- * `#473`**, so `packages/domain/test/events.ts`'s builders can call the same
- * two functions a real pass does. Re-exported below under the same names, so
- * this file's own callers (`pass.ts`, `conduct.ts`,
- * `conductor/unit/adapters.test.ts`) keep their imports unchanged. `@lingtai/domain`'s
- * own `StepEvent` is structurally identical to `@lingtai/actions`' `ActionEvent`
- * (that file's own header explains why it is declared again there rather than
- * imported), so the re-export costs no caller a cast.
- *
- * **This module exists until #464.** Phase 2 puts `StepOutcome` on the log as
- * `StepEnded` and deletes `Hold`; until then a `Hold` and the `WaitReason` it
- * would become are two spellings of one fact (`wait.ts`'s own header), and
- * this pair of files is where today's spelling and 0120's meet without
- * either having to know the other exists anywhere else.
+ * ended with — the shape `pass.ts`'s `runStep` writes straight onto
+ * `StepEnded` since #502.
  *
  * **`eventOf` reads `plugin`, and `nextOf` (`@lingtai/domain`'s
  * `pass-next.ts`) reads it in exactly one place.** One of 0120's result tags
@@ -61,11 +45,7 @@ import {
   type Step,
   type StepOutcome,
   cleared,
-  eventOf,
-  holdOf,
 } from '@lingtai/domain'
-
-export { eventOf, holdOf }
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]

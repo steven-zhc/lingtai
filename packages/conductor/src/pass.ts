@@ -104,6 +104,7 @@ import {
   routeNext,
   STEPS,
   type PassNext,
+  type PayloadOf,
   type Proposal,
   type Step,
   type StepOutcome,
@@ -113,9 +114,9 @@ import type { Recipe, StepAction } from '@lingtai/recipe'
 
 // Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
 // than over a step's actions — two functions with one name would be exactly
-// the collision #466's own header warns against (`adapters.ts`'s own doc
+// the collision #466's own header warns against (`step-outcome.ts`'s own doc
 // comment).
-import { outcomeOf as stepOutcomeOf } from './adapters.ts'
+import { outcomeOf as stepOutcomeOf } from './step-outcome.ts'
 import type { TerminalOutcome } from './end-step.ts'
 // `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -796,6 +797,17 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
 
 // ------------------------------------------------------------- the loop ----
 
+/**
+ * `ActionEvent` (the pipeline's own `RunSpent`) plus the two events `runStep`
+ * writes around it — `StepStarted` before, `StepEnded` after, from the
+ * `StepOutcome` it already builds (`#502`, 0120 phase 2). One union because
+ * both reach the log through the same `emit`.
+ */
+export type PassEvent =
+  | ActionEvent
+  | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
+  | { type: 'StepEnded'; data: PayloadOf<'StepEnded'> }
+
 export interface PassOptions {
   /**
    * The resolved recipe. Only `steps` is read, and it holds all ten (0061 §5),
@@ -819,14 +831,16 @@ export interface PassOptions {
    */
   readonly context: ActionContext
   /**
-   * Every event the pipeline produces, in order, before the next action starts.
+   * Every event the pipeline produces, in order, before the next action
+   * starts — and since `#502` the two `runStep` itself writes around it,
+   * `StepStarted` and `StepEnded` (`PassEvent`, below).
    *
    * Passed straight through: the pipeline does not touch the store and neither
    * does this, for the reason `PipelineOptions` gives — *an action that ran but
    * whose verdict was never recorded is the failure this design exists to
    * remove.*
    */
-  readonly emit: (event: ActionEvent) => Promise<void> | void
+  readonly emit: (event: PassEvent) => Promise<void> | void
   /**
    * The ten bodies.
    *
@@ -1208,14 +1222,32 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
 
   while (at !== null && at !== 'end') {
     const spec = SPEC[at]
+    const visitContext = contextFor()
+    /**
+     * **Once per spine visit, before the pipeline runs** (0120 §1,
+     * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
+     * loop (`claimStep`, `resolveEndActions`) and never reach here, and a
+     * routing visit is built directly by `routeProposal`'s own `record()`
+     * calls rather than through `runStep` — so neither gets one either.
+     */
+    await options.emit({
+      type: 'StepStarted',
+      data: { runId: options.context.runId, step: at, round: visitContext.round ?? 0 },
+    })
     const reached = record(
       await runStep(spec, options, bodies, [...steps], {
-        context: contextFor(),
+        context: visitContext,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
       }),
     )
+    // **Exactly where the step's plugins ran a verdicts pipeline** (`events.ts`'s
+    // own rule for `StepEnded`) — `outcome` is `undefined` for a step with
+    // nothing declared to judge, which never opened one.
+    if (reached.outcome !== undefined) {
+      await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: reached.outcome } })
+    }
     const ending = reached.ending
     if (ending.ending === 'routed') {
       // Unreachable: no body may answer `routed` any more (`theWorkflowsToSay`

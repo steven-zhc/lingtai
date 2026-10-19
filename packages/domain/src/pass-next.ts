@@ -21,7 +21,7 @@
 import { z } from 'zod'
 
 import { Action, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
-import { Proposal } from './proposal.ts'
+import { mergeRefusalProposal, Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
 import { RunRef, WaitReason } from './wait.ts'
 
@@ -280,19 +280,14 @@ function mergeCompletedRefused(step: Step, integration: Integration, evidence: s
     case 'Conflicted':
       return {
         _tag: 'Propose',
-        proposal: {
-          _tag: 'MergeConflict',
-          output: evidence,
+        proposal: mergeRefusalProposal('conflict', evidence, {
           paths: integration.paths,
           baseSha: integration.baseSha,
           headSha: integration.headSha,
-        },
+        }),
       }
     case 'IntegrationRefused':
-      if (integration.reason === 'verify-failed') {
-        return { _tag: 'Propose', proposal: { _tag: 'VerifyRed', output: evidence } }
-      }
-      return { _tag: 'Propose', proposal: { _tag: 'MergeRefused', reason: integration.reason, output: evidence } }
+      return { _tag: 'Propose', proposal: mergeRefusalProposal(integration.reason, evidence, null) }
     case 'Integrated':
       throw new ImpossibleOutcomeError(step, 'merge', 'Integrated already handled before nextOf falls short')
   }

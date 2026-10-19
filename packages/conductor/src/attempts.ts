@@ -112,8 +112,13 @@ export interface AttemptOutcome {
    * the brief quotes its two ends up to `budget.evidence`. Null for a run with no recorded refusal at all.
    */
   evidence: { what: string; text: string } | null
-  /** From `RunFinished`. Null for a run that never got that far. */
-  receipt: { turns: number; costUsd: number | null } | null
+  /**
+   * From `RunFinished`. Null for a run that never got that far. No dollar
+   * figure (#502, 0110 §9): spend is `RunSpent`'s alone, and a per-attempt
+   * total re-derived from it would be a second pricing site — the rule
+   * `0303ca2f` already set for a review's and a design's own evidence.
+   */
+  receipt: { turns: number } | null
 }
 
 /**
@@ -134,8 +139,6 @@ export interface PriorAttempt {
    * a caller reading before its own claim will never see for itself.
    */
   ended: string | null
-  /** The integrator's refusal, when a repair was requested or declined for it. */
-  refusal: { reason: string; detail: string } | null
   outcome: AttemptOutcome | null
 }
 
@@ -156,14 +159,13 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
     // switch (`read-model.ts`, shared with `task_view`) is the one place
     // that has to move when #464 renames the event, rather than this file
     // also carrying a case label that would silently stop matching.
-    const card = cardFactOf(event)
-    if (card !== null && card._tag === 'WaitStarted') {
+    for (const card of cardFactOf(event)) {
+      if (card._tag !== 'WaitStarted') continue
       const runId = 'run' in card.reason ? card.reason.run.runId : null
       const attempt = runId === null ? undefined : byRun.get(runId)
       // An attempt that ended by asking a person ended just as much as one
       // that was released, and the question is the reason.
       if (attempt) attempt.ended = `blocked, asking: ${card.card.question}`
-      continue
     }
 
     switch (event.type) {
@@ -178,7 +180,6 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
           n: attempts.length + 1,
           runId: d.runId,
           ended: null,
-          refusal: null,
           outcome: null,
         }
         attempts.push(attempt)
@@ -190,14 +191,6 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         const d = event.data as PayloadOf<'TicketReleased'>
         const attempt = byRun.get(d.runId)
         if (attempt) attempt.ended = d.reason
-        break
-      }
-
-      default: {
-        const fact = attemptFactOf(event)
-        if (fact?._tag !== 'RepairRefused') break
-        const attempt = byRun.get(fact.runId)
-        if (attempt) attempt.refusal = { reason: fact.reason, detail: fact.detail }
         break
       }
     }
@@ -239,7 +232,7 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
 
       case 'RunFinished': {
         const d = event.data as PayloadOf<'RunFinished'>
-        receipt = { turns: d.turns, costUsd: d.costUsd }
+        receipt = { turns: d.turns }
         break
       }
 
@@ -250,26 +243,33 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
       }
 
       /**
-       * Everything else a step ends with — `StepStarted` opens `unfinished`;
-       * `StepPassed`/`StepWaived`/`StepNeverRan`/`StepDidNotFinish`/`StepAsked`
-       * close it with nothing to show (a quota, a crash, a question — none of
-       * them judged the code, so the failure block for each is empty on
-       * purpose, `#133`/0057 §1/`#296`); `StepFailed` closes it **with**
-       * evidence, the most specific thing on the stream, so the last one wins
-       * over anything else recorded here.
+       * **`StepStarted` opens `unfinished`, keyed by step rather than by
+       * action** (#502) — the actions a step declares are not known until the
+       * pipeline has run, and `StepStarted` is written once per step, not
+       * once per action any more. `StepEnded` closes it for the whole step,
+       * and `attemptFactOf`'s own per-action facts are read alongside it for
+       * whichever one refused: a verdict that passed closes with nothing to
+       * show (a quota, a crash, a question — none of them judged the code, so
+       * the failure block for each is empty on purpose, `#133`/0057 §1/`#296`);
+       * a refused one closes **with** evidence, the most specific thing on the
+       * stream, so the last one wins over anything else recorded here.
        */
+      case 'StepStarted': {
+        const d = event.data as PayloadOf<'StepStarted'>
+        unfinished.add(d.step)
+        break
+      }
+
       default: {
-        const fact = attemptFactOf(event)
-        if (fact === null || fact._tag === 'RepairRefused') break
-        if (fact._tag === 'StepStarted') {
-          unfinished.add(fact.key)
-          break
+        if (event.type === 'StepEnded') {
+          unfinished.delete((event.data as PayloadOf<'StepEnded'>).outcome.step)
         }
-        unfinished.delete(fact.key)
-        if (fact.refused !== null) {
-          evidence = {
-            what: fact.key,
-            text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
+        for (const fact of attemptFactOf(event)) {
+          if (fact.refused !== null) {
+            evidence = {
+              what: fact.key,
+              text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
+            }
           }
         }
         break
@@ -355,17 +355,6 @@ export function attemptBrief(
     )
   }
 
-  if (last.refusal) {
-    lines.push(
-      '',
-      `The integrator refused attempt ${last.n} with **${last.refusal.reason}**:`,
-      '',
-      '```',
-      clamp(last.refusal.detail, budget.evidence),
-      '```',
-    )
-  }
-
   // Only when the run's own stream was read. A caller that did not read it does
   // not know the attempt produced nothing — it knows nothing — and saying the
   // first would be an invention in a prompt.
@@ -423,10 +412,7 @@ export function attemptBrief(
 
   const receipt = last.outcome?.receipt ?? null
   if (receipt) {
-    lines.push(
-      '',
-      `It spent ${receipt.turns} turn(s)${receipt.costUsd === null ? '' : ` and $${receipt.costUsd.toFixed(2)}`} getting there.`,
-    )
+    lines.push('', `It spent ${receipt.turns} turn(s) getting there.`)
   }
 
   const evidence = last.outcome?.evidence ?? null
