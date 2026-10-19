@@ -27,7 +27,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 
 | Group | Types |
 |---|---|
-| work item (8) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` `WorkItemClosed` |
+| work item (8) | `TicketDiscovered` `TicketClaimed` `TicketReleased` `WorkItemBlocked` `WorkItemUnblocked` `TicketLinked` `TicketLanded` `TicketClosed` |
 | dispatch (1) | `DispatchRefused` |
 | run (11) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunKeptUncommitted` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run. `RunKeptUncommitted` is a stopped run's dirty tree, committed by the conductor and kept on the arm alone rather than lost with the worktree (`#468`) |
 | step (10) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepAsked` `StepWaived` — eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. **Three** of them are the three ways a step's agent ends without judging the diff: it never started ([0041](decisions-archive/0041-a-gate-that-never-ran.md)), it started and produced no receipt ([0057](decisions-archive/0057-a-gate-that-did-not-finish.md)), or it stopped and asked something ([0068](decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md)). `StepAsked` is `#296`'s and came with the log's fourth reset ([014](experiments/014-the-log-before-the-fourth-reset.md)) rather than with an upcaster: it was the half of `StepDidNotFinish` the *workflow* branched on, and the token it branched on — `needs-input`, in a `because` — was never on the event, so no stored row could be told which half it was |
@@ -134,8 +134,8 @@ are not — one per work item, run, lane and project, forever.
 
 | Prefix | One per | Example |
 |---|---|---|
-| `wi-` | work item (ticket) | `wi-nextloom-ai-admin-156` |
-| `run-` | run (one attempt) | `run-75b80f13-9f88-48cf-b4d2-79b9779f47cf` |
+| `ticket-` | work item (ticket) | `ticket-nextloom-ai-admin-156` |
+| `pass-` | run (one attempt) | `pass-75b80f13-9f88-48cf-b4d2-79b9779f47cf` |
 | `int-` | integration lane, per base branch | `int-nextloom-ai-admin-develop` |
 | `prj-` | project | `prj-nextloom-ai-admin` |
 | `ctl-` | control | `ctl-conductor`, `ctl-github-app` |
@@ -157,13 +157,13 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `ProjectConfigured` | 1 → 2 | `owner` — the repo name alone could not reach GitHub again. v1 events get `null`, not a guess. |
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
 | `Reconciled` | 1 → 2 | each finding gained `action` |
-| `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
-| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
+| `TicketClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
+| `TicketClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
 | `FixRequested` | 1 → 2 | `of` — the `rounds` ceiling the round is counted against (`#146`). Zero means *not recorded*, and the number is not guessable: the recipe is read from the base branch every pass |
-| `StepDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `WorkItemClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` — which is why it is the one step in this group `#247` left standing |
+| `StepDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `TicketClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` — which is why it is the one step in this group `#247` left standing |
 | `StepPassed` | 1 → 2 | `findings`, the shape `StepFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v1 pass gets `[]`, not a parse of that prose, which is untouched. It was `2 → 3` until `#247`: the rename beneath it went and this step moved down rather than out |
 
 **The counts in this heading are counted off the table, never computed.** Each
@@ -412,7 +412,7 @@ than a budget, and 0028 leaves it undecided on purpose.
 
 ## claim — what holds a ticket, and the two things that are not it
 
-**A `WorkItemClaimed` on `wi-{project}-{n}`.** It says which run took the ticket
+**A `TicketClaimed` on `ticket-{project}-{n}`.** It says which run took the ticket
 and which `worker` — host and pid — took it for. Source:
 `claimWorkItem` in `packages/conductor/src/claim.ts`; the fold is
 `WorkItemLifecycle` in `packages/domain/src/work-item.ts`.
@@ -421,9 +421,9 @@ and which `worker` — host and pid — took it for. Source:
 |---|---|
 | what excludes | `UNIQUE (stream_id, version)`. The claim is an append at the version the reader saw; two conductors racing both append at that version and the database rejects one, which comes back as `lost-race` |
 | what expires it | **nothing.** A claim held is a claim held, for as long as the log says so |
-| what returns it | an appended `WorkItemReleased` — the run ending, a gate failing, `lingtai now`, or the recovery below. There is no other way back |
+| what returns it | an appended `TicketReleased` — the run ending, a gate failing, `lingtai now`, or the recovery below. There is no other way back |
 | what recovers it | a conductor starting. It holds `lingtai:daemon`, and since `#93` every conductor takes that lock, so it knows it is alone: every claim naming another `worker` is dead. `releaseForeignClaims` in `packages/daemon/src/reconcile.ts` appends the release, citing the lock |
-| where a person sees it | a `running` card on the board, and the `WorkItemReleased.reason` naming the lock when one was recovered |
+| where a person sees it | a `running` card on the board, and the `TicketReleased.reason` naming the lock when one was recovered |
 
 **There was a third thing, and it was none of the above.** `leaseUntilMs` was a
 fixed thirty minutes written into every claim and never renewed, against a
@@ -1523,7 +1523,7 @@ Source: `ExtensionEnvNames` in `packages/recipe/src/recipe.ts` — a field of th
 ```yaml
 subscribers:
   - name: telegram
-    on: [WorkItemLanded]
+    on: [TicketLanded]
     run: node packages/telegram/src/cli.ts
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 ```
@@ -1622,7 +1622,7 @@ the project offered nothing at all. It also carried `enhancement`, which no
 recipe here has ever used. This is 0016 §7 — policy the core guesses at, about
 a repository it cannot see.
 
-`WorkItemDiscovered.kind` is therefore `z.string()`. Stored events still parse;
+`TicketDiscovered.kind` is therefore `z.string()`. Stored events still parse;
 no upcaster was needed.
 
 An issue with no label the recipe names has no kind and is **not runnable** —
@@ -1800,7 +1800,7 @@ subscribers:
     run: node apps/cli/src/notify.ts
     env: []
   - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    on: [TicketLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
     run: node packages/telegram/src/cli.ts
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 ```
@@ -1808,7 +1808,7 @@ subscribers:
 `desktop`'s four mean the same thing: nothing moves until a person acts. A landed
 task is good news that needed nobody, and is deliberately not in **that** channel
 — a desktop notification interrupts. A Telegram message is read when you choose
-rather than when it arrives, so `telegram` names `WorkItemLanded` and
+rather than when it arrives, so `telegram` names `TicketLanded` and
 `RunFailed` without that changing what interrupts you. Same event, different
 channel, different answer — sayable only because the subscription is in the
 recipe.
@@ -1839,7 +1839,7 @@ Four rules:
   name no work item in their own bytes — `ApprovalRequested` and
   `RunAwaitingInput` are on a run stream, `IntegrationRefused` on an integration
   lane — so `createSubjectResolver` reads the run's own `RunStarted` for the
-  first two and `data.workItemId` for the third. An event that belongs to no
+  first two and `data.ticketId` for the third. An event that belongs to no
   repository (`ctl-conductor`, `chat-…`, `ext-subscribers`) reaches nobody.
 - **`env:` is every credential that subscriber's process gets** — see *extension
   environment* above, which is the half of 0037 §1 that makes "and nothing else"

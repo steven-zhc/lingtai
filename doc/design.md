@@ -17,7 +17,7 @@ log, every moment worth acting on already announces itself.
 | The agent is stuck waiting | burns to the 2h wall clock | `RunAwaitingInput` → the card lights up |
 | The agent trips the guard | stderr, unseen | `GuardTripped` → counted on the card |
 | Context gets compacted | invisible | `RunContextExhausted` → this item was scoped too large |
-| A bug is filed on GitHub | up to an hour later | webhook → `WorkItemDiscovered` → seconds |
+| A bug is filed on GitHub | up to an hour later | webhook → `TicketDiscovered` → seconds |
 
 `interval` should not exist as a configuration value. What replaces it is a
 **concurrency limit** and a **merge lane**: work when there is work, otherwise
@@ -173,7 +173,7 @@ which is the authority. Notable additions over what the old loop could express:
 |---|---|
 | `GuardTripped` | 132 of these were invisible; they are how the guard patterns get tuned |
 | `RunContextExhausted` | compaction means the item was scoped too large — a metric |
-| `WorkItemLinked` | connects a filed bug to the merge that caused it |
+| `TicketLinked` | connects a filed bug to the merge that caused it |
 | `DispatchRefused` | capability matching said no; never silently downgrade a tier |
 | `StepWaived` | the human escape hatch, recorded |
 
@@ -317,7 +317,7 @@ multi-project — **not for scale**. So:
 - **No general workflow engine.** Gates are one ordered list per project. Branching waits for a second project that needs it.
 - **No configuration UI.** YAML plus `lingtai doctor`. Configuration changes when a project is onboarded, not daily.
 - **No auth, no multi-user.** It runs on one machine.
-- **No work-item DAG.** The agent filing follow-up issues is the manual version and it is sufficient — but `WorkItemLinked` leaves the door open.
+- **No work-item DAG.** The agent filing follow-up issues is the manual version and it is sufficient — but `TicketLinked` leaves the door open.
 
 **The two things worth over-building** are the event schema and the configuration
 schema. Everything else is derived and costs an afternoon to replace; those two

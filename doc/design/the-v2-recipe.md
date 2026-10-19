@@ -270,11 +270,11 @@ subscribers:
     run: node apps/cli/src/notify.ts
     env: []
   - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    on: [TicketLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
     run: node packages/telegram/src/cli.ts
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
   # ↑ v1's comment, unchanged — why `desktop` is the right first crossing of
-  # the extension boundary, and why `telegram` names `WorkItemLanded` and
+  # the extension boundary, and why `telegram` names `TicketLanded` and
   # `desktop` deliberately does not
 ```
 

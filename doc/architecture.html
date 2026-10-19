@@ -474,7 +474,7 @@
         declares the interfaces it needs, the right column implements them, and a host wires the
         two together. Three of the right column's packages are extractions rather than new work:
         <code>projector</code> came out of <code>event-store</code> (an event store that knows what
-        <code>WorkItemClaimed</code> means is not an event store), and <code>repo</code> and
+        <code>TicketClaimed</code> means is not an event store), and <code>repo</code> and
         <code>agent</code> came out of <code>conductor</code>. <code>agent-env</code> sits on the
         left because deciding what an environment holds is not a filesystem operation — it is a
         decision <code>repo</code> then plants.</figcaption>
@@ -785,7 +785,7 @@
             <text x="60" y="54" text-anchor="middle" font-size="10.5" opacity=".55">no event, no cache</text>
             <text x="60" y="72" text-anchor="middle">queue</text>
             <circle cx="60" cy="95" r="5" fill="currentColor"/>
-            <text x="190" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemClaimed</text>
+            <text x="190" y="54" text-anchor="middle" font-size="10.5" opacity=".55">TicketClaimed</text>
             <text x="190" y="72" text-anchor="middle">claim</text>
             <circle cx="190" cy="95" r="5" fill="currentColor"/>
             <text x="305" y="54" text-anchor="middle" font-size="10.5" opacity=".55">Gate* ×3</text>
@@ -802,7 +802,7 @@
             <text x="665" y="72" text-anchor="middle">merge</text>
             <circle cx="665" cy="95" r="5" fill="currentColor"/>
             <text x="800" y="40" text-anchor="middle" font-size="10.5" opacity=".55">IntegrationSucceeded</text>
-            <text x="800" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded · IssueUpdated</text>
+            <text x="800" y="54" text-anchor="middle" font-size="10.5" opacity=".55">TicketLanded · IssueUpdated</text>
             <text x="800" y="72" text-anchor="middle">integrate → end</text>
             <circle cx="800" cy="95" r="5" fill="currentColor"/>
           </g>

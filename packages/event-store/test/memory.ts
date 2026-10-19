@@ -54,7 +54,6 @@
 import {
   Actor,
   type Envelope,
-  type EventType,
   SCHEMA_VER,
   StreamId,
   type ToAppend,
@@ -74,18 +73,21 @@ import {
   RetiredEventTypeError,
   UnknownEventTypeError,
 } from '../src/event-store.ts'
-import type { LogQueries, TypeRow } from '../src/queries.ts'
+import type { LogQueries, TypeCount, TypeRow } from '../src/queries.ts'
 
-export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType'> {
+export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType' | 'typeCounts'> {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
   all(): Envelope[]
   /**
    * Pushes a row this build cannot read, skipping `parsePayload` — the only
    * way a test can get one into this store at all: `append` validates on the
-   * way in, so a test cannot otherwise hold a pre-#445 `WorkItemBlocked` here.
-   * Test-only, and nothing else may call it.
+   * way in, so a test cannot otherwise hold a pre-#445 `WorkItemBlocked`, or a
+   * stored `type` this build's catalogue carries no schema for at all (what a
+   * pre-rename log looks like, `#490`), here. `type` is a bare `string` for
+   * that second reason — a type `append` would refuse is exactly what this
+   * plants. Test-only, and nothing else may call it.
    */
-  plant(row: { type: EventType; schemaVer: number; data: unknown; streamId?: string; actor?: string }): void
+  plant(row: { type: string; schemaVer: number; data: unknown; streamId?: string; actor?: string }): void
 }
 
 /**
@@ -188,6 +190,14 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
       return log
         .filter((r) => r.type === type)
         .map((r): TypeRow => ({ seq: r.seq, schemaVer: r.schemaVer, data: r.data }))
+    },
+
+    async typeCounts() {
+      const counts = new Map<string, number>()
+      for (const r of log) counts.set(r.type, (counts.get(r.type) ?? 0) + 1)
+      return [...counts.entries()]
+        .map(([type, rows]): TypeCount => ({ type, rows }))
+        .sort((a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
     },
 
     async read(streamId, fromVersion = 1) {

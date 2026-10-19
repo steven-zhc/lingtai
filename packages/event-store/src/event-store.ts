@@ -144,9 +144,12 @@ export class SchemaVersionUnsupportedError extends Error {
 }
 
 /**
- * A stored `WorkItemBlocked` predates #445's reset of this type's payload —
- * either a stored v2 row or a v1 one, neither of which this build can read.
- * See `blockPredatesHold` in `@lingtai/domain` for which is which.
+ * The log holds something this build has no schema for — either a stored
+ * `WorkItemBlocked` that predates #445's reset of this type's payload (a
+ * stored v2 row or a v1 one; see `blockPredatesHold` in `@lingtai/domain` for
+ * which is which), or a stored `type` this build's catalogue does not carry
+ * at all, which is what a log written before a stream or event-type rename
+ * looks like (`#490`).
  *
  * **Never *upgrade*.** Before 1.0 the log is reset rather than carried
  * forward (0118 §1), so the remedy named here is the only one: reset the log,
@@ -156,10 +159,23 @@ export class LogPredatesHoldError extends Error {
   override readonly name = 'LogPredatesHoldError'
   readonly seq: bigint
 
-  constructor(seq: bigint) {
+  /**
+   * `type` is given for a row whose `type` this build's catalogue does not
+   * carry at all — there is no upcaster to blame and no shape to name, only
+   * the stored name (and, where the caller counted the whole log rather than
+   * one row, how many rows carry it). Omitted, the message names
+   * `WorkItemBlocked` specifically, which is the one type whose *payload*
+   * (not its name) can predate the Hold event.
+   */
+  constructor(seq: bigint, type?: { readonly name: string; readonly rows?: number }) {
     super(
-      `this log predates the Hold event (WorkItemBlocked at seq ${seq}); reset it — ` +
-        'doc/operating.md, "Resetting the log"',
+      type
+        ? `this log predates a rename (stored type "${type.name}"` +
+            (type.rows !== undefined ? `, ${type.rows} row${type.rows === 1 ? '' : 's'}` : ` at seq ${seq}`) +
+            `, which this build's catalogue does not carry); reset it — ` +
+            'doc/operating.md, "Resetting the log"'
+        : `this log predates the Hold event (WorkItemBlocked at seq ${seq}); reset it — ` +
+            'doc/operating.md, "Resetting the log"',
     )
     this.seq = seq
   }
@@ -213,7 +229,12 @@ function toEnvelope(row: EventRow): Envelope {
  * caller, because what a timestamp looks like in storage is the store's.
  */
 export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
-  if (!isEventType(row.type)) throw new UnknownEventTypeError(row.type, 'read')
+  // A type this build's catalogue does not carry at all, on read, is what a
+  // log written before a stream or event-type rename looks like (`#490`) —
+  // never a typo, since `append` refused that on the way in. `logPredatesHold`
+  // is the pre-flight that is supposed to catch this before any fold reaches
+  // here; this is the same refusal for whichever caller folds the log first.
+  if (!isEventType(row.type)) throw new LogPredatesHoldError(row.seq, { name: row.type })
 
   let data: unknown
   try {
@@ -250,19 +271,31 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
 }
 
 /**
- * The first `WorkItemBlocked` row this build cannot read, in `seq` order, or
- * `null` (#451). Daemon start, `lingtai doctor`, `lingtai projection rebuild`
- * and `withProjector` (#491) each call this before they fold the whole log,
- * so a person is told to reset it instead of watching a parse stack come out
- * of whichever one ran first — `decodeRow`'s own catch above throws the same
+ * The first reason this build cannot fold the whole log, or `null` (#451,
+ * `#490`). Daemon start, `lingtai doctor`, `lingtai projection rebuild` and
+ * `withProjector` (#491) each call this before they fold the whole log, so a
+ * person is told to reset it instead of watching a parse stack come out of
+ * whichever one ran first — `decodeRow`'s own catches above throw the same
  * error for anything that folds the log without asking first.
+ *
+ * Two things disqualify a log, checked in this order: a stored `type` this
+ * build's catalogue does not carry at all — what a log written before a
+ * stream or event-type rename looks like, caught from `typeCounts()` rather
+ * than a row, since there is no `WorkItemBlocked`-shaped row to look at — and
+ * a stored `WorkItemBlocked` whose payload predates #445's reset.
  *
  * Returned rather than thrown: doctor wants a row it can show as a failing
  * check, daemon start wants a result arm, rebuild wants an exit code, and
  * `withProjector` wants a line it can log without the call ever being fatal
  * — none of the four wants a `try`/`catch` of their own for this.
  */
-export async function logPredatesHold(queries: Pick<LogQueries, 'rowsOfType'>): Promise<LogPredatesHoldError | null> {
+export async function logPredatesHold(
+  queries: Pick<LogQueries, 'rowsOfType' | 'typeCounts'>,
+): Promise<LogPredatesHoldError | null> {
+  const counts = await queries.typeCounts()
+  const unknown = counts.find((c) => !isEventType(c.type))
+  if (unknown) return new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows })
+
   const rows = await queries.rowsOfType('WorkItemBlocked')
   const bad = rows.find((r) => blockPredatesHold(r.schemaVer, r.data))
   return bad ? new LogPredatesHoldError(bad.seq) : null

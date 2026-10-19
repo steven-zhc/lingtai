@@ -73,7 +73,7 @@ run.
 
    **The source is chosen once.** `ticketsFor` refuses with
    `TicketSourceConflict` when the recipe says `db`, `dbTickets` holds no
-   ticket yet, and the log already has `wi-<project>-*` streams — numbering
+   ticket yet, and the log already has `ticket-<project>-*` streams — numbering
    from 1 would otherwise step into a GitHub issue's stream. Once `dbTickets`
    holds any ticket of its own, the project switched deliberately and this
    passes regardless of what the log holds from before. Moving from `db` back

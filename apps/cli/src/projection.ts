@@ -10,7 +10,7 @@ import type { ProjectionRunner } from '@lingtai/projector'
 
 export interface RebuildProjectionOptions {
   name: string
-  queries: Pick<LogQueries, 'rowsOfType'>
+  queries: Pick<LogQueries, 'rowsOfType' | 'typeCounts'>
   /** Builds the runner. A seam so a test can hand in a fake and assert `rebuild` was never called (#451). */
   runnerFor: () => ProjectionRunner
   log?: (line: string) => void

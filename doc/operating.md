@@ -822,7 +822,7 @@ Discovery, claim, worktree, the `prepared` point, agent, the remaining gates —
 The branch is pushed and every verdict is recorded; nothing is merged. You get:
 
 ```
-held at 8f3a1c2 — wi-nextloom-ai-admin-120 is waiting on you
+held at 8f3a1c2 — ticket-nextloom-ai-admin-120 is waiting on you
 nothing was merged. Re-run without --no-merge to merge it.
 ```
 
@@ -1439,7 +1439,7 @@ refused instead — or one
 that blocked — an integration that conflicted, a gate that failed for a reason
 that was never about the change — goes back to the queue, and the next pass cuts
 a fresh branch from a base that has since moved. It refuses by naming the state
-the item is actually in, so *`wi-lingtai-122` is claimed, not blocked* is the
+the item is actually in, so *`ticket-lingtai-122` is claimed, not blocked* is the
 answer rather than "not blocked". `--note` is optional (`#424`): a requeue cuts
 a fresh pass with the recipe's own rounds again rather than overruling
 anything, and the actor is still recorded in `by`, so it is not anonymous
@@ -1521,7 +1521,7 @@ what the process did:
 9 run(s): 1 landed, 7 held, 1 stopped (empty)
 ```
 
-**landed** the work item's stream says `WorkItemLanded` — by this run, or by
+**landed** the work item's stream says `TicketLanded` — by this run, or by
 the merge lane after somebody approved it on the board while the pass carried
 on. **held** it is blocked on a question a person now holds. **stopped** it
 ended, nothing landed, and nobody was asked anything. The exit code is non-zero
@@ -1689,7 +1689,7 @@ after `task_view` has already moved it past the queue, in two ways:
   issue itself shows no different from a queued one. That pair, landed and
   still open, is exactly what [010](experiments/010-the-log-before-the-second-reset.md)
   is about.
-- **Closed.** `lingtai close` appends `WorkItemClosed` and runs the recipe's
+- **Closed.** `lingtai close` appends `TicketClosed` and runs the recipe's
   `end:` the same way a landing does (`packages/conductor/src/close.ts:29-36`,
   [0044](decisions-archive/0044-a-close-is-a-terminal-outcome.md)) — so under
   `end: []` it closes the GitHub issue for exactly nobody, the same gap. A
@@ -1875,8 +1875,8 @@ stream against `WorkItemBlocked`, never the latest row of any type**:
 `tellGitHub` appends `IssueUpdated` onto the same work-item stream right
 after a block, once for the comment and once for the labels, so the
 stream's actual latest row is never the block itself. A wait also ends
-without a `WorkItemUnblocked` at all — `WorkItemLanded`, `WorkItemClosed`
-and `WorkItemReleased` each clear `waiting` the same way
+without a `WorkItemUnblocked` at all — `TicketLanded`, `TicketClosed`
+and `TicketReleased` each clear `waiting` the same way
 (`packages/projector/src/task-view.ts:301-355`), because an approval can
 answer the wait on the *run* stream (`ApprovalGranted`,
 `packages/domain/src/read-model.ts:1176-1186`) and leave the item's own
@@ -1893,7 +1893,7 @@ select stream_id from (
   select stream_id, type,
          row_number() over (partition by stream_id order by seq desc) as rn
   from events
-  where type in ('WorkItemBlocked', 'WorkItemUnblocked', 'WorkItemLanded', 'WorkItemClosed', 'WorkItemReleased')
+  where type in ('WorkItemBlocked', 'WorkItemUnblocked', 'TicketLanded', 'TicketClosed', 'TicketReleased')
 ) latest
 where rn = 1 and type = 'WorkItemBlocked';
 ```

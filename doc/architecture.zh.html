@@ -478,7 +478,7 @@
         会调用 GitHub，于是读的人看见纯逻辑层<em>向上</em>伸进适配器，这条规则看起来自相矛盾。
         其实不是 —— <code>conductor</code> 声明它需要的接口，右列去实现，宿主把两边接起来。
         右列里有三个包是拆出来的、而不是新写的：<code>projector</code> 从 <code>event-store</code>
-        里拆出（一个知道 <code>WorkItemClaimed</code> 是什么意思的事件存储，就不是事件存储了），
+        里拆出（一个知道 <code>TicketClaimed</code> 是什么意思的事件存储，就不是事件存储了），
         <code>repo</code> 和 <code>agent</code> 从 <code>conductor</code> 里拆出。
         <code>agent-env</code> 之所以在左边，是因为「决定一个环境里装什么」不是文件系统操作 ——
         它是一个决定，之后由 <code>repo</code> 去落盘。</figcaption>
@@ -764,7 +764,7 @@
             <text x="60" y="54" text-anchor="middle" font-size="10.5" opacity=".55">无事件，无缓存</text>
             <text x="60" y="72" text-anchor="middle">队列</text>
             <circle cx="60" cy="95" r="5" fill="currentColor"/>
-            <text x="190" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemClaimed</text>
+            <text x="190" y="54" text-anchor="middle" font-size="10.5" opacity=".55">TicketClaimed</text>
             <text x="190" y="72" text-anchor="middle">认领</text>
             <circle cx="190" cy="95" r="5" fill="currentColor"/>
             <text x="305" y="54" text-anchor="middle" font-size="10.5" opacity=".55">Gate* ×3</text>
@@ -781,7 +781,7 @@
             <text x="665" y="72" text-anchor="middle">merge</text>
             <circle cx="665" cy="95" r="5" fill="currentColor"/>
             <text x="800" y="40" text-anchor="middle" font-size="10.5" opacity=".55">IntegrationSucceeded</text>
-            <text x="800" y="54" text-anchor="middle" font-size="10.5" opacity=".55">WorkItemLanded · IssueUpdated</text>
+            <text x="800" y="54" text-anchor="middle" font-size="10.5" opacity=".55">TicketLanded · IssueUpdated</text>
             <text x="800" y="72" text-anchor="middle">integrate → end</text>
             <circle cx="800" cy="95" r="5" fill="currentColor"/>
           </g>

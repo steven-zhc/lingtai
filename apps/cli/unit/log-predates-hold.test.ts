@@ -102,6 +102,26 @@ describe('logPredatesHold, the one guard', () => {
 
     expect(await logPredatesHold(store)).toBeNull()
   })
+
+  /**
+   * `#490`: a log written before the `wi-`/`run-` → `ticket-`/`pass-` rename
+   * holds `WorkItemDiscovered` rows, a type this build's catalogue no longer
+   * carries at all — `WorkItemBlocked` kept its name, so the check above never
+   * saw this. Without this, the guard answered `null` for exactly the log that
+   * `decodeRow` cannot read.
+   */
+  it('finds a stored type this build has no schema for, naming it and its count', async () => {
+    const store = createMemoryEventStore()
+    store.plant({ type: 'WorkItemDiscovered', schemaVer: 1, data: { project: 'p', externalRef: '1' } })
+    store.plant({ type: 'WorkItemDiscovered', schemaVer: 1, data: { project: 'p', externalRef: '2' } })
+
+    const found = await logPredatesHold(store)
+
+    expect(found).toBeInstanceOf(LogPredatesHoldError)
+    expect(found?.message).toContain('WorkItemDiscovered')
+    expect(found?.message).toContain('2 rows')
+    expect(found?.message).toContain('reset it')
+  })
 })
 
 describe('decodeRow, through the memory store (#451)', () => {
@@ -117,6 +137,19 @@ describe('decodeRow, through the memory store (#451)', () => {
     store.plant({ type: 'WorkItemBlocked', schemaVer: 2, data: V2_SHAPE })
 
     await expect(store.readAll(0n, 10)).rejects.toThrow(LogPredatesHoldError)
+  })
+
+  /** `#490`: a type `isEventType` rejects outright, not merely a bad payload shape. */
+  it('throws LogPredatesHoldError, not a bare UnknownEventTypeError, for a type the catalogue no longer carries', async () => {
+    const store = createMemoryEventStore()
+    store.plant({
+      type: 'WorkItemDiscovered',
+      schemaVer: 1,
+      data: { project: 'p', externalRef: '1' },
+      streamId: 'ticket-lingtai-451',
+    })
+
+    await expect(store.read('ticket-lingtai-451')).rejects.toThrow(LogPredatesHoldError)
   })
 })
 

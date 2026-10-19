@@ -53,7 +53,7 @@
 .home .hero-actions .second:hover { text-decoration: underline; text-underline-offset: 4px; }
 .home .hero-note { margin: 24px 0 0; font-size: 12px; color: var(--muted); }
 
-.run-diagram {
+.pass-diagram {
   min-width: 0; border: 1px solid var(--rule-2); border-radius: 14px; overflow: hidden;
   background: var(--surface); box-shadow: 0 26px 60px rgba(15, 24, 28, .09), 0 2px 7px rgba(15, 24, 28, .04);
 }
@@ -176,7 +176,7 @@
   .home .hero { grid-template-columns: minmax(0, 1fr); gap: 42px; }
   .home .hero h1 { max-width: 16ch; }
   .home .hero .lede { max-width: 62ch; }
-  .home .run-diagram { max-width: 800px; }
+  .home .pass-diagram { max-width: 800px; }
 }
 @media (max-width: 800px) {
   .home section { padding: 64px 0; }
