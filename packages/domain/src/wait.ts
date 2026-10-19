@@ -1,38 +1,24 @@
 /**
  * 0118 §1's model of a wait: `WaitReason`, `Resolution`, `allowedResolutions`
  * and `recommendedResolution`, and 0118 §1/§10's triage types, `RootCause`,
- * `TriageResult` and `TriageStatus`.
+ * `TriageResult` and `TriageStatus`. On the log directly since #502 (0120
+ * phase 2) — `WaitStarted.reason` and `WaitResolved.resolution` are this
+ * file's `WaitReason` and `Resolution`, verbatim, with no translation layer
+ * in between.
  *
- * **Two names for one idea, until #464.** This is 0118's model, built
- * *beside* today's `Hold` (`hold.ts`) and `Move` (`triage.ts`) rather than in
- * place of them: `WorkItemBlocked.hold` and `HoldTriaged` are still `Hold`
- * and `TriageResult` (the one in `triage.ts`) on the log, and stay that way
- * until #464, 0120's phase 2, resets it. Until then a `Hold` and the
- * `WaitReason` it would become are two spellings of one fact, kept apart on
- * purpose (0120 §2 Decision, Two phases): this file has no upcaster and no
- * reader of the log.
- *
- * **Why this is a subpath, `@lingtai/domain/wait`, and not in `index.ts`.**
- * Three of 0118's names collide with names `index.ts` already re-exports at
- * the package root: `RunRef` (`hold.ts`, with a `repairOf` this model has no
- * field for), `TriageResult` (`triage.ts`, whose `_tag`s are `Failed` and
- * `Advised` rather than `TriageFailed` and `TriageAdvised`) and `TriageStatus`
- * (`triage.ts`, whose `Done` carries the *old* `TriageResult`). `export *`
- * from two modules naming the same export makes TS2308 and exports the name
- * from neither — so this cannot also be exported from `.` without renaming
- * one side, which would stop this file from matching 0118 §1 as the ticket
- * asks. #464 folds this module into `index.ts` and drops the subpath once
- * `Hold`, `Move`, `Cause` and the old `TriageResult`/`TriageStatus` are
- * deleted and there is nothing left to collide with.
+ * **Still a subpath, `@lingtai/domain/wait`, and not in `index.ts`.** The
+ * collisions that put it here — `hold.ts`'s `Hold`-shaped `RunRef` and
+ * `triage.ts`'s old `Failed`/`Advised`-shaped `TriageResult`/`TriageStatus` —
+ * are gone with those two files, so nothing would collide at the root today.
+ * Left as a subpath anyway: nine call sites already import it that way, and
+ * folding it into `index.ts` is a rename with no behaviour to show for it.
  *
  * **Every variant schema stays unexported.** Only the unions, their inferred
  * types and the two functions are exported, so nothing this file declares
- * can collide with anything else — including, later, with `hold.ts`'s and
- * `triage.ts`'s own variants — when #464 merges the two.
+ * can collide with anything else at the package root.
  *
- * Imports leaves only, never `hold.ts` or `events.ts`: `hold.ts:15-19`
- * explains the ESM cycle `events.ts`'s `WorkItemBlocked` would close if a
- * file it depends on imported it back.
+ * Imports leaves only, never `events.ts`: a file `events.ts` depends on
+ * importing it back would close an ESM cycle at load time.
  */
 import { z } from 'zod'
 

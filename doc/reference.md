@@ -147,7 +147,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 9 chains, 11 steps
+## upcaster — 6 chains, 8 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -158,20 +158,20 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `TicketClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
-| `TicketClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
+| `TicketClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
-| `FixRequested` | 1 → 2 | `of` — the `rounds` ceiling the round is counted against (`#146`). Zero means *not recorded*, and the number is not guessable: the recipe is read from the base branch every pass |
-| `StepDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `TicketClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` — which is why it is the one step in this group `#247` left standing |
-| `StepPassed` | 1 → 2 | `findings`, the shape `StepFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v1 pass gets `[]`, not a parse of that prose, which is untouched. It was `2 → 3` until `#247`: the rename beneath it went and this step moved down rather than out |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **nine** chains below is its own row since `#247`; ADR 0018's nine types
-were one row, because they moved together and read as one fact. It read
-*15 chains, 17 steps* while `PromptEdited` and `FixRequested` were missing
-rows — a heading that is arithmetic on a number nobody re-derived is how a
-reader comes to believe four rows are stale and deletable.
+of the **six** chains below is its own row — a heading that is arithmetic on a
+number nobody re-derived is how a reader comes to believe a row is stale and
+deletable.
+
+**`FixRequested`, `StepDidNotFinish` and `StepPassed` had rows here and do not
+any more.** The phase-2 switch (#502, 0120) deleted all three types outright —
+their payload lives on `StepEnded`'s `outcome` now — and reset the log, so
+there is no stored row left for either chain to walk.
 
 **`WorkItemBlocked` had a `1 → 2` row here and does not any more.** #445
 replaced its payload in place with `{hold}` rather than bumping to a third

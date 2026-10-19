@@ -1,42 +1,28 @@
 /**
- * What `task_view`, the board and every other reader of `WorkItemBlocked`
- * folded before #445 — rebuilt from the `Hold` the event now carries, rather
- * than read off the payload directly.
+ * What `task_view`, the board and every other reader of a wait folded before
+ * 0118's `WaitReason` existed — rebuilt from the `WaitReason` directly now
+ * that `Hold` is gone (#502, 0120 phase 2).
  *
- * `WorkItemBlocked` stopped carrying `question`, `needsFrom`, `runId`,
- * `needs` and `diagnosis` once it carried `hold` (0118 §1), and every fold
- * that read one of those five fields would otherwise go blank or throw. This
- * is the one place that reconstructs them, so a fold calls `legacyColumns`
- * rather than growing its own reading of the union — #443 deletes this
- * function together with the columns it serves, once nothing needs them.
+ * This file used to go `Hold -> LegacyColumns`, with `@lingtai/conductor`'s
+ * `adapters.ts` (`holdOf`/`escalatedHold`) doing the other half,
+ * `WaitReason -> Hold`, as a temporary translation layer. The switch deletes
+ * `Hold` itself, so this is now the one function that goes straight from a
+ * `WaitStarted.reason` to the sentence a card and a GitHub comment show —
+ * `holdOf`'s and `escalatedHold`'s own per-variant text, carried over onto
+ * `WaitReason`'s twelve tags (thirteen counting `ProposedEscalated`'s own
+ * proposal) rather than onto `Hold`'s ten.
  *
- * **The card line is rebuilt, not stored.** A `Hold` carries a person's bare
- * words — `Asked.question`, `CheckRed.why` — never the step that arrived with
- * them, because the ticket's own words move a person's text into the variant
- * that owns it and nothing else. So for every variant but `Routed` (whose
- * `why` is already composed, because `branch`/`base` are not on a `Hold`) and
- * `MergeRefused`/`Ceiling` (whose own formulas predate this file), the
- * question is `` `the \`${step}\` step ${word}: ${text}` `` — the same
- * sentence `whatIsWaitingOnYou` used to write before #445, rebuilt here.
- *
- * **Not everything is reproduced exactly.** `diagnosis.what` used to open
- * with `` `${branch} is at ${sha.slice(0,7)} and ` `` and could end with
- * `` ` ${spent} of ${ceiling} rounds were spent.` `` — neither the branch's
- * head nor the round count is on a `Hold`, because 0118 §1 did not carry
- * them, and inventing a number the event never recorded would be worse than
- * the gap. `Asked.question` and `Human.question` are stored unsaid (no
- * `said(…, 400)`), so the composed line differs from today's only past 400
- * characters or where the text has runs of whitespace — accepted rather than
- * moving `said` into this package for it.
- *
- * **The unpushed parenthetical lands on `what`, never on `question`.** The
- * pre-#445 `blocked()` appended it to `diagnosis.what` and left `question`
- * alone; an earlier draft of this file put it on `question` instead, which
- * moved the sentence a person reads on the card and in the GitHub comment.
+ * **Not everything that `Hold` carried survives.** `RunRef.repairOf` (the
+ * pre-#143 repair-purchase bookkeeping) has no field on 0118's `RunRef`, so
+ * the `done: "a repair for ... produced this diff"` sentence it fed is gone
+ * too — accepted, the same way a few other small differences from before
+ * 0118 already were (see the retained note below on 400-character clipping).
  */
 import { diagnoseRefusal } from './attribution.ts'
 import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
-import type { Hold, RunRef } from './hold.ts'
+import type { Proposal } from './proposal.ts'
+import type { Finding, RefusalReason } from './vocabulary.ts'
+import type { EscalationBecause, RunRef, WaitReason } from './wait.ts'
 
 export interface LegacyColumns {
   question: string
@@ -56,24 +42,231 @@ function unpushedSuffix(run: RunRef): string {
   return run.unpushed === undefined ? '' : ` (and ${run.unpushed.branch} was not pushed: ${run.unpushed.said})`
 }
 
-function repairDone(run: RunRef): string | null {
-  return run.repairOf !== undefined ? `a repair for ${run.repairOf.reason} produced this diff` : null
-}
-
 /** `the \`${step}\` step ${word}: ${text}` — today's card line, rebuilt. */
 function stepLine(step: string, word: string, text: string): string {
   return `the \`${step}\` step ${word}: ${text}`
 }
 
 /**
- * The `question`/`needs`/`diagnosis`/etc. a fold wrote before #445, read off
- * the `Hold` that replaced them.
+ * `hold-of.ts`'s own `said`, carried over: whitespace-normalise, trim, and
+ * clip to `n` characters with an ellipsis, so a `why` a card renders as one
+ * sentence never carries a raw multi-line agent or command answer verbatim.
  */
-export function legacyColumns(hold: Hold): LegacyColumns {
-  switch (hold._tag) {
-    case 'Question':
+function said(detail: string, n = 300): string {
+  const one = detail.replace(/\s+/g, ' ').trim()
+  if (one === '') return 'no detail was recorded'
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one
+}
+
+function judgement(
+  question: string,
+  run: RunRef,
+  raw: string | null,
+  recommendation: BlockRecommendation | null = null,
+): LegacyColumns {
+  return {
+    question,
+    runId: run.runId,
+    asked: false,
+    needs: 'judgement',
+    needsFrom: 'human',
+    diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation },
+  }
+}
+
+function acknowledgement(question: string, run: RunRef, raw: string | null): LegacyColumns {
+  return {
+    question,
+    runId: run.runId,
+    asked: false,
+    needs: 'acknowledgement',
+    needsFrom: 'human',
+    diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation: null },
+  }
+}
+
+function mergeRefusedColumns(run: RunRef, reason: RefusalReason, raw: string, pass: { branch: string; base: string }): LegacyColumns {
+  const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
+  const question = `${reason}: ${raw}`.slice(0, 400)
+  return {
+    question,
+    runId: run.runId,
+    asked: false,
+    needs: 'acknowledgement',
+    needsFrom: 'human',
+    diagnosis: {
+      what: reading.what + unpushedSuffix(run),
+      done: reading.done,
+      raw,
+      recommendation: reading.recommendation,
+    },
+  }
+}
+
+function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): LegacyColumns {
+  const question = `${cause}: ${detail}`
+  const what =
+    cause === 'out-of-usd'
+      ? `the run reached the recipe's dollar ceiling and was stopped: ${detail}. The limit is a ` +
+        'scope alarm — the ticket asks for more than one run should cost.'
+      : `the run reached the recipe's turn limit and was stopped: ${detail}. The limit is a scope ` +
+        'alarm — the ticket asks for more than one run should do.'
+  return {
+    question,
+    runId: run.runId,
+    asked: false,
+    needs: 'acknowledgement',
+    needsFrom: 'human',
+    diagnosis: {
+      what: what + unpushedSuffix(run),
+      done: null,
+      raw: detail,
+      recommendation: {
+        action: 'requeue',
+        why:
+          cause === 'out-of-usd'
+            ? 'narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, ' +
+              'it buys another run to the same limit'
+            : 'narrow or split the ticket first; requeued as written, it buys another run to the same limit',
+      },
+    },
+  }
+}
+
+/**
+ * A line for `because` (0120 §3's `EscalationBecause`) to fold into an
+ * escalated wait's `why` — `''` where the router has nothing to add beyond
+ * the proposal itself.
+ */
+function reasonTextOf(because: EscalationBecause): string {
+  switch (because._tag) {
+    case 'NotAsked':
+      return ''
+    case 'JudgeHandedOver':
+      return because.why
+    case 'UnreadableReply':
+      return `the judge's answer could not be read: ${because.raw}`
+    case 'UnknownCandidate':
+      return `the judge named "${because.candidate}", which was not offered`
+    case 'CandidateUnavailable':
+      return because.excluded.because._tag === 'CeilingReached'
+        ? `the judge chose \`${because.excluded.id}\`, and \`${because.excluded.because.ceiling}\` is spent`
+        : `the judge chose \`${because.excluded.id}\`, which nothing holds it to`
+  }
+}
+
+function reviewFindingsOwnText(proposal: { findings: readonly Finding[] }): string | null {
+  return proposal.findings.length === 0 ? null : proposal.findings.map((f) => f.claim).join('; ')
+}
+
+/** `MergeConflict`/`VerifyRed` read through `diagnoseRefusal`, the same way `MergeRefused` carries for the same reason. */
+function routedRefusalColumns(
+  reason: 'conflict' | 'verify-failed',
+  raw: string,
+  run: RunRef,
+  pass: { branch: string; base: string },
+  question: string,
+): LegacyColumns {
+  const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
+  return {
+    question,
+    runId: run.runId,
+    asked: false,
+    needs: 'judgement',
+    needsFrom: 'human',
+    diagnosis: { what: question + unpushedSuffix(run), done: reading.done, raw, recommendation: reading.recommendation },
+  }
+}
+
+function escalatedColumns(
+  run: RunRef,
+  proposal: Proposal,
+  because: EscalationBecause,
+  pass: { branch: string; base: string; findings: readonly Finding[] },
+): LegacyColumns {
+  if (proposal._tag === 'InputNeeded') {
+    return judgement(stepLine(proposal.from, 'asked', proposal.question), run, proposal.question)
+  }
+
+  const reasonText = reasonTextOf(because)
+  const why = (detail: string) =>
+    detail === ''
+      ? `${pass.branch} into ${pass.base} is waiting on you.`
+      : `${pass.branch} into ${pass.base} is waiting on you. ${said(detail, 400)}`
+
+  switch (proposal._tag) {
+    case 'BuildRed': {
+      const question = why(reasonText !== '' ? reasonText : proposal.output)
+      return judgement(question, run, proposal.output)
+    }
+    // `conflict` and `verify-failed` are also `RefusalReason`s, and the same
+    // function `MergeRefused` reads below must answer them the same way here
+    // — the owner sentence and the move, which a plain `judgement()` cannot
+    // carry on its own.
+    case 'VerifyRed':
+      return routedRefusalColumns('verify-failed', proposal.output, run, pass, why(reasonText !== '' ? reasonText : proposal.output))
+    case 'MergeConflict':
+      return routedRefusalColumns('conflict', proposal.output, run, pass, why(reasonText !== '' ? reasonText : proposal.output))
+    case 'ReviewFindings': {
+      const detail = reasonText !== '' ? reasonText : reviewFindingsOwnText(proposal)
+      const question = why(detail ?? '')
+      const recommendation = proposal.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null
+      return judgement(question, run, detail, recommendation)
+    }
+    case 'ReviewEmpty': {
+      const question = why(reasonText !== '' ? reasonText : proposal.said)
+      return judgement(question, run, proposal.said, APPROVE_EVERY_STEP_PASSED)
+    }
+    case 'SetupRefused':
+      return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)
+    case 'CheckRefused':
+      return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)
+    case 'AnswerUnreadable': {
+      if (proposal.from === 'review' || proposal.from === 'proposed') {
+        const prefix =
+          proposal.from === 'review'
+            ? "`review`'s findings could not be read at all: "
+            : "the `proposed` step's own judge answer could not be read at all: "
+        const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + proposal.raw, 400)}`
+        return judgement(question, run, proposal.raw)
+      }
+      if (proposal.from === 'merge') return acknowledgement(stepLine('merge', 'refused', proposal.raw), run, proposal.raw)
+      return acknowledgement(stepLine(proposal.from, 'did-not-finish', proposal.raw), run, proposal.raw)
+    }
+    case 'NothingProduced':
+      return acknowledgement(
+        stepLine('implement', 'did-not-finish', proposal.said ?? 'the agent produced no commits'),
+        run,
+        proposal.said,
+      )
+    case 'FixerDisagrees':
+      return judgement(
+        stepLine('implement', 'declined', proposal.said ?? 'the fixing agent committed nothing'),
+        run,
+        proposal.said,
+      )
+    case 'MergeRefused':
+      return mergeRefusedColumns(run, proposal.reason, proposal.output, pass)
+    case 'BudgetExhausted':
+      return budgetExhaustedColumns(run, proposal.kind, proposal.detail)
+  }
+}
+
+/**
+ * The `question`/`needs`/`diagnosis`/etc. a fold wrote before 0118, read off
+ * the `WaitReason` a `WaitStarted` carries. `pass` is the three facts that
+ * live on the pass rather than on the wait — `branch`/`base` open a
+ * `ProposedEscalated`'s own composed sentence, and `findings` rides on every
+ * `SignoffRequired` the same way it used to ride on `Hold.Human`.
+ */
+export function legacyColumns(
+  reason: WaitReason,
+  pass: { branch: string; base: string; findings: readonly Finding[] } = { branch: '', base: '', findings: [] },
+): LegacyColumns {
+  switch (reason._tag) {
+    case 'OwnQuestion':
       return {
-        question: hold.question,
+        question: reason.question,
         runId: null,
         asked: true,
         needs: 'judgement',
@@ -81,167 +274,58 @@ export function legacyColumns(hold: Hold): LegacyColumns {
         diagnosis: null,
       }
 
-    case 'Asked': {
-      const question = stepLine(hold.step, 'asked', hold.question)
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'judgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: question + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
-          raw: hold.question,
-          recommendation: null,
-        },
-      }
+    case 'AgentQuestion':
+      return judgement(stepLine(reason.step, 'asked', reason.question), reason.run, reason.question)
+
+    case 'SignoffRequired': {
+      const question = stepLine(reason.step, 'held', reason.question)
+      const recommendation = reason.step === 'merge' && pass.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null
+      return judgement(question, reason.run, reason.question, recommendation)
     }
 
-    case 'Human': {
-      const question = stepLine(hold.step, 'held', hold.question)
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'judgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: question + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
-          raw: hold.question,
-          // The same findings veto `Routed` carries below: approving over a
-          // live finding is the one judgement nothing but a person should
-          // make (0058 §3b), so a `merge` hold only recommends it when review
-          // raised nothing.
-          recommendation:
-            hold.step === 'merge' && (hold.findings?.length ?? 0) === 0 ? APPROVE_EVERY_STEP_PASSED : null,
-        },
-      }
-    }
+    case 'FixerDisagrees':
+      return judgement(
+        stepLine('implement', 'declined', reason.said ?? 'the fixing agent committed nothing'),
+        reason.run,
+        reason.said,
+      )
 
-    case 'Declined': {
-      const question = stepLine(hold.step, 'declined', hold.said ?? 'the fixing agent committed nothing')
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'judgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: question + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
-          raw: hold.said,
-          recommendation: null,
-        },
-      }
-    }
+    case 'NothingProduced':
+      return acknowledgement(
+        stepLine('implement', 'did-not-finish', reason.said ?? 'the agent produced no commits'),
+        reason.run,
+        reason.said,
+      )
 
-    case 'Routed': {
-      // The one variant whose composed line is on the hold itself: `why`
-      // already reads "`${branch}` into `${base}` is waiting on you. …",
-      // because branch/base are not fields a `Hold` carries.
-      const question = hold.why
-      // `conflict`/`verify-failed` are also `RefusalReason`s, and the same
-      // function `MergeRefused` reads below must answer them the same way
-      // here — the owner sentence and the move, not the composed `why` on
-      // top of it, are what `approve.ts`'s "one function" comment is about.
-      const reading =
-        hold.when === 'conflict' || hold.when === 'verify-failed'
-          ? diagnoseRefusal({ reason: hold.when, detail: hold.raw ?? '', branch: '', base: '' })
-          : null
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'judgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: question + unpushedSuffix(hold.run),
-          done: reading?.done ?? repairDone(hold.run),
-          raw: hold.raw,
-          recommendation:
-            reading?.recommendation ??
-            (hold.when === 'findings' && hold.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null),
-        },
-      }
-    }
+    case 'ProposedEscalated':
+      return escalatedColumns(reason.run, reason.proposal, reason.because, pass)
 
-    case 'CheckRed':
-    case 'DidNotFinish':
-    case 'SetupRefused': {
-      const word = hold._tag === 'DidNotFinish' ? 'did-not-finish' : 'refused'
-      const question = stepLine(hold.step, word, hold.why)
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'acknowledgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: question + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
-          raw: hold.raw,
-          recommendation: null,
-        },
-      }
-    }
+    case 'CheckRefused':
+      return acknowledgement(stepLine(reason.step, 'refused', reason.evidence), reason.run, reason.evidence)
 
-    case 'MergeRefused': {
-      /**
-       * `done` and `recommendation` depend only on `reason` — never on
-       * `branch`/`base`, which `diagnoseRefusal` uses only to compose `what`
-       * (already on `hold.why`, set by the appender that had them) — so the
-       * placeholders below cost nothing real.
-       */
-      const reading = diagnoseRefusal({ reason: hold.reason, detail: hold.raw ?? '', branch: '', base: '' })
-      const question = `${hold.reason}: ${hold.raw ?? ''}`.slice(0, 400)
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'acknowledgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: hold.why + unpushedSuffix(hold.run),
-          done: reading.done,
-          raw: hold.raw,
-          recommendation: reading.recommendation,
-        },
-      }
-    }
+    case 'MergeRefused':
+      return mergeRefusedColumns(reason.run, reason.reason, reason.raw, pass)
 
-    case 'Ceiling': {
-      const question = `${hold.kind}: ${hold.detail}`
-      // The limit number itself (`limitsFor(recipe, 'implement').turns`/`.usd`)
-      // is not on a `Hold` and is an accepted loss (this file's header); the
-      // *scope alarm* sentence around it is not a number and survives.
-      const what =
-        hold.kind === 'out-of-usd'
-          ? `the run reached the recipe's dollar ceiling and was stopped: ${hold.detail}. The limit is a ` +
-            'scope alarm — the ticket asks for more than one run should cost.'
-          : `the run reached the recipe's turn limit and was stopped: ${hold.detail}. The limit is a scope ` +
-            'alarm — the ticket asks for more than one run should do.'
-      return {
-        question,
-        runId: hold.run.runId,
-        asked: false,
-        needs: 'acknowledgement',
-        needsFrom: 'human',
-        diagnosis: {
-          what: what + unpushedSuffix(hold.run),
-          done: repairDone(hold.run),
-          raw: hold.detail,
-          recommendation: {
-            action: 'requeue',
-            why:
-              hold.kind === 'out-of-usd'
-                ? 'narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, ' +
-                  'it buys another run to the same limit'
-                : 'narrow or split the ticket first; requeued as written, it buys another run to the same limit',
-          },
-        },
+    case 'BudgetExhausted':
+      return budgetExhaustedColumns(reason.run, reason.cause, reason.detail)
+
+    case 'AgentCrashed':
+      return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.detail), reason.run, reason.detail)
+
+    case 'SetupRefused':
+      return acknowledgement(stepLine(reason.step, 'refused', reason.why), reason.run, reason.why)
+
+    case 'AnswerUnreadable': {
+      if (reason.step === 'review' || reason.step === 'proposed') {
+        const prefix =
+          reason.step === 'review'
+            ? "`review`'s findings could not be read at all: "
+            : "the `proposed` step's own judge answer could not be read at all: "
+        const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + reason.raw, 400)}`
+        return judgement(question, reason.run, reason.raw)
       }
+      if (reason.step === 'merge') return acknowledgement(stepLine('merge', 'refused', reason.raw), reason.run, reason.raw)
+      return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.raw), reason.run, reason.raw)
     }
   }
 }

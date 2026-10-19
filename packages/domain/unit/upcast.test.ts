@@ -213,70 +213,12 @@ describe('parseStoredPayload', () => {
  * other, and what fails if `StepsResolved` is bumped again with no step under
  * it.
  */
-describe('the nine steps the reset spent', () => {
-  const STEP_CARRYING = [
-    'StepRequested',
-    'StepStarted',
-    'StepPassed',
-    'StepFailed',
-    'StepWaived',
-    'ApprovalRequested',
-    'ApprovalGranted',
-    'ApprovalRevoked',
-  ] as const
+/** All ten since 0058 §3; `.length(10)` is what the schema asserts. */
+const TEN_STEPS = [...STEPS].map((step) => ({ step, actions: [] as string[] }))
 
-  const base = { action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }
-  const extra: Record<(typeof STEP_CARRYING)[number], object> = {
-    StepRequested: {},
-    StepStarted: {},
-    StepPassed: { evidence: 'exit 0', findings: [] },
-    StepFailed: { evidence: 'exit 1', findings: [] },
-    StepWaived: { by: 'human:steven', reason: 'known flake' },
-    ApprovalRequested: { question: 'Merge?', artifacts: ['diff'] },
-    ApprovalGranted: { by: 'human:steven', note: '' },
-    ApprovalRevoked: { by: 'human:steven', reason: 'force-push' },
-  }
-
-  /**
-   * **The assertion the ticket is about, and it is the pair rather than either
-   * half.** A version left standing with its step deleted makes every row of
-   * that type unreadable; a step left standing under a lowered version is dead
-   * code a reader will trust. `StepPassed` is the one of the nine still past 1,
-   * and what it is past 1 *for* is `findings` and not the rename.
-   */
-  it.each([...STEP_CARRYING, 'StepsResolved'] as const)(
-    'has no step from 1 for %s, because no row stands at 1',
-    (type) => {
-      expect(
-        UPCASTERS[type]?.[1] === undefined || type === 'StepPassed',
-        `${type} still carries 0018's step, which the reset spent`,
-      ).toBe(true)
-    },
-  )
-
-  it('left only StepPassed past version 1, and findings is what it is past it for', () => {
-    for (const type of [...STEP_CARRYING, 'StepsResolved'] as const) {
-      expect(SCHEMA_VER[type], `${type}`).toBe(type === 'StepPassed' ? 2 : 1)
-    }
-  })
-
-  /**
-   * `toEqual` and not `not.toThrow`, which is the half the name promises and
-   * the weaker assertion did not check: a step keyed at the current version —
-   * or a `parsePayload` that drops a field on the way out — returns a mutated
-   * payload without raising anything, and *unchanged* is the word this test is
-   * here for.
-   */
-  it.each(STEP_CARRYING)('reads a %s stamped by this build back unchanged', (type) => {
-    const current = { ...base, ...extra[type], step: 'proposed' }
-    expect(parseStoredPayload(type, SCHEMA_VER[type], current)).toEqual(current)
-  })
-
-  /** All ten since 0058 §3; `.length(10)` is what the schema asserts. */
-  const steps = [...STEPS].map((step) => ({ step, actions: [] as string[] }))
-
+describe('StepsResolved', () => {
   it('reads a ten-step plan back unchanged, recipe and all', () => {
-    const plan = { runId: 'pass-01JX', configHash: 'abc', steps, recipe: {} }
+    const plan = { runId: 'pass-01JX', configHash: 'abc', steps: TEN_STEPS, recipe: {} }
     expect(parseStoredPayload('StepsResolved', SCHEMA_VER.StepsResolved, plan)).toEqual(plan)
   })
 
@@ -291,14 +233,14 @@ describe('the nine steps the reset spent', () => {
     const without = parseStoredPayload('StepsResolved', 1, {
       runId: 'pass-01JX',
       configHash: 'abc',
-      steps,
+      steps: TEN_STEPS,
     })
     expect('recipe' in without).toBe(false)
 
     const empty = parseStoredPayload('StepsResolved', 1, {
       runId: 'pass-01JX',
       configHash: 'abc',
-      steps,
+      steps: TEN_STEPS,
       recipe: {},
     })
     expect('recipe' in empty).toBe(true)
@@ -308,58 +250,11 @@ describe('the nine steps the reset spent', () => {
   /**
    * The count is the assertion 0047 rests on — *what a run was given is on the
    * log* — so a plan that records five steps or eleven is refused rather than
-   * read as a run that was configured differently. **There is no stored five
-   * any more**: the step that widened one is gone with the rows it was written
-   * for, so five is now one answer and not two.
+   * read as a run that was configured differently.
    */
   it('refuses a plan that is not all ten steps', () => {
-    const short = { runId: 'pass-01JX', configHash: 'abc', steps: steps.slice(0, 5) }
+    const short = { runId: 'pass-01JX', configHash: 'abc', steps: TEN_STEPS.slice(0, 5) }
     expect(() => parseStoredPayload('StepsResolved', SCHEMA_VER.StepsResolved, short)).toThrow()
-  })
-})
-
-/**
- * A pass that carries its findings (#135).
- *
- * A `minor` does not refuse, so before this step a review's third tier was
- * recorded only as prose inside `evidence`. The step adds an empty array rather
- * than parsing that prose back: `evidence` is untouched and still says what it
- * said, and a severity read out of a string is a claim nobody recorded.
- *
- * It is `1 → 2` since `#247` and was `2 → 3`: the rename beneath it is gone
- * with the log it was written for, and this step moved down rather than out.
- */
-describe('a pass with findings', () => {
-  const v1 = {
-    step: 'proposed',
-    action: 'review',
-    runId: 'pass-01JX',
-    onSha: 'sha-a',
-    evidence: 'minor packages/actions/src/command.ts:313 — readResult treats every readFile failure as empty',
-  }
-
-  it('walks a v1 StepPassed up with an empty findings array and its prose intact', () => {
-    expect(parseStoredPayload('StepPassed', 1, v1)).toEqual({ ...v1, findings: [] })
-  })
-
-  it('leaves a v2 StepPassed and its findings alone', () => {
-    const v2 = {
-      ...v1,
-      findings: [
-        {
-          file: 'packages/actions/src/command.ts',
-          line: 313,
-          claim: 'readResult treats every readFile failure as empty',
-          failureScenario: 'a result file that exists but is unreadable is read as no result',
-          severity: 'minor',
-        },
-      ],
-    }
-    expect(parseStoredPayload('StepPassed', 2, v2)).toEqual(v2)
-  })
-
-  it('is at v2', () => {
-    expect(SCHEMA_VER.StepPassed).toBe(2)
   })
 })
 
@@ -418,69 +313,6 @@ describe('the lease, dropped on read', () => {
 })
 
 /**
- * The second step that removes a field, and the log it has to keep readable
- * (`#234`, [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4).
- *
- * `attempt` and `retrying` described a retry that never once ran: it recomputed
- * the crashed attempt's session id, so `claude` refused it in zero seconds
- * having reviewed nothing, and the second event then said the action did not
- * finish *twice* about a pass in which it was tried once. The retry is deleted
- * and the two fields with it — but the rows saying `attempt: 2, retrying: false`
- * are on the log and are not rewritten, so this step is what stops the reader
- * believing them.
- */
-describe("the retry's two fields, dropped on read", () => {
-  const stored = {
-    step: 'proposed' as const,
-    action: 'review',
-    runId: 'pass-f8dc341e',
-    onSha: 'b198b57',
-    detail: 'the reviewer did not finish (crash): Error: Session ID b99f35a0 is already in use.',
-  }
-
-  it('drops both fields from a v1 event and touches nothing else', () => {
-    const v1 = { ...stored, attempt: 2, retrying: false }
-    expect(parseStoredPayload('StepDidNotFinish', 1, v1)).toEqual(stored)
-  })
-
-  it('leaves a v2 event alone', () => {
-    expect(parseStoredPayload('StepDidNotFinish', 2, stored)).toEqual(stored)
-  })
-
-  it("is at v2, which is the drop and not 0018's rename", () => {
-    expect(SCHEMA_VER.StepDidNotFinish).toBe(2)
-    // Nothing ever wrote one of these with the `diff` point — the type is
-    // younger than that rename — so a v1 `gate` is already `proposed` and the
-    // step must not be the renamer.
-    expect(UPCASTERS.StepDidNotFinish?.[1]?.({ ...stored, step: 'proposed', attempt: 1 })).toEqual(stored)
-  })
-
-  /**
-   * **And the type that was split out of it has no chain at all** (`#296`,
-   * [014](../../../doc/experiments/014-the-log-before-the-fourth-reset.md)).
-   *
-   * `StepAsked` is the *asked* half of this event, and moving it could have been
-   * a step here — read a `StepDidNotFinish` whose `because` was `needs-input` as
-   * one of these — except that `because` was never on the event. It was the pass's
-   * field, so no stored row can be told which half it was, and an upcaster that
-   * guessed would be worse than none.
-   *
-   * So [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 is
-   * spent again and the log is reset, exactly as `#247` did for the eight `Gate*`
-   * renames. **After 1.0 this stops being free and the answer becomes an
-   * upcaster** — with a `because` on the event to upcast *from*.
-   */
-  it('gives the asked half no chain, because the log is reset instead', () => {
-    expect(SCHEMA_VER.StepAsked).toBe(1)
-    expect(UPCASTERS.StepAsked).toBeUndefined()
-    // The same payload the other half carries, and a question rather than a crash
-    // in `detail`: one shape, two names, and the name is the whole of the split.
-    const asked = { ...stored, detail: 'which of the two `base` values is meant?' }
-    expect(parseStoredPayload('StepAsked', 1, asked)).toEqual(asked)
-  })
-})
-
-/**
  * **The heading over `doc/reference.md`'s upcaster table is arithmetic, and
  * nothing re-derived it** (`#234`).
  *
@@ -502,6 +334,7 @@ describe("doc/reference.md's upcaster counts", () => {
 
   /** The document spells its counts, so the test has to read them that way. */
   const SPELLED: Record<string, number> = {
+    six: 6,
     nine: 9,
     ten: 10,
     eleven: 11,

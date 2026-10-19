@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyWorkItem, reduceWorkItem, retiredRepairPending, WorkItemBlocked } from '../src/index.ts'
+import { emptyWorkItem, reduceWorkItem, WaitStarted, type WaitId } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const discovered = {
@@ -49,7 +49,7 @@ describe('reduceWorkItem', () => {
     const s = reduceWorkItem([
       e('TicketDiscovered', discovered),
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      e('TicketReleased', { runId: 'pass-a', reason: 'lease expired' }),
+      e('TicketReleased', { runId: 'pass-a', reason: 'lease expired', cause: null }),
     ])
 
     expect(s.lifecycle).toEqual({ status: 'backlog' })
@@ -59,22 +59,23 @@ describe('reduceWorkItem', () => {
 
   it('carries the question when blocked, and drops it when unblocked', () => {
     const e = makeStream('ticket-p-1')
-    const hold = {
-      _tag: 'Human' as const,
+    const reason = {
+      _tag: 'SignoffRequired' as const,
       run: { runId: 'pass-a' },
       step: 'proposed' as const,
-      source: 'declared' as const,
+      action: 'sign-off',
       question: 'Which base branch should this target?',
     }
-    const events = [e('TicketDiscovered', discovered), e('WorkItemBlocked', { hold })]
+    const events = [e('TicketDiscovered', discovered), e('WaitStarted', { waitId: 'wait-1' as WaitId, reason })]
 
     const blocked = reduceWorkItem(events)
     expect(blocked.lifecycle).toEqual({
       status: 'blocked',
-      hold,
+      waitId: 'wait-1' as WaitId,
+      reason,
       // The step prefix is composed by `legacyColumns`, rebuilding the card
-      // line `whatIsWaitingOnYou` wrote before #445 — the bare question is on
-      // `hold.question` itself.
+      // line a fold wrote before 0118 — the bare question is on
+      // `reason.question` itself.
       question: 'the `proposed` step held: Which base branch should this target?',
       needsFrom: 'human',
       runId: 'pass-a',
@@ -83,13 +84,14 @@ describe('reduceWorkItem', () => {
         what: 'the `proposed` step held: Which base branch should this target?',
         done: null,
         raw: 'Which base branch should this target?',
-        // Not `merge`, so a `Human` here is never recommended `approve` —
-        // `legacyColumns` cannot see a findings veto on this variant either way.
         recommendation: null,
       },
     })
 
-    const unblocked = reduceWorkItem([...events, e('WorkItemUnblocked', { by: 'human:steven', note: 'develop' })])
+    const unblocked = reduceWorkItem([
+      ...events,
+      e('WaitResolved', { waitId: 'wait-1' as WaitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'develop' }),
+    ])
     expect(unblocked.lifecycle).toEqual({ status: 'backlog' })
     // The answer is not dropped with the question (#147).
     expect(unblocked.answers).toEqual([
@@ -107,35 +109,41 @@ describe('reduceWorkItem', () => {
    *
    * `runId: null` was written into the type and never into the log: all three
    * appenders ran inside a pass. `lingtai ask` is the first that does not, so
-   * the fold has to accept a block that belongs to no run — with no claim before
+   * the fold has to accept a wait that belongs to no run — with no claim before
    * it and nothing in `runs` — and a replay of the answer has to be able to say
    * what the answer was.
    */
-  it('accepts a block that belongs to no run, and keeps the answer that ends it', () => {
+  it('accepts a wait that belongs to no run, and keeps the answer that ends it', () => {
     const e = makeStream('ticket-lingtai-51')
-    const hold = {
-      _tag: 'Question' as const,
+    const reason = {
+      _tag: 'OwnQuestion' as const,
       question: 'Which of the three designs for the production-credential tripwire?',
       by: 'steven',
     }
-    const asked = [e('WorkItemBlocked', { hold })]
+    const asked = [e('WaitStarted', { waitId: 'wait-1' as WaitId, reason })]
 
     const waiting = reduceWorkItem(asked)
     expect(waiting.lifecycle).toEqual({
       status: 'blocked',
-      hold,
+      waitId: 'wait-1' as WaitId,
+      reason,
       question: 'Which of the three designs for the production-credential tripwire?',
       needsFrom: 'human',
       runId: null,
       needs: 'judgement',
-      // `lingtai ask`'s own question carries no diagnosis, same as before #445.
+      // `lingtai ask`'s own question carries no diagnosis, same as before 0118.
       diagnosis: null,
     })
     expect(waiting.runs).toEqual([])
 
     const answered = reduceWorkItem([
       ...asked,
-      e('WorkItemUnblocked', { by: 'human:steven', note: 'the second: refuse at the hook' }),
+      e('WaitResolved', {
+        waitId: 'wait-1' as WaitId,
+        by: 'human:steven',
+        resolution: { _tag: 'AnswerQuestion', choice: 'the second: refuse at the hook' },
+        note: 'the second: refuse at the hook',
+      }),
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
     ])
     expect(answered.lifecycle.status).toBe('claimed')
@@ -152,14 +160,14 @@ describe('reduceWorkItem', () => {
     // Withdrawn rather than answered: back in the backlog, and nothing kept.
     const withdrawn = reduceWorkItem([
       ...asked,
-      e('WorkItemUnblocked', { by: 'human:steven', note: 'asked by mistake, ignore', withdrawn: true }),
+      e('WaitResolved', { waitId: 'wait-1' as WaitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: '' }),
     ])
     expect(withdrawn.lifecycle).toEqual({ status: 'backlog' })
     expect(withdrawn.answers).toEqual([])
   })
 
   /**
-   * The two kinds of block, told apart on the log (#83).
+   * The two kinds of wait, told apart on the log (#83).
    *
    * `held at the merge gate` and `conflict: agent/112 does not merge into
    * develop` were both `WorkItemBlocked` with a string, and they are opposite
@@ -170,28 +178,25 @@ describe('reduceWorkItem', () => {
   it('tells a judgement apart from a failure needing acknowledgement', () => {
     const e = makeStream('ticket-nextloom-ai-admin-112')
     const judgement = reduceWorkItem([
-      e('WorkItemBlocked', {
-        hold: {
-          _tag: 'Human' as const,
+      e('WaitStarted', {
+        waitId: 'wait-1' as WaitId,
+        reason: {
+          _tag: 'SignoffRequired' as const,
           run: { runId: 'pass-a' },
           step: 'merge' as const,
-          source: 'injected' as const,
+          action: 'no-merge',
           question: 'held at the merge step: agent/112 into develop',
         },
       }),
     ])
     const failure = reduceWorkItem([
-      e('WorkItemBlocked', {
-        hold: {
+      e('WaitStarted', {
+        waitId: 'wait-2' as WaitId,
+        reason: {
           _tag: 'MergeRefused' as const,
           run: { runId: 'pass-b' },
-          reason: 'conflict' as const,
-          why: 'agent/112 does not merge into develop.',
-          paths: ['apps/web/src/user-lookup-panel.tsx'],
-          baseSha: 'base123',
-          headSha: 'head456',
-          raw: 'CONFLICT (content): Merge conflict in apps/web/src/…',
-          afterApproval: false,
+          reason: 'lane-busy' as const,
+          raw: 'another integration held the merge lane',
         },
       }),
     ])
@@ -200,8 +205,6 @@ describe('reduceWorkItem', () => {
     expect(failure.lifecycle).toMatchObject({ status: 'blocked', needs: 'acknowledgement' })
     // And the recommendation is a value, not a sentence to parse: `approve` is a
     // legitimate one, which is what makes the board's default action possible.
-    // A `Human` at `merge` is recommended `approve` regardless of findings —
-    // the variant carries none, unlike `Routed` (#445's design).
     expect(judgement.lifecycle.status === 'blocked' && judgement.lifecycle.diagnosis?.recommendation).toEqual({
       action: 'approve',
       why: 'every step passed on this diff; approving merges what this run produced',
@@ -210,11 +213,13 @@ describe('reduceWorkItem', () => {
     // that has moved — which is `REFUSAL_READING.conflict.move` in `attribution.ts`.
     expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.recommendation).toEqual({
       action: 'requeue',
-      why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
+      why: 'the lane was busy rather than wrong — the next pass merges it',
     })
     // The raw failure survives the summary. A sentence that hides the git
     // output would be worse than the git output.
-    expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.raw).toContain('CONFLICT (content)')
+    expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.raw).toContain(
+      'another integration held the merge lane',
+    )
   })
 
   /**
@@ -227,7 +232,7 @@ describe('reduceWorkItem', () => {
     const e = makeStream('ticket-nextloom-ai-admin-35')
     const s = reduceWorkItem([
       e('TicketDiscovered', discovered),
-      e('WorkItemBlocked', { hold: { _tag: 'Question' as const, question: '?', by: 'steven' } }),
+      e('WaitStarted', { waitId: 'wait-1' as WaitId, reason: { _tag: 'OwnQuestion' as const, question: '?', by: 'steven' } }),
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
 
@@ -267,142 +272,31 @@ describe('reduceWorkItem', () => {
   })
 
   /**
-   * A log that still holds `RepairRequested` folds, and the event decides
-   * nothing (`#143`).
-   *
-   * This fold used to carry `repairs`, `pendingRepair` and `repairRun`: the
-   * event was appended just before the release, so between the two the item
-   * carried a pending repair and the next claim *became* it
-   * ([0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md)). A lane
-   * refusal buys nothing since
-   * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
-   * §Consequences, so the type is retired — readable for ever, appended never —
-   * and the three fields are gone with the purchase.
-   *
-   * **The property pinned here is that the rows are harmless, not that they are
-   * absent.** A replay of Lingtai's own log reaches this event, and a reducer
-   * that threw or skipped it would take `projection rebuild` out for the exact
-   * reason 0019 gives. So: the same lifecycle as a log without it, and the
-   * version still advancing, so the next append does not use a stale
-   * expectation.
-   */
-  it('folds a retired RepairRequested as nothing but a version bump', () => {
-    const e = makeStream('ticket-p-1')
-    const bought = {
-      runId: 'pass-a',
-      reason: 'conflict' as const,
-      detail: 'agent/1 does not merge into main: page.tsx',
-      fingerprint: '0123456789ab',
-      attempt: 1,
-    }
-
-    const withIt = reduceWorkItem([
-      e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      e('RepairRequested', bought),
-      e('TicketReleased', { runId: 'pass-a', reason: 'repairing conflict (attempt 1)' }),
-      e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
-    ])
-
-    const f = makeStream('ticket-p-2')
-    const without = reduceWorkItem([
-      f('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      f('TicketReleased', { runId: 'pass-a', reason: 'repairing conflict (attempt 1)' }),
-      f('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
-    ])
-
-    expect(withIt.lifecycle).toEqual(without.lifecycle)
-    expect(withIt.runs).toEqual(without.runs)
-    // One event more, so one version more — and nothing else moved.
-    expect(withIt.version).toBe(without.version + 1)
-  })
-
-  /**
-   * The one question an old stream is still asked: is a repair the old code
-   * bought waiting for a claim? That is the item a daemon restarted onto
-   * `#143` finds in its queue, and it is owed the run it was released for —
-   * so the answer is there until the next claim, and gone after it.
-   */
-  it('reports a retired repair as pending until the next claim consumes it', () => {
-    const e = makeStream('ticket-p-3')
-    const bought = {
-      runId: 'pass-a',
-      reason: 'verify-failed' as const,
-      detail: 'policy: exit 1',
-      fingerprint: '0123456789ab',
-      attempt: 1,
-    }
-    const released = [
-      e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      e('RepairRequested', bought),
-      e('TicketReleased', { runId: 'pass-a', reason: 'repairing verify-failed (attempt 1)' }),
-    ]
-    expect(retiredRepairPending(released)).toEqual({
-      after: 'pass-a',
-      reason: 'verify-failed',
-      detail: 'policy: exit 1',
-      attempt: 1,
-    })
-    expect(
-      retiredRepairPending([
-        ...released,
-        e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
-      ]),
-    ).toBeNull()
-  })
-
-  /**
    * The second ceiling, counted off the log rather than remembered
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §2).
    *
-   * The property that matters is what it does *not* have: no pending record, and
-   * nothing a claim consumes. A repair needed one because the next claim had to
-   * *become* the repair; a restart is an ordinary claim, told what every second
-   * attempt is told, so the only thing the fold owes anybody is the count and
-   * each arm's evidence. Since `#143` it is the only list of its kind left.
+   * Since #502 the arm's own branch/head/findings are not repeated on the
+   * work item — they are on the previous run's own stream, which the next
+   * prompt already reads (`attempts.ts`'s `lastRun`) — so what this fold owes
+   * is the count and which run each restart followed.
    */
-  it('counts the approaches a ticket abandoned, and hands the next claim nothing', () => {
+  it('counts the approaches a ticket abandoned, from the release that follows each one', () => {
     const e = makeStream('ticket-p-1')
-    const arm = (runId: string, restart: number) => ({
-      runId,
-      restart,
-      of: 2,
-      action: 'review',
-      rounds: 3,
-      branch: 'agent/1',
-      headSha: '8634c5d',
-      findings: [
-        {
-          file: 'packages/daemon/src/daemon.ts',
-          line: 124,
-          claim: 'startBeacon sits inside the lock',
-          failureScenario: 'the first beat throws and the lock is never released',
-          severity: 'major' as const,
-        },
-      ],
-    })
-
     const after = reduceWorkItem([
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      e('PassRestarted', arm('pass-a', 1)),
-      e('TicketReleased', { runId: 'pass-a', reason: '…restart 1 of 2' }),
+      e('TicketReleased', { runId: 'pass-a', reason: '…restart 1 of 2', cause: { _tag: 'Restart', restart: 1 } }),
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
 
-    // The claim does not consume it, unlike the pending repair this fold used
-    // to carry: this is a bound on the ticket and not an instruction to the
-    // next run.
     expect(after.restarts).toHaveLength(1)
-    expect(after.restarts[0]!.after).toBe('pass-a')
+    expect(after.restarts[0]!).toEqual({ after: 'pass-a', restart: 1 })
     // And it is claimed, not blocked — a restart is not a state an item is in.
     expect(after.lifecycle.status).toBe('claimed')
 
-    // **Each arm's findings survive**, which is the criterion 0040 §3 rests on:
-    // the run that was refused is on a stream no later pass reads, so if they
-    // were not here a person asked after the last restart would see one
-    // refusal and have to guess about the others.
-    expect(after.restarts[0]!.findings[0]!.failureScenario).toContain('never released')
-
-    const twice = reduceWorkItem([e('PassRestarted', arm('pass-a', 1)), e('PassRestarted', arm('pass-b', 2))])
+    const twice = reduceWorkItem([
+      e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'Restart', restart: 1 } }),
+      e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'Restart', restart: 2 } }),
+    ])
     expect(twice.restarts.map((r) => r.restart)).toEqual([1, 2])
   })
 
@@ -421,8 +315,7 @@ describe('reduceWorkItem', () => {
    * The one-shot edit
    * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the next run and to no other, which is what makes a
-   * stale instruction impossible rather than merely guarded against. It is the
-   * only thing a claim consumes now that `pendingRepair` is gone (`#143`).
+   * stale instruction impossible rather than merely guarded against.
    */
   it('holds a prompt edit until the next claim, and no longer', () => {
     const e = makeStream('ticket-p-1')
@@ -482,36 +375,29 @@ describe('reduceWorkItem', () => {
 })
 
 /**
- * #445's own Done-when: a payload carrying an old field beside `hold` must be
- * refused, not silently stripped. `WorkItemBlocked` is `z.strictObject`, so
- * asserting `safeParse(...).success === false` is the only check that proves
- * it — asserting the *parsed output* lacks the field would also pass for a
- * plain `z.object`, which strips unknown keys without complaint.
+ * `WaitStarted` is `z.strictObject`, so asserting `safeParse(...).success ===
+ * false` is the only check that proves a payload carrying an old field beside
+ * `reason` is refused, not silently stripped — asserting the *parsed output*
+ * lacks the field would also pass for a plain `z.object`.
  */
-describe('WorkItemBlocked is strict about what rides beside hold', () => {
-  const hold = { _tag: 'Question' as const, question: 'which design?', by: 'steven' }
+describe('WaitStarted is strict about what rides beside reason', () => {
+  const reason = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
 
-  it('accepts hold alone', () => {
-    expect(WorkItemBlocked.safeParse({ hold }).success).toBe(true)
+  it('accepts waitId and reason alone', () => {
+    expect(WaitStarted.safeParse({ waitId: 'wait-1' as WaitId, reason }).success).toBe(true)
   })
 
   it.each([
-    ['needs', { hold, needs: ['design'] }],
-    ['question', { hold, question: 'which design?' }],
-    ['runId', { hold, runId: 'pass-1' }],
-    ['diagnosis', { hold, diagnosis: { what: 'merge conflict', done: null, raw: null, recommendation: null } }],
-  ])('refuses a payload carrying %s beside hold', (_name, payload) => {
-    expect(WorkItemBlocked.safeParse(payload).success).toBe(false)
+    ['needs', { waitId: 'wait-1' as WaitId, reason, needs: ['design'] }],
+    ['question', { waitId: 'wait-1' as WaitId, reason, question: 'which design?' }],
+    ['runId', { waitId: 'wait-1' as WaitId, reason, runId: 'pass-1' }],
+    ['diagnosis', { waitId: 'wait-1' as WaitId, reason, diagnosis: { what: 'merge conflict', done: null, raw: null, recommendation: null } }],
+  ])('refuses a payload carrying %s beside reason', (_name, payload) => {
+    expect(WaitStarted.safeParse(payload).success).toBe(false)
   })
 
-  it('refuses the old v2 payload, which carries no hold at all', () => {
-    const v2 = {
-      question: 'which design?',
-      needsFrom: 'human',
-      runId: null,
-      needs: ['design'],
-      diagnosis: null,
-    }
-    expect(WorkItemBlocked.safeParse(v2).success).toBe(false)
+  it('refuses the old WorkItemBlocked payload, which carries a hold rather than a reason', () => {
+    const old = { hold: { _tag: 'Question', question: 'which design?', by: 'steven' } }
+    expect(WaitStarted.safeParse(old).success).toBe(false)
   })
 })

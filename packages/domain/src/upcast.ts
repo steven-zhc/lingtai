@@ -143,47 +143,6 @@ export const UPCASTERS: UpcastRegistry = {
      */
     1: (data) => ({ ...(data as object), hash: null, basedOn: null }),
   },
-  FixRequested: {
-    /**
-     * 1 → 2: `of` was added — the `rounds` ceiling the round is counted against
-     * — because a projection may not read a recipe and a card showing *round 2*
-     * with no denominator cannot say which arm an item is on (`#146`).
-     *
-     * Zero, meaning *not recorded*, and it is not guessable: the ceiling is the
-     * recipe's at the moment of that round, the recipe is read from the base
-     * branch every pass (0005), and the value it had in September is not the
-     * value it has now. Reading today's number back onto a v1 event would be
-     * the log claiming a bound nobody applied.
-     */
-    1: (data) => ({ ...(data as object), of: 0 }),
-  },
-  StepPassed: {
-    /**
-     * 1 → 2: `findings` was added (#135). An empty array, and unlike the nulls
-     * above it is not a guess: a v1 pass's findings exist only as prose inside
-     * `evidence`, which is untouched, and parsing that string back into
-     * structure would be the log claiming a severity and a line nobody recorded
-     * as such. Empty says *none recorded here*; the prose still says the rest.
-     */
-    1: (data) => ({ ...(data as object), findings: [] }),
-  },
-  StepDidNotFinish: {
-    /**
-     * 1 → 2: `attempt` and `retrying` are dropped with 0057 §4's retry (`#234`).
-     * The second step in this file that removes a field rather than adding one,
-     * and it is a step for `TicketClaimed`'s `leaseUntilMs` reason: no event is
-     * rewritten, so the reader is what stops believing them. There is nothing to
-     * recover — the retry those two numbers described reused the crashed
-     * attempt's session id and so ran nothing, which is why it is gone.
-     *
-     * This type is younger than 0018's rename, so 1 is the shape that carried
-     * the two fields and never the one that said `diff`.
-     */
-    1: (data) => {
-      const { attempt: _n, retrying: _more, ...rest } = data as { attempt?: unknown; retrying?: unknown }
-      return rest
-    },
-  },
 }
 
 export class MissingUpcasterError extends Error {

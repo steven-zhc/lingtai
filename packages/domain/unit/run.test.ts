@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { Action, StepOutcome, WaitId } from '../src/index.ts'
 import { emptyRun, stepsOn, reduceRun } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
@@ -17,6 +18,10 @@ const started = {
     tier: 'guarded' as const,
     limits: { turns: 150, wallMs: 3_600_000 },
   },
+}
+
+function verdictAction(name: string, onSha: string, result: Action['result'], evidence = ''): Action {
+  return { plugin: 'run', name, onSha, evidence, yields: 'verdict', result } as Action
 }
 
 describe('reduceRun', () => {
@@ -102,35 +107,38 @@ describe('reduceRun', () => {
 
   it('enters gating on a proposed completion and collects verdicts', () => {
     const e = makeStream('pass-01JX')
+    const outcome: StepOutcome = {
+      step: 'proposed',
+      round: 0,
+      actions: [
+        verdictAction('build', 'sha-a', { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } }, 'exit 0'),
+        verdictAction(
+          'review',
+          'sha-a',
+          {
+            _tag: 'Completed',
+            assessment: {
+              verdict: 'refused',
+              findings: [
+                {
+                  file: 'src/a.ts',
+                  line: 12,
+                  claim: 'check-then-write race',
+                  failureScenario: 'two requests read 0, both write 1, one increment is lost',
+                  severity: 'blocker' as const,
+                },
+              ],
+            },
+          },
+          '1 finding',
+        ),
+      ],
+    }
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepRequested', { step: 'proposed', action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }),
-      e('StepStarted', { step: 'proposed', action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }),
-      e('StepPassed', {
-        step: 'proposed',
-        action: 'build',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        evidence: 'exit 0',
-        findings: [],
-      }),
-      e('StepFailed', {
-        step: 'proposed',
-        action: 'review',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        evidence: '1 finding',
-        findings: [
-          {
-            file: 'src/a.ts',
-            line: 12,
-            claim: 'check-then-write race',
-            failureScenario: 'two requests read 0, both write 1, one increment is lost',
-            severity: 'blocker' as const,
-          },
-        ],
-      }),
+      e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
     ])
 
     expect(s.lifecycle).toEqual({ status: 'gating', headSha: 'sha-a' })
@@ -155,17 +163,23 @@ describe('reduceRun', () => {
    */
   it('keeps a gate whose agent never started apart from one that refused', () => {
     const e = makeStream('pass-01JX')
+    const outcome: StepOutcome = {
+      step: 'proposed',
+      round: 0,
+      actions: [
+        verdictAction(
+          'review',
+          'sha-a',
+          { _tag: 'NeverStarted', scope: 'conductor' },
+          "You've hit your session limit · resets 2pm (America/Chicago)",
+        ),
+      ],
+    }
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepStarted', { step: 'proposed', action: 'review', runId: 'pass-01JX', onSha: 'sha-a' }),
-      e('StepNeverRan', {
-        step: 'proposed',
-        action: 'review',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
-      }),
+      e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
     ])
 
     expect(s.steps['proposed:review']!.verdict).toBe('never-ran')
@@ -182,25 +196,32 @@ describe('reduceRun', () => {
    */
   it('a force-push invalidates every verdict, without revoking anything', () => {
     const e = makeStream('pass-01JX')
+    const outcome: StepOutcome = {
+      step: 'proposed',
+      round: 0,
+      actions: [verdictAction('build', 'sha-a', { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } }, 'exit 0')],
+    }
+    const mergeOutcome: StepOutcome = {
+      step: 'merge',
+      round: 0,
+      actions: [
+        {
+          plugin: 'human',
+          name: 'human',
+          onSha: 'sha-a',
+          evidence: '',
+          yields: 'signoff',
+          result: { _tag: 'Waived', waitId: 'wait-1' as WaitId },
+        } as Action,
+      ],
+    }
     const approved = [
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepPassed', {
-        step: 'proposed',
-        action: 'build',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        evidence: 'exit 0',
-        findings: [],
-      }),
-      e('ApprovalGranted', {
-        step: 'merge',
-        action: 'human',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        by: 'human:steven',
-        note: 'looks right',
-      }),
+      e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
+      e('StepStarted', { runId: 'pass-01JX', step: 'merge', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome: mergeOutcome }),
     ]
 
     const before = reduceRun(approved)
@@ -218,117 +239,65 @@ describe('reduceRun', () => {
     expect(after.steps['merge:human']!.onSha).toBe('sha-a')
   })
 
-  it('records a waiver with who and why — never silently', () => {
+  it('records a waiver with no `by`/`reason` of its own — a person approved past it, named on the ticket stream', () => {
     const e = makeStream('pass-01JX')
+    const outcome: StepOutcome = {
+      step: 'proposed',
+      round: 0,
+      actions: [verdictAction('review', 'sha-a', { _tag: 'Waived', waitId: 'wait-1' as WaitId })],
+    }
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepWaived', {
-        step: 'proposed',
-        action: 'review',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        by: 'human:steven',
-        reason: 'reviewer unavailable, change is a docs typo',
-      }),
+      e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
     ])
 
     expect(s.steps['proposed:review']!.verdict).toBe('waived')
-    expect(s.steps['proposed:review']!.by).toBe('human:steven')
-    expect(s.steps['proposed:review']!.reason).toContain('docs typo')
   })
 
-  it('waits on a person, then proceeds when they answer', () => {
+  it('waits on a person — a signoff action with a live question', () => {
     const e = makeStream('pass-01JX')
-    const asked = [
+    const outcome: StepOutcome = {
+      step: 'merge',
+      round: 0,
+      actions: [
+        {
+          plugin: 'human',
+          name: 'human',
+          onSha: 'sha-a',
+          evidence: '',
+          yields: 'signoff',
+          result: { _tag: 'Completed', requested: { question: 'Merge into develop?' } },
+        } as Action,
+      ],
+    }
+    const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('ApprovalRequested', {
-        step: 'merge',
-        action: 'human',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        question: 'Merge into develop?',
-        artifacts: ['diff'],
-      }),
-    ]
+      e('StepStarted', { runId: 'pass-01JX', step: 'merge', round: 0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
+    ])
 
-    expect(reduceRun(asked).lifecycle).toEqual({
+    expect(s.lifecycle).toEqual({
       status: 'awaiting-approval',
       step: 'merge:human',
       onSha: 'sha-a',
       question: 'Merge into develop?',
     })
-
-    const granted = reduceRun([
-      ...asked,
-      e('ApprovalGranted', {
-        step: 'merge',
-        action: 'human',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        by: 'human:steven',
-        note: '',
-      }),
-    ])
-    expect(granted.lifecycle).toEqual({ status: 'gating', headSha: 'sha-a' })
-    expect(granted.steps['merge:human']!.verdict).toBe('passed')
   })
 
-  /**
-   * This asserted `failed` until #20. A withdrawn approval is not a gate that
-   * refused the diff — nothing refused anything, someone took an answer back —
-   * and the difference is what the card tells a person: "the build is broken"
-   * versus "this is waiting on you". Only one of those is true, and acting on
-   * the wrong one costs a person a search for a defect that does not exist.
-   */
-  it('returns a revoked approval to the gate, not to a refusal', () => {
+  it('keeps the receipt — turns and duration, no dollar figure (0110 §9)', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([
-      e('RunStarted', started),
-      e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('ApprovalGranted', {
-        step: 'merge',
-        action: 'human',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        by: 'human:steven',
-        note: '',
-      }),
-      e('ApprovalRevoked', {
-        step: 'merge',
-        action: 'human',
-        runId: 'pass-01JX',
-        onSha: 'sha-a',
-        by: 'human:steven',
-        reason: 'spotted a migration',
-      }),
-    ])
+    const s = reduceRun([e('RunStarted', started), e('RunFinished', { exitCode: 0, turns: 63, durationMs: 4_210_000 })])
 
-    expect(s.steps['merge:human']!.verdict).toBe('requested')
-    // And the run is waiting again, on the same commit, with the reason the
-    // person gave — not merged, not queued, not failed.
-    expect(s.lifecycle).toMatchObject({ status: 'awaiting-approval', step: 'merge:human', onSha: 'sha-a' })
-    expect(s.lifecycle).toHaveProperty('question', expect.stringContaining('spotted a migration'))
-  })
-
-  it('keeps the receipt the old .jsonl could not be parsed for', () => {
-    const e = makeStream('pass-01JX')
-    const s = reduceRun([
-      e('RunStarted', started),
-      e('RunFinished', { exitCode: 0, turns: 63, durationMs: 4_210_000, costUsd: 5.42 }),
-    ])
-
-    expect(s.receipt).toEqual({ exitCode: 0, turns: 63, durationMs: 4_210_000, costUsd: 5.42 })
+    expect(s.receipt).toEqual({ exitCode: 0, turns: 63, durationMs: 4_210_000 })
     expect(s.lifecycle.status).toBe('finished')
   })
 
   it('records a failure with its kind', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([
-      e('RunStarted', started),
-      e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' }),
-    ])
+    const s = reduceRun([e('RunStarted', started), e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' })])
 
     expect(s.lifecycle).toEqual({ status: 'failed', kind: 'timeout', detail: '2h wall clock' })
   })

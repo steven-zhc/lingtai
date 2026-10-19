@@ -15,6 +15,7 @@
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */
+import type { Action } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
 
@@ -77,7 +78,7 @@ export type RunLifecycle =
   | { status: 'awaiting-input'; prompt: string }
   | { status: 'gating'; headSha: string }
   | { status: 'awaiting-approval'; step: string; onSha: string; question: string }
-  | { status: 'finished'; exitCode: number; turns: number; durationMs: number; costUsd: number | null }
+  | { status: 'finished'; exitCode: number; turns: number; durationMs: number }
   /**
    * `prepare-failed` has no matching `RunFailed` kind, and that is on purpose.
    * The lifecycle is a reading of several events, and a prepare step that
@@ -143,7 +144,7 @@ export interface RunState {
   /** Latest verdict per gate name, each carrying the sha it was made against. */
   steps: Readonly<Record<string, StepState>>
 
-  receipt: { exitCode: number; turns: number; durationMs: number; costUsd: number | null } | null
+  receipt: { exitCode: number; turns: number; durationMs: number } | null
 
   version: number
   lastSeq: bigint | null
@@ -186,6 +187,118 @@ export function stepsOn(state: RunState): StepState[] {
 
 function withStep(state: RunState, step: StepState): Readonly<Record<string, StepState>> {
   return { ...state.steps, [step.step]: step }
+}
+
+/**
+ * One action's `Action` (0120 §1), read as the `StepState` this aggregate
+ * has always kept — the nine-string ladder `StepVerdict` names, `evidence`
+ * for a person, `findings` for a program, and `by`/`reason` for a waiver.
+ */
+function stepStateOf(key: string, action: Action): StepState {
+  const base = { step: key, onSha: action.onSha, by: null, reason: null }
+  switch (action.yields) {
+    case 'verdict':
+      switch (action.result._tag) {
+        case 'Completed':
+          return {
+            ...base,
+            verdict: action.result.assessment.verdict === 'accepted' ? 'passed' : 'failed',
+            evidence: action.evidence,
+            findings: action.result.assessment.findings,
+          }
+        case 'AnswerUnreadable':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'Interrupted':
+          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+        case 'NeverStarted':
+          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'commit':
+      switch (action.result._tag) {
+        case 'Completed':
+          return {
+            ...base,
+            verdict: action.result.question !== null ? 'asked' : 'passed',
+            evidence: action.result.question ?? action.evidence,
+            findings: [],
+          }
+        case 'Interrupted':
+          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+        case 'NotDone':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'NeverStarted':
+          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'design':
+      switch (action.result._tag) {
+        case 'Drafted':
+          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+        case 'Asked':
+          return { ...base, verdict: 'asked', evidence: action.result.question, findings: [] }
+        case 'AnswerUnreadable':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'Interrupted':
+        case 'NotDone':
+          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+        case 'NeverStarted':
+          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'signoff':
+      switch (action.result._tag) {
+        case 'Completed':
+          return action.result.requested === null
+            ? { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+            : { ...base, verdict: 'asked', evidence: action.result.requested.question, findings: [] }
+        case 'NotDone':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'merge':
+      switch (action.result._tag) {
+        case 'Completed':
+          return {
+            ...base,
+            verdict: action.result.integration._tag === 'Integrated' ? 'passed' : 'failed',
+            evidence: action.evidence,
+            findings: [],
+          }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'worktree':
+      switch (action.result._tag) {
+        case 'Completed':
+          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+        case 'NotDone':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+    case 'nothing':
+      switch (action.result._tag) {
+        case 'Completed':
+          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+        case 'NotDone':
+          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+        case 'Waived':
+          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+      }
+      break
+  }
+  return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
 }
 
 export function applyRun(state: RunState, event: Envelope): RunState {
@@ -257,13 +370,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...state,
         ...at,
         receipt: d,
-        lifecycle: {
-          status: 'finished',
-          exitCode: d.exitCode,
-          turns: d.turns,
-          durationMs: d.durationMs,
-          costUsd: d.costUsd,
-        },
+        lifecycle: { status: 'finished', exitCode: d.exitCode, turns: d.turns, durationMs: d.durationMs },
       }
     }
 
@@ -272,203 +379,28 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return { ...state, ...at, lifecycle: { status: 'failed', kind: d.kind, detail: d.detail } }
     }
 
-    case 'StepRequested':
-    case 'StepStarted': {
-      const d = event.data as PayloadOf<'StepRequested'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: event.type === 'StepRequested' ? 'requested' : 'running',
-          onSha: d.onSha,
-          evidence: null,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
-      }
-    }
+    // No per-action step any more (0120's own Consequences: the board loses
+    // which action of a step is running). `StepStarted` is once per step, so
+    // there is nothing here to key a `StepState` by — `lingtai attach`'s run
+    // log is where a running step's current action is now.
+    case 'StepStarted':
+      return { ...state, ...at }
 
-    case 'StepPassed': {
-      const d = event.data as PayloadOf<'StepPassed'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'passed',
-          onSha: d.onSha,
-          evidence: d.evidence,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
+    case 'StepEnded': {
+      const d = event.data as PayloadOf<'StepEnded'>
+      let next = state
+      for (const action of d.outcome.actions) {
+        if (action.result._tag === 'NotReached') continue
+        const key = `${d.outcome.step}:${action.name}`
+        next = { ...next, steps: withStep(next, stepStateOf(key, action)) }
+        if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
+          next = {
+            ...next,
+            lifecycle: { status: 'awaiting-approval', step: key, onSha: action.onSha, question: action.result.requested.question },
+          }
+        }
       }
-    }
-
-    case 'StepFailed': {
-      const d = event.data as PayloadOf<'StepFailed'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'failed',
-          onSha: d.onSha,
-          evidence: d.evidence,
-          findings: d.findings,
-          by: null,
-          reason: null,
-        }),
-      }
-    }
-
-    case 'StepNeverRan': {
-      const d = event.data as PayloadOf<'StepNeverRan'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'never-ran',
-          onSha: d.onSha,
-          // The runtime's own sentence: evidence that the agent never started,
-          // and never evidence about the diff. There are no findings for the
-          // same reason there is no verdict.
-          evidence: d.detail,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
-      }
-    }
-
-    case 'StepDidNotFinish': {
-      const d = event.data as PayloadOf<'StepDidNotFinish'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'did-not-finish',
-          onSha: d.onSha,
-          // The runtime's own sentence about the machinery, never about the
-          // diff — `StepNeverRan.detail`'s reason, one row along in 0057's
-          // table. No findings, because there is no verdict to have them.
-          evidence: d.detail,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
-      }
-    }
-
-    case 'StepAsked': {
-      const d = event.data as PayloadOf<'StepAsked'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'asked',
-          onSha: d.onSha,
-          // The question, in the agent's own words — and the one `detail` on
-          // this fold that is neither about the machinery nor about the diff.
-          // No findings, for `did-not-finish`'s reason: there is no verdict.
-          evidence: d.detail,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
-      }
-    }
-
-    case 'StepWaived': {
-      const d = event.data as PayloadOf<'StepWaived'>
-      return {
-        ...state,
-        ...at,
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'waived',
-          onSha: d.onSha,
-          evidence: null,
-          findings: [],
-          by: d.by,
-          reason: d.reason,
-        }),
-      }
-    }
-
-    case 'ApprovalRequested': {
-      const d = event.data as PayloadOf<'ApprovalRequested'>
-      return {
-        ...state,
-        ...at,
-        lifecycle: { status: 'awaiting-approval', step: `${d.step}:${d.action}`, onSha: d.onSha, question: d.question },
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'requested',
-          onSha: d.onSha,
-          evidence: null,
-          findings: [],
-          by: null,
-          reason: null,
-        }),
-      }
-    }
-
-    case 'ApprovalGranted': {
-      const d = event.data as PayloadOf<'ApprovalGranted'>
-      return {
-        ...state,
-        ...at,
-        lifecycle: { status: 'gating', headSha: d.onSha },
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'passed',
-          onSha: d.onSha,
-          evidence: null,
-          findings: [],
-          by: d.by,
-          reason: d.note,
-        }),
-      }
-    }
-
-    /**
-     * Back to the gate, not to a refusal and not to the queue.
-     *
-     * This set the verdict to `failed`, which says the gate refused the diff.
-     * It did not: someone withdrew an answer, and the question is open again.
-     * The difference is what a person sees on the card — "the build is broken"
-     * versus "this is waiting on you" — and only one of them is true.
-     *
-     * The work item stays blocked either way. Returning it to the queue would
-     * let another run claim it and throw the question away.
-     */
-    case 'ApprovalRevoked': {
-      const d = event.data as PayloadOf<'ApprovalRevoked'>
-      return {
-        ...state,
-        ...at,
-        lifecycle: {
-          status: 'awaiting-approval',
-          step: `${d.step}:${d.action}`,
-          onSha: d.onSha,
-          question: `${d.by} withdrew the approval: ${d.reason}`,
-        },
-        steps: withStep(state, {
-          step: `${d.step}:${d.action}`,
-          verdict: 'requested',
-          onSha: d.onSha,
-          evidence: null,
-          findings: [],
-          by: d.by,
-          reason: d.reason,
-        }),
-      }
+      return { ...next, ...at }
     }
 
     default:

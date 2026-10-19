@@ -1,15 +1,15 @@
 /**
  * 0120 §3's route: `RouteOffer`, `JudgeReply`, `RouteDecision`, `offerFor`,
- * `decideRoute` and `routeNext`. Nothing calls these yet — #462 wires them
- * into `proposed`.
+ * `decideRoute` and `routeNext` — wired into `proposed` by the pass, and,
+ * since #502, the shape `PassRouted` stores: `events.ts` imports the three
+ * types as values for that schema, which is safe because nothing this file
+ * depends on imports `events.ts` back.
  *
  * **Not in `route.ts`, even though that file's header once promised it.**
  * `routeNext` returns `PassNext`, so this file imports `pass-next.ts`; and
  * `pass-next.ts` imports `wait.ts`, which imports `route.ts` at load time to
  * build `EscalationBecause` (`wait.ts:102`). A `route.ts` that imported this
- * file back would close that ESM cycle — the same shape `hold.ts:15-19`
- * warns about for a zod schema read at load time. So `route.ts` stays a
- * leaf, and nothing inside `@lingtai/domain` imports this file.
+ * file back would close that ESM cycle. So `route.ts` stays a leaf.
  *
  * `offerFor`'s `CandidateNext` reuses `pass-next.ts`'s own `FixRound` and
  * `Restart` schemas rather than declaring second copies of them — see that

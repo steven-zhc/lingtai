@@ -1,177 +1,38 @@
 /**
- * Builders that emit today's events for 0120's and 0118's vocabulary — #473,
- * so a test can build a fixture by saying what a pass *ended with* rather
- * than transcribing the wire events a second time.
- *
- * Each one emits through `eventOf`/`holdOf` (`../src/adapters.ts`) rather
- * than a second mapping, so `read-model.ts`'s own round trip
- * (`stepOutcomesOf(aStepEnded(...))` etc.) is a claim about one pair of
- * functions agreeing with itself, not about two independent tables.
+ * Builders that emit 0120's and 0118's events directly (#502, 0120 phase 2)
+ * — a test says what a pass *ended with* and this writes the `StepStarted`/
+ * `StepEnded`/`WaitStarted`/`WaitResolved`/`PassRouted` the real pass would
+ * have, with no translation layer in between (the adapters these builders
+ * used to go through, `eventOf`/`holdOf`, are deleted with the switch).
  */
-import type { Action, Envelope, Finding, Hold, RefusalReason, RunRef, Step, StepOutcome } from '../src/index.ts'
-import { eventOf, holdOf, STEPS } from '../src/index.ts'
+import type { Action, Envelope, RefusalReason, ReleaseCause, Step, StepOutcome, WaitId } from '../src/index.ts'
+import { routeNext, STEPS, type RouteOffer, type JudgeReply, type RouteDecision } from '../src/index.ts'
+import type { RunRef } from '../src/wait.ts'
 import type { Resolution, WaitReason } from '../src/wait.ts'
 import { makeStream } from './support.ts'
 
-/** The `pass` fields `holdOf` reads off the pass rather than the wait — fixed defaults, since no row's assertions read them back. */
-const PASS = { branch: 'agent/473', base: 'main', findings: [] as readonly Finding[] }
+let nextWaitId = 1
 
-function recipeEntryFor(action: Action): Record<string, unknown> {
-  switch (action.plugin) {
-    case 'run':
-      return { name: action.name, run: 'true' }
-    case 'agent':
-      return { name: action.name, agent: 'claude-code' }
-    case 'file':
-      return { name: action.name, file: 'design.md' }
-    case 'file-brief':
-      return { name: action.name, 'file-brief': true }
-    case 'watch':
-      return { name: action.name, watch: ['**/*'], then: action.yields === 'verdict' ? 'fail' : 'request-approval' }
-    case 'worktree':
-      return { name: action.name, worktree: { base: 'main', submodules: false } }
-    case 'merge':
-      return { name: action.name, merge: { strategy: 'merge-commit' } }
-    case 'queue':
-      return { name: action.name, queue: {} }
-    case 'human':
-      return { name: action.name, human: 'merge this?' }
-    default:
-      throw new Error(`events.ts fixture: unrecognised plugin "${action.plugin}"`)
-  }
+/** A fresh `WaitId` — tests that resolve a wait pass the same value back to `aResolution`. */
+export function aWaitId(): WaitId {
+  return `wait-${nextWaitId++}` as WaitId
 }
 
-/**
- * `agent-action.ts`'s own two sentences for a `verdict`- or `design`-yielding
- * agent action that started and did not finish — `` `the reviewer did not
- * finish (${kind}): ...` `` and `` `the design agent did not finish
- * (${kind}): ...` `` (`:580`, `:963`) — the only shape a real pass ever
- * writes into one of those two cells' own `Interrupted` evidence. A fixture
- * that hands `aStepEnded` a bare string there is agreeing with
- * `read-model.ts`'s own `crash` default instead of testing it against the
- * real wire (#478), so this refuses it by name rather than letting it
- * through quietly. `design` with `plugin: 'file'` never yields `Interrupted`
- * (a `file:` destination's own failure is `NotDone`), so it is exempt.
- */
-function requireRealInterruptedEvidence(action: Action): void {
-  if (action.yields !== 'verdict' && action.yields !== 'design') return
-  if (action.result._tag !== 'Interrupted') return
-  if (action.yields === 'design' && action.plugin === 'file') return
-  const label = action.yields === 'verdict' ? 'reviewer' : 'design agent'
-  const prefix = `the ${label} did not finish (${action.result.cause}): `
-  if (!action.evidence.startsWith(prefix)) {
-    throw new Error(
-      `aStepEnded: no real pass writes "${action.evidence}" for an Interrupted ${action.yields} action — it must start with "${prefix}"`,
-    )
-  }
-}
-
-/** One run's own stream, with the bookkeeping `stepOutcomesOf` reads kept beside the step events themselves. */
+/** One run's own stream. */
 export interface RunFixture {
   readonly runId: string
   /** The run's own `makeStream` appender, for a builder that writes directly onto it (`aRoute`, a seeded `TicketClaimed`'s run). */
   readonly event: ReturnType<typeof makeStream>
   /** `StepOutcome`s ended so far, round included — what `stepOutcomesOf(events)` is expected to answer back. */
   readonly ended: StepOutcome[]
-  /** `aStepEnded(outcome)` — the `StepRequested`/`StepStarted`/terminal triples `eventOf` writes, plus the run-level bookkeeping a `commit` yield needs to be read back. */
+  /** `StepStarted{round}` then `StepEnded{outcome}` — the pair a real `runStep` writes for one visit. */
   aStepEnded(outcome: StepOutcome): Envelope[]
 }
 
 /** One run, for `aStepEnded` and `aRoute` to write onto. */
 export function aRun(runId: string): RunFixture {
   const event = makeStream(runId)
-  const recipeSteps: Record<string, Array<Record<string, unknown>>> = {}
   const ended: StepOutcome[] = []
-  let resolvedRecipe = false
-  const roundsOpened = new Set<number>([0])
-
-  /**
-   * `stepOutcomesOf`'s own `round` reads off `FixRequested`, never off the
-   * `StepOutcome` a builder is handed — so a round above 0 needs one opened
-   * on the run before its own step events, the same as a real route does
-   * (`conduct.ts`'s own `FixRequested`, ahead of the fixer's dispatch).
-   */
-  function openRound(round: number, onSha: string): Envelope[] {
-    if (roundsOpened.has(round)) return []
-    roundsOpened.add(round)
-    return [event('FixRequested', { runId, round, of: round, action: 'reviewer', onSha, findings: [] })]
-  }
-
-  function declare(outcome: StepOutcome): void {
-    const list = (recipeSteps[outcome.step] ??= [])
-    for (const action of outcome.actions) {
-      if (!list.some((entry) => entry.name === action.name)) list.push(recipeEntryFor(action))
-    }
-  }
-
-  function stepsResolvedOnce(): Envelope[] {
-    if (resolvedRecipe) return []
-    resolvedRecipe = true
-    return [
-      event('StepsResolved', {
-        runId,
-        configHash: 'fixture',
-        steps: STEPS.map((step) => ({ step, actions: (recipeSteps[step] ?? []).map((entry) => entry.name as string) })),
-        recipe: { steps: recipeSteps },
-      }),
-    ]
-  }
-
-  /** The run-level bookkeeping a `commit`-yield action's own result needs behind it, so `commitContextFor` reads it back. */
-  function contextFor(outcome: StepOutcome, action: Extract<Action, { yields: 'commit' }>): Envelope[] {
-    if (outcome.round === 0) {
-      if (action.result._tag === 'Completed' && action.result.head !== null) {
-        return [event('RunProposedCompletion', { headSha: action.result.head })]
-      }
-      if (action.result._tag === 'Interrupted') {
-        const failed = event('RunFailed', { kind: action.result.cause, detail: action.evidence })
-        // `RunProducedDiff` is written whichever way the dispatch ended
-        // (`read-model.ts`'s own comment on `commitContextFor`) — the
-        // fallback a round interrupted after committing part of the fix
-        // still needs, since `RunFailed` itself carries no `headSha`.
-        if (action.result.head === null) return [failed]
-        return [
-          failed,
-          event('RunProducedDiff', {
-            branch: 'agent/473',
-            headSha: action.result.head,
-            files: 1,
-            insertions: 1,
-            deletions: 0,
-          }),
-        ]
-      }
-      return []
-    }
-    if (action.result._tag === 'Completed') {
-      return [
-        event('FixApplied', {
-          runId,
-          round: outcome.round,
-          headSha: action.result.head,
-          turns: 1,
-          costUsd: null,
-          failure: null,
-        }),
-      ]
-    }
-    if (action.result._tag === 'Interrupted') {
-      return [
-        event('FixApplied', {
-          runId,
-          round: outcome.round,
-          headSha: action.result.head,
-          turns: 1,
-          costUsd: null,
-          // `"<kind>: <detail>"`, the way `conduct.ts:3326` writes it — never
-          // a bare kind, which is `RunFailed.kind`'s own shape (the round-0
-          // branch above), not this one's.
-          failure: `${action.result.cause}: ${action.evidence}`,
-        }),
-      ]
-    }
-    return []
-  }
 
   return {
     runId,
@@ -179,141 +40,68 @@ export function aRun(runId: string): RunFixture {
     ended,
 
     aStepEnded(outcome: StepOutcome): Envelope[] {
-      declare(outcome)
       ended.push(outcome)
-      const envelopes: Envelope[] = [...stepsResolvedOnce()]
-      const onSha = outcome.actions[0]?.onSha ?? 'a'.repeat(40)
-      envelopes.push(...openRound(outcome.round, onSha))
-      for (const action of outcome.actions) {
-        requireRealInterruptedEvidence(action)
-        if (action.yields === 'commit') envelopes.push(...contextFor(outcome, action))
-      }
-      for (const stepEvent of eventOf(outcome, runId)) {
-        envelopes.push(event(stepEvent.type, stepEvent.data as never))
-      }
-      return envelopes
+      return [
+        event('StepStarted', { runId, step: outcome.step, round: outcome.round }),
+        event('StepEnded', { runId, outcome }),
+      ]
     },
   }
 }
 
-/** `WorkItemBlocked{hold}` — a `WaitReason` through `holdOf`, the same builder a real pass's hold goes through. */
-export function aWait(
-  itemStream: ReturnType<typeof makeStream>,
-  reason: WaitReason,
-  pass: { branch: string; base: string; findings: readonly Finding[] } = PASS,
-): Envelope[] {
-  return [itemStream('WorkItemBlocked', { hold: holdOf(reason, pass) })]
+/** `WaitStarted{waitId, reason}` — the event a real pass, `ask.ts` or `approve.ts` writes for a wait starting. */
+export function aWait(itemStream: ReturnType<typeof makeStream>, reason: WaitReason, waitId: WaitId = aWaitId()): Envelope[] {
+  return [itemStream('WaitStarted', { waitId, reason })]
 }
 
 /** 0118 §1's table of resolutions, backwards: the event a person's answer writes. */
 export function aResolution(
   itemStream: ReturnType<typeof makeStream>,
+  waitId: WaitId,
   resolution: Resolution,
-  run?: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
+  by = 'steven',
+  note = '',
 ): Envelope[] {
-  switch (resolution._tag) {
-    case 'Approve': {
-      if (run === undefined) throw new Error('aResolution(Approve, …) needs the run it approves')
-      return [
-        run.event('ApprovalGranted', {
-          step: run.step,
-          action: run.action,
-          runId: run.runId,
-          onSha: resolution.onSha,
-          by: 'steven',
-          note: 'looks right',
-        }),
-      ]
-    }
-    case 'Requeue':
-      return [itemStream('WorkItemUnblocked', { by: 'steven', note: 'requeue' })]
-    case 'EditBodyAndRequeue':
-      // No event of its own today — writes the same `WorkItemUnblocked` an
-      // ordinary requeue does (`approve.ts:555`; the design's own
-      // `Watch out`).
-      return [itemStream('WorkItemUnblocked', { by: 'steven', note: 'edited the body and requeued' })]
-    case 'AnswerQuestion':
-      return [itemStream('WorkItemUnblocked', { by: 'steven', note: resolution.choice })]
-    case 'Close':
-      return [itemStream('TicketClosed', { by: 'steven', reason: 'no longer wanted' })]
-  }
+  const written = resolution._tag === 'AnswerQuestion' ? resolution.choice : note
+  return [itemStream('WaitResolved', { waitId, by, resolution, note: written })]
 }
 
-/** A withdrawn `WorkItemUnblocked` — a person taking back an `OwnQuestion` asked before any run claimed the item. */
-export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, note = 'asked by mistake'): Envelope[] {
-  return [itemStream('WorkItemUnblocked', { by: 'steven', note, withdrawn: true })]
+/** A withdrawn wait — a person taking back an `OwnQuestion` asked before any run claimed the item, by requeuing with no note. */
+export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, waitId: WaitId): Envelope[] {
+  return [itemStream('WaitResolved', { waitId, by: 'steven', resolution: { _tag: 'Requeue' }, note: '' })]
 }
 
 /**
- * `PassRouted`, plus the `FixRequested`/`PassRestarted` it is paired with —
- * `routesOf`'s own reverse.
- *
- * `itemStream`, when given, is where `PassRestarted` is written —
- * `conduct.ts:3936`'s own `appendNow(ticketId, …)` puts it on the work
- * item's stream, never the run's, and `releaseCauseOf` reads it there
- * (`read-model.ts`). Omitted where a test only reads `routesOf`, which keys
- * `PassRestarted` by its own `data.runId` rather than by stream and so does
- * not care; there it falls back to the run's own stream as before.
+ * `PassRouted{offer, reply, decision}` — built from the candidate the route
+ * actually took, with `routeNext` run forward over it so the fixture's own
+ * `next` agrees with what `routesOf` will replay. A `Selected{restart}`
+ * decision also appends `TicketReleased{cause: Restart}` on the item stream.
  */
 export function aRoute(
   run: RunFixture,
   route: {
-    from: Step
-    to: Step | 'waiting'
-    chose?: Step | 'waiting'
-    why?: string
-    ceiling?: 'rounds' | 'restarts' | null
-    round?: number
-    restart?: number
-    of?: number
+    offer: RouteOffer
+    reply: JudgeReply
+    decision: RouteDecision
   },
   itemStream?: ReturnType<typeof makeStream>,
 ): Envelope[] {
-  const envelopes: Envelope[] = [
-    run.event('PassRouted', {
-      from: route.from,
-      chose: route.chose ?? route.to,
-      to: route.to,
-      why: route.why ?? '',
-      ceiling: route.ceiling ?? null,
-    }),
-  ]
-  if (route.to === 'design' || route.to === 'implement') {
-    envelopes.push(
-      run.event('FixRequested', {
-        runId: run.runId,
-        round: route.round ?? 1,
-        of: route.of ?? 1,
-        action: 'reviewer',
-        onSha: 'a'.repeat(40),
-        findings: [],
-      }),
-    )
-  } else if (route.to === 'claim') {
-    const append = itemStream ?? run.event
-    envelopes.push(
-      append('PassRestarted', {
-        runId: run.runId,
-        restart: route.restart ?? 1,
-        of: route.of ?? 1,
-        action: 'reviewer',
-        rounds: 0,
-        branch: 'agent/473',
-        headSha: 'a'.repeat(40),
-        findings: [],
-      }),
-    )
+  const envelopes: Envelope[] = [run.event('PassRouted', { runId: run.runId, ...route })]
+  const next = routeNext(route.offer, route.reply, route.decision, { runId: run.runId })
+  if (next._tag === 'Requeued' && next.cause._tag === 'Restart' && itemStream !== undefined) {
+    envelopes.push(itemStream('TicketReleased', { runId: run.runId, reason: 'restart', cause: next.cause }))
   }
   return envelopes
 }
 
-/** `TicketReleased` — 0120 §5's cause is read back off what came before it on the slice, never carried on the event itself. */
+/** `TicketReleased` with an explicit cause — 0120 §5's four, or `null` where none applies. */
 export function aRelease(
   itemStream: ReturnType<typeof makeStream>,
   runId: string,
   reason = 'the pass did not finish',
+  cause: ReleaseCause | null = null,
 ): Envelope[] {
-  return [itemStream('TicketReleased', { runId, reason })]
+  return [itemStream('TicketReleased', { runId, reason, cause })]
 }
 
 /** `TicketClaimed` — the claim `releaseCauseOf` looks for since the item's last release or landing. */
@@ -321,17 +109,17 @@ export function aClaim(itemStream: ReturnType<typeof makeStream>, runId: string,
   return [itemStream('TicketClaimed', { runId, worker, title: null, kind: null })]
 }
 
-/** `TicketLanded` — the merge sha `mergeResultFrom` (`read-model.ts`) reads back for a `merge` action's own `Integrated`. */
+/** `TicketLanded` — the merge sha a `merge` action's own `Integrated` is cross-checked against. */
 export function aLanding(itemStream: ReturnType<typeof makeStream>, mergeCommit: string, base = 'main'): Envelope[] {
   return [itemStream('TicketLanded', { mergeCommit, base })]
 }
 
-/** `IntegrationRefused` — the three optional fields `mergeResultFrom` reads back for a `Conflicted`/`IntegrationRefused` result. */
+/** `IntegrationRefused` — since #502 carries only `reason`/`detail`; the three conflict fields moved to the merge action's own `Conflicted` result. */
 export function anIntegrationRefusal(
   integrationStream: ReturnType<typeof makeStream>,
   ticketId: string,
   branch: string,
-  refusal: { reason: string; detail?: string; paths?: string[]; baseSha?: string; headSha?: string },
+  refusal: { reason: string; detail?: string },
 ): Envelope[] {
   return [
     integrationStream('IntegrationRefused', {
@@ -339,106 +127,19 @@ export function anIntegrationRefusal(
       branch,
       reason: refusal.reason,
       detail: refusal.detail ?? '',
-      ...(refusal.paths === undefined ? {} : { paths: refusal.paths }),
-      ...(refusal.baseSha === undefined ? {} : { baseSha: refusal.baseSha }),
-      ...(refusal.headSha === undefined ? {} : { headSha: refusal.headSha }),
     } as never),
   ]
 }
 
-/** A bare `RunRef` — `{runId}` — for a `WaitReason`/`Hold` that needs one and nothing more; not an appender, `aRun` is what opens a stream. */
+/** A bare `RunRef` — `{runId}` — for a `WaitReason` that needs one and nothing more; not an appender, `aRun` is what opens a stream. */
 export function aRunRef(runId: string): RunRef {
   return { runId }
 }
 
-/** `FixDeclined` — no writer in `src` today (`events.ts:1339`'s schema, never appended). */
-export function aFixDeclined(run: RunFixture, round: number, why: string): Envelope[] {
-  return [run.event('FixDeclined', { runId: run.runId, round, action: 'reviewer', why, findings: [] })]
+/** One `Action`, filled in with a `NotReached` default's siblings — a convenience for building a `StepOutcome` by hand in a test. */
+export function anOutcome(step: Step, round: number, actions: Action[]): StepOutcome {
+  if (!STEPS.includes(step)) throw new Error(`anOutcome: "${step}" is not one of the ten steps`)
+  return { step, round, actions }
 }
 
-/** `ApprovalRevoked` — no writer in `src` today. */
-export function anApprovalRevoked(
-  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
-  onSha: string,
-  by = 'steven',
-): Envelope[] {
-  return [
-    run.event('ApprovalRevoked', {
-      step: run.step,
-      action: run.action,
-      runId: run.runId,
-      onSha,
-      by,
-      reason: 'withdrawn',
-    }),
-  ]
-}
-
-/** `RepairRequested` — retired by `#143`; no writer in `src` today, and `store.append` refuses it for a real caller. */
-export function aRepairRequested(
-  itemStream: ReturnType<typeof makeStream>,
-  runId: string,
-  reason: RefusalReason = 'verify-failed',
-) {
-  return [
-    itemStream('RepairRequested', { runId, reason, detail: 'policy: exit 1', fingerprint: '0123456789ab', attempt: 1 }),
-  ]
-}
-
-/** `StepWaived` — a person's override of a refusing check; no writer in `src` today. */
-export function aStepWaived(
-  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
-  onSha: string,
-  by: string,
-  reason: string,
-): Envelope[] {
-  return [run.event('StepWaived', { step: run.step, action: run.action, runId: run.runId, onSha, by, reason })]
-}
-
-/** `ApprovalGranted` carrying the fixture's own actor — `aResolution`'s `Approve` case hardcodes `by: 'steven'`/`note: 'looks right'`. */
-export function anApprovalGranted(
-  run: { event: ReturnType<typeof makeStream>; step: Step; action: string; runId: string },
-  onSha: string,
-  by = 'steven',
-  note = '',
-): Envelope[] {
-  return [run.event('ApprovalGranted', { step: run.step, action: run.action, runId: run.runId, onSha, by, note })]
-}
-
-/** `FixRequested` with an explicit `of` — `aStepEnded`'s own `openRound` hardcodes `of: round`. */
-export function aFixRound(
-  run: { event: ReturnType<typeof makeStream>; runId: string },
-  round: number,
-  of: number,
-  action: string,
-  onSha: string,
-  findings: Finding[] = [],
-): Envelope[] {
-  return [run.event('FixRequested', { runId: run.runId, round, of, action, onSha, findings })]
-}
-
-/** `FixApplied` with an explicit cost/turns — `aStepEnded`'s own `contextFor` hardcodes `turns: 1, costUsd: null`. */
-export function aFixApplied(
-  run: { event: ReturnType<typeof makeStream>; runId: string },
-  round: number,
-  headSha: string | null,
-  turns: number,
-  costUsd: number | null,
-  failure: string | null = null,
-): Envelope[] {
-  return [run.event('FixApplied', { runId: run.runId, round, headSha, turns, costUsd, failure })]
-}
-
-/** `WorkItemUnblocked` carrying the fixture's own actor — `aResolution`'s cases hardcode `by: 'steven'`. */
-export function anAnswer(itemStream: ReturnType<typeof makeStream>, by: string, note: string): Envelope[] {
-  return [itemStream('WorkItemUnblocked', { by, note })]
-}
-
-/**
- * `WorkItemBlocked{hold}`, the `Hold` pinned directly rather than built from a
- * `WaitReason` — for the shapes a `WaitReason` cannot produce at all (see the
- * callers' own comments on why each one is dead).
- */
-export function aLegacyHold(itemStream: ReturnType<typeof makeStream>, hold: Hold): Envelope[] {
-  return [itemStream('WorkItemBlocked', { hold })]
-}
+export type { RefusalReason }

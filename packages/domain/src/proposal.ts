@@ -18,6 +18,30 @@ import { z } from 'zod'
 
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
+/**
+ * **The twelve reasons a pass arrives at `proposed`**, which is what a
+ * `judge:` entry's `when:` names — moved here from `hold.ts` by #502, since
+ * `hold.ts` is deleted with the switch and `SpentFor`'s `Judge` variant
+ * (`events.ts`) still needs this as a value import. See `hold.ts`'s former
+ * header (git history) for the full history of this enum; the values
+ * themselves are unchanged.
+ */
+export const JudgeWhen = z.enum([
+  'red',
+  'verify-failed',
+  'conflict',
+  'needs-input',
+  'findings',
+  'setup-refused',
+  'check-refused',
+  'answer-unreadable',
+  'nothing-produced',
+  'fixer-disagrees',
+  'merge-refused',
+  'budget-exhausted',
+])
+export type JudgeWhen = z.infer<typeof JudgeWhen>
+
 /** `build`'s own refusal, with the rounds spent (0120 §2 table). */
 export const BuildRed = z.object({ _tag: z.literal('BuildRed'), output: z.string() })
 export type BuildRed = z.infer<typeof BuildRed>

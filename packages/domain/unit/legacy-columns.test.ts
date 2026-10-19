@@ -1,16 +1,16 @@
 /**
- * `legacyColumns` against one example of each of `Hold`'s ten variants —
- * the Done-when #445 is held to: *the values the fold wrote before.*
+ * `legacyColumns` against one example of each of `WaitReason`'s variants —
+ * the values a card showed before 0118's model replaced `Hold` (#502).
  */
 import { describe, expect, it } from 'vitest'
 
-import type { Hold } from '../src/hold.ts'
 import { legacyColumns } from '../src/legacy-columns.ts'
+import type { WaitReason } from '../src/wait.ts'
 
 describe('legacyColumns', () => {
-  it('reads a Question bare — no run, no step to prefix with', () => {
-    const hold: Hold = { _tag: 'Question', question: 'which design?', by: 'human:steven' }
-    expect(legacyColumns(hold)).toEqual({
+  it('reads an OwnQuestion bare — no run, no step to prefix with', () => {
+    const reason: WaitReason = { _tag: 'OwnQuestion', question: 'which design?', by: 'human:steven' }
+    expect(legacyColumns(reason)).toEqual({
       question: 'which design?',
       runId: null,
       asked: true,
@@ -20,9 +20,9 @@ describe('legacyColumns', () => {
     })
   })
 
-  it('composes the step prefix for Asked, from the run it belongs to', () => {
-    const hold: Hold = { _tag: 'Asked', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' }
-    const cols = legacyColumns(hold)
+  it('composes the step prefix for AgentQuestion, from the run it belongs to', () => {
+    const reason: WaitReason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' }
+    const cols = legacyColumns(reason)
     expect(cols.question).toBe('the `design` step asked: which base?')
     expect(cols.runId).toBe('pass-1')
     expect(cols.needs).toBe('judgement')
@@ -34,93 +34,87 @@ describe('legacyColumns', () => {
     })
   })
 
-  it('composes the step prefix for Human, and recommends approve only at merge', () => {
-    const declared: Hold = {
-      _tag: 'Human',
+  it('composes the step prefix for SignoffRequired, and recommends approve only at merge with no live findings', () => {
+    const declared: WaitReason = {
+      _tag: 'SignoffRequired',
       run: { runId: 'pass-1' },
       step: 'proposed',
-      source: 'declared',
+      action: 'sign-off',
       question: 'go ahead?',
     }
     expect(legacyColumns(declared).question).toBe('the `proposed` step held: go ahead?')
     expect(legacyColumns(declared).diagnosis?.recommendation).toBeNull()
 
-    const injected: Hold = {
-      _tag: 'Human',
+    const injected: WaitReason = {
+      _tag: 'SignoffRequired',
       run: { runId: 'pass-1' },
       step: 'merge',
-      source: 'injected',
+      action: 'no-merge',
       question: '--no-merge',
     }
-    expect(legacyColumns(injected).diagnosis?.recommendation).toEqual({
+    expect(legacyColumns(injected, { branch: '', base: '', findings: [] }).diagnosis?.recommendation).toEqual({
       action: 'approve',
       why: 'every step passed on this diff; approving merges what this run produced',
     })
   })
 
-  it('vetoes the merge recommendation on a Human carrying a live finding', () => {
+  it('vetoes the merge recommendation on a SignoffRequired carrying a live finding', () => {
     const finding = { severity: 'major' as const, file: 'x.ts', line: 4, claim: 'claim', failureScenario: 'scenario' }
-    const hold: Hold = {
-      _tag: 'Human',
+    const reason: WaitReason = {
+      _tag: 'SignoffRequired',
       run: { runId: 'pass-1' },
       step: 'merge',
-      source: 'injected',
+      action: 'no-merge',
       question: '--no-merge',
-      findings: [finding],
     }
-    expect(legacyColumns(hold).diagnosis?.recommendation).toBeNull()
+    expect(legacyColumns(reason, { branch: '', base: '', findings: [finding] }).diagnosis?.recommendation).toBeNull()
   })
 
-  it('composes the step prefix for Declined, with needs judgement and no recommendation', () => {
-    const hold: Hold = {
-      _tag: 'Declined',
+  it('composes the step prefix for FixerDisagrees, with needs judgement and no recommendation', () => {
+    const reason: WaitReason = {
+      _tag: 'FixerDisagrees',
       run: { runId: 'pass-1' },
-      step: 'implement',
       said: 'the findings describe a tradeoff, not a bug',
     }
-    const cols = legacyColumns(hold)
+    const cols = legacyColumns(reason)
     expect(cols.question).toBe('the `implement` step declined: the findings describe a tradeoff, not a bug')
     expect(cols.needs).toBe('judgement')
     expect(cols.diagnosis?.recommendation).toBeNull()
   })
 
-  it('names Declined with a generic line when the fixing agent said nothing', () => {
-    const hold: Hold = { _tag: 'Declined', run: { runId: 'pass-1' }, step: 'implement', said: null }
-    expect(legacyColumns(hold).question).toBe('the `implement` step declined: the fixing agent committed nothing')
+  it('names FixerDisagrees with a generic line when the fixing agent said nothing', () => {
+    const reason: WaitReason = { _tag: 'FixerDisagrees', run: { runId: 'pass-1' }, said: null }
+    expect(legacyColumns(reason).question).toBe('the `implement` step declined: the fixing agent committed nothing')
   })
 
-  it('keeps Routed.why as the composed line, since branch/base are not on a Hold', () => {
-    const hold: Hold = {
-      _tag: 'Routed',
+  it('composes the ProposedEscalated/ReviewFindings line, since branch/base are not on a WaitReason alone', () => {
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
       run: { runId: 'pass-1' },
-      when: 'findings',
-      why: 'agent/1 into main is waiting on you. a blocker was found',
-      raw: 'a blocker was found',
-      findings: [{ severity: 'blocker', file: 'x.ts', line: 1, claim: 'c', failureScenario: 's' }],
-      paths: null,
-      baseSha: null,
-      headSha: null,
+      proposal: { _tag: 'ReviewFindings', findings: [{ severity: 'blocker', file: 'x.ts', line: 1, claim: 'c', failureScenario: 's' }] },
+      because: { _tag: 'NotAsked' },
     }
-    const cols = legacyColumns(hold)
-    expect(cols.question).toBe('agent/1 into main is waiting on you. a blocker was found')
+    const cols = legacyColumns(reason, { branch: 'agent/1', base: 'main', findings: [] })
+    expect(cols.question).toBe('agent/1 into main is waiting on you. c')
     expect(cols.needs).toBe('judgement')
-    // A live finding vetoes the good-hold recommendation.
+    // A live finding vetoes the good-wait recommendation.
     expect(cols.diagnosis?.recommendation).toBeNull()
   })
 
-  it('reads a Routed conflict through diagnoseRefusal, same as MergeRefused carries for the same reason', () => {
-    const hold: Hold = {
-      _tag: 'Routed',
+  it('reads a ProposedEscalated/MergeConflict through diagnoseRefusal, same as MergeRefused carries for the same reason', () => {
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
       run: { runId: 'pass-1' },
-      when: 'conflict',
-      why: 'agent/1 into main is waiting on you. CONFLICT (content): Merge conflict in a.ts',
-      raw: 'CONFLICT (content): Merge conflict in a.ts',
-      findings: [],
-      paths: ['a.ts'],
-      baseSha: 'a'.repeat(40),
-      headSha: 'b'.repeat(40),
+      proposal: {
+        _tag: 'MergeConflict',
+        output: 'CONFLICT (content): Merge conflict in a.ts',
+        paths: ['a.ts'],
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+      },
+      because: { _tag: 'NotAsked' },
     }
-    const cols = legacyColumns(hold)
+    const cols = legacyColumns(reason, { branch: 'agent/1', base: 'main', findings: [] })
     expect(cols.diagnosis?.recommendation).toEqual({
       action: 'requeue',
       why: 'it is cut from a base that has since moved, so a fresh attempt starts from where the base is now',
@@ -128,108 +122,91 @@ describe('legacyColumns', () => {
     expect(cols.diagnosis?.done).toContain('No agent was bought')
   })
 
-  it('reads a Routed verify-failed through diagnoseRefusal, with no recommendation', () => {
-    const hold: Hold = {
-      _tag: 'Routed',
+  it('reads a ProposedEscalated/VerifyRed through diagnoseRefusal, with no recommendation', () => {
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
       run: { runId: 'pass-1' },
-      when: 'verify-failed',
-      why: 'agent/1 into main is waiting on you. exit 2',
-      raw: 'exit 2',
-      findings: [],
-      paths: null,
-      baseSha: null,
-      headSha: null,
+      proposal: { _tag: 'VerifyRed', output: 'exit 2' },
+      because: { _tag: 'NotAsked' },
     }
-    const cols = legacyColumns(hold)
+    const cols = legacyColumns(reason, { branch: 'agent/1', base: 'main', findings: [] })
     expect(cols.diagnosis?.recommendation).toBeNull()
     expect(cols.diagnosis?.done).toContain('No agent was bought')
   })
 
-  it('recommends approve on a Routed carrying no findings', () => {
-    const hold: Hold = {
-      _tag: 'Routed',
+  it('recommends approve on a ProposedEscalated/ReviewEmpty carrying no findings', () => {
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
       run: { runId: 'pass-1' },
-      when: 'findings',
-      why: 'agent/1 into main is waiting on you.',
-      raw: null,
-      findings: [],
-      paths: null,
-      baseSha: null,
-      headSha: null,
+      proposal: { _tag: 'ReviewEmpty', said: '', findings: [] },
+      because: { _tag: 'NotAsked' },
     }
-    expect(legacyColumns(hold).diagnosis?.recommendation).toEqual({
+    expect(legacyColumns(reason, { branch: 'agent/1', base: 'main', findings: [] }).diagnosis?.recommendation).toEqual({
       action: 'approve',
       why: 'every step passed on this diff; approving merges what this run produced',
     })
   })
 
-  it('composes the step prefix for CheckRed, with needs acknowledgement', () => {
-    const hold: Hold = {
-      _tag: 'CheckRed',
+  it('composes the step prefix for CheckRefused, with needs acknowledgement', () => {
+    const reason: WaitReason = {
+      _tag: 'CheckRefused',
       run: { runId: 'pass-1' },
-      step: 'build',
-      why: 'pnpm test exited 2',
-      raw: null,
+      step: 'merge',
+      action: 'check',
+      evidence: 'pnpm test exited 2',
+      findings: [],
     }
-    const cols = legacyColumns(hold)
-    expect(cols.question).toBe('the `build` step refused: pnpm test exited 2')
+    const cols = legacyColumns(reason)
+    expect(cols.question).toBe('the `merge` step refused: pnpm test exited 2')
     expect(cols.needs).toBe('acknowledgement')
     expect(cols.diagnosis?.recommendation).toBeNull()
   })
 
-  it('composes the step prefix for DidNotFinish, with its own word', () => {
-    const hold: Hold = {
-      _tag: 'DidNotFinish',
+  it('composes the step prefix for AgentCrashed, with its own word', () => {
+    const reason: WaitReason = {
+      _tag: 'AgentCrashed',
       run: { runId: 'pass-1' },
       step: 'implement',
-      why: 'the agent crashed',
-      raw: 'Error: boom',
+      cause: 'crash',
+      detail: 'the agent crashed',
     }
-    expect(legacyColumns(hold).question).toBe('the `implement` step did-not-finish: the agent crashed')
+    expect(legacyColumns(reason).question).toBe('the `implement` step did-not-finish: the agent crashed')
   })
 
   it('composes the step prefix for SetupRefused', () => {
-    const hold: Hold = {
+    const reason: WaitReason = {
       _tag: 'SetupRefused',
       run: { runId: 'pass-1' },
       step: 'prepared',
-      lifts: 'person',
+      action: 'cold-reviewer',
       why: 'the cold reviewer had no settings file',
-      raw: 'ENOSPC',
     }
-    const cols = legacyColumns(hold)
+    const cols = legacyColumns(reason)
     expect(cols.question).toBe('the `prepared` step refused: the cold reviewer had no settings file')
-    expect(cols.diagnosis?.raw).toBe('ENOSPC')
+    expect(cols.diagnosis?.raw).toBe('the cold reviewer had no settings file')
   })
 
   it("keeps MergeRefused's own `reason: raw` line, unprefixed by a step", () => {
-    const hold: Hold = {
+    const reason: WaitReason = {
       _tag: 'MergeRefused',
       run: { runId: 'pass-1' },
-      reason: 'conflict',
-      why: 'the branch does not merge into main',
-      raw: 'CONFLICT (content): Merge conflict in a.ts',
-      paths: ['a.ts'],
-      baseSha: 'a'.repeat(40),
-      headSha: 'b'.repeat(40),
-      afterApproval: false,
+      reason: 'dirty-base',
+      raw: 'the branch does not merge into main',
     }
-    const cols = legacyColumns(hold)
-    expect(cols.question).toBe('conflict: CONFLICT (content): Merge conflict in a.ts')
+    const cols = legacyColumns(reason)
+    expect(cols.question).toBe('dirty-base: the branch does not merge into main')
     expect(cols.needs).toBe('acknowledgement')
-    expect(cols.diagnosis?.raw).toBe('CONFLICT (content): Merge conflict in a.ts')
+    expect(cols.diagnosis?.raw).toBe('the branch does not merge into main')
   })
 
-  it("keeps Ceiling's own `kind: detail` line, and recommends requeue", () => {
-    const hold: Hold = {
-      _tag: 'Ceiling',
+  it("keeps BudgetExhausted's own `cause: detail` line, and recommends requeue", () => {
+    const reason: WaitReason = {
+      _tag: 'BudgetExhausted',
       run: { runId: 'pass-1' },
-      kind: 'out-of-turns',
+      cause: 'out-of-turns',
       detail: '151 turns, and the recipe allows 151',
-      turns: 151,
-      costUsd: 20.81,
     }
-    const cols = legacyColumns(hold)
+    const cols = legacyColumns(reason)
     expect(cols.question).toBe('out-of-turns: 151 turns, and the recipe allows 151')
     expect(cols.diagnosis?.what).toContain('scope alarm')
     expect(cols.diagnosis?.recommendation).toEqual({
@@ -239,28 +216,18 @@ describe('legacyColumns', () => {
   })
 
   it('appends the unpushed parenthetical to diagnosis.what, never to question', () => {
-    const hold: Hold = {
-      _tag: 'CheckRed',
+    const reason: WaitReason = {
+      _tag: 'CheckRefused',
       run: { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'stale info' } },
-      step: 'build',
-      why: 'pnpm test exited 2',
-      raw: null,
+      step: 'merge',
+      action: 'check',
+      evidence: 'pnpm test exited 2',
+      findings: [],
     }
-    const cols = legacyColumns(hold)
-    expect(cols.question).toBe('the `build` step refused: pnpm test exited 2')
+    const cols = legacyColumns(reason)
+    expect(cols.question).toBe('the `merge` step refused: pnpm test exited 2')
     expect(cols.diagnosis?.what).toBe(
-      'the `build` step refused: pnpm test exited 2 (and agent/1 was not pushed: stale info)',
+      'the `merge` step refused: pnpm test exited 2 (and agent/1 was not pushed: stale info)',
     )
-  })
-
-  it('names the refusal repairOf answered, not the run id that answered it', () => {
-    const hold: Hold = {
-      _tag: 'CheckRed',
-      run: { runId: 'pass-1', repairOf: { after: 'pass-1978cb64-abcd', reason: 'red' } },
-      step: 'build',
-      why: 'pnpm test exited 2',
-      raw: null,
-    }
-    expect(legacyColumns(hold).diagnosis?.done).toBe('a repair for red produced this diff')
   })
 })

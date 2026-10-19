@@ -19,10 +19,11 @@
  * all three aggregates; assembling it is the board projection's job, not this
  * function's.
  */
+import type { WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockDiagnosis, PayloadOf, Tier } from './events.ts'
-import type { Hold } from './hold.ts'
 import { legacyColumns } from './legacy-columns.ts'
+import type { WaitReason } from './wait.ts'
 
 export type WorkItemLifecycle =
   | { status: 'backlog' }
@@ -36,8 +37,10 @@ export type WorkItemLifecycle =
   | { status: 'claimed'; runId: string; worker: string }
   | {
       status: 'blocked'
-      /** The `Hold` this block is, since #445 — what the event actually carries. */
-      hold: Hold
+      /** This wait's own id — `WaitTriaged`/`WaitResolved` are keyed by it (0118 §1). */
+      waitId: WaitId
+      /** The `WaitReason` this block is, since #502 — what the event actually carries. */
+      reason: WaitReason
       /** The question, not just the fact. `agent:blocked` carried no question. */
       question: string
       /** `schema` was here and never written; see `legacyColumns`. */
@@ -68,24 +71,19 @@ export type WorkItemLifecycle =
 export type WorkItemStatus = WorkItemLifecycle['status']
 
 /**
- * An approach this ticket abandoned, as `PassRestarted` recorded it.
+ * An approach this ticket abandoned, as `TicketReleased{cause: Restart}`
+ * records it (#502). `after` is the pass whose rounds were spent, not the
+ * pass that will try the next approach — the second does not exist yet when
+ * this is written down.
  *
- * `after` is the pass whose rounds were spent, not the pass that will try the
- * next approach — the second does not exist yet when this is written down.
- *
- * `findings` is the arm's own, and the reason this is a record rather than a
- * count: the person asked when the last restart is spent is shown every arm
- * (0040 §3), and each arm's refusal lives on a run stream no later pass reads.
+ * **What `PassRestarted` also carried — the branch, its head, the findings
+ * still live — is not repeated here.** It is on the previous run's own
+ * stream, which the next prompt already reads (`attempts.ts`'s `lastRun`),
+ * so there is no second copy to keep in step with it.
  */
 export interface RestartRecord {
   after: string
   restart: number
-  of: number
-  action: string
-  rounds: number
-  branch: string
-  headSha: string
-  findings: PayloadOf<'PassRestarted'>['findings']
 }
 
 /**
@@ -213,8 +211,8 @@ export const emptyWorkItem: WorkItemState = {
 const LIFECYCLE_EVENTS = new Set([
   'TicketClaimed',
   'TicketReleased',
-  'WorkItemBlocked',
-  'WorkItemUnblocked',
+  'WaitStarted',
+  'WaitResolved',
   'TicketLanded',
   'TicketClosed',
 ])
@@ -279,30 +277,6 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'PassRestarted': {
-      const d = event.data as PayloadOf<'PassRestarted'>
-      // The lifecycle is untouched: a restart is not a state an item is in — the
-      // release that follows this puts it back in the queue, and being queued is
-      // the state.
-      return {
-        ...state,
-        ...at,
-        restarts: [
-          ...state.restarts,
-          {
-            after: d.runId,
-            restart: d.restart,
-            of: d.of,
-            action: d.action,
-            rounds: d.rounds,
-            branch: d.branch,
-            headSha: d.headSha,
-            findings: d.findings,
-          },
-        ],
-      }
-    }
-
     case 'PromptEdited': {
       const d = event.data as PayloadOf<'PromptEdited'>
       // The lifecycle is untouched. An edit is about *what to do*, not about
@@ -322,21 +296,36 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'TicketReleased':
+    case 'TicketReleased': {
+      const d = event.data as PayloadOf<'TicketReleased'>
       // The only way back to the queue. A claim does not lapse (0027), so every
       // return is an append somebody made — including the one a conductor makes
       // at startup for a claim its predecessor died holding.
-      return { ...state, ...at, lifecycle: { status: 'backlog' } }
+      //
+      // A `Restart` cause also records the abandoned arm (#502 — `PassRestarted`
+      // used to do this, on the run that spent its rounds, immediately before
+      // this same release).
+      return {
+        ...state,
+        ...at,
+        lifecycle: { status: 'backlog' },
+        restarts:
+          d.cause?._tag === 'Restart'
+            ? [...state.restarts, { after: d.runId, restart: d.cause.restart }]
+            : state.restarts,
+      }
+    }
 
-    case 'WorkItemBlocked': {
-      const d = event.data as PayloadOf<'WorkItemBlocked'>
-      const legacy = legacyColumns(d.hold)
+    case 'WaitStarted': {
+      const d = event.data as PayloadOf<'WaitStarted'>
+      const legacy = legacyColumns(d.reason)
       return {
         ...state,
         ...at,
         lifecycle: {
           status: 'blocked',
-          hold: d.hold,
+          waitId: d.waitId,
+          reason: d.reason,
           question: legacy.question,
           needsFrom: legacy.needsFrom,
           runId: legacy.runId,
@@ -346,15 +335,25 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'WorkItemUnblocked': {
-      const d = event.data as PayloadOf<'WorkItemUnblocked'>
+    case 'WaitResolved': {
+      const d = event.data as PayloadOf<'WaitResolved'>
       // The answer is kept, and that is the whole of #147's fold change: this
       // case used to return to the backlog and drop `note` on the floor, so the
       // log held the decision and no state, projection or prompt could say it.
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
-      // A question withdrawn was never answered, so there is nothing to keep:
+      // A question withdrawn was never answered (an `OwnQuestion` resolved by
+      // `Requeue` rather than `AnswerQuestion`), so there is nothing to keep:
       // the item is back in the backlog and no attempt is told anything.
-      if (d.withdrawn === true) return { ...state, ...at, lifecycle: { status: 'backlog' } }
+      if (d.resolution._tag === 'Requeue' && block?.reason._tag === 'OwnQuestion') {
+        return { ...state, ...at, lifecycle: { status: 'backlog' } }
+      }
+      // `Close`/`Approve` do not return the item to the backlog on their own —
+      // `TicketClosed`/`TicketLanded` (or a continued run, #465) say what
+      // actually happened — so only the resolutions that are themselves a
+      // requeue move the lifecycle here.
+      if (d.resolution._tag !== 'Requeue' && d.resolution._tag !== 'EditBodyAndRequeue' && d.resolution._tag !== 'AnswerQuestion') {
+        return { ...state, ...at }
+      }
       return {
         ...state,
         ...at,
@@ -412,32 +411,4 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
 
 export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
   return events.reduce(applyWorkItem, emptyWorkItem)
-}
-
-/**
- * A repair the old code bought and no claim has consumed yet — **read off a log
- * written before `#143`**, and never produced by this build.
- *
- * Deliberately not a field of `WorkItemState`. The fold treats the retired
- * `RepairRequested` as a version bump, so nothing new can depend on it; this is
- * the one question that still has to be asked of an old stream, and only at the
- * seam a deploy crosses: the old code appended the request and released the
- * item, and the new code is what claims it. Without this that claim is an
- * ordinary pass — backed off, told nothing it was bought to be told, and free
- * to merge unattended where the repair it was released for would have asked.
- *
- * The last `RepairRequested` after the last `TicketClaimed`, or null.
- */
-export function retiredRepairPending(
-  events: readonly Envelope[],
-): { after: string; reason: string; detail: string; attempt: number } | null {
-  let pending: { after: string; reason: string; detail: string; attempt: number } | null = null
-  for (const event of events) {
-    if (event.type === 'TicketClaimed') pending = null
-    if (event.type === 'RepairRequested') {
-      const d = event.data as PayloadOf<'RepairRequested'>
-      pending = { after: d.runId, reason: d.reason, detail: d.detail, attempt: d.attempt }
-    }
-  }
-  return pending
 }

@@ -17,10 +17,10 @@
  */
 import { z } from 'zod'
 
-import { WaitId } from './action.ts'
-import { Hold, JudgeWhen } from './hold.ts'
+import { StepOutcome, WaitId } from './action.ts'
+import { JudgeWhen } from './proposal.ts'
+import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
-import { TriageResult } from './triage.ts'
 import {
   Finding,
   RefusalReason,
@@ -32,6 +32,7 @@ import {
   STEPS,
   WIP_COMMIT_PREFIX,
 } from './vocabulary.ts'
+import { Resolution, TriageResult, WaitReason } from './wait.ts'
 
 export {
   Finding,
@@ -211,7 +212,24 @@ export const TicketClaimed = z.object({
   kind: z.string().nullable(),
 })
 
-export const TicketReleased = z.object({ runId: z.string(), reason: z.string() })
+/**
+ * Why a work item was released back to the queue — 0120 §5's four causes,
+ * folded from the work item's own `TicketReleased.cause` rather than
+ * re-derived from whatever else sits beside it on the stream.
+ *
+ * `Restart` and `NeverStarted` are `pass-next.ts`'s own `RequeueCause`
+ * variants, spread in rather than redeclared, so the two schemas cannot say
+ * two different things about one tag.
+ */
+export const ReleaseCause = z.discriminatedUnion('_tag', [
+  z.object({ _tag: z.literal('Restart'), restart: z.number().int() }),
+  z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) }),
+  z.object({ _tag: z.literal('ByPerson'), waitId: WaitId }),
+  z.object({ _tag: z.literal('ClaimUnconfirmed') }),
+])
+export type ReleaseCause = z.infer<typeof ReleaseCause>
+
+export const TicketReleased = z.object({ runId: z.string(), reason: z.string(), cause: ReleaseCause.nullable() })
 
 /**
  * What to do about a block, in the vocabulary of the controls that exist.
@@ -261,49 +279,38 @@ export const BlockDiagnosis = z.object({
 export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
 
 /**
- * What happened, carried as the `Hold` it is and nothing beside it (#445,
- * 0118 §1).
+ * A wait started — 0118 §1's model, on the log directly rather than through
+ * the `Hold` translation the phase-1 read model used to need (#502, 0120
+ * phase 2).
  *
  * **Strict, deliberately.** zod 4 strips unknown keys from a plain
- * `z.object`, so a payload carrying `needsFrom`, `question`, `needs` or
- * `diagnosis` beside `hold` would parse silently and the Done-when's own
- * claim — *refuses a payload carrying `needs`, `question` or `diagnosis`
- * beside it* — would pass while proving nothing.
+ * `z.object`, so a payload carrying a second shape beside `reason` would
+ * parse silently.
  *
- * **Reset, not upcast.** This replaced `{question, needsFrom, runId, needs,
- * diagnosis}` in place: there is no v3 and no upcaster from v2, because
- * before 1.0 the log is reset rather than carried forward (0118 §1,
- * `2bfd7a06`). An old row now fails this zod parse rather than folding with
- * stale fields; refusing it by name, at daemon start, `lingtai doctor` and
- * `lingtai projection rebuild`, rather than failing partway through a fold,
- * is what #451 built — `blockPredatesHold` below. #441 changed `MergeRefused`
- * in place the same way, adding `afterApproval` with no upcaster, for the
- * same reason.
- *
- * `needsFrom` is gone rather than moved: every appender wrote `'human'`
- * (`'external'` had no writer), so it carried no information once `hold`
- * exists — a reader that still wants it reads `legacyColumns(hold).needsFrom`,
- * which is `'human'` for every variant.
+ * **Reset, not upcast.** There is no upcaster from `WorkItemBlocked`: before
+ * 1.0 the log is reset rather than carried forward (0118 §1). `waitId` is
+ * minted by the writer (`conduct.ts`, `ask.ts`, `approve.ts`) — a UUID, the
+ * way a run id is.
  */
-export const WorkItemBlocked = z.strictObject({
-  hold: Hold,
+export const WaitStarted = z.strictObject({
+  waitId: WaitId,
+  reason: WaitReason,
 })
 
 /**
- * A person answered the block. `note` **is** the answer — `lingtai answer`'s
+ * A person answered the wait. `note` **is** the answer — `lingtai answer`'s
  * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
  *
- * **`withdrawn`, when a question asked before any run is taken back** rather
- * than answered — `lingtai requeue` on it. `note` is then why it was withdrawn,
- * and the fold keeps no answer: *asked by mistake, ignore* is not a decision
- * any attempt should be told to build. Absent on every other unblock, which is
- * every one written before it existed.
+ * `resolution` is 0118 §1's own `Resolution` — `Approve`, `Requeue`,
+ * `EditBodyAndRequeue`, `AnswerQuestion` or `Close` — so which move a person
+ * made is a value rather than re-derived from which other event followed.
  */
-export const WorkItemUnblocked = z.object({
+export const WaitResolved = z.object({
+  waitId: WaitId,
   by: z.string(),
+  resolution: Resolution,
   note: z.string(),
-  withdrawn: z.literal(true).optional(),
 })
 
 /**
@@ -623,13 +630,14 @@ export const RunKeptUncommitted = z.object({
 /** The moment the gate pipeline fires. */
 export const RunProposedCompletion = z.object({ headSha: z.string() })
 
+/**
+ * `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source,
+ * `RunSpent`, and this type carried a second price for the same call.
+ */
 export const RunFinished = z.object({
   exitCode: z.number().int(),
   turns: z.number().int(),
   durationMs: z.number().int(),
-  costUsd: z.number().nullable(),
-  /** What the run billed, by the runtime's own counts (0110 §3). Absent, never zero. */
-  usage: Usage.optional(),
 })
 
 /**
@@ -750,8 +758,6 @@ export type RunSpent = z.infer<typeof RunSpent>
  * keep doing so: it spreads into `parsePayload`, which takes `unknown`, so a
  * drift between the two compiles and is refused at append time.
  */
-const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.string() }
-
 /**
  * The plan for a run: all ten steps, and what will run at each.
  *
@@ -856,8 +862,17 @@ export const EndActionsResolved = z.object({
   ),
 })
 
-export const StepRequested = z.object(stepBase)
-export const StepStarted = z.object(stepBase)
+/**
+ * One step begins — once per step, never once per action (`StepRequested`,
+ * the per-action event this replaced, is gone with it: the run log carries
+ * which action is running, `lingtai attach`).
+ */
+export const StepStarted = z.object({
+  runId: z.string(),
+  step: Step,
+  /** This pass's own count of the rounds it has bought, 0 on the first lap. */
+  round: z.number().int(),
+})
 
 /**
  * How bad a defect is, **worst first**.
@@ -902,12 +917,6 @@ export const StepStarted = z.object(stepBase)
  * nothing to say carries an empty array, never an absent field
  * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
  */
-export const StepPassed = z.object({
-  ...stepBase,
-  evidence: z.string(),
-  findings: z.array(Finding),
-})
-
 /**
  * **What a refusal is about: these lines, or this approach** (`#223`, `#293`).
  *
@@ -937,7 +946,7 @@ export type RefusedAbout = (typeof REFUSED_ABOUT)[number]
  * **What a cold review answers, as a schema rather than a sentence** (`#369`).
  *
  * `Finding.strict()` rather than `Finding` itself: `Finding` still has to parse
- * a stored `StepPassed`/`StepFailed` payload above, and tightening it in place
+ * a stored `StepEnded` payload's own findings, and tightening it in place
  * would refuse an old event the moment a key it never carried arrived on a new
  * one. This is a derived, stricter copy made for a runtime flag to carry, never
  * for the log to be read against.
@@ -973,179 +982,28 @@ export const REVIEW_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
   return schema
 })()
 
-export const StepFailed = z.object({
-  ...stepBase,
-  evidence: z.string(),
-  findings: z.array(Finding),
-  /**
-   * **The action's answer could not be read at all** — absent on every failure
-   * where it could, which is every failure written before this existed (`#279`).
-   *
-   * *Could not read it* and *read it, it was empty* are two outcomes and the log
-   * carried one shape for both: `#269`'s third review answered four findings one
-   * closing brace short of valid JSON, `parseFindings` refused it, and the event
-   * said `findings: []` — which is also what a reviewer with nothing to say
-   * writes. `proposed` then held the pass as *carries nothing an agent could be
-   * held to*, a sentence that is correct about what it was handed and wrong about
-   * what happened, and $8.97 of review went in the bin with no round bought.
-   *
-   * Present and `true` only, for `WorkItemUnblocked.withdrawn`'s reason: a
-   * boolean on every row would need a third value for the failures that have no
-   * answer to parse — a red `run:` command does not — and *absent* already says
-   * that without a schema step over a log full of rows this is not a claim about.
-   *
-   * It is not `evidence`. That sentence has said *the reviewer's answer was not
-   * readable as findings* all along, and a sentence is not something a fold or a
-   * router reads (0031 §1's rule, at one more seam).
-   */
-  unreadable: z.literal(true).optional(),
-  /**
-   * **Which of the two kinds of refusal the action said this was** — one of
-   * `REFUSED_ABOUT`, and absent wherever it did not say (`#293`).
-   *
-   * Optional for `unreadable`'s reason and one of its own: this field exists to
-   * be counted, so *the reviewer did not classify* has to be a row that answers
-   * neither rather than a row that answers the default, or the reading is a
-   * count of the schema.
-   *
-   * **The reading, written down so the next one is the same one** (`#293`'s
-   * fourth `Done when`) — one query, no projection, no scrape of run logs, which
-   * are deleted when an item lands (0034):
-   *
-   *     SELECT coalesce(data->>'about', '(not said)') AS about,
-   *            count(*) AS refusals
-   *       FROM events
-   *      WHERE type = 'StepFailed'
-   *        AND data->>'step' = 'review'
-   *        AND at > now() - interval '14 days'
-   *      GROUP BY 1
-   *      ORDER BY 2 DESC;
-   *
-   * On SQLite the two extractions are `json_extract(data, '$.about')` and
-   * `json_extract(data, '$.step')`, and the window is a `datetime('now','-14
-   * days')` — the same fold either way (0055 §3).
-   *
-   * `(not said)` is the row `#223` has to read before it designs anything: a
-   * rate whose denominator is mostly *the reviewer did not answer* is not a rate,
-   * it is a prompt that is not landing.
-   *
-   * It is not `because`. That is the lane's word for why it said no and
-   * `directionOf` routes on it; this routes nothing at all, by design, until
-   * `#223` has the rate to decide with.
-   */
-  about: z.enum(REFUSED_ABOUT).optional(),
+/**
+ * One step ends, carrying every action it declared (0120 §1) — the one
+ * event this replaced five with: `StepPassed`, `StepFailed`, `StepAsked`,
+ * `StepDidNotFinish`, `StepNeverRan` were one event each per *action*;
+ * `outcome.actions` now carries all of them for the step, in order, the
+ * ones not run included as `NotReached`.
+ *
+ * **Rule: a `StepEnded` exists exactly where the step's plugins actually
+ * ran a verdicts pipeline.** So there is none for `claim` or `end` — both
+ * run outside `runPass` (0120 §6) — and none for a routed `proposed` visit,
+ * whose fact is `PassRouted` instead.
+ *
+ * A body that then throws (an agent runtime raising, a workflow assertion
+ * firing) leaves this `StepEnded` exactly as the verdicts pipeline wrote
+ * it — the throw is the *body's*, one layer above the outcome, and reaches
+ * the log only as whatever `WaitStarted{AgentCrashed}` or requeue it
+ * resolves to; there is no second `StepEnded` for it.
+ */
+export const StepEnded = z.object({
+  runId: z.string(),
+  outcome: StepOutcome,
 })
-
-/**
- * The gate's agent never started, so the point produced no verdict about the
- * diff — [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1,
- * one layer up.
- *
- * `RunFailed.kind = "never-started"` says this about a run; this says it about
- * the agent inside a gate, and the two are the same finding at two depths. A
- * quota is met by whichever agent asks next, and the second agent in a pass is
- * a reviewer: the build passed, the reviewer never ran, and what the log said
- * was that a review gate refused the diff (`#133`).
- *
- * **It is not `StepFailed` and must never be folded into one.** A failure is a
- * sentence about this diff and this is a sentence about the account — the
- * distinction the whole ticket turns on. Nor is it `StepPassed`: a green gate
- * for a diff nobody assessed is the other way to be wrong.
- *
- * `detail` is the runtime's own words, kept whole for the reason
- * `RunFailed.detail` is: it is the evidence the classification refused to read,
- * and 0031 §4 reads a reset time back out of it.
- *
- * Version 1, and it never left. The **nine** types ADR 0018's rename moved —
- * `StepsResolved`, the four verdicts, `StepWaived` and the three `Approval*` —
- * sat at 2 or above because each needed a step from 1, and nothing ever wrote
- * one of *these* with the old name, so this type had nothing to upcast and
- * nothing to lower. 0061 §7 spent those nine steps along with the log they
- * walked when the reset landed on 2026-09-27 (`#247`), and all nine came back
- * to 1 with them; while a single stored row still stood at 1, lowering those
- * numbers would have made every one of them unreadable and blamed the writer
- * for it. `StepDidNotFinish` is younger still and never carried the old name
- * either; it is at 2 for a reason of its own, which is `#234` dropping the two
- * fields 0057 §4's retry wrote and nothing to do with the rename.
- */
-export const StepNeverRan = z.object({ ...stepBase, detail: z.string() })
-
-/**
- * The gate's agent **started**, ended without a receipt, and so judged nothing
- * — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
- *
- * The third of the three ways a gate's agent can end, and until this event the
- * log had two. A reviewer that crashed after twenty turns wrote `StepFailed`,
- * which is the event a reviewer that read the diff and refused it writes, and
- * everything downstream believed it: the conductor bought a fix round, and a
- * fixing agent was paid to answer a question nobody asked (`#196`,
- * `pass-9e510ffc`). The difference existed only inside the `evidence` sentence,
- * and a sentence is not something `decideFix` or the board reads.
- *
- * **It is not `StepNeverRan` either, and that is 0057 §3.** *Never started*
- * means an account-wide wall and stands the conductor down (0041); a crash is
- * local — a bad settings path, a broken binary, a reused session id (`#195`) —
- * and stopping the queue for it would be the same category error pointed the
- * other way.
- *
- * `detail` is the runtime's own words, whole, for the reason `StepNeverRan`'s
- * is: they are about the machinery and never about the diff.
- *
- * **`attempt` and `retrying` are gone, and the retry they described with them**
- * (`#234`, `schemaVer: 2`). 0057 §4 ran the action once more and said which
- * attempt each event was; the retry recomputed the crashed attempt's session id
- * — `sessionIdFor` hashes `<runId>:review:<action>:<sha>`, which a second
- * attempt does not move (`agent-gate.ts:356`, `claude-code.ts:93`) — so
- * `claude` refused it in zero seconds, twice on this machine's logs and never
- * once reaching a reviewer. What the two fields bought the reader was a *second
- * attempt that never ran*: an event saying `attempt: 2, retrying: false` about a
- * pass in which the action was tried once. So the action is run once, one of
- * these is appended, and there is no number to carry.
- *
- * The rows already written keep both fields and the upcaster drops them on read,
- * for `TicketClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
- * reader is what has to stop believing them.
- */
-export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() })
-
-/**
- * The step's agent **stopped and asked something**, so it judged nothing and
- * there is a question waiting for an answer — 0058 §3c, and `#296`.
- *
- * `StepDidNotFinish`'s sibling and not a flavour of it. The two cost the same
- * nothing (0057 §1–3) and they go to different places: this one reaches
- * `proposed`, where a judge decides between a person and *that step again,
- * stating its assumption*, and the other stops the pass because there is no
- * question in it for anybody to answer.
- *
- * **It was a `StepDidNotFinish` whose `because` happened to read `needs-input`
- * until this event existed**, and that is what it is for. `because` is a plain
- * `string` — it carries `conflict`, `verify-failed`, `claim-unconfirmed`,
- * `passed-over`, `not-claimed` and whatever a crash left — so the one value the
- * *workflow* branched on was indistinguishable, to the compiler, from the ones
- * only a person reads. A token spelled `needs input`, or a plugin that set none,
- * would have lost the destination silently and stopped a pass that had a
- * question in it. `#279` is the same class caught after it cost $8.97; nothing
- * had gone wrong here yet, which is the only good time to split a type.
- *
- * `detail` is the question, in the agent's own words (0043), and there is no
- * `because`: *it asked* is the whole of the reason.
- *
- * **Version 1, and the log was reset rather than upcast** (`#296`,
- * [014](../../../doc/experiments/014-the-log-before-the-fourth-reset.md)). Every
- * row this type would have had was a `StepDidNotFinish` two days old, and 0061
- * §7 spends a pre-1.0 history rather than carrying it, exactly as `#247` did for
- * the eight `Gate*` renames. **After 1.0 the answer is an upcaster** and this
- * sentence is where the next person reads which side of that line they are on.
- */
-export const StepAsked = z.object({ ...stepBase, detail: z.string() })
-
-/** Humans need an escape hatch. It is recorded, never silent. */
-export const StepWaived = z.object({ ...stepBase, by: z.string(), reason: z.string() })
-
-export const ApprovalRequested = z.object({ ...stepBase, question: z.string(), artifacts: z.array(z.string()) })
-export const ApprovalGranted = z.object({ ...stepBase, by: z.string(), note: z.string() })
-export const ApprovalRevoked = z.object({ ...stepBase, by: z.string(), reason: z.string() })
 
 // --------------------------------------------------------------- backlog ----
 
@@ -1218,17 +1076,17 @@ export const FindingDeclined = z.object({
 // ----------------------------------------------------------- integration ----
 
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
+/**
+ * `paths`/`baseSha`/`headSha` are gone (#502): a conflict's three fields now
+ * live on the merge action's own result, `StepEnded`'s `Conflicted` — the
+ * lane's own serialising, the daemon's wake and the board all read `reason`
+ * and `detail` here and the three fields there.
+ */
 export const IntegrationRefused = z.object({
   ticketId: z.string(),
   branch: z.string(),
   reason: RefusalReason,
   detail: z.string(),
-  /** The paths git found unmerged. Set only when `reason` is `conflict`. */
-  paths: z.array(z.string()).optional(),
-  /** The base this attempt merged against. Set only when `reason` is `conflict`. */
-  baseSha: z.string().optional(),
-  /** The side git merged — `options.branch`'s tip at the fetch. Set only when `reason` is `conflict`. */
-  headSha: z.string().optional(),
 })
 export const IntegrationSucceeded = z.object({
   ticketId: z.string(),
@@ -1237,291 +1095,37 @@ export const IntegrationSucceeded = z.object({
   mergeCommit: z.string(),
 })
 
-// -------------------------------------------------------------- repair ----
-
-/**
- * **Retired** (`#143`). Readable for ever, appended never: `RETIRED` below,
- * refused by `store.append`.
- *
- * It recorded that a failure of the managed repository's had bought one agent —
- * a whole new run, told what went wrong, which the next claim became. That was
- * [0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md), and
- * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
- * §Consequences takes the purchase away: the worktree lives as long as the
- * pass, so **a refusal is answered where it happened** and a new run stops
- * being the answer to anything except a run that ended. `FixRequested` below
- * is what a refusal buys now.
- *
- * `#142` had already taken the conflict, which was the whole of what this was
- * for. What was left reaching it was a `verify-failed` — either a `proposed`
- * refusal carrying no criterion, the one `decideFix` declines to buy for, so
- * buying a whole *run* for it was the same decision made twice with opposite
- * answers, or a `merge:` gate, which runs after the round loop and reaches the
- * lane without `decideFix` ever being asked — and a
- * `no-commits`, which is a branch holding nothing the base does not, and a new
- * run from scratch is 0039's expensive wrong answer stated as a definition.
- * Both now block for a person carrying `diagnoseRefusal`'s reading of them.
- *
- * The rows stay because [0019](../../../doc/decisions-archive/0019-a-second-reset.md)
- * says they must, for the reasons written out on `OutboxDelivered` below: a
- * type the log still holds can be neither deleted nor skipped on read.
- * `priorAttempts` still folds both of these into an earlier attempt's refusal,
- * which is the *keep reading them for ever* half of retirement.
- *
- * The three fields that carried the bound are described as they were written,
- * and nothing reads them to decide anything now. `fingerprint` is the failure
- * hashed, so one agent was bought per **distinct** failure; `attempt` was
- * 1-based against a ceiling from the recipe; `runId` is the run that failed,
- * which is how a repair whose own run failed was recognised. `detail` is the
- * refusal verbatim, which is the `#112` complaint inverted and the reason these
- * rows are still worth reading.
- */
-export const RepairRequested = z.object({
-  /** The run whose failure bought this. */
-  runId: z.string(),
-  reason: RefusalReason,
-  detail: z.string(),
-  fingerprint: z.string(),
-  attempt: z.number().int().positive(),
-})
-
-/**
- * **Retired** with `RepairRequested` above, and for the same reasons.
- *
- * It recorded a failure that bought nothing and named the rule that refused,
- * so that a card was never left saying only `conflict: agent/112 does not
- * merge into develop` (`#84`). Every lane refusal is that now, so there is no
- * longer a pair for the event to keep apart: the sentence it carried is the
- * block's own `diagnosis.done`, written from `whoseFailure` rather than from a
- * decision about money.
- */
-export const RepairDeclined = z.object({
-  runId: z.string(),
-  reason: RefusalReason,
-  detail: z.string(),
-  fingerprint: z.string(),
-  /** The sentence the card shows. Names the rule that refused, not just "no". */
-  why: z.string(),
-})
-
-// ------------------------------------------------------------------ fix ----
-
-/**
- * A review refusal bought an agent, inside the run that was refused
- * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §1).
- *
- * On the **run's** stream and not the work item's, which is the difference
- * between this and `RepairRequested`: a repair is the next run, told what went
- * wrong, and the item goes back to the queue to get it. A fix happens while the
- * worktree is still there and the diff is still the thing under discussion, so
- * nothing is released and no second claim is involved — the gates simply run
- * again on a head that moved.
- *
- * **`findings` is the acceptance contract and the reason this event exists.**
- * It is what the fixer was handed, `failureScenario` verbatim, written before
- * anybody knew what the fix would be (§2). The re-review is asked whether those
- * sequences still produce those outcomes, so the log has to hold the question
- * that was asked rather than a summary of it — a deleted line makes a finding's
- * *text* go away, and this is what it cannot make go away.
- */
-export const FixRequested = z.object({
-  /** The run whose review refused. The fixer runs inside it. */
-  runId: z.string(),
-  /** 1-based, against `runtime.limits.rounds` (0039 §3 — `repair.fix` is gone). */
-  round: z.number().int().positive(),
-  /**
-   * That ceiling, so *round 2 of 3* is readable from the event.
-   *
-   * A projection is a fold and may not read a recipe, so a card carrying
-   * `round` alone carries a numerator with no denominator — and with `#146`'s
-   * second ceiling beside it, *which arm is this* becomes a question the log
-   * has to be able to answer on its own. Zero on every event written before the
-   * field existed, and the reading of zero is *not recorded*, which is why the
-   * note says `round 2` rather than `round 2 of 0` for one of those.
-   */
-  of: z.number().int().nonnegative().default(0),
-  /** The action whose refusal bought this — the reviewer's name. */
-  action: z.string(),
-  /** The head the findings were made against. */
-  onSha: z.string(),
-  findings: z.array(Finding),
-})
-
-/**
- * What the fixing agent produced, and what it cost.
- *
- * A spend is a fact the log has to hold whichever way it went, so
- * `headSha` is nullable rather than absent: a fixer that committed nothing
- * ran, cost money and moved nothing, and that is a different ending from one
- * whose commit the re-review then refused.
- */
-export const FixApplied = z.object({
-  runId: z.string(),
-  round: z.number().int().positive(),
-  /** The head after the fixer committed, or null when it committed nothing. */
-  headSha: z.string().nullable(),
-  turns: z.number().int().nonnegative(),
-  costUsd: z.number().nullable(),
-  /** The runtime's own ending, when it did not finish. Null when it did. */
-  failure: z.string().nullable(),
-  /** What the fixing agent said last, clipped to 500 chars; null or absent when it said nothing. */
-  said: z.string().nullable().optional(),
-  /** What the fix round billed, by the runtime's own counts (0110 §3). */
-  usage: Usage.optional(),
-})
-
-/**
- * A review refusal that bought no fixer, and why — including the round that ran
- * out of budget, which is the ordinary ending.
- *
- * `RepairDeclined`'s argument, for the other purse: "nothing happened because
- * nobody asked for it" and "nothing happened and we do not know why" are the two
- * things a log exists to keep apart. This is also the event behind the sentence
- * a person is shown — **two agents disagreed** — so the findings still live are
- * on it rather than only in prose.
- */
-export const FixDeclined = z.object({
-  runId: z.string(),
-  /** Rounds already spent when this was decided. Zero when none was bought. */
-  round: z.number().int().nonnegative(),
-  action: z.string(),
-  /** The sentence the card shows. Names the rule that refused, not just "no". */
-  why: z.string(),
-  /** What is still live, as the reviewer last said it. */
-  findings: z.array(Finding),
-})
-
 // --------------------------------------------------------------- route ----
 
 /**
- * Where a route could send a pass: one of the ten, or a person.
+ * **`proposed` chose, and the log holds the offer, the reply and the
+ * decision it chose from** (0120 §3, §5) — the one event this replaced
+ * `FixRequested`, `PassRestarted` and `FixDeclined` with.
  *
- * `Destination` in `pass.ts`, which is where the concept is argued —
- * `waiting` is not a step (0058 §3) and has exactly one way in, so it is the
- * one value here that is not one of the ten.
- */
-const Destination = z.union([Step, z.literal('waiting')])
-
-/**
- * **`proposed` sent the pass somewhere, and why** (`#271`).
+ * `offer` depends on the recipe and the spend at that moment; `reply` on the
+ * judge. Neither is a pure function of the other two, so both are stored.
+ * `next` is not: a reader replays `routeNext(offer, reply, decision)`
+ * (`@lingtai/domain`'s `routing.ts`) rather than trusting a fourth, derived
+ * field to agree with the three it was derived from. `offer.proposal` could
+ * be recomputed from the `StepEnded` before this, and is kept on the event
+ * anyway, so a reader of `PassRouted` alone never has to walk back to it.
  *
- * The decision the whole loop turns on, and until this existed it was written
- * with `runLog.note` and nowhere else: the run log is a trace kept only while
- * something is still owed an explanation
- * ([0034](../../../doc/decisions-archive/0034-the-run-log.md)), so on the ending that
- * matters most — the one where the change landed — the file is deleted and *why
- * this pass bought a round* was on the log nowhere.
+ * A `Selected{candidate: 'restart'}` decision also appends
+ * `TicketReleased{cause: Restart{restart}}` on the work item's stream, in
+ * that order — what `PassRestarted` carried (the abandoned branch, its head,
+ * the findings still live) is on the *previous* run, which the next
+ * prompt's `lastRun` already reads (`attempts.ts`), so there is nothing left
+ * for the release to repeat.
  *
- * **It was never named `Gate…`**, and that is the one thing about it that is
- * not about routing. The retired-name allowlist could only shrink
- * (`doc/reference.md`), so a new type carrying the retired word could not be
- * added at all; for three days the log held two vocabularies, which was correct
- * rather than untidy — a log records history and that history had two eras.
- * `#247` ended it with the reset 0061 §7 spends, and this type is now the
- * spelling every other one has.
- *
- * **`chose` and `to` are separated because they answer different questions.**
- * 0064 §7 keeps the budget with the workflow rather than with the plugin that
- * routes: a judge may choose `implement` and the pass still go to `waiting`
- * because `rounds` is spent. A single `to` cannot tell *the decision sent this
- * to a person* from *the decision wanted another round and there was none*, and
- * those are the two sentences a person reads on the card. They are equal on
- * every route nothing intervened in, which is most of them.
- *
- * On the **run's** stream, appended after the walk rather than from inside it:
- * the pass is the thing that knows both the choice and the budget, and
- * `conduct.ts` writes what it returns (`PassResult.routes`).
+ * On the **run's** stream, appended after the walk returns: the pass is the
+ * thing that knows the offer, the reply and the decision together, and
+ * `conduct.ts` writes what it returns.
  */
 export const PassRouted = z.object({
-  /**
-   * The step whose outcome was judged — the one that did not pass, or
-   * `proposed` itself where the judgement was made on the way through, which is
-   * where a review's findings are read.
-   */
-  from: Step,
-  /** Where the decision wanted to go. Equal to `to` unless something refused it. */
-  chose: Destination,
-  /** Where the pass actually went. */
-  to: Destination,
-  /** The decision's own words, as a person reads them beside the arriving step's detail. */
-  why: z.string(),
-  /**
-   * Which limit refused the choice, where `to` and `chose` differ — and null
-   * everywhere else, including a route that went where it wanted.
-   *
-   * `rounds` is `runtime.limits.rounds`, spent: no step is on offer any more, so
-   * a choice that was a step became a person. `restarts` is the item's, spent:
-   * `claim` was not on offer. Both are counted by the workflow and neither is
-   * the plugin's to know (0061 §3), which is why this field is written by the
-   * pass and not by whatever answered.
-   */
-  ceiling: z.enum(['rounds', 'restarts']).nullable(),
-})
-
-// ------------------------------------------------------------- restart ----
-
-/**
- * A pass spent its rounds, and the recipe bought another **approach** rather
- * than a person's attention
- * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
- *
- * On the **work item's** stream, immediately before the release that puts it
- * back in the queue — the same ordering as `RepairRequested`, and for a
- * related reason. There it is what the *next claim becomes*; here it is only
- * what the next claim is *allowed to be*, because a restart is told nothing a
- * second attempt is not already told. `attempts.ts` writes the abandoned
- * branch, its sha, the fetch command and the findings into every second prompt
- * already, which is what made
- * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)'s
- * second arm work at all — so there is no pending record to consume and no
- * prompt of its own. The next pass is an ordinary one.
- *
- * **The second ceiling is counted off these rather than remembered**, exactly
- * as `repairs` is (0025 §3): a length against a number from the recipe survives
- * a rebuild and has no counter to forget to increment.
- *
- * `findings` is what was still refused when this arm ended, and it is why the
- * event is worth its bytes. Each later arm's findings are on that arm's own run
- * stream; this arm's are on a stream no later pass reads, so a person handed the
- * item when the last restart is spent would otherwise see only the final
- * refusal — and the claim being tested is precisely that the arms disagree.
- */
-export const PassRestarted = z.object({
-  /** The pass whose rounds were spent. */
   runId: z.string(),
-  /** 1-based, against `runtime.limits.restarts`. */
-  restart: z.number().int().positive(),
-  /** That ceiling, so a card can say *restart 1 of 2* without reading a recipe. */
-  of: z.number().int().positive(),
-  /** The action that refused — the reviewer's name. */
-  action: z.string(),
-  /** Rounds this arm spent before the ceiling stopped it. */
-  rounds: z.number().int().nonnegative(),
-  /**
-   * The branch the abandoned approach is on, and the head it left there.
-   *
-   * **On origin, because this is appended after the pass pushes it.** A pass
-   * that spent its rounds never reached its own push, so these two named
-   * commits that lived in a deleted worktree and nowhere else — while
-   * `attempts.ts` told the next agent to fetch them. The conductor publishes
-   * the approach before it records the arm; an arm on the log is therefore an
-   * arm that can be read.
-   *
-   * **This arm's own ref — `agent/<n>-attempt-<k>` — and not `agent/<n>`**
-   * (`armBranch`; `k` is the claim's attempt ordinal since
-   * [0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §2, because
-   * a restart ordinal is not defined for the endings that now publish too).
-   * The working branch is what the next prompt names, so each
-   * restart takes it over, force, from a history with no ancestor in common
-   * with the last: recording it here would make every arm but the newest name
-   * a sha origin no longer has, which is the reading a person gets exactly
-   * when they are shown all of them at once. One name per arm, so the
-   * paragraph above is true of every one of them.
-   */
-  branch: z.string(),
-  headSha: z.string(),
-  /** What was still refused when this arm ended, as the reviewer last said it. */
-  findings: z.array(Finding),
+  offer: RouteOffer,
+  reply: JudgeReply,
+  decision: RouteDecision,
 })
 
 // --------------------------------------------------------------- control ----
@@ -1915,6 +1519,7 @@ export const DiscussionAsked = z.object({
  * that laundered that into *the binary accepts the flag* would repeat exactly
  * what cost `#89` two attempts.
  */
+/** `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`. */
 export const DiscussionAnswered = z.object({
   text: z.string(),
   /** `main:packages/agent/src/claude-code.ts` — every file served, in order. */
@@ -1925,11 +1530,8 @@ export const DiscussionAnswered = z.object({
   proposal: z.object({ kind: z.enum(['prompt', 'ticket']), text: z.string() }).nullable(),
   turns: z.number().int(),
   durationMs: z.number().int(),
-  costUsd: z.number().nullable(),
   /** Set when the assistant did not finish. Null on an ordinary answer. */
   failure: z.string().nullable(),
-  /** What this turn billed, by the runtime's own counts (0110 §3). */
-  usage: Usage.optional(),
 })
 
 /**
@@ -1945,14 +1547,11 @@ export const DiscussionAnswered = z.object({
  * ordinary answer: a question that was answered and needed nothing written down
  * is the commonest discussion there is.
  */
+/** `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`. */
 export const DiscussionHeld = z.object({
   chatId: z.string(),
-  /** The whole conversation's spend. Null when nothing reported a cost. */
-  costUsd: z.number().nullable(),
   outcome: z.enum(['prompt', 'ticket', 'none']),
   by: z.string(),
-  /** The whole conversation's tokens, by the runtime's own counts (0110 §3). */
-  usage: Usage.optional(),
 })
 
 /**
@@ -2237,27 +1836,27 @@ export const TriageStartedBy = z.discriminatedUnion('_tag', [TriageStartedAgent,
 export type TriageStartedBy = z.infer<typeof TriageStartedBy>
 
 /**
- * Appended before the agent is dispatched. `blocked` is the position (the
- * envelope's `version`, from 1 — never a `seq`, since the log may be reset)
- * of the `WorkItemBlocked` this triage is about, on the work item's own
- * stream. `attempt` is 1 for the first attempt on that block, then one more
- * than the last `TriageStarted` for it. The triage key is the work item and
- * `blocked`; the head and the recipe are not part of it (0118 §3).
+ * Appended before the agent is dispatched. `waitId` names the `WaitStarted`
+ * this triage is about (#502 — it named `blocked`, the position of a
+ * `WorkItemBlocked`, before the switch). `attempt` is 1 for the first
+ * attempt on that wait, then one more than the last `TriageStarted` for it.
+ * The triage key is the work item and the wait; the head and the recipe are
+ * not part of it (0118 §3).
  */
 export const TriageStarted = z.strictObject({
-  blocked: z.number().int().positive(),
+  waitId: WaitId,
   attempt: z.number().int().positive(),
   by: TriageStartedBy,
 })
 
 /**
  * Triage's advice, or its failure, on the work item's stream (0118 §3,
- * `#409`). `attempt` matches the `TriageStarted` it finishes; a reader takes
- * only the latest attempt's result. `headSha` is the head triage read.
+ * principle 5). `attempt` matches the `TriageStarted` it finishes; a reader
+ * takes only the latest attempt's result. `headSha` is the head triage read.
  */
-export const HoldTriaged = z.strictObject({
+export const WaitTriaged = z.strictObject({
+  waitId: WaitId,
   attempt: z.number().int().positive(),
-  blocked: z.number().int().positive(),
   headSha: z.string(),
   result: TriageResult,
   by: TriageBy,
@@ -2310,8 +1909,8 @@ export const EVENTS = {
   TicketDiscovered,
   TicketClaimed,
   TicketReleased,
-  WorkItemBlocked,
-  WorkItemUnblocked,
+  WaitStarted,
+  WaitResolved,
   TicketLinked,
   TicketLanded,
   TicketClosed,
@@ -2330,30 +1929,15 @@ export const EVENTS = {
   RunSpent,
   StepsResolved,
   EndActionsResolved,
-  StepRequested,
   StepStarted,
-  StepPassed,
-  StepFailed,
-  StepNeverRan,
-  StepDidNotFinish,
-  StepAsked,
-  StepWaived,
-  ApprovalRequested,
-  ApprovalGranted,
-  ApprovalRevoked,
+  StepEnded,
   FindingAccepted,
   FindingProposed,
   FindingDeclined,
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
-  RepairRequested,
-  RepairDeclined,
-  FixRequested,
-  FixApplied,
-  FixDeclined,
   PassRouted,
-  PassRestarted,
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,
@@ -2377,7 +1961,7 @@ export const EVENTS = {
   Reconciled,
   GitHubAppCreated,
   TriageStarted,
-  HoldTriaged,
+  WaitTriaged,
   PluginFailed,
 } as const
 
@@ -2395,13 +1979,6 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // `leaseUntilMs` — the lease is deleted (0027). The field is still in every
   // historical row and the upcaster drops it on read; no event is rewritten.
   TicketClaimed: 3,
-  // WorkItemBlocked was here at 2 (`needs` and `diagnosis`, added for #83) and
-  // is not any more: #445 replaced the payload in place with `{hold}` rather
-  // than bumping to 3, because before 1.0 the log is reset rather than
-  // carried forward (0118 §1). `upcast.ts` has no entry for this type, so a
-  // stored row from either old shape now fails this type's zod parse, and
-  // `blockPredatesHold` below refuses it by name instead (#451). #441 added
-  // `MergeRefused.afterApproval` the same way, in place and with no upcaster.
   // 2: added `invocation` — the command, the tier and the limits as applied,
   // where there had only been the runtime's name (#88).
   RunStarted: 2,
@@ -2412,62 +1989,11 @@ const BUMPED: Partial<Record<EventType, number>> = {
   PromptEdited: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
-  // 2: added `of` — the `rounds` ceiling the round is counted against, so a
-  // fold can say *round 2 of 3* without reading a recipe (`#146`).
-  FixRequested: 2,
-  // **Nine numbers came down here on 2026-09-27, and the reset is what made
-  // that legal** (`#247`). They were the `diff` gate point's rename (ADR 0018):
-  // nine types carried a point when it landed, so nine of them moved together
-  // and none could be skipped. 0061 §7 spends that history by *resetting* the
-  // log rather than migrating it, `the-pipeline.md`'s T5b folded it into
-  // [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and
-  // T5 cut it — and a store that holds no row at all holds none at version 1
-  // either. The nine steps came down with them, in `upcast.ts`.
-  //
-  // What a lowered number costs while a row still stands at it is worth keeping
-  // here, because it is the reason this could not be done early: every such row
-  // goes down `upcast`'s `schemaVer > supported` branch, whose message says the
-  // writer is newer than the reader — and the cause is that the reader's number
-  // was lowered under it.
-  //
-  // `StepsResolved` came all the way down rather than to 3: its other two steps
-  // are about the same vanished rows — a plan that named five steps where the
-  // schema now asks for ten, and a `recipe` nothing recorded before 0047 — and
-  // both are written in the payload's old spelling, `points` of `gate`, which
-  // this commit renamed to `steps` of `step`. Kept, they would have had to
-  // claim a history in words that history never used.
-  //
-  // 2: added `findings`, the shape `StepFailed` carries, so a minor on a
-  // passing review is structured rather than prose inside `evidence` (#135).
-  StepPassed: 2,
-  // 2: dropped `attempt` and `retrying` with the retry they described (`#234`,
-  // 0057 §4). Nothing carried the `diff` point here — this type is younger than
-  // that rename — so 1 → 2 is the drop and not the rename's step, which is why
-  // it is the one number in this group that `#247` left standing.
-  StepDidNotFinish: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
   (Object.keys(EVENTS) as EventType[]).map((k) => [k, BUMPED[k] ?? 1]),
 ) as Record<EventType, number>
-
-/**
- * Whether a stored `WorkItemBlocked` row is from before #445's reset of this
- * type's payload (#451) — either a stored v2 row (`needs`, `diagnosis`) or a
- * v1 one (`question`, `needsFrom`), neither of which this build can read.
- *
- * `!==` rather than `>`: #445 dropped this type's `BUMPED` entry, so the
- * supported version fell to 1 and a stored v2 row is *greater* than
- * supported — `upcast`'s `schemaVer > supported` branch would catch that one
- * alone, with a message that says the opposite of what happened here (*the
- * writer is newer than the reader*). A stored v1 row is not caught by that
- * branch at all: it is equal to supported and fails only `WorkItemBlocked`'s
- * own strict parse, for carrying `question`/`needsFrom` instead of `hold`.
- * Checking the parse directly catches both the same way.
- */
-export function blockPredatesHold(schemaVer: number, data: unknown): boolean {
-  return schemaVer !== SCHEMA_VER.WorkItemBlocked || !WorkItemBlocked.safeParse(data).success
-}
 
 /**
  * Types the log holds and nothing appends again.
@@ -2477,14 +2003,7 @@ export function blockPredatesHold(schemaVer: number, data: unknown): boolean {
  * things and only the second can be enforced: stop writing them, and keep
  * reading them for ever.
  */
-export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
-  'OutboxDelivered',
-  'OutboxFailed',
-  // A lane refusal buys nothing, so nothing decides whether it bought an agent
-  // (`#143`, 0039 §Consequences). See the note on `RepairRequested`.
-  'RepairRequested',
-  'RepairDeclined',
-])
+export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(['OutboxDelivered', 'OutboxFailed'])
 
 export function isRetiredEventType(t: string): boolean {
   return isEventType(t) && RETIRED.has(t)
