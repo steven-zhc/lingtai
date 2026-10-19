@@ -57,11 +57,14 @@ One thing in this repository is also not committed:
 
 **`rm -rf ~/.lingtai/repos ~/.lingtai/worktrees ~/.lingtai/runs` is safe.**
 Everything in those is either re-clonable from GitHub or belongs to a run that is
-over. The part that matters — the event log — is in Postgres, and none of it is
-here. **`config.yml`, `<project>/recipe.yml` and `env/` are the exception**: you
+over. The part that matters — the event log — is not here either: it is in
+Postgres on a machine that chose that store, and on a SQLite one it is
+`~/.lingtai/lingtai.db`, which this `rm -rf` does not touch. **`config.yml`,
+`<project>/recipe.yml` and `env/` are the exception**: you
 wrote all three, nothing else has a copy, and deleting them leaves a machine
 with no recipe for any project and no value for any name it requires — each
-refused by name until you write it again.
+refused by name until you write it again. Emptying the log itself, rather than
+the state around it, is [Resetting the log](#resetting-the-log).
 
 [#18]: https://github.com/steven-zhc/lingtai/issues/18
 [#19]: https://github.com/steven-zhc/lingtai/issues/19
@@ -1547,3 +1550,461 @@ Every refusal names itself. The common ones:
 | `did not merge (stale): the card showed …` | The branch moved between reading and deciding. Reload and read it again. |
 | `a waiver needs a reason` | A waiver records who and why. Both, always. |
 | `stopped: exhausted — 1 run(s)` | The queue still has work; everything left has already been tried this pass. Not the same as `empty`. |
+
+## Resetting the log
+
+`lingtai doctor`'s **log: predates the Hold event** row, and the refusal daemon
+start and `lingtai projection rebuild` give on a log written before #445's
+reshape of `WorkItemBlocked`, both point here by this heading. This is the
+fifth time the log has started at zero — [007](experiments/007-the-log-before-the-reset.md),
+[010](experiments/010-the-log-before-the-second-reset.md),
+[013](experiments/013-the-log-before-the-third-reset.md) and
+[014](experiments/014-the-log-before-the-fourth-reset.md) are the ones before
+it, each written for the reason 013 gives: **the habit is what makes a reset a
+decision rather than a loss.** This section is that habit, written out as
+commands rather than relearned each time.
+
+**A reset is not something to reach for.** It is cheap only while
+[0019](decisions-archive/0019-a-second-reset.md)'s precondition holds — no run
+in the log that anybody outside this repository depends on — and
+[0118](decisions/0118-a-hold-explains-itself.md) §1 is why #445's reshape of
+`WorkItemBlocked` chose this over an upcaster: *"There is no upcaster: before
+1.0 the log is reset across a change of shape, as it was in 007 and 010."*
+Where the precondition stops holding, the cost moves from this page to the
+read path, which is the other half of that choice.
+
+### Before
+
+**Stop the conductor first — a note taken while it can still append is a note
+the next landing can outrun.** `pauseConductor` appends `ConductorPaused` to
+the control stream, which is itself inside `events`, so a pause written
+before the reset would not survive it either — stopping, not pausing, is what
+keeps every note below from being taken against a log still in motion:
+
+```bash
+pnpm lingtai shutdown "resetting the log — see #448"
+```
+
+Where this machine runs a supervisor, drain it there instead, or the
+supervisor starts the daemon back up underneath you:
+
+```bash
+pnpm lingtai service shutdown "resetting the log — see #448"
+```
+
+Both append rather than block and return at once, so a successful exit means
+only that the request landed, never that the daemon is down — wait for the
+daemon itself, not the command. Poll `lingtai doctor`'s **daemon: liveness**
+row (or `lingtai status`) until it reads `not running` rather than `draining`
+or a beat within the last few seconds; a pass can run up to
+`runtime.limits.wall` (an hour, here) before that happens:
+
+```bash
+pnpm lingtai doctor
+```
+
+A pass that lands while the notes below are still being taken is exactly the
+gap this order closes, and it closes it only once that row says the daemon
+stopped.
+
+**`agent:hold` holds nothing by itself — it holds only what a project's own
+recipe excludes, and most don't.** `considerIssue` skips a label only when
+`excludeOf`'s answer names it (`packages/conductor/src/discover.ts:200`,
+`const excluded = new Set(queue.exclude...)`, where that `queue` is already
+`excludeOf`'s resolved answer); there is no hold `agent:hold` or any other
+label gets for free. **`excludeOf` reads one of two places, never both**
+(`packages/recipe/src/settings.ts:296-297`, `takeAt(recipe)?.exclude ??
+recipe.source.exclude`): a `queue:` block the recipe declares at `claim`
+(`#269`) — four required fields, `kinds` `exclude` `backoff` `assignee` — if
+it has one, or `source.exclude` only where it declares none. `EXCLUDE`
+defaults to `[]` (`packages/recipe/src/recipe.ts:1074`), the default preset
+writes nothing to it, and this page's own earlier example recipe is
+`exclude: [blocked, needs-design]` — no `agent:hold` in it. The wizard's own
+"Hold all" button refuses for exactly this reason before offering itself:
+*"a recipe that does not exclude it gets no button rather than a guess"*
+(`packages/conductor/src/wizard.ts:154-159`). Check every project you are
+about to hold against, before trusting the label on anything:
+
+```bash
+pnpm lingtai status
+```
+
+and read each project's `excludes` line — it is `excludeOf`'s own answer, so
+it is correct whichever spelling the recipe uses. If `agent:hold` is not on
+it, add it in that project's `~/.lingtai/<project>/recipe.yml`: under
+`source.exclude` **only if the recipe declares no `queue:` block at
+`claim`**; where it does declare one, add it to that block's own `exclude:`
+field instead, rewriting all four of its fields together — `source.exclude`
+is then read by nothing, so editing it there changes nothing. Either way,
+labelling an issue before the matching line is edited changes nothing, and
+the queue offers it again next pass regardless.
+
+**Note what is held, then hold it against the reset too.** A reset forgets
+which work items the log remembers as blocked, and the queue does not leave a
+held item alone on its own — it takes `agent:hold`, not a memory of why, and
+only on a project whose recipe excludes it, per the check above. For every
+issue the board shows as held, before anything else:
+
+- read its ref, its `agent/<n>` branch (if any) and the question or diagnosis
+  it is held on;
+- put `agent:hold` on the GitHub issue, so a queue running against the emptied
+  log does not offer it again the pass after the reset. [010](experiments/010-the-log-before-the-second-reset.md)
+  is what skipping this looks like: *"the log no longer knew that #120, #155
+  and #156 had landed, so the queue offered them again as runnable."*
+
+**Also note what has already landed or been closed — nothing here closes an
+issue for you.** A ticket's GitHub issue can stay open, kind label and all,
+after `task_view` has already moved it past the queue, in two ways:
+
+- **Landed.** The default preset resolves `end: []`
+  (`packages/recipe/src/presets.ts:82`), so with it a ticket's issue stays open
+  after its work has merged — `task_view` shows the task `landed` while the
+  issue itself shows no different from a queued one. That pair, landed and
+  still open, is exactly what [010](experiments/010-the-log-before-the-second-reset.md)
+  is about.
+- **Closed.** `lingtai close` appends `WorkItemClosed` and runs the recipe's
+  `end:` the same way a landing does (`packages/conductor/src/close.ts:29-36`,
+  [0044](decisions-archive/0044-a-close-is-a-terminal-outcome.md)) — so under
+  `end: []` it closes the GitHub issue for exactly nobody, the same gap. A
+  person who decided against a ticket and ran `lingtai close` is left with
+  `task_view` at `closed` and an issue that reads as open and unclaimed as any
+  other.
+
+Either way, the queue excludes only what `excludeOf` resolves for that
+project — nothing, on a default preset — so an open issue the reset's
+forgetting has stripped of its only "already done" or "already decided
+against" memory is offered again unless that project excludes the label you
+put on it, per the check above. The board hides a landed or closed card after
+`DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts:69`, 2 days by
+default), so read the table directly rather than the board:
+
+```sql
+select project, issue from task_view where state in ('landed', 'closed');
+```
+
+For every row this returns, close the GitHub issue — the work is already
+merged, or a person already decided against it, and there is nothing left to
+hold — or put `agent:hold` on it if you are not ready to close it yet. Either
+keeps it off the queue the reset would otherwise hand it back to.
+
+**Note which projects are registered.** `ProjectConfigured` is also inside
+`events`, so a reset forgets every project `lingtai add` ever registered, not
+only its work. `lingtai status` lists them; after the reset each one is
+registered again by name. Its recipe at `~/.lingtai/<project>/recipe.yml` and
+its GitHub state are untouched — only Lingtai's own memory of the project is
+what the reset takes, the same fact [0019](decisions-archive/0019-a-second-reset.md)
+recorded for the second reset: *"Its recipe and its GitHub state are
+untouched; only Lingtai's memory of it is."*
+
+**Note every backlog decision too — a reset empties `finding_backlog` the
+same way.** `finding_backlog` is a fold of this same log (#137): a decline is
+recorded there precisely so the next pass does not ask again, and an
+accepted-but-unopened entry lives there too. The reset forgets both, and this
+section's own *After* step rebuilds the projection to nothing. For every
+project noted above, before the reset:
+
+```bash
+pnpm lingtai backlog <project> --all
+```
+
+and keep what it prints — every accepted and declined finding, and the reason
+given for each decline. Nothing here restores a decision; what the note buys
+is the reason, so a finding raised again after the reset is declined on the
+same grounds rather than relitigated from zero.
+
+### Archive — outside the repository, by default
+
+**Dump the log to a file under `~/.lingtai/archive/`, not into this
+repository.** 007, 010, 013 and 014 are committed because each was read by hand
+first and found to hold nothing that should not be: three or fifty-six events
+from a handful of runs, or no rows at all. The log now holds whole prompts,
+ticket bodies and raw tool output, and a runbook that defaults to committing an
+archive would commit all of that by habit, for every reset after this one.
+
+```bash
+umask 077
+mkdir -p ~/.lingtai/archive
+```
+
+**SQLite.** Never `cp` the file — the log runs in WAL mode, and a plain copy
+can be missing committed rows still sitting in the `-wal` file. Use SQLite's
+own backup instead, which is also the whole of the restore check below: the
+backup file is already a store, and opening it is the restore.
+
+```bash
+sqlite3 ~/.lingtai/lingtai.db ".backup '$HOME/.lingtai/archive/lingtai-$(date -u +%Y%m%dT%H%M%SZ).db'"
+chmod 600 ~/.lingtai/archive/lingtai-*.db
+```
+
+**Postgres.** Dump `events` and `checkpoints` against the log's own direct
+connection string, never a pooler (#157). That string is not necessarily
+`$LINGTAI_DIRECT_DATABASE_URL` — that variable exists only where an exported
+`LINGTAI_DATABASE_URL` has to be a pooler, and on the recommended setup there
+is no such export. Find it as:
+
+- `database.url` in `~/.lingtai/config.yml`, which is already the direct host
+  and never a pooler, when the log is configured there; or
+- the exported `LINGTAI_DATABASE_URL`, when there is no `config.yml` entry and
+  it is not itself a pooler; or
+- the exported `LINGTAI_DIRECT_DATABASE_URL`, only where one of the two above
+  is a pooler.
+
+Paste the string in directly rather than echoing or `grep`-ing it out of
+`config.yml` first — keep it out of shell history if you can:
+
+```bash
+pg_dump --format=custom --table=events --table=checkpoints \
+  <the log's own direct connection string> \
+  --file ~/.lingtai/archive/lingtai-$(date -u +%Y%m%dT%H%M%SZ).dump
+chmod 600 ~/.lingtai/archive/lingtai-*.dump
+```
+
+`pg_dump`'s own major version has to be at least the server's, or the dump
+refuses before it writes anything.
+
+**This directory is never committed, and it goes with `lingtai uninstall`.**
+`uninstall` removes the whole of `LINGTAI_HOME` — not only `lingtai.db` — so an
+archive kept only under `~/.lingtai/archive/` does not survive one. Move
+anything worth keeping past that point somewhere else first.
+
+### Check the dump before resetting anything
+
+Restore the dump into a scratch copy and compare three things against the live
+log: the event count, the last `seq`, and the list of held work items. If any
+of the three differ, stop — the dump is not what the reset is about to erase.
+
+**SQLite**: the backup file from above is already a scratch store; open it
+directly.
+
+```bash
+sqlite3 ~/.lingtai/archive/lingtai-<timestamp>.db \
+  "select count(*), max(seq) from events;"
+sqlite3 ~/.lingtai/lingtai.db \
+  "select count(*), max(seq) from events;"
+```
+
+**Postgres**: restore into a scratch database with `pg_restore`, then run the
+same two queries against it and against the live one. The dump's post-data
+carries `events`'s own trigger (`lingtai_events_notify`) but not the function
+it calls — `--table` dumps only the named tables, never what they depend on
+— so `pg_restore` needs that function to already exist, or it fails the
+restore with `function lingtai_notify_event() does not exist`. Its definition
+is `schema.ts`'s `NOTIFY_SQL` (`packages/event-store/src/schema.ts:90-95`):
+
+```bash
+createdb lingtai_reset_check
+psql lingtai_reset_check <<'SQL'
+CREATE FUNCTION lingtai_notify_event() RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM pg_notify('lingtai', NEW.seq::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+SQL
+pg_restore --dbname=lingtai_reset_check ~/.lingtai/archive/lingtai-<timestamp>.dump
+psql lingtai_reset_check -c "select count(*), max(seq) from events;"
+```
+
+**Held work items, against both copies**, the same SQL either way. This is an
+approximation rather than a fold through `@lingtai/domain`'s catalogue — plain
+SQL is the point, since nothing here should need the application's own code to
+decode a row. **Rank every event that can end a hold on the item's own
+stream against `WorkItemBlocked`, never the latest row of any type**:
+`tellGitHub` appends `IssueUpdated` onto the same work-item stream right
+after a block, once for the comment and once for the labels, so the
+stream's actual latest row is never the block itself. A wait also ends
+without a `WorkItemUnblocked` at all — `WorkItemLanded`, `WorkItemClosed`
+and `WorkItemReleased` each clear `waiting` the same way
+(`packages/projector/src/task-view.ts:301-355`), because an approval can
+answer the wait on the *run* stream (`ApprovalGranted`,
+`packages/domain/src/read-model.ts:1176-1186`) and leave the item's own
+stream to go straight from `WorkItemBlocked` to one of those three.
+`ApprovalGranted` itself never has to appear in the list below — it lives on
+the run's stream, a different `stream_id`, so it is never a candidate for
+this item's latest row regardless. Filtering the ranked rows to the five
+events that answer *held or not* on the item's own stream finds every
+stream whose last word among them was a block that nothing has since
+answered:
+
+```sql
+select stream_id from (
+  select stream_id, type,
+         row_number() over (partition by stream_id order by seq desc) as rn
+  from events
+  where type in ('WorkItemBlocked', 'WorkItemUnblocked', 'WorkItemLanded', 'WorkItemClosed', 'WorkItemReleased')
+) latest
+where rn = 1 and type = 'WorkItemBlocked';
+```
+
+Compare that list, not just its count, against what you noted in the
+held-items note. A list that agrees is the restore check passing; a list that
+disagrees is a dump taken too late, or a hold the board did not show.
+
+### Reset
+
+**Reset only the log's own tables — never `rm` the SQLite file outright.** One
+`lingtai.db` file also holds the projections, their checkpoints, and (for a
+`source.tickets: db` project) `tickets` and `ticket_comments`, which are not
+part of the event log and have no other copy. Deleting the file deletes those
+along with the log.
+
+**SQLite:**
+
+```bash
+sqlite3 ~/.lingtai/lingtai.db <<'SQL'
+delete from events;
+delete from sqlite_sequence where name = 'events';
+delete from checkpoints;
+SQL
+```
+
+`sqlite_sequence` is `seq`'s `AUTOINCREMENT` counter; without clearing it the
+next event still gets a seq picking up where the old log left off rather than
+restarting at 1. The projection tables are left alone — rebuilding below drops
+and recreates them anyway.
+
+**Postgres:** `events` carries a rule that turns a plain `DELETE` into a silent
+no-op (`lingtai_events_no_delete` — the table reports success and removes
+nothing, which is the thing to know before trying a `DELETE` here, as the test
+log's own reset script does, disabling the rule first). **`TRUNCATE` is not
+`DELETE`, and the rule never sees it**: Postgres's rule system rewrites
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` only, and `TRUNCATE` is not one of
+them, so the statement below empties the table with the guard left exactly as
+it was — untouched, never disabled, nothing to re-enable and nothing to leave
+disabled if a later statement in this block fails:
+
+```sql
+truncate table events restart identity;
+truncate table checkpoints;
+```
+
+Leave `lingtai_events_no_delete` alone: disabling it here would open a window
+that buys this reset nothing, and `lingtai doctor`'s **schema: append-only**
+row checks `pg_rules` for the rule's name, not whether it is enabled, so a
+rule left disabled by a copied-in `alter table … disable rule` would read `ok`
+regardless. **Do not also truncate `outbox`**: that table is
+gone (#60/0022; the migration that dropped it is
+`20260904T2359_drop_outbox`), so a script copied from before that migration
+has a line here that now fails outright rather than doing nothing. **Never
+touch `tickets` or `ticket_comments`** — same reason as the SQLite file: they
+imitate an outside issue system and the log reset is not about them. Run this
+against the direct URL, never the pooler.
+
+### After
+
+**A pause cannot hold off a daemon that has not started yet — keep the daemon
+down for the rest of this section instead.** `readControl` scopes every
+signal to the watermark a daemon takes at its own start
+(`packages/daemon/src/control.ts:116-123`), and a person's `lingtai pause`
+never sets `holdsAcrossStarts` — only the conductor's own refusal-pause does
+(`:104-114`). So a pause appended before a daemon's first start is invisible
+to that daemon: it folds the empty, unpaused log it actually sees and claims
+the top queued ticket. **It is no better off against a daemon that is
+already running from before the reset, on this host or another sharing the
+same log.** `controlWatermark` is read once, at that daemon's own start
+(`:131-133`), and never again — so a daemon that started pre-reset is still
+holding whatever version the control stream had reached back then, and the
+reset's `truncate … restart identity` sends the fresh stream back to
+counting from 1. A pause appended here lands below that daemon's own
+watermark exactly as it lands below a freshly started one's, and
+`readControl` filters it out the same way. Nothing makes this command hold
+off any daemon, old or new — what does that is the next paragraph's rule.
+Run it anyway, since it is what `lingtai status` and the board show while
+this section is in progress:
+
+```bash
+pnpm lingtai pause "resetting the log — see #448"
+```
+
+None of `projection rebuild`, `add` or `doctor` below needs a daemon running.
+**Do not bring one back — `service start` included — until `agent:hold` is on
+every issue *Before*'s held-items note or its landed/closed note left held.**
+That is what actually keeps a freshly started daemon from claiming work during
+this section; the pause by itself does not.
+
+Rebuild every projection — there are three. `lingtai --help`'s closing line
+names all of them (`Projections: task_view, finding_backlog, spend`,
+`apps/cli/src/lingtai.ts:346`); check there first if this page is ever behind
+it again. `lingtai projection rebuild <name>` only refuses — and lists the
+known names in doing so — when `<name>` is not one of them; a name that is
+one, typed only to probe, drops that table and replays the log for real:
+
+```bash
+pnpm lingtai projection rebuild task_view
+pnpm lingtai projection rebuild finding_backlog
+pnpm lingtai projection rebuild spend
+```
+
+Register every project noted above — the recipe and the GitHub state
+are already there. **On a project that already has a recipe, `lingtai add` is
+interactive and can write to it** (`askRecipe` → `writeOrRefuse` →
+`setRecipe`, `apps/cli/src/recipe-flow.ts:193-250`); it writes back only
+Lingtai's own memory of the project when every answer it asks matches what
+the file already holds, since `setRecipe` writes nothing when the edited
+text comes out the same as what was there (`packages/recipe/src/write.ts:199`).
+Change one of those answers instead, and it writes the recipe. On a file that
+`extends:` a preset and names no `steps:` of its own, the first changed
+answer pins that preset's whole set of steps into the project's file for
+good; `lingtai add` prints that warning itself before it asks
+(`apps/cli/src/add-github.ts:277-284`) — read it, and keep every answer
+unchanged unless you mean this reset to also stop that project following the
+preset.
+
+```bash
+pnpm lingtai add <owner>/<repo>
+```
+
+Check the machine before trusting it with anything:
+
+```bash
+pnpm lingtai doctor
+```
+
+**log: predates the Hold event** should now read `ok`, since nothing in the
+freshly emptied log predates anything. Put `agent:hold` back only on the
+issues that should still stay held — the reset does not know which those
+were; *Before*'s held-items note says which, and so does its landed/closed
+note, for any issue you chose to hold there rather than close. Only now —
+holds restored — bring the daemon or supervisor back, then lift the pause:
+
+```bash
+pnpm lingtai resume
+```
+
+### What a reset forgets
+
+What follows, and nothing else about the state of the world: GitHub, the
+recipes and the environment files are all untouched.
+
+- **What landed, and what was closed.** The log no longer knows which issues
+  were merged or which a person decided against, so the queue offers them
+  again as runnable — the exact failure [010](experiments/010-the-log-before-the-second-reset.md)
+  recorded, and the reason this section's *Before* step asks for `agent:hold`
+  rather than a note on its own.
+- **What is held.** A question a person was answering, or a diagnosis a run
+  left behind, is gone with the `WorkItemBlocked` row that carried it — which
+  is why it has to be read off the board before the reset, not after.
+- **Which projects exist.** `lingtai status` reads *"no projects registered"*
+  on a freshly reset machine until each one is added back by name, even though
+  every project's recipe is still sitting on disk, untouched, exactly where it
+  was.
+- **What was decided about a minor finding.** `finding_backlog` folds to
+  nothing along with everything else, so an accept or a decline — and the
+  reason given for either — is gone unless the *Before* step above noted it.
+  Without that note, the next cold review raises a declined finding again and
+  a person re-decides it with nothing to go on.
+- **Which GitHub App Lingtai minted.** `GitHubAppCreated` on the
+  `ctl-github-app` stream (`packages/conductor/src/create-app.ts:596-606`) is
+  the only record that an App exists — it is not only the state of the world,
+  it is Lingtai's own memory of having minted one. After the reset,
+  `/setup/github-app` shows no App name and no install link, even though
+  `~/.lingtai/config.yml` still holds the App's credentials and the App itself
+  still works — the page itself does not offer to mint a second one while
+  `config.yml` still names it: `offerCreation` only offers once nothing
+  configured names an App (`create-app.ts:1036`). Write down the App's slug
+  and id before the reset, next to the held items, for the case that matters:
+  if `config.yml`'s own entry is ever lost too, the setup page *will* then
+  offer to mint a second one, and the recorded event that makes doing so
+  wrong (`create-app.ts:590-592`) is exactly what the reset removed. Find the
+  existing App under GitHub → Settings → Developer settings → GitHub Apps
+  instead of accepting that offer.
