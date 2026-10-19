@@ -20,7 +20,7 @@ const created = new Set<string>()
 let store: EventStore
 
 const landed = (_id: string) => ({
-  type: 'WorkItemLanded',
+  type: 'TicketLanded',
   actor: 'conductor',
   data: { mergeCommit: 'abc1234', base: 'develop' },
 })
@@ -65,7 +65,7 @@ describe('the work loop', () => {
     await loop.start()
 
     try {
-      const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`
+      const id = `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`
       created.add(id)
 
       // A run appends steadily — touched files, guard trips, gate verdicts —
@@ -114,7 +114,7 @@ describe('the work loop', () => {
       // never wakes anything: one pass, and `until` below times out at 20s.
       // That is how this failed agent/147's build, on nothing agent/147 changed.
       await until(() => n >= 1)
-      const ids = [1, 2, 3].map(() => `wi-esctest-${crypto.randomUUID().slice(0, 8)}`)
+      const ids = [1, 2, 3].map(() => `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`)
       for (const id of ids) {
         created.add(id)
         await store.append(id, 0, [landed(id)])
@@ -223,7 +223,7 @@ describe('the work loop', () => {
       // And it stays stopped: an event arriving afterwards must not restart a
       // conductor that is on its way out, whatever the log then says.
       allowed = true
-      const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`
+      const id = `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`
       created.add(id)
       await store.append(id, 0, [landed(id)])
       await new Promise((r) => setTimeout(r, 200))
@@ -266,7 +266,7 @@ describe('the work loop', () => {
     const tag = crypto.randomUUID().slice(0, 8)
     // One project per case, so the failures this test appends can be told from
     // any the log already holds.
-    const stream = (which: string) => `wi-esctest${which}${tag}-1`
+    const stream = (which: string) => `ticket-esctest${which}${tag}-1`
     const project = (which: string) => `esctest${which}${tag}`
     const cases = ['throws', 'rejects', 'hangs', 'after']
     for (const which of cases) created.add(stream(which))
@@ -328,7 +328,7 @@ describe('the work loop', () => {
         new Set([project('throws'), project('rejects'), project('hangs')]),
       )
       expect(new Set(failures.map((f) => f.name))).toEqual(new Set(['desktop']))
-      expect(new Set(failures.map((f) => f.eventType))).toEqual(new Set(['WorkItemLanded']))
+      expect(new Set(failures.map((f) => f.eventType))).toEqual(new Set(['TicketLanded']))
       const hung = failures.find((f) => f.project === project('hangs'))
       expect(hung?.reason).toMatch(/did not return within/)
       // The one that succeeded appended nothing: a boundary that recorded every
@@ -342,7 +342,7 @@ describe('the work loop', () => {
   /**
    * A failure on a run stream or an integration lane is recorded under the
    * project whose recipe declared the subscriber — not under whatever cutting
-   * `run-<uuid>` at its last dash produces, which is what it said before.
+   * `pass-<uuid>` at its last dash produces, which is what it said before.
    *
    * And the subscriber is one handed over *after* `start`, through the getter:
    * a project whose recipe could not be read at startup is built on a later
@@ -351,7 +351,7 @@ describe('the work loop', () => {
   it("records a subscriber's failure under its own project, whatever stream the event was on", async () => {
     const tag = crypto.randomUUID().slice(0, 8)
     const project = `esctestowner${tag}`
-    const run = `run-${crypto.randomUUID()}`
+    const run = `pass-${crypto.randomUUID()}`
     const lane = `int-${project}-main`
     created.add(run)
     created.add(lane)
@@ -377,7 +377,7 @@ describe('the work loop', () => {
         {
           type: 'IntegrationRefused',
           actor: 'conductor',
-          data: { workItemId: `wi-${project}-1`, branch: 'agent/1', reason: 'conflict', detail: 'no' },
+          data: { ticketId: `ticket-${project}-1`, branch: 'agent/1', reason: 'conflict', detail: 'no' },
         },
       ])
 
@@ -422,14 +422,14 @@ describe('the work loop', () => {
     try {
       expect(passes).toBe(0)
 
-      const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`
+      const id = `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`
       created.add(id)
       await store.append(id, 0, [landed(id)])
       await new Promise((r) => setTimeout(r, 200))
       expect(passes).toBe(0)
 
       lifted = true
-      const next = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`
+      const next = `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`
       created.add(next)
       await store.append(next, 0, [landed(next)])
       await until(() => passes > 0)

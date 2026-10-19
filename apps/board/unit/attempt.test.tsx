@@ -35,7 +35,7 @@ function e(streamId: string, type: string, data: unknown): Envelope {
   }
 }
 
-const RUN = 'run-33333333-0000-0000-0000-000000000000'
+const RUN = 'pass-33333333-0000-0000-0000-000000000000'
 const SHA = 'c'.repeat(40)
 const claim = (): Claim => ({ runId: RUN, at: '2026-09-10T07:40:00.000Z', repair: false, released: null })
 

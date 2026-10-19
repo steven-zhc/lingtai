@@ -410,7 +410,7 @@ steps:
 # say: it asks again before each pass, and builds whatever this block says on
 # the first pass that reads it, with no restart.
 #
-# **`telegram` names `WorkItemLanded`, and `desktop` deliberately does not.** A
+# **`telegram` names `TicketLanded`, and `desktop` deliberately does not.** A
 # desktop notification interrupts you, so it is for what nothing moves without;
 # a Telegram message is read when you choose, so it can carry the good news too.
 # Same event, different channel, different answer (`#125`). It is started from
@@ -427,7 +427,7 @@ subscribers:
     run: node apps/cli/src/notify.ts
     env: []
   - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    on: [TicketLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
     run: node packages/telegram/src/cli.ts
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 

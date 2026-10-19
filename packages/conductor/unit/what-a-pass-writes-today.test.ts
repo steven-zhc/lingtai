@@ -46,7 +46,7 @@
  *   `because: 'action-refused'`, which is none of those, so it falls past
  *   `directionOf` to `hold-of.ts`'s step 2, fails `RefusalReason`'s parse, and
  *   reads `CheckRed`.
- * - **A `claim` that is passed over still gets a `run-*` stream** (row 15):
+ * - **A `claim` that is passed over still gets a `pass-*` stream** (row 15):
  *   three events — `StepRequested`, `StepStarted`, `StepFailed` — land on it,
  *   because `claim` is `STEPS[0]` and runs through the same per-step
  *   bookkeeping every other step does. What stays empty is the *work-item*
@@ -89,13 +89,13 @@ import {
 
 /** The one run stream a pass mints, or `null` where none was opened. */
 function theRun(store: ReturnType<typeof memoryStore>): Envelope[] | null {
-  const found = [...streams(store)].find(([id]) => id.startsWith('run-'))
+  const found = [...streams(store)].find(([id]) => id.startsWith('pass-'))
   return found === undefined ? null : found[1]
 }
 
 /** Every run stream a store holds, oldest first — for a row that calls `once()` more than once. */
 function theRuns(store: ReturnType<typeof memoryStore>): Envelope[][] {
-  return [...streams(store)].filter(([id]) => id.startsWith('run-')).map(([, events]) => events)
+  return [...streams(store)].filter(([id]) => id.startsWith('pass-')).map(([, events]) => events)
 }
 
 function typesOf(events: readonly Envelope[] | null): string[] {
@@ -103,7 +103,7 @@ function typesOf(events: readonly Envelope[] | null): string[] {
 }
 
 async function theItem(store: ReturnType<typeof memoryStore>): Promise<Envelope[]> {
-  return store.read(`wi-${PROJECT}-7`)
+  return store.read(`ticket-${PROJECT}-7`)
 }
 
 function theHold(item: readonly Envelope[]): Hold | null {
@@ -179,7 +179,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     )
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
-    expect(typesOf(await theItem(store))).toEqual(['WorkItemClaimed', 'IssueUpdated', 'WorkItemLanded', 'IssueUpdated'])
+    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
       'StepRequested',
       'StepStarted',
@@ -257,7 +257,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     )
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
-    expect(typesOf(await theItem(store))).toEqual(['WorkItemClaimed', 'IssueUpdated', 'WorkItemLanded', 'IssueUpdated'])
+    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
       'StepRequested',
       'StepStarted',
@@ -351,7 +351,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
    * `armPublished` is set), and `conduct.ts` spends a restart rather than
    * holding.
    */
-  it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', async () => {
+  it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', async () => {
     const RESTARTABLE = `
 version: 2
 repo: { base: main, submodules: false }
@@ -407,10 +407,10 @@ runtime:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'PassRestarted',
-      'WorkItemReleased',
+      'TicketReleased',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
@@ -442,7 +442,7 @@ runtime:
     expect(theHold(item)).toBeNull()
     const restarted = item.find((e) => e.type === 'PassRestarted')!
     expect(restarted.data).toMatchObject({ restart: 1, of: 1 })
-    const released = item.find((e) => e.type === 'WorkItemReleased')!
+    const released = item.find((e) => e.type === 'TicketReleased')!
     expect(released.data).toMatchObject({
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
@@ -543,12 +543,12 @@ runtime:
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'PassRestarted',
-      'WorkItemReleased',
+      'TicketReleased',
       'IssueUpdated',
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -642,7 +642,7 @@ runtime:
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -709,7 +709,7 @@ runtime:
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -826,7 +826,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -908,7 +908,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -971,7 +971,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
             type: 'IntegrationRefused',
             actor: 'conductor',
             data: {
-              workItemId: o.workItemId,
+              ticketId: o.ticketId,
               branch: o.branch,
               reason: 'dirty-base',
               detail: 'main moved under it',
@@ -1001,7 +1001,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1107,7 +1107,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'design' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1170,7 +1170,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1242,7 +1242,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1490,7 +1490,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1574,7 +1574,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(await theItem(store))).toEqual([
-      'WorkItemClaimed',
+      'TicketClaimed',
       'IssueUpdated',
       'WorkItemBlocked',
       'IssueUpdated',
@@ -1643,7 +1643,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(said).toEqual([])
     expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
     // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
-    // so its own three events — a real `run-*` stream, the file header's own
+    // so its own three events — a real `pass-*` stream, the file header's own
     // point — fold to none at all.
     expect(stepOutcomesOf(theRun(store) ?? [])).toEqual([])
   })
@@ -1651,7 +1651,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   /**
    * **`not-claimed`: another conductor already holds the item** (`#463`).
    *
-   * `claimWorkItem` reads `held` off the `WorkItemClaimed` seeded below and the
+   * `claimWorkItem` reads `held` off the `TicketClaimed` seeded below and the
    * claim declines before `runPass` ever starts. Same shape as row 15: the item
    * stream is exactly what was seeded (nothing of this run's own), and the run
    * stream still opens through `claim`'s own bookkeeping.
@@ -1660,12 +1660,12 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const store = memoryStore()
     const said: string[] = []
     const did: string[] = []
-    const itemId = `wi-${PROJECT}-7`
+    const itemId = `ticket-${PROJECT}-7`
     await store.append(itemId, 0, [
       {
-        type: 'WorkItemClaimed',
+        type: 'TicketClaimed',
         actor: 'conductor',
-        data: { runId: 'run-somebody-else', worker: 'other:1', title: null, kind: null },
+        data: { runId: 'pass-somebody-else', worker: 'other:1', title: null, kind: null },
       },
     ])
 
@@ -1686,29 +1686,29 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
     expect((result as { detail: string }).detail).toContain('held')
-    expect((await store.read(itemId)).map((e) => e.type)).toEqual(['WorkItemClaimed'])
+    expect((await store.read(itemId)).map((e) => e.type)).toEqual(['TicketClaimed'])
     expect(said).toEqual([])
     expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
   })
 
   /**
    * **`claim-unconfirmed`: the append may have committed and then lost the
-   * connection** (`#463`). Only the `WorkItemClaimed` append throws — every
+   * connection** (`#463`). Only the `TicketClaimed` append throws — every
    * other append on the run stream goes through — so `claim` reports
    * `mayHold` and `conduct.ts` releases what this run may hold rather than
-   * resolving an ending it never confirmed: `WorkItemReleased` on the item
+   * resolving an ending it never confirmed: `TicketReleased` on the item
    * stream, and no `EndActionsResolved` anywhere, because `end` never runs on
    * a decline.
    */
-  it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing', async () => {
+  it('15c. a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing', async () => {
     const base = memoryStore()
     const said: string[] = []
     const did: string[] = []
-    const itemId = `wi-${PROJECT}-7`
+    const itemId = `ticket-${PROJECT}-7`
     const flaky: typeof base = {
       ...base,
       append: async (streamId, expectedVersion, events) => {
-        if (streamId === itemId && events.some((e) => e.type === 'WorkItemClaimed')) {
+        if (streamId === itemId && events.some((e) => e.type === 'TicketClaimed')) {
           throw new Error('connection lost')
         }
         return base.append(streamId, expectedVersion, events)
@@ -1731,9 +1731,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     )
 
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
-    expect(typesOf(await flaky.read(itemId))).toEqual(['WorkItemReleased', 'IssueUpdated'])
+    expect(typesOf(await flaky.read(itemId))).toEqual(['TicketReleased', 'IssueUpdated'])
     expect(typesOf(theRun(flaky))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
-    // No `WorkItemClaimed` ever landed on this stream — the append that would
+    // No `TicketClaimed` ever landed on this stream — the append that would
     // have written it is what threw.
     expect(releaseCauseOf(await flaky.read(itemId))).toEqual([{ _tag: 'ClaimUnconfirmed' }])
   })

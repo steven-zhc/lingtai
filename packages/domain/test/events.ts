@@ -69,7 +69,7 @@ function requireRealInterruptedEvidence(action: Action): void {
 /** One run's own stream, with the bookkeeping `stepOutcomesOf` reads kept beside the step events themselves. */
 export interface RunFixture {
   readonly runId: string
-  /** The run's own `makeStream` appender, for a builder that writes directly onto it (`aRoute`, a seeded `WorkItemClaimed`'s run). */
+  /** The run's own `makeStream` appender, for a builder that writes directly onto it (`aRoute`, a seeded `TicketClaimed`'s run). */
   readonly event: ReturnType<typeof makeStream>
   /** `StepOutcome`s ended so far, round included — what `stepOutcomesOf(events)` is expected to answer back. */
   readonly ended: StepOutcome[]
@@ -235,7 +235,7 @@ export function aResolution(
     case 'AnswerQuestion':
       return [itemStream('WorkItemUnblocked', { by: 'steven', note: resolution.choice })]
     case 'Close':
-      return [itemStream('WorkItemClosed', { by: 'steven', reason: 'no longer wanted' })]
+      return [itemStream('TicketClosed', { by: 'steven', reason: 'no longer wanted' })]
   }
 }
 
@@ -249,7 +249,7 @@ export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, note = 'a
  * `routesOf`'s own reverse.
  *
  * `itemStream`, when given, is where `PassRestarted` is written —
- * `conduct.ts:3936`'s own `appendNow(workItemId, …)` puts it on the work
+ * `conduct.ts:3936`'s own `appendNow(ticketId, …)` puts it on the work
  * item's stream, never the run's, and `releaseCauseOf` reads it there
  * (`read-model.ts`). Omitted where a test only reads `routesOf`, which keys
  * `PassRestarted` by its own `data.runId` rather than by stream and so does
@@ -307,35 +307,35 @@ export function aRoute(
   return envelopes
 }
 
-/** `WorkItemReleased` — 0120 §5's cause is read back off what came before it on the slice, never carried on the event itself. */
+/** `TicketReleased` — 0120 §5's cause is read back off what came before it on the slice, never carried on the event itself. */
 export function aRelease(
   itemStream: ReturnType<typeof makeStream>,
   runId: string,
   reason = 'the pass did not finish',
 ): Envelope[] {
-  return [itemStream('WorkItemReleased', { runId, reason })]
+  return [itemStream('TicketReleased', { runId, reason })]
 }
 
-/** `WorkItemClaimed` — the claim `releaseCauseOf` looks for since the item's last release or landing. */
+/** `TicketClaimed` — the claim `releaseCauseOf` looks for since the item's last release or landing. */
 export function aClaim(itemStream: ReturnType<typeof makeStream>, runId: string, worker = 'conductor:1'): Envelope[] {
-  return [itemStream('WorkItemClaimed', { runId, worker, title: null, kind: null })]
+  return [itemStream('TicketClaimed', { runId, worker, title: null, kind: null })]
 }
 
-/** `WorkItemLanded` — the merge sha `mergeResultFrom` (`read-model.ts`) reads back for a `merge` action's own `Integrated`. */
+/** `TicketLanded` — the merge sha `mergeResultFrom` (`read-model.ts`) reads back for a `merge` action's own `Integrated`. */
 export function aLanding(itemStream: ReturnType<typeof makeStream>, mergeCommit: string, base = 'main'): Envelope[] {
-  return [itemStream('WorkItemLanded', { mergeCommit, base })]
+  return [itemStream('TicketLanded', { mergeCommit, base })]
 }
 
 /** `IntegrationRefused` — the three optional fields `mergeResultFrom` reads back for a `Conflicted`/`IntegrationRefused` result. */
 export function anIntegrationRefusal(
   integrationStream: ReturnType<typeof makeStream>,
-  workItemId: string,
+  ticketId: string,
   branch: string,
   refusal: { reason: string; detail?: string; paths?: string[]; baseSha?: string; headSha?: string },
 ): Envelope[] {
   return [
     integrationStream('IntegrationRefused', {
-      workItemId,
+      ticketId,
       branch,
       reason: refusal.reason,
       detail: refusal.detail ?? '',

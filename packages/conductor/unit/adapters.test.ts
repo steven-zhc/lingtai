@@ -24,7 +24,7 @@ function entry(verdict: ActionVerdict, extra: Partial<ActionOutcomeEntry> = {}):
   return { action: 'x', verdict, evidence: 'said something', findings: [], ...extra }
 }
 
-const RUN_ID = 'run-1'
+const RUN_ID = 'pass-1'
 const ON_SHA = 'a'.repeat(40)
 
 /** `actionOf` then `eventOf`, read off the single action it produced — the third event, after `StepRequested`/`StepStarted`. */
@@ -139,14 +139,14 @@ describe('actionOf/eventOf: every factory, by its own verdicts', () => {
 
 /** `#472`'s wrapped form a `Propose` reaches a person by, for the `recommendedResolution`/`allowedResolutions` checks below — `holdOf`'s own equality (`#471`) says this answers the same as the direct `WaitReason` would. */
 function escalated(proposal: Proposal): WaitReason {
-  return { _tag: 'ProposedEscalated', run: { runId: 'run-1' }, proposal, because: { _tag: 'NotAsked' } }
+  return { _tag: 'ProposedEscalated', run: { runId: 'pass-1' }, proposal, because: { _tag: 'NotAsked' } }
 }
 
 describe('a tamper watch refusal routes as a refused check, never as something a person may approve', () => {
   it('`nextOf` answers `CheckRefused`, and `recommendedResolution` never offers `Approve` for it', () => {
     const built = actionOf(fakeAction('watch', 'verdict', 'tamper'), entry('failed', { action: 'tamper' }), ON_SHA)
     const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
-    const next = nextOf(outcome, { runId: 'run-1' })
+    const next = nextOf(outcome, { runId: 'pass-1' })
     expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'CheckRefused' } })
     if (next._tag === 'Propose') {
       expect(recommendedResolution(escalated(next.proposal), { _tag: 'NotDeclared' })).not.toBe('Approve')
@@ -162,7 +162,7 @@ describe('a request-approval watch whose own dependency threw never prefills App
       ON_SHA,
     )
     const outcome: StepOutcome = { step: 'proposed', round: 0, actions: [built] }
-    const next = nextOf(outcome, { runId: 'run-1' })
+    const next = nextOf(outcome, { runId: 'pass-1' })
     expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'SetupRefused' } })
     if (next._tag === 'Propose') {
       expect(recommendedResolution(escalated(next.proposal), { _tag: 'NotDeclared' })).not.toBe('Approve')
@@ -183,7 +183,7 @@ describe('a setup that broke before any agent ran never reads as a crashed agent
     )
     expect(built.result._tag).toBe('NotDone')
     const outcome: StepOutcome = { step: 'implement', round: 0, actions: [built] }
-    const next = nextOf(outcome, { runId: 'run-1' })
+    const next = nextOf(outcome, { runId: 'pass-1' })
     expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'SetupRefused' } })
     if (next._tag === 'Propose') {
       const reason = escalated(next.proposal)
@@ -194,7 +194,7 @@ describe('a setup that broke before any agent ran never reads as a crashed agent
 })
 
 describe('an implement agent that committed nothing, with a `run:` the recipe declared after it', () => {
-  const run = { runId: 'run-1' }
+  const run = { runId: 'pass-1' }
 
   function implementOutcome(round: number): StepOutcome {
     const actions = [fakeAction('agent', 'commit', 'write the change'), fakeAction('run', 'commit', 'format')]
@@ -338,7 +338,7 @@ describe('outcomeOf builds a `wellFormed` StepOutcome', () => {
 
 describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
   const pass = { branch: 'agent/7', base: 'main', findings: [] }
-  const run = { runId: 'run-1' }
+  const run = { runId: 'pass-1' }
 
   const REASONS: WaitReason[] = [
     { _tag: 'OwnQuestion', question: 'which approach?', by: 'steven' },
@@ -640,7 +640,7 @@ describe('holdOf: every `WaitReason` variant parses as a `Hold`', () => {
  */
 describe('holdOf: an escalated #471 proposal equals its direct WaitReason', () => {
   const pass = { branch: 'agent/7', base: 'main', findings: [] }
-  const run = { runId: 'run-1' }
+  const run = { runId: 'pass-1' }
 
   function escalated(proposal: Proposal): WaitReason {
     return { _tag: 'ProposedEscalated', run, proposal, because: { _tag: 'NotAsked' } }

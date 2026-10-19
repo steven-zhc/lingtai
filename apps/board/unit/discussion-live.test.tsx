@@ -47,7 +47,7 @@ const waiting: DiscussionView = {
 }
 
 const render = (discussions: DiscussionView[]) =>
-  renderToStaticMarkup(<Discussion taskId="wi-lingtai-89" attempt={2} discussions={discussions} />)
+  renderToStaticMarkup(<Discussion taskId="ticket-lingtai-89" attempt={2} discussions={discussions} />)
 
 describe('the box while it is being answered', () => {
   it('puts the conversation in its own scroller, with the input box under it', () => {
@@ -149,7 +149,9 @@ describe('the conversation, as turns', () => {
   })
 
   it('wears no brass when the item is running', () => {
-    const quiet = renderToStaticMarkup(<Discussion taskId="wi-lingtai-89" attempt={2} discussions={[answered]} quiet />)
+    const quiet = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[answered]} quiet />,
+    )
     expect(quiet).not.toContain('btn pri')
     expect(render([answered])).toContain('btn pri')
   })

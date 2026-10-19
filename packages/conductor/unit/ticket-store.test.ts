@@ -136,8 +136,8 @@ describe('ticketsFor', () => {
 
     it('refuses by name when the log already has GitHub-numbered work items and dbTickets is empty', async () => {
       const store = memoryStore()
-      await store.append(`wi-${PROJECT}-212`, 0, [
-        { type: 'WorkItemClaimed', actor: 'conductor', data: { issue: 212 } },
+      await store.append(`ticket-${PROJECT}-212`, 0, [
+        { type: 'TicketClaimed', actor: 'conductor', data: { issue: 212 } },
       ])
       const recipe = await recipeOf(RECIPE_DB)
 
@@ -148,8 +148,8 @@ describe('ticketsFor', () => {
 
     it('passes once dbTickets already holds a ticket of its own, regardless of what the log holds', async () => {
       const store = memoryStore()
-      await store.append(`wi-${PROJECT}-212`, 0, [
-        { type: 'WorkItemClaimed', actor: 'conductor', data: { issue: 212 } },
+      await store.append(`ticket-${PROJECT}-212`, 0, [
+        { type: 'TicketClaimed', actor: 'conductor', data: { issue: 212 } },
       ])
       const recipe = await recipeOf(RECIPE_DB)
       const sql = freshSql()

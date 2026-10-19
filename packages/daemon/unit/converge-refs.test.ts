@@ -29,7 +29,7 @@ import type { DaemonStore } from '../src/store.ts'
 
 const PROJECT = 'lingtai'
 const ISSUE = 240
-const STREAM = `wi-${PROJECT}-${ISSUE}`
+const STREAM = `ticket-${PROJECT}-${ISSUE}`
 const BRANCH = agentBranch(ISSUE)
 const HEADS = (name: string) => `heads/${name}`
 
@@ -142,7 +142,7 @@ describe('a refs sweep the log says was refused', () => {
 
     expect(found).toEqual([
       {
-        workItemId: STREAM,
+        ticketId: STREAM,
         project: PROJECT,
         issue: ISSUE,
         change: 'refs',

@@ -73,11 +73,15 @@ export type RefusalReason = z.infer<typeof RefusalReason>
  * two can never name it differently; `@lingtai/repo` cannot hold it because
  * `conduct.ts` imports *types* only from that package (`live.ts`).
  *
- * **`run-` and not the bare `wip: `**, because a human or an agent setting
- * aside its own work with `git commit -m "wip: partial refactor"` must never
- * be caught by this: `runId` always starts `run-` (`conduct.ts`'s one
- * constructor of it), so this prefix matches only a subject this conductor
- * wrote, never a person's own `wip: `.
+ * **A fixed literal, not built from `PASS_STREAM_PREFIX`.** A human or an
+ * agent setting aside its own work with `git commit -m "wip: partial
+ * refactor"` must never be caught by this, so the prefix cannot be the bare
+ * `wip: ` — and it cannot follow `runId`'s own prefix either, which moved from
+ * `run-` to `pass-` at #464's reset. A branch an agent cut before that reset
+ * can still carry a WIP commit spelled the old way, and `integrate.ts`'s lane
+ * guard must keep refusing it after the reset as surely as before — so this
+ * stays `'wip: run-'` forever, independent of what a current `runId` starts
+ * with.
  */
 export const WIP_COMMIT_PREFIX = 'wip: run-'
 

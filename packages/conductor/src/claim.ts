@@ -17,7 +17,7 @@ import { parsePayload, reduceWorkItem } from '@lingtai/domain'
  *     together — and past the half hour it did the opposite of its job, handing
  *     a live run's ticket to the next caller. Held is held.
  *
- * A crash therefore costs a `WorkItemReleased`, not an intervention: the next
+ * A crash therefore costs a `TicketReleased`, not an intervention: the next
  * conductor to take `lingtai:daemon` knows it is the only one, so every claim
  * naming another worker is dead and it appends the release
  * (`daemon/reconcile.ts`). Liveness is the lock, which the kernel maintains;
@@ -49,7 +49,7 @@ export interface ClaimOptions {
 }
 
 export interface Claim {
-  workItemId: string
+  ticketId: string
   runId: string
   worker: string
   /** The stream version the claim landed at; the next append expects this. */
@@ -87,11 +87,11 @@ export function conductorWorker(): string {
  * looking at the same queue, and a caller that has to catch an exception to
  * discover it will eventually forget to.
  */
-export async function claimWorkItem(workItemId: string, options: ClaimOptions): Promise<ClaimResult> {
+export async function claimWorkItem(ticketId: string, options: ClaimOptions): Promise<ClaimResult> {
   const store = options.store ?? eventStore
   const worker = options.worker ?? conductorWorker()
 
-  const events = await store.read(workItemId)
+  const events = await store.read(ticketId)
   const state = reduceWorkItem(events)
 
   if (state.lifecycle.status === 'claimed') {
@@ -106,11 +106,11 @@ export async function claimWorkItem(workItemId: string, options: ClaimOptions): 
   }
 
   try {
-    const [written] = await store.append(workItemId, state.version, [
+    const [written] = await store.append(ticketId, state.version, [
       {
-        type: 'WorkItemClaimed',
+        type: 'TicketClaimed',
         actor: 'conductor',
-        data: parsePayload('WorkItemClaimed', {
+        data: parsePayload('TicketClaimed', {
           runId: options.runId,
           worker,
           title: options.title ?? null,
@@ -120,7 +120,7 @@ export async function claimWorkItem(workItemId: string, options: ClaimOptions): 
     ])
     return {
       ok: true,
-      claim: { workItemId, runId: options.runId, worker, version: written!.version },
+      claim: { ticketId, runId: options.runId, worker, version: written!.version },
     }
   } catch (err) {
     // The other claimant appended first. The constraint is the whole of the
@@ -132,14 +132,14 @@ export async function claimWorkItem(workItemId: string, options: ClaimOptions): 
 
 /** Hands the item back. The only way back: there is no expiry (0027). */
 export async function releaseWorkItem(
-  workItemId: string,
+  ticketId: string,
   runId: string,
   reason: string,
   store: EventStore = eventStore,
 ): Promise<void> {
-  const events = await store.read(workItemId)
+  const events = await store.read(ticketId)
   const state = reduceWorkItem(events)
-  await store.append(workItemId, state.version, [
-    { type: 'WorkItemReleased', actor: 'conductor', data: parsePayload('WorkItemReleased', { runId, reason }) },
+  await store.append(ticketId, state.version, [
+    { type: 'TicketReleased', actor: 'conductor', data: parsePayload('TicketReleased', { runId, reason }) },
   ])
 }

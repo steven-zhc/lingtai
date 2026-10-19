@@ -136,8 +136,8 @@ function fakeClient(labelsByIssue: ReadonlyMap<number, readonly string[]>, calls
 
 describe('what wakes the loop', () => {
   it('matches `COMPLETION_EVENTS` label by label, not event type', () => {
-    const item = makeStream('wi-lingtai-701')
-    const run = aRun('run-701')
+    const item = makeStream('ticket-lingtai-701')
+    const run = aRun('pass-701')
     const passed = run.aStepEnded({
       step: 'build',
       round: 0,
@@ -187,7 +187,7 @@ describe('what wakes the loop', () => {
       ['released', aRelease(item, run.runId)],
       [
         'integration refused',
-        anIntegrationRefusal(makeStream('int-lingtai-main'), 'wi-lingtai-701', 'agent/701', { reason: 'conflict' }),
+        anIntegrationRefusal(makeStream('int-lingtai-main'), 'ticket-lingtai-701', 'agent/701', { reason: 'conflict' }),
       ],
       ['landed', aLanding(item, 'a'.repeat(40))],
     ]
@@ -198,7 +198,7 @@ describe('what wakes the loop', () => {
     // `routed to implement` stays asleep — `PassRouted` and `FixRequested`
     // wake nothing. `restarted at claim` already wakes today: `conduct.ts`'s
     // restart branch (`release(reason)` at `conduct.ts:3951`) calls
-    // `releaseWorkItem` (`claim.ts:143`), which appends `WorkItemReleased` on
+    // `releaseWorkItem` (`claim.ts:143`), which appends `TicketReleased` on
     // the item's own stream right after `PassRestarted` — so the row carries
     // both, the same as a plain release. #464's appendix gives that release a
     // `cause: Restart`; it does not decide whether this row wakes, only what
@@ -224,23 +224,23 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
     const calls: number[] = []
 
     // Claimed, wearing nothing: the running label is wanted.
-    const claimed = makeStream(`wi-${PROJECT}-601`)
-    await appendBuilt(store, versions, aClaim(claimed, 'run-601'))
+    const claimed = makeStream(`ticket-${PROJECT}-601`)
+    await appendBuilt(store, versions, aClaim(claimed, 'pass-601'))
 
     // Waiting, wearing the running label a previous reconcile wrote: should
     // move to the waiting label.
-    const waiting = makeStream(`wi-${PROJECT}-602`)
-    await appendBuilt(store, versions, aClaim(waiting, 'run-602'))
+    const waiting = makeStream(`ticket-${PROJECT}-602`)
+    await appendBuilt(store, versions, aClaim(waiting, 'pass-602'))
     await appendBuilt(
       store,
       versions,
-      aWait(waiting, { _tag: 'AgentQuestion', run: aRunRef('run-602'), step: 'implement', question: 'which way?' }),
+      aWait(waiting, { _tag: 'AgentQuestion', run: aRunRef('pass-602'), step: 'implement', question: 'which way?' }),
     )
 
     // Waited, then requeued — never claimed, so only `WorkItemBlocked` and
     // `WorkItemUnblocked` explain the stream. The waiting label a previous
     // reconcile wrote is now stale: the item wants no label at all.
-    const requeued = makeStream(`wi-${PROJECT}-603`)
+    const requeued = makeStream(`ticket-${PROJECT}-603`)
     await appendBuilt(store, versions, [
       requeued('IssueUpdated', { project: PROJECT, issue: '603', change: 'labels', detail: 'lingtai:waiting' }),
     ])
@@ -248,24 +248,24 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
     await appendBuilt(store, versions, aResolution(requeued, { _tag: 'Requeue' }))
 
     // Released after a claim, with the running label stale the same way.
-    const released = makeStream(`wi-${PROJECT}-604`)
-    await appendBuilt(store, versions, aClaim(released, 'run-604'))
+    const released = makeStream(`ticket-${PROJECT}-604`)
+    await appendBuilt(store, versions, aClaim(released, 'pass-604'))
     await appendBuilt(store, versions, [
       released('IssueUpdated', { project: PROJECT, issue: '604', change: 'labels', detail: 'lingtai:working' }),
     ])
-    await appendBuilt(store, versions, aRelease(released, 'run-604'))
+    await appendBuilt(store, versions, aRelease(released, 'pass-604'))
 
     // Landed, and never asked to carry a label at all: no `IssueUpdated`, no
     // `IssueUpdateFailed` — the log has no outstanding claim, so this is read
     // off `getIssue` by neither `findIssueDrift` nor this test.
-    const landed = makeStream(`wi-${PROJECT}-605`)
-    await appendBuilt(store, versions, aClaim(landed, 'run-605'))
+    const landed = makeStream(`ticket-${PROJECT}-605`)
+    await appendBuilt(store, versions, aClaim(landed, 'pass-605'))
     await appendBuilt(store, versions, aLanding(landed, 'a'.repeat(40)))
 
-    // A `wi-` stream holding only `IssueUpdated` — never claimed, blocked,
+    // A `ticket-` stream holding only `IssueUpdated` — never claimed, blocked,
     // released, landed or unblocked — is not a candidate at all: `streams()`
     // itself never returns it.
-    const untouched = makeStream(`wi-${PROJECT}-606`)
+    const untouched = makeStream(`ticket-${PROJECT}-606`)
     await appendBuilt(store, versions, [
       untouched('IssueUpdated', { project: PROJECT, issue: '606', change: 'labels', detail: 'lingtai:working' }),
     ])
@@ -290,7 +290,7 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
 
     expect(found).toEqual([
       {
-        workItemId: `wi-${PROJECT}-601`,
+        ticketId: `ticket-${PROJECT}-601`,
         project: PROJECT,
         issue: 601,
         change: 'labels',
@@ -298,7 +298,7 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
         actual: '(no labels)',
       },
       {
-        workItemId: `wi-${PROJECT}-602`,
+        ticketId: `ticket-${PROJECT}-602`,
         project: PROJECT,
         issue: 602,
         change: 'labels',
@@ -306,7 +306,7 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
         actual: 'lingtai:working',
       },
       {
-        workItemId: `wi-${PROJECT}-603`,
+        ticketId: `ticket-${PROJECT}-603`,
         project: PROJECT,
         issue: 603,
         change: 'labels',
@@ -314,7 +314,7 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
         actual: 'lingtai:waiting',
       },
       {
-        workItemId: `wi-${PROJECT}-604`,
+        ticketId: `ticket-${PROJECT}-604`,
         project: PROJECT,
         issue: 604,
         change: 'labels',

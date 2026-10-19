@@ -260,7 +260,7 @@ export default async function Home() {
 function RunDiagram() {
   return (
     <div
-      className="run-diagram"
+      className="pass-diagram"
       role="img"
       aria-label="Illustration: a labeled GitHub issue enters Lingtai, an agent works in an isolated worktree, your checks run, and the result either lands or waits for you."
     >

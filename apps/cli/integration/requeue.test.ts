@@ -32,7 +32,7 @@ const RUNNING = 125
 const BLANK_NOTE = 126
 
 const wi = (n: number) => workItemStream(PROJECT, n)
-const run = (n: number) => `run-${PROJECT}-${n}`
+const run = (n: number) => `pass-${PROJECT}-${n}`
 
 /** What the board's `requeueCard` records, which is the local account (0007). */
 const ACTOR = `human:${userInfo().username}`
@@ -41,7 +41,7 @@ const NOTE = 'the agent gate refused every review; the block is the harness, not
 let store: EventStore
 
 const discovered = (n: number) => ({
-  type: 'WorkItemDiscovered',
+  type: 'TicketDiscovered',
   actor: 'github',
   data: {
     project: PROJECT,
@@ -54,7 +54,7 @@ const discovered = (n: number) => ({
 })
 
 const claimed = (n: number) => ({
-  type: 'WorkItemClaimed',
+  type: 'TicketClaimed',
   actor: 'conductor',
   data: { runId: run(n), worker: 'w', title: null, kind: null },
 })

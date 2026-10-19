@@ -23,7 +23,7 @@ export type IntegrationLifecycle =
    * another may be attempting the same base, and one of the two will be
    * refused at the push (#194).
    */
-  | { status: 'attempting'; workItemId: string; branch: string; headSha: string }
+  | { status: 'attempting'; ticketId: string; branch: string; headSha: string }
 
 export type IntegrationStatus = IntegrationLifecycle['status']
 
@@ -35,7 +35,7 @@ export type IntegrationStatus = IntegrationLifecycle['status']
 export type Refusal = PayloadOf<'IntegrationRefused'>
 
 export interface Landed {
-  workItemId: string
+  ticketId: string
   branch: string
   mergeCommit: string
 }
@@ -80,7 +80,7 @@ export function applyIntegration(state: IntegrationState, event: Envelope): Inte
         ...at,
         lifecycle: {
           status: 'attempting',
-          workItemId: d.workItemId,
+          ticketId: d.ticketId,
           branch: d.branch,
           headSha: d.headSha,
         },
@@ -111,7 +111,7 @@ export function applyIntegration(state: IntegrationState, event: Envelope): Inte
         ...at,
         lifecycle: { status: 'idle' },
         base: d.base,
-        landed: [...state.landed, { workItemId: d.workItemId, branch: d.branch, mergeCommit: d.mergeCommit }],
+        landed: [...state.landed, { ticketId: d.ticketId, branch: d.branch, mergeCommit: d.mergeCommit }],
       }
     }
 
@@ -136,13 +136,13 @@ export function reduceIntegration(events: readonly Envelope[]): IntegrationState
  * B both append `IntegrationAttempted`, A is refused at the push, and the first
  * terminal puts `lifecycle` back to `idle` while B is still merging — so this
  * says false with a merge in flight. While both are in flight `lifecycle` names
- * whichever attempted *last*, so B's `workItemId` and `headSha` have overwritten
+ * whichever attempted *last*, so B's `ticketId` and `headSha` have overwritten
  * A's. One `lifecycle` cannot hold two, which is why the fold does not try.
  *
  * What is left is what a single-writer lane made this mean and a chip could
  * still say honestly: something attempted here and nothing has said how it
  * ended. Counting what is genuinely open needs the attempts paired to their
- * terminals by `workItemId`, which is a different fold, and no caller has
+ * terminals by `ticketId`, which is a different fold, and no caller has
  * needed it.
  */
 export function laneIsBusy(state: IntegrationState): boolean {

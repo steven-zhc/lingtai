@@ -219,7 +219,7 @@ describe('resolveRecipe', () => {
     VALID +
     `subscribers:
   - name: telegram
-    on: [WorkItemLanded, WorkItemBlocked, RunFailed]
+    on: [TicketLanded, WorkItemBlocked, RunFailed]
     run: npx @lingtai/telegram
     env: [TELEGRAM_BOT_TOKEN]
 `
@@ -227,7 +227,7 @@ describe('resolveRecipe', () => {
   it('takes a subscriber, and a recipe without one declares none', async () => {
     const with_ = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: WITH_SUBSCRIBER }), 'develop')
     expect(with_.recipe.subscribers).toHaveLength(1)
-    expect(with_.recipe.subscribers[0]!.on).toEqual(['WorkItemLanded', 'WorkItemBlocked', 'RunFailed'])
+    expect(with_.recipe.subscribers[0]!.on).toEqual(['TicketLanded', 'WorkItemBlocked', 'RunFailed'])
     expect(with_.recipe.subscribers[0]!.run).toBe('npx @lingtai/telegram')
 
     // Empty rather than absent, like the four gate points a recipe never
@@ -295,7 +295,7 @@ describe('resolveRecipe', () => {
    * did not get. So the name has to be in the message.
    */
   it('refuses an event name that is not in the catalogue, naming it', async () => {
-    const typo = WITH_SUBSCRIBER.replace('WorkItemLanded', 'WorkItemLandeed')
+    const typo = WITH_SUBSCRIBER.replace('TicketLanded', 'WorkItemLandeed')
     const err = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: typo }), 'develop').catch((e: unknown) => e)
 
     expect(err).toBeInstanceOf(RecipeInvalidError)

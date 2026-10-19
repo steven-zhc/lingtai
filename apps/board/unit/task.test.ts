@@ -34,17 +34,17 @@ function e(streamId: string, type: string, data: unknown): Envelope {
   }
 }
 
-const RUN_1 = 'run-11111111-0000-0000-0000-000000000000'
-const RUN_2 = 'run-22222222-0000-0000-0000-000000000000'
+const RUN_1 = 'pass-11111111-0000-0000-0000-000000000000'
+const RUN_2 = 'pass-22222222-0000-0000-0000-000000000000'
 const CLAIM: Claim = { runId: RUN_1, at: '2026-09-08T04:12:15.000Z', repair: false, released: null }
 
 describe('the claims an item made', () => {
   it('keeps every one, in order, where the page kept only the last', () => {
     const claims = claimsOf([
-      e('wi-lingtai-89', 'WorkItemDiscovered', { externalRef: '89' }),
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_1 }),
-      e('wi-lingtai-89', 'WorkItemReleased', { runId: RUN_1, reason: 'timeout' }),
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_2 }),
+      e('ticket-lingtai-89', 'TicketDiscovered', { externalRef: '89' }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
+      e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'timeout' }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_2 }),
     ])
 
     expect(claims.map((c) => c.runId)).toEqual([RUN_1, RUN_2])
@@ -57,10 +57,10 @@ describe('the claims an item made', () => {
     // it. There is no second event: 0025 refuses a repair a vocabulary of its
     // own, and this is the whole of how a run learns it is one.
     const claims = claimsOf([
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_1 }),
-      e('wi-lingtai-89', 'RepairRequested', { runId: RUN_1, attempt: 1, reason: 'conflict' }),
-      e('wi-lingtai-89', 'WorkItemReleased', { runId: RUN_1, reason: 'repair' }),
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_2 }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
+      e('ticket-lingtai-89', 'RepairRequested', { runId: RUN_1, attempt: 1, reason: 'conflict' }),
+      e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'repair' }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_2 }),
     ])
 
     expect(claims.map((c) => c.repair)).toEqual([false, true])
@@ -68,8 +68,8 @@ describe('the claims an item made', () => {
 
   it('counts a claim naming a run it already holds as the same attempt', () => {
     const claims = claimsOf([
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_1 }),
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_1 }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
     ])
 
     expect(claims).toHaveLength(1)
@@ -193,7 +193,7 @@ describe('the totals', () => {
       seq: '1',
       at: new Date('2026-09-08T04:12:15Z'),
       streamId: pass,
-      ticket: 'wi-lingtai-89',
+      ticket: 'ticket-lingtai-89',
       project: 'lingtai',
       pass,
       purpose: 'Action',
@@ -238,7 +238,7 @@ describe('the totals', () => {
   })
 
   /**
-   * `wi-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
+   * `ticket-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
    * returns `[]`, so `billOf([])` used to fold to five empty bills and the
    * Attempts label said nothing at all — "nothing spent" rather than
    * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
@@ -253,11 +253,11 @@ describe('the totals', () => {
 
 describe('the history', () => {
   const events = [
-    e('wi-lingtai-89', 'WorkItemDiscovered', { externalRef: '89' }),
-    e('wi-lingtai-89', 'WorkItemClaimed', { runId: RUN_1 }),
+    e('ticket-lingtai-89', 'TicketDiscovered', { externalRef: '89' }),
+    e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
     e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
     // A ticket-level event landing mid-run. It must not cut the run in two.
-    e('wi-lingtai-89', 'WorkItemBlocked', { question: 'which flag?' }),
+    e('ticket-lingtai-89', 'WorkItemBlocked', { question: 'which flag?' }),
     e(RUN_1, 'RunFinished', { exitCode: 0, turns: 92, durationMs: 1000, costUsd: 8.4 }),
     e(RUN_2, 'RunStarted', { baseSha: 'a'.repeat(40) }),
   ]

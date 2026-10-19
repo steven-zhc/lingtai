@@ -94,7 +94,7 @@ describe('when a run never starts', () => {
 
     // Every run said what it was, in the vocabulary that is checkable. `crash` is
     // what all six of them said before, which is why the night was unreadable.
-    const runs = [...streams(store)].filter(([id]) => id.startsWith('run-'))
+    const runs = [...streams(store)].filter(([id]) => id.startsWith('pass-'))
     const endings = runs.flatMap(([, events]) =>
       events.filter((e) => e.type === 'RunFailed').map((e) => (e.data as { kind: string }).kind),
     )
@@ -115,14 +115,14 @@ describe('when a run never starts', () => {
     }
 
     // The items keep their place: each attempt released, as any failed run does.
-    const item = await store.read(`wi-${PROJECT}-7`)
-    expect(item.filter((e) => e.type === 'WorkItemReleased')).toHaveLength(6)
+    const item = await store.read(`ticket-${PROJECT}-7`)
+    expect(item.filter((e) => e.type === 'TicketReleased')).toHaveLength(6)
 
     // **And each release says what happened, which is the card's whole line.**
-    // `WorkItemReleased.reason` overwrites the note the projection wrote from
+    // `TicketReleased.reason` overwrites the note the projection wrote from
     // `RunFailed`, so `run failed: ${kind}` was where the reason stopped (0031 §6,
     // `#100`) — the prose was in the history and the card said `crash`.
-    const released = item.filter((e) => e.type === 'WorkItemReleased')
+    const released = item.filter((e) => e.type === 'TicketReleased')
     const reason = (released[0]!.data as { reason: string }).reason
     expect(reason).toContain("You've hit your session limit")
     // And which step met it, because the release is read beside nine others.
@@ -194,7 +194,7 @@ describe('when a run never starts', () => {
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
     // The plan reached the log, which is the half that already worked.
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const resolved = item.find((e) => e.type === 'EndActionsResolved')
     expect(resolved, 'the end step resolved nothing').toBeDefined()
     expect(resolved!.data).toMatchObject({ outcome: 'failed' })
@@ -261,7 +261,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     // nobody — the same ending `quotaRuntime` gets, at the step that met it.
     expect(result).toMatchObject({ ok: false, stage: 'proposed' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // **The run started and was paid**, which is the fact that makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
     expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
@@ -285,7 +285,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(reason).toContain("You've hit your session limit")
 
     // The item keeps its place, as any failed run's does.
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemReleased')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketReleased')
   })
 
   /**
@@ -331,7 +331,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     // account, so it asks nobody.
     expect(result).toMatchObject({ ok: false, stage: 'design' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // The drafting agent is the one that ran, by name, and nothing after it did:
     // `RunStarted` is `firstDispatch`'s and is never reached.
     expect(run.find((e) => e.type === 'StepNeverRan')!.data).toMatchObject({
@@ -357,7 +357,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(reason).toContain("You've hit your session limit")
 
     // The item keeps its place, as any failed run's does.
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemReleased')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketReleased')
   })
 
   /**
@@ -441,7 +441,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     // where a round's agent runs.
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // A round *was* bought, or this is not the branch under test.
     expect(run.find((e) => e.type === 'FixRequested')!.data).toMatchObject({
       round: 1,
@@ -612,10 +612,10 @@ describe('when an agent inside the pass produces no verdict', () => {
     // ticket for it is 0041's category error with the sign flipped.
     expect(await store.read('ctl-conductor')).toEqual([])
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const types = item.map((e) => e.type)
     expect(types).toContain('WorkItemBlocked')
-    expect(types).not.toContain('WorkItemReleased')
+    expect(types).not.toContain('TicketReleased')
 
     const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
     // Nothing is being asked of anybody's judgement about the diff: the
@@ -627,7 +627,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(blocked.diagnosis?.raw).toContain('already in use')
 
     // And no round was bought to answer a judgement nobody made.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     expect(run.map((e) => e.type)).not.toContain('FixRequested')
     expect(run.find((e) => e.type === 'StepDidNotFinish')!.data).toMatchObject({
       step: 'proposed',

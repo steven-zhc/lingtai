@@ -57,9 +57,9 @@ const NEVER_READ = new Set(['StepRequested', 'StepStarted'])
  * second assertion catches exactly that.
  */
 it('READ names every type some builder in events.ts actually produces', () => {
-  const run = aRun('run-read-coverage')
-  const secondRun = aRun('run-read-coverage-2')
-  const itemStream = makeStream('wi-read-coverage')
+  const run = aRun('pass-read-coverage')
+  const secondRun = aRun('pass-read-coverage-2')
+  const itemStream = makeStream('ticket-read-coverage')
   const integrationStream = makeStream('int-read-coverage-main')
 
   const worktree: Action = {
@@ -151,7 +151,7 @@ it('READ names every type some builder in events.ts actually produces', () => {
       { event: secondRun.event, step: 'proposed', action: 'approval', runId: secondRun.runId },
     ),
     ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
-    ...anIntegrationRefusal(integrationStream, 'wi-read-coverage', 'agent/read', { reason: 'dirty-base' }),
+    ...anIntegrationRefusal(integrationStream, 'ticket-read-coverage', 'agent/read', { reason: 'dirty-base' }),
     ...aLanding(itemStream, 'c'.repeat(40)),
     ...aWait(itemStream, { _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
     ...aWithdrawal(itemStream),
@@ -168,7 +168,7 @@ it('READ names every type some builder in events.ts actually produces', () => {
 
 describe('stepOutcomesOf round-trips through aStepEnded', () => {
   it('a verdict action that passed', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -183,7 +183,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a verdict action that refused, with findings', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const finding = {
       file: 'src/fix.ts',
       line: 12,
@@ -205,7 +205,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a verdict action whose answer could not be read at all', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -220,7 +220,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a verdict action whose agent never started', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -238,7 +238,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // The kind is on the wire in `StepDidNotFinish.detail`'s own prefix —
     // `agent-action.ts:580`'s own sentence — the same prefix
     // `verdictResultOf` (`adapters.ts:167`) reads on the forward side.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -263,7 +263,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // of it only seeds the recipe (`shapeFor` needs a `StepsResolved` entry
     // for `review`, which has no `STEP_DEFAULTS` of its own) and clears, so
     // the bare-detail action joins its outcome rather than starting a new one.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const accepted: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -287,7 +287,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a signoff action that passed with nothing asked', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'watch',
       name: 'tamper watch',
@@ -302,7 +302,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a signoff action that asked', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'human',
       name: 'approval',
@@ -317,7 +317,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action that committed, at round 0', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const head = 'b'.repeat(40)
     const action: Action = {
       plugin: 'agent',
@@ -333,7 +333,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action that cleared having committed nothing (row 6 of #461)', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -348,7 +348,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action whose own setup broke before any agent ran', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -369,7 +369,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // fold to `Completed{head: null, question: null}` (cleared) rather than
     // `NotDone`, which is indistinguishable on the read model from an agent
     // that ran to completion and left nothing on the branch.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -394,7 +394,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // checks for that literal instead of the four open-ended prefixes, so a
     // clipped hook-setup detail (anything that is not that exact literal)
     // still reads as `NotDone` rather than a commit that cleared with nothing.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -409,7 +409,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action that was interrupted, at round 0', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -424,7 +424,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action that asked', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -439,7 +439,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action in a fix round that committed (round 1)', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const head = 'd'.repeat(40)
     const action: Action = {
       plugin: 'agent',
@@ -455,7 +455,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a commit action in a fix round that was interrupted (round 1)', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -480,7 +480,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // rather than the `changedNothing` cell `nextOf` reserves for round > 0
     // (`Propose{FixerDisagrees}`) — the fixer having run and declined read as
     // the work action's own setup never having dispatched it at all.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -495,7 +495,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a design action that drafted', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'agent',
       name: 'draft',
@@ -510,7 +510,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a design action that asked', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const asked = 'Which wins — the ticket or the hold rule?'
     const action: Action = {
       plugin: 'agent',
@@ -533,7 +533,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // agent cell's own cause is `out-of-turns`, not `crash` (#478) — a kind
     // the fold would equally answer by its own default, so this tells the
     // two apart rather than agreeing with that default.
-    const runAgent = aRun('run-agent')
+    const runAgent = aRun('pass-agent')
     const agentAction: Action = {
       plugin: 'agent',
       name: 'draft',
@@ -545,7 +545,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     const agentEvents = runAgent.aStepEnded(outcomeOf('design', 0, [agentAction]))
     expect(stepOutcomesOf(agentEvents)[0]?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns' })
 
-    const runFile = aRun('run-file')
+    const runFile = aRun('pass-file')
     const fileAction: Action = {
       plugin: 'file',
       name: 'keep the design',
@@ -564,7 +564,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // `makeStream` instead — `design` has its own `STEP_DEFAULTS` entry
     // (`read-model.ts:92`), so no `StepsResolved` recipe is needed for
     // `shapeFor` to read this action as an `agent:` drafter.
-    const runId = 'run-design-1'
+    const runId = 'pass-design-1'
     const event = makeStream(runId)
     const events = [
       event('StepDidNotFinish', { step: 'design', action: 'draft', runId, onSha, detail: 'the agent died' }),
@@ -574,7 +574,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a nothing action that passed and one that did not', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const passed: Action = {
       plugin: 'file-brief',
       name: 'read the design back',
@@ -601,7 +601,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a worktree action, its head read off the next action this run opens', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const cutHead = 'b'.repeat(40)
     const worktree: Action = {
       plugin: 'worktree',
@@ -628,7 +628,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a merge action that landed', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const mergeSha = 'c'.repeat(40)
     const action: Action = {
       plugin: 'merge',
@@ -638,7 +638,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       yields: 'merge',
       result: { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } },
     }
-    const itemStream = makeStream(`wi-473-1`)
+    const itemStream = makeStream(`ticket-473-1`)
     const events = [
       ...aClaim(itemStream, run.runId),
       ...run.aStepEnded(outcomeOf('merge', 0, [action])),
@@ -648,7 +648,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it('a merge action that refused on a conflict', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const action: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -661,8 +661,8 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       },
     }
     const integrationStream = makeStream('int-473-main')
-    const itemStream = makeStream('wi-473-1')
-    const refused = anIntegrationRefusal(integrationStream, 'wi-473-1', 'agent/473', {
+    const itemStream = makeStream('ticket-473-1')
+    const refused = anIntegrationRefusal(integrationStream, 'ticket-473-1', 'agent/473', {
       reason: 'conflict',
       detail: 'both sides touched src/fix.ts',
       paths: ['src/fix.ts'],
@@ -673,20 +673,20 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     expect(stepOutcomesOf(events)).toEqual([{ ...outcomeOf('merge', 0, [action]), runId: run.runId }])
   })
 
-  it('a merge refusal is matched by workItemId, not by the first refusal on the shared integration stream', () => {
+  it('a merge refusal is matched by ticketId, not by the first refusal on the shared integration stream', () => {
     // The integration stream (`int-<project>-<base>`) is shared by every work
     // item on that base — an older refusal for a different item must not be
     // read as this run's own merge result.
     const integrationStream = makeStream('int-473-main')
-    const itemStream = makeStream('wi-473-7')
-    const older = anIntegrationRefusal(integrationStream, 'wi-473-999', 'agent/999', {
+    const itemStream = makeStream('ticket-473-7')
+    const older = anIntegrationRefusal(integrationStream, 'ticket-473-999', 'agent/999', {
       reason: 'conflict',
       detail: 'not mine',
       paths: ['src/not-mine.ts'],
       baseSha: 'f'.repeat(40),
       headSha: 'e'.repeat(40),
     })
-    const run = aRun('run-7')
+    const run = aRun('pass-7')
     const action: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -695,7 +695,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       yields: 'merge',
       result: { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' } },
     }
-    const ownRefusal = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+    const ownRefusal = anIntegrationRefusal(integrationStream, 'ticket-473-7', 'agent/7', {
       reason: 'dirty-base',
       detail: 'origin moved',
     })
@@ -713,16 +713,16 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
   })
 
   it("a second claim after a release reads its own refusal, never the first attempt's newer-looking one", () => {
-    // The requeue-after-a-refusal path: run-1 conflicts, the item releases
-    // and is reclaimed by run-2, and run-2's own refusal is a plain
+    // The requeue-after-a-refusal path: pass-1 conflicts, the item releases
+    // and is reclaimed by pass-2, and pass-2's own refusal is a plain
     // `dirty-base` with no `paths`/`baseSha`/`headSha`. Picking "whichever
-    // refusal is newest for this workItemId" (rather than bounding to each
-    // attempt's own `StepFailed`) would read run-1's own conflict back onto
-    // run-1's merge the moment run-2's later refusal lands on the shared
+    // refusal is newest for this ticketId" (rather than bounding to each
+    // attempt's own `StepFailed`) would read pass-1's own conflict back onto
+    // pass-1's merge the moment pass-2's later refusal lands on the shared
     // integration stream.
     const integrationStream = makeStream('int-473-main')
-    const itemStream = makeStream('wi-473-7')
-    const run1 = aRun('run-1')
+    const itemStream = makeStream('ticket-473-7')
+    const run1 = aRun('pass-1')
     const conflictAction: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -740,7 +740,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // refusal is built, as its own statement, ahead of the `aStepEnded` call
     // whose `StepFailed` it explains, the same relative order the real log
     // carries.
-    const refusal1 = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+    const refusal1 = anIntegrationRefusal(integrationStream, 'ticket-473-7', 'agent/7', {
       reason: 'conflict',
       detail: 'both sides touched src/mine.ts',
       paths: ['src/mine.ts'],
@@ -753,7 +753,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       ...run1.aStepEnded(outcomeOf('merge', 0, [conflictAction])),
     ]
 
-    const run2 = aRun('run-2')
+    const run2 = aRun('pass-2')
     const dirtyBaseAction: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -762,7 +762,7 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
       yields: 'merge',
       result: { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: 'dirty-base' } },
     }
-    const refusal2 = anIntegrationRefusal(integrationStream, 'wi-473-7', 'agent/7', {
+    const refusal2 = anIntegrationRefusal(integrationStream, 'ticket-473-7', 'agent/7', {
       reason: 'dirty-base',
       detail: 'origin moved',
     })
@@ -794,8 +794,8 @@ describe('stepOutcomesOf round-trips through aStepEnded', () => {
     // run's own `WorkItemBlocked.hold`. Here that hold is `Routed{when:
     // 'conflict'}`, the shape a conflict refusal takes once the router has
     // seen it (`holdOf`'s own `escalatedHold`).
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const action: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -835,7 +835,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // `StepRequested`/`StepStarted`, no recipe entry — at whichever step the
     // pass stopped at, which can be `merge` itself (a check declared before
     // the lane refused it). `STEP_DEFAULTS['merge']` must not claim it.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = [
       run.event('ApprovalRequested', {
         step: 'merge',
@@ -865,7 +865,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // reason: 'unexpected'}}` — a pass that asked a person before the lane
     // ever ran read as the lane itself having refused.
     for (const action of ['no-merge', 'repair']) {
-      const run = aRun(`run-${action}`)
+      const run = aRun(`pass-${action}`)
       const events = [
         run.event('ApprovalRequested', {
           step: 'merge',
@@ -887,7 +887,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
 
   it('reads a "judge" ApprovalRequested at `proposed` without throwing', () => {
     // No recipe entry and no `STEP_DEFAULTS['proposed']` — this used to throw.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = [
       run.event('ApprovalRequested', {
         step: 'proposed',
@@ -908,7 +908,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // (`conduct.ts:3016`) — a run that asks a question at `design` and stops
     // there, as row 11 of #461 does, never reaches it, so `recipeFor` answers
     // `undefined` and the recipe-entry lookup has nothing to find `draft` in.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const asked = 'which wins?'
     const events = [run.event('StepAsked', { step: 'design', action: 'draft', runId: run.runId, onSha, detail: asked })]
     expect(() => stepOutcomesOf(events)).not.toThrow()
@@ -922,7 +922,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // and `review`/`build`/`proposed`/`prepared` have no `STEP_DEFAULTS` row
     // (an action at those steps is always one the recipe declared). The
     // historical row is skipped, not thrown over.
-    const run = aRun('run-v2')
+    const run = aRun('pass-v2')
     const events = [
       run.event('StepsResolved', {
         runId: run.runId,
@@ -943,7 +943,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
   })
 
   it('skips a `build` action a v3+ recipe names no entry for, without throwing', () => {
-    const run = aRun('run-v3')
+    const run = aRun('pass-v3')
     const events = [
       run.event('StepsResolved', {
         runId: run.runId,
@@ -971,7 +971,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // it share the same `step`/`round` on the wire (rows 9, 10a, 10b of
     // #461) — grouping them into one `StepOutcome` leaves the refusing
     // `check` neither last nor cleared, which `wellFormed` rejects.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const refusingCheck = run.event('StepFailed', {
       step: 'merge',
       action: 'check',
@@ -1013,7 +1013,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // neither `TERMINAL_TYPES` nor `READ`, so `stepOutcomesOf` never saw it
     // and the fold still answered `Completed{assessment:{verdict:'refused'}}`
     // for the waived check, which `cleared()` reads as still refusing.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const refusingCheck: Action = {
       plugin: 'run',
       name: 'check',
@@ -1051,7 +1051,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // re-reading the same `IntegrationRefused` row and fabricating a second,
     // identical `Conflicted` result where the log holds one refusal and one
     // waiver.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const conflictAction: Action = {
       plugin: 'merge',
       name: 'land the branch',
@@ -1064,8 +1064,8 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
       },
     }
     const integrationStream = makeStream('int-473-main')
-    const itemStream = makeStream('wi-473-1')
-    const refused = anIntegrationRefusal(integrationStream, 'wi-473-1', 'agent/473', {
+    const itemStream = makeStream('ticket-473-1')
+    const refused = anIntegrationRefusal(integrationStream, 'ticket-473-1', 'agent/473', {
       reason: 'conflict',
       detail: 'both sides touched src/fix.ts',
       paths: ['src/fix.ts'],
@@ -1102,7 +1102,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
     // `stepOutcomesOf: "StepWaived" cannot end a commit action` — exactly
     // the throw `TERMINAL_TYPES`'s own admission of `StepWaived` for every
     // yield was supposed to make unreachable.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const waived = run.event('StepWaived', {
       step: 'implement',
       action: 'write the change',
@@ -1118,7 +1118,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
   })
 
   it('reads a StepWaived at design as Waived rather than throwing', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const waived = run.event('StepWaived', {
       step: 'design',
       action: 'draft',
@@ -1136,7 +1136,7 @@ describe('stepOutcomesOf and conduct.ts:4038\'s injected "unfixed"/"judge" pseud
 
 describe('routesOf', () => {
   it('folds a fix-lines route back to implement', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = aRoute(run, { from: 'review', to: 'implement', why: 'blocker src/fix.ts:12' })
     expect(routesOf(events)).toEqual([
       {
@@ -1149,7 +1149,7 @@ describe('routesOf', () => {
   })
 
   it('folds a restart back to claim', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = aRoute(run, { from: 'proposed', to: 'claim', why: 'start over', restart: 1, of: 2 })
     expect(routesOf(events)).toEqual([
       {
@@ -1167,13 +1167,13 @@ describe('routesOf', () => {
     // `PassRestarted` follows and the pass falls through to an ordinary
     // failed ending. Inventing `Restart{restart:0}` here would claim a
     // restart that never happened.
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = [run.event('PassRouted', { from: 'proposed', chose: 'claim', to: 'claim', why: '', ceiling: null })]
     expect(routesOf(events)).toEqual([])
   })
 
   it('folds an escalation with a spent ceiling', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = aRoute(run, { from: 'proposed', to: 'waiting', chose: 'implement', ceiling: 'rounds' })
     expect(routesOf(events)).toEqual([
       {
@@ -1192,7 +1192,7 @@ describe('routesOf', () => {
   })
 
   it('skips an ordinary advance', () => {
-    const run = aRun('run-1')
+    const run = aRun('pass-1')
     const events = aRoute(run, { from: 'review', to: 'proposed' })
     expect(routesOf(events)).toEqual([])
   })
@@ -1200,7 +1200,7 @@ describe('routesOf', () => {
 
 describe('waitsOf', () => {
   it('round-trips a hold through holdOf, _tag for _tag', () => {
-    const itemStream = makeStream('wi-473-1')
+    const itemStream = makeStream('ticket-473-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
     const events = aWait(itemStream, reason)
     const [wait] = waitsOf(events)
@@ -1217,8 +1217,8 @@ describe('waitsOf', () => {
     // setup breaking before any agent ran without reading the run's own
     // `StepDidNotFinish` detail back, the same way `commitResultFrom`
     // already does via `hookSetupBroke`.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const noCommits: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -1251,8 +1251,8 @@ describe('waitsOf', () => {
     // that round-trips, and the step outcome this same round folds to is
     // `Interrupted`, not the cleared `Completed{head: null}` a bare-kind
     // comparison against `FixApplied.failure` used to answer.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const interrupted: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -1286,8 +1286,8 @@ describe('waitsOf', () => {
     // "the hook " (`hookSetupBroke`'s own four), which is exactly why that
     // check cannot tell this apart from an ordinary cleared-nothing ending —
     // `ctx.ran`/the round's own `FixApplied` is what does.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const noSettings: Action = {
       plugin: 'agent',
       name: 'write the change',
@@ -1324,8 +1324,8 @@ describe('waitsOf', () => {
     // whichever `FixApplied` landed last on the run regardless of round, so
     // round 2's own "no settings" DidNotFinish answered `NothingProduced` off
     // round 1's clean one.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const head1 = 'd'.repeat(40)
     const round1: Action = {
       plugin: 'agent',
@@ -1382,8 +1382,8 @@ describe('waitsOf', () => {
     // place its own cause can be read is `agent-action.ts`'s own sentence,
     // `` `the reviewer did not finish (${kind}): ...` ``, so the fixture
     // writes that rather than an invented format a real pass never produces.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const head = 'd'.repeat(40)
     const cleanFix: Action = {
       plugin: 'agent',
@@ -1422,7 +1422,7 @@ describe('waitsOf', () => {
   })
 
   it('reads a Routed{findings} hold back as ProposedEscalated/ReviewFindings', () => {
-    const itemStream = makeStream('wi-473-1')
+    const itemStream = makeStream('ticket-473-1')
     const finding = {
       file: 'src/fix.ts',
       line: 12,
@@ -1432,7 +1432,7 @@ describe('waitsOf', () => {
     }
     const reason = {
       _tag: 'ProposedEscalated' as const,
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       proposal: { _tag: 'ReviewFindings' as const, findings: [finding] },
       because: { _tag: 'NotAsked' as const },
     }
@@ -1451,8 +1451,8 @@ describe('waitsOf', () => {
     // `Routed{when: 'findings'}` hold. `routedToReason` used to look for the
     // `unreadable: true` `StepFailed` at `review` alone, so this one — the
     // judge's own, at `proposed` — read back as the cold reviewer's.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const judge: Action = {
       plugin: 'agent',
       name: 'judge the direction',
@@ -1481,8 +1481,8 @@ describe('waitsOf', () => {
     // round 0's own unreadable `StepFailed` outranked round 1's own
     // `Routed{findings}` hold, and the escalation read as `AnswerUnreadable`
     // with the finding the person actually has to read dropped.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const unreadableReview: Action = {
       plugin: 'agent',
       name: 'cold reviewer',
@@ -1537,15 +1537,15 @@ describe('waitsOf', () => {
     // Not an `OwnQuestion`: an unwithdrawn unblock of one of those is always
     // `AnswerQuestion` (the next `it`), since the two write the same event
     // and nothing but `withdrawn` tells a requeue from an answer there.
-    const itemStream = makeStream('wi-473-1')
-    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'run-1' }, said: 'the approach cannot work' }
+    const itemStream = makeStream('ticket-473-1')
+    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'pass-1' }, said: 'the approach cannot work' }
     const events = [...aWait(itemStream, reason), ...aResolution(itemStream, { _tag: 'Requeue' })]
     const [wait] = waitsOf(events)
     expect(wait?.resolution).toEqual({ _tag: 'Requeue' })
   })
 
   it('answers the Resolution once one lands: AnswerQuestion', () => {
-    const itemStream = makeStream('wi-473-1')
+    const itemStream = makeStream('ticket-473-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
     const events = [
       ...aWait(itemStream, reason),
@@ -1556,7 +1556,7 @@ describe('waitsOf', () => {
   })
 
   it('answers Close', () => {
-    const itemStream = makeStream('wi-473-1')
+    const itemStream = makeStream('ticket-473-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
     const events = [...aWait(itemStream, reason), ...aResolution(itemStream, { _tag: 'Close' })]
     const [wait] = waitsOf(events)
@@ -1564,7 +1564,7 @@ describe('waitsOf', () => {
   })
 
   it('reads a withdrawn unblock as Requeue, never AnswerQuestion', () => {
-    const itemStream = makeStream('wi-473-1')
+    const itemStream = makeStream('ticket-473-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
     const events = [...aWait(itemStream, reason), ...aWithdrawal(itemStream)]
     const [wait] = waitsOf(events)
@@ -1572,8 +1572,8 @@ describe('waitsOf', () => {
   })
 
   it('answers Approve off the run it grants on', () => {
-    const itemStream = makeStream('wi-473-1')
-    const run = aRun('run-1')
+    const itemStream = makeStream('ticket-473-1')
+    const run = aRun('pass-1')
     const reason = {
       _tag: 'SignoffRequired' as const,
       run: { runId: run.runId },
@@ -1599,8 +1599,8 @@ describe('waitsOf', () => {
     // `Blocked{MergeRefused, afterApproval: true}` → that second wait's own
     // requeue. The first wait's resolution must not be read off the second
     // wait's own `WorkItemUnblocked`.
-    const itemStream = makeStream('wi-473-1')
-    const run = aRun('run-1')
+    const itemStream = makeStream('ticket-473-1')
+    const run = aRun('pass-1')
     const firstReason = {
       _tag: 'SignoffRequired' as const,
       run: { runId: run.runId },
@@ -1634,8 +1634,8 @@ describe('waitsOf', () => {
     // `checkRedHold`) — the only place they can come from is the refusing
     // `StepFailed` on the run, which the design's own table names as their
     // source.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const finding = {
       file: 'src/fix.ts',
       line: 12,
@@ -1665,29 +1665,29 @@ describe('waitsOf', () => {
   })
 
   it("a different item's own unblock does not resolve this item's wait", () => {
-    // One person requeuing `wi-p-8` must not read back as an answer to
-    // `wi-p-7`'s own wait — `resolutionAfter` has to scope `WorkItemUnblocked`
+    // One person requeuing `ticket-p-8` must not read back as an answer to
+    // `ticket-p-7`'s own wait — `resolutionAfter` has to scope `WorkItemUnblocked`
     // by stream, not just by type, the way a projection folding every item's
     // events in one global `seq` order would see them interleaved.
-    const thisItem = makeStream('wi-p-7')
-    const otherItem = makeStream('wi-p-8')
-    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'run-1' }, said: 'the approach cannot work' }
-    const events = [...aWait(thisItem, reason), ...aWithdrawal(otherItem, 'requeuing wi-p-8, not this one')]
+    const thisItem = makeStream('ticket-p-7')
+    const otherItem = makeStream('ticket-p-8')
+    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'pass-1' }, said: 'the approach cannot work' }
+    const events = [...aWait(thisItem, reason), ...aWithdrawal(otherItem, 'requeuing ticket-p-8, not this one')]
     const [wait] = waitsOf(events)
     expect(wait?.resolution).toBeNull()
   })
 
   it("a different item's own block does not cut off this item's own resolution window", () => {
-    // The mirror case: `wi-p-7` blocks, `wi-p-8` blocks, then `wi-p-7` is
+    // The mirror case: `ticket-p-7` blocks, `ticket-p-8` blocks, then `ticket-p-7` is
     // unblocked. Bounding the search window by the next `WorkItemBlocked` of
-    // any stream would read `wi-p-8`'s own block as the end of `wi-p-7`'s
-    // window and miss `wi-p-7`'s real resolution sitting past it.
-    const thisItem = makeStream('wi-p-7')
-    const otherItem = makeStream('wi-p-8')
-    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'run-1' }, said: 'the approach cannot work' }
+    // any stream would read `ticket-p-8`'s own block as the end of `ticket-p-7`'s
+    // window and miss `ticket-p-7`'s real resolution sitting past it.
+    const thisItem = makeStream('ticket-p-7')
+    const otherItem = makeStream('ticket-p-8')
+    const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'pass-1' }, said: 'the approach cannot work' }
     const events = [
       ...aWait(thisItem, reason),
-      ...aWait(otherItem, { _tag: 'FixerDisagrees' as const, run: { runId: 'run-2' }, said: 'unrelated' }),
+      ...aWait(otherItem, { _tag: 'FixerDisagrees' as const, run: { runId: 'pass-2' }, said: 'unrelated' }),
       ...aResolution(thisItem, { _tag: 'Requeue' }),
     ]
     const [thisWait] = waitsOf(events)
@@ -1697,8 +1697,8 @@ describe('waitsOf', () => {
 
 describe('releaseCauseOf', () => {
   it('reads an ordinary restart off the PassRestarted immediately before it', () => {
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const events = [
       ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
       ...aRelease(itemStream, run.runId),
@@ -1710,27 +1710,27 @@ describe('releaseCauseOf', () => {
     // `PassRestarted` lives on the work item's own stream (`conduct.ts:3936`)
     // — a second item appending in between, in global `seq` order, must not
     // make `releaseCauseOf` read the release as an ordinary failed pass.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-p-7')
-    const otherItem = makeStream('wi-p-8')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-p-7')
+    const otherItem = makeStream('ticket-p-8')
     const events = [
       ...aRoute(run, { from: 'proposed', to: 'claim', restart: 1, of: 2 }, itemStream),
-      ...aClaim(otherItem, 'run-9'),
+      ...aClaim(otherItem, 'pass-9'),
       ...aRelease(itemStream, run.runId),
     ]
     expect(releaseCauseOf(events)).toEqual([{ _tag: 'Restart', restart: 1 }])
   })
 
   it('answers null for an ordinary failed pass', () => {
-    const itemStream = makeStream('wi-473-1')
-    const claimed = aClaim(itemStream, 'run-1')
-    const released = itemStream('WorkItemReleased', { runId: 'run-1', reason: 'the pass did not finish' })
+    const itemStream = makeStream('ticket-473-1')
+    const claimed = aClaim(itemStream, 'pass-1')
+    const released = itemStream('TicketReleased', { runId: 'pass-1', reason: 'the pass did not finish' })
     expect(releaseCauseOf([...claimed, released])).toEqual([null])
   })
 
   it('answers ClaimUnconfirmed when no claim preceded the release', () => {
-    const itemStream = makeStream('wi-473-1')
-    const released = itemStream('WorkItemReleased', { runId: 'run-1', reason: 'the append may have committed' })
+    const itemStream = makeStream('ticket-473-1')
+    const released = itemStream('TicketReleased', { runId: 'pass-1', reason: 'the append may have committed' })
     expect(releaseCauseOf([released])).toEqual([{ _tag: 'ClaimUnconfirmed' }])
   })
 
@@ -1741,8 +1741,8 @@ describe('releaseCauseOf', () => {
     // release reads `scope: 'conductor'` the way every forward builder
     // (`verdictResultFrom`/`commitResultFrom`/`designResultFrom`) already
     // does for the same event.
-    const run = aRun('run-1')
-    const itemStream = makeStream('wi-473-1')
+    const run = aRun('pass-1')
+    const itemStream = makeStream('ticket-473-1')
     const events = [
       ...aClaim(itemStream, run.runId),
       run.event('StepNeverRan', {
@@ -1766,17 +1766,17 @@ describe('releaseCauseOf', () => {
  */
 describe('boardFactOf', () => {
   it('answers ActionRequested for StepRequested', () => {
-    const stream = makeStream('run-board-1')
-    const event = stream('StepRequested', { step: 'build', action: 'typecheck', runId: 'run-board-1', onSha })
+    const stream = makeStream('pass-board-1')
+    const event = stream('StepRequested', { step: 'build', action: 'typecheck', runId: 'pass-board-1', onSha })
     expect(boardFactOf(event)).toEqual({ _tag: 'ActionRequested', step: 'build', action: 'typecheck' })
   })
 
   it('answers StepEnded{ending: "Passed"} for StepPassed, findings carried verbatim', () => {
-    const stream = makeStream('run-board-2')
+    const stream = makeStream('pass-board-2')
     const event = stream('StepPassed', {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-board-2',
+      runId: 'pass-board-2',
       onSha,
       evidence: 'looks right',
       findings: [],
@@ -1794,11 +1794,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers StepEnded{ending: "Failed"}, carrying unreadable when the answer could not be read', () => {
-    const stream = makeStream('run-board-3')
+    const stream = makeStream('pass-board-3')
     const event = stream('StepFailed', {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-board-3',
+      runId: 'pass-board-3',
       onSha,
       evidence: 'not valid JSON',
       findings: [],
@@ -1817,11 +1817,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers StepEnded{ending: "NeverRan"}, carrying detail rather than evidence', () => {
-    const stream = makeStream('run-board-4')
+    const stream = makeStream('pass-board-4')
     const event = stream('StepNeverRan', {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-board-4',
+      runId: 'pass-board-4',
       onSha,
       detail: 'the account was over budget',
     })
@@ -1838,11 +1838,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers StepEnded{ending: "DidNotFinish"}', () => {
-    const stream = makeStream('run-board-5')
+    const stream = makeStream('pass-board-5')
     const event = stream('StepDidNotFinish', {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-board-5',
+      runId: 'pass-board-5',
       onSha,
       detail: 'the reviewer did not finish (crash): segfault',
     })
@@ -1859,11 +1859,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers StepEnded{ending: "Asked"}', () => {
-    const stream = makeStream('run-board-6')
+    const stream = makeStream('pass-board-6')
     const event = stream('StepAsked', {
       step: 'design',
       action: 'drafter',
-      runId: 'run-board-6',
+      runId: 'pass-board-6',
       onSha,
       detail: 'which assumption should I state?',
     })
@@ -1880,11 +1880,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers Waived for StepWaived', () => {
-    const stream = makeStream('run-board-7')
+    const stream = makeStream('pass-board-7')
     const event = stream('StepWaived', {
       step: 'merge',
       action: 'lane',
-      runId: 'run-board-7',
+      runId: 'pass-board-7',
       onSha,
       by: 'steven',
       reason: 'already reviewed by hand',
@@ -1899,11 +1899,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers SignoffRequested for ApprovalRequested', () => {
-    const stream = makeStream('run-board-8')
+    const stream = makeStream('pass-board-8')
     const event = stream('ApprovalRequested', {
       step: 'merge',
       action: 'lane',
-      runId: 'run-board-8',
+      runId: 'pass-board-8',
       onSha,
       question: 'merge this?',
       artifacts: [],
@@ -1918,11 +1918,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers SignoffGranted for ApprovalGranted', () => {
-    const stream = makeStream('run-board-9')
+    const stream = makeStream('pass-board-9')
     const event = stream('ApprovalGranted', {
       step: 'merge',
       action: 'lane',
-      runId: 'run-board-9',
+      runId: 'pass-board-9',
       onSha,
       by: 'steven',
       note: 'looks right',
@@ -1937,11 +1937,11 @@ describe('boardFactOf', () => {
   })
 
   it('answers SignoffRevoked for ApprovalRevoked', () => {
-    const stream = makeStream('run-board-10')
+    const stream = makeStream('pass-board-10')
     const event = stream('ApprovalRevoked', {
       step: 'merge',
       action: 'lane',
-      runId: 'run-board-10',
+      runId: 'pass-board-10',
       onSha,
       by: 'steven',
       reason: 'withdrawn',
@@ -1957,9 +1957,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers RoundOpened for FixRequested', () => {
-    const stream = makeStream('run-board-11')
+    const stream = makeStream('pass-board-11')
     const event = stream('FixRequested', {
-      runId: 'run-board-11',
+      runId: 'pass-board-11',
       round: 1,
       of: 2,
       action: 'cold reviewer',
@@ -1970,9 +1970,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers RoundEnded for every FixApplied, including one that cost nothing', () => {
-    const stream = makeStream('run-board-12')
+    const stream = makeStream('pass-board-12')
     const event = stream('FixApplied', {
-      runId: 'run-board-12',
+      runId: 'pass-board-12',
       round: 1,
       headSha: null,
       turns: 1,
@@ -1990,9 +1990,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers RoundsDeclined for FixDeclined', () => {
-    const stream = makeStream('run-board-13')
+    const stream = makeStream('pass-board-13')
     const event = stream('FixDeclined', {
-      runId: 'run-board-13',
+      runId: 'pass-board-13',
       round: 2,
       action: 'cold reviewer',
       why: 'two agents disagreed',
@@ -2007,9 +2007,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers Restarted for PassRestarted', () => {
-    const stream = makeStream('wi-board-14')
+    const stream = makeStream('ticket-board-14')
     const event = stream('PassRestarted', {
-      runId: 'run-board-14',
+      runId: 'pass-board-14',
       restart: 1,
       of: 2,
       action: 'cold reviewer',
@@ -2030,13 +2030,13 @@ describe('boardFactOf', () => {
   })
 
   it('answers RunEnded for RunFailed', () => {
-    const stream = makeStream('run-board-15')
+    const stream = makeStream('pass-board-15')
     const event = stream('RunFailed', { kind: 'crash', detail: 'segfault' })
     expect(boardFactOf(event)).toEqual({ _tag: 'RunEnded', kind: 'crash', detail: 'segfault' })
   })
 
   it('answers WaitStarted for WorkItemBlocked, through Hold.safeParse and legacyColumns', () => {
-    const itemStream = makeStream('wi-board-16')
+    const itemStream = makeStream('ticket-board-16')
     const [event] = aWait(itemStream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' })
     expect(boardFactOf(event!)).toEqual({
       _tag: 'WaitStarted',
@@ -2052,7 +2052,7 @@ describe('boardFactOf', () => {
     // enforces today, which `makeStream` cannot construct.
     const event = {
       seq: 999_999n,
-      streamId: 'wi-board-17',
+      streamId: 'ticket-board-17',
       version: 1,
       type: 'WorkItemBlocked' as const,
       schemaVer: 1,
@@ -2070,13 +2070,13 @@ describe('boardFactOf', () => {
   })
 
   it('answers WaitResolved for WorkItemUnblocked', () => {
-    const itemStream = makeStream('wi-board-18')
+    const itemStream = makeStream('ticket-board-18')
     const event = itemStream('WorkItemUnblocked', { by: 'steven', note: 'requeue', withdrawn: true })
     expect(boardFactOf(event)).toEqual({ _tag: 'WaitResolved', by: 'steven', note: 'requeue', withdrawn: true })
   })
 
   it('answers WaitTriaged for HoldTriaged', () => {
-    const itemStream = makeStream('wi-board-19')
+    const itemStream = makeStream('ticket-board-19')
     const result = { _tag: 'Failed' as const, failure: 'could not read the diff' }
     const event = itemStream('HoldTriaged', {
       attempt: 1,
@@ -2089,9 +2089,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers RepairBought for RepairRequested', () => {
-    const itemStream = makeStream('wi-board-20')
+    const itemStream = makeStream('ticket-board-20')
     const event = itemStream('RepairRequested', {
-      runId: 'run-board-20',
+      runId: 'pass-board-20',
       reason: 'verify-failed',
       detail: 'exit 1',
       fingerprint: '0123456789ab',
@@ -2101,9 +2101,9 @@ describe('boardFactOf', () => {
   })
 
   it('answers RepairRefused for RepairDeclined', () => {
-    const itemStream = makeStream('wi-board-21')
+    const itemStream = makeStream('ticket-board-21')
     const event = itemStream('RepairDeclined', {
-      runId: 'run-board-21',
+      runId: 'pass-board-21',
       reason: 'verify-failed',
       detail: 'exit 1',
       fingerprint: '0123456789ab',
@@ -2117,8 +2117,8 @@ describe('boardFactOf', () => {
   })
 
   it('answers null for a type it does not own', () => {
-    const itemStream = makeStream('wi-board-22')
-    const [event] = aClaim(itemStream, 'run-board-22')
+    const itemStream = makeStream('ticket-board-22')
+    const [event] = aClaim(itemStream, 'pass-board-22')
     expect(boardFactOf(event!)).toBeNull()
   })
 })

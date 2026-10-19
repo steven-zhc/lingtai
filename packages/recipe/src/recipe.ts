@@ -1097,7 +1097,7 @@ const SOURCE_FIELDS = {
    * a `db` project on an old daemon just reads as a `github` one.
    *
    * **Switching a project with history is unsupported.** Work items are the
-   * streams `wi-<project>-<number>` (`packages/domain/src/streams.ts:14`). A
+   * streams `ticket-<project>-<number>` (`packages/domain/src/streams.ts:14`). A
    * DB ticket numbered from 1 would append into the stream of the GitHub
    * issue that happens to share its number. Refusing that by name is #382's
    * job; this field only carries the value.
@@ -2329,7 +2329,7 @@ function actionsAt(step: Step) {
          * step runs (0065 §2) and the pass reads its ending off the pipeline, so
          * a `run: pnpm smoke` written after the lane runs on a branch already on
          * the base: the merge happened, the check fails, `endingOf` reports
-         * `merge` refused, no `WorkItemLanded` is appended, `end`'s `when:
+         * `merge` refused, no `TicketLanded` is appended, `end`'s `when:
          * landed` effects never fire, and the item is blocked with its diff on
          * `main` for a later pass to work again. A check that must gate the merge
          * goes before the lane, which is where a reader would write it anyway.
@@ -2531,7 +2531,7 @@ function actionsAt(step: Step) {
        * does not follow is a landing: the append is guarded on the lane's own
        * commit — `const merged = landedAt(); if (outcome === "landed" && merged
        * !== null)` in `conduct.ts` — and no lane ran, so there is no
-       * `WorkItemLanded`, no `endPlan`, `end`'s `when: landed` effects never
+       * `TicketLanded`, no `endPlan`, `end`'s `when: landed` effects never
        * fire, the issue is never closed, and the pass falls through to the
        * failed tail under *the pass ended without landing and without asking
        * anybody*. The next pass takes the same ticket and buys a fresh agent for
@@ -2574,7 +2574,7 @@ function actionsAt(step: Step) {
           message:
             `the "${step}" step is written with ${written.length} action` +
             `${written.length === 1 ? '' : 's'} and none of them is the lane, so the step would ` +
-            'pass having landed nothing — and nothing follows from that: the `WorkItemLanded` ' +
+            'pass having landed nothing — and nothing follows from that: the `TicketLanded` ' +
             "append is guarded on the lane's own commit, so the pass falls through to the failed " +
             'tail, releases the ticket and buys a second agent for the same diff. Write the lane ' +
             `last. An empty "${step}: []" resolves, but it is not the way to land nothing — the ` +

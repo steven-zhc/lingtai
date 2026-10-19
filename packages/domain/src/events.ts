@@ -60,7 +60,7 @@ export {
  * (#76). The same argument 0016 §7 made about the hardcoded `agent:*` skip in
  * `discover.ts`, one field along.
  *
- * `WorkItemDiscovered.kind` is therefore `z.string()`. That is a *widening*: no
+ * `TicketDiscovered.kind` is therefore `z.string()`. That is a *widening*: no
  * upcaster is needed because every stored event still parses. Old code reading
  * a new event will refuse a kind outside its enum, which is the
  * forward-compatibility limit this catalogue already documents.
@@ -173,7 +173,7 @@ export type RuntimeId = z.infer<typeof RuntimeId>
 
 // ------------------------------------------------------------- work item ----
 
-export const WorkItemDiscovered = z.object({
+export const TicketDiscovered = z.object({
   project: z.string(),
   source: z.enum(['github-issue', 'manual', 'agent-followup']),
   externalRef: z.string(),
@@ -183,7 +183,7 @@ export const WorkItemDiscovered = z.object({
   labels: z.array(z.string()),
 })
 
-export const WorkItemClaimed = z.object({
+export const TicketClaimed = z.object({
   runId: z.string(),
   /**
    * Host and pid, and the reason this outlived the lease
@@ -197,7 +197,7 @@ export const WorkItemClaimed = z.object({
    * What the task is, recorded at the moment Lingtai takes responsibility
    * for it.
    *
-   * Here because the queue left the log (0012). `WorkItemDiscovered` used to be
+   * Here because the queue left the log (0012). `TicketDiscovered` used to be
    * where a title entered, and without it a rebuilt projection had no row at
    * all for anything claimed — every running and landed task simply vanished,
    * since GitHub's *open* issue list cannot supply a title for work that has
@@ -211,7 +211,7 @@ export const WorkItemClaimed = z.object({
   kind: z.string().nullable(),
 })
 
-export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string() })
+export const TicketReleased = z.object({ runId: z.string(), reason: z.string() })
 
 /**
  * What to do about a block, in the vocabulary of the controls that exist.
@@ -310,12 +310,12 @@ export const WorkItemUnblocked = z.object({
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed
  * against code that #58 had already merged, and nothing connected them.
  */
-export const WorkItemLinked = z.object({
+export const TicketLinked = z.object({
   relation: z.enum(['caused-by', 'follows-up', 'duplicates']),
   otherRef: z.string(),
 })
 
-export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string() })
+export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string() })
 
 /**
  * A person decided nobody is going to do this — the second terminal, and the
@@ -325,7 +325,7 @@ export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string
  * a ticket was `gh issue close` by hand, which appends nothing, so the fold went
  * on saying `backlog` and the board went on offering the card as *Queued* — an
  * item nobody would ever claim, sitting where things that are going to be worked
- * sit. `wi-lingtai-32` sat there for two days.
+ * sit. `ticket-lingtai-32` sat there for two days.
  *
  * **Appended, not deleted.** Every event before it stays where it was and a
  * replay reaches the same place; what changes is that the item now has an end,
@@ -338,7 +338,7 @@ export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string
  * intent that is no longer the intent, into every prompt after it. If the work
  * is wanted again, open a new ticket.
  */
-export const WorkItemClosed = z.object({ by: z.string(), reason: z.string() })
+export const TicketClosed = z.object({ by: z.string(), reason: z.string() })
 
 /** Capability matching refused the dispatch. Never silently downgrade a tier. */
 export const DispatchRefused = z.object({
@@ -384,7 +384,7 @@ export const Invocation = z.object({
 export type Invocation = z.infer<typeof Invocation>
 
 export const RunStarted = z.object({
-  workItemId: z.string(),
+  ticketId: z.string(),
   runtime: RuntimeId,
   model: z.string(),
   promptVersion: z.string(),
@@ -1079,7 +1079,7 @@ export const StepNeverRan = z.object({ ...stepBase, detail: z.string() })
  * which is the event a reviewer that read the diff and refused it writes, and
  * everything downstream believed it: the conductor bought a fix round, and a
  * fixing agent was paid to answer a question nobody asked (`#196`,
- * `run-9e510ffc`). The difference existed only inside the `evidence` sentence,
+ * `pass-9e510ffc`). The difference existed only inside the `evidence` sentence,
  * and a sentence is not something `decideFix` or the board reads.
  *
  * **It is not `StepNeverRan` either, and that is 0057 §3.** *Never started*
@@ -1103,7 +1103,7 @@ export const StepNeverRan = z.object({ ...stepBase, detail: z.string() })
  * these is appended, and there is no number to carry.
  *
  * The rows already written keep both fields and the upcaster drops them on read,
- * for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
+ * for `TicketClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
  * reader is what has to stop believing them.
  */
 export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() })
@@ -1217,9 +1217,9 @@ export const FindingDeclined = z.object({
 
 // ----------------------------------------------------------- integration ----
 
-export const IntegrationAttempted = z.object({ workItemId: z.string(), branch: z.string(), headSha: z.string() })
+export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
 export const IntegrationRefused = z.object({
-  workItemId: z.string(),
+  ticketId: z.string(),
   branch: z.string(),
   reason: RefusalReason,
   detail: z.string(),
@@ -1231,7 +1231,7 @@ export const IntegrationRefused = z.object({
   headSha: z.string().optional(),
 })
 export const IntegrationSucceeded = z.object({
-  workItemId: z.string(),
+  ticketId: z.string(),
   branch: z.string(),
   base: z.string(),
   mergeCommit: z.string(),
@@ -1669,7 +1669,7 @@ export const ConductorStarted = z.object({
   sha: z.string().nullable(),
   dirty: z.boolean(),
   /**
-   * `host:pid`, spelled the way `WorkItemClaimed.worker` spells it.
+   * `host:pid`, spelled the way `TicketClaimed.worker` spells it.
    *
    * One string, so a claim and the start of the process that made it join
    * without anybody translating between two conventions.
@@ -1863,7 +1863,7 @@ export const RunRequested = z.object({
 export const DiscussionRequested = z.object({
   /** `chat-<uuid>`, which is also the stream the exchange lands on. */
   chatId: z.string(),
-  workItemId: z.string(),
+  ticketId: z.string(),
   /** The attempt being asked about, 1-based, or null for the item as a whole. */
   attempt: z.number().int().nullable(),
   question: z.string(),
@@ -1877,7 +1877,7 @@ export const DiscussionRequested = z.object({
  * with.
  *
  * On `chat-<id>`, which holds the whole exchange (0033 §6). Self-contained like
- * everything else here: `workItemId` is on every ask, so the stream is readable
+ * everything else here: `ticketId` is on every ask, so the stream is readable
  * without joining against the control stream that asked for it.
  *
  * **`reading` is Lingtai's sentence, not the assistant's**, and that is the
@@ -1888,7 +1888,7 @@ export const DiscussionRequested = z.object({
  * spot cannot be hidden by an answer that does not mention it.
  */
 export const DiscussionAsked = z.object({
-  workItemId: z.string(),
+  ticketId: z.string(),
   attempt: z.number().int().nullable(),
   by: z.string(),
   question: z.string(),
@@ -1964,7 +1964,7 @@ export const DiscussionHeld = z.object({
  * to do* and not about which diff to merge.
  *
  * It applies to the next run only, whoever starts it — `reduceWorkItem` holds
- * it as `pendingPrompt` and the next `WorkItemClaimed` consumes it. Something
+ * it as `pendingPrompt` and the next `TicketClaimed` consumes it. Something
  * meant to last belongs in the GitHub ticket, where everybody can see it and it
  * versions as `ticket@NNNN`; a durable override living only inside Lingtai
  * would be a shadow ticket body (§6).
@@ -2307,14 +2307,14 @@ export const PluginFailed = z.object({
 // -------------------------------------------------------------- registry ----
 
 export const EVENTS = {
-  WorkItemDiscovered,
-  WorkItemClaimed,
-  WorkItemReleased,
+  TicketDiscovered,
+  TicketClaimed,
+  TicketReleased,
   WorkItemBlocked,
   WorkItemUnblocked,
-  WorkItemLinked,
-  WorkItemLanded,
-  WorkItemClosed,
+  TicketLinked,
+  TicketLanded,
+  TicketClosed,
   DispatchRefused,
   RunStarted,
   RunPrompted,
@@ -2394,7 +2394,7 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: added `title` and `kind`, because the queue left the log. 3: dropped
   // `leaseUntilMs` — the lease is deleted (0027). The field is still in every
   // historical row and the upcaster drops it on read; no event is rewritten.
-  WorkItemClaimed: 3,
+  TicketClaimed: 3,
   // WorkItemBlocked was here at 2 (`needs` and `diagnosis`, added for #83) and
   // is not any more: #445 replaced the payload in place with `{hold}` rather
   // than bumping to 3, because before 1.0 the log is reset rather than

@@ -59,8 +59,8 @@ describeDaemonStoreContract('sqlite', async (): Promise<DaemonFixture> => {
     async forget() {
       db.exec('DELETE FROM daemon_status')
     },
-    prefix: `wi-${project}-%`,
-    stream: (issue) => `wi-${project}-${issue}`,
+    prefix: `ticket-${project}-%`,
+    stream: (issue) => `ticket-${project}-${issue}`,
     async close() {
       for (const s of seconds.splice(0)) await s.close().catch(() => {})
       await store.close()

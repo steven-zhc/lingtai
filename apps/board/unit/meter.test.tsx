@@ -52,7 +52,7 @@ function turn(question: string, costUsd: number | null) {
 
 const render = (discussions: DiscussionView[], discussionTotal: string | null = null) =>
   renderToStaticMarkup(
-    <Discussion taskId="wi-lingtai-89" attempt={2} discussions={discussions} discussionTotal={discussionTotal} />,
+    <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={discussions} discussionTotal={discussionTotal} />,
   )
 
 describe('the meter', () => {
@@ -108,7 +108,7 @@ describe('the meter', () => {
 
 function run(over: Partial<RunView> = {}): RunView {
   return {
-    runId: 'run-1',
+    runId: 'pass-1',
     attempt: 1,
     at: '2026-09-08T03:00:00.000Z',
     repair: false,
@@ -140,7 +140,7 @@ function spent(
     seq: '1',
     at: new Date('2026-09-08T03:00:00Z'),
     streamId: pass ?? 'chat-1',
-    ticket: 'wi-lingtai-1',
+    ticket: 'ticket-lingtai-1',
     project: 'lingtai',
     pass,
     purpose,
@@ -167,9 +167,9 @@ describe("the ledger's total", () => {
   it('leads with the sum and keeps the split behind it', () => {
     const fact = totalsFact(
       totalsOf(
-        [run(), run({ runId: 'run-2', attempt: 2, turns: 74 })],
+        [run(), run({ runId: 'pass-2', attempt: 2, turns: 74 })],
         [chat({ held: 'none' })],
-        [spent('Action', 0, 7.81, 'run-1'), spent('Action', 1, 5.23, 'run-2'), spent('Discussion', null, 0.42, null)],
+        [spent('Action', 0, 7.81, 'pass-1'), spent('Action', 1, 5.23, 'pass-2'), spent('Discussion', null, 0.42, null)],
       ),
     )
 
@@ -186,7 +186,7 @@ describe("the ledger's total", () => {
    * twice, which is the disagreement a second copy of an arithmetic invites.
    */
   it('drops the split when there is only one kind of money', () => {
-    const fact = totalsFact(totalsOf([run()], [], [spent('Action', 0, 7.81, 'run-1')]))
+    const fact = totalsFact(totalsOf([run()], [], [spent('Action', 0, 7.81, 'pass-1')]))
 
     expect(fact?.startsWith('$7.81 · 1 attempt · 73 turns')).toBe(true)
     expect(fact).not.toContain('work')
@@ -194,7 +194,7 @@ describe("the ledger's total", () => {
 
   /**
    * An attempt that contributed not one row to `spend` — `rows` defaults to
-   * `[]` here, the no-row case a pre-`RunSpent` ticket like `wi-lingtai-89`
+   * `[]` here, the no-row case a pre-`RunSpent` ticket like `ticket-lingtai-89`
    * is always in — is unknown, never nothing: 0110 §7 asks for `unknown`,
    * not silence, and `$0.00` is a third answer this bill must never give.
    */

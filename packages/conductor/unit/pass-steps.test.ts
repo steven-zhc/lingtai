@@ -57,10 +57,10 @@ const BASE = '0000000000000000000000000000000000000000'
 const CUT_AT = '1111111111111111111111111111111111111111'
 const COMMITTED = '2222222222222222222222222222222222222222'
 
-const context: ActionContext = { runId: 'run-1', onSha: BASE, cwd: '/nowhere', env: {} }
+const context: ActionContext = { runId: 'pass-1', onSha: BASE, cwd: '/nowhere', env: {} }
 
 const ITEM: Claimed = {
-  workItemId: 'wi-lingtai-259',
+  ticketId: 'ticket-lingtai-259',
   ticket: { ref: '259', title: 'T4a', body: 'six bodies, filling a contract that already runs' },
   kind: 'feature',
 }
@@ -248,7 +248,7 @@ interface Asks {
    */
   land: { strategy: MergeStrategy; onSha: string }[]
   read: string[]
-  record: { workItemId: string; at: number; plan: readonly ToAppend[] }[]
+  record: { ticketId: string; at: number; plan: readonly ToAppend[] }[]
 }
 
 interface Answers {
@@ -317,17 +317,17 @@ function portsAnswering(answers: Answers = {}): {
       onStream = null
       const answer = of<TakeAnswer, undefined>(
         answers.take,
-        { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } },
+        { taken: { ticketId: ITEM.ticketId, kind: ITEM.kind } },
         undefined,
       )
       if ('taken' in answer) {
-        took = { ...ITEM, workItemId: answer.taken.workItemId, kind: answer.taken.kind }
-        onStream = answer.taken.workItemId
+        took = { ...ITEM, ticketId: answer.taken.ticketId, kind: answer.taken.kind }
+        onStream = answer.taken.ticketId
       } else if ('mayHold' in answer) {
         // The one decline that leaves a stream behind: `end` still resolves
         // against it, because an item this run may be holding is one somebody has
         // to be told about.
-        onStream = answer.mayHold.workItemId
+        onStream = answer.mayHold.ticketId
       }
       return answer
     },
@@ -365,13 +365,13 @@ function portsAnswering(answers: Answers = {}): {
 
   const ports: PassPorts = {
     onStream: () => onStream,
-    readEnd: async (workItemId) => {
-      asked.read.push(workItemId)
+    readEnd: async (ticketId) => {
+      asked.read.push(ticketId)
       if (answers.readThrows) throw answers.readThrows
       return answers.stream ?? []
     },
-    recordEnd: async (workItemId, at, plan) => {
-      asked.record.push({ workItemId, at, plan })
+    recordEnd: async (ticketId, at, plan) => {
+      asked.record.push({ ticketId, at, plan })
       if (answers.recordThrows) throw answers.recordThrows
     },
   }
@@ -546,7 +546,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     expect(asked.cut).toEqual([{ base: 'main', submodules: false }])
     expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket)
     // `end` resolves onto the stream `claim` named, and nowhere else.
-    expect(asked.read).toEqual([ITEM.workItemId])
+    expect(asked.read).toEqual([ITEM.ticketId])
   })
 
   /**
@@ -602,7 +602,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
    */
   it('names the item when the claim may have committed, and leaves nothing for `runPass` to resolve', async () => {
     const { ports, asked, taking } = portsAnswering({
-      take: { mayHold: { workItemId: 'wi-lingtai-259', detail: 'connection reset' } },
+      take: { mayHold: { ticketId: 'ticket-lingtai-259', detail: 'connection reset' } },
     })
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
 
@@ -616,11 +616,11 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
 
     expect(claimed.ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
     const detail = 'detail' in claimed.ending ? claimed.ending.detail : ''
-    expect(detail).toContain('wi-lingtai-259')
+    expect(detail).toContain('ticket-lingtai-259')
     // `PassPorts.onStream()` names it too — the one decline that leaves a
     // stream behind, which is what lets a caller tell this run may be
     // holding something rather than nothing at all.
-    expect(ports.onStream()).toBe('wi-lingtai-259')
+    expect(ports.onStream()).toBe('ticket-lingtai-259')
     expect(asked.read).toEqual([])
   })
 
@@ -639,7 +639,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     const { ports, asked, taking } = portsAnswering({
       take: () => {
         const answer: TakeAnswer = first
-          ? { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } }
+          ? { taken: { ticketId: ITEM.ticketId, kind: ITEM.kind } }
           : { passedOver: 'no kind label' }
         first = false
         return answer
@@ -667,7 +667,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     // second `end` to resolve onto the item the first one landed.
     expect(second).toBeNull()
     expect(ports.onStream()).toBeNull()
-    expect(asked.read).toEqual([ITEM.workItemId])
+    expect(asked.read).toEqual([ITEM.ticketId])
     expect(asked.record).toHaveLength(1)
   })
 })
@@ -2211,7 +2211,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
    * `defaultsAt`'s lane and the change lands. A caller that substitutes *nothing*
    * is this one, and the step passes having landed nothing — which is the
    * substitution rule doing what it says rather than a hole, and is why
-   * `conduct.ts` asks `landedAt()` before it writes `WorkItemLanded`.
+   * `conduct.ts` asks `landedAt()` before it writes `TicketLanded`.
    */
   it('lands nothing where nothing at all runs at the step', async () => {
     const { result, asked } = await pass({ actions: { merge: [] } })
@@ -2436,9 +2436,9 @@ describe('end runs on every ending and cannot refuse', () => {
     const stream = [
       {
         seq: 1n,
-        streamId: ITEM.workItemId,
+        streamId: ITEM.ticketId,
         version: 1,
-        type: 'WorkItemClaimed',
+        type: 'TicketClaimed',
         schemaVer: 1,
         data: {},
         actor: 'conductor',
@@ -2449,14 +2449,14 @@ describe('end runs on every ending and cannot refuse', () => {
     const { asked } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers: { stream } })
 
     expect(asked.record[0]?.at).toBe(1)
-    expect(asked.record[0]?.workItemId).toBe(ITEM.workItemId)
+    expect(asked.record[0]?.ticketId).toBe(ITEM.ticketId)
   })
 
   it('appends nothing when the recipe declares nothing at the step', async () => {
     const { result, asked } = await pass()
 
     expect(result.steps.at(-1)?.ending).toEqual({ ending: 'passed' })
-    expect(asked.read).toEqual([ITEM.workItemId])
+    expect(asked.read).toEqual([ITEM.ticketId])
     expect(asked.record).toEqual([])
   })
 
@@ -2469,7 +2469,7 @@ describe('end runs on every ending and cannot refuse', () => {
   it('appends nothing a second time for an outcome the stream already carries', async () => {
     const already: Envelope = {
       seq: 2n,
-      streamId: ITEM.workItemId,
+      streamId: ITEM.ticketId,
       version: 2,
       type: 'EndActionsResolved',
       schemaVer: 1,

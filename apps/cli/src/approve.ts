@@ -79,7 +79,7 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
     })
 
     if (result.ok) {
-      log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`)
+      log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
       return 0
     }
     log(`did not merge (${result.reason}): ${result.detail}`)

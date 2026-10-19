@@ -45,7 +45,7 @@ function stream(streamId: string) {
   }
 }
 
-const discovered: PayloadOf<'WorkItemDiscovered'> = {
+const discovered: PayloadOf<'TicketDiscovered'> = {
   project: 'lingtai',
   source: 'github-issue',
   externalRef: '104',
@@ -54,7 +54,7 @@ const discovered: PayloadOf<'WorkItemDiscovered'> = {
   labels: ['feature'],
 }
 
-const claim = (runId: string): PayloadOf<'WorkItemClaimed'> => ({
+const claim = (runId: string): PayloadOf<'TicketClaimed'> => ({
   runId,
   worker: 'conductor',
   title: 'Approving a blocked item is yes or no',
@@ -79,11 +79,11 @@ describe("the next attempt's prompt", () => {
    * empty string is a prompt this feature never touched.
    */
   it('is the template alone on a first attempt nobody has edited, except the checks block that always renders', () => {
-    const e = stream('wi-lingtai-104')
+    const e = stream('ticket-lingtai-104')
     const next = nextPrompt({
       base: 'ticket@1924',
       budget: BUDGET,
-      item: [e('WorkItemDiscovered', discovered)],
+      item: [e('TicketDiscovered', discovered)],
       lastRun: null,
     })
 
@@ -104,7 +104,7 @@ describe("the next attempt's prompt", () => {
   })
 
   it('carries an answer given before any run into every attempt, without the issue body', () => {
-    const e = stream('wi-lingtai-51')
+    const e = stream('ticket-lingtai-51')
     const asked = e('WorkItemBlocked', {
       hold: {
         _tag: 'Question',
@@ -117,7 +117,7 @@ describe("the next attempt's prompt", () => {
     const first = nextPrompt({
       base: 'ticket@1924',
       budget: BUDGET,
-      item: [e('WorkItemDiscovered', discovered), asked, answered],
+      item: [e('TicketDiscovered', discovered), asked, answered],
       lastRun: null,
     })
     const text = renderPrompt(TEMPLATE, TICKET, [], first.failure)
@@ -136,11 +136,11 @@ describe("the next attempt's prompt", () => {
       base: 'ticket@1924',
       budget: BUDGET,
       item: [
-        e('WorkItemDiscovered', discovered),
+        e('TicketDiscovered', discovered),
         asked,
         answered,
-        e('WorkItemClaimed', claim('run-a')),
-        e('WorkItemReleased', { runId: 'run-a', reason: 'killed' }),
+        e('TicketClaimed', claim('pass-a')),
+        e('TicketReleased', { runId: 'pass-a', reason: 'killed' }),
       ],
       lastRun: null,
     })
@@ -148,17 +148,17 @@ describe("the next attempt's prompt", () => {
   })
 
   it("does not carry a requeue's note, which answered an attempt and not the ticket", () => {
-    const e = stream('wi-lingtai-51b')
+    const e = stream('ticket-lingtai-51b')
     const next = nextPrompt({
       base: 'ticket@1924',
       budget: BUDGET,
       item: [
-        e('WorkItemDiscovered', discovered),
-        e('WorkItemClaimed', claim('run-a')),
+        e('TicketDiscovered', discovered),
+        e('TicketClaimed', claim('pass-a')),
         e('WorkItemBlocked', {
           hold: {
             _tag: 'MergeRefused',
-            run: { runId: 'run-a' },
+            run: { runId: 'pass-a' },
             reason: 'conflict',
             why: 'agent/51 does not merge into main',
             raw: 'agent/51 does not merge into main',
@@ -182,12 +182,12 @@ describe("the next attempt's prompt", () => {
    * have — `#58`'s shape.
    */
   it("carries a person's sentence into the document, naming them and its bound", () => {
-    const e = stream('wi-lingtai-104b')
+    const e = stream('ticket-lingtai-104b')
     const next = nextPrompt({
       base: 'ticket@1924',
       budget: BUDGET,
       item: [
-        e('WorkItemDiscovered', discovered),
+        e('TicketDiscovered', discovered),
         e('PromptEdited', edit('`claude --help` does not list it. Read the bundle.')),
       ],
       lastRun: null,
@@ -210,8 +210,8 @@ describe("the next attempt's prompt", () => {
    * `PromptEdited.hash` carries.
    */
   it('names the edit in the version, and never reads as the unedited one', () => {
-    const e = stream('wi-lingtai-104c')
-    const item = [e('WorkItemDiscovered', discovered), e('PromptEdited', edit('pass --max-turns'))]
+    const e = stream('ticket-lingtai-104c')
+    const item = [e('TicketDiscovered', discovered), e('PromptEdited', edit('pass --max-turns'))]
     const next = nextPrompt({ base: 'ticket@1924', budget: BUDGET, item, lastRun: null })
 
     // Both parts move, and that is right rather than redundant. The edit is a
@@ -231,12 +231,12 @@ describe("the next attempt's prompt", () => {
    * a block the agent was never shown.
    */
   it('falls back to the unedited version once the edit is taken back off', () => {
-    const e = stream('wi-lingtai-104d')
+    const e = stream('ticket-lingtai-104d')
     const next = nextPrompt({
       base: 'ticket@1924',
       budget: BUDGET,
       item: [
-        e('WorkItemDiscovered', discovered),
+        e('TicketDiscovered', discovered),
         e('PromptEdited', edit('pass --max-turns')),
         e('PromptEdited', edit('   ')),
       ],
@@ -254,11 +254,11 @@ describe("the next attempt's prompt", () => {
    * — the thing being separated out is the human's sentence and nothing else.
    */
   it('keeps the history in what it composed, and only the sentence out of it', () => {
-    const e = stream('wi-lingtai-104e')
+    const e = stream('ticket-lingtai-104e')
     const item = [
-      e('WorkItemDiscovered', discovered),
-      e('WorkItemClaimed', claim('run-1')),
-      e('WorkItemReleased', { runId: 'run-1', reason: 'the build refused' }),
+      e('TicketDiscovered', discovered),
+      e('TicketClaimed', claim('pass-1')),
+      e('TicketReleased', { runId: 'pass-1', reason: 'the build refused' }),
       e('PromptEdited', edit('the flag is in the binary, not in --help')),
     ]
     const next = nextPrompt({ base: 'ticket@1924', budget: BUDGET, item, lastRun: [] })
@@ -281,11 +281,11 @@ describe("the next attempt's prompt", () => {
    * about a run nobody read would be an invention in a prompt.
    */
   it('distinguishes an attempt that produced nothing from one nobody read', () => {
-    const e = stream('wi-lingtai-104f')
+    const e = stream('ticket-lingtai-104f')
     const item = [
-      e('WorkItemDiscovered', discovered),
-      e('WorkItemClaimed', claim('run-1')),
-      e('WorkItemReleased', { runId: 'run-1', reason: 'timeout' }),
+      e('TicketDiscovered', discovered),
+      e('TicketClaimed', claim('pass-1')),
+      e('TicketReleased', { runId: 'pass-1', reason: 'timeout' }),
     ]
 
     const read = nextPrompt({ base: 'ticket@1924', budget: BUDGET, item, lastRun: [] })

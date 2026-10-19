@@ -28,7 +28,7 @@
  *
  * **And `end` runs, because `end` is the point that runs on every terminal
  * outcome** ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)).
- * It did not, at first: this appended `WorkItemClosed` and stopped, so a recipe
+ * It did not, at first: this appended `TicketClosed` and stopped, so a recipe
  * saying `when: any` did not fire on a close, and `lingtai close` left the
  * GitHub issue open for somebody to close by hand afterwards — the manual step
  * the whole point exists to remove. A fourth outcome that does not reach a
@@ -59,7 +59,7 @@ import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
 
 export interface CloseOutcome {
   ok: boolean
-  workItemId: string
+  ticketId: string
   detail: string
 }
 
@@ -94,22 +94,22 @@ export async function close(options: {
   store?: EventStore
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
 
   if (!options.reason.trim()) {
-    return { ok: false, workItemId, detail: 'a close needs a reason' }
+    return { ok: false, ticketId, detail: 'a close needs a reason' }
   }
 
-  const events = await store.read(workItemId)
+  const events = await store.read(ticketId)
   const item = reduceWorkItem(events)
 
   if (item.lifecycle.status === 'closed') {
-    return { ok: false, workItemId, detail: `${workItemId} is already closed` }
+    return { ok: false, ticketId, detail: `${ticketId} is already closed` }
   }
   if (item.lifecycle.status === 'landed') {
     // Not an error a person needs to work around: it is done, and saying so is
     // more useful than appending a second ending over the first.
-    return { ok: false, workItemId, detail: `${workItemId} landed — there is nothing to close` }
+    return { ok: false, ticketId, detail: `${ticketId} landed — there is nothing to close` }
   }
 
   // Before the close is recorded, so an unreadable recipe refuses rather than
@@ -123,7 +123,7 @@ export async function close(options: {
     } catch (err) {
       return {
         ok: false,
-        workItemId,
+        ticketId,
         detail: `${(err as Error).message}. Nothing was closed.`,
       }
     }
@@ -133,11 +133,11 @@ export async function close(options: {
   // apart, and the version check that guards the close guards both.
   const ended = resolveEndActions(events, end, 'closed')
   try {
-    await store.append(workItemId, item.version, [
+    await store.append(ticketId, item.version, [
       {
-        type: 'WorkItemClosed',
+        type: 'TicketClosed',
         actor: options.by,
-        data: parsePayload('WorkItemClosed', { by: options.by, reason: options.reason }),
+        data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
       },
       ...ended,
     ])
@@ -145,7 +145,7 @@ export async function close(options: {
     // Something moved between the read and the append — a pass claimed it, or a
     // gate answered. Say so rather than closing over a decision nobody saw.
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while closing — read it again` }
+      return { ok: false, ticketId, detail: `${ticketId} changed while closing — read it again` }
     }
     throw err
   }
@@ -159,11 +159,11 @@ export async function close(options: {
     await tellGitHubAbout({
       store,
       github: options.client,
-      workItemId,
+      ticketId,
       labels: labelsFor('closed'),
       appended: ended,
     })
   }
 
-  return { ok: true, workItemId, detail: `closed by ${options.by} — the queue will not offer it again` }
+  return { ok: true, ticketId, detail: `closed by ${options.by} — the queue will not offer it again` }
 }

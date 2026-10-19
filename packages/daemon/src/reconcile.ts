@@ -106,8 +106,8 @@ function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => P
  * `daemonStore` carries — which is what `DaemonStore.events` is for
  * (`store.ts`). The process-wide store is the last resort and not the second,
  * because finding stream ids in one log and folding them out of another does
- * not fail, it answers *nothing is wrong*: `streams()` returns `wi-p-117` from
- * the store it was given, `read("wi-p-117")` goes to Postgres and comes back
+ * not fail, it answers *nothing is wrong*: `streams()` returns `ticket-p-117` from
+ * the store it was given, `read("ticket-p-117")` goes to Postgres and comes back
  * empty, the fold is not `claimed`, and `releaseForeignClaims` reports no
  * orphaned claims at all. The dead daemon's claim then holds the ticket out of
  * circulation for ever, which is #87 with the repair for #87 installed.
@@ -194,7 +194,7 @@ export interface ReconcileOptions {
    *
    * Told rather than discovered for a blunter reason: this check *appends*, and
    * a reconcile in a test shares its database with every other suite. Scanning
-   * every `wi-` stream would release fixtures belonging to tests that are not
+   * every `ticket-` stream would release fixtures belonging to tests that are not
    * running. Production passes every registered project, which is the same set.
    */
   projects?: readonly ProjectState[]
@@ -248,7 +248,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
       // that is broken.
       const run = await store.read(runId).catch(() => [])
       const taskId = run
-        .map((e) => (e.data as { workItemId?: string } | undefined)?.workItemId)
+        .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
 
       if (!taskId) {
@@ -359,7 +359,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
 
       const run = await store.read(runId).catch(() => [])
       const taskId = run
-        .map((e) => (e.data as { workItemId?: string } | undefined)?.workItemId)
+        .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
 
       if (!taskId) {
@@ -456,7 +456,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   if (names.length === 0) return []
 
   const streams = await withStreams(options, (it) =>
-    it.streams({ prefixes: names.map((n) => `${workItemStreamsOf(n)}%`), types: ['WorkItemClaimed'] }),
+    it.streams({ prefixes: names.map((n) => `${workItemStreamsOf(n)}%`), types: ['TicketClaimed'] }),
   )
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same
@@ -464,13 +464,13 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
     .catch(() => [] as string[])
 
   const findings: Finding[] = []
-  for (const workItemId of streams) {
-    const item = reduceWorkItem(await store.read(workItemId).catch(() => []))
+  for (const ticketId of streams) {
+    const item = reduceWorkItem(await store.read(ticketId).catch(() => []))
     const life = item.lifecycle
     if (life.status !== 'claimed') continue
     if (life.worker === worker) continue
     findings.push({
-      stream: workItemId,
+      stream: ticketId,
       expected: `queued — ${worker} holds ${DAEMON_LOCK_KEY}, so ${life.worker} is not conducting`,
       actual: `still claimed by ${life.worker} for ${life.runId}`,
       action: options.dryRun ? 'reported' : 'released',
@@ -620,13 +620,13 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
       ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
       log,
     })
-    const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`))
+    const done = new Set(converged.map((d) => `${d.ticketId}:${d.change}`))
     for (const d of divergences) {
       findings.push({
-        stream: d.workItemId,
+        stream: d.ticketId,
         expected: `${d.change}: ${d.expected}`,
         actual: d.actual,
-        action: done.has(`${d.workItemId}:${d.change}`) ? 'converged' : 'reported',
+        action: done.has(`${d.ticketId}:${d.change}`) ? 'converged' : 'reported',
         path: '',
       })
     }
@@ -661,9 +661,9 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
         await store.append(f.stream, events.length, [
           {
-            type: 'WorkItemReleased',
+            type: 'TicketReleased',
             actor: 'conductor',
-            data: parsePayload('WorkItemReleased', {
+            data: parsePayload('TicketReleased', {
               runId: life.runId,
               // The lock, not a timestamp. Whoever reads this back should be
               // able to check the claim: `life.worker` is not `mine`, and there

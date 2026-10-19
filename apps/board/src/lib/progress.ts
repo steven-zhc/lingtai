@@ -362,7 +362,7 @@ export function foldProgress(
    * Whether this item **landed**. Not whether it is over.
    *
    * It cannot be read off the run's own stream: the merge lane appends
-   * `IntegrationSucceeded` to its own stream and `WorkItemLanded` goes on the
+   * `IntegrationSucceeded` to its own stream and `TicketLanded` goes on the
    * work item's, so the caller is the only one holding the fact. Passing it is
    * what turns *a point that recorded nothing* from `pending` into `never-ran`,
    * and it is the whole of the difference between the two.
@@ -370,7 +370,7 @@ export function foldProgress(
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
    * because nothing should have run in them. This is anchored on
-   * `WorkItemLanded` for that reason — see `RailCandidate.over`, which is the
+   * `TicketLanded` for that reason — see `RailCandidate.over`, which is the
    * caller holding the same line.
    */
   over = false,

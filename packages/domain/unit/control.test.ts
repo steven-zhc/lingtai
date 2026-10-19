@@ -193,7 +193,7 @@ describe('the discussions somebody asked for', () => {
           type: 'DiscussionRequested',
           data: {
             chatId: 'chat-1',
-            workItemId: 'wi-lingtai-89',
+            ticketId: 'ticket-lingtai-89',
             attempt: 2,
             question: 'why did attempt 2 produce nothing?',
             by: 'human:steven',
@@ -203,7 +203,7 @@ describe('the discussions somebody asked for', () => {
           type: 'DiscussionRequested',
           data: {
             chatId: 'chat-1',
-            workItemId: 'wi-lingtai-89',
+            ticketId: 'ticket-lingtai-89',
             attempt: null,
             question: 'and the first?',
             by: 'human:steven',
@@ -231,7 +231,7 @@ describe('the discussions somebody asked for', () => {
       log([
         {
           type: 'DiscussionRequested',
-          data: { chatId: 'chat-1', workItemId: 'wi-lingtai-89', attempt: null, question: '?', by: 'human:steven' },
+          data: { chatId: 'chat-1', ticketId: 'ticket-lingtai-89', attempt: null, question: '?', by: 'human:steven' },
         },
         { type: 'ConductorResumed', data: { by: 'human:steven' } },
       ]),
@@ -351,7 +351,7 @@ describe('who may append', () => {
   })
 
   it('accepts the other four', () => {
-    for (const who of ['conductor', 'github', 'agent:run-1a2b', 'human:steven']) {
+    for (const who of ['conductor', 'github', 'agent:pass-1a2b', 'human:steven']) {
       expect(Actor.safeParse(who).success, who).toBe(true)
     }
   })

@@ -64,7 +64,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `progress.ts:60-76`).
  *
  * **Rows 15, 15b and 15c pin no strip and no run-side history at all.** A
- * decline at `claim` never writes a `WorkItemClaimed`, so `claimsOf(own)`
+ * decline at `claim` never writes a `TicketClaimed`, so `claimsOf(own)`
  * (`task.ts:973`) is `[]` for this run; `loadTask` reads a run's own stream
  * only through `streams = claims.map((c) => eventStore.read(c.runId))`
  * (`task.ts:1485`), so that stream is never read, and `foldProgress` is never
@@ -72,15 +72,15 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * 0`, and `folded = claims.map(...)` is `[]`). `history: groupHistory([...own,
  * ...streams.flat()], attempts)` (`task.ts:1578`) therefore folds `own`
  * alone — empty for rows 15 and 15b, whose item stream carries nothing of
- * this run's (row 15b's item stream does carry a `WorkItemClaimed`, but by
- * `run-somebody-else`, left out here per the note on `RUN_15b` below rather
+ * this run's (row 15b's item stream does carry a `TicketClaimed`, but by
+ * `pass-somebody-else`, left out here per the note on `RUN_15b` below rather
  * than pinned as if this run had written it), and just the two
- * `WorkItemReleased`/`IssueUpdated` events for row 15c. None of the three
+ * `TicketReleased`/`IssueUpdated` events for row 15c. None of the three
  * calls `stripOf`, and none hands `historyOf` a fabricated `attempts` entry
  * for this run — either would pin a page view this ending never produces.
  *
  * **Rows 4 and 16 pin no strip either, for the same reason.** Both items end
- * on `WorkItemReleased`, which `work-item.ts:329` folds to `lifecycle.status:
+ * on `TicketReleased`, which `work-item.ts:329` folds to `lifecycle.status:
  * 'backlog'` and `standingOf` reports as `'queued'` (`task.ts:692`).
  * `loadTask` calls `planFor` only for `'running'` or `'blocked'`
  * (`task.ts:1525-1527`), so `plan` stays `undefined`; `landed` is `false`
@@ -151,54 +151,54 @@ function stripOf(
 // Row 1, `what-a-pass-writes-today.test.ts:162` — lands with no rounds spent
 const ITEM_1: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
     },
   },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: 'lingtai:working' } },
-  { type: 'WorkItemLanded', data: { mergeCommit: 'cccccccccccccccccccccccccccccccccccccccc', base: 'main' } },
+  { type: 'TicketLanded', data: { mergeCommit: 'cccccccccccccccccccccccccccccccccccccccc', base: 'main' } },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: '' } },
 ]
 const RUN_1: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: '',
-      evidence: '/tmp/fake/run-3b3b3de5-d8a4-4706-9267-bea08a5a8205 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -207,7 +207,7 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -216,27 +216,27 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      worktree: '/tmp/fake/pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -284,7 +284,7 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -295,7 +295,7 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -304,7 +304,7 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -313,7 +313,7 @@ const RUN_1: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
+      runId: 'pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'merged as ccccccc',
       findings: [],
@@ -322,17 +322,17 @@ const RUN_1: EventSpec[] = [
 ]
 
 it('1. lands with no rounds spent', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_1)
-  const runEvents = envelopesFor('run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', RUN_1)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_1)
+  const runEvents = envelopesFor('pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', RUN_1)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-3b3b3de5-d8a4-4706-9267-bea08a5a8205', 1]])
+  const attempts = new Map([['pass-3b3b3de5-d8a4-4706-9267-bea08a5a8205', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 3b3b3de5' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 3b3b3de5' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
-        { type: 'WorkItemLanded', actor: 'conductor', summary: 'merged as ccccccc' },
+        { type: 'TicketLanded', actor: 'conductor', summary: 'merged as ccccccc' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels:' },
       ],
     },
@@ -351,7 +351,7 @@ it('1. lands with no rounds spent', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-3b3b3de5-d8a4-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-3b3b3de5-d8a\u2026',
         },
         {
           type: 'StepsResolved',
@@ -386,54 +386,54 @@ it('1. lands with no rounds spent', () => {
 // Row 2, `what-a-pass-writes-today.test.ts:223` — lands after one fix round (review lines, judge, implement, green)
 const ITEM_2: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
     },
   },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: 'lingtai:working' } },
-  { type: 'WorkItemLanded', data: { mergeCommit: 'cccccccccccccccccccccccccccccccccccccccc', base: 'main' } },
+  { type: 'TicketLanded', data: { mergeCommit: 'cccccccccccccccccccccccccccccccccccccccc', base: 'main' } },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: '' } },
 ]
 const RUN_2: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: '',
-      evidence: '/tmp/fake/run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -442,7 +442,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -451,27 +451,27 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
-      worktree: '/tmp/fake/run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      worktree: '/tmp/fake/pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
       steps: [
         { step: 'claim', actions: [] },
@@ -526,7 +526,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -537,7 +537,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -546,7 +546,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -555,7 +555,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -574,7 +574,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -583,14 +583,14 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
   {
     type: 'FixRequested',
     data: {
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       round: 1,
       of: 1,
       action: 'proposed',
@@ -609,7 +609,7 @@ const RUN_2: EventSpec[] = [
   {
     type: 'FixApplied',
     data: {
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       round: 1,
       headSha: 'dddddddddddddddddddddddddddddddddddddddd',
       turns: 3,
@@ -633,7 +633,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'committed ddddddd',
       findings: [],
@@ -644,7 +644,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -653,7 +653,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -662,7 +662,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
       evidence: 'no findings\n\n(3 turns \u00b7 $0.42)',
       findings: [],
@@ -673,7 +673,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -682,7 +682,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -691,7 +691,7 @@ const RUN_2: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
+      runId: 'pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
       evidence: 'merged as ccccccc',
       findings: [],
@@ -710,17 +710,17 @@ const RUN_2: EventSpec[] = [
 ]
 
 it('2. lands after one fix round (review lines, judge, implement, green)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_2)
-  const runEvents = envelopesFor('run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', RUN_2)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_2)
+  const runEvents = envelopesFor('pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', RUN_2)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', 1]])
+  const attempts = new Map([['pass-e15ad066-6bed-4e39-86ee-d0d50d51ea9f', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run e15ad066' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run e15ad066' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
-        { type: 'WorkItemLanded', actor: 'conductor', summary: 'merged as ccccccc' },
+        { type: 'TicketLanded', actor: 'conductor', summary: 'merged as ccccccc' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels:' },
       ],
     },
@@ -739,7 +739,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/run-e15ad066-6bed-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-e15ad066-6be\u2026',
         },
         {
           type: 'StepsResolved',
@@ -793,12 +793,12 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
   ])
 })
 
-// Row 4, `what-a-pass-writes-today.test.ts:321` — a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)
+// Row 4, `what-a-pass-writes-today.test.ts:321` — a judge restarts the pass (`PassRestarted`, `TicketReleased`)
 const ITEM_4: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -808,7 +808,7 @@ const ITEM_4: EventSpec[] = [
   {
     type: 'PassRestarted',
     data: {
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       restart: 1,
       of: 1,
       action: 'proposed',
@@ -827,9 +827,9 @@ const ITEM_4: EventSpec[] = [
     },
   },
   {
-    type: 'WorkItemReleased',
+    type: 'TicketReleased',
     data: {
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
     },
@@ -839,39 +839,39 @@ const ITEM_4: EventSpec[] = [
 const RUN_4: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: '',
-      evidence: '/tmp/fake/run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -880,7 +880,7 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -889,27 +889,27 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745',
-      worktree: '/tmp/fake/run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      worktree: '/tmp/fake/pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       configHash: '742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745',
       steps: [
         { step: 'claim', actions: [] },
@@ -964,7 +964,7 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -975,7 +975,7 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -984,7 +984,7 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -993,7 +993,7 @@ const RUN_4: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
+      runId: 'pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -1041,16 +1041,16 @@ const RUN_4: EventSpec[] = [
   },
 ]
 
-it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_4)
-  const runEvents = envelopesFor('run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', RUN_4)
+it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_4)
+  const runEvents = envelopesFor('pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', RUN_4)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', 1]])
+  const attempts = new Map([['pass-4b9f0c6a-c9ec-4995-ab92-da97d74301d0', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 4b9f0c6a' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 4b9f0c6a' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'PassRestarted',
@@ -1058,7 +1058,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
           summary: 'restart 1 of 1 \u2014 proposed refused agent/7-attempt-1 after 0 round(s), 1 finding left live',
         },
         {
-          type: 'WorkItemReleased',
+          type: 'TicketReleased',
           actor: 'conductor',
           summary:
             'run 4b9f0c6a: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
@@ -1081,7 +1081,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/fake/run-4b9f0c6a-c9ec-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/fake/pass-4b9f0c6a-c9e\u2026',
         },
         {
           type: 'StepsResolved',
@@ -1112,16 +1112,16 @@ it('4. a judge restarts the pass (`PassRestarted`, `WorkItemReleased`)', () => {
     },
   ])
   expect(documentsOf(all, attempts)).toEqual([{ type: 'StepFailed', field: 'evidence' }])
-  // No `stripOf` here — the item ends on `WorkItemReleased` (`queued`), so
+  // No `stripOf` here — the item ends on `TicketReleased` (`queued`), so
   // the task page draws no strip for this ending at all (file header).
 })
 
 // Row 5, `what-a-pass-writes-today.test.ts:445` — restarts spent: the second arrival holds, not requeues
 const ITEM_5: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-b1ad92a9-ee53-40e9-b196-78de9004c40c',
+      runId: 'pass-b1ad92a9-ee53-40e9-b196-78de9004c40c',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -1131,7 +1131,7 @@ const ITEM_5: EventSpec[] = [
   {
     type: 'PassRestarted',
     data: {
-      runId: 'run-b1ad92a9-ee53-40e9-b196-78de9004c40c',
+      runId: 'pass-b1ad92a9-ee53-40e9-b196-78de9004c40c',
       restart: 1,
       of: 1,
       action: 'proposed',
@@ -1150,18 +1150,18 @@ const ITEM_5: EventSpec[] = [
     },
   },
   {
-    type: 'WorkItemReleased',
+    type: 'TicketReleased',
     data: {
-      runId: 'run-b1ad92a9-ee53-40e9-b196-78de9004c40c',
+      runId: 'pass-b1ad92a9-ee53-40e9-b196-78de9004c40c',
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
     },
   },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: '' } },
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -1173,7 +1173,7 @@ const ITEM_5: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Routed',
-        run: { runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c' },
+        run: { runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c' },
         when: 'findings',
         why: 'agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
         raw: 'the judge chose `restart`, and `restarts` is spent',
@@ -1198,39 +1198,39 @@ const ITEM_5: EventSpec[] = [
 const RUN_5: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: '',
-      evidence: '/tmp/fake/run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -1239,7 +1239,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -1248,27 +1248,27 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1+failure@89344829abac',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745',
-      worktree: '/tmp/fake/run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      worktree: '/tmp/fake/pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       configHash: '742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745',
       steps: [
         { step: 'claim', actions: [] },
@@ -1323,7 +1323,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -1334,7 +1334,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -1343,7 +1343,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -1352,7 +1352,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -1392,7 +1392,7 @@ const RUN_5: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
+      runId: 'pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question:
         'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
@@ -1413,23 +1413,23 @@ const RUN_5: EventSpec[] = [
 ]
 
 it('5. restarts spent: the second arrival holds, not requeues', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_5)
-  const runEvents = envelopesFor('run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', RUN_5)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_5)
+  const runEvents = envelopesFor('pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', RUN_5)
   const all = [...itemEvents, ...runEvents]
-  // `attempt: 2`, not 1: ITEM_5 carries two `WorkItemClaimed` (run-b1ad92a9
-  // first, run-9ad6ce9b second), so `claimsOf(own)` (`task.ts:966`) returns
+  // `attempt: 2`, not 1: ITEM_5 carries two `TicketClaimed` (pass-b1ad92a9
+  // first, pass-9ad6ce9b second), so `claimsOf(own)` (`task.ts:966`) returns
   // both, and `loadTask`'s `claims.map((c, i) => foldRun(c, i + 1, ...))`
-  // (`task.ts:1494`) numbers run-9ad6ce9b's attempt 2. Production also folds
-  // a third group, `attempt 1`, from run-b1ad92a9's own run stream — but this
+  // (`task.ts:1494`) numbers pass-9ad6ce9b's attempt 2. Production also folds
+  // a third group, `attempt 1`, from pass-b1ad92a9's own run stream — but this
   // fixture carries no events for that stream, so that group is left out
   // here rather than pinned on invented events, the same way `RUN_15b`'s
   // other claim is left out below.
-  const attempts = new Map([['run-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', 2]])
+  const attempts = new Map([['pass-9ad6ce9b-07bf-4131-b3a5-73a3efd5890c', 2]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run b1ad92a9' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run b1ad92a9' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'PassRestarted',
@@ -1437,13 +1437,13 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
           summary: 'restart 1 of 1 \u2014 proposed refused agent/7-attempt-1 after 0 round(s), 1 finding left live',
         },
         {
-          type: 'WorkItemReleased',
+          type: 'TicketReleased',
           actor: 'conductor',
           summary:
             'run b1ad92a9: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
         },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels:' },
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 9ad6ce9b' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 9ad6ce9b' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -1469,7 +1469,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1+failure@89344829abac baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/fak\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1+failure@89344829abac baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/f\u2026',
         },
         {
           type: 'StepsResolved',
@@ -1523,9 +1523,9 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
 // Row 6, `what-a-pass-writes-today.test.ts:585` — `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFinish`)
 const ITEM_6: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -1537,7 +1537,7 @@ const ITEM_6: EventSpec[] = [
     data: {
       hold: {
         _tag: 'DidNotFinish',
-        run: { runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb' },
+        run: { runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb' },
         step: 'implement',
         why: 'the agent produced no commits',
         raw: 'the agent produced no commits',
@@ -1550,39 +1550,39 @@ const ITEM_6: EventSpec[] = [
 const RUN_6: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       onSha: '',
-      evidence: '/tmp/fake/run-2430949b-a22c-4dff-93c6-ffe0b6802afb at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-2430949b-a22c-4dff-93c6-ffe0b6802afb at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -1591,7 +1591,7 @@ const RUN_6: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -1600,27 +1600,27 @@ const RUN_6: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      worktree: '/tmp/fake/pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -1657,7 +1657,7 @@ const RUN_6: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-2430949b-a22c-4dff-93c6-ffe0b6802afb',
+      runId: 'pass-2430949b-a22c-4dff-93c6-ffe0b6802afb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       detail: 'the agent produced no commits',
     },
@@ -1683,15 +1683,15 @@ const RUN_6: EventSpec[] = [
 ]
 
 it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFinish`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_6)
-  const runEvents = envelopesFor('run-2430949b-a22c-4dff-93c6-ffe0b6802afb', RUN_6)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_6)
+  const runEvents = envelopesFor('pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', RUN_6)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-2430949b-a22c-4dff-93c6-ffe0b6802afb', 1]])
+  const attempts = new Map([['pass-2430949b-a22c-4dff-93c6-ffe0b6802afb', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 2430949b' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 2430949b' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -1717,7 +1717,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-2430949b-a22c-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-2430949b-a22\u2026',
         },
         {
           type: 'StepsResolved',
@@ -1759,9 +1759,9 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
 // Row 7, `what-a-pass-writes-today.test.ts:647` — `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)
 const ITEM_7: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -1773,7 +1773,7 @@ const ITEM_7: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Declined',
-        run: { runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6' },
+        run: { runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6' },
         step: 'implement',
         said: '{"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it twice and the second call deadlocks on the lock the first took"}]}',
       },
@@ -1785,39 +1785,39 @@ const ITEM_7: EventSpec[] = [
 const RUN_7: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: '',
-      evidence: '/tmp/fake/run-7680e22b-ccfd-4279-add1-fee1663cd2c6 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-7680e22b-ccfd-4279-add1-fee1663cd2c6 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -1826,7 +1826,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -1835,27 +1835,27 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
-      worktree: '/tmp/fake/run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      worktree: '/tmp/fake/pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
       steps: [
         { step: 'claim', actions: [] },
@@ -1910,7 +1910,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -1921,7 +1921,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -1930,7 +1930,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -1939,7 +1939,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -1958,7 +1958,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -1967,14 +1967,14 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
   {
     type: 'FixRequested',
     data: {
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       round: 1,
       of: 1,
       action: 'proposed',
@@ -1993,7 +1993,7 @@ const RUN_7: EventSpec[] = [
   {
     type: 'FixApplied',
     data: {
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       round: 1,
       headSha: null,
       turns: 5,
@@ -2007,7 +2007,7 @@ const RUN_7: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-7680e22b-ccfd-4279-add1-fee1663cd2c6',
+      runId: 'pass-7680e22b-ccfd-4279-add1-fee1663cd2c6',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       detail: 'the fixing agent committed nothing, so there is nothing new for the review to read',
     },
@@ -2057,15 +2057,15 @@ const RUN_7: EventSpec[] = [
 ]
 
 it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_7)
-  const runEvents = envelopesFor('run-7680e22b-ccfd-4279-add1-fee1663cd2c6', RUN_7)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_7)
+  const runEvents = envelopesFor('pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', RUN_7)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-7680e22b-ccfd-4279-add1-fee1663cd2c6', 1]])
+  const attempts = new Map([['pass-7680e22b-ccfd-4279-add1-fee1663cd2c6', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 7680e22b' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 7680e22b' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -2092,7 +2092,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/run-7680e22b-ccfd-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-7680e22b-ccf\u2026',
         },
         {
           type: 'StepsResolved',
@@ -2156,9 +2156,9 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
 // Row 9, `what-a-pass-writes-today.test.ts:740` — a check before the lane at `merge` refuses (`CheckRed`)
 const ITEM_9: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -2170,7 +2170,7 @@ const ITEM_9: EventSpec[] = [
     data: {
       hold: {
         _tag: 'CheckRed',
-        run: { runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb' },
+        run: { runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb' },
         step: 'merge',
         why: 'blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns \u00b7 $1.25)',
         raw: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
@@ -2183,39 +2183,39 @@ const ITEM_9: EventSpec[] = [
 const RUN_9: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: '',
-      evidence: '/tmp/fake/run-1176f67d-84fe-4244-9ff8-7ec85b005feb at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-1176f67d-84fe-4244-9ff8-7ec85b005feb at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -2224,7 +2224,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -2233,27 +2233,27 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '6353c1eaf44d11c9b8723dc1c6b369209b31628728428e2067daf91d848cf93b',
-      worktree: '/tmp/fake/run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      worktree: '/tmp/fake/pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       configHash: '6353c1eaf44d11c9b8723dc1c6b369209b31628728428e2067daf91d848cf93b',
       steps: [
         { step: 'claim', actions: [] },
@@ -2310,7 +2310,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -2321,7 +2321,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'check',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2330,7 +2330,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'check',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2339,7 +2339,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'check',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -2379,7 +2379,7 @@ const RUN_9: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'unfixed',
-      runId: 'run-1176f67d-84fe-4244-9ff8-7ec85b005feb',
+      runId: 'pass-1176f67d-84fe-4244-9ff8-7ec85b005feb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question:
         'Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns \u00b7 $1.25) (`check`)',
@@ -2400,15 +2400,15 @@ const RUN_9: EventSpec[] = [
 ]
 
 it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_9)
-  const runEvents = envelopesFor('run-1176f67d-84fe-4244-9ff8-7ec85b005feb', RUN_9)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_9)
+  const runEvents = envelopesFor('pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', RUN_9)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-1176f67d-84fe-4244-9ff8-7ec85b005feb', 1]])
+  const attempts = new Map([['pass-1176f67d-84fe-4244-9ff8-7ec85b005feb', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 1176f67d' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 1176f67d' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -2435,7 +2435,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=6353c1eaf44d11c9b8723dc1c6b369209b31628728428e2067daf91d848cf93b worktree=/tmp/fake/run-1176f67d-84fe-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=6353c1eaf44d11c9b8723dc1c6b369209b31628728428e2067daf91d848cf93b worktree=/tmp/fake/pass-1176f67d-84f\u2026',
         },
         {
           type: 'StepsResolved',
@@ -2492,9 +2492,9 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
 // Row 10a, `what-a-pass-writes-today.test.ts:828` — the merge lane refuses on a conflict (`Routed{when: "conflict"}`)
 const ITEM_10a: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -2506,7 +2506,7 @@ const ITEM_10a: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Routed',
-        run: { runId: 'run-309321b8-80ea-4890-bff6-5511181ea956' },
+        run: { runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956' },
         when: 'conflict',
         why: 'agent/7 into main is waiting on you. both sides touched src/fix.ts',
         raw: 'both sides touched src/fix.ts',
@@ -2523,39 +2523,39 @@ const ITEM_10a: EventSpec[] = [
 const RUN_10a: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: '',
-      evidence: '/tmp/fake/run-309321b8-80ea-4890-bff6-5511181ea956 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-309321b8-80ea-4890-bff6-5511181ea956 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -2564,7 +2564,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -2573,27 +2573,27 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-309321b8-80ea-4890-bff6-5511181ea956',
+      worktree: '/tmp/fake/pass-309321b8-80ea-4890-bff6-5511181ea956',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -2641,7 +2641,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -2652,7 +2652,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2661,7 +2661,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2670,7 +2670,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'both sides touched src/fix.ts',
       findings: [],
@@ -2702,7 +2702,7 @@ const RUN_10a: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'unfixed',
-      runId: 'run-309321b8-80ea-4890-bff6-5511181ea956',
+      runId: 'pass-309321b8-80ea-4890-bff6-5511181ea956',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question:
         'Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
@@ -2723,15 +2723,15 @@ const RUN_10a: EventSpec[] = [
 ]
 
 it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_10a)
-  const runEvents = envelopesFor('run-309321b8-80ea-4890-bff6-5511181ea956', RUN_10a)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_10a)
+  const runEvents = envelopesFor('pass-309321b8-80ea-4890-bff6-5511181ea956', RUN_10a)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-309321b8-80ea-4890-bff6-5511181ea956', 1]])
+  const attempts = new Map([['pass-309321b8-80ea-4890-bff6-5511181ea956', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 309321b8' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 309321b8' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -2758,7 +2758,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-309321b8-80ea-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-309321b8-80e\u2026',
         },
         {
           type: 'StepsResolved',
@@ -2811,9 +2811,9 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
 // Row 10b, `what-a-pass-writes-today.test.ts:903` — the merge lane refuses on a dirty base (`MergeRefused`)
 const ITEM_10b: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -2825,7 +2825,7 @@ const ITEM_10b: EventSpec[] = [
     data: {
       hold: {
         _tag: 'MergeRefused',
-        run: { runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55' },
+        run: { runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55' },
         reason: 'dirty-base',
         why: "Lingtai's own checkout of main was not clean, so the merge was refused. Nothing is wrong with agent/7.",
         paths: ['src/fix.ts'],
@@ -2842,39 +2842,39 @@ const ITEM_10b: EventSpec[] = [
 const RUN_10b: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: '',
-      evidence: '/tmp/fake/run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -2883,7 +2883,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -2892,27 +2892,27 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      worktree: '/tmp/fake/pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -2960,7 +2960,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -2971,7 +2971,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2980,7 +2980,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -2989,7 +2989,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'land the branch',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'main moved under it',
       findings: [],
@@ -3021,7 +3021,7 @@ const RUN_10b: EventSpec[] = [
     data: {
       step: 'merge',
       action: 'unfixed',
-      runId: 'run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
+      runId: 'pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question: 'Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
       artifacts: ['agent/7@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
@@ -3041,15 +3041,15 @@ const RUN_10b: EventSpec[] = [
 ]
 
 it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_10b)
-  const runEvents = envelopesFor('run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', RUN_10b)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_10b)
+  const runEvents = envelopesFor('pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', RUN_10b)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', 1]])
+  const attempts = new Map([['pass-5fa23233-0e19-4f89-a77d-dfddaf6b6d55', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 5fa23233' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 5fa23233' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         { type: 'WorkItemBlocked', actor: 'conductor', summary: 'acknowledgement: dirty-base: main moved under it' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'comment: 1' },
@@ -3071,7 +3071,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-5fa23233-0e19-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-5fa23233-0e1\u2026',
         },
         {
           type: 'StepsResolved',
@@ -3124,9 +3124,9 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
 // Row 11, `what-a-pass-writes-today.test.ts:995` — an agent asks a question (`StepAsked`)
 const ITEM_11: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -3138,7 +3138,7 @@ const ITEM_11: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Asked',
-        run: { runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6' },
+        run: { runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6' },
         step: 'design',
         question: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
       },
@@ -3150,39 +3150,39 @@ const ITEM_11: EventSpec[] = [
 const RUN_11: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       onSha: '',
-      evidence: '/tmp/fake/run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -3191,7 +3191,7 @@ const RUN_11: EventSpec[] = [
     data: {
       step: 'design',
       action: 'draft',
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -3200,7 +3200,7 @@ const RUN_11: EventSpec[] = [
     data: {
       step: 'design',
       action: 'draft',
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -3209,7 +3209,7 @@ const RUN_11: EventSpec[] = [
     data: {
       step: 'design',
       action: 'draft',
-      runId: 'run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
+      runId: 'pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       detail: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
     },
@@ -3235,15 +3235,15 @@ const RUN_11: EventSpec[] = [
 ]
 
 it('11. an agent asks a question (`StepAsked`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_11)
-  const runEvents = envelopesFor('run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', RUN_11)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_11)
+  const runEvents = envelopesFor('pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', RUN_11)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', 1]])
+  const attempts = new Map([['pass-071e4ee4-d499-4303-bca4-4cd4ccb1d7b6', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 071e4ee4' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 071e4ee4' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -3300,9 +3300,9 @@ it('11. an agent asks a question (`StepAsked`)', () => {
 // Row 12, `what-a-pass-writes-today.test.ts:1082` — a declared `human:` at `proposed` (`Human`)
 const ITEM_12: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -3314,7 +3314,7 @@ const ITEM_12: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Human',
-        run: { runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96' },
+        run: { runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96' },
         step: 'proposed',
         source: 'declared',
         question: "Merge this? It is Lingtai's own code.",
@@ -3328,39 +3328,39 @@ const ITEM_12: EventSpec[] = [
 const RUN_12: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: '',
-      evidence: '/tmp/fake/run-1e489b59-ae27-4677-a99e-372afcc7dc96 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-1e489b59-ae27-4677-a99e-372afcc7dc96 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -3369,7 +3369,7 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -3378,27 +3378,27 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '7007dfe8eb4e956548410da6b95d931b3bb5d549ab4a9484ec8630f51af6fc30',
-      worktree: '/tmp/fake/run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      worktree: '/tmp/fake/pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       configHash: '7007dfe8eb4e956548410da6b95d931b3bb5d549ab4a9484ec8630f51af6fc30',
       steps: [
         { step: 'claim', actions: [] },
@@ -3452,7 +3452,7 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -3463,7 +3463,7 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'approval',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -3472,7 +3472,7 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'approval',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -3481,7 +3481,7 @@ const RUN_12: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'approval',
-      runId: 'run-1e489b59-ae27-4677-a99e-372afcc7dc96',
+      runId: 'pass-1e489b59-ae27-4677-a99e-372afcc7dc96',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question: "Merge this? It is Lingtai's own code.",
       artifacts: [],
@@ -3512,15 +3512,15 @@ const RUN_12: EventSpec[] = [
 ]
 
 it('12. a declared `human:` at `proposed` (`Human`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_12)
-  const runEvents = envelopesFor('run-1e489b59-ae27-4677-a99e-372afcc7dc96', RUN_12)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_12)
+  const runEvents = envelopesFor('pass-1e489b59-ae27-4677-a99e-372afcc7dc96', RUN_12)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-1e489b59-ae27-4677-a99e-372afcc7dc96', 1]])
+  const attempts = new Map([['pass-1e489b59-ae27-4677-a99e-372afcc7dc96', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 1e489b59' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 1e489b59' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -3546,7 +3546,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=7007dfe8eb4e956548410da6b95d931b3bb5d549ab4a9484ec8630f51af6fc30 worktree=/tmp/fake/run-1e489b59-ae27-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=7007dfe8eb4e956548410da6b95d931b3bb5d549ab4a9484ec8630f51af6fc30 worktree=/tmp/fake/pass-1e489b59-ae2\u2026',
         },
         {
           type: 'StepsResolved',
@@ -3591,9 +3591,9 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
 // Row 13, `what-a-pass-writes-today.test.ts:1157` — a judge answer is unreadable
 const ITEM_13: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -3605,7 +3605,7 @@ const ITEM_13: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Routed',
-        run: { runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953' },
+        run: { runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953' },
         when: 'findings',
         why: 'agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (claude-code (haiku) \u00b7 5 turns, $1.25): I am not sure what to say here.',
         raw: 'the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (claude-code (haiku) \u00b7 5 turns, $1.25):\nI am not sure what to say here.',
@@ -3630,39 +3630,39 @@ const ITEM_13: EventSpec[] = [
 const RUN_13: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: '',
-      evidence: '/tmp/fake/run-058f8a7c-f9d0-4899-b0e8-21453521a953 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-058f8a7c-f9d0-4899-b0e8-21453521a953 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -3671,7 +3671,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -3680,27 +3680,27 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '91dc07820041694a822997757e710f0d4da19bb28bd45e959136c3ff5303c92e',
-      worktree: '/tmp/fake/run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      worktree: '/tmp/fake/pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       configHash: '91dc07820041694a822997757e710f0d4da19bb28bd45e959136c3ff5303c92e',
       steps: [
         { step: 'claim', actions: [] },
@@ -3763,7 +3763,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -3774,7 +3774,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -3783,7 +3783,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -3792,7 +3792,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -3832,7 +3832,7 @@ const RUN_13: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-058f8a7c-f9d0-4899-b0e8-21453521a953',
+      runId: 'pass-058f8a7c-f9d0-4899-b0e8-21453521a953',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question:
         'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (claude-code (haiku) \u00b7 5 turns, $1.25): I am not sure what to say here.',
@@ -3853,15 +3853,15 @@ const RUN_13: EventSpec[] = [
 ]
 
 it('13. a judge answer is unreadable', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_13)
-  const runEvents = envelopesFor('run-058f8a7c-f9d0-4899-b0e8-21453521a953', RUN_13)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_13)
+  const runEvents = envelopesFor('pass-058f8a7c-f9d0-4899-b0e8-21453521a953', RUN_13)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-058f8a7c-f9d0-4899-b0e8-21453521a953', 1]])
+  const attempts = new Map([['pass-058f8a7c-f9d0-4899-b0e8-21453521a953', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 058f8a7c' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 058f8a7c' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -3888,7 +3888,7 @@ it('13. a judge answer is unreadable', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=91dc07820041694a822997757e710f0d4da19bb28bd45e959136c3ff5303c92e worktree=/tmp/fake/run-058f8a7c-f9d0-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=91dc07820041694a822997757e710f0d4da19bb28bd45e959136c3ff5303c92e worktree=/tmp/fake/pass-058f8a7c-f9d\u2026',
         },
         {
           type: 'StepsResolved',
@@ -3946,9 +3946,9 @@ it('13. a judge answer is unreadable', () => {
 // Row 13b, `what-a-pass-writes-today.test.ts:1244` — the cold reviewer's own answer is unreadable
 const ITEM_13b: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -3960,7 +3960,7 @@ const ITEM_13b: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Routed',
-        run: { runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81' },
+        run: { runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81' },
         when: 'findings',
         why: "agent/7 into main is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         raw: "the reviewer's answer was not readable as findings:\nI am not sure what to say here.",
@@ -3977,39 +3977,39 @@ const ITEM_13b: EventSpec[] = [
 const RUN_13b: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: '',
-      evidence: '/tmp/fake/run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -4018,7 +4018,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -4027,27 +4027,27 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
-      worktree: '/tmp/fake/run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      worktree: '/tmp/fake/pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
       steps: [
         { step: 'claim', actions: [] },
@@ -4102,7 +4102,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -4113,7 +4113,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -4122,7 +4122,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -4131,7 +4131,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: "the reviewer's answer was not readable as findings:\nI am not sure what to say here.",
       findings: [],
@@ -4164,7 +4164,7 @@ const RUN_13b: EventSpec[] = [
     data: {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
+      runId: 'pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       question:
         "Merge agent/7 into main anyway? agent/7 into main is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
@@ -4185,15 +4185,15 @@ const RUN_13b: EventSpec[] = [
 ]
 
 it("13b. the cold reviewer's own answer is unreadable", () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_13b)
-  const runEvents = envelopesFor('run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', RUN_13b)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_13b)
+  const runEvents = envelopesFor('pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', RUN_13b)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', 1]])
+  const attempts = new Map([['pass-6a7d6221-23fa-4aea-8e60-2e3bfbec3c81', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 6a7d6221' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 6a7d6221' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -4220,7 +4220,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/run-6a7d6221-23fa-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-6a7d6221-23f\u2026',
         },
         {
           type: 'StepsResolved',
@@ -4281,9 +4281,9 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
 // Row 14a, `what-a-pass-writes-today.test.ts:1397` — the turn ceiling is hit mid-run (`Ceiling`)
 const ITEM_14a: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -4295,7 +4295,7 @@ const ITEM_14a: EventSpec[] = [
     data: {
       hold: {
         _tag: 'Ceiling',
-        run: { runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8' },
+        run: { runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8' },
         kind: 'out-of-turns',
         detail: 'out-of-turns: spent all 10 turns with no commit',
         turns: 10,
@@ -4309,39 +4309,39 @@ const ITEM_14a: EventSpec[] = [
 const RUN_14a: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       onSha: '',
-      evidence: '/tmp/fake/run-74c54a49-67b3-4eb3-a860-cf84aa0094a8 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -4350,7 +4350,7 @@ const RUN_14a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -4359,27 +4359,27 @@ const RUN_14a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      worktree: '/tmp/fake/pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -4417,7 +4417,7 @@ const RUN_14a: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
+      runId: 'pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       detail: 'out-of-turns: spent all 10 turns with no commit',
     },
@@ -4467,15 +4467,15 @@ const RUN_14a: EventSpec[] = [
 ]
 
 it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_14a)
-  const runEvents = envelopesFor('run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', RUN_14a)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_14a)
+  const runEvents = envelopesFor('pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', RUN_14a)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-74c54a49-67b3-4eb3-a860-cf84aa0094a8', 1]])
+  const attempts = new Map([['pass-74c54a49-67b3-4eb3-a860-cf84aa0094a8', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 74c54a49' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 74c54a49' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -4502,7 +4502,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-74c54a49-67b3-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-74c54a49-67b\u2026',
         },
         {
           type: 'StepsResolved',
@@ -4551,9 +4551,9 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
 // Row 14b, `what-a-pass-writes-today.test.ts:1468` — the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)
 const ITEM_14b: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -4565,7 +4565,7 @@ const ITEM_14b: EventSpec[] = [
     data: {
       hold: {
         _tag: 'DidNotFinish',
-        run: { runId: 'run-e1833177-2959-4fee-9014-7987a430d752' },
+        run: { runId: 'pass-e1833177-2959-4fee-9014-7987a430d752' },
         step: 'implement',
         why: 'timeout: exceeded wall 2m',
         raw: 'timeout: exceeded wall 2m',
@@ -4578,39 +4578,39 @@ const ITEM_14b: EventSpec[] = [
 const RUN_14b: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-e1833177-2959-4fee-9014-7987a430d752', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       onSha: '',
-      evidence: '/tmp/fake/run-e1833177-2959-4fee-9014-7987a430d752 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-e1833177-2959-4fee-9014-7987a430d752 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -4619,7 +4619,7 @@ const RUN_14b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -4628,27 +4628,27 @@ const RUN_14b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
-      worktree: '/tmp/fake/run-e1833177-2959-4fee-9014-7987a430d752',
+      worktree: '/tmp/fake/pass-e1833177-2959-4fee-9014-7987a430d752',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       configHash: '9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1',
       steps: [
         { step: 'claim', actions: [] },
@@ -4685,7 +4685,7 @@ const RUN_14b: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-e1833177-2959-4fee-9014-7987a430d752',
+      runId: 'pass-e1833177-2959-4fee-9014-7987a430d752',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       detail: 'timeout: exceeded wall 2m',
     },
@@ -4725,15 +4725,15 @@ const RUN_14b: EventSpec[] = [
 ]
 
 it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_14b)
-  const runEvents = envelopesFor('run-e1833177-2959-4fee-9014-7987a430d752', RUN_14b)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_14b)
+  const runEvents = envelopesFor('pass-e1833177-2959-4fee-9014-7987a430d752', RUN_14b)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-e1833177-2959-4fee-9014-7987a430d752', 1]])
+  const attempts = new Map([['pass-e1833177-2959-4fee-9014-7987a430d752', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run e1833177' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run e1833177' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -4759,7 +4759,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/run-e1833177-2959-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-e1833177-295\u2026',
         },
         {
           type: 'StepsResolved',
@@ -4800,9 +4800,9 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
 // Row 14c, `what-a-pass-writes-today.test.ts:1287` — a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the ticket's scope)
 const ITEM_14c: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -4814,7 +4814,7 @@ const ITEM_14c: EventSpec[] = [
     data: {
       hold: {
         _tag: 'DidNotFinish',
-        run: { runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb' },
+        run: { runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb' },
         step: 'implement',
         why: 'the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
         raw: 'the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
@@ -4827,39 +4827,39 @@ const ITEM_14c: EventSpec[] = [
 const RUN_14c: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: '',
-      evidence: '/tmp/fake/run-8d4fc65a-ccf1-447d-a49b-1348e64941eb at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -4868,7 +4868,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -4877,27 +4877,27 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
-      worktree: '/tmp/fake/run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      worktree: '/tmp/fake/pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
       steps: [
         { step: 'claim', actions: [] },
@@ -4952,7 +4952,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -4963,7 +4963,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -4972,7 +4972,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -4981,7 +4981,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -5000,7 +5000,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5009,14 +5009,14 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
   {
     type: 'FixRequested',
     data: {
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       round: 1,
       of: 1,
       action: 'proposed',
@@ -5035,7 +5035,7 @@ const RUN_14c: EventSpec[] = [
   {
     type: 'FixApplied',
     data: {
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       round: 1,
       headSha: null,
       turns: 7,
@@ -5048,7 +5048,7 @@ const RUN_14c: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
+      runId: 'pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       detail:
         'the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
@@ -5099,15 +5099,15 @@ const RUN_14c: EventSpec[] = [
 ]
 
 it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the ticket's scope)", () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_14c)
-  const runEvents = envelopesFor('run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', RUN_14c)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_14c)
+  const runEvents = envelopesFor('pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', RUN_14c)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-8d4fc65a-ccf1-447d-a49b-1348e64941eb', 1]])
+  const attempts = new Map([['pass-8d4fc65a-ccf1-447d-a49b-1348e64941eb', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 8d4fc65a' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 8d4fc65a' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -5134,7 +5134,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/run-8d4fc65a-ccf1-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-8d4fc65a-ccf\u2026',
         },
         {
           type: 'StepsResolved',
@@ -5203,9 +5203,9 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
 // Row 14d, `what-a-pass-writes-today.test.ts:1341` — the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody paid for
 const ITEM_14d: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -5217,7 +5217,7 @@ const ITEM_14d: EventSpec[] = [
     data: {
       hold: {
         _tag: 'DidNotFinish',
-        run: { runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4' },
+        run: { runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4' },
         step: 'review',
         why: 'the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
         raw: 'the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
@@ -5230,39 +5230,39 @@ const ITEM_14d: EventSpec[] = [
 const RUN_14d: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: '',
-      evidence: '/tmp/fake/run-960c9de8-efc6-4650-9080-4abb4e44f9b4 at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-960c9de8-efc6-4650-9080-4abb4e44f9b4 at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -5271,7 +5271,7 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -5280,27 +5280,27 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
-      worktree: '/tmp/fake/run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      worktree: '/tmp/fake/pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       configHash: '2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a',
       steps: [
         { step: 'claim', actions: [] },
@@ -5355,7 +5355,7 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -5366,7 +5366,7 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5375,7 +5375,7 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5384,7 +5384,7 @@ const RUN_14d: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-960c9de8-efc6-4650-9080-4abb4e44f9b4',
+      runId: 'pass-960c9de8-efc6-4650-9080-4abb4e44f9b4',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       detail: 'the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
     },
@@ -5424,15 +5424,15 @@ const RUN_14d: EventSpec[] = [
 ]
 
 it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody paid for", () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_14d)
-  const runEvents = envelopesFor('run-960c9de8-efc6-4650-9080-4abb4e44f9b4', RUN_14d)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_14d)
+  const runEvents = envelopesFor('pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', RUN_14d)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-960c9de8-efc6-4650-9080-4abb4e44f9b4', 1]])
+  const attempts = new Map([['pass-960c9de8-efc6-4650-9080-4abb4e44f9b4', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 960c9de8' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 960c9de8' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'WorkItemBlocked',
@@ -5459,7 +5459,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/run-960c9de8-efc6-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-960c9de8-efc\u2026',
         },
         {
           type: 'StepsResolved',
@@ -5512,18 +5512,18 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
 const RUN_15: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-70c33732-0ef1-4a73-bc8a-2ee675b35354', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-70c33732-0ef1-4a73-bc8a-2ee675b35354', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-70c33732-0ef1-4a73-bc8a-2ee675b35354', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-70c33732-0ef1-4a73-bc8a-2ee675b35354', onSha: '' },
   },
   {
     type: 'StepFailed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-70c33732-0ef1-4a73-bc8a-2ee675b35354',
+      runId: 'pass-70c33732-0ef1-4a73-bc8a-2ee675b35354',
       onSha: '',
       evidence: 'excluded-label',
       findings: [],
@@ -5534,33 +5534,33 @@ const RUN_15: EventSpec[] = [
 it('15. a claim decline (`passed-over`) writes no work-item events', () => {
   // Validates the fixture's shape; `claimsOf([])` is `[]`, so none of it
   // reaches `loadTask`'s own reads (header).
-  envelopesFor('run-70c33732-0ef1-4a73-bc8a-2ee675b35354', RUN_15)
+  envelopesFor('pass-70c33732-0ef1-4a73-bc8a-2ee675b35354', RUN_15)
   expect(historyOf([], new Map())).toEqual([])
 })
 
 // Row 15b, `what-a-pass-writes-today.test.ts:1582` — a claim decline (`not-claimed`) writes no work-item events
 //
-// The item stream does carry one event here — `WorkItemClaimed` by
-// `run-somebody-else`, seeded so `claimWorkItem` reads the item as held — but
+// The item stream does carry one event here — `TicketClaimed` by
+// `pass-somebody-else`, seeded so `claimWorkItem` reads the item as held — but
 // it is that run's write, not this one's, so it is left out of the pin rather
 // than read as if this run had written it (file header).
 const RUN_15b: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-219a4221-af5e-4e54-a5d1-16508af6b7e4', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-219a4221-af5e-4e54-a5d1-16508af6b7e4', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-219a4221-af5e-4e54-a5d1-16508af6b7e4', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-219a4221-af5e-4e54-a5d1-16508af6b7e4', onSha: '' },
   },
   {
     type: 'StepFailed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-219a4221-af5e-4e54-a5d1-16508af6b7e4',
+      runId: 'pass-219a4221-af5e-4e54-a5d1-16508af6b7e4',
       onSha: '',
-      evidence: '{"reason":"held","by":"other:1","runId":"run-somebody-else"}',
+      evidence: '{"reason":"held","by":"other:1","runId":"pass-somebody-else"}',
       findings: [],
     },
   },
@@ -5568,19 +5568,19 @@ const RUN_15b: EventSpec[] = [
 
 it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
   // Validates the fixture's shape; `claimsOf` on the real item stream here
-  // yields `run-somebody-else`'s claim, never this run's, so this run's own
+  // yields `pass-somebody-else`'s claim, never this run's, so this run's own
   // stream is still never read by `loadTask` (header).
-  envelopesFor('run-219a4221-af5e-4e54-a5d1-16508af6b7e4', RUN_15b)
+  envelopesFor('pass-219a4221-af5e-4e54-a5d1-16508af6b7e4', RUN_15b)
   expect(historyOf([], new Map())).toEqual([])
 })
 
-// Row 15c, `what-a-pass-writes-today.test.ts:1626` — a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing
+// Row 15c, `what-a-pass-writes-today.test.ts:1626` — a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing
 const ITEM_15c: EventSpec[] = [
   {
-    type: 'WorkItemReleased',
+    type: 'TicketReleased',
     data: {
-      runId: 'run-a694ff5c-3f7c-461a-8349-675bf58b1863',
-      reason: 'the claim was not confirmed: wi-purecheck-7 may be claimed by this run: connection lost',
+      runId: 'pass-a694ff5c-3f7c-461a-8349-675bf58b1863',
+      reason: 'the claim was not confirmed: ticket-purecheck-7 may be claimed by this run: connection lost',
     },
   },
   { type: 'IssueUpdated', data: { project: 'purecheck', issue: '7', change: 'labels', detail: '' } },
@@ -5588,40 +5588,40 @@ const ITEM_15c: EventSpec[] = [
 const RUN_15c: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-a694ff5c-3f7c-461a-8349-675bf58b1863', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-a694ff5c-3f7c-461a-8349-675bf58b1863', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-a694ff5c-3f7c-461a-8349-675bf58b1863', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-a694ff5c-3f7c-461a-8349-675bf58b1863', onSha: '' },
   },
   {
     type: 'StepFailed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-a694ff5c-3f7c-461a-8349-675bf58b1863',
+      runId: 'pass-a694ff5c-3f7c-461a-8349-675bf58b1863',
       onSha: '',
-      evidence: 'wi-purecheck-7 may be claimed by this run: connection lost',
+      evidence: 'ticket-purecheck-7 may be claimed by this run: connection lost',
       findings: [],
     },
   },
 ]
 
-it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resolves nothing', () => {
+it('15c. a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing', () => {
   // Validates the fixture's shape; `claimsOf(itemEvents)` is still `[]` \u2014 a
-  // `WorkItemReleased` with no matching `WorkItemClaimed` opens nothing \u2014 so
+  // `TicketReleased` with no matching `TicketClaimed` opens nothing \u2014 so
   // this run's own stream is never read by `loadTask` either (header).
-  envelopesFor('run-a694ff5c-3f7c-461a-8349-675bf58b1863', RUN_15c)
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_15c)
+  envelopesFor('pass-a694ff5c-3f7c-461a-8349-675bf58b1863', RUN_15c)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_15c)
   expect(historyOf(itemEvents, new Map())).toEqual([
     {
       label: 'the ticket',
       lines: [
         {
-          type: 'WorkItemReleased',
+          type: 'TicketReleased',
           actor: 'conductor',
           summary:
-            'run a694ff5c: the claim was not confirmed: wi-purecheck-7 may be claimed by this run: connection lost',
+            'run a694ff5c: the claim was not confirmed: ticket-purecheck-7 may be claimed by this run: connection lost',
         },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels:' },
       ],
@@ -5632,9 +5632,9 @@ it('15c. a claim decline (`claim-unconfirmed`) writes WorkItemReleased and resol
 // Row 16, `what-a-pass-writes-today.test.ts:1786` — a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRestarted` spends the ceiling)
 const ITEM_16: EventSpec[] = [
   {
-    type: 'WorkItemClaimed',
+    type: 'TicketClaimed',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       worker: 'local:44075',
       title: 'a race in the importer',
       kind: 'bug',
@@ -5644,7 +5644,7 @@ const ITEM_16: EventSpec[] = [
   {
     type: 'PassRestarted',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       restart: 1,
       of: 2,
       action: 'proposed',
@@ -5670,9 +5670,9 @@ const ITEM_16: EventSpec[] = [
     },
   },
   {
-    type: 'WorkItemReleased',
+    type: 'TicketReleased',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       reason:
         'the proposed reviewer still refused after 1 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 2',
     },
@@ -5682,39 +5682,39 @@ const ITEM_16: EventSpec[] = [
 const RUN_16: EventSpec[] = [
   {
     type: 'StepRequested',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'claim', action: 'take the ticket', runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
+    data: { step: 'claim', action: 'take the ticket', runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'claim',
       action: 'take the ticket',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: '',
-      evidence: 'wi-purecheck-7 claimed as a bug',
+      evidence: 'ticket-purecheck-7 claimed as a bug',
       findings: [],
     },
   },
   {
     type: 'StepRequested',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
   },
   {
     type: 'StepStarted',
-    data: { step: 'admit', action: 'cut the branch', runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
+    data: { step: 'admit', action: 'cut the branch', runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a', onSha: '' },
   },
   {
     type: 'StepPassed',
     data: {
       step: 'admit',
       action: 'cut the branch',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: '',
-      evidence: '/tmp/fake/run-42e75b7d-7144-4650-8fdd-11c491b5472a at aaaaaaa, from origin/main',
+      evidence: '/tmp/fake/pass-42e75b7d-7144-4650-8fdd-11c491b5472a at aaaaaaa, from origin/main',
       findings: [],
     },
   },
@@ -5723,7 +5723,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
@@ -5732,27 +5732,27 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     },
   },
   {
     type: 'RunStarted',
     data: {
-      workItemId: 'wi-purecheck-7',
+      ticketId: 'ticket-purecheck-7',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1',
       baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       configHash: '8a30fea5adf3c61ad10d4b25d582b1e09a9d8534e056bdba9b028ecbfdce5a9b',
-      worktree: '/tmp/fake/run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      worktree: '/tmp/fake/pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       invocation: null,
     },
   },
   {
     type: 'StepsResolved',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       configHash: '8a30fea5adf3c61ad10d4b25d582b1e09a9d8534e056bdba9b028ecbfdce5a9b',
       steps: [
         { step: 'claim', actions: [] },
@@ -5807,7 +5807,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       evidence: 'committed bbbbbbb',
       findings: [],
@@ -5818,7 +5818,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5827,7 +5827,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5836,7 +5836,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -5855,7 +5855,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
@@ -5864,14 +5864,14 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     },
   },
   {
     type: 'FixRequested',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       round: 1,
       of: 1,
       action: 'proposed',
@@ -5890,7 +5890,7 @@ const RUN_16: EventSpec[] = [
   {
     type: 'FixApplied',
     data: {
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       round: 1,
       headSha: 'dddddddddddddddddddddddddddddddddddddddd',
       turns: 8,
@@ -5913,7 +5913,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'implement',
       action: 'write the change',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       evidence: 'committed ddddddd',
       findings: [],
@@ -5924,7 +5924,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -5933,7 +5933,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
     },
   },
@@ -5942,7 +5942,7 @@ const RUN_16: EventSpec[] = [
     data: {
       step: 'review',
       action: 'cold reviewer',
-      runId: 'run-42e75b7d-7144-4650-8fdd-11c491b5472a',
+      runId: 'pass-42e75b7d-7144-4650-8fdd-11c491b5472a',
       onSha: 'dddddddddddddddddddddddddddddddddddddddd',
       evidence: 'blocker src/fix.ts:12 \u2014 the approach cannot work\n\n(5 turns \u00b7 $1.25)',
       findings: [
@@ -6015,15 +6015,15 @@ const RUN_16: EventSpec[] = [
 ]
 
 it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRestarted` spends the ceiling)', () => {
-  const itemEvents = envelopesFor('wi-purecheck-7', ITEM_16)
-  const runEvents = envelopesFor('run-42e75b7d-7144-4650-8fdd-11c491b5472a', RUN_16)
+  const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_16)
+  const runEvents = envelopesFor('pass-42e75b7d-7144-4650-8fdd-11c491b5472a', RUN_16)
   const all = [...itemEvents, ...runEvents]
-  const attempts = new Map([['run-42e75b7d-7144-4650-8fdd-11c491b5472a', 1]])
+  const attempts = new Map([['pass-42e75b7d-7144-4650-8fdd-11c491b5472a', 1]])
   expect(historyOf(all, attempts)).toEqual([
     {
       label: 'the ticket',
       lines: [
-        { type: 'WorkItemClaimed', actor: 'conductor', summary: 'run 42e75b7d' },
+        { type: 'TicketClaimed', actor: 'conductor', summary: 'run 42e75b7d' },
         { type: 'IssueUpdated', actor: 'conductor', summary: 'labels: lingtai:working' },
         {
           type: 'PassRestarted',
@@ -6031,7 +6031,7 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
           summary: 'restart 1 of 2 \u2014 proposed refused agent/7-attempt-1 after 1 round(s), 2 findings left live',
         },
         {
-          type: 'WorkItemReleased',
+          type: 'TicketReleased',
           actor: 'conductor',
           summary:
             'run 42e75b7d: the proposed reviewer still refused after 1 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 2',
@@ -6054,7 +6054,7 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
           type: 'RunStarted',
           actor: 'conductor',
           summary:
-            'workItemId=wi-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=8a30fea5adf3c61ad10d4b25d582b1e09a9d8534e056bdba9b028ecbfdce5a9b worktree=/tmp/fake/run-42e75b7d-7144-4\u2026',
+            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=8a30fea5adf3c61ad10d4b25d582b1e09a9d8534e056bdba9b028ecbfdce5a9b worktree=/tmp/fake/pass-42e75b7d-714\u2026',
         },
         {
           type: 'StepsResolved',
@@ -6116,6 +6116,6 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
     { type: 'StepFailed', field: 'evidence' },
     { type: 'StepFailed', field: 'evidence' },
   ])
-  // No `stripOf` here — the item ends on `WorkItemReleased` (`queued`), so
+  // No `stripOf` here — the item ends on `TicketReleased` (`queued`), so
   // the task page draws no strip for this ending at all (file header).
 })

@@ -21,10 +21,10 @@ describe('legacyColumns', () => {
   })
 
   it('composes the step prefix for Asked, from the run it belongs to', () => {
-    const hold: Hold = { _tag: 'Asked', run: { runId: 'run-1' }, step: 'design', question: 'which base?' }
+    const hold: Hold = { _tag: 'Asked', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' }
     const cols = legacyColumns(hold)
     expect(cols.question).toBe('the `design` step asked: which base?')
-    expect(cols.runId).toBe('run-1')
+    expect(cols.runId).toBe('pass-1')
     expect(cols.needs).toBe('judgement')
     expect(cols.diagnosis).toEqual({
       what: 'the `design` step asked: which base?',
@@ -37,7 +37,7 @@ describe('legacyColumns', () => {
   it('composes the step prefix for Human, and recommends approve only at merge', () => {
     const declared: Hold = {
       _tag: 'Human',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'proposed',
       source: 'declared',
       question: 'go ahead?',
@@ -47,7 +47,7 @@ describe('legacyColumns', () => {
 
     const injected: Hold = {
       _tag: 'Human',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'merge',
       source: 'injected',
       question: '--no-merge',
@@ -62,7 +62,7 @@ describe('legacyColumns', () => {
     const finding = { severity: 'major' as const, file: 'x.ts', line: 4, claim: 'claim', failureScenario: 'scenario' }
     const hold: Hold = {
       _tag: 'Human',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'merge',
       source: 'injected',
       question: '--no-merge',
@@ -74,7 +74,7 @@ describe('legacyColumns', () => {
   it('composes the step prefix for Declined, with needs judgement and no recommendation', () => {
     const hold: Hold = {
       _tag: 'Declined',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'implement',
       said: 'the findings describe a tradeoff, not a bug',
     }
@@ -85,14 +85,14 @@ describe('legacyColumns', () => {
   })
 
   it('names Declined with a generic line when the fixing agent said nothing', () => {
-    const hold: Hold = { _tag: 'Declined', run: { runId: 'run-1' }, step: 'implement', said: null }
+    const hold: Hold = { _tag: 'Declined', run: { runId: 'pass-1' }, step: 'implement', said: null }
     expect(legacyColumns(hold).question).toBe('the `implement` step declined: the fixing agent committed nothing')
   })
 
   it('keeps Routed.why as the composed line, since branch/base are not on a Hold', () => {
     const hold: Hold = {
       _tag: 'Routed',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       when: 'findings',
       why: 'agent/1 into main is waiting on you. a blocker was found',
       raw: 'a blocker was found',
@@ -111,7 +111,7 @@ describe('legacyColumns', () => {
   it('reads a Routed conflict through diagnoseRefusal, same as MergeRefused carries for the same reason', () => {
     const hold: Hold = {
       _tag: 'Routed',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       when: 'conflict',
       why: 'agent/1 into main is waiting on you. CONFLICT (content): Merge conflict in a.ts',
       raw: 'CONFLICT (content): Merge conflict in a.ts',
@@ -131,7 +131,7 @@ describe('legacyColumns', () => {
   it('reads a Routed verify-failed through diagnoseRefusal, with no recommendation', () => {
     const hold: Hold = {
       _tag: 'Routed',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       when: 'verify-failed',
       why: 'agent/1 into main is waiting on you. exit 2',
       raw: 'exit 2',
@@ -148,7 +148,7 @@ describe('legacyColumns', () => {
   it('recommends approve on a Routed carrying no findings', () => {
     const hold: Hold = {
       _tag: 'Routed',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       when: 'findings',
       why: 'agent/1 into main is waiting on you.',
       raw: null,
@@ -166,7 +166,7 @@ describe('legacyColumns', () => {
   it('composes the step prefix for CheckRed, with needs acknowledgement', () => {
     const hold: Hold = {
       _tag: 'CheckRed',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'build',
       why: 'pnpm test exited 2',
       raw: null,
@@ -180,7 +180,7 @@ describe('legacyColumns', () => {
   it('composes the step prefix for DidNotFinish, with its own word', () => {
     const hold: Hold = {
       _tag: 'DidNotFinish',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'implement',
       why: 'the agent crashed',
       raw: 'Error: boom',
@@ -191,7 +191,7 @@ describe('legacyColumns', () => {
   it('composes the step prefix for SetupRefused', () => {
     const hold: Hold = {
       _tag: 'SetupRefused',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'prepared',
       lifts: 'person',
       why: 'the cold reviewer had no settings file',
@@ -205,7 +205,7 @@ describe('legacyColumns', () => {
   it("keeps MergeRefused's own `reason: raw` line, unprefixed by a step", () => {
     const hold: Hold = {
       _tag: 'MergeRefused',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       reason: 'conflict',
       why: 'the branch does not merge into main',
       raw: 'CONFLICT (content): Merge conflict in a.ts',
@@ -223,7 +223,7 @@ describe('legacyColumns', () => {
   it("keeps Ceiling's own `kind: detail` line, and recommends requeue", () => {
     const hold: Hold = {
       _tag: 'Ceiling',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       kind: 'out-of-turns',
       detail: '151 turns, and the recipe allows 151',
       turns: 151,
@@ -241,7 +241,7 @@ describe('legacyColumns', () => {
   it('appends the unpushed parenthetical to diagnosis.what, never to question', () => {
     const hold: Hold = {
       _tag: 'CheckRed',
-      run: { runId: 'run-1', unpushed: { branch: 'agent/1', said: 'stale info' } },
+      run: { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'stale info' } },
       step: 'build',
       why: 'pnpm test exited 2',
       raw: null,
@@ -256,7 +256,7 @@ describe('legacyColumns', () => {
   it('names the refusal repairOf answered, not the run id that answered it', () => {
     const hold: Hold = {
       _tag: 'CheckRed',
-      run: { runId: 'run-1', repairOf: { after: 'run-1978cb64-abcd', reason: 'red' } },
+      run: { runId: 'pass-1', repairOf: { after: 'pass-1978cb64-abcd', reason: 'red' } },
       step: 'build',
       why: 'pnpm test exited 2',
       raw: null,

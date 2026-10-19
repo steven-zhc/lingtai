@@ -51,12 +51,12 @@ describe('reconcile, a project with no owner', () => {
     const tickets = memoryTickets()
     const opened = await tickets.createIssue({ title: 'a ticket', body: '', labels: ['lingtai:working'] })
     const issue = opened.number
-    const stream = `wi-${PROJECT}-${issue}`
+    const stream = `ticket-${PROJECT}-${issue}`
 
     const store = createMemoryEventStore()
     await store.append(stream, 0, [
-      { type: 'WorkItemClaimed', actor: 'conductor', data: { runId: 'run-a', worker: 'w', title: null, kind: null } },
-      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: '0'.repeat(40), base: 'main' } },
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'pass-a', worker: 'w', title: null, kind: null } },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: '0'.repeat(40), base: 'main' } },
       {
         type: 'IssueUpdated',
         actor: 'conductor',

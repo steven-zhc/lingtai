@@ -61,9 +61,9 @@ beforeAll(async () => {
   ])
   await store.append(wi(RUNNING), 0, [
     {
-      type: 'WorkItemClaimed',
+      type: 'TicketClaimed',
       actor: 'conductor',
-      data: { runId: `run-${PROJECT}-${RUNNING}`, worker: 'w', title: null, kind: null },
+      data: { runId: `pass-${PROJECT}-${RUNNING}`, worker: 'w', title: null, kind: null },
     },
   ])
 }, 120_000)

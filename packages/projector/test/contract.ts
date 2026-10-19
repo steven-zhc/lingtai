@@ -127,16 +127,16 @@ const touched = (path: string) => ({
 })
 
 const claimed = (runId: string, title: string) => ({
-  type: 'WorkItemClaimed',
+  type: 'TicketClaimed',
   actor: 'conductor',
   data: { runId, worker: 'contract:1', title, kind: 'tech-debt' },
 })
 
-const started = (workItemId: string) => ({
+const started = (ticketId: string) => ({
   type: 'RunStarted',
   actor: 'conductor',
   data: {
-    workItemId,
+    ticketId,
     runtime: 'claude-code' as const,
     model: 'test',
     promptVersion: '1',
@@ -215,7 +215,7 @@ const blocked = (question: string): ToAppend =>
   toAppend(
     aWait(makeStream('contract-scratch'), {
       _tag: 'AgentQuestion',
-      run: { runId: 'run-0' },
+      run: { runId: 'pass-0' },
       step: 'implement',
       question,
     })[0]!,

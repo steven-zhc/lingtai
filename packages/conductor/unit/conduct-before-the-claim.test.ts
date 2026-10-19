@@ -74,11 +74,11 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
 
     expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
     // Still queued, not held for a person: the domain lifecycle is unchanged
     // by `DispatchRefused`, and nothing here claims it either.
-    expect(item.map((e) => e.type)).not.toContain('WorkItemClaimed')
+    expect(item.map((e) => e.type)).not.toContain('TicketClaimed')
 
     const control = await store.read('ctl-conductor')
     const paused = control.filter((e) => e.type === 'ConductorPaused')
@@ -123,7 +123,7 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
     expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
 
     // The refusal itself is still recorded on the item …
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
 
     // … but the control stream is byte-identical: no second `ConductorPaused`,
@@ -168,8 +168,8 @@ describe('nothing is claimed and nothing is acquired', () => {
     if (result.ok !== false) return
     expect(result.stage).toBe('recipe')
     // Nothing was claimed, so there is nothing to release …
-    expect(result.workItemId).toBeNull()
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(result.ticketId).toBeNull()
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
     // … and nothing was acquired, so there is nothing to unwind.
     expect(did).toEqual([])
   })
@@ -260,14 +260,14 @@ describe("the conductor refuses an extension's production value before anything 
       ports,
     )
 
-    expect(result).toMatchObject({ ok: false, stage: 'env', workItemId: null })
+    expect(result).toMatchObject({ ok: false, stage: 'env', ticketId: null })
     expect((result as { detail: string }).detail).toMatch(
       /PROD_DATABASE_URL looks like production.*"eliwlauokdzgsqfgczkv"/,
     )
     expect((result as { detail: string }).detail).not.toContain('s3cr3t')
     // Nothing claimed, nothing provisioned.
     expect(did).toEqual([])
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
   })
 })
 
@@ -296,11 +296,11 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
       fakePorts(did, store),
     )
 
-    expect(result).toMatchObject({ ok: false, stage: 'recipe', workItemId: null })
+    expect(result).toMatchObject({ ok: false, stage: 'recipe', ticketId: null })
     expect((result as { detail: string }).detail).toContain('runtime.agent is codex')
     expect((result as { detail: string }).detail).toContain('this conductor runs claude-code')
     expect(did).toEqual([])
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
   })
 
   /**
@@ -342,13 +342,13 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
       fakePorts(did, store),
     )
 
-    expect(result).toMatchObject({ ok: false, stage: 'recipe', workItemId: null })
+    expect(result).toMatchObject({ ok: false, stage: 'recipe', ticketId: null })
     expect((result as { detail: string }).detail).toContain('steps.proposed\'s "review" action names agent codex')
     expect((result as { detail: string }).detail).toContain('nothing on this machine is signed in to codex')
     // Nothing was claimed, so nothing was spent and no verdict was recorded
     // against a review that ran on a runtime nobody named.
     expect(did).toEqual([])
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
   })
 
   /**
@@ -392,7 +392,7 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
       )
 
     const wrong = await run(judged('codex'))
-    expect(wrong).toMatchObject({ ok: false, stage: 'recipe', workItemId: null })
+    expect(wrong).toMatchObject({ ok: false, stage: 'recipe', ticketId: null })
     expect((wrong as { detail: string }).detail).toContain(
       'steps.proposed\'s "the lines or the approach" action names judge codex',
     )
@@ -464,7 +464,7 @@ describe('a claim that took nothing writes nothing', () => {
     expect((result as { detail: string }).detail).toContain('excluded-label')
     // Not one event on the item: not the block, and not the release the
     // `ensuring` at the bottom of `runOnce` would otherwise append.
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
     // And nothing was said to GitHub — no `lingtai:waiting`, no comment.
     expect(said).toEqual([])
     /**
@@ -493,19 +493,19 @@ describe('a claim that took nothing writes nothing', () => {
    *
    * `claimWorkItem` answers `held` and the pass declines; a block here replaces
    * that run's lifecycle with `blocked` and relabels its issue while its agent
-   * is still working, and `releaseWorkItem` appends `WorkItemReleased` to
+   * is still working, and `releaseWorkItem` appends `TicketReleased` to
    * whoever holds it rather than only to this run.
    */
   it('touches nothing on an item another run holds', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
-    const itemId = `wi-${PROJECT}-7`
+    const itemId = `ticket-${PROJECT}-7`
     await store.append(itemId, 0, [
       {
-        type: 'WorkItemClaimed',
+        type: 'TicketClaimed',
         actor: 'conductor',
-        data: { runId: 'run-somebody-else', worker: 'other:1', title: null, kind: null },
+        data: { runId: 'pass-somebody-else', worker: 'other:1', title: null, kind: null },
       },
     ])
 
@@ -527,7 +527,7 @@ describe('a claim that took nothing writes nothing', () => {
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
     expect((result as { detail: string }).detail).toContain('held')
     // The other run's item, exactly as it was.
-    expect((await store.read(itemId)).map((e) => e.type)).toEqual(['WorkItemClaimed'])
+    expect((await store.read(itemId)).map((e) => e.type)).toEqual(['TicketClaimed'])
     expect(said).toEqual([])
     // And nothing on disk for a candidate this pass never took: see above.
     expect(did).toEqual([`remove ${(result as { runId: string }).runId}`])
@@ -544,7 +544,7 @@ describe('a claim that took nothing writes nothing', () => {
  * that handler answers with `release("unexpected failure: …")`. `releaseWorkItem`
  * reads the stream and appends unconditionally (`claim.ts:137`), so on a pass
  * whose item another conductor claimed a second earlier an ENOSPC here appended
- * `WorkItemReleased{runId: <this run>}` to that conductor's live item, folded it
+ * `TicketReleased{runId: <this run>}` to that conductor's live item, folded it
  * to `backlog`, and wrote `lingtai:queued` over its `lingtai:working` while its
  * agent was still working — after which `selectRunnable` hands it to a third
  * pass. The `claim` branch's `released = true` guards declines the pass *reports*;
@@ -588,19 +588,19 @@ describe('a failure acquiring what a step needs is answered at that step', () =>
     expect(did).not.toContain('wire')
     expect(did.filter((line) => line.startsWith('provision'))).toEqual([])
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const types = item.map((e) => e.type)
     // This run claimed it, so this run is what holds it — and a person is asked
     // rather than the queue, because the next pass meets the same disk.
-    expect(types).toContain('WorkItemClaimed')
+    expect(types).toContain('TicketClaimed')
     expect(types).toContain('WorkItemBlocked')
-    expect(types).not.toContain('WorkItemReleased')
+    expect(types).not.toContain('TicketReleased')
 
     const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
     expect(blocked.question).toContain('the cold reviewer had no settings')
     expect(blocked.diagnosis?.raw).toContain('ENOSPC')
     // Nothing was cut, so there is nothing on origin and nothing to approve.
-    const run = [...streams(store)].find(([id]) => id.startsWith('run-'))
+    const run = [...streams(store)].find(([id]) => id.startsWith('pass-'))
     expect((run?.[1] ?? []).map((e) => e.type)).not.toContain('ApprovalRequested')
   })
 })

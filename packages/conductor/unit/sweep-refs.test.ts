@@ -54,8 +54,8 @@ function fakeRefs(refs: readonly string[], opts: { fail?: boolean; refuseFrom?: 
 }
 
 /** The rows this appended, newest last. */
-async function rows(store: EventStore, workItemId: string) {
-  return (await store.read(workItemId))
+async function rows(store: EventStore, ticketId: string) {
+  return (await store.read(ticketId))
     .filter((e) => e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed')
     .map((e) => ({ type: e.type, ...(e.data as PayloadOf<'IssueUpdated'>) }))
 }
@@ -77,10 +77,10 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
 
     expect(remote.left()).toEqual([HEADS(BRANCH)])
-    expect(await rows(store, 'wi-lingtai-240')).toEqual([
+    expect(await rows(store, 'ticket-lingtai-240')).toEqual([
       {
         type: 'IssueUpdated',
         project: 'lingtai',
@@ -95,7 +95,7 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: true })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: true })
 
     expect(remote.left()).toEqual([])
   })
@@ -110,7 +110,7 @@ describe("sweeping a landed ticket's history refs", () => {
     const twoDigit = agentBranch(24)
     const remote = fakeRefs([...AFTER_FOUR_ATTEMPTS, HEADS(twoDigit), HEADS(armBranch(twoDigit, 1))])
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-24', andTheBranch: true })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-24', andTheBranch: true })
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
   })
@@ -125,10 +125,10 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs([HEADS(BRANCH)])
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
 
     expect(remote.left()).toEqual([HEADS(BRANCH)])
-    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+    expect((await rows(store, 'ticket-lingtai-240'))[0]).toMatchObject({
       type: 'IssueUpdated',
       detail: 'none',
     })
@@ -144,11 +144,11 @@ describe("sweeping a landed ticket's history refs", () => {
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { fail: true })
 
     await expect(
-      sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false }),
+      sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
     ).resolves.toBeUndefined()
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
-    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+    expect((await rows(store, 'ticket-lingtai-240'))[0]).toMatchObject({
       type: 'IssueUpdateFailed',
       change: 'refs',
       error: '403 resource not accessible by integration',
@@ -164,7 +164,7 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
 
     expect(remote.asked).toEqual([HEADS(BRANCH)])
   })
@@ -183,10 +183,10 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 3)) })
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
 
     expect(remote.left()).toEqual([HEADS(BRANCH), HEADS(armBranch(BRANCH, 3)), HEADS(armBranch(BRANCH, 4))].sort())
-    const row = (await rows(store, 'wi-lingtai-240'))[0]!
+    const row = (await rows(store, 'ticket-lingtai-240'))[0]!
     expect(row.type).toBe('IssueUpdateFailed')
     expect((row as unknown as { error: string }).error).toBe(
       `403 secondary rate limit — after deleting ${HEADS(armBranch(BRANCH, 1))},${HEADS(armBranch(BRANCH, 2))}`,
@@ -202,10 +202,10 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 1)) })
 
-    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
+    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
-    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+    expect((await rows(store, 'ticket-lingtai-240'))[0]).toMatchObject({
       type: 'IssueUpdateFailed',
       error: '403 secondary rate limit',
     })
@@ -270,7 +270,7 @@ describe("the order the end point's effects are carried out in", () => {
     await tellGitHubAbout({
       store,
       github: world.github,
-      workItemId: 'wi-lingtai-240',
+      ticketId: 'ticket-lingtai-240',
       appended: [
         resolved([
           { name: 'sweep', refs: true, branch: false },
@@ -294,7 +294,7 @@ describe("the order the end point's effects are carried out in", () => {
     await tellGitHubAbout({
       store,
       github: world.github,
-      workItemId: 'wi-lingtai-240',
+      ticketId: 'ticket-lingtai-240',
       appended: [
         resolved([
           { name: 'sweep', refs: true, branch: false },

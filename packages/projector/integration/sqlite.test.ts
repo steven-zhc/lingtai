@@ -56,7 +56,7 @@ describeProjectionStoreContract('sqlite', async (): Promise<ProjectionFixture> =
     store,
     events: createSqliteEventStore(logDb),
     project,
-    stream: (kind, suffix) => (kind === 'wi' ? `wi-${project}-${suffix}` : `run-${project}-${suffix}`),
+    stream: (kind, suffix) => (kind === 'wi' ? `ticket-${project}-${suffix}` : `pass-${project}-${suffix}`),
     async another() {
       const s = createSqliteProjectionStore(openSqliteProjections(path))
       seconds.push(s)
@@ -94,7 +94,7 @@ describe('sqlite: the dialect the projections are written in', () => {
     // alone, `verdicts` would become `{}{"g":"passed"}` and every card would
     // count no verdicts while nothing threw.
     const q = translate('update t set verdicts = verdicts || jsonb_build_object($1::text, $2::text)', [
-      'run-1:proposed:build',
+      'pass-1:proposed:build',
       'passed',
     ])
     expect(q.text).toBe('update t set verdicts = json_patch(verdicts, json_object(?, ?))')

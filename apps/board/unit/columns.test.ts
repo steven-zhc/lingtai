@@ -16,7 +16,7 @@ import { COLUMNS, emptyNote, toCard, toColumns } from '../src/lib/board.ts'
 
 function task(state: TaskCard['state']): TaskCard {
   return {
-    taskId: `wi-esctest-${state}`,
+    taskId: `ticket-esctest-${state}`,
     project: 'esctest',
     issue: '1',
     title: 'a task',
@@ -99,7 +99,7 @@ describe("the board's columns", () => {
   it('shows a task in verifying as running, beside the state that shares the lane', () => {
     const columns = toColumns([toCard(task('verifying')), toCard(task('running'))])
     const running = columns.find((c) => c.id === 'running')
-    expect(running?.cards.map((c) => c.taskId)).toEqual(['wi-esctest-verifying', 'wi-esctest-running'])
+    expect(running?.cards.map((c) => c.taskId)).toEqual(['ticket-esctest-verifying', 'ticket-esctest-running'])
   })
 })
 

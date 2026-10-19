@@ -107,9 +107,9 @@ describe('logPredatesHold, the one guard', () => {
 describe('decodeRow, through the memory store (#451)', () => {
   it('throws LogPredatesHoldError, not a bare parse error, reading a planted stream', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE, streamId: 'wi-lingtai-451' })
+    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE, streamId: 'ticket-lingtai-451' })
 
-    await expect(store.read('wi-lingtai-451')).rejects.toThrow(LogPredatesHoldError)
+    await expect(store.read('ticket-lingtai-451')).rejects.toThrow(LogPredatesHoldError)
   })
 
   it('throws the same error off readAll', async () => {

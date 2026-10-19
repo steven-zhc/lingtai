@@ -97,7 +97,7 @@ import pg from 'pg'
  *
  * The guard below has to know both, and until 2026-09-11 it knew one. That is
  * not a tidiness point, and what it cost is the reason this comment is long.
- * An interrupted event-store run left twenty-two `wi-test-<hex>` rows behind at
+ * An interrupted event-store run left twenty-two `ticket-test-<hex>` rows behind at
  * 22:09 on 2026-09-10; the guard read them as a log with real history in it and
  * from that moment deleted **nothing**. Six hours of runs added 1,650 events
  * nobody swept, `task_view`'s rebuild — which costs a round trip per event —

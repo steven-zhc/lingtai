@@ -39,7 +39,7 @@ export interface RequeueCommandOptions {
 
 export async function requeueCommand(options: RequeueCommandOptions, log = console.log): Promise<number> {
   // Checked before the stream is read, so a mistyped project says so. Without
-  // it the refusal would be `wi-lingati-130 is backlog, not blocked`, which is
+  // it the refusal would be `ticket-lingati-130 is backlog, not blocked`, which is
   // true, unhelpful, and about the wrong mistake.
   const project = await loadProject(options.project)
   if (!project) {

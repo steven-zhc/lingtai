@@ -24,7 +24,7 @@ import {
  *
  * **The unit is the attempt.** The log keeps one stream per run and this used to
  * flatten what the log divided: a single `runId` — the most recent — and one
- * `history` with every run's events interleaved into it, so `wi-lingtai-87`'s
+ * `history` with every run's events interleaved into it, so `ticket-lingtai-87`'s
  * three claims read as one 80-row list whose only marker of which attempt a row
  * belonged to was a 36-character uuid inside the row's collapsed body (#102).
  * Two things followed from that flattening and are fixed by ending it: gates
@@ -113,7 +113,7 @@ export interface StepVerdict {
  * only place that still claimed otherwise.** #152 arranged the page into a
  * standing and a record, and all of this went into the record's last row —
  * closed, at the foot of the page, labelled `prompt` after the document that
- * comes second inside it. Measured on `wi-lingtai-159`: the GitHub link sat at
+ * comes second inside it. Measured on `ticket-lingtai-159`: the GitHub link sat at
  * y=1103 of an 1126px page and the title rendered nowhere, on a screen whose
  * first control is *Approve*. `title` and `url` now also go to `Standing` as
  * its `subject`, one line under the state; the row is `ticket` and keeps the
@@ -503,10 +503,10 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
  *
  * Listed rather than inferred, because *when the state began* is the second
  * half of this block and nothing else on the item's stream may move it: a
- * `WorkItemLinked`, a restarted pass or a gate reporting late are all
+ * `TicketLinked`, a restarted pass or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
-const LIFECYCLE_MOVES = new Set(['WorkItemClaimed', 'WorkItemReleased', ...WAIT_EVENTS, 'WorkItemLanded'])
+const LIFECYCLE_MOVES = new Set(['TicketClaimed', 'TicketReleased', ...WAIT_EVENTS, 'TicketLanded'])
 
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
@@ -617,7 +617,7 @@ function refusalOn(run: RunView): Deciding | null {
  * The one deciding line, and the attempt that holds the whole of it.
  *
  * **The attempt that decided is not always the attempt that is named.** A
- * repair is an ordinary run (0025) and it ends like one: `wi-lingtai-89`'s
+ * repair is an ordinary run (0025) and it ends like one: `ticket-lingtai-89`'s
  * second attempt finished with exit 0 and no commits, so it has no failed
  * verdict and no outcome detail, and the failure everybody is looking at —
  * `proposed / build`, `error TS2741` — is attempt 1's. Pointing only at the
@@ -749,7 +749,7 @@ export interface TaskDetail {
    * bottom of an 80-row history or nowhere.
    */
   standing: StandingView
-  /** Null only when the id is not `wi-<project>-<n>`. */
+  /** Null only when the id is not `ticket-<project>-<n>`. */
   ticket: TicketView | null
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
   runs: RunView[]
@@ -906,13 +906,13 @@ export function foldChat(chatId: string, events: readonly Envelope[], held: Disc
  * what says a conversation was closed and what it produced.
  */
 export function chatIdsFor(
-  control: readonly { chatId: string; workItemId: string }[],
+  control: readonly { chatId: string; ticketId: string }[],
   own: readonly Envelope[],
   taskId: string,
 ): { chatId: string; held: DiscussionView['held'] }[] {
   const order: string[] = []
   for (const d of control) {
-    if (d.workItemId === taskId && !order.includes(d.chatId)) order.push(d.chatId)
+    if (d.ticketId === taskId && !order.includes(d.chatId)) order.push(d.chatId)
   }
   const held = new Map<string, DiscussionView['held']>()
   for (const e of own) {
@@ -973,14 +973,14 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
   for (const e of own) {
     const d = (e.data ?? {}) as Record<string, unknown>
     if (boardFactOf(e)?._tag === 'RepairBought') pendingRepair = true
-    if (e.type === 'WorkItemClaimed') {
+    if (e.type === 'TicketClaimed') {
       const runId = String(d['runId'] ?? '')
       if (runId && !claims.some((c) => c.runId === runId)) {
         claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null })
       }
       pendingRepair = false
     }
-    if (e.type === 'WorkItemReleased') {
+    if (e.type === 'TicketReleased') {
       const held = claims.find((c) => c.runId === String(d['runId'] ?? ''))
       if (held) held.released = String(d['reason'] ?? '') || 'released'
     }
@@ -1217,7 +1217,7 @@ function outcomeOf(seen: {
  * own purpose.
  *
  * **A run that contributed not one `Action` row is unknown, never free**
- * (0110 §7): `wi-lingtai-89`'s two attempts predate `RunSpent`, so `rows` is
+ * (0110 §7): `ticket-lingtai-89`'s two attempts predate `RunSpent`, so `rows` is
  * empty and `billOf([])` folds to five empty bills — which reads as nothing
  * spent, the defect this ticket exists to remove. Credited to Work or
  * Answering by `run.repair`, the same split `billOf` makes for a row that did
@@ -1333,7 +1333,7 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
 /**
  * The ticket, from the log first and GitHub second.
  *
- * The order matters. A title recorded on `WorkItemClaimed` is what the ticket
+ * The order matters. A title recorded on `TicketClaimed` is what the ticket
  * said when the run started, and it survives a repository the App can no longer
  * reach — so it is read first and only overwritten by an answer. GitHub is
  * asked once, for the three things the log has never carried, and a refusal
@@ -1349,9 +1349,9 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   let labels: string[] = []
   for (const e of own) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    // `WorkItemDiscovered` is the queue's own event and predates 0012; a claim
+    // `TicketDiscovered` is the queue's own event and predates 0012; a claim
     // carries the same two fields precisely so a rebuilt projection has them.
-    if (e.type === 'WorkItemDiscovered' || e.type === 'WorkItemClaimed') {
+    if (e.type === 'TicketDiscovered' || e.type === 'TicketClaimed') {
       title = (d['title'] as string | null) ?? title
       kind = (d['kind'] as string | null) ?? kind
       if (Array.isArray(d['labels'])) labels = d['labels'] as string[]
@@ -1418,7 +1418,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   } catch (err) {
     // **The one question this catch has to answer twice.** A 404 from GitHub is
     // an answer — there is no such issue — and everything else is the absence of
-    // one. Collapsing the two is what made `wi-lingtai-99999` and a repository
+    // one. Collapsing the two is what made `ticket-lingtai-99999` and a repository
     // behind a rate limit render identically, and only the first of them is a
     // page that should not exist (#113).
     const missing = err instanceof GitHubError && err.status === 404
@@ -1439,8 +1439,8 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
  * Its own function because it is the whole of #113's lead requirement and it
  * used to be `own.length === 0`, which is a claim about the log and was being
  * read as a claim about the world. Two facts were flattened into one 404:
- * `wi-lingtai-112`, which GitHub has and Lingtai has not touched, and
- * `wi-lingtai-99999`, which nothing knows about. Only the second is a page that
+ * `ticket-lingtai-112`, which GitHub has and Lingtai has not touched, and
+ * `ticket-lingtai-99999`, which nothing knows about. Only the second is a page that
  * should not exist.
  *
  * So: an item the log has touched is a page whatever GitHub says today — the
@@ -1450,7 +1450,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
  */
 export function exists(own: readonly Envelope[], ticket: TicketView | null): boolean {
   if (own.length > 0) return true
-  // `null` is an id that is not `wi-<project>-<n>` — there is no issue behind
+  // `null` is an id that is not `ticket-<project>-<n>` — there is no issue behind
   // it to have an opinion about, so nothing could ever have offered it.
   return ticket !== null && ticket.found !== false
 }
@@ -1528,14 +1528,14 @@ async function recipesFor(project: string, runs: readonly RunView[]): Promise<Ma
  * | `true` | GitHub is offering it and nothing has run it | a page saying it has not started |
  * | `null` | GitHub could not be asked — a rate limit, a revoked App — or it was never going to be asked, because the project's tickets are not on GitHub (`askedGitHub`, #384) | a page saying **that**, never a 404 |
  *
- * A `ticket` of `null` — an id that is not `wi-<project>-<n>` at all — is the
+ * A `ticket` of `null` — an id that is not `ticket-<project>-<n>` at all — is the
  * first row: there is no issue behind it to have an opinion about.
  */
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await eventStore.read(taskId)
 
   // Every claim, and not the last one. A task can be claimed several times —
-  // `wi-lingtai-87` three, `wi-lingtai-89` twice — and each claim opens a stream
+  // `ticket-lingtai-87` three, `ticket-lingtai-89` twice — and each claim opens a stream
   // of its own that the page kept no room for (#102).
   const claims = claimsOf(own)
 

@@ -119,8 +119,8 @@
  * ## What the pass does not write
  *
  * **The item's ending.** `outcomeOf` says which of the four it is and
- * `PassResult` reports it, and appending `WorkItemLanded`, `WorkItemBlocked` or
- * `WorkItemReleased` belongs to whoever holds the claim — `conduct.ts` today,
+ * `PassResult` reports it, and appending `TicketLanded`, `WorkItemBlocked` or
+ * `TicketReleased` belongs to whoever holds the claim — `conduct.ts` today,
  * T5's caller after it. `end` here resolves the declared effects against that
  * outcome and records the resolution, which is 0058 §3's *runs on every ending*
  * and the whole of what the ticket asks for; the effects never decide whether
@@ -162,8 +162,8 @@ export interface Ticket {
  * reads it back through `PassPorts.item` (`#269`).
  */
 export interface Claimed {
-  /** `wi-<project>-<issue>` — `workItemStream`, and where `end` appends. */
-  readonly workItemId: string
+  /** `ticket-<project>-<issue>` — `workItemStream`, and where `end` appends. */
+  readonly ticketId: string
   readonly ticket: Ticket
   /** Which kind the recipe matched it as, which is what ordered the queue. */
   readonly kind: string
@@ -502,7 +502,7 @@ export interface PassPorts {
    * does the append expect. The step is also the last thing a pass does, so a
    * stream read at the claim would be nine steps stale.
    */
-  readEnd(workItemId: string): Promise<readonly Envelope[]>
+  readEnd(ticketId: string): Promise<readonly Envelope[]>
   /**
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
@@ -513,7 +513,7 @@ export interface PassPorts {
    * pass writing an item's ending on the way past. What that leaves the caller is
    * not a free choice: `resolveEndActions`'s own doc is *one transaction, so the
    * outcome and its resolution cannot come apart*, and `end` runs **before** the
-   * caller writes `WorkItemLanded` or `WorkItemBlocked`. So a live implementation
+   * caller writes `TicketLanded` or `WorkItemBlocked`. So a live implementation
    * holds this plan and appends it beside the event that makes its outcome true;
    * one that appended here instead would put the resolution on the stream first,
    * and a dropped connection on the next append leaves it there alone — an
@@ -542,7 +542,7 @@ export interface PassPorts {
    * is a fact and belongs on the log, and doing is I/O that must not be able to
    * undo it.
    */
-  recordEnd(workItemId: string, at: number, plan: readonly ToAppend[]): Promise<void>
+  recordEnd(ticketId: string, at: number, plan: readonly ToAppend[]): Promise<void>
 }
 
 /**
@@ -911,19 +911,19 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `EndActionsResolved` records.
      */
     end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
-      const workItemId = ports.onStream()
-      if (workItemId === null) return { ending: 'passed' }
+      const ticketId = ports.onStream()
+      if (ticketId === null) return { ending: 'passed' }
       // Which of the step's three acts did not finish, for the person reading
       // `detail`. The plan is empty until `resolveEndActions` has answered, so a
       // `read` that threw cannot be mistaken for a recorded nothing.
       let act = 'read'
       try {
-        const events = await ports.readEnd(workItemId)
+        const events = await ports.readEnd(ticketId)
         act = 'resolve'
         const plan = resolveEndActions(events, actions, outcome)
         if (plan.length === 0) return { ending: 'passed' }
         act = 'record'
-        await ports.recordEnd(workItemId, events.length, plan)
+        await ports.recordEnd(ticketId, events.length, plan)
         return { ending: 'passed' }
       } catch (error) {
         return {
@@ -933,7 +933,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
           // `asking` and `noReceipt` above are `null` here.
           at: null,
           detail:
-            `${workItemId} reached \`${outcome}\` and its \`end\` effects were not resolved — ` +
+            `${ticketId} reached \`${outcome}\` and its \`end\` effects were not resolved — ` +
             `\`${act}\` threw: ${error instanceof Error ? error.message : String(error)}`,
         }
       }

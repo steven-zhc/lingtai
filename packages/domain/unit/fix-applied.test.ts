@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { parsePayload } from '../src/index.ts'
 
 const base = {
-  runId: 'run-1',
+  runId: 'pass-1',
   round: 1,
   headSha: null,
   turns: 3,

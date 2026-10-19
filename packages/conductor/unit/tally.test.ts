@@ -23,22 +23,22 @@ const created = new Set<string>()
 let store: EventStore
 
 const wi = (n: number) => {
-  const id = `wi-${PROJECT}-${n}`
+  const id = `ticket-${PROJECT}-${n}`
   created.add(id)
   return id
 }
-const runId = (n: number) => `run-${PROJECT}-${n}`
+const runId = (n: number) => `pass-${PROJECT}-${n}`
 
 const held = (n: number): RunOnceResult => ({
   ok: 'held',
-  workItemId: wi(n),
+  ticketId: wi(n),
   runId: runId(n),
   headSha: 'sha-a',
   step: 'merge',
 })
 const failed = (n: number, stage: string): RunOnceResult => ({
   ok: false,
-  workItemId: wi(n),
+  ticketId: wi(n),
   runId: runId(n),
   stage,
   detail: 'why',
@@ -87,11 +87,11 @@ beforeAll(async () => {
   await seed(wi(5), [...aClaim(item5, runId(5)), ...aRelease(item5, runId(5))])
 
   // 6 — blocked, then released with no unblock in between. Today's fold reads
-  // this as `backlog` (stopped): `WorkItemReleased` sets `backlog` whatever the
+  // this as `backlog` (stopped): `TicketReleased` sets `backlog` whatever the
   // lifecycle was, so a block nothing ever answered is not a wait. A tally
   // moved onto `waitsOf` would read it as `held` instead — `waitsOf` only
   // resolves a wait on `WorkItemUnblocked`, `ApprovalGranted` or
-  // `WorkItemClosed`, and none of those is here.
+  // `TicketClosed`, and none of those is here.
   const item6 = makeStream(wi(6))
   await seed(wi(6), [
     ...aClaim(item6, runId(6)),
@@ -107,7 +107,7 @@ describe('tallyPass', () => {
   })
 
   it('counts a merge this run performed', async () => {
-    const merged: RunOnceResult = { ok: true, workItemId: wi(2), runId: runId(2), mergeCommit: 'abc1234' }
+    const merged: RunOnceResult = { ok: true, ticketId: wi(2), runId: runId(2), mergeCommit: 'abc1234' }
     expect(await tallyPass([merged], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
   })
 
@@ -127,7 +127,7 @@ describe('tallyPass', () => {
   })
 
   it('counts a refusal with no work item as stopped', async () => {
-    const noItem: RunOnceResult = { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: 'no recipe' }
+    const noItem: RunOnceResult = { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: 'no recipe' }
     expect(await tallyPass([noItem], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
   })
 

@@ -78,7 +78,7 @@ export const SUBSCRIBER_COMMAND_TIMEOUT_MS = parseDuration(SUBSCRIBER_COMMAND_TI
  *
  * `id` is here as well as its two halves so that a subscriber never has to know
  * how a stream is spelled — the board link is `id`, and a command written by
- * somebody else should not have to reconstruct `wi-{project}-{n}` to make one.
+ * somebody else should not have to reconstruct `ticket-{project}-{n}` to make one.
  */
 export interface EventSubject {
   id: string
@@ -209,7 +209,7 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
   }
 }
 
-/** `wi-{project}-{n}` and its two halves, from the halves. */
+/** `ticket-{project}-{n}` and its two halves, from the halves. */
 export function subjectOf(project: string, issue: string): EventSubject {
   return { id: workItemStream(project, issue), project, issue }
 }

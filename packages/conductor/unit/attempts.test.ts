@@ -56,7 +56,7 @@ function stream(streamId: string) {
   }
 }
 
-const claim = (runId: string): PayloadOf<'WorkItemClaimed'> => ({
+const claim = (runId: string): PayloadOf<'TicketClaimed'> => ({
   runId,
   worker: 'conductor',
   title: 'A retry is a blind retry',
@@ -66,15 +66,15 @@ const claim = (runId: string): PayloadOf<'WorkItemClaimed'> => ({
 const step = (action: string, onSha = 'sha-1') => ({
   step: 'proposed' as const,
   action,
-  runId: 'run-2',
+  runId: 'pass-2',
   onSha,
 })
 
 describe('priorAttempts', () => {
   it('finds nothing on a work item nobody has claimed', () => {
-    const e = stream('wi-lingtai-82')
+    const e = stream('ticket-lingtai-82')
     const events = [
-      e('WorkItemDiscovered', {
+      e('TicketDiscovered', {
         project: 'lingtai',
         source: 'github-issue',
         externalRef: '82',
@@ -89,42 +89,42 @@ describe('priorAttempts', () => {
 
   /**
    * The ticket's first criterion, at the level of the fold: how many attempts
-   * there were and what ended each. `WorkItemClaimed` ×N is what `attempts: N`
+   * there were and what ended each. `TicketClaimed` ×N is what `attempts: N`
    * on a card counts, so it is what this counts.
    */
   it('pairs each claim with the reason its release gives', () => {
-    const e = stream('wi-lingtai-59')
+    const e = stream('ticket-lingtai-59')
     const attempts = priorAttempts([
-      e('WorkItemClaimed', claim('run-1')),
-      e('WorkItemReleased', { runId: 'run-1', reason: 'prepare failed at prepared:install' }),
-      e('WorkItemClaimed', claim('run-2')),
-      e('WorkItemReleased', {
-        runId: 'run-2',
+      e('TicketClaimed', claim('pass-1')),
+      e('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+      e('TicketClaimed', claim('pass-2')),
+      e('TicketReleased', {
+        runId: 'pass-2',
         reason: 'the run was killed by an operator timeout before it produced anything',
       }),
     ])
 
     expect(attempts.map((a) => [a.n, a.runId, a.ended])).toEqual([
-      [1, 'run-1', 'prepare failed at prepared:install'],
-      [2, 'run-2', 'the run was killed by an operator timeout before it produced anything'],
+      [1, 'pass-1', 'prepare failed at prepared:install'],
+      [2, 'pass-2', 'the run was killed by an operator timeout before it produced anything'],
     ])
   })
 
   /** A second claim by one run is not a second attempt, any more than a second run. */
   it('counts a re-claim by the same run once', () => {
-    const e = stream('wi-lingtai-59')
-    expect(priorAttempts([e('WorkItemClaimed', claim('run-1')), e('WorkItemClaimed', claim('run-1'))])).toHaveLength(1)
+    const e = stream('ticket-lingtai-59')
+    expect(priorAttempts([e('TicketClaimed', claim('pass-1')), e('TicketClaimed', claim('pass-1'))])).toHaveLength(1)
   })
 
   /** An attempt that ended by asking a person ended, and the question is why. */
   it('reads a block as an ending, with its question', () => {
-    const e = stream('wi-lingtai-59')
+    const e = stream('ticket-lingtai-59')
     const [attempt] = priorAttempts([
-      e('WorkItemClaimed', claim('run-1')),
+      e('TicketClaimed', claim('pass-1')),
       e('WorkItemBlocked', {
         hold: {
           _tag: 'MergeRefused',
-          run: { runId: 'run-1' },
+          run: { runId: 'pass-1' },
           reason: 'conflict',
           why: 'agent/59 does not merge into main',
           raw: 'agent/59 does not merge into main',
@@ -144,17 +144,17 @@ describe('priorAttempts', () => {
    * itself, not the category the release reason summarises it into.
    */
   it("carries the integrator's refusal verbatim when one bought a repair", () => {
-    const e = stream('wi-lingtai-59')
+    const e = stream('ticket-lingtai-59')
     const [attempt] = priorAttempts([
-      e('WorkItemClaimed', claim('run-1')),
+      e('TicketClaimed', claim('pass-1')),
       e('RepairRequested', {
-        runId: 'run-1',
+        runId: 'pass-1',
         reason: 'conflict',
         detail: 'agent/59 does not merge into main:\napps/web/src/app/page.tsx',
         fingerprint: 'aaaaaaaaaaaa',
         attempt: 1,
       }),
-      e('WorkItemReleased', { runId: 'run-1', reason: 'repairing conflict (attempt 1)' }),
+      e('TicketReleased', { runId: 'pass-1', reason: 'repairing conflict (attempt 1)' }),
     ])
 
     expect(attempt?.refusal).toEqual({
@@ -166,7 +166,7 @@ describe('priorAttempts', () => {
 
 describe('attemptOutcome', () => {
   it('reports what the run committed and what the gate said about it', () => {
-    const e = stream('run-2')
+    const e = stream('pass-2')
     const outcome = attemptOutcome(
       [
         e('RunProducedDiff', {
@@ -201,7 +201,7 @@ describe('attemptOutcome', () => {
 
   /** A review gate's findings are the evidence; its output alone is a summary. */
   it("lists a review gate's findings under its output", () => {
-    const e = stream('run-2')
+    const e = stream('pass-2')
     const outcome = attemptOutcome(
       [
         e('StepFailed', {
@@ -227,7 +227,7 @@ describe('attemptOutcome', () => {
 
   /** The run's own ending, when no gate ever refused. */
   it("falls back to the run's failure", () => {
-    const e = stream('run-1')
+    const e = stream('pass-1')
     const outcome = attemptOutcome(
       [
         e('RunFailed', {
@@ -250,7 +250,7 @@ describe('attemptOutcome', () => {
    * envelopes rather than `reduceRun`.
    */
   it('names the point a run died inside', () => {
-    const e = stream('run-1')
+    const e = stream('pass-1')
     const outcome = attemptOutcome([e('StepStarted', step('install'))], BUDGET)
 
     expect(outcome.evidence?.what).toBe('proposed:install')
@@ -258,7 +258,7 @@ describe('attemptOutcome', () => {
   })
 
   it('says nothing about a gate that passed', () => {
-    const e = stream('run-1')
+    const e = stream('pass-1')
     const outcome = attemptOutcome(
       [e('StepStarted', step('install')), e('StepPassed', { ...step('install'), evidence: 'ok', findings: [] })],
       BUDGET,
@@ -269,17 +269,17 @@ describe('attemptOutcome', () => {
 })
 
 describe('attemptBrief', () => {
-  const item = stream('wi-lingtai-59')
+  const item = stream('ticket-lingtai-59')
   const history = [
-    item('WorkItemClaimed', claim('run-1')),
-    item('WorkItemReleased', { runId: 'run-1', reason: 'prepare failed at prepared:install' }),
-    item('WorkItemClaimed', claim('run-2')),
-    item('WorkItemReleased', { runId: 'run-2', reason: 'gates refused the diff' }),
+    item('TicketClaimed', claim('pass-1')),
+    item('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+    item('TicketClaimed', claim('pass-2')),
+    item('TicketReleased', { runId: 'pass-2', reason: 'gates refused the diff' }),
   ]
 
   const filled = () => {
     const attempts = priorAttempts(history)
-    const run = stream('run-2')
+    const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
       [
         run('RunProducedDiff', {
@@ -338,7 +338,7 @@ describe('attemptBrief', () => {
 
   it('says so plainly when the last attempt committed nothing', () => {
     const attempts = priorAttempts(history)
-    const run = stream('run-2')
+    const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
       [run('RunFailed', { kind: 'timeout', detail: 'killed by an operator timeout' })],
       BUDGET,
@@ -359,7 +359,7 @@ describe('attemptBrief', () => {
    */
   it('offers a kept WIP as a diff from its own parent, never as a checkout', () => {
     const attempts = priorAttempts(history)
-    const run = stream('run-2')
+    const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
       [
         run('RunFailed', { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' }),
@@ -403,21 +403,21 @@ describe('attemptBrief', () => {
    * the number of attempts except one table row.
    */
   it('keeps a long history and a long gate log bounded', () => {
-    const many = stream('wi-lingtai-59')
+    const many = stream('ticket-lingtai-59')
     const events = Array.from({ length: 8 }, (_, i) => [
-      many('WorkItemClaimed', claim(`run-${i + 1}`)),
-      many('WorkItemReleased', { runId: `run-${i + 1}`, reason: `attempt ${i + 1} failed` }),
+      many('TicketClaimed', claim(`pass-${i + 1}`)),
+      many('TicketReleased', { runId: `pass-${i + 1}`, reason: `attempt ${i + 1} failed` }),
     ]).flat()
 
     const attempts = priorAttempts(events)
-    const run = stream('run-8')
+    const run = stream('pass-8')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
       [run('StepFailed', { ...step('build'), evidence: 'x'.repeat(10_000), findings: [] })],
       BUDGET,
     )
 
     const brief = attemptBrief(attempts, BUDGET)
-    const rows = brief.split('\n').filter((l) => l.startsWith('| ') && l.includes('`run-'))
+    const rows = brief.split('\n').filter((l) => l.startsWith('| ') && l.includes('`pass-'))
 
     expect(rows).toHaveLength(BUDGET.attempts)
     expect(brief).toContain('3 earlier attempt(s), omitted')
@@ -448,7 +448,7 @@ describe('attemptBrief', () => {
     )
     const failed = (name: string) => [
       ` FAIL  packages/event-store/test/store.test.ts > ${name}`,
-      "AssertionError: expected { type: 'WorkItemClaimed', …(3) } to deeply equal { type: 'WorkItemClaimed', …(3) }",
+      "AssertionError: expected { type: 'TicketClaimed', …(3) } to deeply equal { type: 'TicketClaimed', …(3) }",
       '',
       '- Expected',
       '+ Received',
@@ -457,7 +457,7 @@ describe('attemptBrief', () => {
       ...Array.from(
         { length: 5 },
         (_, i) =>
-          `-   "field${i}": "wi-lingtai-169/run-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/expected-${i}",\n+   "field${i}": "wi-lingtai-169/run-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/received-${i}",`,
+          `-   "field${i}": "ticket-lingtai-169/pass-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/expected-${i}",\n+   "field${i}": "ticket-lingtai-169/pass-42ae0c78-1c72-480b-9b1e-be4bd6b0a819/received-${i}",`,
       ),
       '  }',
       '',
@@ -486,10 +486,10 @@ describe('attemptBrief', () => {
 
     const briefAt = (evidenceBudget: number) => {
       const budget = { ...BUDGET, evidence: evidenceBudget }
-      const run = stream('run-1')
+      const run = stream('pass-1')
       const attempts = priorAttempts([
-        stream('wi-lingtai-169')('WorkItemClaimed', claim('run-1')),
-        stream('wi-lingtai-169')('WorkItemReleased', { runId: 'run-1', reason: 'gates refused the diff' }),
+        stream('ticket-lingtai-169')('TicketClaimed', claim('pass-1')),
+        stream('ticket-lingtai-169')('TicketReleased', { runId: 'pass-1', reason: 'gates refused the diff' }),
       ])
       attempts[0]!.outcome = attemptOutcome([run('StepFailed', { ...step('build'), evidence, findings: [] })], budget)
       return attemptBrief(attempts, budget)
@@ -497,7 +497,7 @@ describe('attemptBrief', () => {
 
     const brief = briefAt(recipe)
     expect(brief).toContain('FAIL  packages/event-store/test/store.test.ts > appends')
-    expect(brief).toContain("AssertionError: expected { type: 'WorkItemClaimed'")
+    expect(brief).toContain("AssertionError: expected { type: 'TicketClaimed'")
     expect(brief).toContain('exited 1 after 370.1s')
     expect(brief).not.toContain('…elided')
 
@@ -593,16 +593,16 @@ describe('attemptBrief', () => {
 
   /** A reason with a newline in it must not break the table it sits in. */
   it('keeps a multi-line release reason on one row', () => {
-    const e = stream('wi-lingtai-59')
+    const e = stream('ticket-lingtai-59')
     const brief = attemptBrief(
       priorAttempts([
-        e('WorkItemClaimed', claim('run-1')),
-        e('WorkItemReleased', { runId: 'run-1', reason: 'conflict:\napps/page.tsx\napps/x.tsx' }),
+        e('TicketClaimed', claim('pass-1')),
+        e('TicketReleased', { runId: 'pass-1', reason: 'conflict:\napps/page.tsx\napps/x.tsx' }),
       ]),
       BUDGET,
     )
 
-    expect(brief).toContain('| 1 | `run-1` | conflict: apps/page.tsx apps/x.tsx |')
+    expect(brief).toContain('| 1 | `pass-1` | conflict: apps/page.tsx apps/x.tsx |')
   })
 })
 
@@ -612,19 +612,19 @@ describe('attemptBrief', () => {
  * the row that says how that attempt ended.
  */
 describe('attemptBrief, naming the arms', () => {
-  const item = stream('wi-lingtai-314')
+  const item = stream('ticket-lingtai-314')
   const history = [
-    item('WorkItemClaimed', claim('run-1')),
-    item('WorkItemReleased', { runId: 'run-1', reason: 'the run hit its session limit' }),
-    item('WorkItemClaimed', claim('run-2')),
-    item('WorkItemReleased', { runId: 'run-2', reason: 'refused: the approach' }),
+    item('TicketClaimed', claim('pass-1')),
+    item('TicketReleased', { runId: 'pass-1', reason: 'the run hit its session limit' }),
+    item('TicketClaimed', claim('pass-2')),
+    item('TicketReleased', { runId: 'pass-2', reason: 'refused: the approach' }),
   ]
   const onOrigin = (...names: string[]) => ({ branch: 'agent/314', onOrigin: new Set(names) })
 
   it("names an attempt's arm in the same row as how it ended", () => {
     const brief = attemptBrief(priorAttempts(history), BUDGET, onOrigin('agent/314-attempt-1'))
 
-    expect(brief).toContain('| 1 | `run-1` | the run hit its session limit | `agent/314-attempt-1` |')
+    expect(brief).toContain('| 1 | `pass-1` | the run hit its session limit | `agent/314-attempt-1` |')
   })
 
   /** An attempt that died before it committed pushed no arm, and its name is not offered. */
@@ -632,7 +632,7 @@ describe('attemptBrief, naming the arms', () => {
     const brief = attemptBrief(priorAttempts(history), BUDGET, onOrigin('agent/314-attempt-1'))
     const row = brief.split('\n').find((line) => line.startsWith('| 2 |'))
 
-    expect(row).toBe('| 2 | `run-2` | refused: the approach |  |')
+    expect(row).toBe('| 2 | `pass-2` | refused: the approach |  |')
     expect(brief).not.toContain('agent/314-attempt-2')
   })
 

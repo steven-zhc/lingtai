@@ -83,7 +83,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
   describeEventStoreContract(
     'postgres',
     () => store,
-    () => streamId('wi-contract'),
+    () => streamId('ticket-contract'),
   )
 
   describe('append and read', () => {
@@ -135,7 +135,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     it("rejects a payload that does not match its event's schema", async () => {
       const s = streamId()
       await expect(
-        store.append(s, 0, [{ type: 'WorkItemDiscovered', actor: 'conductor', data: { title: 12 } }]),
+        store.append(s, 0, [{ type: 'TicketDiscovered', actor: 'conductor', data: { title: 12 } }]),
       ).rejects.toThrow()
       expect(await store.read(s)).toEqual([])
     })

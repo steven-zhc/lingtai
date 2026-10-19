@@ -23,13 +23,13 @@ import type { ProjectionRow } from '../src/store.ts'
 
 const SHA = 'a'.repeat(40)
 const PROJECT = 'pin'
-const wi = (n: number | string) => `wi-${PROJECT}-${n}`
+const wi = (n: number | string) => `ticket-${PROJECT}-${n}`
 
 const USAGE = [{ model: 'claude-opus-5', tokens: { fresh: 100, output: 20 } }]
 
-function aRunStarted(run: ReturnType<typeof aRun>, workItemId: string): Envelope {
+function aRunStarted(run: ReturnType<typeof aRun>, ticketId: string): Envelope {
   return run.event('RunStarted', {
-    workItemId,
+    ticketId,
     runtime: 'claude-code',
     model: 'm',
     promptVersion: '1',
@@ -59,7 +59,7 @@ function aRunSpent(
 const events: Envelope[] = []
 
 // ---- Action and Judge, on one run stream after its RunStarted -------------
-const runAction = aRun('run-pin-action')
+const runAction = aRun('pass-pin-action')
 events.push(aRunStarted(runAction, wi(1)))
 const afterActionRunStarted = events.length
 const actionSpent = aRunSpent(runAction.event, { _tag: 'Action', step: 'proposed', name: 'review', round: 0 })
@@ -77,7 +77,7 @@ const controlStream = makeStream(CONTROL_STREAM)
 events.push(
   controlStream('DiscussionRequested', {
     chatId: 'chat-pin-1',
-    workItemId: wi(4),
+    ticketId: wi(4),
     attempt: null,
     question: 'why did this fail?',
     by: 'human:t',
@@ -88,22 +88,22 @@ const discussionSpent = aRunSpent(discussionStream, { _tag: 'Discussion' })
 events.push(discussionSpent)
 
 // ---- Judge, on a run stream admit refused before any RunStarted landed ----
-// `claim` appends `WorkItemClaimed` to the ticket's own stream, carrying the
+// `claim` appends `TicketClaimed` to the ticket's own stream, carrying the
 // run stream's id, before `admit` runs — so a `Judge` `RunSpent` dispatched on
 // a refusal there still finds its ticket, with no `RunStarted` ever appended.
 const claimedStream = makeStream(wi(5))
-const refusedRunId = 'run-pin-admit-refused'
-events.push(claimedStream('WorkItemClaimed', { runId: refusedRunId, worker: 'local:1', title: null, kind: null }))
+const refusedRunId = 'pass-pin-admit-refused'
+events.push(claimedStream('TicketClaimed', { runId: refusedRunId, worker: 'local:1', title: null, kind: null }))
 const adminRefusedJudgeSpent = aRunSpent(makeStream(refusedRunId), { _tag: 'Judge', when: 'setup-refused' })
 events.push(adminRefusedJudgeSpent)
 
 // ---- A run stream with no RunStarted — kept, ticket and project null ------
-const orphanSpent = aRunSpent(makeStream('run-pin-orphan'), { _tag: 'Action', step: 'build', name: 'build', round: 0 })
+const orphanSpent = aRunSpent(makeStream('pass-pin-orphan'), { _tag: 'Action', step: 'build', name: 'build', round: 0 })
 events.push(orphanSpent)
 
 // ---- costUsd: null stays null, never becomes 0 -----------------------------
 const nullCostSpent = aRunSpent(
-  makeStream('run-pin-nullcost'),
+  makeStream('pass-pin-nullcost'),
   { _tag: 'Action', step: 'build', name: 'build', round: 0 },
   { costUsd: null },
 )
@@ -212,7 +212,7 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
     expect(links.find((l) => l.stream_id === chatStream('chat-pin-1'))).toMatchObject({ ticket: wi(4) })
   })
 
-  it('fills ticket through WorkItemClaimed when admit refused before any RunStarted was appended', async () => {
+  it('fills ticket through TicketClaimed when admit refused before any RunStarted was appended', async () => {
     const { spend, links } = await fold(events)
     const row = rowFor(spend, adminRefusedJudgeSpent.seq)!
     expect(row).toMatchObject({
@@ -228,7 +228,7 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   it('keeps a RunSpent row whose run stream has no RunStarted, with ticket and project null', async () => {
     const { spend } = await fold(events)
     const row = rowFor(spend, orphanSpent.seq)!
-    expect(row).toMatchObject({ stream_id: 'run-pin-orphan', ticket: null, project: null, pass: 'run-pin-orphan' })
+    expect(row).toMatchObject({ stream_id: 'pass-pin-orphan', ticket: null, project: null, pass: 'pass-pin-orphan' })
   })
 
   it('leaves cost_usd null rather than defaulting it to zero', async () => {

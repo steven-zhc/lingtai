@@ -508,7 +508,7 @@ runtime:
   agent: claude-code
 subscribers:
   - name: telegram
-    on: [WorkItemLanded]
+    on: [TicketLanded]
     run: npx @lingtai/telegram
     env: [TELEGRAM_BOT_TOKEN]
 `
@@ -1039,7 +1039,7 @@ steps:
         actor: 'conductor',
         data: {
           name: 'notify',
-          eventType: 'WorkItemLanded',
+          eventType: 'TicketLanded',
           project: 'esctest-doctor',
           reason: 'terminal-notifier exited 127',
         },

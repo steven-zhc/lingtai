@@ -4,7 +4,7 @@ import { emptyRun, stepsOn, reduceRun } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const started = {
-  workItemId: 'wi-nextloom-ai-admin-117',
+  ticketId: 'ticket-nextloom-ai-admin-117',
   runtime: 'claude-code' as const,
   model: 'claude-opus-5',
   promptVersion: 'ticket@3',
@@ -25,7 +25,7 @@ describe('reduceRun', () => {
   })
 
   it("records the run's provenance, including the recipe it was bound to", () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([e('RunStarted', started)])
 
     expect(s.lifecycle.status).toBe('running')
@@ -42,7 +42,7 @@ describe('reduceRun', () => {
    * anything else (#88), so the fold carries it rather than only counting it.
    */
   it('carries the prompt itself, and still counts them', () => {
-    const e = makeStream('run-01JY')
+    const e = makeStream('pass-01JY')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' }),
@@ -53,7 +53,7 @@ describe('reduceRun', () => {
   })
 
   it('says nothing about the text of a prompt recorded before it was kept', () => {
-    const e = makeStream('run-01JZ')
+    const e = makeStream('pass-01JZ')
     // A v1 `RunPrompted`, upcast: the length survived, the document did not.
     const s = reduceRun([e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: null })])
 
@@ -66,7 +66,7 @@ describe('reduceRun', () => {
    * log nobody parsed. Counting them is the entire reason the event exists.
    */
   it('records compaction as a metric, not as noise', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunContextExhausted', { turn: 41 }),
@@ -78,7 +78,7 @@ describe('reduceRun', () => {
   })
 
   it('lights up when the agent is waiting, and goes back to running on progress', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const waiting = [e('RunStarted', started), e('RunAwaitingInput', { prompt: 'Which base?' })]
 
     expect(reduceRun(waiting).lifecycle).toEqual({
@@ -101,16 +101,16 @@ describe('reduceRun', () => {
   })
 
   it('enters gating on a proposed completion and collects verdicts', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepRequested', { step: 'proposed', action: 'build', runId: 'run-01JX', onSha: 'sha-a' }),
-      e('StepStarted', { step: 'proposed', action: 'build', runId: 'run-01JX', onSha: 'sha-a' }),
+      e('StepRequested', { step: 'proposed', action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }),
+      e('StepStarted', { step: 'proposed', action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }),
       e('StepPassed', {
         step: 'proposed',
         action: 'build',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         evidence: 'exit 0',
         findings: [],
@@ -118,7 +118,7 @@ describe('reduceRun', () => {
       e('StepFailed', {
         step: 'proposed',
         action: 'review',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         evidence: '1 finding',
         findings: [
@@ -154,15 +154,15 @@ describe('reduceRun', () => {
    * says a review is still going on hours after the run ended.
    */
   it('keeps a gate whose agent never started apart from one that refused', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
-      e('StepStarted', { step: 'proposed', action: 'review', runId: 'run-01JX', onSha: 'sha-a' }),
+      e('StepStarted', { step: 'proposed', action: 'review', runId: 'pass-01JX', onSha: 'sha-a' }),
       e('StepNeverRan', {
         step: 'proposed',
         action: 'review',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
       }),
@@ -181,14 +181,14 @@ describe('reduceRun', () => {
    * inherited its own approval. Here a new head simply has no verdicts.
    */
   it('a force-push invalidates every verdict, without revoking anything', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const approved = [
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepPassed', {
         step: 'proposed',
         action: 'build',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         evidence: 'exit 0',
         findings: [],
@@ -196,7 +196,7 @@ describe('reduceRun', () => {
       e('ApprovalGranted', {
         step: 'merge',
         action: 'human',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         by: 'human:steven',
         note: 'looks right',
@@ -219,14 +219,14 @@ describe('reduceRun', () => {
   })
 
   it('records a waiver with who and why — never silently', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepWaived', {
         step: 'proposed',
         action: 'review',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         by: 'human:steven',
         reason: 'reviewer unavailable, change is a docs typo',
@@ -239,14 +239,14 @@ describe('reduceRun', () => {
   })
 
   it('waits on a person, then proceeds when they answer', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const asked = [
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('ApprovalRequested', {
         step: 'merge',
         action: 'human',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         question: 'Merge into develop?',
         artifacts: ['diff'],
@@ -265,7 +265,7 @@ describe('reduceRun', () => {
       e('ApprovalGranted', {
         step: 'merge',
         action: 'human',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         by: 'human:steven',
         note: '',
@@ -283,14 +283,14 @@ describe('reduceRun', () => {
    * the wrong one costs a person a search for a defect that does not exist.
    */
   it('returns a revoked approval to the gate, not to a refusal', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('ApprovalGranted', {
         step: 'merge',
         action: 'human',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         by: 'human:steven',
         note: '',
@@ -298,7 +298,7 @@ describe('reduceRun', () => {
       e('ApprovalRevoked', {
         step: 'merge',
         action: 'human',
-        runId: 'run-01JX',
+        runId: 'pass-01JX',
         onSha: 'sha-a',
         by: 'human:steven',
         reason: 'spotted a migration',
@@ -313,7 +313,7 @@ describe('reduceRun', () => {
   })
 
   it('keeps the receipt the old .jsonl could not be parsed for', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunFinished', { exitCode: 0, turns: 63, durationMs: 4_210_000, costUsd: 5.42 }),
@@ -324,7 +324,7 @@ describe('reduceRun', () => {
   })
 
   it('records a failure with its kind', () => {
-    const e = makeStream('run-01JX')
+    const e = makeStream('pass-01JX')
     const s = reduceRun([
       e('RunStarted', started),
       e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' }),
@@ -334,8 +334,8 @@ describe('reduceRun', () => {
   })
 
   it('ignores an event type it has never heard of', () => {
-    const e = makeStream('run-01JX')
-    const s = reduceRun([e('RunStarted', started), unknownEvent('run-01JX', 2)])
+    const e = makeStream('pass-01JX')
+    const s = reduceRun([e('RunStarted', started), unknownEvent('pass-01JX', 2)])
 
     expect(s.lifecycle.status).toBe('running')
     expect(s.version).toBe(2)

@@ -88,7 +88,7 @@ async function passWith(result: ActionResult): Promise<{ result: PassOver; event
   const events: ActionEvent[] = []
   const passed = await runPass({
     recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
-    context: { runId: 'run-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
+    context: { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
     emit: (event) => void events.push(event),
     actionsAt: answering(result),
     // No `bodies`, so `NOT_BUILT_YET` answers — which is the floor 0066 §7's

@@ -31,7 +31,7 @@ import { releaseForeignClaims, reconcile } from '../src/reconcile.ts'
 import type { DaemonStore, StreamQuery } from '../src/store.ts'
 
 const PROJECT = 'pureproj'
-const CLAIMED = `wi-${PROJECT}-117`
+const CLAIMED = `ticket-${PROJECT}-117`
 
 const project: ProjectState = {
   project: PROJECT,
@@ -79,8 +79,8 @@ function recordingStore(events: EventStore, ids: string[]) {
     async streams(query) {
       asked.push(query)
       // Only the claim query has an answer: `converge`'s asks for five types
-      // under `wi-%`, and this log holds nothing it would change.
-      return query.types.includes('WorkItemClaimed') && query.types.length === 1 ? [...ids] : []
+      // under `ticket-%`, and this log holds nothing it would change.
+      return query.types.includes('TicketClaimed') && query.types.length === 1 ? [...ids] : []
     },
     async close() {},
   }
@@ -91,12 +91,12 @@ async function logWithAClaim(): Promise<EventStore> {
   const events = createMemoryEventStore()
   await events.append(CLAIMED, 0, [
     {
-      type: 'WorkItemClaimed',
+      type: 'TicketClaimed',
       actor: 'conductor',
       // A worker that is not this pass's, which is the whole of what makes the
       // claim dead (0027): this conductor holds the lock, so nobody else is
       // conducting.
-      data: { runId: 'run-dead', worker: 'otherhost:23673', title: null, kind: 'bug' },
+      data: { runId: 'pass-dead', worker: 'otherhost:23673', title: null, kind: 'bug' },
     },
   ])
   return events
@@ -115,9 +115,9 @@ describe("a pass given a store reads that store's log", () => {
     })
 
     // Asked this store, and folded this store's log. Reading the process-wide
-    // Postgres instead returns `[]` for `wi-pureproj-117`, and an empty fold is
+    // Postgres instead returns `[]` for `ticket-pureproj-117`, and an empty fold is
     // not `claimed` — so the orphan is reported as no orphan at all.
-    expect(asked).toEqual([{ prefixes: [`wi-${PROJECT}-%`], types: ['WorkItemClaimed'] }])
+    expect(asked).toEqual([{ prefixes: [`ticket-${PROJECT}-%`], types: ['TicketClaimed'] }])
     expect(findings.map((f) => f.stream)).toEqual([CLAIMED])
     expect(findings[0]!.actual).toContain('otherhost:23673')
   })
@@ -143,7 +143,7 @@ describe("a pass given a store reads that store's log", () => {
     // `postgresUrl()`, and on one that has, it asks a log this pass has
     // nothing to do with.
     expect(asked).toHaveLength(2)
-    expect(asked[1]!.prefixes).toEqual(['wi-%'])
-    expect(asked[1]!.types).toContain('WorkItemLanded')
+    expect(asked[1]!.prefixes).toEqual(['ticket-%'])
+    expect(asked[1]!.types).toContain('TicketLanded')
   })
 })

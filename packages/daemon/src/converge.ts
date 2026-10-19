@@ -228,7 +228,7 @@ function labelState(status: WorkItemStatus): LabelState {
 
 export interface Divergence {
   /** The work item's own stream, so a finding points at the log. */
-  workItemId: string
+  ticketId: string
   project: string
   issue: number
   change: 'labels' | 'closed' | 'comment' | 'refs'
@@ -266,7 +266,7 @@ export interface ConvergeOptions {
 /**
  * Work items the log currently claims something about, on GitHub.
  *
- * One read, and a narrow one: a `wi-` stream is a candidate only if something
+ * One read, and a narrow one: a `ticket-` stream is a candidate only if something
  * in it has moved a work item, which is far fewer streams than exist. Whether
  * each candidate is *actually* diverged is decided per item below, against the
  * log and then against GitHub — that part cannot be SQL, because the target
@@ -289,7 +289,7 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
       prefixes: [`${WORK_ITEM_STREAM_PREFIX}%`],
-      types: ['WorkItemClaimed', ...WAIT_EVENTS, 'WorkItemReleased', 'WorkItemLanded'],
+      types: ['TicketClaimed', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
     }),
   )
 }
@@ -315,14 +315,14 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
 
   const found: Divergence[] = []
 
-  for (const workItemId of streams) {
-    const parsed = parseWorkItemStream(workItemId)
+  for (const ticketId of streams) {
+    const parsed = parseWorkItemStream(ticketId)
     if (!parsed) continue
     const issue = Number(parsed.issue)
     if (!Number.isInteger(issue)) continue
     if (!byName.has(parsed.project)) continue
 
-    const events = await store.read(workItemId).catch(() => [])
+    const events = await store.read(ticketId).catch(() => [])
     if (events.length === 0) continue
     const item = reduceWorkItem(events)
     const wanted = labelsFor(labelState(item.lifecycle.status))
@@ -384,7 +384,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     const actual = [...carried].sort()
     if (target.join(',') !== actual.join(',')) {
       found.push({
-        workItemId,
+        ticketId,
         project: parsed.project,
         issue,
         change: 'labels',
@@ -395,7 +395,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
 
     if (lastOutcome.get('closed') === 'IssueUpdateFailed' && current.state === 'open') {
       found.push({
-        workItemId,
+        ticketId,
         project: parsed.project,
         issue,
         change: 'closed',
@@ -406,7 +406,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
 
     if (lastOutcome.get('comment') === 'IssueUpdateFailed') {
       found.push({
-        workItemId,
+        ticketId,
         project: parsed.project,
         issue,
         change: 'comment',
@@ -442,7 +442,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
       )
       if (doomed.length > 0) {
         found.push({
-          workItemId,
+          ticketId,
           project: parsed.project,
           issue,
           change: 'refs',
@@ -496,7 +496,7 @@ export async function convergeIssues(
       } else {
         await client.closeIssue(d.issue)
       }
-      await record(store, d.workItemId, 'IssueUpdated', {
+      await record(store, d.ticketId, 'IssueUpdated', {
         project: d.project,
         issue: String(d.issue),
         change: d.change,
@@ -510,7 +510,7 @@ export async function convergeIssues(
       // Recorded, not retried. The next reconcile recomputes the target from
       // the log and tries again on its own; a counter here would be the
       // machinery 0022 deleted, growing back one field at a time.
-      await record(store, d.workItemId, 'IssueUpdateFailed', {
+      await record(store, d.ticketId, 'IssueUpdateFailed', {
         project: d.project,
         issue: String(d.issue),
         change: d.change,
@@ -526,13 +526,13 @@ export async function convergeIssues(
 /** Same silence as `tell.ts`: losing the record must not lose the write. */
 async function record(
   store: EventStore,
-  workItemId: string,
+  ticketId: string,
   type: 'IssueUpdated' | 'IssueUpdateFailed',
   data: Record<string, string>,
 ): Promise<void> {
   try {
-    const at = (await store.read(workItemId)).length
-    await store.append(workItemId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
+    const at = (await store.read(ticketId)).length
+    await store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
   } catch {
     // The next pass recomputes from GitHub, so an unwritten record costs a
     // request rather than a fact.

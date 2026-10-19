@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`a blocked task > is arranged as the four questions, then the record 1`] = `
-"coords: wi-lingtai-147 since 2026-09-14 04:27 UTC from attempt 1 of 1 ↓
+"coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from attempt 1 of 1 ↓
 state: blocked 4h 33m
 subject: #147 ↗ the reviewer crashes on a reused session id
 why: claim admit prepared design implement build review proposed merge end proposed:review refused the \`proposed\` step refused: review still refuses agent/147 proposed / review 1 line the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.
@@ -12,7 +12,7 @@ record: history · diff · findings · attempts · ticket"
 `;
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
-"coords: wi-lingtai-147 since 2026-09-14 08:40 UTC from attempt 1 of 1 ↓
+"coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from attempt 1 of 1 ↓
 state: running 20m
 subject: #147 ↗ the reviewer crashes on a reused session id
 why: claim admit prepared design implement build review proposed merge end agent 4h33m run log not reading

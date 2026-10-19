@@ -166,7 +166,7 @@ Look at these first. They are where the defects have actually been.
 /**
  * **The last thing the reviewer reads, not the middle of the prompt** (`#368`).
  * A cold reviewer answered in prose instead of the schema's shape twice before
- * this moved — once on a first review (`run-77a96d6a`, `#368` attempt 1) and
+ * this moved — once on a first review (`pass-77a96d6a`, `#368` attempt 1) and
  * once on a re-review (`#318` round 1) — and on both occasions this contract sat
  * above the recheck block and the diff rather than after them. The ticket's own
  * record is that the ordering is, at most, a contributing factor alongside
@@ -481,7 +481,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // Round 2 then handed Claude Code round 1's session id, and the binary
       // refuses one it has already been given: `Session ID ... is already in
       // use`, one second, no receipt, the round spent, the diff never read
-      // (`run-9e510ffc`, `wi-lingtai-192`). **The crash was the lucky
+      // (`pass-9e510ffc`, `ticket-lingtai-192`). **The crash was the lucky
       // outcome** — a runtime that resumed instead would have produced the
       // warm review the paragraph above exists to prevent, silently.
       //
@@ -591,7 +591,7 @@ function reviewAnswer(outcome: RunOutcome): ActionResult {
      * The sentence below has said `the reviewer did not finish` since this
      * branch was written, and the verdict beside it said `failed` — which
      * is the verdict a reviewer that read the diff and refused it returns.
-     * So the conductor bought a fix round, and on `run-9e510ffc` an agent
+     * So the conductor bought a fix round, and on `pass-9e510ffc` an agent
      * was paid fourteen seconds to write *I'm not fixing anything this
      * round … the review never looked at the change* (`#196`). The
      * difference was real and lived only in this string, and a string is

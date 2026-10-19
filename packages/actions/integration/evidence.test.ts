@@ -95,7 +95,7 @@ describe('the stored evidence', () => {
           env: { PATH: process.env['PATH'] ?? '' },
         }),
       ],
-      context: { runId: 'run-01JX', onSha: 'sha-a', cwd: process.cwd(), env: {} },
+      context: { runId: 'pass-01JX', onSha: 'sha-a', cwd: process.cwd(), env: {} },
       emit: (e) => void events.push(e),
     })
 

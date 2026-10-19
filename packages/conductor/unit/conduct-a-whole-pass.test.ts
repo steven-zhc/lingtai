@@ -91,9 +91,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(result.step).toBe('merge')
 
     // The decision, as the log records it.
-    const events = await store.read(`wi-${PROJECT}-7`)
+    const events = await store.read(`ticket-${PROJECT}-7`)
     const item = events.map((e) => e.type)
-    expect(item).toContain('WorkItemClaimed')
+    expect(item).toContain('TicketClaimed')
     expect(item).toContain('WorkItemBlocked')
     // Told GitHub inline, and recorded that it did (0022 — no outbox).
     expect(item.filter((t) => t === 'IssueUpdated').length).toBeGreaterThan(0)
@@ -306,7 +306,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * on the spine — every pass that got past `review` arrives there — so a hold
    * there is reached by the daemon, unprompted, one step before anything lands.
    * What is asserted is unchanged: `integrate` was never called and no
-   * `WorkItemLanded` is on the item's stream.
+   * `TicketLanded` is on the item's stream.
    */
   it('holds at a person the recipe declared before the lane, with no --no-merge anywhere', async () => {
     const store = memoryStore()
@@ -334,12 +334,12 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(result.step).toBe('proposed')
     // **Nothing reached the base branch.** That is the entire ticket.
     expect(did).not.toContain('integrate')
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).not.toContain('TicketLanded')
 
     // A real pipeline and not a special case: the action the recipe named is what
     // asked, through the same `ApprovalRequested` the flag asks with, bound to the
     // head the steps judged.
-    const [, run] = [...store.streams].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...store.streams].find(([id]) => id.startsWith('pass-'))!
     const asked = run.filter((e) => e.type === 'ApprovalRequested')
     expect(asked).toHaveLength(1)
     expect(asked[0]!.data).toMatchObject({
@@ -401,7 +401,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(run.step).toBe('proposed')
     // **Nothing reached the base branch.**
     expect(did).not.toContain('integrate')
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).not.toContain('TicketLanded')
   })
 
   /**
@@ -457,7 +457,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     if (run.ok === false) throw new Error(`stopped at ${run.stage}: ${run.detail}`)
     expect(run.ok).toBe(true)
     expect(did).toContain('integrate')
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
   })
 
   /**
@@ -492,7 +492,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
     expect(result.ok).toBe(true)
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
     // **A landed item carries no `lingtai:` label at all** — `labelsFor("landed")`
     // is `[]`, so the last whole-set write is somebody else's labels and nothing
     // of Lingtai's. Being on `main` is not a state Lingtai is waiting on, and the
@@ -575,8 +575,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
     expect((result as { detail: string }).detail).toContain('terminating connection')
 
-    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
-    expect(types).toContain('WorkItemReleased')
+    const types = (await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)
+    expect(types).toContain('TicketReleased')
     // Nobody is waiting on a person over a database blip.
     expect(types).not.toContain('WorkItemBlocked')
     // And the issue says so: `lingtai:working` is off it again, which is what a
@@ -594,7 +594,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * `StepRequested` — **before** `claimWorkItem` has appended anything. A dropped
    * connection there is the same defect, and `release` is the same handler, but
    * what it would give back is an item this run never held: `releaseWorkItem`
-   * appends whoever holds it, so `WorkItemReleased` lands on **another
+   * appends whoever holds it, so `TicketReleased` lands on **another
    * conductor's live item** and `lingtai:queued` goes over its `lingtai:working`
    * while its agent is still working. That is the failure `#268` named when it
    * moved the reviewer's settings below the claim, arriving here through the step
@@ -638,7 +638,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // Nothing was claimed, so nothing is released and nothing is blocked — the
     // stream is as empty as it was before the pass started.
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
+    expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
     // And the issue is not relabelled, either to `lingtai:working` or back out of
     // it: a whole-set write here is the one that would stamp on somebody else.
     expect(said.filter((line) => line.startsWith('labels #7'))).toEqual([])
@@ -652,7 +652,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * A verdict lost is a pass whose report is a lie, so it is raised; a route lost
    * is an explanation missing from a pass that happened, and on a landing it is
    * the **only** store write between `runPass` returning and the atomic
-   * `WorkItemLanded` + `endPlan` — `publishWhatIsCommitted` is skipped when the
+   * `TicketLanded` + `endPlan` — `publishWhatIsCommitted` is skipped when the
    * change went in. Raised there, a dropped connection on a purely informational
    * row would release an item whose branch is already on `main`, leave `end`'s
    * plan unresolved, tell GitHub nothing, and hand the ticket to a second pass
@@ -720,13 +720,13 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
     expect(lane).toBe(2)
 
-    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
-    expect(item).toContain('WorkItemLanded')
-    expect(item).not.toContain('WorkItemReleased')
+    const item = (await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)
+    expect(item).toContain('TicketLanded')
+    expect(item).not.toContain('TicketReleased')
 
     // The row is not on the run's stream, and the run log says so in the words a
     // person reading a trace gets — which is all that was lost.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     expect(run.map((e) => e.type)).not.toContain('PassRouted')
     expect(
       did.some((line) => line.startsWith('note route merge \u2192 implement:') && line.includes('same-worktree')),
@@ -794,7 +794,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const applied = run.find((e) => e.type === 'FixApplied')
     if (applied === undefined) throw new Error('no FixApplied on the run stream')
     const data = applied.data as { said?: string | null }
@@ -873,7 +873,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     expect(result.ok, JSON.stringify(result)).toBe('held')
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // **Still reachable before this fix** (`#468`): a commit clears
     // `interrupted` on its own, but not a failure that still ended the
     // round, so `keepUncommittedWork` never ran and this row never existed.
@@ -980,9 +980,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // **The whole of it**: the declared lane is in the list, the injected hold is
     // ahead of it, and nothing reached the base branch.
     expect(did).not.toContain('integrate')
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).not.toContain('TicketLanded')
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const asked = run.filter((e) => e.type === 'ApprovalRequested')
     expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(['no-merge'])
   })
@@ -1034,7 +1034,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // step, which at this one is the branch on `main` twice.
     expect(did.filter((line) => line === 'integrate')).toHaveLength(1)
     expect(result.mergeCommit).toBe('c'.repeat(40))
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
   })
 
   /**
@@ -1066,7 +1066,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     )
 
     if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const planned = run.find((event) => event.type === 'StepsResolved')
     expect(JSON.stringify(planned?.data)).toContain('land the branch')
     const verdicts = run
@@ -1112,7 +1112,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     )
 
     if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
   })
 
   /**
@@ -1175,7 +1175,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     )
 
     if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const planned = run.find((event) => event.type === 'StepsResolved')
     expect(JSON.stringify(planned?.data)).toContain('draft')
     const passed = run.find(
@@ -1285,7 +1285,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // is the step that did not pass, and where it was sent is `routes` (`take`).
     expect(result).toMatchObject({ ok: 'held', step: 'design' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const stopped = run.find((e) => e.type === 'StepAsked')!
     // The token is not on this event — it is what the *action* said, and what the
     // log carries is the words. The routing it bought is the assertion below.
@@ -1297,7 +1297,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // **And a person has it.** `WorkItemBlocked` is what the card reads, and
     // `raw` is the arriving step's own detail — the question, whole.
-    const blockedHold = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+    const blockedHold = (await store.read(`ticket-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
       hold: Hold
     }
     const blocked = legacyColumns(blockedHold.hold)
@@ -1356,14 +1356,14 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // The drafting step is the one that ran and passed — the setup this is about,
     // not a pass that failed earlier for some other reason.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     expect(run.some((e) => e.type === 'StepPassed' && (e.data as { step: string }).step === 'design')).toBe(true)
 
     // And `implement` stops, because *this* agent left no receipt. Held rather
     // than released: 0057 §2's class buys no round and asks a person, and there is
     // nothing about the account here for the conductor to stand down over.
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    const blockedHold2 = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+    const blockedHold2 = (await store.read(`ticket-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
       hold: Hold
     }
     const blocked = legacyColumns(blockedHold2.hold)
@@ -1373,7 +1373,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // commit as this run's completion, and nothing lands.
     expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')
     expect(did).not.toContain('integrate')
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).not.toContain('TicketLanded')
   })
 
   /**
@@ -1418,7 +1418,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // `repo.submodules: false` two blocks up no longer answers for it.
     expect(did).toContain('cut from origin/main with submodules')
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const planned = run.find((event) => event.type === 'StepsResolved')
     expect(JSON.stringify(planned?.data)).toContain('cut the branch')
     const verdicts = run
@@ -1494,7 +1494,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // And the route says who chose, by the name of the entry in the recipe — the
     // line a person edits, not the built-in a person would have to grep for.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
       .filter((e) => e.type === 'PassRouted')
       .map(
@@ -1523,7 +1523,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     // So the pass rests with a person at the router, and the item says so.
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemBlocked')
+    expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemBlocked')
 
     // The built-in spends nothing and appends nothing (`#495`): only a
     // runtime judge starts a process, and `judge: same-worktree` is a name
@@ -1610,7 +1610,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // three reviews read what they wrote.
     expect(ran.filter((id) => id.includes(':review:'))).toHaveLength(3)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
       .filter((e) => e.type === 'PassRouted')
       .map((e) => e.data as { to: string; chose: string; why: string; ceiling: string | null })
@@ -1693,7 +1693,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     expect(ran.filter((id) => id.includes(':judge:'))).toHaveLength(1)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const judgeSpent = run.filter((e) => e.type === 'RunSpent' && (e.data as RunSpent).for._tag === 'Judge')
     expect(judgeSpent).toHaveLength(1)
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
@@ -1748,7 +1748,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     expect(ran.filter((id) => id.includes(':judge:'))).toHaveLength(1)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const judgeSpent = run.filter((e) => e.type === 'RunSpent' && (e.data as RunSpent).for._tag === 'Judge')
     expect(judgeSpent).toHaveLength(1)
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
@@ -1801,7 +1801,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     expect(ran.filter((id) => id.includes(':judge:'))).toHaveLength(1)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const judgeSpent = run.filter((e) => e.type === 'RunSpent' && (e.data as RunSpent).for._tag === 'Judge')
     expect(judgeSpent).toHaveLength(1)
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
@@ -1870,7 +1870,7 @@ runtime:
 
     expect(ran.filter((id) => id.includes(':judge:'))).toEqual([])
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
       .filter((e) => e.type === 'PassRouted')
       .map((e) => e.data as { chose: string; to: string; why: string; ceiling: string | null })
@@ -1926,7 +1926,7 @@ runtime:
 
     expect(ran.filter((id) => id.includes(':judge:'))).toEqual([])
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const blocked = item.find((e) => e.type === 'WorkItemBlocked')!
     expect((blocked.data as { hold: Hold }).hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
 
@@ -1972,11 +1972,11 @@ runtime:
       fakePorts(did, store),
     )
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run.filter((e) => e.type === 'PassRouted').map((e) => e.data as { chose: string; to: string })
     expect(routed[0]).toMatchObject({ chose: 'build', to: 'waiting' })
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const blocked = item.find((e) => e.type === 'WorkItemBlocked')!
     expect((blocked.data as { hold: Hold }).hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
 
@@ -2021,7 +2021,7 @@ runtime:
       fakePorts(did, store),
     )
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
       .filter((e) => e.type === 'PassRouted')
       .map((e) => e.data as { chose: string; to: string; why: string; ceiling: string | null })
@@ -2100,7 +2100,7 @@ runtime:
     ])
 
     // And the log says which runtime wrote the change, which is still the first.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const started = run.find((e) => e.type === 'RunStarted')!.data as { runtime: string }
     expect(started.runtime).toBe('claude-code')
   })
@@ -2146,7 +2146,7 @@ runtime:
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
 
     expect(models).toEqual(['haiku'])
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run.filter((e) => e.type === 'PassRouted').map((e) => e.data as { why: string })
     expect(routed[0]!.why).toContain('claude-code (haiku)')
   })

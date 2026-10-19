@@ -69,7 +69,7 @@ export const StreamId = z.string().regex(
   // event it failed on: the daemon follows the log while a run is appending
   // to that stream, so writing back to it would turn a notifier's bad day
   // into a `ConcurrencyError` in the middle of a run.
-  'streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)',
+  'streamId must be ticket-… (work item), pass-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)',
 )
 
 export interface Envelope<T = unknown> {

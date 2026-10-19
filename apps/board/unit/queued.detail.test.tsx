@@ -60,14 +60,14 @@ const TICKET: TicketView = {
 
 describe('whether there is a page here', () => {
   /**
-   * The row the ticket leads with. `wi-lingtai-112` — GitHub has it, Lingtai
+   * The row the ticket leads with. `ticket-lingtai-112` — GitHub has it, Lingtai
    * has not touched it — was a 404, and the whole Queued column with it.
    */
   it('renders an id GitHub offers and the log has never seen', () => {
     expect(exists([], TICKET)).toBe(true)
   })
 
-  /** `wi-lingtai-99999`. GitHub answered, and the answer was no. */
+  /** `ticket-lingtai-99999`. GitHub answered, and the answer was no. */
   it('still refuses an id nothing knows about', () => {
     expect(exists([], { ...TICKET, ref: '99999', found: false, body: null })).toBe(false)
   })
@@ -87,7 +87,7 @@ describe('whether there is a page here', () => {
     expect(exists([], unreachable)).toBe(true)
   })
 
-  /** An id that is not `wi-<project>-<n>`: there is no issue to have a view about. */
+  /** An id that is not `ticket-<project>-<n>`: there is no issue to have a view about. */
   it('refuses an id that is not a work item', () => {
     expect(exists([], null)).toBe(false)
   })
@@ -98,7 +98,7 @@ describe('whether there is a page here', () => {
    * alike — those cost the body, not the page (#76).
    */
   it('keeps the page for an item the log has touched, whatever GitHub says', () => {
-    const own = [e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-1' })]
+    const own = [e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' })]
     expect(exists(own, { ...TICKET, found: false, body: null })).toBe(true)
     expect(exists(own, null)).toBe(true)
   })
@@ -183,12 +183,12 @@ describe("the backoff, folded from the item's own stream", () => {
   })
 
   it('holds an item whose last claim is inside the window', () => {
-    const own = [e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-1' }, '2026-09-09T03:45:00Z')]
+    const own = [e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T03:45:00Z')]
     expect(backoffOf(own, HOUR, now)?.toISOString()).toBe('2026-09-09T04:45:00.000Z')
   })
 
   it('lets go once the window is past', () => {
-    const own = [e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-1' }, '2026-09-09T02:45:00Z')]
+    const own = [e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T02:45:00Z')]
     expect(backoffOf(own, HOUR, now)).toBeNull()
   })
 
@@ -203,15 +203,15 @@ describe("the backoff, folded from the item's own stream", () => {
    */
   it('does not hold an item a retired repair request is still pending on', () => {
     const own = [
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-1' }, '2026-09-09T03:45:00Z'),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T03:45:00Z'),
       e(
-        'wi-lingtai-89',
+        'ticket-lingtai-89',
         'RepairRequested',
         {
-          runId: 'run-1',
+          runId: 'pass-1',
           attempt: 1,
           reason: 'conflict',
-          after: 'run-1',
+          after: 'pass-1',
         },
         '2026-09-09T03:50:00Z',
       ),
@@ -225,19 +225,19 @@ describe("the backoff, folded from the item's own stream", () => {
    */
   it('holds an item once the claim has consumed the retired repair', () => {
     const own = [
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-1' }, '2026-09-09T03:30:00Z'),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T03:30:00Z'),
       e(
-        'wi-lingtai-89',
+        'ticket-lingtai-89',
         'RepairRequested',
         {
-          runId: 'run-1',
+          runId: 'pass-1',
           attempt: 1,
           reason: 'conflict',
-          after: 'run-1',
+          after: 'pass-1',
         },
         '2026-09-09T03:40:00Z',
       ),
-      e('wi-lingtai-89', 'WorkItemClaimed', { runId: 'run-2' }, '2026-09-09T03:45:00Z'),
+      e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-2' }, '2026-09-09T03:45:00Z'),
     ]
     expect(backoffOf(own, HOUR, now)?.toISOString()).toBe('2026-09-09T04:45:00.000Z')
   })
@@ -408,13 +408,13 @@ const NEVER_RUN: StandingView = {
 const render = (standing: StandingView, queued: QueuedView | null, unknown: string | null = null) =>
   renderToStaticMarkup(
     <>
-      <Coords standing={standing} taskId="wi-lingtai-112" queued={queued} />
+      <Coords standing={standing} taskId="ticket-lingtai-112" queued={queued} />
       <Standing
         subject={null}
         standing={standing}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={queued}

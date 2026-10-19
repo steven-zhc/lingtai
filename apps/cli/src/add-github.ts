@@ -132,7 +132,7 @@ export interface AskBeforeGithubAddDeps {
   ask: (prompt: string) => Promise<string | null>
   /** `askRecipe`'s `runtimes` — already probed, never by this function itself. */
   runtimes: () => Promise<readonly RuntimeFound[]>
-  /** `askRecipe`'s `history` — `wi-<project>-*` streams already in the log for this project. */
+  /** `askRecipe`'s `history` — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Promise<readonly string[]>
 }
 

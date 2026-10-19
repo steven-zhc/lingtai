@@ -112,14 +112,14 @@ export type IssueWrite = Exclude<IssueChange, { kind: 'refs' }>
 export interface TellOptions {
   store: EventStore
   github: IssueChannel
-  /** `wi-<project>-<issue>`. */
-  workItemId: string
+  /** `ticket-<project>-<issue>`. */
+  ticketId: string
   change: IssueWrite
 }
 
-/** `wi-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
-function split(workItemId: string): { project: string; issue: number } | null {
-  const parsed = parseWorkItemStream(workItemId)
+/** `ticket-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
+function split(ticketId: string): { project: string; issue: number } | null {
+  const parsed = parseWorkItemStream(ticketId)
   if (!parsed) return null
   // This path nominates issues by number; a non-numeric ref is not one it can
   // tell GitHub about.
@@ -140,8 +140,8 @@ function split(workItemId: string): { project: string; issue: number } | null {
  * that is a far smaller wrong than deleting all of them.
  */
 export async function tellGitHub(options: TellOptions): Promise<void> {
-  const { store, github, workItemId, change } = options
-  const target = split(workItemId)
+  const { store, github, ticketId, change } = options
+  const target = split(ticketId)
   if (target === null) return
   const { project, issue } = target
 
@@ -173,7 +173,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
         break
     }
   } catch (err) {
-    await record(store, workItemId, 'IssueUpdateFailed', {
+    await record(store, ticketId, 'IssueUpdateFailed', {
       project,
       issue: String(issue),
       change: change.kind,
@@ -181,7 +181,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
     })
     return
   }
-  await record(store, workItemId, 'IssueUpdated', {
+  await record(store, ticketId, 'IssueUpdated', {
     project,
     issue: String(issue),
     change: change.kind,
@@ -234,13 +234,13 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
 export async function sweepRefs(options: {
   store: EventStore
   github: RefChannel
-  /** `wi-<project>-<issue>`. */
-  workItemId: string
+  /** `ticket-<project>-<issue>`. */
+  ticketId: string
   /** `agent/<n>` itself, on top of its arms. */
   andTheBranch: boolean
 }): Promise<void> {
-  const { store, github, workItemId } = options
-  const target = split(workItemId)
+  const { store, github, ticketId } = options
+  const target = split(ticketId)
   if (target === null) return
   const { project, issue } = target
 
@@ -260,7 +260,7 @@ export async function sweepRefs(options: {
       gone.push(ref)
     }
   } catch (err) {
-    await record(store, workItemId, 'IssueUpdateFailed', {
+    await record(store, ticketId, 'IssueUpdateFailed', {
       project,
       issue: String(issue),
       change: 'refs',
@@ -268,7 +268,7 @@ export async function sweepRefs(options: {
     })
     return
   }
-  await record(store, workItemId, 'IssueUpdated', {
+  await record(store, ticketId, 'IssueUpdated', {
     project,
     issue: String(issue),
     change: 'refs',
@@ -309,13 +309,13 @@ export function sweepFailure(err: unknown, gone: readonly string[]): string {
  */
 async function record(
   store: EventStore,
-  workItemId: string,
+  ticketId: string,
   type: 'IssueUpdated' | 'IssueUpdateFailed',
   data: Record<string, string>,
 ): Promise<void> {
   try {
-    const at = (await store.read(workItemId)).length
-    await store.append(workItemId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
+    const at = (await store.read(ticketId)).length
+    await store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
   } catch {
     // Deliberately silent: see above.
   }
@@ -331,8 +331,8 @@ async function record(
  * up closed and one that ends up closed and then reopened by a label write.
  *
  * **A blocked item now says so on GitHub.** For the whole life of the outbox it
- * did not: the projection set labels on `WorkItemClaimed`, `WorkItemReleased`
- * and `WorkItemLanded` only, so an item waiting on a person kept
+ * did not: the projection set labels on `TicketClaimed`, `TicketReleased`
+ * and `TicketLanded` only, so an item waiting on a person kept
  * `lingtai:working` while the board showed it in *Waiting on you*, and
  * `lingtai:waiting` was never once written. `442f513` preserved that on purpose
  * — a replacement that also changes behaviour cannot be reviewed as one — and
@@ -352,7 +352,7 @@ export async function tellGitHubAbout(options: {
    * delete is a recipe that resolved an effect nothing ran, which is `#61`.
    */
   github: IssueChannel & RefChannel
-  workItemId: string
+  ticketId: string
   /** Lingtai's own labels for this state, or `null` to leave them alone. */
   labels?: readonly string[] | null
   /** The question, when a person is now the thing being waited on. */
@@ -360,13 +360,13 @@ export async function tellGitHubAbout(options: {
   /** The events just appended; any `EndActionsResolved` among them is carried out. */
   appended?: readonly ToAppend[]
 }): Promise<void> {
-  const { store, github, workItemId } = options
+  const { store, github, ticketId } = options
   // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefs`'s, and
   // a helper that took the wider union would let one reach `tellGitHub`, whose
   // `switch` has a case for each of the four issue writes and no default — so a
   // `refs` change there falls straight through and records an `IssueUpdated`
   // for a sweep that never ran. That is `#61`'s failure inside one function.
-  const tell = (change: IssueWrite) => tellGitHub({ store, github, workItemId, change })
+  const tell = (change: IssueWrite) => tellGitHub({ store, github, ticketId, change })
 
   if (options.question !== undefined) {
     await tell({ kind: 'comment', body: `**Lingtai is waiting on you.**\n\n${options.question}` })
@@ -389,7 +389,7 @@ export async function tellGitHubAbout(options: {
     for (const action of [...writes, ...sweeps]) {
       if ('close' in action) await tell({ kind: 'closed' })
       else if ('labels' in action) await tell({ kind: 'labels', labels: action.labels })
-      else await sweepRefs({ store, github, workItemId, andTheBranch: action.branch })
+      else await sweepRefs({ store, github, ticketId, andTheBranch: action.branch })
     }
   }
 }

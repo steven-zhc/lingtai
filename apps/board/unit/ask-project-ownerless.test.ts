@@ -53,7 +53,7 @@ describe('askProject, for a project with no owner', () => {
       // `runnableNow`'s order and not a second one.
       select: async (opts) =>
         opts.offered.map((o) => ({
-          taskId: `wi-${opts.project}-${o.ref}`,
+          taskId: `ticket-${opts.project}-${o.ref}`,
           issue: o.ref,
           title: o.title,
           kind: o.kind,

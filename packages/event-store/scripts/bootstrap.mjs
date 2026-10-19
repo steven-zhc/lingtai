@@ -51,7 +51,7 @@ check("unique (stream_id, version)", uq.rowCount === 1);
 // ---- optimistic concurrency ------------------------------------------------
 // This constraint is the entire concurrency control. If it does not hold, two
 // workers can claim the same work item.
-const ev = (v) => [`wi-probe-1`, v, "WorkItemDiscovered", JSON.stringify({ probe: true }), "conductor"];
+const ev = (v) => [`ticket-probe-1`, v, "TicketDiscovered", JSON.stringify({ probe: true }), "conductor"];
 const INS = `insert into events (stream_id, version, type, data, actor)
              values ($1,$2,$3,$4::jsonb,$5) returning seq`;
 const first = await c.query(INS, ev(1));
@@ -92,7 +92,7 @@ await listener.end();
 // The rules block DELETE, so drop them the only way left. Real events are never
 // removed; these were never real.
 await c.query("alter table events disable rule lingtai_events_no_delete");
-await c.query("delete from events where stream_id = 'wi-probe-1'");
+await c.query("delete from events where stream_id = 'ticket-probe-1'");
 await c.query("alter table events enable rule lingtai_events_no_delete");
 // Scoped to the probe stream, not the whole table.
 //
@@ -102,7 +102,7 @@ await c.query("alter table events enable rule lingtai_events_no_delete");
 // doubt the database" would have started failing the moment Lingtai did any
 // work at all. It surfaced against a database with a hundred events in it.
 const left = await c.query(
-  "select count(*)::int n from events where stream_id = 'wi-probe-1'",
+  "select count(*)::int n from events where stream_id = 'ticket-probe-1'",
 );
 check("probe rows removed", left.rows[0].n === 0, `${left.rows[0].n} probe rows remain`);
 

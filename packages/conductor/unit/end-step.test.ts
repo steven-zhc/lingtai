@@ -18,7 +18,7 @@ const BUILD: StepAction = { name: 'build', run: 'true', timeout: '2m', env: [] }
 /** One event on a work item stream. Only `type` and `data` are read here. */
 const event = (type: string, data: unknown): Envelope => ({
   seq: 1n,
-  streamId: 'wi-p-1',
+  streamId: 'ticket-p-1',
   version: 2,
   type,
   schemaVer: 1,
@@ -71,7 +71,7 @@ describe('the end step', () => {
   })
 
   it("resolves once per outcome, from the item's own stream", () => {
-    const stream = [event('WorkItemLanded', {}), resolved('landed', [{ name: 'close the ticket', close: true }])]
+    const stream = [event('TicketLanded', {}), resolved('landed', [{ name: 'close the ticket', close: true }])]
     expect(resolveEndActions(stream, [CLOSE], 'landed')).toEqual([])
   })
 

@@ -388,15 +388,15 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
   const endedWithout = db.prepare(
     `WITH over AS (
        SELECT e.stream_id AS streamId,
-              CASE WHEN e.type = 'WorkItemClosed' THEN 'closed' ELSE 'landed' END AS outcome
+              CASE WHEN e.type = 'TicketClosed' THEN 'closed' ELSE 'landed' END AS outcome
        FROM events e
-       WHERE e.type IN ('WorkItemLanded', 'WorkItemClosed')
+       WHERE e.type IN ('TicketLanded', 'TicketClosed')
          AND e.seq = (SELECT max(x.seq) FROM events x
                       WHERE x.stream_id = e.stream_id
-                        AND x.type IN ('WorkItemLanded', 'WorkItemClosed'))
+                        AND x.type IN ('TicketLanded', 'TicketClosed'))
      ),
      planned AS (
-       SELECT DISTINCT json_extract(started.data, '$.workItemId') AS work_item
+       SELECT DISTINCT json_extract(started.data, '$.ticketId') AS work_item
        FROM events started
        JOIN events plan
          ON plan.stream_id = started.stream_id AND plan.type = 'StepsResolved'

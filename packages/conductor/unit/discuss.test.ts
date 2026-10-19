@@ -36,11 +36,11 @@ import { passClientOf } from '../src/ticket-store.ts'
 import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-pass.ts'
 
 const EVIDENCE: DiscussionEvidence = {
-  workItemId: 'wi-lingtai-89',
+  ticketId: 'ticket-lingtai-89',
   attempt: 2,
   ticket: { ref: '89', title: 'the run does not stop at the turn limit', body: '…' },
   ticketProblem: null,
-  log: ['1  2026-09-08 04:12:00  wi-lingtai-89  WorkItemClaimed  conductor  {}'],
+  log: ['1  2026-09-08 04:12:00  ticket-lingtai-89  TicketClaimed  conductor  {}'],
   reading: ['main: readable at abc1234'],
   refs: [{ ref: 'main', sha: 'abc1234', paths: ['packages/agent/src/claude-code.ts'], truncated: false }],
 }
@@ -202,7 +202,7 @@ describe('concludeDiscussion', () => {
     const store = memoryStore()
     const result = await concludeDiscussion({
       store,
-      workItemId: `wi-lingtai-${opened.number}`,
+      ticketId: `ticket-lingtai-${opened.number}`,
       chatId: 'chat-1',
       by: 'human:steven',
       outcome: 'ticket',

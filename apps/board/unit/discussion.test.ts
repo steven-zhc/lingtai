@@ -33,7 +33,7 @@ function e(streamId: string, type: string, data: unknown, at = '2026-09-09T10:00
 }
 
 const ASKED = {
-  workItemId: 'wi-lingtai-89',
+  ticketId: 'ticket-lingtai-89',
   attempt: 2,
   by: 'human:steven',
   question: 'why did attempt 2 produce nothing?',
@@ -139,18 +139,18 @@ describe('which conversations an item has had', () => {
   it('finds an open conversation from the control stream and a closed one from the item', () => {
     const chats = chatIdsFor(
       [
-        { chatId: 'chat-1', workItemId: 'wi-lingtai-89' },
-        { chatId: 'chat-2', workItemId: 'wi-lingtai-87' },
+        { chatId: 'chat-1', ticketId: 'ticket-lingtai-89' },
+        { chatId: 'chat-2', ticketId: 'ticket-lingtai-87' },
       ],
-      [e('wi-lingtai-89', 'DiscussionHeld', { chatId: 'chat-1', costUsd: 0.42, outcome: 'prompt' })],
-      'wi-lingtai-89',
+      [e('ticket-lingtai-89', 'DiscussionHeld', { chatId: 'chat-1', costUsd: 0.42, outcome: 'prompt' })],
+      'ticket-lingtai-89',
     )
 
     expect(chats).toEqual([{ chatId: 'chat-1', held: 'prompt' }])
   })
 
   it('leaves an unconcluded conversation open rather than calling it closed', () => {
-    const chats = chatIdsFor([{ chatId: 'chat-1', workItemId: 'wi-lingtai-89' }], [], 'wi-lingtai-89')
+    const chats = chatIdsFor([{ chatId: 'chat-1', ticketId: 'ticket-lingtai-89' }], [], 'ticket-lingtai-89')
     expect(chats).toEqual([{ chatId: 'chat-1', held: null }])
   })
 })
@@ -181,7 +181,7 @@ function discussionSpent(costUsd: number | null): SpendRow {
     seq: '1',
     at: new Date('2026-09-09T10:00:00Z'),
     streamId: 'chat-1',
-    ticket: 'wi-lingtai-89',
+    ticket: 'ticket-lingtai-89',
     project: 'lingtai',
     pass: null,
     purpose: 'Discussion',

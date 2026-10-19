@@ -5,7 +5,7 @@
  * (`end-step.ts`).
  *
  * Under the ten steps that rule is a claim about two files. `runPass` runs `end`
- * after the walk and before `conduct.ts` writes `WorkItemLanded` or
+ * after the walk and before `conduct.ts` writes `TicketLanded` or
  * `WorkItemBlocked`, so the caller has to *hold* what the step resolved and
  * append it beside the ending — which is what `PassPorts.recordEnd` means by
  * *batching is the caller's because the ending is the caller's*. A port that
@@ -72,10 +72,10 @@ describe('the ending and its end actions', () => {
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
     expect(result.ok).toBe(true)
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     // **Immediately after the landing**, which is what one append looks like from
     // the outside: nothing of this run's can be interleaved between them.
-    const at = item.findIndex((e) => e.type === 'WorkItemLanded')
+    const at = item.findIndex((e) => e.type === 'TicketLanded')
     expect(at).toBeGreaterThanOrEqual(0)
     expect(item[at + 1]?.type).toBe('EndActionsResolved')
     expect(item[at + 1]!.data).toEqual({
@@ -91,7 +91,7 @@ describe('the ending and its end actions', () => {
 
   /**
    * **The window itself, as the failure it was.** The store takes everything but
-   * the append that carries `WorkItemLanded`, which is the dropped connection
+   * the append that carries `TicketLanded`, which is the dropped connection
    * arriving on exactly the row it costs the most.
    *
    * What must not be on the stream afterwards is the resolution. The merge is on
@@ -107,7 +107,7 @@ describe('the ending and its end actions', () => {
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === 'WorkItemLanded')) {
+        if (events.some((e) => e.type === 'TicketLanded')) {
           throw new Error('terminating connection due to administrator command')
         }
         return store.append(streamId, expected, events) as Promise<Envelope[]>
@@ -133,13 +133,13 @@ describe('the ending and its end actions', () => {
     // not a refusal this run can make on anybody's behalf.
     expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
 
-    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
+    const types = (await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)
     // Neither the landing nor a word about `end`.
-    expect(types).not.toContain('WorkItemLanded')
+    expect(types).not.toContain('TicketLanded')
     expect(types).not.toContain('EndActionsResolved')
     // The item is back in the queue, which is what the defect handler's release
     // makes true — and the `landed` plan is not carried in on it.
-    expect(types).toContain('WorkItemReleased')
+    expect(types).toContain('TicketReleased')
     // So nothing was done to the issue on the strength of a landing nothing
     // recorded.
     expect(said).not.toContain('close #7')
@@ -178,8 +178,8 @@ describe('the ending and its end actions', () => {
 
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
-    const item = await store.read(`wi-${PROJECT}-7`)
-    const at = item.findIndex((e) => e.type === 'WorkItemReleased')
+    const item = await store.read(`ticket-${PROJECT}-7`)
+    const at = item.findIndex((e) => e.type === 'TicketReleased')
     expect(at).toBeGreaterThanOrEqual(0)
     expect(item[at + 1]?.type).toBe('EndActionsResolved')
     expect(item[at + 1]!.data).toMatchObject({ outcome: 'failed' })
@@ -209,7 +209,7 @@ describe('the ending and its end actions', () => {
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === 'WorkItemReleased')) {
+        if (events.some((e) => e.type === 'TicketReleased')) {
           throw new Error('terminating connection due to administrator command')
         }
         return store.append(streamId, expected, events) as Promise<Envelope[]>
@@ -235,8 +235,8 @@ describe('the ending and its end actions', () => {
     // a second reason for the run to have failed.
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
-    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
-    expect(types).not.toContain('WorkItemReleased')
+    const types = (await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)
+    expect(types).not.toContain('TicketReleased')
     expect(types).not.toContain('EndActionsResolved')
     // And nothing was done to the issue on the strength of an ending nothing
     // recorded, which is `tellGitHubAbout` reading the plan that was appended
@@ -266,7 +266,7 @@ describe('the ending and its end actions', () => {
 
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
 
-    const item = await store.read(`wi-${PROJECT}-7`)
+    const item = await store.read(`ticket-${PROJECT}-7`)
     const at = item.findIndex((e) => e.type === 'WorkItemBlocked')
     expect(at).toBeGreaterThanOrEqual(0)
     expect(item[at + 1]?.type).toBe('EndActionsResolved')

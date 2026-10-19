@@ -21,8 +21,8 @@ const track = (id: string) => {
   created.add(id)
   return id
 }
-const wi = (n: number) => track(`wi-${PROJECT}-${n}`)
-const run = (n: number, attempt: number) => track(`run-${PROJECT}-${n}-${attempt}`)
+const wi = (n: number) => track(`ticket-${PROJECT}-${n}`)
+const run = (n: number, attempt: number) => track(`pass-${PROJECT}-${n}-${attempt}`)
 
 const minor = (claim: string, line: number): Finding => ({
   file: 'src/a.ts',
@@ -64,7 +64,7 @@ async function attempt(n: number, a: number, findings: Finding[], verdict: 'acce
       type: 'RunStarted',
       actor: 'conductor',
       data: {
-        workItemId: wi(n),
+        ticketId: wi(n),
         runtime: 'claude-code',
         model: 'm',
         promptVersion: 'p',

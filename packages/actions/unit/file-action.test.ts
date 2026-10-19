@@ -28,7 +28,7 @@ import { actionsFromRecipe } from '../src/from-recipe.ts'
 const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 
 const context = (design?: TheDesign): ActionContext => ({
-  runId: 'run-abc',
+  runId: 'pass-abc',
   onSha: 'a'.repeat(40),
   cwd: '/tmp/wt',
   env: {},

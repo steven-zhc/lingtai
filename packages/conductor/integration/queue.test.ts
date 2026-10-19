@@ -58,18 +58,18 @@ describe('selectRunnable', () => {
     // No rows at all: the log has no opinion about either, so both are runnable.
     const before = await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR })
     expect(before.map((r) => r.issue)).toEqual(['10', '11'])
-    expect(before[0]).toEqual({ taskId: `wi-${other}-10`, issue: '10', title: 'one', kind: 'bug' })
+    expect(before[0]).toEqual({ taskId: `ticket-${other}-10`, issue: '10', title: 'one', kind: 'bug' })
 
-    const claimedId = `wi-${other}-10`
+    const claimedId = `ticket-${other}-10`
     created.add(claimedId)
     await store.append(claimedId, 0, [
       {
-        type: 'WorkItemClaimed',
+        type: 'TicketClaimed',
         actor: 'conductor',
-        data: { runId: `run-${other}-10`, worker: 'w', title: null, kind: null },
+        data: { runId: `pass-${other}-10`, worker: 'w', title: null, kind: null },
       },
     ])
-    created.add(`run-${other}-10`)
+    created.add(`pass-${other}-10`)
     await build()
 
     // GitHub still lists 10. The log is the authority on what happened after
@@ -94,7 +94,7 @@ describe('selectRunnable', () => {
     const project = `esctest${crypto.randomUUID().slice(0, 6)}`
     const offered = [{ ref: '51', title: 'the tripwire', kind: 'bug' }]
     const kinds = ['bug']
-    created.add(`wi-${project}-51`)
+    created.add(`ticket-${project}-51`)
 
     const asked = await ask({ project, issue: 51, question: 'which of the three designs?', by: 'human:steven', store })
     expect(asked.ok).toBe(true)
@@ -119,7 +119,7 @@ describe('selectRunnable', () => {
     // And Send's requeue refuses the question rather than withdrawing it.
     const sent = await requeue({ project, issue: 51, by: 'human:steven', note: 'sent', onQuestion: 'refuse', store })
     expect(sent.ok).toBe(false)
-    expect(reduceWorkItem(await store.read(`wi-${project}-51`)).lifecycle.status).toBe('blocked')
+    expect(reduceWorkItem(await store.read(`ticket-${project}-51`)).lifecycle.status).toBe('blocked')
 
     const answered = await answer({
       project,
@@ -182,8 +182,8 @@ describe('selectRunnable', () => {
     'holds a released item for the backoff, and offers it once the window passes',
     async () => {
       const project = `esctest${crypto.randomUUID().slice(0, 6)}`
-      const item = `wi-${project}-7`
-      const runId = `run-${crypto.randomUUID()}`
+      const item = `ticket-${project}-7`
+      const runId = `pass-${crypto.randomUUID()}`
       created.add(item)
       created.add(runId)
       const offered = [{ ref: '7', title: 'flaky', kind: 'bug' }]
@@ -191,12 +191,12 @@ describe('selectRunnable', () => {
 
       await store.append(item, 0, [
         {
-          type: 'WorkItemClaimed',
+          type: 'TicketClaimed',
           actor: 'conductor',
           data: { runId, worker: 'w', title: null, kind: null },
         },
         {
-          type: 'WorkItemReleased',
+          type: 'TicketReleased',
           actor: 'conductor',
           data: { runId, reason: 'the gate failed' },
         },

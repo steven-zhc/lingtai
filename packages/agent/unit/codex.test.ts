@@ -556,7 +556,7 @@ describe('what one line is worth saying in the log', () => {
 describe('the hook wiring, translated', () => {
   const settings = (includeClaudeOnly: boolean) =>
     renderSettings({
-      runId: 'run-1',
+      runId: 'pass-1',
       hookBinary: '/opt/lingtai/lingtai-hook',
       includeClaudeOnly,
     })
@@ -629,10 +629,10 @@ describe('the invocation', () => {
    * is a claim `pnpm test` can settle. The `readFileSync` behind it is the
    * adapter's own and belongs to the integration half (0060 §1).
    */
-  const wiring = () => renderSettings({ runId: 'run-1', hookBinary: '/opt/lingtai/lingtai-hook' })
+  const wiring = () => renderSettings({ runId: 'pass-1', hookBinary: '/opt/lingtai/lingtai-hook' })
 
   const invocable = {
-    runId: 'run-1',
+    runId: 'pass-1',
     cwd: '/tmp/tree',
     settingsPath: '/state/runs/run-1/settings.json',
     env: {},

@@ -13,15 +13,15 @@ import { directPostgresUrl } from '../src/env.ts'
 /** Streams created by the current file, so cleanup can name them exactly. */
 export const created = new Set<string>()
 
-export function streamId(prefix = 'wi-test'): string {
+export function streamId(prefix = 'ticket-test'): string {
   const id = `${prefix}-${crypto.randomUUID().slice(0, 8)}`
   created.add(id)
   return id
 }
 
-/** A valid `WorkItemDiscovered` with a distinguishable title. */
+/** A valid `TicketDiscovered` with a distinguishable title. */
 export const discovered = (title: string) => ({
-  type: 'WorkItemDiscovered',
+  type: 'TicketDiscovered',
   actor: 'conductor',
   data: {
     project: 'lingtai',

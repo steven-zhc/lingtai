@@ -88,7 +88,7 @@ export const withPorts = (ports: RunPorts) =>
 /**
  * **The proof against #461's fixture, run on every call rather than once**
  * (`#466`). `onPass` hands this the `PassOver` the moment `runOnce` has it,
- * and after the call returns, the one `run-*` stream this attempt opened is
+ * and after the call returns, the one `pass-*` stream this attempt opened is
  * checked against `eventOf` of the very same `pass.steps` — so a mismatch is
  * `adapters.ts` disagreeing with the pipeline it is adapting, caught here
  * rather than copied into every fixture row by hand (the file header of
@@ -117,7 +117,7 @@ export const once = async (options: Parameters<typeof runOnce>[0] & { client: Gi
 
   if (options.store !== undefined && captured.pass !== null) {
     const pass = captured.pass
-    const newRunId = [...streams(options.store).keys()].find((id) => id.startsWith('run-') && !before.has(id))
+    const newRunId = [...streams(options.store).keys()].find((id) => id.startsWith('pass-') && !before.has(id))
     if (newRunId !== undefined) {
       const written = streams(options.store).get(newRunId) ?? []
       const actual = written
@@ -570,7 +570,7 @@ export const refusingRuntime: Runtime = {
 }
 
 /**
- * The reviewer of `run-9e510ffc`: exit 1 in a second, nothing on the stream.
+ * The reviewer of `pass-9e510ffc`: exit 1 in a second, nothing on the stream.
  *
  * `crash` and not `never-started`, which is the whole distinction `#196` turns
  * on. The three facts 0031 §1 names are not all here — zero turns and zero cost,

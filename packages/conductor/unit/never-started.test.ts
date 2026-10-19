@@ -34,7 +34,7 @@ const WEEKLY = "You've hit your weekly limit · resets Sep 19 at 9am (America/Ch
 const WEEKLY_MET = new Date('2026-09-17T17:35:13Z')
 
 /**
- * Codex's wording, verbatim from `run-1c087f2a`'s log at 22:23:12 Chicago
+ * Codex's wording, verbatim from `pass-1c087f2a`'s log at 22:23:12 Chicago
  * time on 2026-09-29 (#317) — URLs and all. The two URLs are the noise a
  * looser lead-in would trip on; the sentence names no zone, so the reading is
  * a guess, exactly as an unzoned `resets` sentence's is.

@@ -202,7 +202,7 @@ export async function requeueCard(input: { project: string; issue: number; note:
  * **It appends; it does not delete** (`#151`). `gh issue close` by hand writes
  * nothing to the log, so the fold went on calling the item `backlog` and the
  * board went on offering it — five items sat in Queued that GitHub had closed
- * hours earlier. This writes `WorkItemClosed`, and the queue passes over the
+ * hours earlier. This writes `TicketClosed`, and the queue passes over the
  * item *because the log says it is over*, not because a label was scraped.
  *
  * **Never the primary move, and never offered on a card that landed.**
@@ -402,7 +402,7 @@ export async function askDiscussion(input: {
         actor: by,
         data: parsePayload('DiscussionRequested', {
           chatId,
-          workItemId: input.taskId,
+          ticketId: input.taskId,
           attempt: input.attempt,
           question: input.question,
           by,
@@ -450,7 +450,7 @@ export async function concludeChat(input: {
 
     const result = await concludeDiscussion({
       store: eventStore,
-      workItemId: input.taskId,
+      ticketId: input.taskId,
       chatId: input.chatId,
       by: actor(),
       outcome: input.outcome,
@@ -478,7 +478,7 @@ export async function concludeChat(input: {
  * is also why there is no `onSha` in this input: nothing is being agreed to.
  *
  * **It applies to the next run only**, whoever starts it. `reduceWorkItem`
- * holds it as `pendingPrompt` and the next `WorkItemClaimed` consumes it —
+ * holds it as `pendingPrompt` and the next `TicketClaimed` consumes it —
  * anything meant to last belongs in the GitHub ticket, where it versions as
  * `ticket@NNNN` and everybody can see it (§6).
  *
@@ -642,7 +642,7 @@ export async function runNow(input: { project: string; issue: string }): Promise
     const by = actor()
     await requestRun(input.project, input.issue, by)
     // The id said once, by the function that owns its shape — a second copy of
-    // `wi-<project>-<n>` here is a revalidation that quietly stops matching.
+    // `ticket-<project>-<n>` here is a revalidation that quietly stops matching.
     revalidatePath(`/task/${workItemStream(input.project, input.issue)}`)
     revalidatePath('/')
     return { ok: true, detail: `asked for by ${by} — the next pass takes it` }

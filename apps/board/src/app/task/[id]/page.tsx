@@ -746,7 +746,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           discussionBill={task.totals.byPurpose.Discussion}
           outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
-          // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`
+          // The controls act on a GitHub issue. An id that is not `ticket-<p>-<n>`
           // has none, and the block states the state without offering a move.
           issue={issueNumber}
           queued={task.queued}

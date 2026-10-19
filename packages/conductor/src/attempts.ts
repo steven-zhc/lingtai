@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
  * knew nothing of the first. `RunPrompted` on the second attempt at `#59`
  * recorded `promptVersion: "ticket@1911"` — byte-identical to the first — while
  * the log beside it already held that run's `prepared:install` verdict and the
- * `WorkItemReleased.reason` that ended it. So `attempts: 2` on a card meant *we
+ * `TicketReleased.reason` that ended it. So `attempts: 2` on a card meant *we
  * paid twice*, not *we learned once*, and the loop's `exhausted` stop exists
  * precisely because a blind retry is expensive. The cheaper fix is to stop the
  * retry being blind.
@@ -129,7 +129,7 @@ export interface PriorAttempt {
   n: number
   runId: string
   /**
-   * How it ended, in the log's own words: `WorkItemReleased.reason`, or the
+   * How it ended, in the log's own words: `TicketReleased.reason`, or the
    * question it was blocked with. Null while a run still holds the item — which
    * a caller reading before its own claim will never see for itself.
    */
@@ -142,7 +142,7 @@ export interface PriorAttempt {
 /**
  * Every attempt this item has already had, oldest first.
  *
- * A claim is an attempt: `WorkItemClaimed` ×N is what "attempts: N" on a card
+ * A claim is an attempt: `TicketClaimed` ×N is what "attempts: N" on a card
  * counts, so it is what this counts. Called **before** the claim this run is
  * about to make, so the run asking does not appear in its own history.
  */
@@ -167,8 +167,8 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
     }
 
     switch (event.type) {
-      case 'WorkItemClaimed': {
-        const d = event.data as PayloadOf<'WorkItemClaimed'>
+      case 'TicketClaimed': {
+        const d = event.data as PayloadOf<'TicketClaimed'>
         // A second claim by the same run is the same attempt claiming again,
         // not a new one — the same reason `WorkItemState.runs` will not list it
         // twice. Nothing writes one today; the guard is about the fold, not
@@ -186,8 +186,8 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         break
       }
 
-      case 'WorkItemReleased': {
-        const d = event.data as PayloadOf<'WorkItemReleased'>
+      case 'TicketReleased': {
+        const d = event.data as PayloadOf<'TicketReleased'>
         const attempt = byRun.get(d.runId)
         if (attempt) attempt.ended = d.reason
         break

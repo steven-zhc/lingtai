@@ -9,7 +9,7 @@
  * - the `run:` line resolves from the directory `lingtai.ts` hands over
  *   (`cwd: process.cwd()`, the checkout) — attempt 4 declared a path that could
  *   never resolve from the directory its subscribers were spawned in;
- * - a `RunFailed` on a `run-<uuid>` stream reaches Telegram carrying its card,
+ * - a `RunFailed` on a `pass-<uuid>` stream reaches Telegram carrying its card,
  *   which only `createSubjectResolver` reading the run's `RunStarted` can name;
  * - the process gets the token from the project's env file, read by the real
  *   resolver, and not from this process — which holds a different one — and
@@ -144,7 +144,7 @@ let issue = 0
 async function aRun() {
   issue += 1
   const wi = workItemStream(PROJECT, issue)
-  const runId = `run-${crypto.randomUUID()}`
+  const runId = `pass-${crypto.randomUUID()}`
   created.add(wi)
   created.add(runId)
   await store.append(runId, 0, [
@@ -152,7 +152,7 @@ async function aRun() {
       type: 'RunStarted',
       actor: 'conductor',
       data: {
-        workItemId: wi,
+        ticketId: wi,
         runtime: 'claude-code',
         model: 'claude-opus-5',
         promptVersion: 'v1',
@@ -178,7 +178,7 @@ async function failures(): Promise<{ name: string; eventType: string; reason: st
 describe('the telegram subscriber this repository declares', () => {
   it('names the five events the ticket lists, and no LINGTAI_ variable', () => {
     expect(new Set(shipped.on)).toEqual(
-      new Set(['WorkItemLanded', 'WorkItemBlocked', 'RunFailed', 'ApprovalRequested', 'RunAwaitingInput']),
+      new Set(['TicketLanded', 'WorkItemBlocked', 'RunFailed', 'ApprovalRequested', 'RunAwaitingInput']),
     )
     expect(shipped.env.filter((n) => n.startsWith('LINGTAI_'))).toEqual([])
   })
@@ -191,7 +191,7 @@ describe('the telegram subscriber this repository declares', () => {
     await failed(run.runId, 'session limit')
     await until(() => api.received.find((r) => r.text.includes('run failed')))
     await store.append(run.wi, 0, [
-      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: '5ace763aa0', base: 'main' } },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: '5ace763aa0', base: 'main' } },
     ])
     await until(() => api.received.find((r) => r.text.includes('landed')))
 

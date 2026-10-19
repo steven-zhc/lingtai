@@ -50,18 +50,18 @@ let client: Db
 let store: EventStore
 
 const wi = (n: number) => {
-  const id = `wi-${PROJECT}-${n}`
+  const id = `ticket-${PROJECT}-${n}`
   created.add(id)
   return id
 }
 const run = (n: number) => {
-  const id = `run-${PROJECT}-${n}`
+  const id = `pass-${PROJECT}-${n}`
   created.add(id)
   return id
 }
 
 const discovered = (n: number, title: string, kind = 'bug') => ({
-  type: 'WorkItemDiscovered',
+  type: 'TicketDiscovered',
   actor: 'github',
   data: {
     project: PROJECT,
@@ -80,13 +80,13 @@ const discovered = (n: number, title: string, kind = 'bug') => ({
  * — and the whole of #78 is what happens when it is not.
  */
 const attempt = (n: number, which: string) => {
-  const id = `run-${PROJECT}-${n}${which}`
+  const id = `pass-${PROJECT}-${n}${which}`
   created.add(id)
   return id
 }
 
 const claimedWith = (runId: string) => ({
-  type: 'WorkItemClaimed',
+  type: 'TicketClaimed',
   actor: 'conductor',
   data: { runId, worker: 'w', title: null, kind: null },
 })
@@ -94,7 +94,7 @@ const claimedWith = (runId: string) => ({
 const claimed = (n: number) => claimedWith(run(n))
 
 const released = (runId: string, reason: string) => ({
-  type: 'WorkItemReleased',
+  type: 'TicketReleased',
   actor: 'conductor',
   data: { runId, reason },
 })
@@ -138,7 +138,7 @@ const started = (n: number) => ({
   type: 'RunStarted',
   actor: 'conductor',
   data: {
-    workItemId: wi(n),
+    ticketId: wi(n),
     runtime: 'claude-code',
     model: 'm',
     promptVersion: 'p',
@@ -242,19 +242,19 @@ async function seed(): Promise<void> {
     {
       type: 'IntegrationAttempted',
       actor: 'conductor',
-      data: { workItemId: wi(4), branch: 'agent/4', headSha: 'sha' },
+      data: { ticketId: wi(4), branch: 'agent/4', headSha: 'sha' },
     },
     {
       type: 'IntegrationRefused',
       actor: 'conductor',
-      data: { workItemId: wi(4), branch: 'agent/4', reason: 'dirty-base', detail: 'uncommitted changes' },
+      data: { ticketId: wi(4), branch: 'agent/4', reason: 'dirty-base', detail: 'uncommitted changes' },
     },
   ])
 
   // 5 — landed.
   await append(wi(5), [
     discovered(5, 'landed a while ago'),
-    { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234def', base: 'develop' } },
+    { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc1234def', base: 'develop' } },
   ])
 
   // 6 — attempt 1 passed a gate and was then killed from outside. Attempt 2
@@ -355,7 +355,7 @@ async function seed(): Promise<void> {
       type: 'IntegrationRefused',
       actor: 'conductor',
       data: {
-        workItemId: wi(9),
+        ticketId: wi(9),
         branch: 'agent/9',
         reason: 'conflict',
         detail: 'agent/9 does not merge into develop: page.tsx',
@@ -769,7 +769,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     })
 
     /**
-     * #78. `wi-lingtai-59` read `1 passed · attempt 2` on the board, and the pass
+     * #78. `ticket-lingtai-59` read `1 passed · attempt 2` on the board, and the pass
      * belonged to attempt 1 — a run an operator had killed eleven hours earlier,
      * which produced nothing. The verdicts were keyed `point:action` with no run
      * in the key, so the map was one shared set of cells and nothing ever cleared
@@ -780,7 +780,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const six = card(tasks, 6)!
 
       expect(six.attempts).toBe(2)
-      expect(six.runId).toBe(`run-${PROJECT}-6b`)
+      expect(six.runId).toBe(`pass-${PROJECT}-6b`)
       // Attempt 2 has reached no gate. Attempt 1's `prepared:install` is still in
       // the map, against the run that earned it, and is not this card's.
       expect(six.passed).toBe(0)
@@ -848,7 +848,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       // The lane holds more than questions: a refused dispatch with no block
       // after it leaves `state` alone — #406 — so card 4 is whatever
-      // `WorkItemDiscovered` wrote, with the refusal as its note.
+      // `TicketDiscovered` wrote, with the refusal as its note.
       expect(card(tasks, 4)!.state).toBe('queued')
       expect(card(tasks, 4)!.waiting).toBe(false)
     })

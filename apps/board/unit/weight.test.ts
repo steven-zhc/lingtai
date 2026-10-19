@@ -20,7 +20,7 @@ import { LANDED_OPEN, issueUrl, ledger, toCard, toColumns } from '../src/lib/boa
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
-    taskId: `wi-esctest-${over.issue ?? '1'}`,
+    taskId: `ticket-esctest-${over.issue ?? '1'}`,
     project: 'esctest',
     issue: '1',
     title: 'a task',
@@ -102,10 +102,10 @@ function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow
   return {
     seq: '1',
     at: new Date('2026-09-10T04:27:22Z'),
-    streamId: `run-${ticket}`,
+    streamId: `pass-${ticket}`,
     ticket,
     project: null,
-    pass: `run-${ticket}`,
+    pass: `pass-${ticket}`,
     purpose: 'Action',
     step: 'proposed',
     action: 'build',
@@ -132,9 +132,9 @@ describe('what the board says it has cost', () => {
       toCard(task({ state: 'running', issue: '4' })),
     ])
     const rows = [
-      spendRow('wi-esctest-1', 0.97),
-      spendRow('wi-esctest-2', 1.78),
-      spendRow('wi-esctest-3', 3.4),
+      spendRow('ticket-esctest-1', 0.97),
+      spendRow('ticket-esctest-2', 1.78),
+      spendRow('ticket-esctest-3', 3.4),
       // Never spent, so this card contributes nothing — still a card, still counted.
     ]
 
@@ -150,7 +150,7 @@ describe('what the board says it has cost', () => {
    */
   it("keeps repair out of the work's figure and still shows it", () => {
     const columns = toColumns([toCard(task())])
-    const rows = [spendRow('wi-esctest-1', 1.0), spendRow('wi-esctest-1', 0.5, { round: 1 })]
+    const rows = [spendRow('ticket-esctest-1', 1.0), spendRow('ticket-esctest-1', 0.5, { round: 1 })]
     const { total } = ledger(columns, rows)
 
     expect(total.byPurpose.Work.reportedCents).toBe(100)
@@ -165,7 +165,7 @@ describe('what the board says it has cost', () => {
   })
 
   /**
-   * `wi-lingtai-89` ran twice before `spend` existed, so `readSpend({ ticket })`
+   * `ticket-lingtai-89` ran twice before `spend` existed, so `readSpend({ ticket })`
    * returns `[]` for it — `attempts: 2` says it ran, but no row names it.
    * `billOf` used to fold that to five empty bills, which `ledger` printed as
    * `—` in every column: the same reading an unclaimed card gets, though one

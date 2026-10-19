@@ -19,7 +19,7 @@ let n = 0
 describeEventStoreContract(
   'in memory',
   () => createMemoryEventStore(),
-  () => `wi-mem-${n++}`,
+  () => `ticket-mem-${n++}`,
 )
 
 /**
@@ -39,14 +39,14 @@ describe('in memory: what is not in the contract', () => {
 
   it('hands back the whole log, in append order', async () => {
     const s = createMemoryEventStore()
-    await s.append('wi-p-1', 0, [
-      { type: 'WorkItemClaimed', actor: 'conductor', data: { runId: 'run-1', worker: 't', title: null, kind: null } },
+    await s.append('ticket-p-1', 0, [
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'pass-1', worker: 't', title: null, kind: null } },
     ])
-    await s.append('wi-p-2', 0, [
-      { type: 'WorkItemClaimed', actor: 'conductor', data: { runId: 'run-2', worker: 't', title: null, kind: null } },
+    await s.append('ticket-p-2', 0, [
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'pass-2', worker: 't', title: null, kind: null } },
     ])
 
-    expect(s.all().map((e) => e.streamId)).toEqual(['wi-p-1', 'wi-p-2'])
+    expect(s.all().map((e) => e.streamId)).toEqual(['ticket-p-1', 'ticket-p-2'])
   })
 
   it('takes a clock, so a test need not wait for one', async () => {
@@ -55,8 +55,8 @@ describe('in memory: what is not in the contract', () => {
     const at = new Date('2026-09-14T12:00:00.000Z')
     const s = createMemoryEventStore({ now: () => at })
 
-    const [written] = await s.append('wi-p-1', 0, [
-      { type: 'WorkItemClaimed', actor: 'conductor', data: { runId: 'run-1', worker: 't', title: null, kind: null } },
+    const [written] = await s.append('ticket-p-1', 0, [
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'pass-1', worker: 't', title: null, kind: null } },
     ])
 
     expect(written!.at).toEqual(at)

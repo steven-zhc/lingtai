@@ -17,8 +17,8 @@ import {
 } from '../src/wait.ts'
 import { WaitReason as WaitReasonSchema } from '../src/wait.ts'
 
-const run: RunRef = { runId: 'run-1' }
-const unpushedRun: RunRef = { runId: 'run-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
+const run: RunRef = { runId: 'pass-1' }
+const unpushedRun: RunRef = { runId: 'pass-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
 
 // One set per union, populated by the parsers below, so "every tag is
 // covered above" checks what the describes below actually exercised —

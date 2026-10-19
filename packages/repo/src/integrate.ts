@@ -74,7 +74,7 @@ export interface IntegrateOptions {
   repo: string
   base: string
   branch: string
-  workItemId: string
+  ticketId: string
   /** The commit the gates gave their verdicts about. */
   headSha: string
   /** False when a gate refused. The integrator records it and does not merge. */
@@ -245,7 +245,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   ): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
       await append('IntegrationRefused', {
-        workItemId: options.workItemId,
+        ticketId: options.ticketId,
         branch: options.branch,
         reason,
         detail: detail.slice(0, 2_000),
@@ -257,7 +257,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
       await append('IntegrationSucceeded', {
-        workItemId: options.workItemId,
+        ticketId: options.ticketId,
         branch: options.branch,
         base: options.base,
         mergeCommit,
@@ -596,7 +596,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   return Effect.gen(function* () {
     yield* Effect.promise(() =>
       append('IntegrationAttempted', {
-        workItemId: options.workItemId,
+        ticketId: options.ticketId,
         branch: options.branch,
         headSha: options.headSha,
       }),

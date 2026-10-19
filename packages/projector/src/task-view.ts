@@ -41,7 +41,7 @@
  * That key includes the run (#78). Keying it `point:action` alone bought
  * replay-safety and quietly gave up scope: a second attempt overwrote the same
  * cells, and in the window between a release and the next attempt reaching the
- * same point the card asserted a verdict no live run held. `wi-lingtai-59` read
+ * same point the card asserted a verdict no live run held. `ticket-lingtai-59` read
  * `1 passed · attempt 2` while attempt 1's only gate belonged to a run an
  * operator had killed hours earlier. Keying by run keeps both properties:
  * assignment is still idempotent, and `readTasks` shows only the run the card
@@ -95,7 +95,7 @@ export const taskViewProjection: Projection = {
         insertions   int,
         deletions    int,
 
-        -- { "run-abc:proposed:build": "passed" }. A map, so replaying is
+        -- { "pass-abc:proposed:build": "passed" }. A map, so replaying is
         -- assignment rather than appending; keyed by the run that produced the
         -- verdict, so an attempt that is over cannot lend its verdicts to the
         -- next one. Evidence is not here on purpose.
@@ -186,7 +186,7 @@ export const taskViewProjection: Projection = {
         -- the backoff exemption its repair was bought with.
         repair_pending boolean not null default false,
         repair_run_id  text,
-        -- { "run-abc#fix1": 1.42 }. A map for the reason the verdicts column
+        -- { "pass-abc#fix1": 1.42 }. A map for the reason the verdicts column
         -- is one: assignment replays to the same number and += does not.
         --
         -- **Wider than its name since 0039 §3.** It began as what a *repair*
@@ -231,7 +231,7 @@ export const taskViewProjection: Projection = {
     await ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
 
     // Which run belongs to which task. Run events arrive on their own stream and
-    // name the task only at WorkItemClaimed or RunStarted.
+    // name the task only at TicketClaimed or RunStarted.
     await ctx.query(`
       create table if not exists task_view_run (
         run_id  text primary key,
@@ -260,8 +260,8 @@ export const taskViewProjection: Projection = {
          * these, and a projection that cannot replay its own history is not a
          * projection.
          */
-        case 'WorkItemDiscovered': {
-          const d = event.data as PayloadOf<'WorkItemDiscovered'>
+        case 'TicketDiscovered': {
+          const d = event.data as PayloadOf<'TicketDiscovered'>
           await upsert(ctx, event.streamId, seq, at, {
             project: d.project,
             issue: d.externalRef,
@@ -272,8 +272,8 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'WorkItemClaimed': {
-          const d = event.data as PayloadOf<'WorkItemClaimed'>
+        case 'TicketClaimed': {
+          const d = event.data as PayloadOf<'TicketClaimed'>
           await linkRun(ctx, d.runId, event.streamId)
           // The claim creates the row, not just updates it. With the queue out
           // of the log there is no earlier event to have made one, so an UPDATE
@@ -298,8 +298,8 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'WorkItemReleased': {
-          const d = event.data as PayloadOf<'WorkItemReleased'>
+        case 'TicketReleased': {
+          const d = event.data as PayloadOf<'TicketReleased'>
           // The reason becomes the card's line. A release is an attempt that
           // ended without landing, and it used to leave no mark at all: a run
           // killed from outside fails no gate, so the card came back to Queued
@@ -318,8 +318,8 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'WorkItemClosed': {
-          const d = event.data as PayloadOf<'WorkItemClosed'>
+        case 'TicketClosed': {
+          const d = event.data as PayloadOf<'TicketClosed'>
           await set(ctx, event.streamId, seq, at, {
             state: 'closed',
             // The reason, where `landed` puts the merge commit: it is the whole
@@ -338,8 +338,8 @@ export const taskViewProjection: Projection = {
           break
         }
 
-        case 'WorkItemLanded': {
-          const d = event.data as PayloadOf<'WorkItemLanded'>
+        case 'TicketLanded': {
+          const d = event.data as PayloadOf<'TicketLanded'>
           await set(ctx, event.streamId, seq, at, {
             state: 'landed',
             note: d.mergeCommit,
@@ -412,7 +412,7 @@ export const taskViewProjection: Projection = {
 
         case 'RunStarted': {
           const d = event.data as PayloadOf<'RunStarted'>
-          await linkRun(ctx, event.streamId, d.workItemId)
+          await linkRun(ctx, event.streamId, d.ticketId)
           await viaRun(ctx, event.streamId, seq, at, {
             state: 'running',
             run_id: event.streamId,
@@ -512,7 +512,7 @@ export const taskViewProjection: Projection = {
           // way out writes its own state, so this leaves `state` alone rather
           // than guessing which one is coming.
           const d = event.data as PayloadOf<'IntegrationRefused'>
-          await set(ctx, d.workItemId, seq, at, {
+          await set(ctx, d.ticketId, seq, at, {
             note: `${d.reason}: ${d.detail}`,
             // The approval, if there was one, has been spent on this attempt.
             // The run is back to `gating` and `approve()` refuses it — so the
@@ -524,7 +524,7 @@ export const taskViewProjection: Projection = {
 
         case 'IntegrationSucceeded': {
           const d = event.data as PayloadOf<'IntegrationSucceeded'>
-          await set(ctx, d.workItemId, seq, at, {
+          await set(ctx, d.ticketId, seq, at, {
             state: 'landed',
             note: d.mergeCommit,
             closed_at: at,
@@ -742,9 +742,9 @@ export const taskViewProjection: Projection = {
 // ----------------------------------------------------------------- write ----
 
 /**
- * `wi-nextloom-ai-admin-155` → project `nextloom-ai-admin`, issue `155`.
+ * `ticket-nextloom-ai-admin-155` → project `nextloom-ai-admin`, issue `155`.
  *
- * Safe to parse because the same code writes it (`wi-${project}-${ref}`), and
+ * Safe to parse because the same code writes it (`ticket-${project}-${ref}`), and
  * splitting at the *last* hyphen is what makes a project name containing
  * hyphens survive — which every one of them does.
  */

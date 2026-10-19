@@ -28,7 +28,7 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType } from '@lingtai/domain'
-import { boardFactOf } from '@lingtai/domain'
+import { boardFactOf, PASS_STREAM_PREFIX } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -116,9 +116,9 @@ function sha(d: Payload, key: string, n = 7): string {
   return need(d, key).slice(0, n)
 }
 
-/** `run-78db72ff-d659-…` → `78db72ff`. The same cut `WorkItemClaimed` made. */
+/** `pass-78db72ff-d659-…` → `78db72ff`. The same cut `TicketClaimed` made. */
 function runShort(d: Payload, key: string): string {
-  return need(d, key).slice(4, 12)
+  return need(d, key).slice(PASS_STREAM_PREFIX.length, PASS_STREAM_PREFIX.length + 8)
 }
 
 function list(v: unknown): string {
@@ -138,11 +138,11 @@ function stepAt(d: Payload): string {
 
 const FORMAT: Partial<Record<EventType, Formatter>> = {
   // ------------------------------------------------------------ work item --
-  WorkItemDiscovered: (d) => `#${need(d, 'externalRef')} ${need(d, 'kind')} — ${clip(need(d, 'title'))}`,
-  WorkItemClaimed: (d) => `run ${runShort(d, 'runId')}`,
-  WorkItemReleased: (d) => `run ${runShort(d, 'runId')}: ${clip(need(d, 'reason'))}`,
-  WorkItemLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
-  WorkItemLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
+  TicketDiscovered: (d) => `#${need(d, 'externalRef')} ${need(d, 'kind')} — ${clip(need(d, 'title'))}`,
+  TicketClaimed: (d) => `run ${runShort(d, 'runId')}`,
+  TicketReleased: (d) => `run ${runShort(d, 'runId')}: ${clip(need(d, 'reason'))}`,
+  TicketLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
+  TicketLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
   DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
 
   // ------------------------------------------------------------------ run --
@@ -575,14 +575,15 @@ export function summarise(event: Envelope): string {
 /**
  * The actor, short enough to stay in the actor column.
  *
- * `agent:run-78db72ff-d659-4515-a5d3-150a0e8a3b33` is 45 characters against a
+ * `agent:pass-78db72ff-d659-4515-a5d3-150a0e8a3b33` is 46 characters against a
  * 9rem column, so it ran past the summary and read as the row's detail — which
  * is how `RunPrompted` came to look like an event whose content was its own
  * actor. The whole value goes in the row's `title`.
  */
 export function shortActor(actor: string): string {
-  if (!actor.startsWith('agent:run-')) return actor
-  return `agent:run-${actor.slice('agent:run-'.length, 'agent:run-'.length + 8)}`
+  const prefix = `agent:${PASS_STREAM_PREFIX}`
+  if (!actor.startsWith(prefix)) return actor
+  return `${prefix}${actor.slice(prefix.length, prefix.length + 8)}`
 }
 
 /** The payload as stored, for the disclosure under every row. */

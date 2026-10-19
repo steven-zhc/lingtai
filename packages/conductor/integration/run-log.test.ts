@@ -66,20 +66,20 @@ describe('finding the log for a run id', () => {
   it('looks the project up rather than asking for one', async () => {
     await mkdir(join(home, 'runs', 'lingtai'), { recursive: true })
     await mkdir(join(home, 'runs', 'other'), { recursive: true })
-    await writeFile(join(home, 'runs', 'other', 'run-7.log'), '')
+    await writeFile(join(home, 'runs', 'other', 'pass-7.log'), '')
 
     // A run id names a run and not a project: every id anybody types comes off
     // the board or off `lingtai status` with no project beside it.
-    expect(await findRunLog('run-7', home)).toEqual({
+    expect(await findRunLog('pass-7', home)).toEqual({
       project: 'other',
-      runId: 'run-7',
-      path: runLogPath(home, 'other', 'run-7'),
+      runId: 'pass-7',
+      path: runLogPath(home, 'other', 'pass-7'),
     })
-    expect(await findRunLog('run-nobody-has-heard-of', home)).toBeNull()
+    expect(await findRunLog('pass-nobody-has-heard-of', home)).toBeNull()
   })
 
   it('is null on a machine no run has ever left a log on', async () => {
-    expect(await findRunLog('run-7', home)).toBeNull()
+    expect(await findRunLog('pass-7', home)).toBeNull()
     expect(await listRunLogs(home)).toEqual([])
   })
 
@@ -88,14 +88,14 @@ describe('finding the log for a run id', () => {
     // `runs/` holds `settingsPathFor`'s `runs/<runId>/settings.json` too — a
     // directory named for a run. The two shapes share a parent and the walk
     // must see only the second.
-    await mkdir(join(home, 'runs', 'lingtai', 'run-old'), { recursive: true })
-    await writeFile(join(home, 'runs', 'lingtai', 'run-old', 'settings.json'), '{}')
+    await mkdir(join(home, 'runs', 'lingtai', 'pass-old'), { recursive: true })
+    await writeFile(join(home, 'runs', 'lingtai', 'pass-old', 'settings.json'), '{}')
 
-    await writeFile(join(home, 'runs', 'lingtai', 'run-old.log'), '')
+    await writeFile(join(home, 'runs', 'lingtai', 'pass-old.log'), '')
     await new Promise((r) => setTimeout(r, 10))
-    await writeFile(join(home, 'runs', 'lingtai', 'run-new.log'), '')
+    await writeFile(join(home, 'runs', 'lingtai', 'pass-new.log'), '')
 
-    expect((await listRunLogs(home)).map((l) => l.runId)).toEqual(['run-new', 'run-old'])
+    expect((await listRunLogs(home)).map((l) => l.runId)).toEqual(['pass-new', 'pass-old'])
   })
 })
 
@@ -103,7 +103,7 @@ describe('following one', () => {
   it('reads a finished run from the beginning and stops where it ends', async () => {
     // The main use, and the one a command that only worked live would miss:
     // the log worth reading is always the one from the run that just failed.
-    const path = runLogPath(home, 'lingtai', 'run-over')
+    const path = runLogPath(home, 'lingtai', 'pass-over')
     const log = await openRunLog({ path })
     log.note('Read', 'packages/agent/src/run-log.ts')
     log.note('Bash', 'pnpm typecheck')
@@ -122,7 +122,7 @@ describe('following one', () => {
   it('gives a late joiner the file from the start, not from when they attached', async () => {
     // The whole reason 0034 chose a file over a socket: somebody attaching four
     // minutes into a run wants the four minutes.
-    const path = runLogPath(home, 'lingtai', 'run-late')
+    const path = runLogPath(home, 'lingtai', 'pass-late')
     const log = await openRunLog({ path })
     log.note('Read', 'before anybody was watching')
 
@@ -141,7 +141,7 @@ describe('following one', () => {
   it('treats the file going away as an ending, because it is one', async () => {
     // 0034 §4 deletes the log when the run landed and §5 when its work item
     // did. Either way there is nothing left to explain and nothing more coming.
-    const path = runLogPath(home, 'lingtai', 'run-landed')
+    const path = runLogPath(home, 'lingtai', 'pass-landed')
     const log = await openRunLog({ path })
     log.note('Read', 'a run that is about to land')
 
@@ -205,7 +205,7 @@ describe('following one', () => {
   })
 
   it('says landed when the last line does, before the file goes', async () => {
-    const path = runLogPath(home, 'lingtai', 'run-said')
+    const path = runLogPath(home, 'lingtai', 'pass-said')
     const log = await openRunLog({ path })
     log.note(RUN_LOG_END, runLogEnd(true))
     await log.close('keep')
@@ -223,7 +223,7 @@ describe('following one', () => {
   it('stops on an abort without claiming the run ended', async () => {
     // Ctrl-C, and the tab closing. A reader leaving says nothing about the run,
     // so there is no ending to report — the caller knows it detached.
-    const path = runLogPath(home, 'lingtai', 'run-going')
+    const path = runLogPath(home, 'lingtai', 'pass-going')
     const log = await openRunLog({ path })
     log.note('Read', 'still going')
 
@@ -242,7 +242,7 @@ describe('following one', () => {
     // Everything an agent controls arrives as a *detail*; the end is matched on
     // the label column, which nothing it types can reach. An agent that prints
     // this sentence verbatim must not hang up on its own reader.
-    const path = runLogPath(home, 'lingtai', 'run-liar')
+    const path = runLogPath(home, 'lingtai', 'pass-liar')
     const log = await openRunLog({ path })
     log.note('agent', runLogEnd(true))
     log.note('Edit', 'and the run carried on')
@@ -258,7 +258,7 @@ describe('following one', () => {
     // A `read` lands wherever the writer left it, so both a partial line and a
     // partial UTF-8 character are ordinary. Half a line yielded as a line is a
     // fragment of a fact read as the whole one.
-    const path = runLogPath(home, 'lingtai', 'run-split')
+    const path = runLogPath(home, 'lingtai', 'pass-split')
     const log = await openRunLog({ path })
 
     const follow = drain(path)

@@ -84,8 +84,8 @@ describe('panelOf: which tab a hash target sits inside', () => {
 })
 
 describe("rank 2's log, when its run ends", () => {
-  const RUN = 'run-52feebd1-0000-0000-0000-000000000000'
-  const NEXT = 'run-6a000000-0000-0000-0000-000000000000'
+  const RUN = 'pass-52feebd1-0000-0000-0000-000000000000'
+  const NEXT = 'pass-6a000000-0000-0000-0000-000000000000'
 
   it('keeps the run it was showing when nothing is running any more', () => {
     expect(heldRun(null, RUN)).toBe(RUN)

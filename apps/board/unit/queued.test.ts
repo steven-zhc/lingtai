@@ -15,7 +15,7 @@ import { groupQueue, queuedStanding, toCard } from '../src/lib/board.ts'
 
 function queued(over: Partial<TaskCard> & { issue: string; kind: string }): TaskCard {
   return {
-    taskId: `wi-esctest-${over.issue}`,
+    taskId: `ticket-esctest-${over.issue}`,
     project: 'esctest',
     title: `issue ${over.issue}`,
     state: 'queued',

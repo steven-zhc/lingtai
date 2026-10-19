@@ -24,7 +24,7 @@ import { runActionPipeline } from '../src/action.ts'
 import { actionsFromRecipe } from '../src/from-recipe.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
-const context = { runId: 'run-1', onSha: 'b'.repeat(40), cwd: root, env: {} }
+const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: root, env: {} }
 
 /**
  * The block as `doc/tamper-watch.md` publishes it, which is where it lives while

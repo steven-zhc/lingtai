@@ -74,7 +74,7 @@ const base = () => ({
   owner: 'steven-zhc',
   repo: PROJECT,
   base: 'develop',
-  workItemId: `wi-${PROJECT}-1`,
+  ticketId: `ticket-${PROJECT}-1`,
   headSha: '0'.repeat(40),
   stepsPassed: true,
   home,

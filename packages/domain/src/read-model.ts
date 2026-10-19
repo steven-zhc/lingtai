@@ -69,12 +69,12 @@ export const READ = [
   'PassRouted',
   'PassRestarted',
   'IntegrationRefused',
-  'WorkItemLanded',
+  'TicketLanded',
   'WorkItemBlocked',
   'WorkItemUnblocked',
-  'WorkItemClosed',
-  'WorkItemClaimed',
-  'WorkItemReleased',
+  'TicketClosed',
+  'TicketClaimed',
+  'TicketReleased',
 ] as const
 
 /** A `StepOutcome` from a particular run — `StepOutcome` itself carries no `runId` (0120 §1's own shape). */
@@ -468,11 +468,11 @@ function worktreeResultFrom(e: Envelope, runEvents: readonly Envelope[], index: 
 }
 
 /**
- * The item this run was claimed against — `WorkItemClaimed.runId` is the
+ * The item this run was claimed against — `TicketClaimed.runId` is the
  * only event that links a run back to its own stream's id (`envelope.streamId`).
  */
 function workItemIdFor(events: readonly Envelope[], runId: string): string | undefined {
-  const claimed = events.find((e) => e.type === 'WorkItemClaimed' && (e.data as { runId: string }).runId === runId)
+  const claimed = events.find((e) => e.type === 'TicketClaimed' && (e.data as { runId: string }).runId === runId)
   return claimed?.streamId
 }
 
@@ -484,18 +484,18 @@ function workItemIdFor(events: readonly Envelope[], runId: string): string | und
  * the hold's own `run.runId`, never by position: a requeued item's later
  * `WorkItemBlocked` must not answer for an earlier attempt's merge.
  */
-function holdForRun(events: readonly Envelope[], workItemId: string | undefined, runId: string): Hold | undefined {
+function holdForRun(events: readonly Envelope[], ticketId: string | undefined, runId: string): Hold | undefined {
   const blocked = events.find((x) => {
-    if (x.type !== 'WorkItemBlocked' || x.streamId !== workItemId) return false
+    if (x.type !== 'WorkItemBlocked' || x.streamId !== ticketId) return false
     const hold = (x.data as { hold: Hold }).hold
     return 'run' in hold && hold.run.runId === runId
   })
   return blocked === undefined ? undefined : (blocked.data as { hold: Hold }).hold
 }
 
-function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: string | undefined): Action['result'] {
+function mergeResultFrom(e: Envelope, events: readonly Envelope[], ticketId: string | undefined): Action['result'] {
   if (e.type === 'StepPassed') {
-    const landed = events.find((x) => x.type === 'WorkItemLanded' && x.streamId === workItemId)
+    const landed = events.find((x) => x.type === 'TicketLanded' && x.streamId === ticketId)
     const mergeSha = landed === undefined ? '' : (landed.data as { mergeCommit: string }).mergeCommit
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha } }
   }
@@ -512,7 +512,7 @@ function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: s
     return { _tag: 'Waived', waitId: syntheticWaitId(e) }
   }
   const runId = (e.data as { runId: string }).runId
-  // **By `workItemId`, and bounded to at-or-before this merge's own
+  // **By `ticketId`, and bounded to at-or-before this merge's own
   // `StepFailed`** — the integration stream (`int-<project>-<base>`) is
   // shared by every work item on that base, and one item claimed twice
   // (requeue after an earlier refusal) writes one refusal per attempt. Only
@@ -523,8 +523,7 @@ function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: s
   // own — never a later requeue's, which picking the newest overall answered
   // with instead.
   const matching = events.filter(
-    (x) =>
-      x.type === 'IntegrationRefused' && x.seq <= e.seq && (x.data as { workItemId: string }).workItemId === workItemId,
+    (x) => x.type === 'IntegrationRefused' && x.seq <= e.seq && (x.data as { ticketId: string }).ticketId === ticketId,
   )
   const refused = matching[matching.length - 1]
   if (refused === undefined) {
@@ -533,7 +532,7 @@ function mergeResultFrom(e: Envelope, events: readonly Envelope[], workItemId: s
     // this run's own `WorkItemBlocked.hold` (`MergeRefused.reason`, or
     // `Routed{when:'conflict', paths, baseSha, headSha}`), read back here
     // rather than invented.
-    const hold = holdForRun(events, workItemId, runId)
+    const hold = holdForRun(events, ticketId, runId)
     if (hold?._tag === 'MergeRefused' && hold.reason !== 'conflict') {
       return { _tag: 'Completed', integration: { _tag: 'IntegrationRefused', reason: hold.reason } }
     }
@@ -582,7 +581,7 @@ function actionFromEvent(
   recipe: Record<string, unknown> | undefined,
   runEvents: readonly Envelope[],
   index: number,
-  workItemId: string | undefined,
+  ticketId: string | undefined,
 ): Action | undefined {
   const data = e.data as { step: Step; action: string; onSha: string }
   const base = { name: data.action, onSha: data.onSha, evidence: evidenceOf(e) }
@@ -605,7 +604,7 @@ function actionFromEvent(
     case 'worktree':
       return { ...baseWithPlugin, yields: 'worktree', result: worktreeResultFrom(e, runEvents, index) as never }
     case 'merge':
-      return { ...baseWithPlugin, yields: 'merge', result: mergeResultFrom(e, events, workItemId) as never }
+      return { ...baseWithPlugin, yields: 'merge', result: mergeResultFrom(e, events, ticketId) as never }
     case 'nothing':
       return { ...baseWithPlugin, yields: 'nothing', result: nothingResultFrom(e) as never }
   }
@@ -667,13 +666,13 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
   for (const [runId, runEvents] of byRun) {
     const recipe = recipeFor(events, runId)
     const fixRounds = fixRoundsOf(events, runId)
-    const workItemId = workItemIdFor(events, runId)
+    const ticketId = workItemIdFor(events, runId)
     let current: { step: Step; round: number; actions: Action[] } | null = null
     for (let i = 0; i < runEvents.length; i++) {
       const e = runEvents[i]!
       const data = e.data as { step: Step }
       const round = roundAt(e.seq, fixRounds)
-      const action = actionFromEvent(e, events, runId, round, recipe, runEvents, i, workItemId)
+      const action = actionFromEvent(e, events, runId, round, recipe, runEvents, i, ticketId)
       // No recipe entry and no default (`shapeFor`'s own `undefined`) — an
       // ordinary historical row (`events.ts:762-766`), not a corrupt one.
       // Skip it and keep folding, rather than stopping the whole item's
@@ -1153,14 +1152,14 @@ function reasonFromHold(hold: Hold, events: readonly Envelope[], blockedSeq: big
  * because an unbounded search for the first `WorkItemUnblocked` after
  * `blockedSeq` finds the second wait's answer rather than nothing. Within
  * the window, the earliest of
- * `WorkItemUnblocked`/`ApprovalGranted`/`WorkItemClosed` is the one that
+ * `WorkItemUnblocked`/`ApprovalGranted`/`TicketClosed` is the one that
  * actually ended this wait — never `WorkItemUnblocked` unconditionally ahead
  * of `ApprovalGranted`.
  *
  * **`itemStreamId`, not type alone, bounds `nextBlocked`/`unblocked`/
  * `closed`** — the module header's own "correct on any superset" promise
  * means a slice may carry another item's events too, and a different item's
- * `WorkItemBlocked`/`WorkItemUnblocked`/`WorkItemClosed` must neither answer
+ * `WorkItemBlocked`/`WorkItemUnblocked`/`TicketClosed` must neither answer
  * for this one's wait nor cut its search window short.
  */
 function resolutionAfter(
@@ -1179,14 +1178,14 @@ function resolutionAfter(
     'run' in reason
       ? events.find((e) => e.type === 'ApprovalGranted' && e.streamId === reason.run.runId && inWindow(e.seq))
       : undefined
-  const closed = events.find((e) => e.type === 'WorkItemClosed' && e.streamId === itemStreamId && inWindow(e.seq))
+  const closed = events.find((e) => e.type === 'TicketClosed' && e.streamId === itemStreamId && inWindow(e.seq))
 
   const candidates = [unblocked, granted, closed].filter((e): e is Envelope => e !== undefined)
   if (candidates.length === 0) return null
   const first = candidates.reduce((a, b) => (a.seq < b.seq ? a : b))
 
   if (first.type === 'ApprovalGranted') return { _tag: 'Approve', onSha: (first.data as { onSha: string }).onSha }
-  if (first.type === 'WorkItemClosed') return { _tag: 'Close' }
+  if (first.type === 'TicketClosed') return { _tag: 'Close' }
   const d = first.data as { note: string; withdrawn?: true }
   if (d.withdrawn === true) return { _tag: 'Requeue' }
   if (reason._tag === 'OwnQuestion') return { _tag: 'AnswerQuestion', choice: d.note }
@@ -1208,7 +1207,7 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
 
 // --------------------------------------------------------- releaseCauseOf ----
 
-/** 0120 §5's four causes a `WorkItemReleased` may carry. */
+/** 0120 §5's four causes a `TicketReleased` may carry. */
 export type ReleaseCause =
   | Restart
   | NeverStarted
@@ -1219,7 +1218,7 @@ function sinceLastBoundary(before: readonly Envelope[]): Envelope[] {
   let start = 0
   for (let i = before.length - 1; i >= 0; i--) {
     const t = before[i]!.type
-    if (t === 'WorkItemReleased' || t === 'WorkItemLanded') {
+    if (t === 'TicketReleased' || t === 'TicketLanded') {
       start = i + 1
       break
     }
@@ -1227,14 +1226,14 @@ function sinceLastBoundary(before: readonly Envelope[]): Envelope[] {
   return before.slice(start)
 }
 
-/** One `WorkItemReleased` folded to its cause, or `null` where 0120 names none. */
+/** One `TicketReleased` folded to its cause, or `null` where 0120 names none. */
 export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause | null> {
   return events
-    .filter((e) => e.type === 'WorkItemReleased')
+    .filter((e) => e.type === 'TicketReleased')
     .map((release) => {
       // **On this item's own stream, not the last event on any stream** —
       // `PassRestarted` lives on the work item (`conduct.ts:3936`), same as
-      // `WorkItemClaimed`/`WorkItemReleased`/`WorkItemLanded` do by
+      // `TicketClaimed`/`TicketReleased`/`TicketLanded` do by
       // construction, so a run-stream or another item's event interleaved
       // in global `seq` order (the module header's own "correct on any
       // superset") must not stand in as "the last thing before this
@@ -1244,7 +1243,7 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
       if (lastBefore?.type === 'PassRestarted') {
         return { _tag: 'Restart', restart: (lastBefore.data as { restart: number }).restart }
       }
-      if (!sinceLastBoundary(beforeOnItem).some((e) => e.type === 'WorkItemClaimed')) {
+      if (!sinceLastBoundary(beforeOnItem).some((e) => e.type === 'TicketClaimed')) {
         return { _tag: 'ClaimUnconfirmed' }
       }
       const runId = (release.data as { runId: string }).runId

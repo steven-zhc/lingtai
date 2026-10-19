@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest'
 import { Hold } from '../src/hold.ts'
 import { allowedMoves } from '../src/moves.ts'
 
-const run = { runId: 'run-1' }
-const unpushedRun = { runId: 'run-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
+const run = { runId: 'pass-1' }
+const unpushedRun = { runId: 'pass-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
 
 // Populated by `parseHold` below, so "every Hold tag is covered above" checks
 // the tags the describe below actually exercised — never a literal that

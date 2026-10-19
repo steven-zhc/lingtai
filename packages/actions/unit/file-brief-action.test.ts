@@ -26,7 +26,7 @@ const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `Ste
 const ON_THE_BRANCH = '## The shape\n\nAs kept, and edited since.'
 
 const context = (design?: TheDesign): ActionContext => ({
-  runId: 'run-abc',
+  runId: 'pass-abc',
   onSha: 'a'.repeat(40),
   cwd: '/tmp/wt',
   env: {},

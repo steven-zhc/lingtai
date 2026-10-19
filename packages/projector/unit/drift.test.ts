@@ -42,7 +42,7 @@ import { ProjectionShapeError, columnOf } from '../src/store.ts'
 import type { ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
-const RUN = 'run-drift-1'
+const RUN = 'pass-drift-1'
 const RECORDED = JSON.stringify({ [`${RUN}:proposed:build`]: 'failed' })
 
 /**
@@ -61,7 +61,7 @@ async function storeWith(column: 'verdicts' | 'gates'): Promise<ProjectionStore>
       `insert into task_view
          (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      ['wi-drift-1', 'drift', '1', 'gates', RUN, RECORDED, new Date().toISOString(), 1],
+      ['ticket-drift-1', 'drift', '1', 'gates', RUN, RECORDED, new Date().toISOString(), 1],
     )
   })
   return store
@@ -148,7 +148,7 @@ async function storeWithWaitingColumn(column: 'waiting' | 'blocked'): Promise<Pr
       `insert into task_view
          (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      ['wi-drift-2', 'drift', '2', 'waiting', RUN, true, new Date().toISOString(), 1],
+      ['ticket-drift-2', 'drift', '2', 'waiting', RUN, true, new Date().toISOString(), 1],
     )
   })
   return store
@@ -188,8 +188,8 @@ const RAISED = {
   project: 'drift',
   key: 'f-1',
   issue: '251',
-  task_id: 'wi-drift-251',
-  run_id: 'run-drift-2',
+  task_id: 'ticket-drift-251',
+  run_id: 'pass-drift-2',
   step: 'proposed',
   action: 'review',
   on_sha: 'e'.repeat(40),

@@ -98,7 +98,7 @@ describe('a closed item in the archive', () => {
   // fields this test turns on — `state` and `updatedAt` — are the two a loose
   // cast would have let through wrong, and one of them did.
   const task = (over: Partial<TaskCard> = {}): TaskCard => ({
-    taskId: 'wi-lingtai-136',
+    taskId: 'ticket-lingtai-136',
     project: 'lingtai',
     issue: '136',
     title: 'A refused review buys a fixing agent',

@@ -71,7 +71,7 @@ const actionWith = (reply: RunOutcome, diff = 'diff --git a/x b/x\n+1', prompt =
     },
   )
 
-const context = { runId: 'run-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
+const context = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 
 const finding = (over: Record<string, unknown> = {}) => ({
   file: 'src/x.ts',
@@ -351,7 +351,7 @@ describe('asking the reviewer again after a fix', () => {
    * `recheck` empty, and that round's review used to run under the id round 1
    * had already used. Claude Code refuses a `--session-id` it has been given
    * before, so it died in one second with no receipt, the round was spent, and
-   * `wi-lingtai-192` reached a person with no verdict about its diff at all.
+   * `ticket-lingtai-192` reached a person with no verdict about its diff at all.
    *
    * The runtime here refuses a repeat the way the binary does, through the same
    * `sessionIdFor` the adapter derives it with — so what is pinned is the UUID
@@ -368,7 +368,7 @@ describe('asking the reviewer again after a fix', () => {
       runtime.seen.push(request)
       const session = sessionIdFor(request.runId)
       if (taken.has(session)) {
-        // `run-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
+        // `pass-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
         return outcome({
           exitCode: 1,
           turns: 0,
@@ -706,7 +706,7 @@ describe('the action', () => {
     expect(runtime.seen[0]?.traceTools).toBe(true)
     expect(lines).toEqual([
       'proposed:review | started · agent on aaaaaaa',
-      expect.stringMatching(/^proposed:review \| review  run-abc:review:review:aaaaaaa · \d+ bytes of diff$/),
+      expect.stringMatching(/^proposed:review \| review  pass-abc:review:review:aaaaaaa · \d+ bytes of diff$/),
       'proposed:review | Read    src/x.ts',
       'proposed:review | receipt  success · 7 turns · $0.42 · exit 0',
       expect.stringMatching(/^proposed:review \| passed · after \d+s$/),
@@ -924,7 +924,7 @@ describe('the action', () => {
    * This test asserted `failed` for two years, and the verdict it asserted is
    * the one a reviewer that read the diff and refused it returns. So
    * the conductor bought a fix round for an action that judged nothing, and on
-   * `run-9e510ffc` the fixing agent spent fourteen seconds working out that
+   * `pass-9e510ffc` the fixing agent spent fourteen seconds working out that
    * *the review never looked at the change*. The evidence sentence had said so
    * all along — and a sentence is not something `decideFix` reads.
    *

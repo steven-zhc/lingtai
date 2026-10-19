@@ -42,7 +42,7 @@ import {
 
 // --------------------------------------------------------------- fixtures ----
 
-const context: ActionContext = { runId: 'run-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
+const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
 
 const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [] }
 
@@ -2414,7 +2414,7 @@ describe('end is told which of the four endings it is running for', () => {
     expect(
       outcomeOf({
         _tag: 'WaitOnPerson',
-        reason: { _tag: 'AgentCrashed', run: { runId: 'run-1' }, step: 'merge', cause: 'crash', detail: '…' },
+        reason: { _tag: 'AgentCrashed', run: { runId: 'pass-1' }, step: 'merge', cause: 'crash', detail: '…' },
       }),
     ).toBe('blocked')
     expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } })).toBe('failed')

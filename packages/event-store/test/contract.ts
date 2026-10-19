@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest'
 import { ConcurrencyError, type EventStore } from '../src/event-store.ts'
 
 const claimed = (runId: string) => ({
-  type: 'WorkItemClaimed' as const,
+  type: 'TicketClaimed' as const,
   actor: 'conductor',
   data: { runId, worker: 'test', title: null, kind: null },
 })
@@ -61,21 +61,21 @@ export function describeEventStoreContract(
       const s = await store()
       const id = freshStream()
 
-      const written = await s.append(id, 0, [claimed('run-1')])
+      const written = await s.append(id, 0, [claimed('pass-1')])
 
       expect(written.map((e) => e.version)).toEqual([1])
       expect(written[0]?.streamId).toBe(id)
-      expect(written[0]?.type).toBe('WorkItemClaimed')
+      expect(written[0]?.type).toBe('TicketClaimed')
     })
 
     it('numbers a batch in the order it was given', async () => {
       const s = await store()
       const id = freshStream()
 
-      const written = await s.append(id, 0, [claimed('run-1'), claimed('run-2')])
+      const written = await s.append(id, 0, [claimed('pass-1'), claimed('pass-2')])
 
       expect(written.map((e) => e.version)).toEqual([1, 2])
-      expect(written.map((e) => (e.data as { runId: string }).runId)).toEqual(['run-1', 'run-2'])
+      expect(written.map((e) => (e.data as { runId: string }).runId)).toEqual(['pass-1', 'pass-2'])
     })
 
     it('refuses a stream that has moved', async () => {
@@ -83,9 +83,9 @@ export function describeEventStoreContract(
       // model: two writers that read the same version cannot both append.
       const s = await store()
       const id = freshStream()
-      await s.append(id, 0, [claimed('run-1')])
+      await s.append(id, 0, [claimed('pass-1')])
 
-      await expect(s.append(id, 0, [claimed('run-2')])).rejects.toThrow(ConcurrencyError)
+      await expect(s.append(id, 0, [claimed('pass-2')])).rejects.toThrow(ConcurrencyError)
     })
 
     it('leaves nothing behind when a batch conflicts', async () => {
@@ -93,12 +93,12 @@ export function describeEventStoreContract(
       // what must not happen is that it lands and the second does not.
       const s = await store()
       const id = freshStream()
-      await s.append(id, 0, [claimed('run-1')])
+      await s.append(id, 0, [claimed('pass-1')])
 
-      await expect(s.append(id, 0, [claimed('run-2'), claimed('run-3')])).rejects.toThrow(ConcurrencyError)
+      await expect(s.append(id, 0, [claimed('pass-2'), claimed('pass-3')])).rejects.toThrow(ConcurrencyError)
 
       const back = await s.read(id)
-      expect(back.map((e) => (e.data as { runId: string }).runId)).toEqual(['run-1'])
+      expect(back.map((e) => (e.data as { runId: string }).runId)).toEqual(['pass-1'])
     })
 
     it('writes nothing when the batch has a bad event in it', async () => {
@@ -109,7 +109,7 @@ export function describeEventStoreContract(
       const id = freshStream()
 
       await expect(
-        s.append(id, 0, [claimed('run-1'), { type: 'NoSuchEvent', actor: 'conductor', data: {} }]),
+        s.append(id, 0, [claimed('pass-1'), { type: 'NoSuchEvent', actor: 'conductor', data: {} }]),
       ).rejects.toThrow()
 
       expect(await s.read(id)).toEqual([])
@@ -119,13 +119,13 @@ export function describeEventStoreContract(
       const s = await store()
       const id = freshStream()
 
-      await expect(s.append(id, 0, [{ ...claimed('run-1'), actor: '' }])).rejects.toThrow()
+      await expect(s.append(id, 0, [{ ...claimed('pass-1'), actor: '' }])).rejects.toThrow()
     })
 
     it('refuses a negative expected version', async () => {
       const s = await store()
 
-      await expect(s.append(freshStream(), -1, [claimed('run-1')])).rejects.toThrow(RangeError)
+      await expect(s.append(freshStream(), -1, [claimed('pass-1')])).rejects.toThrow(RangeError)
     })
 
     it('appends nothing for an empty batch', async () => {
@@ -140,8 +140,8 @@ export function describeEventStoreContract(
       const s = await store()
       const mine = freshStream()
       const other = freshStream()
-      await s.append(mine, 0, [claimed('run-1'), claimed('run-2')])
-      await s.append(other, 0, [claimed('run-3')])
+      await s.append(mine, 0, [claimed('pass-1'), claimed('pass-2')])
+      await s.append(other, 0, [claimed('pass-3')])
 
       const back = await s.read(mine)
 
@@ -152,7 +152,7 @@ export function describeEventStoreContract(
     it('reads from a version, inclusive', async () => {
       const s = await store()
       const id = freshStream()
-      await s.append(id, 0, [claimed('run-1'), claimed('run-2'), claimed('run-3')])
+      await s.append(id, 0, [claimed('pass-1'), claimed('pass-2'), claimed('pass-3')])
 
       expect((await s.read(id, 2)).map((e) => e.version)).toEqual([2, 3])
     })
@@ -163,8 +163,8 @@ export function describeEventStoreContract(
       const s = await store()
       const a = freshStream()
       const b = freshStream()
-      const first = await s.append(a, 0, [claimed('run-1')])
-      const second = await s.append(b, 0, [claimed('run-2')])
+      const first = await s.append(a, 0, [claimed('pass-1')])
+      const second = await s.append(b, 0, [claimed('pass-2')])
 
       expect(second[0]!.seq).toBeGreaterThan(first[0]!.seq)
 
@@ -178,7 +178,7 @@ export function describeEventStoreContract(
       const s = await store()
       const id = freshStream()
       const before = await s.readAll(0n, 1)
-      await s.append(id, 0, [claimed('run-1'), claimed('run-2'), claimed('run-3')])
+      await s.append(id, 0, [claimed('pass-1'), claimed('pass-2'), claimed('pass-3')])
 
       expect(before.length).toBeLessThanOrEqual(1)
       expect((await s.readAll(0n, 2)).length).toBeLessThanOrEqual(2)
@@ -188,7 +188,7 @@ export function describeEventStoreContract(
       const s = await store()
       const id = freshStream()
 
-      const [written] = await s.append(id, 0, [claimed('run-1')])
+      const [written] = await s.append(id, 0, [claimed('pass-1')])
 
       expect(written!.at).toBeInstanceOf(Date)
       expect(Number.isNaN(written!.at.getTime())).toBe(false)

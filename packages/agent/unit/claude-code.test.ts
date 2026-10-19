@@ -172,15 +172,15 @@ describe('spawnEnvFor', () => {
   })
 
   it('passes every other key through unchanged', () => {
-    expect(spawnEnvFor({ PATH: '/usr/bin', LINGTAI_RUN_ID: 'run-1' })).toEqual({
+    expect(spawnEnvFor({ PATH: '/usr/bin', LINGTAI_RUN_ID: 'pass-1' })).toEqual({
       PATH: '/usr/bin',
-      LINGTAI_RUN_ID: 'run-1',
+      LINGTAI_RUN_ID: 'pass-1',
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
     })
   })
 
   it("adds exactly one key — the input's own keys plus this one", () => {
-    const input = { PATH: '/usr/bin', LINGTAI_RUN_ID: 'run-1' }
+    const input = { PATH: '/usr/bin', LINGTAI_RUN_ID: 'pass-1' }
     expect(Object.keys(spawnEnvFor(input)).sort()).toEqual(
       [...Object.keys(input), 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'].sort(),
     )
@@ -193,7 +193,7 @@ describe('spawnEnvFor', () => {
  */
 describe("argsFor's --max-budget-usd", () => {
   const invocable = {
-    runId: 'run-1',
+    runId: 'pass-1',
     cwd: '/tmp/tree',
     settingsPath: '/state/runs/run-1/settings.json',
     env: {},

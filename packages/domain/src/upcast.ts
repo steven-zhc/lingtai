@@ -84,7 +84,7 @@ export const UPCASTERS: UpcastRegistry = {
       })),
     }),
   },
-  WorkItemClaimed: {
+  TicketClaimed: {
     /**
      * 1 → 2: `title` and `kind` were added when the queue left the log (0012).
      * A v1 claim recorded neither, and null says so — the upcaster is handed a
@@ -171,7 +171,7 @@ export const UPCASTERS: UpcastRegistry = {
     /**
      * 1 → 2: `attempt` and `retrying` are dropped with 0057 §4's retry (`#234`).
      * The second step in this file that removes a field rather than adding one,
-     * and it is a step for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is
+     * and it is a step for `TicketClaimed`'s `leaseUntilMs` reason: no event is
      * rewritten, so the reader is what stops believing them. There is nothing to
      * recover — the retry those two numbers described reused the crashed
      * attempt's session id and so ran nothing, which is why it is gone.

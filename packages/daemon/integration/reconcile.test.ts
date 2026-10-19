@@ -44,7 +44,7 @@ async function plant(runId: string): Promise<void> {
  * now (0027), so every fixture here has to say who took it.
  */
 const claim = (runId: string, worker: string, title: string | null = null) => ({
-  type: 'WorkItemClaimed',
+  type: 'TicketClaimed',
   actor: 'conductor',
   data: { runId, worker, title, kind: 'bug' },
 })
@@ -59,7 +59,7 @@ const started = (taskId: string) => ({
   type: 'RunStarted',
   actor: 'conductor',
   data: {
-    workItemId: taskId,
+    ticketId: taskId,
     runtime: 'claude-code',
     model: 'm',
     promptVersion: 'p',
@@ -77,16 +77,16 @@ beforeAll(async () => {
 
 describe('reconciliation', () => {
   it('removes a worktree the log says is finished, and leaves a live one alone', async () => {
-    const dead = `run-${PROJECT}-dead`
-    const live = `run-${PROJECT}-live`
-    const deadTask = `wi-${PROJECT}-1`
-    const liveTask = `wi-${PROJECT}-2`
+    const dead = `pass-${PROJECT}-dead`
+    const live = `pass-${PROJECT}-live`
+    const deadTask = `ticket-${PROJECT}-1`
+    const liveTask = `ticket-${PROJECT}-2`
     for (const id of [dead, live, deadTask, liveTask]) created.add(id)
 
     // Landed: the run is over, the directory is not.
     await store.append(deadTask, 0, [
       claim(dead, ME),
-      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'develop' } },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'develop' } },
     ])
     await store.append(dead, 0, [started(deadTask)])
 
@@ -113,8 +113,8 @@ describe('reconciliation', () => {
    * conductor named on the claim is not the one running this pass.
    */
   it('treats a claim by another conductor as finished', async () => {
-    const stale = `run-${PROJECT}-stale`
-    const staleTask = `wi-${PROJECT}-3`
+    const stale = `pass-${PROJECT}-stale`
+    const staleTask = `ticket-${PROJECT}-3`
     created.add(stale)
     created.add(staleTask)
 
@@ -143,7 +143,7 @@ describe('reconciliation', () => {
    * mysteries is how you stop being able to explain them.
    */
   it('reports a worktree it cannot attribute, and does not remove it', async () => {
-    const nameless = `run-${PROJECT}-nameless`
+    const nameless = `pass-${PROJECT}-nameless`
     await plant(nameless)
 
     const found = await reconcile({ home, store, worker: ME })
@@ -165,16 +165,16 @@ describe('reconciliation', () => {
    * about the set.
    */
   it("reaps a landed item's log, keeps an unfinished one's, and reports a mystery", async () => {
-    const landed = `run-${PROJECT}-log-landed`
-    const waiting = `run-${PROJECT}-log-waiting`
-    const nameless = `run-${PROJECT}-log-nameless`
-    const landedTask = `wi-${PROJECT}-10`
-    const waitingTask = `wi-${PROJECT}-11`
+    const landed = `pass-${PROJECT}-log-landed`
+    const waiting = `pass-${PROJECT}-log-waiting`
+    const nameless = `pass-${PROJECT}-log-nameless`
+    const landedTask = `ticket-${PROJECT}-10`
+    const waitingTask = `ticket-${PROJECT}-11`
     for (const id of [landed, waiting, landedTask, waitingTask]) created.add(id)
 
     await store.append(landedTask, 0, [
       claim(landed, ME),
-      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'def5678', base: 'main' } },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'def5678', base: 'main' } },
     ])
     await store.append(landed, 0, [started(landedTask)])
 
@@ -276,8 +276,8 @@ describe('a conductor that replaces a dead one', () => {
         lastSeq: null,
       },
     ]
-    const taskId = `wi-${project}-87`
-    const runId = `run-${project}-orphan`
+    const taskId = `ticket-${project}-87`
+    const runId = `pass-${project}-orphan`
     created.add(taskId)
     created.add(runId)
 
@@ -315,7 +315,7 @@ describe('a conductor that replaces a dead one', () => {
     // this same row and reaches the same answer, which it could not do if
     // `queued` were a function of the current time.
     const types = (await store.read(taskId)).map((e) => e.type)
-    expect(types).toEqual(['WorkItemClaimed', 'WorkItemReleased'])
+    expect(types).toEqual(['TicketClaimed', 'TicketReleased'])
 
     await build()
     expect((await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).map((r) => r.issue)).toEqual([
@@ -338,13 +338,13 @@ describe('a conductor that replaces a dead one', () => {
         lastSeq: null,
       },
     ]
-    const taskId = `wi-${project}-1`
+    const taskId = `ticket-${project}-1`
     created.add(taskId)
-    await store.append(taskId, 0, [claim(`run-${project}-mine`, ME)])
+    await store.append(taskId, 0, [claim(`pass-${project}-mine`, ME)])
 
     const found = await reconcile({ home: quiet, store, worker: ME, projects })
 
     expect(found.find((f) => f.stream === taskId)).toBeUndefined()
-    expect((await store.read(taskId)).map((e) => e.type)).toEqual(['WorkItemClaimed'])
+    expect((await store.read(taskId)).map((e) => e.type)).toEqual(['TicketClaimed'])
   })
 })

@@ -216,7 +216,7 @@ export interface InitWorld {
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
   registerLocal: (payload: RegisterLocalPayload) => Promise<string>
-  /** `FirstProjectWorld.history` (#396) — `wi-<project>-*` streams already in the log for this project. */
+  /** `FirstProjectWorld.history` (#396) — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Promise<readonly string[]>
   /**
    * The report `lingtai doctor` would print, formatted — printed at the end

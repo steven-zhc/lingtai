@@ -91,8 +91,8 @@ import type { DaemonStore } from './store.ts'
  * previous one is mid-agent, dozens of times per run.
  */
 export const COMPLETION_EVENTS = [
-  'WorkItemLanded',
-  'WorkItemReleased',
+  'TicketLanded',
+  'TicketReleased',
   ...WAIT_EVENTS,
   'IntegrationSucceeded',
   'IntegrationRefused',
@@ -150,7 +150,7 @@ export interface EventSubscriber {
    * when it fails.
    *
    * Carried rather than read off the event, because the event cannot say: of
-   * the four types Lingtai's own recipe declares, three are on a `run-<uuid>`
+   * the four types Lingtai's own recipe declares, three are on a `pass-<uuid>`
    * stream or an `int-{project}-{base}` lane, and cutting either at its last
    * dash names a project that does not exist. The subscriber already knows.
    */
@@ -368,9 +368,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     if (event.type === 'PluginFailed') return
 
     // The subscriber's own project when it has one. Otherwise only what the
-    // event names *exactly* — its `wi-` stream or its `workItemId` — and null
+    // event names *exactly* — its `ticket-` stream or its `ticketId` — and null
     // rather than a guess: `parseWorkItemStream` cuts any id at its last dash,
-    // so `run-3f2a…-0123` would be recorded as project `run-3f2a…`.
+    // so `pass-3f2a…-0123` would be recorded as project `pass-3f2a…`.
     const project = owner ?? workItemOf(event)?.project ?? null
     const data = { name, eventType: event.type, project, reason }
     recording = recording

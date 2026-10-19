@@ -64,8 +64,8 @@ describe('the approval a refusal reaches a person with', () => {
       },
       fakePorts(did, store),
     )
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
-    return { result, run, item: await store.read(`wi-${PROJECT}-7`) }
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    return { result, run, item: await store.read(`ticket-${PROJECT}-7`) }
   }
 
   it('is named for itself, so the refusal it reports is not overwritten', async () => {

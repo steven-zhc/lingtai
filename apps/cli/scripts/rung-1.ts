@@ -111,7 +111,7 @@ if (env.refusal) {
   process.exit(1)
 }
 
-const runId = `run-rung1-${crypto.randomUUID().slice(0, 8)}`
+const runId = `pass-rung1-${crypto.randomUUID().slice(0, 8)}`
 const worktree = await provisionWorktree({
   project: repo,
   owner,
@@ -131,7 +131,7 @@ done(`${worktree.path} at ${worktree.baseSha.slice(0, 7)}`)
 const store = memory()
 const result = await prepareWorktree({
   runId,
-  workItemId: `wi-${repo}-0`,
+  ticketId: `ticket-${repo}-0`,
   cwd: worktree.path,
   env: runnableEnv(env.values),
   steps: recipe.prepare,

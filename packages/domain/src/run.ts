@@ -1,5 +1,5 @@
 /**
- * The Run aggregate: `run-{ulid}`, alive for hours, noisy.
+ * The Run aggregate: `pass-{ulid}`, alive for hours, noisy.
  *
  * This is where the old loop's telemetry went to die. Guard blocks went to
  * stderr inside a log nobody parsed — 132 of them across 56 of 73 runs, 77% of
@@ -101,7 +101,7 @@ export type RunStatus = RunLifecycle['status']
 export interface RunState {
   lifecycle: RunLifecycle
 
-  workItemId: string | null
+  ticketId: string | null
   runtime: RuntimeId | null
   model: string | null
   promptVersion: string | null
@@ -151,7 +151,7 @@ export interface RunState {
 
 export const emptyRun: RunState = {
   lifecycle: { status: 'pending' },
-  workItemId: null,
+  ticketId: null,
   runtime: null,
   model: null,
   promptVersion: null,
@@ -198,7 +198,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...state,
         ...at,
         lifecycle: { status: 'running' },
-        workItemId: d.workItemId,
+        ticketId: d.ticketId,
         runtime: d.runtime,
         model: d.model,
         promptVersion: d.promptVersion,

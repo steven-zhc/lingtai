@@ -166,9 +166,9 @@ export function headOf(run: readonly Envelope[]): string | null {
  * cloned yet is a fact, and "no file can be read" is the honest brief for it.
  */
 export async function gatherEvidence(request: DiscussionRequest): Promise<DiscussionEvidence> {
-  const parsed = parseWorkItemStream(request.workItemId)
+  const parsed = parseWorkItemStream(request.ticketId)
   const project = parsed?.project ?? ''
-  const own = await eventStore.read(request.workItemId)
+  const own = await eventStore.read(request.ticketId)
   const item = reduceWorkItem(own)
 
   const runIds = [...item.runs]
@@ -213,7 +213,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   }
 
   return {
-    workItemId: request.workItemId,
+    ticketId: request.ticketId,
     attempt: request.attempt,
     ticket,
     ticketProblem,
@@ -271,7 +271,7 @@ export async function answerDiscussion(
   request: DiscussionRequest,
   log: (line: string) => void = () => {},
 ): Promise<void> {
-  const project = parseWorkItemStream(request.workItemId)?.project ?? ''
+  const project = parseWorkItemStream(request.ticketId)?.project ?? ''
   const evidence = await gatherEvidence(request)
   const { cwd, settingsPath } = await prepare(request.chatId)
   /**
@@ -364,7 +364,7 @@ export async function answerDiscussion(
   }
 
   try {
-    say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(' · ')}`)
+    say(`discussion ${request.chatId} on ${request.ticketId}: ${evidence.reading.join(' · ')}`)
 
     const held = await holdDiscussion(
       {

@@ -61,8 +61,8 @@ import type { Tickets } from './ticket-store.ts'
  * for ever, which is the dead end #84 is about. The board and the CLI deciding
  * about one item are on one machine, which is all a file lock covers.
  */
-async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
-  const got = await createFileLocker().tryLock(`decide:${workItemId}`, 'lingtai-decide')
+async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
+  const got = await createFileLocker().tryLock(`decide:${ticketId}`, 'lingtai-decide')
   if (!got.ok) return busy()
   try {
     return await act()
@@ -170,22 +170,22 @@ export interface ApproveOptions {
 }
 
 export type ApproveResult =
-  | { ok: true; workItemId: string; runId: string; mergeCommit: string }
-  | { ok: false; workItemId: string; reason: string; detail: string }
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string }
+  | { ok: false; ticketId: string; reason: string; detail: string }
 
 export async function approve(options: ApproveOptions): Promise<ApproveResult> {
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
   // Held through the merge and the append that ends it, so a requeue cannot
   // put the item back in the queue while this is landing it. See `deciding`.
   return deciding<ApproveResult>(
-    workItemId,
+    ticketId,
     () => ({
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'busy',
-      detail: `${workItemId} is being decided by someone else right now. Nothing was merged — reload and read it again.`,
+      detail: `${ticketId} is being decided by someone else right now. Nothing was merged — reload and read it again.`,
     }),
-    () => approveHolding(options, workItemId),
+    () => approveHolding(options, ticketId),
   )
 }
 
@@ -196,14 +196,14 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
  * it can, and `index.ts` does not re-export it, so nothing outside this
  * module or a test gains a second way to grant an approval unlocked.
  */
-export async function approveHolding(options: ApproveOptions, workItemId: string): Promise<ApproveResult> {
+export async function approveHolding(options: ApproveOptions, ticketId: string): Promise<ApproveResult> {
   const store = options.store ?? eventStore
   const log = options.log ?? (() => {})
 
-  const item = reduceWorkItem(await store.read(workItemId))
+  const item = reduceWorkItem(await store.read(ticketId))
   const runId = item.runs[item.runs.length - 1]
   if (!runId) {
-    return { ok: false, workItemId, reason: 'no-run', detail: `${workItemId} has never been run` }
+    return { ok: false, ticketId, reason: 'no-run', detail: `${ticketId} has never been run` }
   }
 
   const run = reduceRun(await store.read(runId))
@@ -212,7 +212,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
     // than saying it is not the right one.
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'not-awaiting-approval',
       detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
     }
@@ -225,9 +225,9 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
   if (item.lifecycle.status !== 'blocked' || (item.lifecycle.runId !== null && item.lifecycle.runId !== runId)) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'not-blocked',
-      detail: `${workItemId} is ${item.lifecycle.status}, not held on ${runId} — nothing was merged`,
+      detail: `${ticketId} is ${item.lifecycle.status}, not held on ${runId} — nothing was merged`,
     }
   }
 
@@ -237,7 +237,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
   if (options.onSha && options.onSha !== onSha) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'stale',
       detail:
         `the card showed ${options.onSha.slice(0, 7)} and the run is now asking about ` +
@@ -255,7 +255,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
   if (refusing.length > 0 && !note) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'reason-required',
       detail:
         `${refusing.join(', ')} still ${refusing.length === 1 ? 'refuses' : 'refuse'} ${onSha.slice(0, 7)}, ` +
@@ -272,7 +272,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
   if (remoteHead !== onSha) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'stale',
       detail:
         `the approval is for ${onSha.slice(0, 7)} and ${branch} is now ` +
@@ -305,7 +305,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
   } catch (err) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'recipe',
       detail: `${(err as Error).message}. Nothing was merged.`,
     }
@@ -332,7 +332,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
     if (!(err instanceof ConcurrencyError)) throw err
     return {
       ok: false,
-      workItemId,
+      ticketId,
       reason: 'stale',
       detail: `${runId} moved while this was being approved. Nothing was merged — reload and read it again.`,
     }
@@ -348,7 +348,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
     repo: options.client.repo,
     base: options.base,
     branch,
-    workItemId,
+    ticketId,
     headSha: onSha,
     // The gates already ran and their verdicts are on the log against this same
     // sha. A person approving a red build is granting a waiver, and the log
@@ -382,7 +382,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
      * nothing. Which means this path is now the *only* one a refused merge
      * takes, from here or from a pass.
      */
-    const blocked = await store.read(workItemId)
+    const blocked = await store.read(ticketId)
     // `diagnoseRefusal` is the one function behind both tags: a pass's own
     // `conflict`/`verify-failed` refusal is `Routed` rather than this variant
     // since #452 (`hold-of.ts`'s step 1), carrying its own composed `why` —
@@ -390,7 +390,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
     // reading of a `Routed` hold each reach `diagnoseRefusal` independently,
     // so `done` and `recommendation`, the owner sentence and the move, cannot
     // describe the same conflict differently (#83).
-    const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, workItemId, branch)
+    const integrationRefusal = await lastIntegrationRefusal(store, options.project, options.base, ticketId, branch)
     const { event, question } = approvedMergeRefusedOf({
       // No `unpushed`: the run is bound to `onSha`, already on origin.
       runId,
@@ -403,7 +403,7 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
       headSha: integrationRefusal?.headSha ?? null,
     })
     const ended = resolveEndActions(blocked, end, 'blocked')
-    await store.append(workItemId, blocked.length, [
+    await store.append(ticketId, blocked.length, [
       // `ApprovalGranted` was already appended above: this approval is spent,
       // which is `approvedMergeRefusedOf`'s own `afterApproval: true`.
       { ...event, actor: 'conductor' },
@@ -412,35 +412,35 @@ export async function approveHolding(options: ApproveOptions, workItemId: string
     await tellGitHubAbout({
       store,
       github: options.client,
-      workItemId,
+      ticketId,
       question,
       labels: labelsFor('waiting'),
       appended: ended,
     })
-    return { ok: false, workItemId, reason: merged.reason, detail: merged.detail }
+    return { ok: false, ticketId, reason: merged.reason, detail: merged.detail }
   }
 
-  const landed = await store.read(workItemId)
+  const landed = await store.read(ticketId)
   // The same append, so an item cannot land without its `end` point being
   // resolved in the same transaction.
   const ended = resolveEndActions(landed, end, 'landed')
-  await store.append(workItemId, landed.length, [
+  await store.append(ticketId, landed.length, [
     {
-      type: 'WorkItemLanded',
+      type: 'TicketLanded',
       actor: 'conductor',
-      data: parsePayload('WorkItemLanded', { mergeCommit: merged.mergeCommit, base: options.base }),
+      data: parsePayload('TicketLanded', { mergeCommit: merged.mergeCommit, base: options.base }),
     },
     ...ended,
   ])
   await tellGitHubAbout({
     store,
     github: options.client,
-    workItemId,
+    ticketId,
     labels: labelsFor('landed'),
     appended: ended,
   })
   log(`landed ${merged.mergeCommit.slice(0, 7)} on ${options.base}`)
-  return { ok: true, workItemId, runId, mergeCommit: merged.mergeCommit }
+  return { ok: true, ticketId, runId, mergeCommit: merged.mergeCommit }
 }
 
 /**
@@ -488,9 +488,9 @@ export async function requeue(options: {
    */
   onQuestion?: 'withdraw' | 'refuse'
   store?: EventStore
-}): Promise<{ ok: boolean; workItemId: string; detail: string }> {
+}): Promise<{ ok: boolean; ticketId: string; detail: string }> {
   const store = options.store ?? eventStore
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
 
   // **Never while an approval is acting on the item** (#150). Requeue sits
   // beside Approve now, and an approval that has appended and is still merging
@@ -499,13 +499,13 @@ export async function requeue(options: {
   // that arrives after this reads the item, which is no longer holding it. See
   // `deciding`.
   return deciding(
-    workItemId,
+    ticketId,
     () => ({
       ok: false,
-      workItemId,
-      detail: `${workItemId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
+      ticketId,
+      detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    () => requeueHolding(options, store, workItemId),
+    () => requeueHolding(options, store, ticketId),
   )
 }
 
@@ -513,17 +513,17 @@ export async function requeue(options: {
 export async function requeueHolding(
   options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse' },
   store: EventStore,
-  workItemId: string,
-): Promise<{ ok: boolean; workItemId: string; detail: string }> {
-  const events = await store.read(workItemId)
+  ticketId: string,
+): Promise<{ ok: boolean; ticketId: string; detail: string }> {
+  const events = await store.read(ticketId)
   const item = reduceWorkItem(events)
   if (item.lifecycle.status !== 'blocked') {
     // Saying which state it is in, for the reason `approve` does: "not blocked"
     // sends somebody nowhere, and "it is already running" answers the question.
     return {
       ok: false,
-      workItemId,
-      detail: `${workItemId} is ${item.lifecycle.status}, not blocked`,
+      ticketId,
+      detail: `${ticketId} is ${item.lifecycle.status}, not blocked`,
     }
   }
   // **A block no run holds is a question about the ticket (#147), and a requeue
@@ -542,8 +542,8 @@ export async function requeueHolding(
   if (withdrawn && options.onQuestion === 'refuse') {
     return {
       ok: false,
-      workItemId,
-      detail: `${workItemId} is asking a question before any run — answer it first`,
+      ticketId,
+      detail: `${ticketId} is asking a question before any run — answer it first`,
     }
   }
 
@@ -551,13 +551,13 @@ export async function requeueHolding(
   // verbatim (#424) — a blank note is stored as empty, never invented.
   const note = options.note.trim() ? options.note : ''
 
-  await store.append(workItemId, item.version, [
+  await store.append(ticketId, item.version, [
     { ...waitResolvedOf(wait.reason, { _tag: 'Requeue' }, options.by, note), actor: options.by },
   ])
 
   return {
     ok: true,
-    workItemId,
+    ticketId,
     detail: withdrawn
       ? `question withdrawn, by ${options.by} — back in the queue, and no attempt is told it`
       : `back in the queue, by ${options.by}`,
@@ -585,23 +585,23 @@ export async function waive(options: {
   reason: string
   onSha?: string
   store?: EventStore
-}): Promise<{ ok: boolean; workItemId: string; detail: string }> {
+}): Promise<{ ok: boolean; ticketId: string; detail: string }> {
   const store = options.store ?? eventStore
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
 
   if (!options.reason.trim()) {
     // The one rule. A waiver with no reason is the silent waiver by another
     // name, and the field being present is not the same as it being filled in.
-    return { ok: false, workItemId, detail: 'a waiver needs a reason' }
+    return { ok: false, ticketId, detail: 'a waiver needs a reason' }
   }
 
-  const item = reduceWorkItem(await store.read(workItemId))
+  const item = reduceWorkItem(await store.read(ticketId))
   const runId = item.runs[item.runs.length - 1]
-  if (!runId) return { ok: false, workItemId, detail: `${workItemId} has never been run` }
+  if (!runId) return { ok: false, ticketId, detail: `${ticketId} has never been run` }
 
   const events = await store.read(runId)
   const run = reduceRun(events)
-  if (!run.headSha) return { ok: false, workItemId, detail: `${runId} has produced no diff to waive` }
+  if (!run.headSha) return { ok: false, ticketId, detail: `${runId} has produced no diff to waive` }
 
   // **A waiver names a gate the run reported, or it is refused** (#150). The
   // board's card once sent `"build"` for whatever had refused, so a waived
@@ -618,7 +618,7 @@ export async function waive(options: {
   if (!run.steps[options.step] && !planned.includes(options.step)) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       detail: `${runId} reported no step named "${options.step}" — a waiver can only name one it did`,
     }
   }
@@ -629,7 +629,7 @@ export async function waive(options: {
   if (options.onSha && options.onSha !== run.headSha) {
     return {
       ok: false,
-      workItemId,
+      ticketId,
       detail: `the card showed ${options.onSha.slice(0, 7)} and the branch is now ${run.headSha.slice(0, 7)}`,
     }
   }
@@ -643,7 +643,7 @@ export async function waive(options: {
 
   return {
     ok: true,
-    workItemId,
+    ticketId,
     detail: `${options.step} waived on ${run.headSha.slice(0, 7)} by ${options.by}: ${options.reason}`,
   }
 }

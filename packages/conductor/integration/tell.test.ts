@@ -24,7 +24,7 @@ const created = new Set<string>()
 let store: EventStore
 
 const wi = (n: number) => {
-  const id = `wi-${PROJECT}-${n}`
+  const id = `ticket-${PROJECT}-${n}`
   created.add(id)
   return id
 }
@@ -85,7 +85,7 @@ describe('tellGitHub', () => {
     await tellGitHub({
       store,
       github: gh.channel,
-      workItemId: id,
+      ticketId: id,
       change: { kind: 'labels', labels: ['lingtai:working'] },
     })
 
@@ -104,7 +104,7 @@ describe('tellGitHub', () => {
     await tellGitHub({
       store,
       github: gh.channel,
-      workItemId: id,
+      ticketId: id,
       change: { kind: 'comment', body: '**Lingtai is waiting on you.**' },
     })
     const e = await last(id)
@@ -115,7 +115,7 @@ describe('tellGitHub', () => {
   it('records a close', async () => {
     const id = wi(3)
     const gh = fakeGitHub()
-    await tellGitHub({ store, github: gh.channel, workItemId: id, change: { kind: 'closed' } })
+    await tellGitHub({ store, github: gh.channel, ticketId: id, change: { kind: 'closed' } })
     expect(gh.calls).toContain('closeIssue')
     expect((await last(id))?.data).toMatchObject({ change: 'closed' })
   })
@@ -124,7 +124,7 @@ describe('tellGitHub', () => {
     const id = wi(4)
     const gh = fakeGitHub({ fail: true })
     await expect(
-      tellGitHub({ store, github: gh.channel, workItemId: id, change: { kind: 'closed' } }),
+      tellGitHub({ store, github: gh.channel, ticketId: id, change: { kind: 'closed' } }),
     ).resolves.toBeUndefined()
 
     const e = await last(id)
@@ -135,7 +135,7 @@ describe('tellGitHub', () => {
   it('does nothing at all for a stream id that is not a work item', async () => {
     const gh = fakeGitHub()
     await expect(
-      tellGitHub({ store, github: gh.channel, workItemId: 'nonsense', change: { kind: 'closed' } }),
+      tellGitHub({ store, github: gh.channel, ticketId: 'nonsense', change: { kind: 'closed' } }),
     ).resolves.toBeUndefined()
     expect(gh.calls, 'no call was made').toHaveLength(0)
   })

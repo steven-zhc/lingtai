@@ -16,7 +16,7 @@ describe('waiverOf', () => {
     const result = waiverOf({
       step: 'build',
       action: 'test',
-      runId: 'run-1',
+      runId: 'pass-1',
       onSha: 'a'.repeat(40),
       by: 'human:steven',
       reason: 'flaky, waiving',
@@ -26,7 +26,7 @@ describe('waiverOf', () => {
       data: {
         step: 'build',
         action: 'test',
-        runId: 'run-1',
+        runId: 'pass-1',
         onSha: 'a'.repeat(40),
         by: 'human:steven',
         reason: 'flaky, waiving',
@@ -44,7 +44,7 @@ describe('approvalOf', () => {
       ],
       step: 'proposed',
       action: 'unfixed',
-      runId: 'run-2',
+      runId: 'pass-2',
       onSha: 'b'.repeat(40),
       by: 'human:steven',
       note: 'waiving the known flake',
@@ -55,7 +55,7 @@ describe('approvalOf', () => {
         data: {
           step: 'build',
           action: 'install',
-          runId: 'run-2',
+          runId: 'pass-2',
           onSha: 'b'.repeat(40),
           by: 'human:steven',
           reason: 'waiving the known flake',
@@ -66,7 +66,7 @@ describe('approvalOf', () => {
         data: {
           step: 'build',
           action: 'test',
-          runId: 'run-2',
+          runId: 'pass-2',
           onSha: 'b'.repeat(40),
           by: 'human:steven',
           reason: 'waiving the known flake',
@@ -77,7 +77,7 @@ describe('approvalOf', () => {
         data: {
           step: 'proposed',
           action: 'unfixed',
-          runId: 'run-2',
+          runId: 'pass-2',
           onSha: 'b'.repeat(40),
           by: 'human:steven',
           note: 'waiving the known flake',
@@ -91,7 +91,7 @@ describe('approvalOf', () => {
       refusing: [],
       step: 'proposed',
       action: 'unfixed',
-      runId: 'run-3',
+      runId: 'pass-3',
       onSha: 'c'.repeat(40),
       by: 'human:steven',
       note: '',
@@ -102,7 +102,7 @@ describe('approvalOf', () => {
         data: {
           step: 'proposed',
           action: 'unfixed',
-          runId: 'run-3',
+          runId: 'pass-3',
           onSha: 'c'.repeat(40),
           by: 'human:steven',
           note: '',
@@ -115,7 +115,7 @@ describe('approvalOf', () => {
 describe('approvedMergeRefusedOf', () => {
   it('builds the Hold approve.ts wrote by hand, afterApproval: true, and the question beside it', () => {
     const { event, question } = approvedMergeRefusedOf({
-      runId: 'run-4',
+      runId: 'pass-4',
       reason: 'dirty-base',
       raw: 'main not clean',
       branch: 'agent/4',
@@ -129,7 +129,7 @@ describe('approvedMergeRefusedOf', () => {
       data: {
         hold: {
           _tag: 'MergeRefused',
-          run: { runId: 'run-4' },
+          run: { runId: 'pass-4' },
           afterApproval: true,
           reason: 'dirty-base',
           why: "Lingtai's own checkout of main was not clean, so the merge was refused. Nothing is wrong with agent/4.",
@@ -145,7 +145,7 @@ describe('approvedMergeRefusedOf', () => {
 
   it('carries the integration refusal evidence through to paths/baseSha/headSha', () => {
     const { event } = approvedMergeRefusedOf({
-      runId: 'run-5',
+      runId: 'pass-5',
       reason: 'conflict',
       raw: 'CONFLICT (content): a.ts',
       branch: 'agent/5',

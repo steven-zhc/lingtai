@@ -21,16 +21,16 @@
  * `task_view_run` or `finding_backlog_run` for `backlog.ts`'s own reason:
  * another projection's table is at another projection's checkpoint.
  *
- *   `run-…`  (action, judge)  — linked by this stream's own `RunStarted`, and
- *                               by `WorkItemClaimed` on the ticket's stream
+ *   `pass-…`  (action, judge)  — linked by this stream's own `RunStarted`, and
+ *                               by `TicketClaimed` on the ticket's stream
  *                               (below), whichever lands first
- *   `wi-…`   (triage)         — needs no link; the stream id is the ticket
+ *   `ticket-…`   (triage)         — needs no link; the stream id is the ticket
  *   `chat-…` (discussion)     — linked by `DiscussionRequested`, keyed on
  *                               `chatStream(chatId)` because that event lands
  *                               on `ctl-conductor`, not on the chat stream
  *
- * **`WorkItemClaimed` links a run stream before `RunStarted` can.** `claim`
- * appends it to the `wi-…` stream carrying the run stream's id as `runId`,
+ * **`TicketClaimed` links a run stream before `RunStarted` can.** `claim`
+ * appends it to the `ticket-…` stream carrying the run stream's id as `runId`,
  * and `admit` — which can refuse the pass outright, leaving no `RunStarted`
  * ever appended to that run stream — runs after `claim`. A `Judge` `RunSpent`
  * dispatched on such a refusal still names that run stream, so without this
@@ -108,13 +108,13 @@ export const spendProjection: Projection = {
           await ctx.query(
             `insert into spend_stream (stream_id, ticket) values ($1, $2)
              on conflict (stream_id) do nothing`,
-            [event.streamId, d.workItemId],
+            [event.streamId, d.ticketId],
           )
           break
         }
 
-        case 'WorkItemClaimed': {
-          const d = event.data as PayloadOf<'WorkItemClaimed'>
+        case 'TicketClaimed': {
+          const d = event.data as PayloadOf<'TicketClaimed'>
           await ctx.query(
             `insert into spend_stream (stream_id, ticket) values ($1, $2)
              on conflict (stream_id) do nothing`,
@@ -128,7 +128,7 @@ export const spendProjection: Projection = {
           await ctx.query(
             `insert into spend_stream (stream_id, ticket) values ($1, $2)
              on conflict (stream_id) do nothing`,
-            [chatStream(d.chatId), d.workItemId],
+            [chatStream(d.chatId), d.ticketId],
           )
           break
         }

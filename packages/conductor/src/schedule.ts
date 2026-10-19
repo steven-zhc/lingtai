@@ -17,7 +17,7 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  * ## The trap
  *
  * `runOnce` **releases** a work item when a run fails, and a released item goes
- * straight back into the queue — that is what `WorkItemReleased` is for, and it
+ * straight back into the queue — that is what `TicketReleased` is for, and it
  * is right, because a run that died should not leave the ticket claimed
  * forever.
  *
@@ -263,14 +263,14 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
  * `9 run(s): 0 landed, 8 held, 1 stopped` and exited 1, while #154 — held at
  * the merge gate, approved on the board *during* the pass, and merged by the
  * integrate lane a few seconds later — had landed. Nothing was wrong with the
- * log: `IntegrationSucceeded` and `WorkItemLanded` are both in it. The summary
+ * log: `IntegrationSucceeded` and `TicketLanded` are both in it. The summary
  * counted merges this process performed, and that is a smaller thing than the
  * state of the work.
  *
  * So the counts are read back from the work item's own stream, where the
  * lifecycle already is:
  *
- *   landed   `WorkItemLanded` — by this run or by anyone else, since
+ *   landed   `TicketLanded` — by this run or by anyone else, since
  *   held     `blocked` — a question a person now holds
  *   stopped  neither: released back into the queue, or never claimed at all
  *
@@ -291,7 +291,7 @@ export async function tallyPass(ran: readonly RunOnceResult[], store: EventStore
   for (const result of ran) {
     // A refusal before anything was claimed — an unreadable recipe — has no
     // stream to read. It stopped, and there is nowhere else to check.
-    const events = result.workItemId ? await store.read(result.workItemId).catch(() => null) : null
+    const events = result.ticketId ? await store.read(result.ticketId).catch(() => null) : null
     if (events === null) {
       // Either no work item, or the log could not be read. Fall back to what
       // this process saw rather than lose the summary to a failing read.

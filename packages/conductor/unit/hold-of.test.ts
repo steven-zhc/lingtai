@@ -13,7 +13,7 @@ const BASE_INPUT: HoldOfPassInput = {
   ceilingHit: null,
   declined: null,
   findings: [],
-  runId: 'run-1',
+  runId: 'pass-1',
   branch: 'agent/1',
   base: 'main',
   integrationRefusal: null,
@@ -28,7 +28,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toMatchObject({
       _tag: 'MergeRefused',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       reason: 'dirty-base',
       raw: 'main moved',
       paths: ['a.ts'],
@@ -49,7 +49,7 @@ describe('holdOfPass', () => {
         ending: { ending: 'refused', because: 'action-refused', at: 'verify', detail: 'exit 1' },
       },
     })
-    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'merge', why: 'exit 1', raw: 'exit 1' })
+    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'pass-1' }, step: 'merge', why: 'exit 1', raw: 'exit 1' })
   })
 
   it('reads a turn ceiling as Ceiling, carrying what the runtime reported', () => {
@@ -59,7 +59,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toEqual({
       _tag: 'Ceiling',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       kind: 'out-of-turns',
       detail: '151 turns, and the recipe allows 151',
       turns: 151,
@@ -96,7 +96,7 @@ describe('holdOfPass', () => {
       ...BASE_INPUT,
       stopped: { step: 'design', ending: { ending: 'asked', at: 'draft', detail: 'which base?' } },
     })
-    expect(hold).toEqual({ _tag: 'Asked', run: { runId: 'run-1' }, step: 'design', question: 'which base?' })
+    expect(hold).toEqual({ _tag: 'Asked', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' })
   })
 
   it('reads a declared human: action as Human, source: declared', () => {
@@ -106,7 +106,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toEqual({
       _tag: 'Human',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'proposed',
       source: 'declared',
       question: 'go ahead?',
@@ -143,7 +143,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toEqual({
       _tag: 'SetupRefused',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'prepared',
       lifts: 'person',
       why: 'ENOSPC',
@@ -156,7 +156,7 @@ describe('holdOfPass', () => {
       ...BASE_INPUT,
       stopped: { step: 'proposed', ending: { ending: 'refused', because: 'action-refused', at: null, detail: 'boom' } },
     })
-    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'run-1' }, step: 'proposed', why: 'boom', raw: 'boom' })
+    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'pass-1' }, step: 'proposed', why: 'boom', raw: 'boom' })
   })
 
   it('reads a did-not-finish ending as Declined when a fix round committed nothing and did not fail', () => {
@@ -170,7 +170,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toEqual({
       _tag: 'Declined',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'implement',
       said: 'the findings describe a tradeoff, not a bug — I am not changing this',
     })
@@ -186,7 +186,7 @@ describe('holdOfPass', () => {
     })
     expect(hold).toEqual({
       _tag: 'DidNotFinish',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       step: 'implement',
       why: 'Error: boom',
       raw: 'Error: boom',
@@ -206,13 +206,13 @@ describe('holdOfPass', () => {
       ...BASE_INPUT,
       stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
       unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: { after: 'run-0', reason: 'red' },
+      repairOf: { after: 'pass-0', reason: 'red' },
     })
     if (hold._tag === 'Question') throw new Error('unreachable: holdOfPass never returns Question')
     expect(hold.run).toEqual({
-      runId: 'run-1',
+      runId: 'pass-1',
       unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: { after: 'run-0', reason: 'red' },
+      repairOf: { after: 'pass-0', reason: 'red' },
     })
   })
 })

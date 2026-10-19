@@ -54,7 +54,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   seq += 1n
   return {
     seq,
-    streamId: 'run-170',
+    streamId: 'pass-170',
     version: Number(seq),
     type,
     schemaVer: 2,
@@ -68,7 +68,7 @@ function at(time: string, type: string, data: unknown): Envelope {
 const step = (step: Step, action: string) => ({
   step: step,
   action,
-  runId: 'run-170',
+  runId: 'pass-170',
   onSha: 'b1b8694',
 })
 
@@ -94,7 +94,7 @@ const PLAN: StepPlan = new Map([
 /** `StepsResolved`, from a plan — the log's own record of what was configured. */
 const resolved = (plan: StepPlan) =>
   at('2026-09-15T17:12:30Z', 'StepsResolved', {
-    runId: 'run-170',
+    runId: 'pass-170',
     configHash: 'abc',
     steps: STEPS.map((step) => ({
       step: step,
@@ -114,7 +114,7 @@ function running(): Envelope[] {
       findings: [],
     }),
     at('2026-09-15T17:12:30Z', 'RunStarted', {
-      workItemId: 'wi-lingtai-170',
+      ticketId: 'ticket-lingtai-170',
       invocation: {
         command: 'claude',
         args: [],
@@ -156,7 +156,7 @@ const refused = (): Envelope[] => [
 const fixRound = (): Envelope[] => [
   ...refused(),
   at('2026-09-15T17:34:01Z', 'FixRequested', {
-    runId: 'run-170',
+    runId: 'pass-170',
     round: 1,
     of: 3,
     action: 'build',
@@ -169,7 +169,7 @@ const fixRound = (): Envelope[] => [
 const fixSpent = (): Envelope[] => [
   ...fixRound(),
   at('2026-09-15T17:48:00Z', 'FixApplied', {
-    runId: 'run-170',
+    runId: 'pass-170',
     round: 1,
     headSha: null,
     turns: 9,
@@ -243,7 +243,7 @@ function noPlanRecorded(): Envelope[] {
   seq = 0n
   return [
     at('2026-09-15T17:12:30Z', 'RunStarted', {
-      workItemId: 'wi-lingtai-170',
+      ticketId: 'ticket-lingtai-170',
       invocation: {
         command: 'claude',
         args: [],
@@ -285,7 +285,7 @@ function landedPastMerge(): Envelope[] {
       findings: [],
     }),
     at('2026-09-15T17:12:30Z', 'RunStarted', {
-      workItemId: 'wi-lingtai-55',
+      ticketId: 'ticket-lingtai-55',
       invocation: {
         command: 'claude',
         args: [],
@@ -322,14 +322,14 @@ function landedPastMerge(): Envelope[] {
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
-    taskId: 'wi-lingtai-170',
+    taskId: 'ticket-lingtai-170',
     project: 'lingtai',
     issue: '170',
     title: 'the five steps are a sequence, so draw one',
     kind: 'tech-debt',
     state: 'running',
     tier: 'guarded',
-    runId: 'run-170',
+    runId: 'pass-170',
     turns: 48,
     costUsd: 5.92,
     passed: 1,
@@ -954,7 +954,7 @@ describe('the hatch, and what may not draw it', () => {
    * `prepared` has a `proposed` that correctly recorded nothing. Close the
    * ticket and the card joins the Landed column — `COLUMN_OF.closed` is
    * `landed` — which is the whole of how a closed item can be mistaken for a
-   * landed one. The doctor is anchored on `WorkItemLanded` and never reports
+   * landed one. The doctor is anchored on `TicketLanded` and never reports
    * this run; the board must not either.
    */
   it('never draws it on a closed item whose run was refused', () => {
@@ -1025,7 +1025,9 @@ describe('which cards draw a rail', () => {
    * *It is small* is not a bound; `WAITING_RAILS` is.
    */
   it('bounds the Waiting fold, however long the lane is', () => {
-    const lane = Array.from({ length: 45 }, (_, i) => task({ taskId: `wi-${i}`, runId: `run-${i}`, state: 'waiting' }))
+    const lane = Array.from({ length: 45 }, (_, i) =>
+      task({ taskId: `ticket-${i}`, runId: `pass-${i}`, state: 'waiting' }),
+    )
 
     const folded = railCandidates(lane)
     expect(folded).toHaveLength(WAITING_RAILS)
@@ -1047,9 +1049,9 @@ describe('which cards draw a rail', () => {
       task({ taskId, runId, state, updatedAt: new Date(`2026-09-16T0${hour}:00:00Z`) })
     const rows = [
       row('never-claimed', null, 'closed', 9),
-      row('landed-b', 'run-b', 'landed', 8),
-      row('closed-c', 'run-c', 'closed', 7),
-      row('collapsed-d', 'run-d', 'landed', 6),
+      row('landed-b', 'pass-b', 'landed', 8),
+      row('closed-c', 'pass-c', 'closed', 7),
+      row('collapsed-d', 'pass-d', 'landed', 6),
     ]
     expect(rows).toHaveLength(LANDED_OPEN + 1)
 

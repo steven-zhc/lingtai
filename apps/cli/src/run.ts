@@ -523,13 +523,13 @@ export async function run(
       })
 
       if (result.ok === true) {
-        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`)
+        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
         return 0
       }
       if (result.ok === 'held') {
         // Exit 0: holding is what was asked for, and a non-zero code here would
         // teach a person to ignore it.
-        log(`held at ${result.headSha.slice(0, 7)} — ${result.workItemId} is waiting on you`)
+        log(`held at ${result.headSha.slice(0, 7)} — ${result.ticketId} is waiting on you`)
         log(`nothing was merged. Re-run without --no-merge to merge it.`)
         return 0
       }

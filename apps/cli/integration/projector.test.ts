@@ -29,8 +29,8 @@ const run = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
-const wi = `wi-${PROJECT}-1`
-const runId = `run-${PROJECT}-1`
+const wi = `ticket-${PROJECT}-1`
+const runId = `pass-${PROJECT}-1`
 let store: EventStore
 
 /**
@@ -63,7 +63,7 @@ describe('withProjector', () => {
       async () => {
         await store.append(wi, 0, [
           {
-            type: 'WorkItemClaimed',
+            type: 'TicketClaimed',
             actor: 'conductor',
             data: { runId, worker: 'w', title: 'held open', kind: 'bug' },
           },

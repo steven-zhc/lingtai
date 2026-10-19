@@ -18,7 +18,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { TaskDetail } from '../src/lib/task.ts'
 
-const stub = { taskId: 'wi-lingtai-172' } as TaskDetail
+const stub = { taskId: 'ticket-lingtai-172' } as TaskDetail
 
 vi.mock('../src/lib/task.ts', async (original) => ({
   ...(await original<typeof import('../src/lib/task.ts')>()),
@@ -30,7 +30,7 @@ const { Follow, Following, Live, warning } = await import('../src/app/live.tsx')
 
 describe('the task route', () => {
   it('mounts the subscription around the page it re-renders', async () => {
-    const page = (await TaskPage({ params: Promise.resolve({ id: 'wi-lingtai-172' }) })) as ReactElement<{
+    const page = (await TaskPage({ params: Promise.resolve({ id: 'ticket-lingtai-172' }) })) as ReactElement<{
       children: ReactNode
     }>
     const mounted = Children.toArray(page.props.children).filter(isValidElement)

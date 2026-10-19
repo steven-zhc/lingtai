@@ -146,8 +146,8 @@ describe('when the agent meets the wall', () => {
       },
       ports,
     )
-    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
-    return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) }
+    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    return { result, did, runId, run, item: await store.read(`ticket-${PROJECT}-7`) }
   }
 
   /**
@@ -558,8 +558,8 @@ describe('when the agent meets the wall', () => {
         },
         ports,
       )
-      const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
-      return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) }
+      const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+      return { result, did, runId, run, item: await store.read(`ticket-${PROJECT}-7`) }
     }
 
     it('keeps it on the arm at the agent’s own commit, and leaves the branch there too', async () => {
@@ -782,7 +782,7 @@ describe('when the agent meets the wall', () => {
           ports,
         )
         expect(result.ok, JSON.stringify(result)).toBe('held')
-        const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+        const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
         return { did, run }
       })()
 
@@ -840,7 +840,7 @@ describe('when the agent meets the wall', () => {
         ports,
       )
       expect(result.ok, JSON.stringify(result)).toBe('held')
-      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
 
       const refs = run.find((e) => e.type === 'RunRefsPublished')
       expect(refs!.data).toMatchObject({ outcome: 'nothing-committed' })
@@ -928,7 +928,7 @@ describe('when the agent meets the wall', () => {
       expect(did.indexOf('git add -A')).toBeLessThan(did.indexOf('git reset -q -- .env.local'))
       expect(did.indexOf('git reset -q -- .env.local')).toBeLessThan(did.indexOf('git commit --no-verify'))
 
-      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
       expect(kept!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
     })
@@ -985,7 +985,7 @@ describe('when the agent meets the wall', () => {
       expect(did.some((d) => d.startsWith('git add'))).toBe(false)
       expect(did.some((d) => d.includes('commit'))).toBe(false)
 
-      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
       expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
 
       const refs = run.find((e) => e.type === 'RunRefsPublished')
@@ -1059,7 +1059,7 @@ describe('when the agent meets the wall', () => {
         ports,
       )
       expect(result.ok, JSON.stringify(result)).toBe('held')
-      const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
 
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
       expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['nothing-committed', 'published'])
@@ -1134,8 +1134,8 @@ describe('when the merge lane refuses what every step passed', () => {
       },
       ports,
     )
-    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
-    return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) }
+    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    return { result, did, runId, run, item: await store.read(`ticket-${PROJECT}-7`) }
   }
 
   it("leaves this attempt's own arm on origin, and does not call it already published", async () => {

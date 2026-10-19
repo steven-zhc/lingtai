@@ -251,12 +251,12 @@ export async function lastIntegrationRefusal(
   store: Pick<EventStore, 'read'>,
   project: string,
   base: string,
-  workItemId: string,
+  ticketId: string,
   branch: string,
 ): Promise<IntegrationRefusalEvidence | null> {
   const events = await store.read(integrationStream(project, base))
   const state = reduceIntegration(events)
-  const refusal = state.refusals.findLast((r) => r.workItemId === workItemId && r.branch === branch)
+  const refusal = state.refusals.findLast((r) => r.ticketId === ticketId && r.branch === branch)
   if (refusal === undefined) return null
   return {
     paths: refusal.paths ?? null,

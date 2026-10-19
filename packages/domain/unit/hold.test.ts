@@ -38,7 +38,7 @@ import {
   type MechanicalHunk as MechanicalHunkType,
 } from '../src/triage.ts'
 
-const run = { runId: 'run-1' }
+const run = { runId: 'pass-1' }
 
 describe('Question has no run', () => {
   it('refuses a run on the literal', () => {

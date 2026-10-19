@@ -98,7 +98,7 @@ export interface RecipeAt {
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[]
   defaultBranch: () => Promise<string | null>
-  /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
+  /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
    * The caller's own first-run answers — `repo.base`/`repo.remote`/`env.plantAt`

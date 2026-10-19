@@ -77,9 +77,9 @@ describe('a projection on a machine with no Postgres', () => {
       const item = workItemStream(project, 1)
       await log.store.append(item, 0, [
         {
-          type: 'WorkItemDiscovered',
+          type: 'TicketDiscovered',
           actor: 'conductor',
-          data: parsePayload('WorkItemDiscovered', {
+          data: parsePayload('TicketDiscovered', {
             project,
             source: 'manual',
             externalRef: '1',

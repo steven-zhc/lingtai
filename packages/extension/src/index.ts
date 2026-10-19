@@ -73,7 +73,7 @@ export interface NotifyPayload {
  * nothing else rendered them with an empty `#` and no link, for the events that
  * most needed one.
  *
- * `WorkItemLanded` and `RunFailed` are here for `#125`: a Telegram message is
+ * `TicketLanded` and `RunFailed` are here for `#125`: a Telegram message is
  * read when you choose, so it can carry the good news a desktop notification
  * deliberately does not interrupt you with. Which of these a channel hears is
  * its `on:` line, never this function.
@@ -120,7 +120,7 @@ export function describe(payload: NotifyPayload): Notification {
         body: `${String(d['kind'] ?? '')}: ${String(d['detail'] ?? '')}`,
         url,
       }
-    case 'WorkItemLanded':
+    case 'TicketLanded':
       return {
         title: `${ref} landed`,
         body: `merged into ${String(d['base'] ?? '')} at ${String(d['mergeCommit'] ?? '').slice(0, 7)}`,

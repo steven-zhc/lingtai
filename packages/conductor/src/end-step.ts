@@ -12,7 +12,7 @@
  * It used to be a private function in the conductor, with one call site: the
  * line where that same run merged the branch. Everything that landed by any
  * other route — `lingtai approve`, the board's approve button — integrated,
- * appended `WorkItemLanded`, and stopped. The point was configured, the log
+ * appended `TicketLanded`, and stopped. The point was configured, the log
  * said so in `StepsResolved`, and it silently did not run. That is exactly the
  * half of the responsibility [ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4 calls Lingtai's bug, and it went unnoticed for as long as it did because
@@ -69,9 +69,9 @@ export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed'
  * fold it into the very append that records the outcome:
  *
  * ```ts
- * const item = await store.read(workItemId);
- * await store.append(workItemId, item.length, [
- *   { type: "WorkItemLanded", ... },
+ * const item = await store.read(ticketId);
+ * await store.append(ticketId, item.length, [
+ *   { type: "TicketLanded", ... },
  *   ...resolveEndActions(item, recipe.steps.end, "landed"),
  * ]);
  * ```
@@ -160,15 +160,15 @@ export function resolveEndActions(
  */
 export async function appendEndActions(
   store: EventStore,
-  workItemId: string,
+  ticketId: string,
   actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): Promise<ToAppend[]> {
   if (actions.length === 0) return []
-  const events = await store.read(workItemId)
+  const events = await store.read(ticketId)
   const toAppend = resolveEndActions(events, actions, outcome)
   if (toAppend.length === 0) return []
-  await store.append(workItemId, events.length, toAppend)
+  await store.append(ticketId, events.length, toAppend)
   // Returned so the caller can carry them out. Resolving and doing are two
   // steps on purpose — the resolution is a fact and belongs in one transaction
   // with the outcome, and the doing is I/O that must not be able to undo it.
@@ -179,7 +179,7 @@ export async function appendEndActions(
 
 /** A work item that ended with a plan at `end` and no record of it running. */
 export interface UnresolvedEnd {
-  workItemId: string
+  ticketId: string
   project: string
   issue: number
   /**
@@ -193,7 +193,7 @@ export interface UnresolvedEnd {
 }
 
 /**
- * `wi-lingtai-52` → the project and the issue.
+ * `ticket-lingtai-52` → the project and the issue.
  *
  * The last hyphen, which is what keeps a project name containing one intact.
  * Safe because the same code writes the id — `workItemStream` in `discover.ts`.
@@ -214,7 +214,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
 /**
  * Every item that ended whose `end` point was configured and did not run.
  *
- * **Two widenings, and both are the same hole.** It read `WorkItemLanded`
+ * **Two widenings, and both are the same hole.** It read `TicketLanded`
  * alone, so a ticket a person closed was audited by nothing (0044); and it
  * asked only whether *an* `EndActionsResolved` existed, where the resolver
  * itself dedupes per outcome — so an item that resolved `end` while it was
@@ -239,12 +239,12 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  */
 export async function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
   // The comparison is the store's since #221 — an anti-join that returns only
-  // the offending items — and the naming is still this file's: `wi-lingtai-52`
+  // the offending items — and the naming is still this file's: `ticket-lingtai-52`
   // becomes a project and an issue here, where `splitWorkItem` is.
   const ask = queries ?? (await import('@lingtai/event-store')).log.queries
   const found = await ask.endedWithoutEndActions()
   return found.flatMap((row) => {
     const split = splitWorkItem(row.streamId)
-    return split === null ? [] : [{ workItemId: row.streamId, outcome: row.outcome, ...split }]
+    return split === null ? [] : [{ ticketId: row.streamId, outcome: row.outcome, ...split }]
   })
 }

@@ -36,19 +36,19 @@ let n = 0
 
 function id(prefix: 'wi' | 'chat'): string {
   n += 1
-  const stream = prefix === 'chat' ? `chat-${crypto.randomUUID()}` : `wi-${PROJECT}-${n}`
+  const stream = prefix === 'chat' ? `chat-${crypto.randomUUID()}` : `ticket-${PROJECT}-${n}`
   created.add(stream)
   return stream
 }
 
 /** The evidence `#89`'s second attempt actually had: main, and no branch. */
-function evidence(workItemId: string): DiscussionEvidence {
+function evidence(ticketId: string): DiscussionEvidence {
   return {
-    workItemId,
+    ticketId,
     attempt: 2,
     ticket: { ref: '89', title: 'the run does not stop at the turn limit', body: '…' },
     ticketProblem: null,
-    log: [`1  2026-09-08 04:12:00  ${workItemId}  WorkItemClaimed  conductor  {}`],
+    log: [`1  2026-09-08 04:12:00  ${ticketId}  TicketClaimed  conductor  {}`],
     reading: readingFor({ attempt: 2, base: 'main', baseSha: 'abc1234ff', head: null }),
     refs: [{ ref: 'main', sha: 'abc1234ff', paths: ['packages/agent/src/claude-code.ts'], truncated: false }],
   }
@@ -68,7 +68,7 @@ beforeAll(async () => {
 
 describe('a discussion, on the log', () => {
   it('writes the exchange to its own stream, under its own actor', async () => {
-    const workItemId = id('wi')
+    const ticketId = id('wi')
     const chatId = id('chat')
 
     await holdDiscussion(
@@ -81,7 +81,7 @@ describe('a discussion, on the log', () => {
       },
       {
         chatId,
-        evidence: evidence(workItemId),
+        evidence: evidence(ticketId),
         question: 'why did attempt 2 produce nothing?',
         by: 'human:steven',
         call: CALL,
@@ -100,18 +100,18 @@ describe('a discussion, on the log', () => {
 
     // And nothing at all on the work item yet. The ticket's history grows when
     // the conversation ends, not turn by turn.
-    expect(await store.read(workItemId)).toHaveLength(0)
+    expect(await store.read(ticketId)).toHaveLength(0)
   })
 
   it('adds one line to the work item when it ends, carrying what it cost', async () => {
-    const workItemId = id('wi')
+    const ticketId = id('wi')
     const chatId = id('chat')
 
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
       {
         chatId,
-        evidence: evidence(workItemId),
+        evidence: evidence(ticketId),
         question: 'why?',
         by: 'human:steven',
         call: CALL,
@@ -121,7 +121,7 @@ describe('a discussion, on the log', () => {
 
     const result = await concludeDiscussion({
       store,
-      workItemId,
+      ticketId,
       chatId,
       by: 'human:steven',
       outcome: 'prompt',
@@ -129,7 +129,7 @@ describe('a discussion, on the log', () => {
     })
 
     expect(result.ok).toBe(true)
-    const own = await store.read(workItemId)
+    const own = await store.read(ticketId)
     // Two lines and not forty: the edit, and the pointer at the conversation.
     expect(own.map((e) => e.type)).toEqual(['PromptEdited', 'DiscussionHeld'])
     const held = own[1]?.data as { chatId: string; costUsd: number; outcome: string }
@@ -144,13 +144,13 @@ describe('a discussion, on the log', () => {
    * either way, because the money was spent either way.
    */
   it('appends to the ticket body, and still records the spend when GitHub refuses', async () => {
-    const workItemId = id('wi')
+    const ticketId = id('wi')
     const chatId = id('chat')
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
       {
         chatId,
-        evidence: evidence(workItemId),
+        evidence: evidence(ticketId),
         question: 'why?',
         by: 'human:steven',
         call: CALL,
@@ -171,7 +171,7 @@ describe('a discussion, on the log', () => {
 
     const ok = await concludeDiscussion({
       store,
-      workItemId,
+      ticketId,
       chatId,
       by: 'human:steven',
       outcome: 'ticket',
@@ -183,7 +183,7 @@ describe('a discussion, on the log', () => {
     expect(ok.ok).toBe(true)
     expect(written).toContain('The original ticket.')
     expect(written).toContain('The runtime must pass --max-turns.')
-    expect((await store.read(workItemId)).map((e) => e.type)).toEqual(['IssueUpdated', 'DiscussionHeld'])
+    expect((await store.read(ticketId)).map((e) => e.type)).toEqual(['IssueUpdated', 'DiscussionHeld'])
 
     // And the refusal path, on a second conversation about the same item.
     const second = id('chat')
@@ -191,7 +191,7 @@ describe('a discussion, on the log', () => {
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
       {
         chatId: second,
-        evidence: evidence(workItemId),
+        evidence: evidence(ticketId),
         question: 'again?',
         by: 'human:steven',
         call: CALL,
@@ -200,7 +200,7 @@ describe('a discussion, on the log', () => {
     )
     const refused = await concludeDiscussion({
       store,
-      workItemId,
+      ticketId,
       chatId: second,
       by: 'human:steven',
       outcome: 'ticket',
@@ -217,7 +217,7 @@ describe('a discussion, on the log', () => {
     })
 
     expect(refused.ok).toBe(false)
-    const own = (await store.read(workItemId)).map((e) => e.type)
+    const own = (await store.read(ticketId)).map((e) => e.type)
     expect(own.slice(-2)).toEqual(['IssueUpdateFailed', 'DiscussionHeld'])
   })
 })

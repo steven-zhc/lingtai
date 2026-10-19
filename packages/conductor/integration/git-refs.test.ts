@@ -89,15 +89,15 @@ describe('sweepRefs, over a gitRefChannel', () => {
   it("sweeps 24's own arm and leaves 240's, even though matchingRefs('heads/agent/24') answers both", async () => {
     const store = createMemoryEventStore()
     const channel = gitRefChannel({ remote })
-    const workItemId = workItemStream('esctest', 24)
+    const ticketId = workItemStream('esctest', 24)
 
-    await sweepRefs({ store, github: channel, workItemId, andTheBranch: false })
+    await sweepRefs({ store, github: channel, ticketId, andTheBranch: false })
 
     const left = await channel.matchingRefs('heads/agent/')
     expect(left).not.toContain('heads/agent/24-attempt-1')
     expect(left).toContain('heads/agent/240-attempt-1')
 
-    const events = await store.read(workItemId)
+    const events = await store.read(ticketId)
     const last = events.at(-1)
     expect(last?.type).toBe('IssueUpdated')
     expect(last?.data).toMatchObject({ change: 'refs', detail: 'heads/agent/24-attempt-1' })

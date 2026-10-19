@@ -80,9 +80,9 @@ beforeAll(async () => {
 describe('convergeIssues', () => {
   /** #69's test, verbatim: fail a label write, reconcile, GitHub matches the log. */
   it('brings an issue whose label write failed back into line, without replaying it', async () => {
-    const stream = `wi-${PROJECT}-1`
+    const stream = `ticket-${PROJECT}-1`
     await seed(stream, [
-      { type: 'WorkItemClaimed', data: { runId: `run-${PROJECT}-1`, worker: 'w', title: 't', kind: 'bug' } },
+      { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-1`, worker: 'w', title: 't', kind: 'bug' } },
       // Exactly what `tell.ts` writes when GitHub refuses. Nothing else about
       // the call survives — no body, no attempt count, no queue row.
       { type: 'IssueUpdateFailed', data: { project: PROJECT, issue: '1', change: 'labels', error: '503 from GitHub' } },
@@ -113,9 +113,9 @@ describe('convergeIssues', () => {
    * still records a failure; GitHub is already right; nothing is written.
    */
   it('writes nothing when somebody already fixed the issue by hand', async () => {
-    const stream = `wi-${PROJECT}-2`
+    const stream = `ticket-${PROJECT}-2`
     await seed(stream, [
-      { type: 'WorkItemClaimed', data: { runId: `run-${PROJECT}-2`, worker: 'w', title: 't', kind: 'bug' } },
+      { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-2`, worker: 'w', title: 't', kind: 'bug' } },
       { type: 'IssueUpdateFailed', data: { project: PROJECT, issue: '2', change: 'labels', error: '503 from GitHub' } },
     ])
 
@@ -133,9 +133,9 @@ describe('convergeIssues', () => {
 
   /** A comment cannot be recomputed, so it is reported and left alone. */
   it('reports a lost comment and does not re-send it', async () => {
-    const stream = `wi-${PROJECT}-3`
+    const stream = `ticket-${PROJECT}-3`
     await seed(stream, [
-      { type: 'WorkItemClaimed', data: { runId: `run-${PROJECT}-3`, worker: 'w', title: 't', kind: 'bug' } },
+      { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-3`, worker: 'w', title: 't', kind: 'bug' } },
       { type: 'IssueUpdated', data: { project: PROJECT, issue: '3', change: 'labels', detail: 'lingtai:working' } },
       {
         type: 'IssueUpdateFailed',
@@ -167,11 +167,11 @@ describe('convergeIssues', () => {
    * the release landed, reconcile ran, and it walked straight past the label.
    */
   it('clears a label it put on and no longer wants, with nothing having failed', async () => {
-    const stream = `wi-${PROJECT}-5`
+    const stream = `ticket-${PROJECT}-5`
     await seed(stream, [
-      { type: 'WorkItemClaimed', data: { runId: `run-${PROJECT}-5`, worker: 'w', title: 't', kind: 'bug' } },
+      { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-5`, worker: 'w', title: 't', kind: 'bug' } },
       { type: 'IssueUpdated', data: { project: PROJECT, issue: '5', change: 'labels', detail: 'lingtai:working' } },
-      { type: 'WorkItemReleased', data: { runId: `run-${PROJECT}-5`, reason: 'killed' } },
+      { type: 'TicketReleased', data: { runId: `pass-${PROJECT}-5`, reason: 'killed' } },
     ])
 
     const { github, world, writes } = fakeGitHub({ labels: ['bug', 'lingtai:working'] })
@@ -188,10 +188,10 @@ describe('convergeIssues', () => {
 
   /** A landed item should be carrying no Lingtai label, and a stale one is drift. */
   it('clears a label the log says should be gone', async () => {
-    const stream = `wi-${PROJECT}-4`
+    const stream = `ticket-${PROJECT}-4`
     await seed(stream, [
-      { type: 'WorkItemClaimed', data: { runId: `run-${PROJECT}-4`, worker: 'w', title: 't', kind: 'bug' } },
-      { type: 'WorkItemLanded', data: { mergeCommit: 'a'.repeat(40), base: 'main' } },
+      { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-4`, worker: 'w', title: 't', kind: 'bug' } },
+      { type: 'TicketLanded', data: { mergeCommit: 'a'.repeat(40), base: 'main' } },
       { type: 'IssueUpdateFailed', data: { project: PROJECT, issue: '4', change: 'labels', error: '503' } },
     ])
 

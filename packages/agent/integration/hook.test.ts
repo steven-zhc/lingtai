@@ -79,7 +79,7 @@ beforeAll(async () => {
   await exec('bun', ['build', '--compile', '--outfile', binary, hookSource])
 
   store = createMemoryEventStore()
-  runId = `run-esctest-${crypto.randomUUID().slice(0, 8)}`
+  runId = `pass-esctest-${crypto.randomUUID().slice(0, 8)}`
 
   server = createHookServer({
     socketPath: join(root, 'conductor.sock'),
@@ -123,7 +123,7 @@ describe('lingtai-hook fails closed', () => {
   it('denies a run the conductor has never heard of', async () => {
     const { code, stderr } = await runHook(
       binary,
-      { LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: 'run-nobody' },
+      { LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: 'pass-nobody' },
       preToolUse('ls'),
     )
     expect(code).toBe(2)
@@ -363,13 +363,13 @@ describe('the lifecycle hooks', () => {
 describe('hook wiring', () => {
   it('is written outside the worktree', async () => {
     const home = join(root, 'home')
-    const wiring = await writeHookWiring({ runId: 'run-w', hookBinary: binary, home })
+    const wiring = await writeHookWiring({ runId: 'pass-w', hookBinary: binary, home })
 
     // An agent that can edit its own hook configuration has no hook
     // configuration, so the file is never inside the repository.
     expect(wiring.settingsPath.startsWith(home)).toBe(true)
     expect(wiring.settingsPath).not.toContain('worktrees')
-    expect(wiring.env).toEqual({ LINGTAI_HOOK_SOCKET: wiring.socketPath, LINGTAI_HOOK_RUN_ID: 'run-w' })
+    expect(wiring.env).toEqual({ LINGTAI_HOOK_SOCKET: wiring.socketPath, LINGTAI_HOOK_RUN_ID: 'pass-w' })
   })
 
   it("wires the four shared hooks, and Claude Code's extras only when asked", () => {
@@ -419,16 +419,16 @@ describe('socket paths', () => {
     // The state directory can be arbitrarily deep — a temp directory in a test
     // already is. The socket does not live there, which is the point.
     const longHome = join('/private/var/folders/y7/b4lkp2c90p165_gygx2txt100000gn/T', 'lingtai-runonce-80F6pP', 'home')
-    const path = socketPathFor(`run-${crypto.randomUUID()}`, longHome)
+    const path = socketPathFor(`pass-${crypto.randomUUID()}`, longHome)
 
     expect(Buffer.byteLength(path)).toBeLessThan(SUN_PATH_MAX)
     expect(path.startsWith(longHome)).toBe(false)
   })
 
   it('is stable for a run, distinct between runs, and distinct between homes', () => {
-    expect(socketPathFor('run-a', '/tmp/a')).toBe(socketPathFor('run-a', '/tmp/a'))
-    expect(socketPathFor('run-a', '/tmp/a')).not.toBe(socketPathFor('run-b', '/tmp/a'))
+    expect(socketPathFor('pass-a', '/tmp/a')).toBe(socketPathFor('pass-a', '/tmp/a'))
+    expect(socketPathFor('pass-a', '/tmp/a')).not.toBe(socketPathFor('pass-b', '/tmp/a'))
     // Two conductors with different state directories must not collide.
-    expect(socketPathFor('run-a', '/tmp/a')).not.toBe(socketPathFor('run-a', '/tmp/b'))
+    expect(socketPathFor('pass-a', '/tmp/a')).not.toBe(socketPathFor('pass-a', '/tmp/b'))
   })
 })

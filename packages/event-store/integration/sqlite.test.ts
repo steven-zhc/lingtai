@@ -61,7 +61,7 @@ afterAll(() => {
 })
 
 const discovered = (title: string) => ({
-  type: 'WorkItemDiscovered',
+  type: 'TicketDiscovered',
   actor: 'conductor',
   data: {
     project: 'lingtai',
@@ -74,7 +74,7 @@ const discovered = (title: string) => ({
 })
 
 let n = 0
-const stream = () => `wi-sqlite-${n++}`
+const stream = () => `ticket-sqlite-${n++}`
 
 describeEventStoreContract('sqlite', () => createSqliteEventStore(open(freshLog())), stream)
 

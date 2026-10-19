@@ -10,7 +10,7 @@
  *
  * **`streams` is the one that is not a copy**, because it was two: `reconcile`
  * asked for one type across several project prefixes and `converge` for five
- * types under `wi-%`, as a `like` and a subquery respectively. They are the
+ * types under `ticket-%`, as a `like` and a subquery respectively. They are the
  * same question with different arguments, and the subquery was doing nothing
  * the `where` does not — a stream holding one of those types *is* the answer.
  *

@@ -48,7 +48,7 @@ export interface SourceDeps {
 }
 
 export interface TicketsDeps extends SourceDeps {
-  /** `wi-<project>-*` streams already in the log for this project — empty where there is no history. */
+  /** `ticket-<project>-*` streams already in the log for this project — empty where there is no history. */
   history: (project: string) => Promise<readonly string[]>
 }
 
@@ -78,7 +78,7 @@ async function resolvedRecipe(
  *
  * **A local project is never prompted** — there is one legal answer
  * (`db`), and asking would be a press of Enter. **A project with history
- * keeps its source and is never switched** — `wi-<project>-<n>` streams
+ * keeps its source and is never switched** — `ticket-<project>-<n>` streams
  * numbered under one source would collide with a different source's own
  * numbering (`packages/domain/src/streams.ts:14`, #381).
  */
@@ -229,7 +229,7 @@ export async function askKinds(
  * `ticket-store.ts`'s own reason — a caller that only wants to ask a setup
  * question must not open a store merely by importing this module.
  *
- * **Two kinds of history, not one.** A `wi-<project>-*` stream is what a
+ * **Two kinds of history, not one.** A `ticket-<project>-*` stream is what a
  * claimed ticket leaves in the log, whichever source claimed it. A `db`
  * project's own tickets leave no stream until a pass claims one —
  * `dbTickets.createIssue` (`db-tickets.ts`) is a plain `INSERT INTO

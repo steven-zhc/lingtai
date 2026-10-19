@@ -65,9 +65,9 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
           await c.query('delete from daemon_status where id = 1').catch(() => {})
         })
       },
-      prefix: `wi-${project}-%`,
+      prefix: `ticket-${project}-%`,
       stream(issue) {
-        const id = `wi-${project}-${issue}`
+        const id = `ticket-${project}-${issue}`
         created.add(id)
         return id
       },

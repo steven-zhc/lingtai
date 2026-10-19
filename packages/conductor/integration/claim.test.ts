@@ -30,11 +30,11 @@ let rival: EventStore
 describe.skipIf(!postgresUnderTest())('against the real store', () => {
   /** A work item that has been discovered and nothing else. */
   async function discovered(): Promise<string> {
-    const id = `wi-esctest-${crypto.randomUUID().slice(0, 8)}`
+    const id = `ticket-esctest-${crypto.randomUUID().slice(0, 8)}`
     created.add(id)
     await store.append(id, 0, [
       {
-        type: 'WorkItemDiscovered',
+        type: 'TicketDiscovered',
         actor: 'github',
         data: {
           project: 'esctest',
@@ -75,23 +75,23 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
   describe('claimWorkItem', () => {
     it('takes an unclaimed item and records who took it', async () => {
       const id = await discovered()
-      const result = await claimWorkItem(id, { runId: 'run-a', worker: 'w1', store })
+      const result = await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
-      expect(result.claim.runId).toBe('run-a')
+      expect(result.claim.runId).toBe('pass-a')
       expect(result.claim.worker).toBe('w1')
       expect(result.claim.version).toBe(2)
     })
 
     it('refuses an item someone else holds, naming who', async () => {
       const id = await discovered()
-      await claimWorkItem(id, { runId: 'run-a', worker: 'w1', store })
+      await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
 
-      const second = await claimWorkItem(id, { runId: 'run-b', worker: 'w2', store })
+      const second = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
       expect(second.ok).toBe(false)
       if (second.ok) return
-      expect(second.refusal).toEqual({ reason: 'held', by: 'w1', runId: 'run-a' })
+      expect(second.refusal).toEqual({ reason: 'held', by: 'w1', runId: 'pass-a' })
     })
 
     /**
@@ -103,35 +103,35 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
      */
     it('stays held, with no elapsed time that would take it back', async () => {
       const id = await discovered()
-      const held = await claimWorkItem(id, { runId: 'run-dead', worker: 'killed', store })
+      const held = await claimWorkItem(id, { runId: 'pass-dead', worker: 'killed', store })
       expect(held.ok).toBe(true)
 
-      const next = await claimWorkItem(id, { runId: 'run-b', worker: 'w2', store })
+      const next = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
 
       expect(next.ok).toBe(false)
       if (next.ok) return
-      expect(next.refusal).toEqual({ reason: 'held', by: 'killed', runId: 'run-dead' })
+      expect(next.refusal).toEqual({ reason: 'held', by: 'killed', runId: 'pass-dead' })
     })
 
     it('a released item is claimable again, and the release is on the record', async () => {
       const id = await discovered()
-      await claimWorkItem(id, { runId: 'run-a', worker: 'w1', store })
-      await releaseWorkItem(id, 'run-a', 'gate failed', store)
+      await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
+      await releaseWorkItem(id, 'pass-a', 'gate failed', store)
 
-      const again = await claimWorkItem(id, { runId: 'run-b', worker: 'w2', store })
+      const again = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
       expect(again.ok).toBe(true)
 
       const types = (await store.read(id)).map((e) => e.type)
-      expect(types).toEqual(['WorkItemDiscovered', 'WorkItemClaimed', 'WorkItemReleased', 'WorkItemClaimed'])
+      expect(types).toEqual(['TicketDiscovered', 'TicketClaimed', 'TicketReleased', 'TicketClaimed'])
     })
 
     it('refuses an item that has landed', async () => {
       const id = await discovered()
       await store.append(id, 1, [
-        { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc', base: 'develop' } },
+        { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc', base: 'develop' } },
       ])
 
-      const result = await claimWorkItem(id, { runId: 'run-a', store })
+      const result = await claimWorkItem(id, { runId: 'pass-a', store })
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.refusal).toEqual({ reason: 'not-claimable', status: 'landed' })
@@ -147,8 +147,8 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
         const id = await discovered()
 
         const [first, second] = await Promise.all([
-          claimWorkItem(id, { runId: `run-a${round}`, worker: 'w1', store }),
-          claimWorkItem(id, { runId: `run-b${round}`, worker: 'w2', store: rival }),
+          claimWorkItem(id, { runId: `pass-a${round}`, worker: 'w1', store }),
+          claimWorkItem(id, { runId: `pass-b${round}`, worker: 'w2', store: rival }),
         ])
 
         const winners = [first, second].filter((r) => r.ok)
@@ -162,7 +162,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
         expect(['lost-race', 'held']).toContain(refusal.reason)
 
         // And the log agrees: exactly one claim.
-        const claims = (await store.read(id)).filter((e) => e.type === 'WorkItemClaimed')
+        const claims = (await store.read(id)).filter((e) => e.type === 'TicketClaimed')
         expect(claims).toHaveLength(1)
       }
     })

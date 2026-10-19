@@ -60,18 +60,18 @@ export function describeLogQueriesContract(
   make: () => LogQueriesHarness | Promise<LogQueriesHarness>,
 ): void {
   /**
-   * A run for `workItemId` that planned `points`. Written as events, because
+   * A run for `ticketId` that planned `points`. Written as events, because
    * that is what the questions read.
    */
-  async function run(h: LogQueriesHarness, workItemId: string, steps: Record<string, string[]>): Promise<string> {
-    const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`
+  async function run(h: LogQueriesHarness, ticketId: string, steps: Record<string, string[]>): Promise<string> {
+    const runId = `pass-${h.project}-${crypto.randomUUID().slice(0, 8)}`
     h.note?.(runId)
     await h.store.append(runId, 0, [
       {
         type: 'RunStarted',
         actor: 'conductor',
         data: parsePayload('RunStarted', {
-          workItemId,
+          ticketId,
           runtime: 'claude-code',
           model: '',
           promptVersion: 'ticket@1',
@@ -91,15 +91,15 @@ export function describeLogQueriesContract(
   }
 
   const landed = () => ({
-    type: 'WorkItemLanded',
+    type: 'TicketLanded',
     actor: 'conductor',
-    data: parsePayload('WorkItemLanded', { mergeCommit: MERGE, base: 'main' }),
+    data: parsePayload('TicketLanded', { mergeCommit: MERGE, base: 'main' }),
   })
 
   const closed = () => ({
-    type: 'WorkItemClosed',
+    type: 'TicketClosed',
     actor: 'human:test',
-    data: parsePayload('WorkItemClosed', { by: 'human:test', reason: 'done elsewhere' }),
+    data: parsePayload('TicketClosed', { by: 'human:test', reason: 'done elsewhere' }),
   })
 
   const resolved = (outcome: 'landed' | 'closed' | 'blocked') => ({
@@ -279,7 +279,7 @@ export function describeLogQueriesContract(
       // A shared database holds other tests' rows too, so the assertion is on
       // this log holding *at least* what was just put in it — and on the shape,
       // which is what a caller reads.
-      expect(byType.get('WorkItemLanded') ?? 0).toBeGreaterThanOrEqual(1)
+      expect(byType.get('TicketLanded') ?? 0).toBeGreaterThanOrEqual(1)
       expect(byType.get('EndActionsResolved') ?? 0).toBeGreaterThanOrEqual(2)
       expect(counts.map((c) => c.type)).toEqual(counts.map((c) => c.type).sort())
       // And the pair, named: one order for both stores, or this contract means
@@ -298,7 +298,7 @@ export function describeLogQueriesContract(
       h.note?.(item)
       await h.store.append(item, 0, [landed(), closed()])
 
-      const rows = await h.queries.rowsOfType('WorkItemClosed')
+      const rows = await h.queries.rowsOfType('TicketClosed')
 
       // A shared database holds other tests' rows of this type too, so the
       // assertion is on the shape and the order rather than on which rows are
@@ -310,7 +310,7 @@ export function describeLogQueriesContract(
       const last = rows.at(-1)!
       expect(last.schemaVer).toBe(1)
       expect(last.data).toEqual({ by: 'human:test', reason: 'done elsewhere' })
-      // Never a `WorkItemLanded` row's shape, appended right beside it in the
+      // Never a `TicketLanded` row's shape, appended right beside it in the
       // same batch — the near-miss `typeCounts`'s own test seeds for the same
       // reason: a query that forgot to filter by type would pass everything
       // else here too.
@@ -399,7 +399,7 @@ export function describeLogQueriesContract(
       actor: 'conductor',
       data: parsePayload('PluginFailed', {
         name,
-        eventType: 'WorkItemLanded',
+        eventType: 'TicketLanded',
         project: null,
         reason,
       }),

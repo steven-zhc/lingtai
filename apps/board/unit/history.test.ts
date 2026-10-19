@@ -22,7 +22,7 @@ import { describePayload, shortActor, summarise } from '../src/lib/history.ts'
 function e(type: string, data: unknown, actor = 'conductor'): Envelope {
   return {
     seq: 1n,
-    streamId: 'wi-lingtai-59',
+    streamId: 'ticket-lingtai-59',
     version: 1,
     type,
     schemaVer: 1,
@@ -56,7 +56,7 @@ describe('a line of history', () => {
    * what `${by}: ${note}` would leave behind for an empty one.
    */
   it('renders a note-free unblock as just who, with no trailing colon', () => {
-    const itemStream = makeStream('wi-lingtai-59')
+    const itemStream = makeStream('ticket-lingtai-59')
     const said = summarise(anAnswer(itemStream, 'human:steven', '')[0]!)
     expect(said).toBe('human:steven')
 
@@ -242,10 +242,10 @@ describe('a line of history', () => {
    * `WorkItemBlocked` with a string, and the history printed the string.
    */
   it('says which kind of block it was, and what it recommends', () => {
-    const itemStream = makeStream('wi-lingtai-59')
+    const itemStream = makeStream('ticket-lingtai-59')
     const [blocked] = aLegacyHold(itemStream, {
       _tag: 'MergeRefused',
-      run: { runId: 'run-1' },
+      run: { runId: 'pass-1' },
       reason: 'conflict',
       why: 'agent/112 does not merge into develop.',
       raw: 'CONFLICT (content): …',
@@ -261,7 +261,7 @@ describe('a line of history', () => {
   })
 
   it('prints the bare question when nothing is recommended', () => {
-    const itemStream = makeStream('wi-lingtai-59')
+    const itemStream = makeStream('ticket-lingtai-59')
     const [blocked] = aWait(itemStream, {
       _tag: 'OwnQuestion',
       question: 'held at the merge gate: agent/112 into develop',
@@ -278,8 +278,8 @@ describe('a line of history', () => {
   })
 
   it('names the action on a gate row, not only the point', () => {
-    const build = e('StepStarted', { step: 'prepared', action: 'build', runId: 'run-1', onSha: 'abc' })
-    const lint = e('StepStarted', { step: 'prepared', action: 'lint', runId: 'run-1', onSha: 'abc' })
+    const build = e('StepStarted', { step: 'prepared', action: 'build', runId: 'pass-1', onSha: 'abc' })
+    const lint = e('StepStarted', { step: 'prepared', action: 'lint', runId: 'pass-1', onSha: 'abc' })
     expect(summarise(build)).toBe('prepared · build')
     // Three gates at one point used to render as three identical rows.
     expect(summarise(build)).not.toBe(summarise(lint))
@@ -294,8 +294,8 @@ describe('a line of history', () => {
    * had this row as its only appearance on the page.
    */
   it('says the answer could not be read, where a zero would have said nothing', () => {
-    const event = makeStream('run-1')
-    const step = { step: 'review' as const, action: 'cold reviewer', runId: 'run-1', onSha: 'a'.repeat(40) }
+    const event = makeStream('pass-1')
+    const step = { step: 'review' as const, action: 'cold reviewer', runId: 'pass-1', onSha: 'a'.repeat(40) }
     const dropped = summarise(event('StepFailed', { ...step, evidence: '…', findings: [], unreadable: true }))
 
     expect(dropped).toBe('review · cold reviewer — the answer could not be read')
@@ -308,7 +308,7 @@ describe('a line of history', () => {
   it('renders the plan StepsResolved carries, including the empty points', () => {
     const said = summarise(
       e('StepsResolved', {
-        runId: 'run-1',
+        runId: 'pass-1',
         configHash: '3f8a1c2b9d04',
         steps: [
           { step: 'admit', actions: [] },
@@ -334,7 +334,7 @@ describe('a line of history', () => {
   it('says how the run was started', () => {
     const said = summarise(
       e('RunStarted', {
-        workItemId: 'wi-lingtai-59',
+        ticketId: 'ticket-lingtai-59',
         runtime: 'claude-code',
         model: 'opus-5',
         promptVersion: 'ticket@1911',
@@ -349,13 +349,13 @@ describe('a line of history', () => {
 
   it('gives RunPrompted a detail of its own, so its actor is not read as one', () => {
     const said = summarise(
-      e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: '…' }, 'agent:run-78db72ff-d659'),
+      e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: '…' }, 'agent:pass-78db72ff-d659'),
     )
     expect(said).toBe('ticket@1911, 4593 bytes')
   })
 
   it("shortens a run's actor to something an actor column can hold", () => {
-    expect(shortActor('agent:run-78db72ff-d659-4515-a5d3-150a0e8a3b33')).toBe('agent:run-78db72ff')
+    expect(shortActor('agent:pass-78db72ff-d659-4515-a5d3-150a0e8a3b33')).toBe('agent:pass-78db72ff')
     expect(shortActor('conductor')).toBe('conductor')
     expect(shortActor('human:steven')).toBe('human:steven')
   })

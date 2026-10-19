@@ -25,7 +25,7 @@ import {
 import { Finding } from '../src/vocabulary.ts'
 import type { EscalationBecause, RunRef } from '../src/wait.ts'
 
-const run: RunRef = { runId: 'run-1' }
+const run: RunRef = { runId: 'pass-1' }
 const policy: RoutingPolicy = { rounds: 2, restarts: 1 }
 
 function finding(overrides: Partial<Finding> = {}): Finding {

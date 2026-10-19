@@ -34,7 +34,7 @@ function handRung(): Waker & { ring(): void } {
 
 /** `support.ts` has the same one, and reads a database URL at import. */
 const discovered = (title: string) => ({
-  type: 'WorkItemDiscovered',
+  type: 'TicketDiscovered',
   actor: 'conductor',
   data: {
     project: 'lingtai',
@@ -54,7 +54,7 @@ describeWakerContract('rung by hand', () => {
     waker,
     store,
     async append(title) {
-      const [written] = await store.append(`wi-wake-${n++}`, 0, [discovered(title)])
+      const [written] = await store.append(`ticket-wake-${n++}`, 0, [discovered(title)])
       waker.ring()
       return written!
     },

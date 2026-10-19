@@ -141,25 +141,25 @@ describe('askTickets', () => {
   it('with history, a GitHub project is not prompted, and the log line says why', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked, lines } = world()
-    const history = async () => ['wi-app-12']
+    const history = async () => ['ticket-app-12']
     const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'github' })
     expect(asked).toEqual([])
-    expect(lines.some((l) => l.includes('wi-app-12') && l.includes('#381'))).toBe(true)
+    expect(lines.some((l) => l.includes('ticket-app-12') && l.includes('#381'))).toBe(true)
   })
 
   it('with history, a different --tickets is refused rather than switched', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world()
-    const history = async () => ['wi-app-12']
+    const history = async () => ['ticket-app-12']
     const result = await askTickets(w, PROJECT, false, 'db', { home: HOME, files, history })
-    expect(result).toMatchObject({ refused: expect.stringContaining('wi-app-12') })
+    expect(result).toMatchObject({ refused: expect.stringContaining('ticket-app-12') })
   })
 
   it('with history, a db project keeps db and writes nothing', async () => {
     const files = mapFiles({ [PATH]: DB_FIXTURE })
     const { world: w } = world()
-    const history = async () => ['wi-app-3']
+    const history = async () => ['ticket-app-3']
     const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'db' })
   })
@@ -167,7 +167,7 @@ describe('askTickets', () => {
   it('a local project with history keeps its source rather than being written to db', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world()
-    const history = async () => ['wi-app-9']
+    const history = async () => ['ticket-app-9']
     const result = await askTickets(w, PROJECT, true, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'github' })
   })
@@ -193,7 +193,7 @@ describe('askTickets', () => {
   it('an absent file with db-ticket history reads as db, not github, so the recipe created from it keeps that source (#432 fix round, finding 1)', async () => {
     const files = mapFiles()
     const { world: w, asked, lines } = world()
-    const history = async () => ['wi-widget-3', 'db ticket #7']
+    const history = async () => ['ticket-widget-3', 'db ticket #7']
     const result = await askTickets(w, 'widget', false, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'db' })
     expect(asked).toEqual([])
@@ -203,7 +203,7 @@ describe('askTickets', () => {
   it('an absent file with history that carries no db-ticket evidence still reads as github', async () => {
     const files = mapFiles()
     const { world: w } = world()
-    const history = async () => ['wi-widget-3']
+    const history = async () => ['ticket-widget-3']
     const result = await askTickets(w, 'widget', false, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'github' })
   })

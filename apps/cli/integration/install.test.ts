@@ -303,7 +303,7 @@ describe('lingtai rollback, among prereleases', () => {
 describe('lingtai uninstall', () => {
   it('refuses while a daemon from a checkout holds the conductor lock, and removes nothing', async () => {
     await installOld()
-    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'run-1')
+    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'pass-1')
     mkdirSync(worktree, { recursive: true })
     const w = world({ conducting: async () => 'steven@host pid 777' })
     expect(await installCommand(['uninstall', '--yes'], w)).toBe(1)
@@ -323,7 +323,7 @@ describe('lingtai uninstall', () => {
     // A daemon from a checkout, between passes: its recipe and a held item's
     // worktree are here, nothing runs from them, and this copy has no log.
     const recipe = join(home, '.lingtai', 'lingtai', 'recipe.yml')
-    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'run-1')
+    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'pass-1')
     mkdirSync(worktree, { recursive: true })
     mkdirSync(join(home, '.lingtai', 'lingtai'), { recursive: true })
     writeFileSync(recipe, 'steps: {}\n')
@@ -368,7 +368,7 @@ describe('lingtai uninstall', () => {
   })
 
   it('finds a process by the directory it works in, where its command line names nothing', async () => {
-    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'run-1')
+    const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'pass-1')
     mkdirSync(worktree, { recursive: true })
     const child = spawn('sleep', ['30'], { cwd: worktree, stdio: 'ignore' })
     try {

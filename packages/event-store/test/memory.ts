@@ -9,7 +9,7 @@
  *
  * ```ts
  * store = createEventStore(client);          // a real pg client
- * await store.append(workItemId, 0, [ … ]);
+ * await store.append(ticketId, 0, [ … ]);
  * (await store.read(runId)).filter((e) => e.type === "StepWaived")
  * ```
  *
@@ -173,7 +173,7 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
       seq += 1n
       log.push({
         seq,
-        streamId: row.streamId ?? `wi-plant-${seq}`,
+        streamId: row.streamId ?? `ticket-plant-${seq}`,
         version: 1,
         type: row.type,
         schemaVer: row.schemaVer,

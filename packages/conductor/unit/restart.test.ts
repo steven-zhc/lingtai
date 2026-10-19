@@ -22,7 +22,7 @@ import { armBranch } from '../src/branches.ts'
 import { decideRestart, restartReason } from '../src/restart.ts'
 
 const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
-  after: 'run-1',
+  after: 'pass-1',
   restart: 1,
   of: 2,
   action: 'review',
@@ -135,7 +135,7 @@ describe('whether a spent pass buys another approach', () => {
     const spent = decideRestart({
       refusal: refused,
       restarts: 2,
-      item: item([arm({ restart: 1 }), arm({ restart: 2, after: 'run-2' })]),
+      item: item([arm({ restart: 1 }), arm({ restart: 2, after: 'pass-2' })]),
       alsoAsked: null,
     })
 

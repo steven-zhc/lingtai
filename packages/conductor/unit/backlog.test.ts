@@ -25,8 +25,8 @@ const entry: BacklogEntry = {
   key: '0123456789ab',
   project: 'lingtai',
   issue: '135',
-  taskId: 'wi-lingtai-135',
-  runId: 'run-abc',
+  taskId: 'ticket-lingtai-135',
+  runId: 'pass-abc',
   step: 'proposed',
   action: 'review',
   onSha: 'f'.repeat(40),
@@ -180,7 +180,7 @@ describe('proposalFor', () => {
       entry.claim,
       entry.failureScenario,
       '#135',
-      'run-abc',
+      'pass-abc',
       '`proposed`, action `review`',
       '0123456789ab',
       '## Done when',
@@ -504,7 +504,7 @@ describe('findingKey across rounds', () => {
     // Round 2: a different run, a different sha, a different line — passed as a
     // variable rather than a literal, so the excess-property check does not hide
     // the assertion. None of the three reaches the key, which is the property.
-    const round2 = { ...round1, runId: 'run-b', onSha: 'beefbeefbeef', line: 412 }
+    const round2 = { ...round1, runId: 'pass-b', onSha: 'beefbeefbeef', line: 412 }
     expect(findingKey(round2)).toBe(findingKey(round1))
     // And whitespace and case in the claim are folded, which is what makes a
     // re-review that re-wraps its own sentence land on the entry it already has.

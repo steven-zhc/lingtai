@@ -57,7 +57,7 @@ describe('the box, rendered', () => {
    * and could not be changed.
    */
   it('shows the composed prompt, raw, before anything is sent', () => {
-    const html = renderToStaticMarkup(<Outgoing taskId="wi-lingtai-104" outgoing={VIEW} />)
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} />)
 
     expect(html).toContain('will be sent')
     expect(html).toContain('what attempt 1 did')
@@ -72,7 +72,7 @@ describe('the box, rendered', () => {
    * decides whether the ticket is the right place instead (0032 §6).
    */
   it('says how long the edit lasts, on the box', () => {
-    const html = renderToStaticMarkup(<Outgoing taskId="wi-lingtai-104" outgoing={VIEW} />)
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} />)
     expect(html).toContain('attempt 3 only')
   })
 
@@ -89,7 +89,7 @@ describe('the box, rendered', () => {
       edit: { text: 'the flag is in the binary', by: 'human:steven' },
       delta: { added: 4, removed: 0 },
     }
-    const html = renderToStaticMarkup(<Outgoing taskId="wi-lingtai-104" outgoing={edited} />)
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={edited} />)
 
     expect(html).toContain('ticket@1924+failure@9d0c11aa+human@a91f2e')
     expect(html).toContain('human:steven')
@@ -99,7 +99,7 @@ describe('the box, rendered', () => {
   })
 
   it('offers no removal when there is nothing to remove', () => {
-    const html = renderToStaticMarkup(<Outgoing taskId="wi-lingtai-104" outgoing={VIEW} />)
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} />)
     expect(html).not.toContain('Remove the edit')
   })
 
@@ -111,7 +111,7 @@ describe('the box, rendered', () => {
   it('says why there is no prompt rather than showing an approximation', () => {
     const html = renderToStaticMarkup(
       <Outgoing
-        taskId="wi-lingtai-104"
+        taskId="ticket-lingtai-104"
         outgoing={{ ...VIEW, text: '', problem: 'the recipe could not be read: bad kinds' }}
       />,
     )

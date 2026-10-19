@@ -137,7 +137,7 @@ describe('upcast', () => {
 describe('the prompt and the invocation', () => {
   it('walks a v1 RunStarted up, with a null invocation', () => {
     const v1 = {
-      workItemId: 'wi-lingtai-59',
+      ticketId: 'ticket-lingtai-59',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1911',
@@ -165,7 +165,7 @@ describe('the prompt and the invocation', () => {
       limits: { turns: 150, wallMs: 3_600_000 },
     }
     const started = {
-      workItemId: 'wi-lingtai-88',
+      ticketId: 'ticket-lingtai-88',
       runtime: 'claude-code',
       model: '',
       promptVersion: 'ticket@1932+a1b2c3d4',
@@ -225,7 +225,7 @@ describe('the nine steps the reset spent', () => {
     'ApprovalRevoked',
   ] as const
 
-  const base = { action: 'build', runId: 'run-01JX', onSha: 'sha-a' }
+  const base = { action: 'build', runId: 'pass-01JX', onSha: 'sha-a' }
   const extra: Record<(typeof STEP_CARRYING)[number], object> = {
     StepRequested: {},
     StepStarted: {},
@@ -276,7 +276,7 @@ describe('the nine steps the reset spent', () => {
   const steps = [...STEPS].map((step) => ({ step, actions: [] as string[] }))
 
   it('reads a ten-step plan back unchanged, recipe and all', () => {
-    const plan = { runId: 'run-01JX', configHash: 'abc', steps, recipe: {} }
+    const plan = { runId: 'pass-01JX', configHash: 'abc', steps, recipe: {} }
     expect(parseStoredPayload('StepsResolved', SCHEMA_VER.StepsResolved, plan)).toEqual(plan)
   })
 
@@ -289,14 +289,14 @@ describe('the nine steps the reset spent', () => {
    */
   it('keeps absent and empty apart on the recipe', () => {
     const without = parseStoredPayload('StepsResolved', 1, {
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       configHash: 'abc',
       steps,
     })
     expect('recipe' in without).toBe(false)
 
     const empty = parseStoredPayload('StepsResolved', 1, {
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       configHash: 'abc',
       steps,
       recipe: {},
@@ -313,7 +313,7 @@ describe('the nine steps the reset spent', () => {
    * for, so five is now one answer and not two.
    */
   it('refuses a plan that is not all ten steps', () => {
-    const short = { runId: 'run-01JX', configHash: 'abc', steps: steps.slice(0, 5) }
+    const short = { runId: 'pass-01JX', configHash: 'abc', steps: steps.slice(0, 5) }
     expect(() => parseStoredPayload('StepsResolved', SCHEMA_VER.StepsResolved, short)).toThrow()
   })
 })
@@ -333,7 +333,7 @@ describe('a pass with findings', () => {
   const v1 = {
     step: 'proposed',
     action: 'review',
-    runId: 'run-01JX',
+    runId: 'pass-01JX',
     onSha: 'sha-a',
     evidence: 'minor packages/actions/src/command.ts:313 — readResult treats every readFile failure as empty',
   }
@@ -374,10 +374,10 @@ describe('a pass with findings', () => {
  * history depends on.
  */
 describe('the lease, dropped on read', () => {
-  const v1 = { runId: 'run-1978cb64', worker: 'local:71410' }
+  const v1 = { runId: 'pass-1978cb64', worker: 'local:71410' }
 
   it('walks a v1 claim all the way up: title and kind null, no lease', () => {
-    expect(parseStoredPayload('WorkItemClaimed', 1, { ...v1, leaseUntilMs: 1_788_385_279_411 })).toEqual({
+    expect(parseStoredPayload('TicketClaimed', 1, { ...v1, leaseUntilMs: 1_788_385_279_411 })).toEqual({
       ...v1,
       title: null,
       kind: null,
@@ -386,7 +386,7 @@ describe('the lease, dropped on read', () => {
 
   it('drops the lease from a v2 claim and touches nothing else', () => {
     const v2 = { ...v1, leaseUntilMs: 1_788_385_279_411, title: 'a ticket', kind: 'bug' }
-    expect(parseStoredPayload('WorkItemClaimed', 2, v2)).toEqual({
+    expect(parseStoredPayload('TicketClaimed', 2, v2)).toEqual({
       ...v1,
       title: 'a ticket',
       kind: 'bug',
@@ -397,17 +397,17 @@ describe('the lease, dropped on read', () => {
     // Nothing wrote such a row. The step is a delete, so it has to be a no-op
     // on a payload that does not carry the key rather than throwing on one.
     const v2 = { ...v1, title: null, kind: null }
-    expect(parseStoredPayload('WorkItemClaimed', 2, v2)).toEqual(v2)
+    expect(parseStoredPayload('TicketClaimed', 2, v2)).toEqual(v2)
   })
 
   it('leaves a v3 claim alone', () => {
     const v3 = { ...v1, title: 'a ticket', kind: 'bug' }
-    expect(parseStoredPayload('WorkItemClaimed', 3, v3)).toEqual(v3)
+    expect(parseStoredPayload('TicketClaimed', 3, v3)).toEqual(v3)
   })
 
   /** `worker` stays: it is what recovery is decided on now, not decoration. */
   it("keeps the worker, which is the field the lease's job moved to", () => {
-    const up = parseStoredPayload('WorkItemClaimed', 2, {
+    const up = parseStoredPayload('TicketClaimed', 2, {
       ...v1,
       leaseUntilMs: 1,
       title: null,
@@ -433,7 +433,7 @@ describe("the retry's two fields, dropped on read", () => {
   const stored = {
     step: 'proposed' as const,
     action: 'review',
-    runId: 'run-f8dc341e',
+    runId: 'pass-f8dc341e',
     onSha: 'b198b57',
     detail: 'the reviewer did not finish (crash): Error: Session ID b99f35a0 is already in use.',
   }

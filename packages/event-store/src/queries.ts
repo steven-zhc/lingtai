@@ -32,7 +32,7 @@
  * ## What each caller keeps
  *
  * The domain stays with the caller. This takes the stream prefix and hands back
- * column names; parsing `wi-lingtai-52` into a project and an issue is the
+ * column names; parsing `ticket-lingtai-52` into a project and an issue is the
  * conductor's, as it was.
  *
  * ## Nothing here chooses, and since #179 `choose.ts` does
@@ -226,13 +226,13 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
       const rows = await ask<{ stream_id: string; outcome: string }>(
         `with over as (
            select distinct on (stream_id) stream_id,
-                  case when type = 'WorkItemClosed' then 'closed' else 'landed' end as outcome
+                  case when type = 'TicketClosed' then 'closed' else 'landed' end as outcome
            from events
-           where type in ('WorkItemLanded', 'WorkItemClosed')
+           where type in ('TicketLanded', 'TicketClosed')
            order by stream_id, seq desc
          ),
          planned as (
-           select distinct started.data->>'workItemId' as work_item
+           select distinct started.data->>'ticketId' as work_item
            from events started
            join events plan
              on plan.stream_id = started.stream_id and plan.type = 'StepsResolved'

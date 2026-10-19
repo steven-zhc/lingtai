@@ -206,7 +206,7 @@ export function planOf(
  */
 export function backoffOf(own: readonly Envelope[], backoffMs: number, now: number = Date.now()): Date | null {
   let lastAttemptAt: Date | null = null
-  for (const e of own) if (e.type === 'WorkItemClaimed') lastAttemptAt = e.at
+  for (const e of own) if (e.type === 'TicketClaimed') lastAttemptAt = e.at
   return heldUntil({ lastAttemptAt, repairPending: retiredRepairPending(own) !== null }, backoffMs, now)
 }
 

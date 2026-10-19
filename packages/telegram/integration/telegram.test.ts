@@ -24,7 +24,7 @@ const TOKEN = '123456:secret-bot-token'
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
-  workItem: { id: 'wi-lingtai-125', project: 'lingtai', issue: '125' },
+  workItem: { id: 'ticket-lingtai-125', project: 'lingtai', issue: '125' },
   board: 'http://localhost:3200',
 })
 
@@ -71,7 +71,7 @@ describe('the message', () => {
   })
 
   it('cuts a body too long for Telegram, and never the link', () => {
-    const url = 'http://localhost:3200/task/wi-lingtai-125'
+    const url = 'http://localhost:3200/task/ticket-lingtai-125'
     const text = messageText({ title: '#125 is asking', body: 'x'.repeat(10_000), url })
     expect(text.length).toBeLessThanOrEqual(MAX_TEXT)
     expect(text.endsWith(url)).toBe(true)
@@ -79,7 +79,7 @@ describe('the message', () => {
 
   it('never cuts an emoji in half where it cuts the body', () => {
     const title = '#125 is asking'
-    const url = 'http://localhost:3200/task/wi-lingtai-125'
+    const url = 'http://localhost:3200/task/ticket-lingtai-125'
     const room = MAX_TEXT - title.length - url.length - 3
     // The cut keeps `room - 1` code units, so an emoji starting one or two
     // before that leaves its high surrogate on the kept side for one of them.
@@ -98,13 +98,13 @@ describe('sending it', () => {
     const api = await botApi()
     await sendMessage(
       { token: TOKEN, chatId: '42', apiRoot: api.root },
-      { title: '#125 is waiting on you', body: 'Merge?', url: 'http://localhost:3200/task/wi-lingtai-125' },
+      { title: '#125 is waiting on you', body: 'Merge?', url: 'http://localhost:3200/task/ticket-lingtai-125' },
     )
 
     expect(api.received).toHaveLength(1)
     expect(api.received[0]!.path).toBe(`/bot${TOKEN}/sendMessage`)
     expect(api.received[0]!.body.chat_id).toBe('42')
-    expect(api.received[0]!.body.text).toContain('http://localhost:3200/task/wi-lingtai-125')
+    expect(api.received[0]!.body.text).toContain('http://localhost:3200/task/ticket-lingtai-125')
   })
 
   it('rejects when Telegram is unreachable, saying so and not saying the token', async () => {
@@ -144,14 +144,14 @@ describe("the command's exit code", () => {
   it('is 0 when the message arrived', async () => {
     const api = await botApi()
     const code = await telegramCommand({
-      read: read(payload('WorkItemLanded', { mergeCommit: 'abc1234def', base: 'main' })),
+      read: read(payload('TicketLanded', { mergeCommit: 'abc1234def', base: 'main' })),
       env: { TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_CHAT_ID: '42', TELEGRAM_API_ROOT: api.root },
       log: () => {},
     })
 
     expect(code).toBe(0)
     expect(api.received[0]!.body.text).toBe(
-      '#125 landed\nmerged into main at abc1234\nhttp://localhost:3200/task/wi-lingtai-125',
+      '#125 landed\nmerged into main at abc1234\nhttp://localhost:3200/task/ticket-lingtai-125',
     )
   })
 

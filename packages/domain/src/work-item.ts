@@ -1,5 +1,5 @@
 /**
- * The WorkItem aggregate: `wi-{project}-{n}`, alive for weeks.
+ * The WorkItem aggregate: `ticket-{project}-{n}`, alive for weeks.
  *
  * The failure this replaces is specific. In the old loop a ticket's state was
  * the set of `agent:*` labels on its GitHub issue, and `--add-label` is set
@@ -30,7 +30,7 @@ export type WorkItemLifecycle =
    * Held. There is no expiry in this shape and that is the whole of 0027: a
    * fold cannot read a clock, so a lifecycle that lapsed on its own would make
    * `lingtai projection rebuild task_view` disagree with the incremental fold.
-   * What returns a claim is a `WorkItemReleased`, appended by a conductor that
+   * What returns a claim is a `TicketReleased`, appended by a conductor that
    * holds the lock.
    */
   | { status: 'claimed'; runId: string; worker: string }
@@ -114,7 +114,7 @@ export interface WorkItemLink {
 export interface WorkItemState {
   lifecycle: WorkItemLifecycle
 
-  /** Null until `WorkItemDiscovered`; a stream can be read before it exists. */
+  /** Null until `TicketDiscovered`; a stream can be read before it exists. */
   project: string | null
   source: 'github-issue' | 'manual' | 'agent-followup' | null
   externalRef: string | null
@@ -160,7 +160,7 @@ export interface WorkItemState {
    * The whole of how a `PromptEdited` reaches an agent
    * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the **next run only**, whoever starts it — the next
-   * `WorkItemClaimed` clears it.
+   * `TicketClaimed` clears it.
    *
    * One-shot rather than durable, and that removes a failure mode rather than
    * mitigating one: a lasting override would need the page to guard against a
@@ -211,12 +211,12 @@ export const emptyWorkItem: WorkItemState = {
  * seventh transition is added.
  */
 const LIFECYCLE_EVENTS = new Set([
-  'WorkItemClaimed',
-  'WorkItemReleased',
+  'TicketClaimed',
+  'TicketReleased',
   'WorkItemBlocked',
   'WorkItemUnblocked',
-  'WorkItemLanded',
-  'WorkItemClosed',
+  'TicketLanded',
+  'TicketClosed',
 ])
 
 export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemState {
@@ -239,8 +239,8 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
   }
 
   switch (event.type) {
-    case 'WorkItemDiscovered': {
-      const d = event.data as PayloadOf<'WorkItemDiscovered'>
+    case 'TicketDiscovered': {
+      const d = event.data as PayloadOf<'TicketDiscovered'>
       return {
         ...state,
         ...at,
@@ -253,8 +253,8 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'WorkItemClaimed': {
-      const d = event.data as PayloadOf<'WorkItemClaimed'>
+    case 'TicketClaimed': {
+      const d = event.data as PayloadOf<'TicketClaimed'>
       return {
         ...state,
         ...at,
@@ -322,7 +322,7 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'WorkItemReleased':
+    case 'TicketReleased':
       // The only way back to the queue. A claim does not lapse (0027), so every
       // return is an append somebody made — including the one a conductor makes
       // at startup for a claim its predecessor died holding.
@@ -371,19 +371,19 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       }
     }
 
-    case 'WorkItemLinked': {
-      const d = event.data as PayloadOf<'WorkItemLinked'>
+    case 'TicketLinked': {
+      const d = event.data as PayloadOf<'TicketLinked'>
       const already = state.links.some((l) => l.relation === d.relation && l.otherRef === d.otherRef)
       return { ...state, ...at, links: already ? state.links : [...state.links, d] }
     }
 
-    case 'WorkItemClosed': {
-      const d = event.data as PayloadOf<'WorkItemClosed'>
+    case 'TicketClosed': {
+      const d = event.data as PayloadOf<'TicketClosed'>
       return { ...state, ...at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
     }
 
-    case 'WorkItemLanded': {
-      const d = event.data as PayloadOf<'WorkItemLanded'>
+    case 'TicketLanded': {
+      const d = event.data as PayloadOf<'TicketLanded'>
       return {
         ...state,
         ...at,
@@ -426,14 +426,14 @@ export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
  * ordinary pass — backed off, told nothing it was bought to be told, and free
  * to merge unattended where the repair it was released for would have asked.
  *
- * The last `RepairRequested` after the last `WorkItemClaimed`, or null.
+ * The last `RepairRequested` after the last `TicketClaimed`, or null.
  */
 export function retiredRepairPending(
   events: readonly Envelope[],
 ): { after: string; reason: string; detail: string; attempt: number } | null {
   let pending: { after: string; reason: string; detail: string; attempt: number } | null = null
   for (const event of events) {
-    if (event.type === 'WorkItemClaimed') pending = null
+    if (event.type === 'TicketClaimed') pending = null
     if (event.type === 'RepairRequested') {
       const d = event.data as PayloadOf<'RepairRequested'>
       pending = { after: d.runId, reason: d.reason, detail: d.detail, attempt: d.attempt }

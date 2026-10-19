@@ -105,9 +105,9 @@ describe('a machine that wrote sqlite', () => {
 
       const project = "esctest" + Math.random().toString(16).slice(2, 8);
       await eventStore.append(workItemStream(project, 1), 0, [{
-        type: "WorkItemDiscovered",
+        type: "TicketDiscovered",
         actor: "conductor",
-        data: parsePayload("WorkItemDiscovered", {
+        data: parsePayload("TicketDiscovered", {
           project, source: "manual", externalRef: "1",
           title: "a card with no server behind it", kind: "tech-debt", labels: [],
         }),
@@ -122,7 +122,7 @@ describe('a machine that wrote sqlite', () => {
 
       const cards = await readTasks({ project });
       const lags = await projectionLag();
-      const streams = await log.queries.projectStreams("wi-");
+      const streams = await log.queries.projectStreams("ticket-");
 
       await runner.close();
       console.log(JSON.stringify({
@@ -222,7 +222,7 @@ describe('a machine that wrote postgres', () => {
       const daemon = await processDaemonStore();
 
       const store = await at(() => log.store.readAll(0n, 1));
-      const queries = await at(() => log.queries.projectStreams("wi-"));
+      const queries = await at(() => log.queries.projectStreams("ticket-"));
       const waker = await at(async () => {
         const session = log.waker("probe").open({ nudge() {}, lost() {} });
         try { await session.ready; } finally { session.close(); }
@@ -323,8 +323,8 @@ describe('a machine that wrote nothing', () => {
         catch (err) { return what + ": " + err.message; }
       };
       console.log(JSON.stringify({
-        append: await refusal("append", () => eventStore.append("wi-x-1", 0, [])),
-        read: await refusal("read", () => eventStore.read("wi-x-1")),
+        append: await refusal("append", () => eventStore.append("ticket-x-1", 0, [])),
+        read: await refusal("read", () => eventStore.read("ticket-x-1")),
         tasks: await refusal("tasks", () => readTasks({})),
         status: await refusal("status", () => readStatus()),
       }));

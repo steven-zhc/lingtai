@@ -23,10 +23,10 @@ function row(over: Partial<SpendRow> = {}): SpendRow {
   return {
     seq: '1',
     at: new Date('2026-09-10T00:00:00Z'),
-    streamId: 'run-1',
-    ticket: 'wi-pin-1',
+    streamId: 'pass-1',
+    ticket: 'ticket-pin-1',
     project: 'pin',
-    pass: 'run-1',
+    pass: 'pass-1',
     purpose: 'Action',
     step: 'proposed',
     action: 'build',
@@ -170,7 +170,7 @@ describe('unknownBill and withNoSpendFallback', () => {
   })
 
   /**
-   * A ticket like `wi-lingtai-89` whose runs predate `RunSpent`: `billOf`
+   * A ticket like `ticket-lingtai-89` whose runs predate `RunSpent`: `billOf`
    * folds its (empty) rows to five empty bills, which reads as nothing spent
    * rather than as unknown. `withNoSpendFallback` is the one place every
    * reader (the card, `/spend`'s ledger) takes that fallback, credited to
@@ -201,19 +201,19 @@ describe('unknownBill and withNoSpendFallback', () => {
   })
 
   /**
-   * One attempt (`run-1`) reported an `Action` row; the other (`run-2`) did
+   * One attempt (`pass-1`) reported an `Action` row; the other (`pass-2`) did
    * not. The straddling case the review named: a ticket whose later attempt
    * appended `RunSpent` and whose earlier one did not must still show the
    * earlier one as unknown, not silently accounted for by the later one.
    */
   it('credits only the attempts with no Action row of their own, when some attempts do have one', () => {
-    const rows = [row({ pass: 'run-1', round: 0, costUsd: 1 })]
+    const rows = [row({ pass: 'pass-1', round: 0, costUsd: 1 })]
     const bills = withNoSpendFallback(billOf(rows), 2, rows)
     expect(bills.Work).toEqual({ reportedCents: 100, reportedRuns: 1, estimates: [], unknown: 1 })
   })
 
   it('does nothing when every attempt already has its own Action row', () => {
-    const rows = [row({ pass: 'run-1', round: 0, costUsd: 1 }), row({ pass: 'run-2', round: 1, costUsd: 0.5 })]
+    const rows = [row({ pass: 'pass-1', round: 0, costUsd: 1 }), row({ pass: 'pass-2', round: 1, costUsd: 0.5 })]
     const bills = billOf(rows)
     expect(withNoSpendFallback(bills, 2, rows)).toEqual(bills)
   })

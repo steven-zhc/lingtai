@@ -36,7 +36,7 @@ import {
 } from '../src/index.ts'
 
 const context = {
-  runId: 'run-01JX',
+  runId: 'pass-01JX',
   onSha: 'sha-a',
   cwd: process.cwd(),
   // The **agent's**, which since 0037 §1 is not what a `run:` action is given.

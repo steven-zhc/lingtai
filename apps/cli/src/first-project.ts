@@ -117,7 +117,7 @@ export interface FirstProjectWorld extends QuestionWorld {
   setupReader: (dir: string) => SetupReader
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
-  /** `wi-<project>-*` streams already in the log for this project — #396's `askTickets`. */
+  /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
    * The clause a refusal here ends with in place of "Nothing was written" —

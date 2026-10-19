@@ -3,23 +3,23 @@
  *
  * Vocabulary, in the package that holds vocabulary. Both of these were in
  * `conductor` and both are needed by things that must not depend on it: the
- * projector folds `wi-…` streams into cards, and the board renders the states.
- * A shared word does not belong to whoever happened to say it first.
+ * projector folds `ticket-…` streams into cards, and the board renders the
+ * states. A shared word does not belong to whoever happened to say it first.
  *
  * Neither of these decides anything, which is why they can live here: `domain`
  * imports nothing, so everything can import `domain`.
  */
 
-export const WORK_ITEM_STREAM_PREFIX = 'wi-'
+export const WORK_ITEM_STREAM_PREFIX = 'ticket-'
 
-export const PASS_STREAM_PREFIX = 'run-'
+export const PASS_STREAM_PREFIX = 'pass-'
 
-/** `wi-{project}-`, every work item's stream for one project. */
+/** `ticket-{project}-`, every work item's stream for one project. */
 export function workItemStreamsOf(project: string): string {
   return `${WORK_ITEM_STREAM_PREFIX}${project}-`
 }
 
-/** `wi-{project}-{n}`, the work item's own stream. */
+/** `ticket-{project}-{n}`, the work item's own stream. */
 export function workItemStream(project: string, externalRef: string | number): string {
   return `${workItemStreamsOf(project)}${externalRef}`
 }
@@ -47,7 +47,7 @@ export function isWorkItemStream(id: string): boolean {
   return id.startsWith(WORK_ITEM_STREAM_PREFIX)
 }
 
-/** `run-{uuid}` — a pass's own stream. The uuid is a caller's to make. */
+/** `pass-{uuid}` — a pass's own stream. The uuid is a caller's to make. */
 export function passStream(id: string): string {
   return `${PASS_STREAM_PREFIX}${id}`
 }
@@ -144,11 +144,11 @@ export type LabelState = (typeof LABEL_STATES)[number]
  * Two of the three ways an event names one, and both are in the bytes the
  * subscription already hands over:
  *
- *   `wi-lingtai-123`                       the work item's own stream
- *   `data.workItemId` = `wi-lingtai-123`   an event on a stream of its own
+ *   `ticket-lingtai-123`                     the work item's own stream
+ *   `data.ticketId` = `ticket-lingtai-123`   an event on a stream of its own
  *
  * The second is what `IntegrationRefused` on `int-lingtai-main` has, and what
- * `RunStarted` on `run-<uuid>` has. It is read rather than the stream id
+ * `RunStarted` on `pass-<uuid>` has. It is read rather than the stream id
  * because `int-{project}-{base}` cannot be split back: a base branch may hold a
  * `-` and an issue number may not, so the last-dash rule that makes
  * `parseWorkItemStream` exact makes an integration stream a guess.
@@ -165,7 +165,7 @@ export function workItemOf(event: { streamId: string; data?: unknown }): {
   issue: string
 } | null {
   if (isWorkItemStream(event.streamId)) return parseWorkItemStream(event.streamId)
-  const named = (event.data as { workItemId?: unknown } | null | undefined)?.workItemId
+  const named = (event.data as { ticketId?: unknown } | null | undefined)?.ticketId
   if (typeof named !== 'string' || !isWorkItemStream(named)) return null
   return parseWorkItemStream(named)
 }

@@ -440,14 +440,14 @@ export interface RunOnceOptions {
 }
 
 export type RunOnceResult =
-  | { ok: true; workItemId: string; runId: string; mergeCommit: string }
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string }
   /**
    * Reached the merge and stopped, because a person asked it to. Deliberately
    * not `ok: false` with a stage — nothing refused, and calling it a failure
    * would be the kind of convenient fiction the log exists to prevent.
    */
-  | { ok: 'held'; workItemId: string; runId: string; headSha: string; step: string }
-  | { ok: false; workItemId: string | null; runId: string | null; stage: string; detail: string }
+  | { ok: 'held'; ticketId: string; runId: string; headSha: string; step: string }
+  | { ok: false; ticketId: string | null; runId: string | null; stage: string; detail: string }
 
 /** A defect's own words. Wanted by the publish and by the release above it. */
 function whyOf(defect: unknown): string {
@@ -607,7 +607,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }),
     )
     if (Either.isLeft(recipeAt)) {
-      return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: recipeAt.left }
+      return { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: recipeAt.left }
     }
     const resolved = recipeAt.right
     const recipe = resolved.recipe
@@ -625,7 +625,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       options.client.owner === null ? `--local <dir>` : `${options.client.owner}/${options.client.repo}`,
     )
     if (divergence) {
-      return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: divergence }
+      return { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: divergence }
     }
     // The agent the recipe resolved to is the agent that runs, or nothing runs
     // (0046 §3). Before the claim, for the same reason as the refusals around it.
@@ -654,7 +654,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (wrongAgent !== null) {
       return {
         ok: false,
-        workItemId: null,
+        ticketId: null,
         runId: null,
         stage: 'recipe',
         // **Per-step dispatch is built, so the remedy is no longer *name the
@@ -746,11 +746,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }),
     )
     if (Either.isLeft(asked)) {
-      return { ok: false, workItemId: null, runId: null, stage: 'env', detail: asked.left.detail }
+      return { ok: false, ticketId: null, runId: null, stage: 'env', detail: asked.left.detail }
     }
     const env = asked.right
     if (env.refusal) {
-      return { ok: false, workItemId: null, runId: null, stage: 'env', detail: env.refusal }
+      return { ok: false, ticketId: null, runId: null, stage: 'env', detail: env.refusal }
     }
     log(
       `env: ${env.names.length === 0 ? 'nothing declared' : env.names.map((n) => `${n.name} from ${n.layer}`).join(', ')}`,
@@ -782,7 +782,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (Either.isLeft(extensionRefusal)) {
       const detail =
         extensionRefusal.left instanceof Error ? extensionRefusal.left.message : String(extensionRefusal.left)
-      return { ok: false, workItemId: null, runId: null, stage: 'env', detail }
+      return { ok: false, ticketId: null, runId: null, stage: 'env', detail }
     }
 
     /**
@@ -860,13 +860,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       .map((id) => ({ id, missing: missingForTier(runtimeNamed(id as RuntimeId).capabilities, tier) }))
       .find((each) => each.missing.length > 0)
     const missing = refusedBy?.missing ?? []
-    const workItemId = workItemStream(project, options.issue)
+    const ticketId = workItemStream(project, options.issue)
 
     if (missing.length > 0) {
       // Never silently downgrade. The refusal is an event on the work item so the
       // board can say why nothing ran.
       yield* Effect.promise(() =>
-        appendNow(workItemId, [
+        appendNow(ticketId, [
           {
             type: 'DispatchRefused',
             actor: 'conductor',
@@ -904,7 +904,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
       return {
         ok: false,
-        workItemId,
+        ticketId,
         runId: null,
         stage: 'dispatch',
         // `'failed'` means no pause is known to hold, so `detail` must not
@@ -935,7 +935,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * the agent. It is also where the restarts already spent are counted, which
      * is what `Ceilings.restartsLeft` is.
      */
-    const before = yield* Effect.promise(() => store.read(workItemId))
+    const before = yield* Effect.promise(() => store.read(ticketId))
     const folded = reduceWorkItem(before)
     const edit = folded.pendingPrompt
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
@@ -1029,7 +1029,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * `recordEnd` sets this and appends nothing, which is `PassPorts.recordEnd`
      * read the way it states itself — *batching is the caller's because the
      * ending is the caller's*. It used to append on the spot, and that put the
-     * resolution on the item's stream **before** the `WorkItemLanded` or
+     * resolution on the item's stream **before** the `TicketLanded` or
      * `WorkItemBlocked` it is about: the exact split `resolveEndActions` says is
      * impossible — *one transaction, so the outcome and its resolution cannot
      * come apart* (`end-step.ts`).
@@ -1104,7 +1104,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * **A run that took nothing releases nothing** (`#269`).
          *
          * `releaseWorkItem` appends whoever holds it (`claim.ts`), so a release
-         * from a run that never claimed writes `WorkItemReleased` over **another
+         * from a run that never claimed writes `TicketReleased` over **another
          * conductor's live item** and `lingtai:queued` over its `lingtai:working`
          * while its agent is still working. The `claim` branch at the bottom
          * guards the declines the pass *reports*; what reaches the defect handler
@@ -1128,13 +1128,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           try: async () => {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseWorkItem(workItemId, runId, reason, store).catch((err: unknown) => {
+            await releaseWorkItem(ticketId, runId, reason, store).catch((err: unknown) => {
               backInTheQueue = false
               log(`the item was not released: ${whyOf(err)}`)
             })
             if (backInTheQueue && endedAs === 'failed' && endPlan.length > 0) {
               try {
-                await appendAt(workItemId, endPlan)
+                await appendAt(ticketId, endPlan)
                 endResolved = endPlan
               } catch (defect) {
                 // Said rather than raised: the run has already ended and the item
@@ -1146,7 +1146,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             await tellGitHubAbout({
               store,
               github: options.client,
-              workItemId,
+              ticketId,
               labels: labelsFor('queued'),
               appended: endResolved,
             })
@@ -1204,7 +1204,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const claimed = Effect.gen(function* () {
       /**
        * Whether this run's diff reached the base branch. Set in exactly one
-       * place, beside the `WorkItemLanded` append, which is the only sentence
+       * place, beside the `TicketLanded` append, which is the only sentence
        * here that means it.
        */
       let didLand = false
@@ -1413,7 +1413,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         )
         // The sentence that says which run this is, first — then what was written
         // while there was nowhere to write it, in the order it was written.
-        runLog.note('run', `${runId} · ${workItemId} · ${branch} → ${base}`)
+        runLog.note('run', `${runId} · ${ticketId} · ${branch} → ${base}`)
         const held = beforeTheOpen
         beforeTheOpen = []
         for (const { label, detail } of held) runLog.note(label, detail)
@@ -2006,7 +2006,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         try {
           // The claim carries what the task is, because it is now the only place a
           // title enters the log at all.
-          claim = await claimWorkItem(workItemId, {
+          claim = await claimWorkItem(ticketId, {
             runId,
             store,
             title: runnable.title,
@@ -2016,8 +2016,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // The one decline that leaves a stream behind, and `end` resolves
           // against it: the append may have committed, so the item may be held by
           // this run and somebody has to be told about it.
-          onStream = workItemId
-          return { mayHold: { workItemId, detail: whyOf(error) } }
+          onStream = ticketId
+          return { mayHold: { ticketId, detail: whyOf(error) } }
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
         // **Set on the line the append committed, and before anything that can
@@ -2025,14 +2025,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // is what `release` below is gated on — so a throw between here and the
         // return must not be able to leave the item claimed with nothing willing
         // to give it back.
-        onStream = workItemId
-        log(`claimed ${workItemId} as ${runId}`)
+        onStream = ticketId
+        log(`claimed ${ticketId} as ${runId}`)
         // **The run's account starts here**, because until this line there is no
         // run to account for: see `runLog`. A `passedOver` or a lost race above
         // returns having opened nothing.
         await openTheRunLog()
         took = {
-          workItemId,
+          ticketId,
           kind: runnable.kind,
           ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
         }
@@ -2042,10 +2042,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         await tellGitHubAbout({
           store,
           github: options.client,
-          workItemId,
+          ticketId,
           labels: labelsFor('running'),
         })
-        return { taken: { workItemId, kind: runnable.kind } }
+        return { taken: { ticketId, kind: runnable.kind } }
       }
 
       /**
@@ -2085,7 +2085,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * permissions change — became a **defect**, which the handler at the
          * bottom of `runOnce` answers with `release(…)`: `releaseWorkItem`
          * appends whoever holds it (`claim.ts`), so a failure here appended
-         * `WorkItemReleased` to another conductor's live item and wrote
+         * `TicketReleased` to another conductor's live item and wrote
          * `lingtai:queued` over its `lingtai:working` while its agent was still
          * working. The `claim` branch guards declines the pass reports; a defect
          * raised before the `claim` step reaches the handler with `released`
@@ -2399,7 +2399,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * outcome and its resolution cannot come apart*, and `PassPorts.recordEnd`
        * says whose transaction it is: *batching is the caller's because the ending
        * is the caller's*. The pass runs `end` before this file writes
-       * `WorkItemLanded` or `WorkItemBlocked`, so an append here is the resolution
+       * `TicketLanded` or `WorkItemBlocked`, so an append here is the resolution
        * landing first and a dropped connection leaving it there alone. See
        * `endPlan` for what that cost.
        *
@@ -2466,7 +2466,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             repo: options.client.repo,
             base,
             branch,
-            workItemId,
+            ticketId,
             headSha: on.onSha,
             stepsPassed: true,
             token: options.token,
@@ -3041,7 +3041,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       type: 'RunStarted',
                       actor: 'conductor',
                       data: parsePayload('RunStarted', {
-                        workItemId,
+                        ticketId,
                         // **The runtime that actually ran, not the pass's
                         // default** (`#314`). This field answers *which runtime
                         // wrote this*, and a step naming a second one makes the
@@ -3546,7 +3546,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`.
        * Left to fall through, a blocked branch appends `ApprovalRequested` to a
        * run stream with no `RunStarted`, appends `WorkItemBlocked` to
-       * `workItemId`, comments **Lingtai is waiting on you** and sets
+       * `ticketId`, comments **Lingtai is waiting on you** and sets
        * `lingtai:waiting` — for an item this pass never claimed.
        *
        * Both declines are worse than noise. `passedOver` is `runnableNow` saying
@@ -3559,7 +3559,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `claim` here and wrote nothing at all.
        *
        * So: nothing is appended and nothing is told. `released` is set because
-       * the `ensuring` at the bottom would otherwise append `WorkItemReleased`
+       * the `ensuring` at the bottom would otherwise append `TicketReleased`
        * and write `lingtai:queued` over exactly those two items —
        * `releaseWorkItem` appends whoever holds it.
        *
@@ -3585,7 +3585,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`nothing claimed: ${said(why)}`)
         return {
           ok: false,
-          workItemId,
+          ticketId,
           runId,
           stage: 'claim',
           detail: why,
@@ -3649,7 +3649,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * **`appendAt` and a swallowed refusal, which is `noteRefs`' rule and not a
        * laxness**: *the account never costs the thing it is an account of.* This
        * is the only store write between the walk returning and the landing's own
-       * `appendNow(workItemId, [WorkItemLanded, ...endPlan])`, because
+       * `appendNow(ticketId, [TicketLanded, ...endPlan])`, because
        * `publishWhatIsCommitted` is skipped on a landing — so a strict append
        * here would let a dropped connection on a purely informational row reach
        * the defect handler, release an item whose branch is already on `main`,
@@ -3868,7 +3868,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // the same way `holdOfPass`'s own step 2 already did for this
           // reason, off the same `lastIntegrationRefusal`.
           if (withRun._tag === 'MergeRefused') {
-            const refusal = await lastIntegrationRefusal(store, project, base, workItemId, branch)
+            const refusal = await lastIntegrationRefusal(store, project, base, ticketId, branch)
             return {
               ...withRun,
               paths: refusal?.paths ?? null,
@@ -3880,7 +3880,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }
         const integrationRefusal =
           stopped?.step === 'merge' && stopped.ending.ending === 'refused'
-            ? await lastIntegrationRefusal(store, project, base, workItemId, branch)
+            ? await lastIntegrationRefusal(store, project, base, ticketId, branch)
             : null
         return holdOfPass({
           stopped,
@@ -3901,11 +3901,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const merged = landedAt()
       if (outcome === 'landed' && merged !== null) {
         yield* Effect.promise(() =>
-          appendNow(workItemId, [
+          appendNow(ticketId, [
             {
-              type: 'WorkItemLanded',
+              type: 'TicketLanded',
               actor: 'conductor',
-              data: parsePayload('WorkItemLanded', { mergeCommit: merged, base }),
+              data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
             },
             // **In the same append as the landing, so the two cannot come apart**
             // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
@@ -3923,14 +3923,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           tellGitHubAbout({
             store,
             github: options.client,
-            workItemId,
+            ticketId,
             labels: labelsFor('landed'),
             appended: endResolved,
           }),
         )
         log(`landed ${merged.slice(0, 7)} on ${base}`)
         didLand = true
-        return { ok: true, workItemId, runId, mergeCommit: merged } satisfies RunOnceResult
+        return { ok: true, ticketId, runId, mergeCommit: merged } satisfies RunOnceResult
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
@@ -3996,7 +3996,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           of: ceiling.restarts,
         })
         yield* Effect.promise(() =>
-          appendNow(workItemId, [
+          appendNow(ticketId, [
             {
               type: 'PassRestarted',
               actor: 'conductor',
@@ -4018,7 +4018,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`starting over — restart ${restart} of ${ceiling.restarts}`)
         runLog.note('restart', reason)
         yield* release(reason)
-        return { ok: false, workItemId, runId, stage: 'restart', detail: reason } satisfies RunOnceResult
+        return { ok: false, ticketId, runId, stage: 'restart', detail: reason } satisfies RunOnceResult
       }
 
       // ---- blocked: a person now holds it -------------------------------------
@@ -4120,7 +4120,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           )
         }
         yield* Effect.promise(() =>
-          appendNow(workItemId, [
+          appendNow(ticketId, [
             {
               type: 'WorkItemBlocked',
               actor: 'conductor',
@@ -4138,7 +4138,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           tellGitHubAbout({
             store,
             github: options.client,
-            workItemId,
+            ticketId,
             question: said_.question,
             labels: labelsFor('waiting'),
             appended: endResolved,
@@ -4147,7 +4147,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${said_.question}`)
         return {
           ok: 'held',
-          workItemId,
+          ticketId,
           runId,
           headSha,
           step: stopped?.step ?? 'proposed',
@@ -4200,7 +4200,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       yield* release(reason)
       return {
         ok: false,
-        workItemId,
+        ticketId,
         runId,
         stage: stopped?.step ?? 'pass',
         detail: stopped === null ? reason : detailOf(stopped),
@@ -4213,7 +4213,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         return release(`unexpected failure: ${detail}`).pipe(
           Effect.as({
             ok: false as const,
-            workItemId,
+            ticketId,
             runId,
             stage: 'unexpected',
             detail,

@@ -22,7 +22,7 @@ import { createHumanAction } from '../src/human-action.ts'
 import { createProcessAction } from '../src/process-action.ts'
 import { createWatchAction } from '../src/watch-action.ts'
 
-const context = { runId: 'run-1', onSha: 'b'.repeat(40), cwd: process.cwd(), env: {} }
+const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: process.cwd(), env: {} }
 /** A `run:` action's own environment, since 0037 §1 — never the context's. */
 const shellEnv = { PATH: process.env['PATH'] ?? '' }
 

@@ -320,7 +320,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
 
   const result = await runPass({
     recipe: { steps: StepMap.parse(DECLARED) },
-    context: { runId: 'run-1', onSha: 'abc1234def', cwd, env: {} },
+    context: { runId: 'pass-1', onSha: 'abc1234def', cwd, env: {} },
     emit: (event) => void events.push({ type: event.type, payload: JSON.stringify(event.data) }),
     actionsAt,
     bodies: PASSING,

@@ -99,7 +99,7 @@ function beating(over: Partial<Beat> = {}): Beat {
 }
 
 const claimed = (runId: string) => ({
-  type: 'WorkItemClaimed',
+  type: 'TicketClaimed',
   actor: 'conductor',
   data: { runId, worker: 'local:1', title: null, kind: 'bug' },
 })
@@ -164,14 +164,14 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
 
     it('lands a beat that a later read sees, and reads as up', async () => {
       await withStore(async ({ store }) => {
-        await store.beat(beating({ state: 'starting', currentRunId: 'run-1', codeSha: 'abc1234' }))
+        await store.beat(beating({ state: 'starting', currentRunId: 'pass-1', codeSha: 'abc1234' }))
 
         const status = await store.status()
         expect(status).not.toBeNull()
         expect(status!.pid).toBe(4242)
         expect(status!.host).toBe('contract-host')
         expect(status!.state).toBe('starting')
-        expect(status!.currentRunId).toBe('run-1')
+        expect(status!.currentRunId).toBe('pass-1')
         expect(status!.codeSha).toBe('abc1234')
         expect(status!.codeDirty).toBe(false)
         // The whole point of the row: `lingtai doctor` and the board's health
@@ -204,7 +204,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
 
         const second = await fixture.another()
         try {
-          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'run-2' }))
+          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2' }))
         } finally {
           await second.close()
         }
@@ -215,7 +215,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const status = await store.status()
         expect(status!.state).toBe('draining')
         expect(status!.pid).toBe(9999)
-        expect(status!.currentRunId).toBe('run-2')
+        expect(status!.currentRunId).toBe('pass-2')
         // And the row's beginning survives the overwriting. `started_at` is
         // what makes a beat an update of a running daemon rather than a new
         // life for it.
@@ -372,7 +372,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const { store } = fixture
         const before = await store.head()
 
-        const written = await store.events.append(fixture.stream(1), 0, [claimed('run-a')])
+        const written = await store.events.append(fixture.stream(1), 0, [claimed('pass-a')])
         const seq = written.at(-1)!.seq
 
         const after = await store.head()
@@ -388,14 +388,14 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const { store } = fixture
         const claimedStream = fixture.stream(2)
         const landedStream = fixture.stream(3)
-        await store.events.append(claimedStream, 0, [claimed('run-b')])
+        await store.events.append(claimedStream, 0, [claimed('pass-b')])
         await store.events.append(landedStream, 0, [
-          { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'main' } },
+          { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'main' } },
         ])
 
         const found = await store.streams({
           prefixes: [fixture.prefix],
-          types: ['WorkItemClaimed'],
+          types: ['TicketClaimed'],
         })
         expect(found).toContain(claimedStream)
         expect(found).not.toContain(landedStream)
@@ -414,13 +414,13 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       await withStore(async (fixture) => {
         const { store } = fixture
         const id = fixture.stream(4)
-        await store.events.append(id, 0, [claimed('run-c')])
+        await store.events.append(id, 0, [claimed('pass-c')])
 
-        expect(await store.streams({ prefixes: [fixture.prefix], types: ['WorkItemClaimed'] })).toContain(id)
+        expect(await store.streams({ prefixes: [fixture.prefix], types: ['TicketClaimed'] })).toContain(id)
         expect(
           await store.streams({
             prefixes: [fixture.prefix.toUpperCase()],
-            types: ['WorkItemClaimed'],
+            types: ['TicketClaimed'],
           }),
         ).toEqual([])
       })
@@ -431,8 +431,8 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // `type = any('{}')` matches nothing — so the empty answer is returned
       // rather than paid for.
       await withStore(async ({ store }) => {
-        expect(await store.streams({ prefixes: [], types: ['WorkItemClaimed'] })).toEqual([])
-        expect(await store.streams({ prefixes: ['wi-%'], types: [] })).toEqual([])
+        expect(await store.streams({ prefixes: [], types: ['TicketClaimed'] })).toEqual([])
+        expect(await store.streams({ prefixes: ['ticket-%'], types: [] })).toEqual([])
       })
     })
   })

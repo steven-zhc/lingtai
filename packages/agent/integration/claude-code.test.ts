@@ -72,7 +72,7 @@ const RECEIPT = {
   duration_api_ms: 4_101_233,
   num_turns: 63,
   result: 'the point runs on every outcome, not just an inline merge',
-  session_id: sessionIdFor('run-01JX'),
+  session_id: sessionIdFor('pass-01JX'),
   total_cost_usd: 5.42,
   usage: { input_tokens: 10, output_tokens: 4_212 },
   permission_denials: [],
@@ -137,7 +137,7 @@ function recordingTrace(): RunTrace & { lines: string[] } {
 }
 
 const request = (over: Partial<Parameters<ReturnType<typeof createClaudeCodeRuntime>['run']>[0]> = {}) => ({
-  runId: 'run-01JX',
+  runId: 'pass-01JX',
   cwd: root,
   prompt: 'fix the thing',
   settingsPath: join(root, 'settings.json'),
@@ -231,12 +231,12 @@ describe('sessionIdFor', () => {
    * nothing to store and nothing to lose.
    */
   it('is stable for a run id and different between runs', () => {
-    expect(sessionIdFor('run-a')).toBe(sessionIdFor('run-a'))
-    expect(sessionIdFor('run-a')).not.toBe(sessionIdFor('run-b'))
+    expect(sessionIdFor('pass-a')).toBe(sessionIdFor('pass-a'))
+    expect(sessionIdFor('pass-a')).not.toBe(sessionIdFor('pass-b'))
   })
 
   it('is a valid UUID, because --session-id requires one', () => {
-    expect(sessionIdFor('run-a')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(sessionIdFor('pass-a')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 })
 
@@ -257,7 +257,7 @@ describe('run', () => {
     expect(outcome.turns).toBe(63)
     expect(outcome.costUsd).toBe(5.42)
     expect(outcome.durationMs).toBe(4_210_000)
-    expect(outcome.sessionId).toBe(sessionIdFor('run-01JX'))
+    expect(outcome.sessionId).toBe(sessionIdFor('pass-01JX'))
   })
 
   it('passes the flags that make the run attributable and governed', async () => {
@@ -271,7 +271,7 @@ describe('run', () => {
     expect(written).toContain('-p')
     expect(written).toContain('--output-format')
     expect(written).toContain('--settings')
-    expect(written).toContain(sessionIdFor('run-01JX'))
+    expect(written).toContain(sessionIdFor('pass-01JX'))
     expect(written).toContain('claude-opus-5')
 
     // The pair, together or not at all: 2.1.263 refuses `--print` with
@@ -377,7 +377,7 @@ describe('run', () => {
 
   it("passes the recipe's turns to the binary, where the log can see it", () => {
     const { args } = createClaudeCodeRuntime().invocation!({
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       cwd: root,
       settingsPath: join(root, 'settings.json'),
       env: {},
@@ -395,7 +395,7 @@ describe('run', () => {
   it('passes an output schema as --json-schema, and omits the flag without one', () => {
     const schema = { type: 'object', properties: { findings: { type: 'array' } } }
     const withSchema = createClaudeCodeRuntime().invocation!({
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       cwd: root,
       settingsPath: join(root, 'settings.json'),
       env: {},
@@ -405,7 +405,7 @@ describe('run', () => {
     expect(withSchema.args[withSchema.args.indexOf('--json-schema') + 1]).toBe(JSON.stringify(schema))
 
     const withoutSchema = createClaudeCodeRuntime().invocation!({
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       cwd: root,
       settingsPath: join(root, 'settings.json'),
       env: {},
@@ -552,7 +552,7 @@ describe('the stream, and the accounting that must not move', () => {
       costUsd: 5.42,
       text: 'the point runs on every outcome, not just an inline merge',
       failure: null,
-      sessionId: sessionIdFor('run-01JX'),
+      sessionId: sessionIdFor('pass-01JX'),
     })
   })
 
@@ -721,7 +721,7 @@ describe("the agent's output in the run log", () => {
   it('interleaves with the hook trace in one readable file', async () => {
     const path = join(root, 'interleaved.log')
     const log = await openRunLog({ path })
-    log.note('run', 'run-01JX · wi-lingtai-109 · agent/109 → main')
+    log.note('run', 'pass-01JX · ticket-lingtai-109 · agent/109 → main')
 
     const binary = await fakeStream(stream())
     await createClaudeCodeRuntime({ binary }).run(request({ log }))
@@ -866,9 +866,9 @@ describe('the Codex adapter, where it reads the wiring off disk', () => {
   }
 
   it('finds the hook the conductor rendered and points Codex at it', async () => {
-    const path = await settingsAt(renderSettings({ runId: 'run-1', hookBinary: '/opt/lingtai/lingtai-hook' }))
+    const path = await settingsAt(renderSettings({ runId: 'pass-1', hookBinary: '/opt/lingtai/lingtai-hook' }))
     const { args } = createCodexRuntime().invocation!({
-      runId: 'run-1',
+      runId: 'pass-1',
       cwd: '/tmp/tree',
       settingsPath: path,
       env: {},
@@ -886,7 +886,7 @@ describe('the Codex adapter, where it reads the wiring off disk', () => {
    */
   it('refuses to start where the wiring cannot be read, rather than running unhooked', async () => {
     const outcome = await createCodexRuntime().run({
-      runId: 'run-1',
+      runId: 'pass-1',
       cwd: '/tmp/tree',
       prompt: 'do the thing',
       settingsPath: join(tmpdir(), 'lingtai-no-such-settings.json'),
@@ -922,8 +922,8 @@ describe('the Codex adapter, where it reads the wiring off disk', () => {
   it("names a linked worktree's git directory and the borrowed stores, not the repository", async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-worktree-'))
     const bare = join(root, 'repos', 'p.git')
-    const gitDir = join(bare, 'worktrees', 'run-1')
-    const tree = join(root, 'worktrees', 'p', 'run-1')
+    const gitDir = join(bare, 'worktrees', 'pass-1')
+    const tree = join(root, 'worktrees', 'p', 'pass-1')
     await mkdir(gitDir, { recursive: true })
     await mkdir(tree, { recursive: true })
     await mkdir(join(bare, 'hooks'), { recursive: true })

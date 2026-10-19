@@ -7,10 +7,10 @@ import { integrationStream, workItemStream } from '@lingtai/domain'
  * looked at a stream; a per-recipe one cannot, and **three of the four types
  * this repository declares are appended to no work item stream**:
  *
- *   `WorkItemBlocked`      `wi-{project}-{n}`    the stream says it
- *   `IntegrationRefused`   `int-{project}-{base}` `data.workItemId` says it
- *   `ApprovalRequested`    `run-<uuid>`          only the run's `RunStarted`
- *   `RunAwaitingInput`     `run-<uuid>`          the same
+ *   `WorkItemBlocked`      `ticket-{project}-{n}`    the stream says it
+ *   `IntegrationRefused`   `int-{project}-{base}` `data.ticketId` says it
+ *   `ApprovalRequested`    `pass-<uuid>`          only the run's `RunStarted`
+ *   `RunAwaitingInput`     `pass-<uuid>`          the same
  *
  * So all four are appended here exactly as `conduct.ts`, `hook-socket.ts` and
  * `integrate.ts` append them, and the resolver is asked. A mock store would
@@ -24,8 +24,8 @@ import { createSubjectResolver } from '../src/subscribers.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const wi = workItemStream(PROJECT, 7)
-const runId = `run-${crypto.randomUUID()}`
-const startless = `run-${crypto.randomUUID()}`
+const runId = `pass-${crypto.randomUUID()}`
+const startless = `pass-${crypto.randomUUID()}`
 const lane = integrationStream(PROJECT, 'main')
 
 let store: EventStore
@@ -50,7 +50,7 @@ beforeAll(async () => {
       type: 'RunStarted',
       actor: 'conductor',
       data: {
-        workItemId: wi,
+        ticketId: wi,
         runtime: 'claude-code',
         model: 'claude-opus-5',
         promptVersion: 'v1',
@@ -80,7 +80,7 @@ beforeAll(async () => {
     {
       type: 'IntegrationRefused',
       actor: 'conductor',
-      data: { workItemId: wi, branch: 'agent/7', reason: 'conflict', detail: 'does not merge' },
+      data: { ticketId: wi, branch: 'agent/7', reason: 'conflict', detail: 'does not merge' },
     },
   ])
   await store.append(wi, 0, [
@@ -106,7 +106,7 @@ describe('createSubjectResolver', () => {
   })
 
   /** `int-{project}-{base}` cannot be split back — a base may hold a `-` — so the payload answers. */
-  it('reads it off `workItemId` for an integration lane', async () => {
+  it('reads it off `ticketId` for an integration lane', async () => {
     expect(await subject(await head(lane))).toEqual(card)
   })
 

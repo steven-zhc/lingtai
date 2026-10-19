@@ -38,9 +38,9 @@ function e(streamId: string, type: string, data: unknown, at = '2026-09-08T04:12
   }
 }
 
-const ITEM = 'wi-lingtai-89'
-const RUN_1 = 'run-11111111-0000-0000-0000-000000000000'
-const RUN_2 = 'run-22222222-0000-0000-0000-000000000000'
+const ITEM = 'ticket-lingtai-89'
+const RUN_1 = 'pass-11111111-0000-0000-0000-000000000000'
+const RUN_2 = 'pass-22222222-0000-0000-0000-000000000000'
 const SHA = 'a'.repeat(40)
 
 const claim = (runId: string, at: string): Claim => ({ runId, at, repair: false, released: null })
@@ -58,8 +58,8 @@ describe('the state, and how long it has held', () => {
     // against the item while the hold stands is not the hold starting again.
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemDiscovered', { project: 'lingtai', externalRef: '89' }, '2026-09-06T09:00:00Z'),
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }, '2026-09-08T03:00:00Z'),
+        e(ITEM, 'TicketDiscovered', { project: 'lingtai', externalRef: '89' }, '2026-09-06T09:00:00Z'),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }, '2026-09-08T03:00:00Z'),
         e(
           ITEM,
           'WorkItemBlocked',
@@ -78,7 +78,7 @@ describe('the state, and how long it has held', () => {
           },
           '2026-09-08T04:12:15Z',
         ),
-        e(ITEM, 'WorkItemLinked', { relation: 'follows-up', otherRef: '58' }, '2026-09-08T08:24:00Z'),
+        e(ITEM, 'TicketLinked', { relation: 'follows-up', otherRef: '58' }, '2026-09-08T08:24:00Z'),
       ],
       [],
     )
@@ -98,8 +98,8 @@ describe('the state, and how long it has held', () => {
   it('says an item nobody is holding is queued, and that nobody is waiting on you', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }, '2026-09-08T03:00:00Z'),
-        e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'timeout' }, '2026-09-08T04:00:00Z'),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }, '2026-09-08T03:00:00Z'),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'timeout' }, '2026-09-08T04:00:00Z'),
       ],
       [],
     )
@@ -112,7 +112,7 @@ describe('the state, and how long it has held', () => {
 
   it('reads a run in flight as running rather than as an absence', () => {
     const standing = standingOf(
-      [e(ITEM, 'WorkItemClaimed', { runId: RUN_1, worker: 'daemon' }, '2026-09-08T03:00:00Z')],
+      [e(ITEM, 'TicketClaimed', { runId: RUN_1, worker: 'daemon' }, '2026-09-08T03:00:00Z')],
       [],
     )
 
@@ -128,9 +128,9 @@ describe('the state, and how long it has held', () => {
     ]
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'repair' }),
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'repair' }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'MergeRefused',
@@ -163,7 +163,7 @@ describe('the evidence', () => {
     ])
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'CheckRed',
@@ -217,9 +217,9 @@ describe('the evidence', () => {
 
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
       ],
       [one, two],
     )
@@ -264,9 +264,9 @@ describe('the evidence', () => {
 
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
       ],
       [one, two],
     )
@@ -307,7 +307,7 @@ describe('the evidence', () => {
       e(RUN_1, 'RunFinished', { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
     ])
 
-    const standing = standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 })], [run])
+    const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
 
     expect(standing.deciding?.source).toBe('proposed / review')
     expect(standing.deciding?.line).toContain('never ran')
@@ -323,7 +323,7 @@ describe('the evidence', () => {
       e(RUN_1, 'RunStarted', { baseSha: SHA }),
       e(RUN_1, 'RunFailed', { kind: 'error_max_turns' }),
     ])
-    const standing = standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 })], [run])
+    const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
 
     expect(standing.deciding).toEqual({ attempt: 1, source: 'failed', line: 'error_max_turns' })
   })
@@ -333,11 +333,11 @@ describe('the evidence', () => {
       e(RUN_1, 'RunStarted', { baseSha: SHA }),
       e(RUN_1, 'RunFinished', { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
     ])
-    expect(standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 })], [run]).deciding).toBeNull()
+    expect(standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run]).deciding).toBeNull()
   })
 
   /**
-   * `wi-lingtai-89`, and the reason the block had no pointer at all on
+   * `ticket-lingtai-89`, and the reason the block had no pointer at all on
    * 2026-09-09 (#111). The repair is the named attempt and it ended *well* — exit
    * 0, no commits, no gate ever reported — so it refused nothing; the failure
    * everybody is looking at is attempt 1's. A pointer that only ever looked at
@@ -362,7 +362,7 @@ describe('the evidence', () => {
 
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
         // Retired, and still read: this is an old ticket's stream, and the
         // walk below has to work on one (`#143`).
         e(ITEM, 'RepairRequested', {
@@ -372,8 +372,8 @@ describe('the evidence', () => {
           fingerprint: 'x',
           attempt: 1,
         }),
-        e(ITEM, 'WorkItemReleased', { runId: RUN_1, reason: 'repair' }),
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'repair' }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'CheckRed',
@@ -414,7 +414,7 @@ describe('the question', () => {
   it('carries its deciding line and leaves the tail where the tail is', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'Routed',
@@ -442,7 +442,7 @@ describe('the question', () => {
   it('clips a single line that is a log all by itself', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'Routed',
@@ -484,7 +484,7 @@ describe('the move the block ends in', () => {
       e(RUN_1, 'ApprovalRequested', { step: 'proposed', action: 'human', onSha: 'b'.repeat(40) }),
       e(RUN_1, 'RunProducedDiff', { headSha: SHA, branch: 'agent/89', files: 2, insertions: 9, deletions: 1 }),
     ])
-    const standing = standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }), blocked(RUN_1)], [run])
+    const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 }), blocked(RUN_1)], [run])
 
     expect(standing.awaitingSha).toBe('b'.repeat(40))
     expect(standing.headSha).toBe(SHA)
@@ -499,7 +499,7 @@ describe('the move the block ends in', () => {
       e(RUN_1, 'ApprovalRequested', { step: 'merge', action: 'human', onSha: SHA }),
       e(RUN_1, 'ApprovalGranted', { step: 'merge', action: 'human', onSha: SHA, by: 'human:steven' }),
     ])
-    const standing = standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 }), blocked(RUN_1)], [run])
+    const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 }), blocked(RUN_1)], [run])
 
     expect(standing.awaitingSha).toBeNull()
   })
@@ -508,7 +508,7 @@ describe('the move the block ends in', () => {
     const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'ApprovalRequested', { step: 'proposed', action: 'human', onSha: SHA }),
     ])
-    const standing = standingOf([e(ITEM, 'WorkItemClaimed', { runId: RUN_1 })], [run])
+    const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
 
     expect(standing.state).toBe('running')
     expect(standing.awaitingSha).toBeNull()
@@ -552,7 +552,7 @@ describe('the block, rendered', () => {
         standing={HELD}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -561,7 +561,7 @@ describe('the block, rendered', () => {
 
     expect(html).toContain('blocked')
     // The coordinate is the bar's now (#152), and still says which attempt.
-    expect(renderToStaticMarkup(<Coords standing={HELD} taskId="wi-lingtai-112" queued={null} />)).toContain(
+    expect(renderToStaticMarkup(<Coords standing={HELD} taskId="ticket-lingtai-112" queued={null} />)).toContain(
       'from attempt 2 of 2',
     )
     expect(html).toContain('conflict: agent/112 does not merge into develop')
@@ -597,7 +597,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -632,7 +632,7 @@ describe('the block, rendered', () => {
   it('does not name a step as the source of words that step never said', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'MergeRefused',
@@ -663,7 +663,7 @@ describe('the block, rendered', () => {
         standing={standing}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -677,7 +677,7 @@ describe('the block, rendered', () => {
   it('names the step whose own evidence is the quote', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'CheckRed',
@@ -714,7 +714,7 @@ describe('the block, rendered', () => {
     }
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'Routed',
@@ -751,7 +751,7 @@ describe('the block, rendered', () => {
         standing={standing}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -769,7 +769,7 @@ describe('the block, rendered', () => {
   it('still gives a refusal whose diagnosis quoted nothing a second rank', () => {
     const standing = standingOf(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN_2 }),
+        e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
         e(ITEM, 'WorkItemBlocked', {
           hold: {
             _tag: 'CheckRed',
@@ -794,7 +794,7 @@ describe('the block, rendered', () => {
         standing={standing}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -817,7 +817,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -842,7 +842,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -870,7 +870,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -912,7 +912,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -924,7 +924,7 @@ describe('the block, rendered', () => {
   })
 
   /**
-   * The block used to print `run-5cb24ac5` twice — once as a coordinate and
+   * The block used to print `pass-5cb24ac5` twice — once as a coordinate and
    * once inside the sentence about the repair that produced the diff. The
    * conductor's sentence no longer names it and the block names it once.
    */
@@ -944,7 +944,7 @@ describe('the block, rendered', () => {
         }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -964,7 +964,7 @@ describe('the block, rendered', () => {
         standing={HELD}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -986,7 +986,7 @@ describe('the block, rendered', () => {
         standing={HELD}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1000,7 +1000,7 @@ describe('the block, rendered', () => {
         standing={{ ...HELD, state: 'running', onYou: false, who: 'an agent is working', question: null }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1023,7 +1023,7 @@ describe('the block, rendered', () => {
         standing={HELD}
         project={null}
         issue={null}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1046,7 +1046,7 @@ describe('the block, rendered', () => {
         standing={{ ...HELD, question: 'verify-failed: build exited 2\nScope: 15 of 16 workspace projects' }}
         project="lingtai"
         issue={112}
-        taskId="wi-lingtai-112"
+        taskId="ticket-lingtai-112"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1088,7 +1088,7 @@ const render = (standing: StandingView, outgoing: OutgoingView | null) =>
       standing={standing}
       project="lingtai"
       issue={112}
-      taskId="wi-lingtai-112"
+      taskId="ticket-lingtai-112"
       discussions={[]}
       outgoing={outgoing}
 
@@ -1271,7 +1271,7 @@ describe('what the refusal means for the decision', () => {
         standing={diagnosed({ action: 'requeue', why: LONG_WHY })}
         project="lingtai"
         issue={147}
-        taskId="wi-lingtai-147"
+        taskId="ticket-lingtai-147"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1296,11 +1296,11 @@ describe('what the refusal means for the decision', () => {
  * That was true when it was written. #152 then arranged the page into a
  * standing and a record, and the ticket went into the record's last row — a
  * closed `<details>` at the foot of the page, labelled `prompt` after the
- * document that comes second inside it. Measured on `wi-lingtai-159`: the
+ * document that comes second inside it. Measured on `ticket-lingtai-159`: the
  * GitHub link rendered at y=1103 of an 1126px page, and the title's `innerText`
  * came back empty because a closed `<details>` renders none of it. The page
  * opened on *Approve / Send attempt 3 / Leave blocked / Close* and named the
- * thing it was asking about `wi-lingtai-159`.
+ * thing it was asking about `ticket-lingtai-159`.
  *
  * So these assert the subject is in the standing block, not that it exists
  * somewhere in the markup — which was already true and was not the point.
@@ -1318,7 +1318,7 @@ describe('the subject, at the top', () => {
         standing={HELD}
         project="lingtai"
         issue={159}
-        taskId="wi-lingtai-159"
+        taskId="ticket-lingtai-159"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1346,7 +1346,7 @@ describe('the subject, at the top', () => {
         standing={HELD}
         project="lingtai"
         issue={159}
-        taskId="wi-lingtai-159"
+        taskId="ticket-lingtai-159"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1370,7 +1370,7 @@ describe('the subject, at the top', () => {
         standing={HELD}
         project="demo"
         issue={7}
-        taskId="wi-demo-7"
+        taskId="ticket-demo-7"
         discussions={[]}
         outgoing={null}
         queued={null}
@@ -1381,7 +1381,7 @@ describe('the subject, at the top', () => {
     expect(html).not.toContain('GitHub')
   })
 
-  /** An id that is not `wi-<p>-<n>` has no ticket, and the line is simply absent. */
+  /** An id that is not `ticket-<p>-<n>` has no ticket, and the line is simply absent. */
   it('draws no subject line where there is no ticket', () => {
     const html = renderToStaticMarkup(
       <Standing

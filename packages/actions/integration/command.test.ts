@@ -33,14 +33,14 @@ describe('a payload on stdin', () => {
   it('reaches the command as JSON, and the stream is closed', async () => {
     const outcome = await run({
       run: 'cat > payload.json',
-      payload: { runId: 'run-01JX', ticket: { number: 122 } },
+      payload: { runId: 'pass-01JX', ticket: { number: 122 } },
     })
 
     // `cat` returning at all is half the assertion: a stdin that stayed open
     // would hang here until the timeout.
     expect(outcome.ok).toBe(true)
     expect(JSON.parse(await readFile(join(cwd, 'payload.json'), 'utf8'))).toEqual({
-      runId: 'run-01JX',
+      runId: 'pass-01JX',
       ticket: { number: 122 },
     })
   })

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import type { Action, ActionContext, ActionResult } from '../src/action.ts'
 import { createKeptRunAction, type KeptRunActionDeps } from '../src/kept-run-action.ts'
 
-const context: ActionContext = { runId: 'run-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
+const context: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 
 function fakeInner(result: ActionResult): Action {
   return { name: 'format', kind: 'run', yields: 'verdict', run: async () => result }

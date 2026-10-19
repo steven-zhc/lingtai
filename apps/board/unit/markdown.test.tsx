@@ -33,12 +33,12 @@ const PROMPT = ['# Ticket', '', '## #106 — Markdown is decided per source', ''
 function e(type: string, data: unknown): Envelope {
   return {
     seq: 1800n,
-    streamId: 'run-f60112af-a598',
+    streamId: 'pass-f60112af-a598',
     version: 3,
     type,
     schemaVer: 2,
     data,
-    actor: 'agent:run-f60112af-a598-47ee-a21c-b277bda75822',
+    actor: 'agent:pass-f60112af-a598-47ee-a21c-b277bda75822',
     causation: null,
     at: new Date('2026-09-08T17:12:15Z'),
   }

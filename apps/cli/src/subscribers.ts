@@ -20,13 +20,13 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  * this; a per-recipe one does, and **three of the four kinds Lingtai's own
  * recipe names cannot answer it from their own bytes**:
  *
- *   `WorkItemBlocked`      `wi-lingtai-123`      the stream says it
- *   `IntegrationRefused`   `int-lingtai-main`    `data.workItemId` says it
- *   `ApprovalRequested`    `run-<uuid>`          neither: only `runId`
- *   `RunAwaitingInput`     `run-<uuid>`          neither
+ *   `WorkItemBlocked`      `ticket-lingtai-123`      the stream says it
+ *   `IntegrationRefused`   `int-lingtai-main`    `data.ticketId` says it
+ *   `ApprovalRequested`    `pass-<uuid>`          neither: only `runId`
+ *   `RunAwaitingInput`     `pass-<uuid>`          neither
  *
  * So the last two are answered by the log: a run stream opens with
- * `RunStarted`, which carries `workItemId`, and `runSubject` reads it. That is
+ * `RunStarted`, which carries `ticketId`, and `runSubject` reads it. That is
  * a query and not a cache on purpose — a daemon restarted mid-run has no memory
  * of a `RunStarted` it never saw, and the approval that follows is exactly the
  * event nobody can afford to miss.
@@ -74,7 +74,7 @@ export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
 /**
  * The work item a run is for, off the log.
  *
- * `RunStarted` is the run stream's own first word and carries `workItemId`, so
+ * `RunStarted` is the run stream's own first word and carries `ticketId`, so
  * this reads the stream from the beginning and stops at it. The whole stream
  * comes back — the store has no `limit` — which is why this is asked only for
  * an event some recipe actually declared.

@@ -44,7 +44,7 @@ const SWAPPED = RECIPE.replace(
 )
 
 const BASE = 'b'.repeat(40)
-const RUN = 'run-44444444-0000-0000-0000-000000000000'
+const RUN = 'pass-44444444-0000-0000-0000-000000000000'
 const hashOf = async (text: string) => (await resolveRecipe(async () => text, 'x')).configHash
 
 let seq = 0n

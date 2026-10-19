@@ -94,7 +94,7 @@ export interface ControlState {
 /** One question, as `DiscussionRequested` recorded it. */
 export interface DiscussionRequest {
   chatId: string
-  workItemId: string
+  ticketId: string
   attempt: number | null
   question: string
   by: string
@@ -194,7 +194,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         const attempt = d['attempt']
         state.discussions.push({
           chatId: str('chatId') ?? '',
-          workItemId: str('workItemId') ?? '',
+          ticketId: str('ticketId') ?? '',
           attempt: typeof attempt === 'number' ? attempt : null,
           question: str('question') ?? '',
           by: str('by') ?? '',

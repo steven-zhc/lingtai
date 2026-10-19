@@ -1,7 +1,7 @@
 /**
  * **What `#269`'s third review actually answered**, byte for byte (`#279`).
  *
- * `run-008da76d-52d8-4d57-83fc-ef62be90937c`, 00:32:44, `success · 61 turns ·
+ * `pass-008da76d-52d8-4d57-83fc-ef62be90937c`, 00:32:44, `success · 61 turns ·
  * $8.97 · exit 0`. It is four findings — a `major` at
  * `packages/recipe/src/recipe.ts:1413` about `whyThatPair` gaining no `claim`
  * branch, with a failure scenario, and three minors — and it **ends one closing

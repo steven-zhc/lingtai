@@ -292,7 +292,7 @@ describe("the bar's amber", () => {
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
-    taskId: `wi-${over.project ?? 'lingtai'}-${over.issue ?? '1'}`,
+    taskId: `ticket-${over.project ?? 'lingtai'}-${over.issue ?? '1'}`,
     project: 'lingtai',
     issue: '1',
     title: 'a task',
@@ -336,10 +336,10 @@ function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow
   return {
     seq: '1',
     at: new Date('2026-09-10T04:27:22Z'),
-    streamId: `run-${ticket}`,
+    streamId: `pass-${ticket}`,
     ticket,
     project: null,
-    pass: `run-${ticket}`,
+    pass: `pass-${ticket}`,
     purpose: 'Action',
     step: 'proposed',
     action: 'build',
@@ -366,10 +366,10 @@ describe('the spend the bar handed to a page', () => {
       toCard(task({ project: 'nextloom-ai-admin', issue: '3' })),
     ])
     const rows = [
-      spendRow('wi-lingtai-1', 2.5),
-      spendRow('wi-lingtai-1', 0.75, { round: 1 }),
-      spendRow('wi-lingtai-2', 1.5),
-      spendRow('wi-nextloom-ai-admin-3', 4.0),
+      spendRow('ticket-lingtai-1', 2.5),
+      spendRow('ticket-lingtai-1', 0.75, { round: 1 }),
+      spendRow('ticket-lingtai-2', 1.5),
+      spendRow('ticket-nextloom-ai-admin-3', 4.0),
     ]
 
     const byProject = ledger(columns, rows).rows
@@ -386,7 +386,7 @@ describe('the spend the bar handed to a page', () => {
    */
   it("keeps answering's spend out of the work's, per repository", () => {
     const columns = toColumns([toCard(task({ project: 'lingtai' }))])
-    const rows = [spendRow('wi-lingtai-1', 1.0), spendRow('wi-lingtai-1', 9.0, { round: 1 })]
+    const rows = [spendRow('ticket-lingtai-1', 1.0), spendRow('ticket-lingtai-1', 9.0, { round: 1 })]
 
     const row = ledger(columns, rows).rows[0]!
     expect(row.byPurpose.Work.reportedCents).toBe(100)
@@ -406,7 +406,7 @@ describe('the spend the bar handed to a page', () => {
       // Never claimed, so it cost nothing — still a card, and still counted.
       toCard(task({ project: 'retired', issue: '3' })),
     ])
-    const rows = [spendRow('wi-lingtai-1', 2.5), spendRow('wi-retired-2', 3.25)]
+    const rows = [spendRow('ticket-lingtai-1', 2.5), spendRow('ticket-retired-2', 3.25)]
 
     const { rows: byProject, total } = ledger(columns, rows)
     expect(byProject.map((r) => r.project)).toEqual(['lingtai', 'retired'])
@@ -423,7 +423,7 @@ describe('the spend the bar handed to a page', () => {
    */
   it('prints a column that adds up to its printed footer', () => {
     const columns = toColumns(['a', 'b', 'c'].map((project, i) => toCard(task({ project, issue: String(i) }))))
-    const rows = ['a', 'b', 'c'].map((project, i) => spendRow(`wi-${project}-${i}`, 0.005))
+    const rows = ['a', 'b', 'c'].map((project, i) => spendRow(`ticket-${project}-${i}`, 0.005))
 
     const { rows: byProject, total } = ledger(columns, rows)
     const work = (r: (typeof byProject)[number]) => r.byPurpose.Work.reportedCents

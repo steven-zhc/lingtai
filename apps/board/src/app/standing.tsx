@@ -45,7 +45,7 @@ import { FollowedLog } from './run-log.tsx'
  * **The ranks: state · why · so what · moves · pair** (#132, #152). The block
  * used to run the other way — six lines in three sizes and three greys, the
  * further down you read the more specific it got while the type got smaller,
- * and `run-5cb24ac5` in two of them. So the state is the readout, *why it
+ * and `pass-5cb24ac5` in two of them. So the state is the readout, *why it
  * stopped* is second and quoted from whatever refused, *what that means for the
  * decision* is third, the moves are fourth and the pair is fifth. Every
  * identifier is in the bar (`Coords`), once.
@@ -133,7 +133,7 @@ export function Standing({
    * the label `prompt` — closed, at the bottom, named after the document that
    * comes second inside it. So a page that opens on *Approve / Send attempt 3 /
    * Leave blocked / Close* identified the thing it was asking about as
-   * `wi-lingtai-159` and nothing else, and arriving from a link meant reading
+   * `ticket-lingtai-159` and nothing else, and arriving from a link meant reading
    * four rows to find out what it was. The fix keeps `BLOCKED` at rank 1 —
    * somebody who already knows the ticket opened this to find out why it
    * stopped (#132) — and gives the subject the line under it.
@@ -572,7 +572,7 @@ function firstClause(text: string): string {
  * bar (#152).
  *
  * This was the block's own fourth rank, and the attempt row printed the same
- * run id again as a full uuid — `run-52feebd1` twice on one page. So the bar
+ * run id again as a full uuid — `pass-52feebd1` twice on one page. So the bar
  * says which item and which attempt, and the run id is that link's title; the
  * attempt row is where the id, the shas and the branch are printed, once.
  */

@@ -166,7 +166,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       for (const table of ['task_view', 'finding_backlog', 'spend']) {
         await c.query(`delete from "${table}" where project like 'esctest-pg-%'`)
       }
-      await c.query(`delete from spend_stream where ticket like 'wi-esctest-pg-%'`)
+      await c.query(`delete from spend_stream where ticket like 'ticket-esctest-pg-%'`)
     })
   })
 

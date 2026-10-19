@@ -26,7 +26,7 @@ const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString()
 const event = (n: number, type: string, data: object): Envelope =>
   ({
     seq: n,
-    streamId: 'wi-lingtai-32',
+    streamId: 'ticket-lingtai-32',
     type,
     data,
     at: at(n),
@@ -34,7 +34,7 @@ const event = (n: number, type: string, data: object): Envelope =>
     actor: 'human:steven',
   }) as unknown as Envelope
 
-const closed = event(2, 'WorkItemClosed', { by: 'human:steven', reason: 'over-built for the need' })
+const closed = event(2, 'TicketClosed', { by: 'human:steven', reason: 'over-built for the need' })
 
 describe('a closed work item', () => {
   it('is a terminal that carries who and why', () => {
@@ -42,7 +42,7 @@ describe('a closed work item', () => {
       event(1, 'WorkItemBlocked', {
         hold: {
           _tag: 'Human',
-          run: { runId: 'run-1' },
+          run: { runId: 'pass-1' },
           step: 'merge',
           source: 'injected',
           question: 'merge over the refusal?',
@@ -92,7 +92,7 @@ describe('a closed work item', () => {
   it('is not lifted by a claim arriving after it', () => {
     const state = applyWorkItem(
       reduceWorkItem([closed]),
-      event(4, 'WorkItemClaimed', { runId: 'run-2', worker: 'daemon' }),
+      event(4, 'TicketClaimed', { runId: 'pass-2', worker: 'daemon' }),
     )
 
     expect(state.lifecycle.status).toBe('closed')
@@ -103,7 +103,7 @@ describe('a closed work item', () => {
  * And the `end` point runs on it, because `end` is the point that runs on every
  * terminal outcome (0044).
  *
- * The first cut of `close()` appended `WorkItemClosed` and stopped. That is
+ * The first cut of `close()` appended `TicketClosed` and stopped. That is
  * 0016 §4's shape — the point was configured, `StepsResolved` said so, and it
  * silently did not run — and its visible cost was a manual step: `lingtai
  * close` ended the ticket on the log and left the GitHub issue open for
@@ -198,7 +198,7 @@ describe('closing runs the end point', () => {
     expect(outcome.ok).toBe(true)
     // One append, carrying both. A crash cannot leave a terminal whose point
     // resolved to nothing recorded — the version check guards the pair.
-    expect(s.appends[0]?.map((e) => e.type)).toEqual(['WorkItemClosed', 'EndActionsResolved'])
+    expect(s.appends[0]?.map((e) => e.type)).toEqual(['TicketClosed', 'EndActionsResolved'])
     // Exactly the `when: closed` action. The `when: landed` one beside it in
     // the same recipe does not resolve here, which is the whole reason the two
     // are separate actions rather than one `when: any`.

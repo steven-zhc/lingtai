@@ -27,7 +27,7 @@ import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-st
 
 export interface AskOutcome {
   ok: boolean
-  workItemId: string
+  ticketId: string
   detail: string
 }
 
@@ -51,25 +51,25 @@ export async function ask(options: {
   store?: EventStore
 }): Promise<AskOutcome> {
   const store = options.store ?? eventStore
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
 
   if (!options.question.trim()) {
-    return { ok: false, workItemId, detail: 'a question needs a question' }
+    return { ok: false, ticketId, detail: 'a question needs a question' }
   }
 
-  const item = reduceWorkItem(await store.read(workItemId))
+  const item = reduceWorkItem(await store.read(ticketId))
   if (item.lifecycle.status !== 'backlog') {
     // The state it is in, for the reason `requeue` names it: "cannot ask" sends
     // nobody anywhere, and "it is already running" answers why.
     return {
       ok: false,
-      workItemId,
-      detail: `${workItemId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
+      ticketId,
+      detail: `${ticketId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
     }
   }
 
   try {
-    await store.append(workItemId, item.version, [
+    await store.append(ticketId, item.version, [
       {
         ...waitStartedOf({ _tag: 'OwnQuestion', question: options.question, by: options.by }, NO_PASS),
         actor: options.by,
@@ -79,12 +79,12 @@ export async function ask(options: {
     // A conductor claimed it between the read and the append. The claim won,
     // which is the right outcome: say so rather than retrying onto a run.
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while asking — read it again` }
+      return { ok: false, ticketId, detail: `${ticketId} changed while asking — read it again` }
     }
     throw err
   }
 
-  return { ok: true, workItemId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
+  return { ok: true, ticketId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
 }
 
 /**
@@ -119,16 +119,16 @@ export async function answer(options: {
   store?: EventStore
 }): Promise<AskOutcome> {
   const store = options.store ?? eventStore
-  const workItemId = workItemStream(options.project, options.issue)
+  const ticketId = workItemStream(options.project, options.issue)
 
   if (!options.answer.trim()) {
-    return { ok: false, workItemId, detail: 'an answer needs an answer' }
+    return { ok: false, ticketId, detail: 'an answer needs an answer' }
   }
 
-  const events = await store.read(workItemId)
+  const events = await store.read(ticketId)
   const item = reduceWorkItem(events)
   if (item.lifecycle.status !== 'blocked') {
-    return { ok: false, workItemId, detail: `${workItemId} is ${item.lifecycle.status}, not asking anything` }
+    return { ok: false, ticketId, detail: `${ticketId} is ${item.lifecycle.status}, not asking anything` }
   }
 
   // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
@@ -140,20 +140,20 @@ export async function answer(options: {
     const runId = reason !== undefined && 'run' in reason ? reason.run.runId : null
     return {
       ok: false,
-      workItemId,
-      detail: `${workItemId} is held by ${runId}, not asking before a run — lingtai approve or lingtai requeue`,
+      ticketId,
+      detail: `${ticketId} is held by ${runId}, not asking before a run — lingtai approve or lingtai requeue`,
     }
   }
   if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {
     return {
       ok: false,
-      workItemId,
-      detail: `${workItemId} is asking a different question now — "${reason.question}" — read it again`,
+      ticketId,
+      detail: `${ticketId} is asking a different question now — "${reason.question}" — read it again`,
     }
   }
 
   try {
-    await store.append(workItemId, item.version, [
+    await store.append(ticketId, item.version, [
       {
         ...waitResolvedOf(reason, { _tag: 'AnswerQuestion', choice: options.answer }, options.by, options.answer),
         actor: options.by,
@@ -161,10 +161,10 @@ export async function answer(options: {
     ])
   } catch (err) {
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while answering — read it again` }
+      return { ok: false, ticketId, detail: `${ticketId} changed while answering — read it again` }
     }
     throw err
   }
 
-  return { ok: true, workItemId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }
+  return { ok: true, ticketId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }
 }

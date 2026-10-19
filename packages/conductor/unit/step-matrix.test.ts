@@ -219,7 +219,7 @@ const EVERY_DEP: ActionDeps = {
   watch: { changedFiles: async () => [] },
   worktree: { cut: async () => ({ head: '0'.repeat(40), where: '/nowhere' }) },
   merge: { land: async () => ({ merged: '0'.repeat(40) }) },
-  queue: { take: async () => ({ taken: { workItemId: 'wi-nowhere-1', kind: 'bug' } }) },
+  queue: { take: async () => ({ taken: { ticketId: 'ticket-nowhere-1', kind: 'bug' } }) },
   work: { work: async () => ({ committed: '0'.repeat(40) }) },
   file: { keep: async () => ({ at: 'doc/design/x.md' }), issue: async () => ({ ref: '310' }) },
   fileBrief: { read: async () => ({ document: 'the shape' }) },

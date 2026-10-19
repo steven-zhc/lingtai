@@ -3,7 +3,7 @@ import { STEPS, type Envelope, type Step } from '@lingtai/domain'
 /**
  * What a running card says about *now*.
  *
- * Driven off the timeline #79 recorded against `wi-lingtai-59`'s own log, which
+ * Driven off the timeline #79 recorded against `ticket-lingtai-59`'s own log, which
  * is the whole of the complaint: at 17:23 the card read `1 passed · attempt 2`
  * while the truth was "the agent finished three minutes ago; the build gate is
  * 2m34s into a 20m budget". Every fact in that sentence is in the events below,
@@ -19,7 +19,7 @@ function at(time: string, type: string, data: unknown): Envelope {
   seq += 1n
   return {
     seq,
-    streamId: 'run-59',
+    streamId: 'pass-59',
     version: Number(seq),
     type,
     schemaVer: 2,
@@ -33,7 +33,7 @@ function at(time: string, type: string, data: unknown): Envelope {
 const step = (step: Step, action: string) => ({
   step: step,
   action,
-  runId: 'run-59',
+  runId: 'pass-59',
   onSha: 'b1b8694',
 })
 
@@ -59,11 +59,11 @@ function timeline(): Envelope[] {
     at('2026-09-04T17:12:20Z', 'StepStarted', step('prepared', 'install')),
     at('2026-09-04T17:12:26Z', 'StepPassed', { ...step('prepared', 'install'), evidence: 'ok', findings: [] }),
     at('2026-09-04T17:12:30Z', 'RunStarted', {
-      workItemId: 'wi-lingtai-59',
+      ticketId: 'ticket-lingtai-59',
       invocation: { command: 'claude', args: [], tier: 'guarded', limits: { turns: 150, wallMs: 3_600_000 } },
     }),
     at('2026-09-04T17:12:30Z', 'StepsResolved', {
-      runId: 'run-59',
+      runId: 'pass-59',
       configHash: 'abc',
       steps: STEPS.map((step) => ({
         step: step,
@@ -245,7 +245,7 @@ describe('rounds spent against the ceiling', () => {
         findings: [],
       }),
       at('2026-09-04T17:34:01Z', 'FixRequested', {
-        runId: 'run-59',
+        runId: 'pass-59',
         round: 1,
         of: 3,
         action: 'build',
@@ -267,7 +267,7 @@ describe('rounds spent against the ceiling', () => {
         findings: [],
       }),
       at('2026-09-04T17:34:01Z', 'FixRequested', {
-        runId: 'run-59',
+        runId: 'pass-59',
         round: 1,
         of: 3,
         action: 'build',
@@ -275,7 +275,7 @@ describe('rounds spent against the ceiling', () => {
         findings: [],
       }),
       at('2026-09-04T17:48:00Z', 'FixApplied', {
-        runId: 'run-59',
+        runId: 'pass-59',
         round: 1,
         headSha: null,
         turns: 9,
@@ -288,7 +288,7 @@ describe('rounds spent against the ceiling', () => {
         findings: [],
       }),
       at('2026-09-04T17:48:02Z', 'FixDeclined', {
-        runId: 'run-59',
+        runId: 'pass-59',
         round: 1,
         action: 'build',
         why: 'two agents disagreed',

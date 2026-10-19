@@ -87,7 +87,7 @@ describe('provisionWorktree', () => {
     const wt = await provisionWorktree({
       ...base,
       branch: 'agent/1',
-      runId: 'run-1',
+      runId: 'pass-1',
       submodules: false,
       remote: originPath,
       home,
@@ -113,7 +113,7 @@ describe('provisionWorktree', () => {
     const at = await exec('git', ['rev-parse', 'HEAD'], { cwd: wt.path })
     expect(at.stdout.trim()).toBe(wt.baseSha)
 
-    await removeWorktree({ project: base.project, runId: 'run-1', home })
+    await removeWorktree({ project: base.project, runId: 'pass-1', home })
   })
 
   /**
@@ -140,7 +140,7 @@ describe('provisionWorktree', () => {
     const wt = await provisionWorktree({
       ...base,
       branch: 'agent/1',
-      runId: 'run-2',
+      runId: 'pass-2',
       submodules: false,
       remote: originPath,
       home,
@@ -184,7 +184,7 @@ describe('provisionWorktree', () => {
     const ref = await exec('git', ['rev-parse', 'refs/heads/agent/1'], { cwd: mirror })
     expect(ref.stdout.trim()).toBe(head.stdout.trim())
 
-    await removeWorktree({ project: base.project, runId: 'run-2', home })
+    await removeWorktree({ project: base.project, runId: 'pass-2', home })
   })
 
   /**
@@ -195,7 +195,7 @@ describe('provisionWorktree', () => {
     const wt = await provisionWorktree({
       ...base,
       branch: 'agent/2',
-      runId: 'run-2',
+      runId: 'pass-2',
       submodules: true,
       remote: originPath,
       home,
@@ -205,28 +205,28 @@ describe('provisionWorktree', () => {
     expect((await stat(shared)).isFile()).toBe(true)
     expect(await readFile(shared, 'utf8')).toBe('shared\n')
 
-    await removeWorktree({ project: base.project, runId: 'run-2', home })
+    await removeWorktree({ project: base.project, runId: 'pass-2', home })
   })
 
   it('leaves the submodule empty when the recipe does not ask', async () => {
     const wt = await provisionWorktree({
       ...base,
       branch: 'agent/3',
-      runId: 'run-3',
+      runId: 'pass-3',
       submodules: false,
       remote: originPath,
       home,
     })
 
     await expect(stat(join(wt.path, 'packages/shared/shared.txt'))).rejects.toThrow()
-    await removeWorktree({ project: base.project, runId: 'run-3', home })
+    await removeWorktree({ project: base.project, runId: 'pass-3', home })
   })
 
   it('re-provisioning the same run replaces the worktree rather than failing', async () => {
     const first = await provisionWorktree({
       ...base,
       branch: 'agent/4',
-      runId: 'run-4',
+      runId: 'pass-4',
       submodules: false,
       remote: originPath,
       home,
@@ -236,7 +236,7 @@ describe('provisionWorktree', () => {
     const second = await provisionWorktree({
       ...base,
       branch: 'agent/4',
-      runId: 'run-4',
+      runId: 'pass-4',
       submodules: false,
       remote: originPath,
       home,
@@ -245,6 +245,6 @@ describe('provisionWorktree', () => {
     expect(second.path).toBe(first.path)
     // A crash mid-run leaves a directory, not a state to reconcile by hand.
     await expect(stat(join(second.path, 'scratch.txt'))).rejects.toThrow()
-    await removeWorktree({ project: base.project, runId: 'run-4', home })
+    await removeWorktree({ project: base.project, runId: 'pass-4', home })
   })
 })

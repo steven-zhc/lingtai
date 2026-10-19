@@ -8,7 +8,7 @@
  *
  * Four properties, and the third is the one an earlier attempt at `#123` got
  * wrong badly enough to be refused: it delivered only events whose *stream* was
- * `wi-…`, and three of the four types this repository declares are appended to
+ * `ticket-…`, and three of the four types this repository declares are appended to
  * a run stream or an integration lane. So the rule under test is that whatever
  * `subject` answers is what decides, and that the answer reaches the command as
  * a work item it can link to.
@@ -67,7 +67,7 @@ const delivered = async (): Promise<SubscriberPayload> =>
 describe('what starts a process and what does not', () => {
   it('starts one for a type the recipe named', async () => {
     const s = build(async () => subjectOf('lingtai', '123'))
-    await s.deliver(event('WorkItemBlocked', 'wi-lingtai-123'))
+    await s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123'))
 
     expect((await delivered()).event.type).toBe('WorkItemBlocked')
   })
@@ -82,7 +82,7 @@ describe('what starts a process and what does not', () => {
       asked += 1
       return subjectOf('lingtai', '123')
     })
-    await s.deliver(event('WorkItemLanded', 'wi-lingtai-123'))
+    await s.deliver(event('TicketLanded', 'ticket-lingtai-123'))
 
     expect(asked).toBe(0)
     await expect(delivered()).rejects.toThrow()
@@ -91,7 +91,7 @@ describe('what starts a process and what does not', () => {
   /**
    * The refusal that ended attempt 3 of `#123`, as a test.
    *
-   * `ApprovalRequested` is appended to `run-<uuid>`, `RunAwaitingInput` to the
+   * `ApprovalRequested` is appended to `pass-<uuid>`, `RunAwaitingInput` to the
    * same, and `IntegrationRefused` to `int-lingtai-main`. A subscriber that
    * read the stream id for the project would deliver none of them while the
    * daemon printed that it was subscribed to all four — a notifier that has
@@ -100,10 +100,10 @@ describe('what starts a process and what does not', () => {
   it('delivers an event whose own stream names no work item, when the caller resolves one', async () => {
     const s = build(async () => subjectOf('lingtai', '123'))
     await s.deliver(
-      event('ApprovalRequested', `run-${crypto.randomUUID()}`, {
+      event('ApprovalRequested', `pass-${crypto.randomUUID()}`, {
         step: 'merge',
         action: 'approve',
-        runId: 'run-x',
+        runId: 'pass-x',
         onSha: 'abc',
         question: 'Merge agent/123 into main?',
         artifacts: [],
@@ -112,7 +112,7 @@ describe('what starts a process and what does not', () => {
 
     const payload = await delivered()
     expect(payload.event.type).toBe('ApprovalRequested')
-    expect(payload.workItem).toEqual({ id: 'wi-lingtai-123', project: 'lingtai', issue: '123' })
+    expect(payload.workItem).toEqual({ id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' })
   })
 
   /** An event that belongs to no repository — `ctl-conductor`, `chat-…` — reaches nobody. */
@@ -126,7 +126,7 @@ describe('what starts a process and what does not', () => {
   /** Declared in one recipe, so it hears about one repository. */
   it("starts none for another project's event", async () => {
     const s = build(async () => subjectOf('admin', '155'))
-    await s.deliver(event('WorkItemBlocked', 'wi-admin-155'))
+    await s.deliver(event('WorkItemBlocked', 'ticket-admin-155'))
 
     await expect(delivered()).rejects.toThrow()
   })
@@ -135,7 +135,7 @@ describe('what starts a process and what does not', () => {
 describe('what the command is handed', () => {
   it('gets the envelope as JSON, with seq a string and at ISO-8601', async () => {
     const s = build(async () => subjectOf('lingtai', '123'))
-    await s.deliver(event('WorkItemBlocked', 'wi-lingtai-123', { question: 'which base?' }))
+    await s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123', { question: 'which base?' }))
 
     const payload = await delivered()
     // A number here would have lost the log's own identity for a stream past
@@ -151,7 +151,7 @@ describe('what the command is handed', () => {
     const s = build(async () => subjectOf('lingtai', '123'), {
       run: 'env | grep -c SECRET_TOKEN > count.txt; true',
     })
-    await s.deliver(event('WorkItemBlocked', 'wi-lingtai-123'))
+    await s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123'))
 
     expect((await readFile(join(cwd, 'count.txt'), 'utf8')).trim()).toBe('0')
   })
@@ -169,7 +169,7 @@ describe('what a failure does', () => {
       run: "echo 'no notification daemon' >&2; exit 3",
     })
 
-    await expect(s.deliver(event('WorkItemBlocked', 'wi-lingtai-123'))).rejects.toThrow(
+    await expect(s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123'))).rejects.toThrow(
       /exited 3[\s\S]*no notification daemon/,
     )
   })
@@ -177,7 +177,7 @@ describe('what a failure does', () => {
   it('rejects when the command does not exist, naming it', async () => {
     const s = build(async () => subjectOf('lingtai', '123'), { run: 'definitely-not-a-binary' })
 
-    await expect(s.deliver(event('WorkItemBlocked', 'wi-lingtai-123'))).rejects.toThrow(/definitely-not-a-binary/)
+    await expect(s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123'))).rejects.toThrow(/definitely-not-a-binary/)
   })
 
   /**
@@ -190,6 +190,6 @@ describe('what a failure does', () => {
       throw new Error('the log is unreachable')
     })
 
-    await expect(s.deliver(event('WorkItemBlocked', 'wi-lingtai-123'))).rejects.toThrow('the log is unreachable')
+    await expect(s.deliver(event('WorkItemBlocked', 'ticket-lingtai-123'))).rejects.toThrow('the log is unreachable')
   })
 })

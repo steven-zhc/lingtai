@@ -139,7 +139,7 @@ export interface ReadableRef {
 
 /** Everything the assistant is given before it asks for anything. */
 export interface DiscussionEvidence {
-  workItemId: string
+  ticketId: string
   /** 1-based, or null when the question is about the item as a whole. */
   attempt: number | null
   ticket: DiscussionTicket | null
@@ -324,7 +324,7 @@ Nothing else. Be short; the answer to "why is this stuck" is usually four lines.
 
 ## The work item
 
-${evidence.workItemId}${evidence.attempt === null ? '' : ` · the question is about attempt ${evidence.attempt}`}
+${evidence.ticketId}${evidence.attempt === null ? '' : ` · the question is about attempt ${evidence.attempt}`}
 
 ## The ticket
 
@@ -508,7 +508,7 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
   // actions record. Prefixing it here would make it `human:human:steven` and
   // fail the envelope's own regex, which is the check that catches it.
   await append(ports.store, stream, before.length, options.by, 'DiscussionAsked', {
-    workItemId: options.evidence.workItemId,
+    ticketId: options.evidence.ticketId,
     attempt: options.evidence.attempt,
     by: options.by,
     question: options.question,
@@ -685,7 +685,7 @@ export function appendToBody(body: string, text: string, by: string, at: Date): 
 
 export interface ConcludeOptions {
   store: EventStore
-  workItemId: string
+  ticketId: string
   chatId: string
   by: string
   outcome: 'prompt' | 'ticket' | 'none'
@@ -711,7 +711,7 @@ export interface ConcludeOptions {
  * §4 says a person is supposed to be able to see.
  */
 export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok: boolean; detail: string }> {
-  const { store, workItemId, chatId, by } = options
+  const { store, ticketId, chatId, by } = options
   const text = (options.text ?? '').trim()
 
   let detail = 'the discussion is closed'
@@ -719,8 +719,8 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
 
   if (options.outcome === 'prompt') {
     if (text === '') return { ok: false, detail: "there is nothing to add to the next run's prompt" }
-    const at = (await store.read(workItemId)).length
-    await store.append(workItemId, at, [
+    const at = (await store.read(ticketId)).length
+    await store.append(ticketId, at, [
       {
         type: 'PromptEdited',
         actor: by,
@@ -749,10 +749,10 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
     await tellGitHub({
       store,
       github: options.ticket.github,
-      workItemId,
+      ticketId,
       change: { kind: 'body', body },
     })
-    const said = await store.read(workItemId)
+    const said = await store.read(ticketId)
     const last = said[said.length - 1]
     ok = last?.type === 'IssueUpdated'
     detail = ok ? 'the ticket carries it' : 'GitHub refused the edit; the log says why'
@@ -761,8 +761,8 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
   const chatEvents = await store.read(chatStream(chatId))
   const spend = spendOf(chatEvents)
   const usage = usageOf(chatEvents)
-  const at = (await store.read(workItemId)).length
-  await store.append(workItemId, at, [
+  const at = (await store.read(ticketId)).length
+  await store.append(ticketId, at, [
     {
       type: 'DiscussionHeld',
       actor: by,

@@ -40,7 +40,7 @@ const SHA = 'a'.repeat(40)
 interface Fixture {
   /** The `WaitReason._tag` this fixture is one of, for the coverage check below. */
   tag: string
-  /** Unique within the file — becomes `wi-pin-<name>`. */
+  /** Unique within the file — becomes `ticket-pin-<name>`. */
   name: string
   taskId: string
   events: Envelope[]
@@ -62,7 +62,7 @@ function add(
   expectedQuestion: string | null,
   expectedButtons: string[],
 ): void {
-  const taskId = `wi-pin-${name}`
+  const taskId = `ticket-pin-${name}`
   FIXTURES.push({
     tag,
     name,
@@ -87,10 +87,10 @@ add(
   'AgentQuestion',
   'agentquestion',
   (item) => [
-    ...aClaim(item, 'run-pin-agentquestion'),
+    ...aClaim(item, 'pass-pin-agentquestion'),
     ...aWait(item, {
       _tag: 'AgentQuestion',
-      run: { runId: 'run-pin-agentquestion' },
+      run: { runId: 'pass-pin-agentquestion' },
       step: 'implement',
       question: 'which approach?',
     }),
@@ -104,18 +104,18 @@ add(
   'SignoffRequired',
   'signoffrequired',
   (item) => [
-    ...aClaim(item, 'run-pin-signoffrequired'),
-    makeStream('run-pin-signoffrequired')('ApprovalRequested', {
+    ...aClaim(item, 'pass-pin-signoffrequired'),
+    makeStream('pass-pin-signoffrequired')('ApprovalRequested', {
       step: 'merge',
       action: 'human',
-      runId: 'run-pin-signoffrequired',
+      runId: 'pass-pin-signoffrequired',
       onSha: SHA,
       question: 'merge this?',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'SignoffRequired',
-      run: { runId: 'run-pin-signoffrequired' },
+      run: { runId: 'pass-pin-signoffrequired' },
       step: 'merge',
       action: 'human',
       question: 'merge this?',
@@ -130,10 +130,10 @@ add(
   'FixerDisagrees',
   'fixerdisagrees',
   (item) => [
-    ...aClaim(item, 'run-pin-fixerdisagrees'),
+    ...aClaim(item, 'pass-pin-fixerdisagrees'),
     ...aWait(item, {
       _tag: 'FixerDisagrees',
-      run: { runId: 'run-pin-fixerdisagrees' },
+      run: { runId: 'pass-pin-fixerdisagrees' },
       said: 'the fixer thinks this is fine',
     }),
   ],
@@ -146,8 +146,8 @@ add(
   'NothingProduced',
   'nothingproduced',
   (item) => [
-    ...aClaim(item, 'run-pin-nothingproduced'),
-    ...aWait(item, { _tag: 'NothingProduced', run: { runId: 'run-pin-nothingproduced' }, said: null }),
+    ...aClaim(item, 'pass-pin-nothingproduced'),
+    ...aWait(item, { _tag: 'NothingProduced', run: { runId: 'pass-pin-nothingproduced' }, said: null }),
   ],
   null,
   'the `implement` step did-not-finish: the agent produced no commits',
@@ -158,7 +158,7 @@ add(
   'ProposedEscalated',
   'proposedescalated-buildred',
   (item) => [
-    ...aClaim(item, 'run-pin-pe-buildred'),
+    ...aClaim(item, 'pass-pin-pe-buildred'),
     // `conduct.ts`'s `judged = stopped === null || …` is true for every
     // `Routed` hold (the router handing `proposed` to a person), and this
     // fixture's run reached origin (`onOrigin !== null`), so production
@@ -167,17 +167,17 @@ add(
     // That is not unconditional, though: a push to origin that itself failed
     // leaves `onOrigin` null and no `ApprovalRequested` at all — the
     // `proposedescalated-unpushed` fixture below is that case.
-    makeStream('run-pin-pe-buildred')('ApprovalRequested', {
+    makeStream('pass-pin-pe-buildred')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-pin-pe-buildred',
+      runId: 'pass-pin-pe-buildred',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. tsc failed',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
-      run: { runId: 'run-pin-pe-buildred' },
+      run: { runId: 'pass-pin-pe-buildred' },
       proposal: { _tag: 'BuildRed', output: 'tsc failed' },
       because: { _tag: 'NotAsked' },
     }),
@@ -191,18 +191,18 @@ add(
   'ProposedEscalated',
   'proposedescalated-verifyred',
   (item) => [
-    ...aClaim(item, 'run-pin-pe-verifyred'),
-    makeStream('run-pin-pe-verifyred')('ApprovalRequested', {
+    ...aClaim(item, 'pass-pin-pe-verifyred'),
+    makeStream('pass-pin-pe-verifyred')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-pin-pe-verifyred',
+      runId: 'pass-pin-pe-verifyred',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. verify red output',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
-      run: { runId: 'run-pin-pe-verifyred' },
+      run: { runId: 'pass-pin-pe-verifyred' },
       proposal: { _tag: 'VerifyRed', output: 'verify red output' },
       because: { _tag: 'NotAsked' },
     }),
@@ -216,18 +216,18 @@ add(
   'ProposedEscalated',
   'proposedescalated-mergeconflict',
   (item) => [
-    ...aClaim(item, 'run-pin-pe-mergeconflict'),
-    makeStream('run-pin-pe-mergeconflict')('ApprovalRequested', {
+    ...aClaim(item, 'pass-pin-pe-mergeconflict'),
+    makeStream('pass-pin-pe-mergeconflict')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-pin-pe-mergeconflict',
+      runId: 'pass-pin-pe-mergeconflict',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. conflict output',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
-      run: { runId: 'run-pin-pe-mergeconflict' },
+      run: { runId: 'pass-pin-pe-mergeconflict' },
       proposal: {
         _tag: 'MergeConflict',
         output: 'conflict output',
@@ -247,18 +247,18 @@ add(
   'ProposedEscalated',
   'proposedescalated-reviewfindings',
   (item) => [
-    ...aClaim(item, 'run-pin-pe-reviewfindings'),
-    makeStream('run-pin-pe-reviewfindings')('ApprovalRequested', {
+    ...aClaim(item, 'pass-pin-pe-reviewfindings'),
+    makeStream('pass-pin-pe-reviewfindings')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-pin-pe-reviewfindings',
+      runId: 'pass-pin-pe-reviewfindings',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. bug',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
-      run: { runId: 'run-pin-pe-reviewfindings' },
+      run: { runId: 'pass-pin-pe-reviewfindings' },
       proposal: {
         _tag: 'ReviewFindings',
         findings: [
@@ -277,7 +277,7 @@ add(
   'ProposedEscalated',
   'proposedescalated-unpushed',
   (item) => [
-    ...aClaim(item, 'run-pin-pe-unpushed'),
+    ...aClaim(item, 'pass-pin-pe-unpushed'),
     // `conduct.ts:3696` sets `unpushed` on the hold whenever the branch's own
     // push to origin failed, which makes `onOrigin` null — so
     // `conduct.ts:4008`'s `!held && judged && onOrigin !== null` is false and
@@ -288,7 +288,7 @@ add(
     // name a sha that reached nowhere.
     ...aWait(item, {
       _tag: 'ProposedEscalated',
-      run: { runId: 'run-pin-pe-unpushed', unpushed: { branch: 'agent/473', said: 'remote rejected the push' } },
+      run: { runId: 'pass-pin-pe-unpushed', unpushed: { branch: 'agent/473', said: 'remote rejected the push' } },
       proposal: { _tag: 'BuildRed', output: 'tsc failed' },
       because: { _tag: 'NotAsked' },
     }),
@@ -302,7 +302,7 @@ add(
   'CheckRefused',
   'checkrefused',
   (item) => [
-    ...aClaim(item, 'run-pin-checkrefused'),
+    ...aClaim(item, 'pass-pin-checkrefused'),
     // `CheckRed`'s hold reads `needs: 'acknowledgement'` (`legacy-columns.ts`),
     // so `describeWait` still answers null for the pill — but `conduct.ts`'s
     // `judged` is true for a `stopped.ending.ending === 'refused'` hold same as
@@ -310,17 +310,17 @@ add(
     // `merge` ran), so production pairs this ending with
     // `ApprovalRequested{step:'merge',action:'unfixed'}` regardless (RUN_9),
     // which still turns on the Approve button.
-    makeStream('run-pin-checkrefused')('ApprovalRequested', {
+    makeStream('pass-pin-checkrefused')('ApprovalRequested', {
       step: 'merge',
       action: 'unfixed',
-      runId: 'run-pin-checkrefused',
+      runId: 'pass-pin-checkrefused',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? the `merge` step refused: ci red (`ci`)',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'CheckRefused',
-      run: { runId: 'run-pin-checkrefused' },
+      run: { runId: 'pass-pin-checkrefused' },
       step: 'merge',
       action: 'ci',
       evidence: 'ci red',
@@ -336,22 +336,22 @@ add(
   'MergeRefused',
   'mergerefused',
   (item) => [
-    ...aClaim(item, 'run-pin-mergerefused'),
+    ...aClaim(item, 'pass-pin-mergerefused'),
     // Same shape as `CheckRefused` above — `needs: 'acknowledgement'` keeps
     // the pill null, but `onOrigin !== null` and the refused lane's own
     // ending still pair an `ApprovalRequested{step:'merge',action:'unfixed'}`
     // (RUN_10b), so Approve is offered.
-    makeStream('run-pin-mergerefused')('ApprovalRequested', {
+    makeStream('pass-pin-mergerefused')('ApprovalRequested', {
       step: 'merge',
       action: 'unfixed',
-      runId: 'run-pin-mergerefused',
+      runId: 'pass-pin-mergerefused',
       onSha: SHA,
       question: 'Merge agent/473 into main anyway? dirty-base: uncommitted changes present (`land the branch`)',
       artifacts: [],
     }),
     ...aWait(item, {
       _tag: 'MergeRefused',
-      run: { runId: 'run-pin-mergerefused' },
+      run: { runId: 'pass-pin-mergerefused' },
       reason: 'dirty-base',
       raw: 'uncommitted changes present',
     }),
@@ -365,10 +365,10 @@ add(
   'BudgetExhausted',
   'budgetexhausted',
   (item) => [
-    ...aClaim(item, 'run-pin-budgetexhausted'),
+    ...aClaim(item, 'pass-pin-budgetexhausted'),
     ...aWait(item, {
       _tag: 'BudgetExhausted',
-      run: { runId: 'run-pin-budgetexhausted' },
+      run: { runId: 'pass-pin-budgetexhausted' },
       cause: 'out-of-turns',
       detail: 'spent 80 turns',
     }),
@@ -382,10 +382,10 @@ add(
   'AgentCrashed',
   'agentcrashed',
   (item) => [
-    ...aClaim(item, 'run-pin-agentcrashed'),
+    ...aClaim(item, 'pass-pin-agentcrashed'),
     ...aWait(item, {
       _tag: 'AgentCrashed',
-      run: { runId: 'run-pin-agentcrashed' },
+      run: { runId: 'pass-pin-agentcrashed' },
       step: 'implement',
       cause: 'crash',
       detail: 'segfault',
@@ -400,10 +400,10 @@ add(
   'SetupRefused',
   'setuprefused',
   (item) => [
-    ...aClaim(item, 'run-pin-setuprefused'),
+    ...aClaim(item, 'pass-pin-setuprefused'),
     ...aWait(item, {
       _tag: 'SetupRefused',
-      run: { runId: 'run-pin-setuprefused' },
+      run: { runId: 'pass-pin-setuprefused' },
       step: 'prepared',
       action: 'install',
       why: 'npm install failed',
@@ -418,17 +418,17 @@ add(
   'AnswerUnreadable',
   'answerunreadable',
   (item) => [
-    ...aClaim(item, 'run-pin-answerunreadable'),
+    ...aClaim(item, 'pass-pin-answerunreadable'),
     // This variant (`step: 'review'`) only arises through `routedToReason`'s
     // `hold.when === 'findings'` branch — a `Routed` hold, same as
     // `ProposedEscalated` — so it reads `needs: 'judgement'` and `conduct.ts`
     // treats it as `stopped === null`: the request it writes names
     // `step: 'proposed', action: 'judge'` (never `'review'`/`'reviewer'`,
     // which are the failure's own step/action, not the request's — RUN_13b).
-    makeStream('run-pin-answerunreadable')('ApprovalRequested', {
+    makeStream('pass-pin-answerunreadable')('ApprovalRequested', {
       step: 'proposed',
       action: 'judge',
-      runId: 'run-pin-answerunreadable',
+      runId: 'pass-pin-answerunreadable',
       onSha: SHA,
       question:
         "Merge agent/473 into main anyway? agent/473 into main is waiting on you. `review`'s findings could not be read at all: not json",
@@ -436,7 +436,7 @@ add(
     }),
     ...aWait(item, {
       _tag: 'AnswerUnreadable',
-      run: { runId: 'run-pin-answerunreadable' },
+      run: { runId: 'pass-pin-answerunreadable' },
       step: 'review',
       action: 'reviewer',
       raw: 'not json',

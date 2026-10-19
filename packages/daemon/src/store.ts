@@ -106,7 +106,7 @@ export interface Beat {
  * fold that follows reads a handful of streams rather than the whole log.
  */
 export interface StreamQuery {
-  /** `wi-lingtai-%` — matched as SQL `like`, so `%` is the wildcard. */
+  /** `ticket-lingtai-%` — matched as SQL `like`, so `%` is the wildcard. */
   prefixes: readonly string[]
   /** A stream qualifies if it holds at least one event of one of these types. */
   types: readonly string[]

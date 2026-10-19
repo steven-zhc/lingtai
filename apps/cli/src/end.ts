@@ -4,7 +4,7 @@
  * The repair half of the doctor check next to it. `end` fires on every terminal
  * outcome, but for a while it only fired on the path where `runOnce` merged the
  * branch itself, so everything that landed through an approval merged, said
- * `WorkItemLanded`, and stopped: the issue was never closed and nothing on
+ * `TicketLanded`, and stopped: the issue was never closed and nothing on
  * GitHub showed that Lingtai had touched it.
  *
  * The code no longer does that. This is for the items it already did it to.
@@ -75,7 +75,7 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
     for (const item of found) {
       const project = await loadProject(item.project)
       if (!project?.owner) {
-        log(`${item.workItemId}: no project named "${item.project}" is onboarded — skipped`)
+        log(`${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
         continue
       }
       try {
@@ -96,10 +96,10 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
         // replayed as landed would write a resolution naming an outcome its own
         // log does not contain, and run every `when: landed` action on a ticket
         // that landed nothing (0044).
-        const ended = await appendEndActions(eventStore, item.workItemId, resolved.recipe.steps.end, item.outcome)
+        const ended = await appendEndActions(eventStore, item.ticketId, resolved.recipe.steps.end, item.outcome)
         // Resolved and then carried out, in that order and in this process. The
         // outbox used to stand between them; there is nothing to wait for now.
-        await tellGitHubAbout({ store: eventStore, github: client, workItemId: item.workItemId, appended: ended })
+        await tellGitHubAbout({ store: eventStore, github: client, ticketId: item.ticketId, appended: ended })
         replayed += 1
         log(`${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${resolved.ref}`)
       } catch (err) {

@@ -61,7 +61,7 @@ import type { Action, ActionContext, ActionResult } from './action.ts'
  */
 export type TakeAnswer =
   /** Taken — the stream it was claimed on, and which kind the recipe matched it as. */
-  | { readonly taken: { readonly workItemId: string; readonly kind: string } }
+  | { readonly taken: { readonly ticketId: string; readonly kind: string } }
   /**
    * GitHub is no longer offering it, with `considerIssue`'s own reason —
    * `excluded-label`, `blocked-by`, `assigned-elsewhere`. Asked rather than
@@ -76,7 +76,7 @@ export type TakeAnswer =
    */
   | { readonly notClaimed: string }
   /** The append may have committed. Named, so the caller can give it back. */
-  | { readonly mayHold: { readonly workItemId: string; readonly detail: string } }
+  | { readonly mayHold: { readonly ticketId: string; readonly detail: string } }
 
 /**
  * The take, as the only thing this action needs from its caller.
@@ -114,7 +114,7 @@ export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps):
       if ('taken' in answer) {
         return {
           verdict: 'passed',
-          evidence: `${answer.taken.workItemId} claimed as a ${answer.taken.kind}`,
+          evidence: `${answer.taken.ticketId} claimed as a ${answer.taken.kind}`,
           findings: [],
         }
       }
@@ -123,7 +123,7 @@ export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps):
           verdict: 'failed',
           // The item by name, because the caller has to be able to give back
           // something this run may be holding, and `detail` one layer up is this.
-          evidence: `${answer.mayHold.workItemId} may be claimed by this run: ${answer.mayHold.detail}`,
+          evidence: `${answer.mayHold.ticketId} may be claimed by this run: ${answer.mayHold.detail}`,
           findings: [],
           because: 'claim-unconfirmed',
         }

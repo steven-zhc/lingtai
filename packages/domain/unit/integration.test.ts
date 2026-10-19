@@ -13,14 +13,14 @@ describe('reduceIntegration', () => {
 
   it('holds the lane while attempting, and releases it on success', () => {
     const e = makeStream(LANE)
-    const attempting = [e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' })]
+    const attempting = [e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' })]
 
     expect(laneIsBusy(reduceIntegration(attempting))).toBe(true)
 
     const done = reduceIntegration([
       ...attempting,
       e('IntegrationSucceeded', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         base: 'develop',
         mergeCommit: 'merge1',
@@ -29,7 +29,7 @@ describe('reduceIntegration', () => {
 
     expect(laneIsBusy(done)).toBe(false)
     expect(done.base).toBe('develop')
-    expect(done.landed).toEqual([{ workItemId: 'wi-a', branch: 'agent/58', mergeCommit: 'merge1' }])
+    expect(done.landed).toEqual([{ ticketId: 'ticket-a', branch: 'agent/58', mergeCommit: 'merge1' }])
   })
 
   /**
@@ -39,9 +39,9 @@ describe('reduceIntegration', () => {
   it('releases the lane on a refusal too', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
       e('IntegrationRefused', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         reason: 'dirty-base' as const,
         detail: "uncommitted changes in the operator's checkout",
@@ -59,13 +59,13 @@ describe('reduceIntegration', () => {
   it('tallies refusals by typed reason', () => {
     const e = makeStream(LANE)
     const refusal = (reason: 'dirty-base' | 'conflict' | 'lane-busy', detail: string) =>
-      e('IntegrationRefused', { workItemId: 'wi-a', branch: 'agent/58', reason, detail })
+      e('IntegrationRefused', { ticketId: 'ticket-a', branch: 'agent/58', reason, detail })
 
     const s = reduceIntegration([
       refusal('dirty-base', 'operator checkout dirty'),
       refusal('dirty-base', 'still dirty'),
       refusal('conflict', 'src/a.ts'),
-      refusal('lane-busy', 'wi-b holds develop'),
+      refusal('lane-busy', 'ticket-b holds develop'),
     ])
 
     expect(s.refusalsByReason).toEqual({ 'dirty-base': 2, conflict: 1, 'lane-busy': 1 })
@@ -77,16 +77,16 @@ describe('reduceIntegration', () => {
   it('counts attempts separately from outcomes', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
       e('IntegrationRefused', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         reason: 'conflict' as const,
         detail: 'src/a.ts',
       }),
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-b' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-b' }),
       e('IntegrationSucceeded', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         base: 'develop',
         mergeCommit: 'merge1',
@@ -111,9 +111,9 @@ describe('reduceIntegration', () => {
   it('still reads a past `lane-busy` refusal, which nothing writes any more', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
       e('IntegrationRefused', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         reason: 'lane-busy' as const,
         detail: 'another integration holds merge:lingtai:main',
@@ -129,9 +129,9 @@ describe('reduceIntegration', () => {
   it('counts a rejected push as the refusal it is', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
       e('IntegrationRefused', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         reason: 'push-rejected' as const,
         detail: '! [rejected] HEAD -> main (fetch first)',
@@ -154,15 +154,15 @@ describe('reduceIntegration', () => {
   it('answers about the last attempt, not about what is merging', () => {
     const e = makeStream(LANE)
     const both = [
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
-      e('IntegrationAttempted', { workItemId: 'wi-b', branch: 'agent/59', headSha: 'sha-b' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-b', branch: 'agent/59', headSha: 'sha-b' }),
     ]
 
     // Both in flight, and the lane can only name one of them.
     const overlapping = reduceIntegration(both)
     expect(overlapping.lifecycle).toEqual({
       status: 'attempting',
-      workItemId: 'wi-b',
+      ticketId: 'ticket-b',
       branch: 'agent/59',
       headSha: 'sha-b',
     })
@@ -172,7 +172,7 @@ describe('reduceIntegration', () => {
     const aRefused = reduceIntegration([
       ...both,
       e('IntegrationRefused', {
-        workItemId: 'wi-a',
+        ticketId: 'ticket-a',
         branch: 'agent/58',
         reason: 'push-rejected' as const,
         detail: '! [rejected] HEAD -> develop (fetch first)',
@@ -186,7 +186,7 @@ describe('reduceIntegration', () => {
   it('ignores an event type it has never heard of', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
-      e('IntegrationAttempted', { workItemId: 'wi-a', branch: 'agent/58', headSha: 'sha-a' }),
+      e('IntegrationAttempted', { ticketId: 'ticket-a', branch: 'agent/58', headSha: 'sha-a' }),
       unknownEvent(LANE, 2),
     ])
 
@@ -201,7 +201,7 @@ describe('reduceIntegration', () => {
  * `IntegrationRefused` already on the log still parses.
  */
 describe('IntegrationRefused payload', () => {
-  const base = { workItemId: 'wi-a', branch: 'agent/58', reason: 'conflict' as const, detail: 'src/a.ts' }
+  const base = { ticketId: 'ticket-a', branch: 'agent/58', reason: 'conflict' as const, detail: 'src/a.ts' }
 
   it('parses a refusal from before #408, with none of the three fields', () => {
     expect(() => parsePayload('IntegrationRefused', base)).not.toThrow()

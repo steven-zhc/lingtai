@@ -270,7 +270,7 @@ describe('the accessors', () => {
    * a failure the ordering makes silent: every declared action at a step runs and
    * the step's ending is the pipeline's, so a check written after the lane runs on
    * a change already on the base branch. `endingOf` then reports `merge` refused
-   * while the merge stood — no `WorkItemLanded`, `end`'s `when: landed` effects
+   * while the merge stood — no `TicketLanded`, `end`'s `when: landed` effects
    * never fired, and the item back in the queue with its diff on `main`.
    *
    * Both rows are the one clause: a second `merge:` is refused by *being after the
@@ -316,7 +316,7 @@ describe('the accessors', () => {
    * a list with no lane at all walked straight through it. Every declared action
    * at a step runs and the step's ending is the pipeline's, so a `merge:` of
    * green checks reports `merge` **passed** having landed nothing — and then no
-   * landing follows either, because the `WorkItemLanded` append is guarded on
+   * landing follows either, because the `TicketLanded` append is guarded on
    * the lane's own commit: no event, no `endPlan`, and the pass falls through to
    * the failed tail, which releases the ticket so the next pass buys a fresh
    * agent for a diff that is still on the branch. Nothing red, nothing held, a

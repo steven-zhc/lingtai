@@ -33,7 +33,7 @@ import type { ProjectionRow } from '../src/store.ts'
 
 const SHA = 'a'.repeat(40)
 const PROJECT = 'pin'
-const wi = (n: number | string) => `wi-${PROJECT}-${n}`
+const wi = (n: number | string) => `ticket-${PROJECT}-${n}`
 
 function minorFinding(claim: string, line: number, file = 'src/a.ts'): Finding {
   return { file, line, claim, failureScenario: `when ${claim}, it breaks`, severity: 'minor' }
@@ -54,9 +54,9 @@ function verdictAction(name: string, verdict: 'accepted' | 'refused', findings: 
   }
 }
 
-function aRunStarted(run: ReturnType<typeof aRun>, workItemId: string): Envelope {
+function aRunStarted(run: ReturnType<typeof aRun>, ticketId: string): Envelope {
   return run.event('RunStarted', {
-    workItemId,
+    ticketId,
     runtime: 'claude-code',
     model: 'm',
     promptVersion: '1',
@@ -70,7 +70,7 @@ function aRunStarted(run: ReturnType<typeof aRun>, workItemId: string): Envelope
 const events: Envelope[] = []
 
 // ---- case 1: raised and filtered -------------------------------------------
-const run1 = aRun('run-pin-1')
+const run1 = aRun('pass-pin-1')
 events.push(aRunStarted(run1, wi(1)))
 const afterCase1RunStarted = events.length
 events.push(
@@ -94,12 +94,12 @@ events.push(
 const afterCase1 = events.length
 
 // ---- case 2: a passing verdict with no minors ------------------------------
-const run2 = aRun('run-pin-2')
+const run2 = aRun('pass-pin-2')
 events.push(aRunStarted(run2, wi(2)))
 events.push(...run2.aStepEnded({ step: 'proposed', round: 0, actions: [verdictAction('review', 'accepted', [], SHA)] }))
 
 // ---- case 3: two passing verdict actions in one outcome --------------------
-const run3 = aRun('run-pin-3')
+const run3 = aRun('pass-pin-3')
 events.push(aRunStarted(run3, wi(3)))
 events.push(
   ...run3.aStepEnded({
@@ -113,7 +113,7 @@ events.push(
 )
 
 // ---- case 4: a failing gate's minors ---------------------------------------
-const run4 = aRun('run-pin-4')
+const run4 = aRun('pass-pin-4')
 events.push(aRunStarted(run4, wi(4)))
 events.push(
   ...run4.aStepEnded({
@@ -124,7 +124,7 @@ events.push(
 )
 
 // ---- case 5: first sighting wins -------------------------------------------
-const run5a = aRun('run-pin-5a')
+const run5a = aRun('pass-pin-5a')
 events.push(aRunStarted(run5a, wi(5)))
 events.push(
   ...run5a.aStepEnded({
@@ -133,7 +133,7 @@ events.push(
     actions: [verdictAction('review', 'accepted', [minorFinding('duplicate finding', 10)], 'sha-5a')],
   }),
 )
-const run5b = aRun('run-pin-5b')
+const run5b = aRun('pass-pin-5b')
 events.push(aRunStarted(run5b, wi(5)))
 events.push(
   ...run5b.aStepEnded({
@@ -144,7 +144,7 @@ events.push(
 )
 
 // ---- case 6: no RunStarted --------------------------------------------------
-const run6 = aRun('run-pin-6')
+const run6 = aRun('pass-pin-6')
 events.push(
   ...run6.aStepEnded({
     step: 'proposed',
@@ -153,8 +153,8 @@ events.push(
   }),
 )
 
-// ---- case 7: a workItemId parseWorkItemStream refuses ----------------------
-const run7 = aRun('run-pin-7')
+// ---- case 7: a ticketId parseWorkItemStream refuses ----------------------
+const run7 = aRun('pass-pin-7')
 events.push(aRunStarted(run7, 'noprojectissue'))
 events.push(
   ...run7.aStepEnded({
@@ -165,7 +165,7 @@ events.push(
 )
 
 // ---- case 8: a duplicate RunStarted for one run ----------------------------
-const run8 = aRun('run-pin-8')
+const run8 = aRun('pass-pin-8')
 events.push(aRunStarted(run8, wi(8)))
 events.push(aRunStarted(run8, wi('8-again')))
 events.push(
@@ -177,7 +177,7 @@ events.push(
 )
 
 // ---- case 9: the decisions --------------------------------------------------
-const run9a = aRun('run-pin-9a')
+const run9a = aRun('pass-pin-9a')
 events.push(aRunStarted(run9a, wi(9)))
 events.push(
   ...run9a.aStepEnded({
@@ -201,7 +201,7 @@ events.push(
     reason: 'style',
   }),
 )
-const run9b = aRun('run-pin-9b')
+const run9b = aRun('pass-pin-9b')
 events.push(aRunStarted(run9b, wi(9)))
 events.push(
   ...run9b.aStepEnded({
@@ -211,7 +211,7 @@ events.push(
   }),
 )
 
-const run9c = aRun('run-pin-9c')
+const run9c = aRun('pass-pin-9c')
 events.push(aRunStarted(run9c, wi(9)))
 events.push(
   ...run9c.aStepEnded({
@@ -247,7 +247,7 @@ events.push(
   }),
 )
 
-const run9d = aRun('run-pin-9d')
+const run9d = aRun('pass-pin-9d')
 events.push(aRunStarted(run9d, wi(9)))
 events.push(
   ...run9d.aStepEnded({
@@ -288,10 +288,10 @@ events.push(
 // `aLegacyHold`: `aRun().aStepEnded` always writes `StepsResolved` ahead of a
 // verdict, so the only way to build a `StepPassed` with none ahead of it on
 // the run's own stream is the wire shape directly.
-const run10 = makeStream('run-pin-10')
+const run10 = makeStream('pass-pin-10')
 events.push(
   run10('RunStarted', {
-    workItemId: wi(10),
+    ticketId: wi(10),
     runtime: 'claude-code',
     model: 'm',
     promptVersion: '1',
@@ -305,7 +305,7 @@ events.push(
   run10('StepPassed', {
     step: 'proposed',
     action: 'review',
-    runId: 'run-pin-10',
+    runId: 'pass-pin-10',
     onSha: SHA,
     evidence: 'looks right',
     findings: [minorFinding('no StepsResolved ahead of this one', 1)],
@@ -433,7 +433,7 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
   it('files a StepPassed with no StepsResolved ahead of it on the run', async () => {
     const { backlog } = await fold(events)
     const row = backlog.find((r) => r.claim === 'no StepsResolved ahead of this one')
-    expect(row).toMatchObject({ task_id: wi(10), run_id: 'run-pin-10' })
+    expect(row).toMatchObject({ task_id: wi(10), run_id: 'pass-pin-10' })
   })
 
   it('folds in two batches split between a RunStarted and its own StepPassed the same as one batch', async () => {

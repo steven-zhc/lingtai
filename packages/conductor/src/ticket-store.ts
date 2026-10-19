@@ -239,7 +239,7 @@ async function defaultLogQueries(): Promise<Pick<LogQueries, 'projectStreams'>> 
  * status` reaches before anything else — must not open one merely by
  * importing this function.
  *
- * **The refusal.** A project whose log already has `wi-<project>-*` streams
+ * **The refusal.** A project whose log already has `ticket-<project>-*` streams
  * and whose recipe newly says `db` would number tickets from 1 into streams
  * that belong to GitHub issues (`workItemStream`, `@lingtai/domain`). Once
  * `dbTickets` holds any ticket of its own, the project switched deliberately

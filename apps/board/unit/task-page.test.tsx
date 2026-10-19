@@ -51,8 +51,8 @@ function e(streamId: string, type: string, data: unknown, at = '2026-09-14T04:27
   return { seq, streamId, version: 1, type, schemaVer: 1, data, actor: 'conductor', causation: null, at: new Date(at) }
 }
 
-const ITEM = 'wi-lingtai-147'
-const RUN = 'run-52feebd1-0000-0000-0000-000000000000'
+const ITEM = 'ticket-lingtai-147'
+const RUN = 'pass-52feebd1-0000-0000-0000-000000000000'
 const BASE = 'b'.repeat(40)
 const HEAD = 'a4e9df9'.padEnd(40, '0')
 const claim: Claim = { runId: RUN, at: '2026-09-14T04:00:00.000Z', repair: false, released: null }
@@ -87,7 +87,7 @@ const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}):
   ...rest,
 })
 
-/** `wi-lingtai-147` on 2026-09-14, as the ticket quotes it. */
+/** `ticket-lingtai-147` on 2026-09-14, as the ticket quotes it. */
 function blocked(): TaskDetail {
   const run = foldRun(claim, 1, [
     e(RUN, 'RunStarted', { baseSha: BASE }),
@@ -96,7 +96,7 @@ function blocked(): TaskDetail {
     e(RUN, 'RunFinished', { turns: 30, durationMs: 900_000, costUsd: 2.5, exitCode: 0 }),
   ])
   const own = [
-    e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
+    e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
     e(
       ITEM,
       'WorkItemBlocked',
@@ -159,7 +159,7 @@ function blocked(): TaskDetail {
 
 function running(): TaskDetail {
   const run = foldRun(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
-  return task([e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
+  return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
 }
 
 const page = (t: TaskDetail) => renderToStaticMarkup(<TaskBody task={t} />)
@@ -217,7 +217,7 @@ describe('a blocked task', () => {
     const count = (needle: string) => read.split(needle).length - 1
     expect(count(ITEM)).toBe(1)
     // Short or as the whole uuid, the run is printed once: the attempt row's.
-    expect(count('run-52feebd1')).toBe(1)
+    expect(count('pass-52feebd1')).toBe(1)
   })
 })
 
@@ -328,7 +328,7 @@ describe('the rail on the task page', () => {
       ],
       { plan },
     )
-    return task([e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
+    return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
   }
 
   const why = (html: string) => html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
@@ -408,8 +408,8 @@ describe('the rail on the task page', () => {
       e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
     ]
     const own = [
-      e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
-      e(ITEM, 'WorkItemLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
+      e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
+      e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
     const landed = task(own, [foldRun(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
@@ -424,8 +424,8 @@ describe('the rail on the task page', () => {
       e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
     ]
     const own = [
-      e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
-      e(ITEM, 'WorkItemLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
+      e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
+      e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
     // `over` is what `loadTask` passes for the attempt that landed.
     const landed = task(own, [foldRun(claim, 1, events, { over: true })])
@@ -454,8 +454,8 @@ describe('the record', () => {
     ])
     const landed = task(
       [
-        e(ITEM, 'WorkItemClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
-        e(ITEM, 'WorkItemLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
+        e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
+        e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
       ],
       [run],
     )

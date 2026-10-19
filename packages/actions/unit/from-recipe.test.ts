@@ -44,7 +44,7 @@ function reviewer(): Runtime & { seen: RunRequest[] } {
   }
 }
 
-const context = { runId: 'run-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
+const context = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 
 describe("usd through actionsFromRecipe's review dispatch", () => {
   it('reaches the runtime where the ceiling declared one', async () => {

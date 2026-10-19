@@ -133,7 +133,7 @@ export const backlogProjection: Projection = {
           await ctx.query(
             `insert into finding_backlog_run (run_id, task_id) values ($1, $2)
              on conflict (run_id) do nothing`,
-            [event.streamId, d.workItemId],
+            [event.streamId, d.ticketId],
           )
           break
         }

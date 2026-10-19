@@ -14,7 +14,7 @@ import { fromOf, type Proposal } from '../src/proposal.ts'
 import { Finding, RefusalReason, Step } from '../src/vocabulary.ts'
 import type { RunRef } from '../src/wait.ts'
 
-const run: RunRef = { runId: 'run-1' }
+const run: RunRef = { runId: 'pass-1' }
 const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', evidence: '' }
 
 function action(yields: Action['yields'], result: unknown, overrides: Partial<typeof base> = {}): Action {

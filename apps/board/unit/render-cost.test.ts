@@ -86,7 +86,7 @@ function listed(name: string, kinds: string[], refs: string[]): ProjectQueue {
     filter: resolvedFilter(name, kinds),
     offered: { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null },
     runnable: refs.map((ref) => ({
-      taskId: `wi-${name}-${ref}`,
+      taskId: `ticket-${name}-${ref}`,
       issue: ref,
       title: `issue ${ref}`,
       kind: kinds[0]!,

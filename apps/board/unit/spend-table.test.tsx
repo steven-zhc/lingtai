@@ -13,10 +13,10 @@ function row(over: Partial<SpendRow> = {}): SpendRow {
   return {
     seq: '1',
     at: new Date('2026-09-10T00:00:00Z'),
-    streamId: 'run-1',
-    ticket: 'wi-pin-1',
+    streamId: 'pass-1',
+    ticket: 'ticket-pin-1',
     project: 'pin',
-    pass: 'run-1',
+    pass: 'pass-1',
     purpose: 'Action',
     step: 'proposed',
     action: 'build',

@@ -85,7 +85,7 @@ export function addBills(
 /**
  * A ticket (or a card) known to have run — `attempts` claims, at least one —
  * but whose attempts did not each contribute an `Action` row is unknown,
- * never free (0110 §7): a ticket like `wi-lingtai-89` that predates
+ * never free (0110 §7): a ticket like `ticket-lingtai-89` that predates
  * `RunSpent` folds `billOf` to five empty bills otherwise, and an empty bill
  * reads as nothing spent.
  *
