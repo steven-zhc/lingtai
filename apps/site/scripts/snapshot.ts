@@ -128,7 +128,7 @@ async function main(): Promise<void> {
   // too).
   const tickets = tasks.map((t) => t.taskId)
   const rows = await readSpend({ url, ticket: tickets })
-  const spend = spendByTicket(rows, tickets)
+  const spend = spendByTicket(rows, tasks)
 
   const snapshot = takeBoard(tasks, { open, capturedAt, commit: head(), spend })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)

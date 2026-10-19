@@ -82,6 +82,7 @@ const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}):
   queued: null,
   held: null,
   totals: totalsOf(runs),
+  spendCurrency: { lag: 0 },
   history: [],
   ...rest,
 })

@@ -12,6 +12,7 @@ import {
   billText,
   emptyBill,
   PURPOSES,
+  spendChip,
   totalBill,
   unknownBill,
   withNoSpendFallback,
@@ -176,17 +177,63 @@ describe('unknownBill and withNoSpendFallback', () => {
    * Work since neither carries a per-attempt repair flag to split it by.
    */
   it('credits Work with one unknown run per attempt when spend has nothing at all', () => {
-    const bills = withNoSpendFallback(billOf([]), 2)
+    const bills = withNoSpendFallback(billOf([]), 2, [])
     expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
     expect(bills.Answering).toEqual(emptyBill())
   })
 
   it('does nothing for a ticket that never ran', () => {
-    expect(withNoSpendFallback(billOf([]), 0)).toEqual(billOf([]))
+    expect(withNoSpendFallback(billOf([]), 0, [])).toEqual(billOf([]))
   })
 
-  it('does nothing when any purpose already has reported or unknown data', () => {
-    const bills = billOf([row({ purpose: 'Judge', round: null, costUsd: 1 })])
-    expect(withNoSpendFallback(bills, 3)).toBe(bills)
+  /**
+   * The old test here asserted the opposite — that a `Judge` row with no
+   * `Action` row beside it made the fallback a no-op — which was the bug
+   * (`#498`'s review): a ticket with 3 attempts and only a `Judge` row has
+   * contributed *no* `Action` row for *any* attempt, so all three are still
+   * unaccounted, regardless of Judge having data of its own.
+   */
+  it('still credits every unaccounted attempt when another purpose already has data', () => {
+    const rows = [row({ purpose: 'Judge', pass: null, round: null, costUsd: 1 })]
+    const bills = withNoSpendFallback(billOf(rows), 3, rows)
+    expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 3 })
+    expect(bills.Judge.reportedCents).toBe(100)
+  })
+
+  /**
+   * One attempt (`run-1`) reported an `Action` row; the other (`run-2`) did
+   * not. The straddling case the review named: a ticket whose later attempt
+   * appended `RunSpent` and whose earlier one did not must still show the
+   * earlier one as unknown, not silently accounted for by the later one.
+   */
+  it('credits only the attempts with no Action row of their own, when some attempts do have one', () => {
+    const rows = [row({ pass: 'run-1', round: 0, costUsd: 1 })]
+    const bills = withNoSpendFallback(billOf(rows), 2, rows)
+    expect(bills.Work).toEqual({ reportedCents: 100, reportedRuns: 1, estimates: [], unknown: 1 })
+  })
+
+  it('does nothing when every attempt already has its own Action row', () => {
+    const rows = [row({ pass: 'run-1', round: 0, costUsd: 1 }), row({ pass: 'run-2', round: 1, costUsd: 0.5 })]
+    const bills = billOf(rows)
+    expect(withNoSpendFallback(bills, 2, rows)).toEqual(bills)
+  })
+})
+
+describe('spendChip', () => {
+  /**
+   * `loadBoard`'s empty-tasks path never attempts the fold, so it has no lag
+   * to report — a fact that used to be indistinguishable from a fold that ran
+   * and could not read its lag, which sent an operator to rebuild a
+   * projection nothing had asked anything of (`#498`'s review).
+   */
+  it('reads a skipped fold as nothing spent, never as a failure', () => {
+    const chip = spendChip({ lag: null, skipped: true })
+    expect(chip).toMatchObject({ current: true, tone: 'idle', label: 'nothing spent' })
+    expect(chip.title).not.toContain('rebuild')
+  })
+
+  it('still reads a bare null lag as a failure, when the fold was not skipped', () => {
+    const chip = spendChip({ lag: null })
+    expect(chip).toMatchObject({ current: false, tone: 'warn', label: 'unknown' })
   })
 })

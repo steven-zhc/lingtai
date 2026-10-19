@@ -907,9 +907,12 @@ export async function loadBoard(project?: string): Promise<Board> {
   const [queued, spend] = await Promise.all([
     queuedCards(registered.filter((p) => project === undefined || p.project === project)),
     // Not measured, so not claimed: a skipped fold has no lag to report, and
-    // `{ lag: 0 }` would say it checked.
+    // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
+    // this is a board with nothing to bill rather than a fold that ran and
+    // failed — the two used to read identically as a bare `lag: null`
+    // (`#498`'s review).
     tasks.length === 0
-      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null } as SpendCurrency })
+      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
       : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
@@ -934,7 +937,8 @@ export async function loadBoard(project?: string): Promise<Board> {
     // A ticket whose runs predate `RunSpent` contributes not one row here —
     // `billOf` would fold it to five empty bills, which reads as nothing
     // spent rather than as unknown (0110 §7, `#498`'s review).
-    const bills = withNoSpendFallback(billOf(spendByTicket.get(t.taskId) ?? []), t.attempts)
+    const rowsForTicket = spendByTicket.get(t.taskId) ?? []
+    const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
     return toCard(
       t,
       t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
@@ -1284,7 +1288,8 @@ export function ledger(
   const byProject = new Map<string, { cards: number; byPurpose: Record<Purpose, Bill> }>()
   let totalBills = emptyBills()
   for (const card of cards) {
-    const bill = withNoSpendFallback(billOf(rowsByTicket.get(card.taskId) ?? []), card.attempts)
+    const ticketRows = rowsByTicket.get(card.taskId) ?? []
+    const bill = withNoSpendFallback(billOf(ticketRows), card.attempts, ticketRows)
     totalBills = addBills(totalBills, bill)
     const row = byProject.get(card.project) ?? { cards: 0, byPurpose: emptyBills() }
     byProject.set(card.project, { cards: row.cards + 1, byPurpose: addBills(row.byPurpose, bill) })

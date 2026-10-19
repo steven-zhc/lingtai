@@ -18,7 +18,7 @@ import { Fragment } from 'react'
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
-import { billHasAny, billText } from '@/lib/spend'
+import { billHasAny, billText, spendChip } from '@/lib/spend'
 
 import { Close, Decide, Requeue } from './decide.tsx'
 import { Draining } from './draining.tsx'
@@ -660,12 +660,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, ticketSources, projects: filters, pending }, registered, control] = await Promise.all([
-    loadBoard(only),
-    loadProjects().catch(() => []),
-    readControl(),
-  ])
+  const [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control] =
+    await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()])
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
+  // Every card's money pill below is off this same `spend`. Silent when it
+  // folded cleanly — a chip is not free, and this is the ordinary case — and
+  // a sentence when it did not, because a card reading `unknown (1 run)`
+  // after a failed fold is indistinguishable from a ticket that predates
+  // `RunSpent` without one (`#498`'s review).
+  const spendCurrency = spendChip(spend.currency)
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
@@ -756,6 +759,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               action in it when either is not. Never amber — that is the
               headline's, below. */}
           <Health />
+          {/* Nothing while `spend` folded cleanly; the sentence when it did
+              not. Draws nothing in the ordinary case, the same reason
+              `Paused` and `Draining` cost the quiet row nothing. */}
+          {spendCurrency.current ? null : (
+            <>
+              <span className="sep" />
+              <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
+                {spendCurrency.label}
+              </span>
+            </>
+          )}
           {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for

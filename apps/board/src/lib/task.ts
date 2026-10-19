@@ -77,6 +77,7 @@ import {
   unknownBill,
   type Bill,
   type Purpose,
+  type SpendCurrency,
 } from './spend.ts'
 
 export interface Finding {
@@ -779,6 +780,14 @@ export interface TaskDetail {
    */
   held: string | null
   totals: Totals
+  /**
+   * Whether `totals` and every attempt's `costUsd` are off a `spend` that
+   * was actually brought to the head — `currentSpend`'s own currency, kept
+   * rather than discarded (`#498`'s review): a fold that failed must not
+   * read the same as a ticket with nothing spent, which is exactly what
+   * every attempt reading `unknown (1 run)` would otherwise look like.
+   */
+  spendCurrency: SpendCurrency
   /**
    * Everything, in order, for the question a summary did not anticipate — and
    * still the last thing on the page. Structure may lead a reader to it;
@@ -1641,6 +1650,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     queued,
     held,
     totals: totalsOf(runs, discussions, spend),
+    spendCurrency: spendFold.currency,
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is
     // that forty turns of exploration do not drown the thirty-six events this

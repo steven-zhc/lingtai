@@ -198,8 +198,22 @@ export function billOf(rows: readonly SpendRow[]): MoneyBill {
   return { reportedCents, reportedRuns, unknown }
 }
 
-/** One bill per ticket, for every ticket named — a ticket with no rows gets an empty bill. */
-export function spendByTicket(rows: readonly SpendRow[], tickets: readonly string[]): Map<string, MoneyBill> {
+/**
+ * One bill per ticket, for every ticket named.
+ *
+ * A ticket with no rows at all is not an empty bill — `billOf([])` folds to
+ * nothing, which reads as nothing spent — it is `attempts` runs unknown
+ * (0110 §7): this reader never took that fallback at all, and a pre-`RunSpent`
+ * ticket's cost pill simply vanished (`#498`'s review). Counted the way
+ * `apps/board/src/lib/spend.ts`'s `withNoSpendFallback` counts it: the
+ * distinct runs (`SpendRow.pass`) that contributed an `Action` row, so an
+ * attempt whose only row is a `Judge` or `Discussion` one still reads as
+ * unaccounted.
+ */
+export function spendByTicket(
+  rows: readonly SpendRow[],
+  tasks: readonly { taskId: string; attempts: number }[],
+): Map<string, MoneyBill> {
   const byTicket = new Map<string, SpendRow[]>()
   for (const row of rows) {
     if (row.ticket === null) continue
@@ -207,7 +221,19 @@ export function spendByTicket(rows: readonly SpendRow[], tickets: readonly strin
     if (list) list.push(row)
     else byTicket.set(row.ticket, [row])
   }
-  return new Map(tickets.map((t) => [t, billOf(byTicket.get(t) ?? [])]))
+  return new Map(
+    tasks.map((t) => {
+      const ticketRows = byTicket.get(t.taskId) ?? []
+      const bill = billOf(ticketRows)
+      const accounted = new Set(ticketRows.filter((r) => r.purpose === 'Action' && r.pass !== null).map((r) => r.pass))
+        .size
+      const unaccounted = t.attempts - accounted
+      return [
+        t.taskId,
+        unaccounted > 0 ? addBill(bill, { reportedCents: 0, reportedRuns: 0, unknown: unaccounted }) : bill,
+      ]
+    }),
+  )
 }
 
 function addBill(a: MoneyBill, b: MoneyBill): MoneyBill {

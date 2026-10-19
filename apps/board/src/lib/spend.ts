@@ -84,16 +84,36 @@ export function addBills(
 
 /**
  * A ticket (or a card) known to have run — `attempts` claims, at least one —
- * but that contributed not one row to `spend` is unknown, never free (0110
- * §7): a ticket like `wi-lingtai-89` that predates `RunSpent` folds `billOf`
- * to five empty bills otherwise, and an empty bill reads as nothing spent.
+ * but whose attempts did not each contribute an `Action` row is unknown,
+ * never free (0110 §7): a ticket like `wi-lingtai-89` that predates
+ * `RunSpent` folds `billOf` to five empty bills otherwise, and an empty bill
+ * reads as nothing spent.
+ *
+ * **Counted per attempt, by distinct `pass`, never by "does any purpose have
+ * anything at all".** That first test was true the moment *one* attempt's
+ * `Action` row landed — including a `Judge` row with no `Action` row beside
+ * it at all — which hid every attempt that reported nothing: a ticket whose
+ * later attempt appended `RunSpent` and whose earlier one did not (every
+ * ticket that straddles 2026-10-18, and every attempt killed before it
+ * returned) read as fully accounted for, though the earlier attempt's cost
+ * was still unknown (`#498`'s review). So this counts the distinct runs
+ * (`SpendRow.pass`) that contributed an `Action` row and credits only the
+ * remainder — independent of whether Judge, Triage or Discussion have data.
+ *
  * Credited to Work, since a ticket's cards and rows carry no per-attempt
  * repair flag to split the credit by — `totalsOf`'s own per-run fallback does
  * that split, where a `RunView` is available to read it off.
  */
-export function withNoSpendFallback(bills: Record<Purpose, Bill>, attempts: number): Record<Purpose, Bill> {
-  if (attempts === 0 || PURPOSES.some((p) => billHasAny(bills[p]))) return bills
-  return { ...bills, Work: addBill(bills.Work, unknownBill(attempts)) }
+export function withNoSpendFallback(
+  bills: Record<Purpose, Bill>,
+  attempts: number,
+  rows: readonly SpendRow[],
+): Record<Purpose, Bill> {
+  if (attempts === 0) return bills
+  const accounted = new Set(rows.filter((r) => r.purpose === 'Action' && r.pass !== null).map((r) => r.pass)).size
+  const unaccounted = attempts - accounted
+  if (unaccounted <= 0) return bills
+  return { ...bills, Work: addBill(bills.Work, unknownBill(unaccounted)) }
 }
 
 /**
@@ -179,6 +199,15 @@ export interface SpendCurrency {
   lag: number | null
   /** Why the fold, or the read of its lag, did not succeed. */
   error?: string
+  /**
+   * The fold was never attempted because there was nothing on the board to
+   * bill — `loadBoard`'s empty-tasks path. Distinct from a bare `lag: null`
+   * with no `error`, which only a fold that actually ran and still could not
+   * read its lag produces: a not-measured board is not a failed one, and
+   * `spendChip` must not send an operator to rebuild a projection nothing
+   * asked anything of (`#498`'s review).
+   */
+  skipped?: boolean
 }
 
 /**
@@ -225,6 +254,9 @@ export function spendChip(c: SpendCurrency): {
       tone: 'warn',
       title: `spend could not be brought to the head: ${c.error} — ${repair}`,
     }
+  }
+  if (c.skipped) {
+    return { current: true, label: 'nothing spent', tone: 'idle', title: 'no card on this board has spend to fold' }
   }
   if (c.lag === null) {
     return { current: false, label: 'unknown', tone: 'warn', title: `could not read spend's lag — ${repair}` }

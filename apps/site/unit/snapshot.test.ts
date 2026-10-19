@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
@@ -10,6 +11,7 @@ import {
   elapsed,
   money,
   readSnapshot,
+  spendByTicket,
   stamp,
   takeBoard,
   type MoneyBill,
@@ -279,5 +281,56 @@ describe('how a figure reads', () => {
 
   it('carries the date it was taken', () => {
     expect(take([task()]).capturedAt).toBe(AT.toISOString())
+  })
+})
+
+function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow> = {}): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-09T00:00:00Z'),
+    streamId: `run-${ticket}`,
+    ticket,
+    project: null,
+    pass: `run-${ticket}`,
+    purpose: 'Action',
+    step: 'proposed',
+    action: 'build',
+    round: 0,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+    ...over,
+  }
+}
+
+describe('spendByTicket', () => {
+  /**
+   * `wi-89` ran twice before `spend` existed: no row at all for either
+   * attempt. `billOf([])` folds to an empty bill, which reads as nothing
+   * spent — this reader took no fallback at all, so the card's cost pill
+   * vanished rather than reading as unknown (`#498`'s review).
+   */
+  it('reads a ticket with attempts but not one row as unknown, never as nothing', () => {
+    const spend = spendByTicket([], [{ taskId: 'wi-89', attempts: 2 }])
+    expect(spend.get('wi-89')).toEqual({ reportedCents: 0, reportedRuns: 0, unknown: 2 })
+  })
+
+  it('credits only the attempt with no Action row of its own, when another attempt did report', () => {
+    const rows = [spendRow('wi-1', 1.5)]
+    const spend = spendByTicket(rows, [{ taskId: 'wi-1', attempts: 2 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 150, reportedRuns: 1, unknown: 1 })
+  })
+
+  it('does nothing when every attempt already has its own Action row', () => {
+    const rows = [spendRow('wi-1', 1.5), spendRow('wi-1', 0.5, { pass: 'run-wi-1-2' })]
+    const spend = spendByTicket(rows, [{ taskId: 'wi-1', attempts: 2 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 200, reportedRuns: 2, unknown: 0 })
+  })
+
+  it('gives a ticket with no attempts an empty bill', () => {
+    const spend = spendByTicket([], [{ taskId: 'wi-1', attempts: 0 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 0, reportedRuns: 0, unknown: 0 })
   })
 })
