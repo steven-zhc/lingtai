@@ -15,19 +15,8 @@ import { integrationStream } from '@lingtai/domain'
  * **Retention is a query.** A landed task falling out of the window must still
  * be a row. Deleting it would make the projection depend on when it last ran.
  */
-import type { ToAppend } from '@lingtai/domain'
-import {
-  aFixApplied,
-  aFixRound,
-  aLegacyHold,
-  anAnswer,
-  anApprovalGranted,
-  aRepairRequested,
-  aRoute,
-  aRun,
-  aStepWaived,
-  aWait,
-} from '@lingtai/domain/test/events'
+import type { JudgeReply, RouteDecision, RouteOffer, ToAppend } from '@lingtai/domain'
+import { aResolution, aRoute, aRun, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { directPostgresUrl } from '@lingtai/env'
 import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
@@ -96,10 +85,37 @@ const claimed = (n: number) => claimedWith(run(n))
 const released = (runId: string, reason: string) => ({
   type: 'TicketReleased',
   actor: 'conductor',
-  data: { runId, reason },
+  // `cause` is required (nullable, not optional) since #502 — `null` is
+  // what every one of these releases carries other than a restart's own.
+  data: { runId, reason, cause: null },
 })
 
 const KILLED = 'the run was killed by an operator timeout before it produced anything'
+
+/** A `RouteOffer` offering one fix round at `round`, with no other candidate but hand-to-person — the shape row 13/14's fixture needs. */
+function fixRoundOffer(round: number): RouteOffer {
+  return {
+    proposal: { _tag: 'ReviewFindings', findings: [] },
+    available: [
+      { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round } },
+      { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+    ],
+    unavailable: [],
+  }
+}
+const fixLinesReply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'fixable' }
+const fixLinesDecision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
+
+/** A `RouteOffer` offering a restart, with the fix-round candidate already spent — row 14's shape. */
+function restartOffer(restart: number): RouteOffer {
+  return {
+    proposal: { _tag: 'ReviewFindings', findings: [] },
+    available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart } } }],
+    unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+  }
+}
+const restartReply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'try a fresh approach' }
+const restartDecision: RouteDecision = { _tag: 'Selected', candidate: 'restart' }
 
 /** `{ type, actor, data }` off a builder's own `Envelope`, or off one of this file's own non-retired literals — both already carry the three fields `append` wants. */
 function toAppend(e: { type: string; actor: string; data: unknown }): ToAppend {
@@ -162,40 +178,17 @@ async function append(
   versions.set(streamId, before + events.length)
 }
 
-/**
- * An event this build refuses to append, written the way an older build did.
- *
- * `store.append` refuses a retired type, which is right for everything that
- * writes — and would make it impossible to seed the one thing a rebuild has to
- * survive: a log from before the type was retired. So the row goes in beneath
- * the store, with the next version on the stream, and the store reads it back
- * exactly as it reads a real one. Tracked on the same `versions` map as
- * `append`, since the two share a stream's version sequence.
- */
-async function appendRetired(streamId: string, type: string, data: object): Promise<void> {
-  const before = versions.get(streamId) ?? 0
-  const c = new pg.Client({ connectionString: directPostgresUrl() })
-  await c.connect()
-  try {
-    await c.query(
-      "insert into events (stream_id, version, type, data, actor) values ($1, $2, $3, $4::jsonb, 'conductor')",
-      [streamId, before + 1, type, JSON.stringify(data)],
-    )
-  } finally {
-    await c.end()
-  }
-  versions.set(streamId, before + 1)
-}
-
 async function seed(): Promise<void> {
   // 1 — queued and nothing else.
   await append(wi(1), [discovered(1, 'still waiting')])
 
-  // 2 — running, guard tripped twice, cost recorded.
+  // 2 — running, guard tripped twice.
   await append(wi(2), [discovered(2, 'a race in the importer'), claimed(2)])
   await append(run(2), [
     started(2),
-    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 63, durationMs: 100, costUsd: 5.42 } },
+    // `RunFinished.costUsd` is gone (#502, 0110 §9) — spend has one source,
+    // `RunSpent`, read at display time, not folded into this row.
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 63, durationMs: 100 } },
   ])
 
   // 3 — at the gates, one passed and one failed.
@@ -292,33 +285,42 @@ async function seed(): Promise<void> {
           ],
         })
         .map(toAppend),
-      ...aStepWaived(
-        { event: run8.event, step: 'proposed', action: 'build', runId: run(8) },
-        'sha-8',
-        'human:steven',
-        'known flake',
-      ).map(toAppend),
-      // `aResolution`'s `Approve` case writes the same event with a fixed
-      // `by`/`note` ('steven'/'looks right') that nothing here reads;
-      // `anApprovalGranted` takes them explicitly instead, so the actor this
-      // fixture is about stays on the row.
-      ...anApprovalGranted(
-        { event: run8.event, step: 'merge', action: 'human', runId: run(8) },
-        'sha-8',
-        'human:steven',
-        '',
-      ).map(toAppend),
+      // `StepWaived` is gone (#502): a waiver is the same action's own
+      // `Waived{waitId}` result on a later `StepEnded` for the same
+      // run:step:action key, which `verdicts`' assignment semantics
+      // overwrite the earlier `refused` with.
+      ...run8
+        .aStepEnded({
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'agent',
+              name: 'build',
+              onSha: 'sha-8',
+              evidence: 'known flake',
+              yields: 'verdict',
+              result: { _tag: 'Waived', waitId: aWaitId() },
+            },
+          ],
+        })
+        .map(toAppend),
     ])
   }
+  // `ApprovalGranted` is gone (#502): an approval is `WaitResolved{Approve}`
+  // on the ticket's own stream now, which `aResolution` writes.
+  await append(wi(8), aResolution(makeStream(wi(8)), aWaitId(), { _tag: 'Approve', onSha: 'sha-8' }).map(toAppend))
 
   // 9 — approved, and the merge hit a conflict anyway. The whole of #84 in one
   //     stream: the approval is spent, `approve()` refuses every further click,
   //     and the item is blocked with a diagnosis rather than a headstone.
   //
-  //     It used to buy an agent here, and the fixture used to carry the second
-  //     attempt that agent was. `#143` takes the purchase away — and takes
-  //     `RepairRequested` with it, which `store.append` now refuses as retired,
-  //     so this could not be seeded even if it were still meant.
+  //     `afterApproval` is gone with `Hold` (#502) — `WaitReason.MergeRefused`
+  //     has no field for it, and a `conflict` is excluded from that variant
+  //     outright (it always escalates through `proposed` instead, as
+  //     `ProposedEscalated{proposal: MergeConflict}`), so this is the same
+  //     shape row 11/12 use below rather than a distinct "already approved"
+  //     one — that distinction has no `WaitReason` left to carry it.
   await append(wi(9), [discovered(9, 'approved, then conflicted'), claimedWith(attempt(9, 'a'))])
   {
     const run9a = aRun(attempt(9, 'a'))
@@ -341,14 +343,11 @@ async function seed(): Promise<void> {
           ],
         })
         .map(toAppend),
-      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
-      ...anApprovalGranted(
-        { event: run9a.event, step: 'merge', action: 'approval', runId: attempt(9, 'a') },
-        'sha-9a',
-        'human:steven',
-        '',
-      ).map(toAppend),
+      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10 } },
     ])
+    // `ApprovalGranted` is gone (#502): an approval is `WaitResolved{Approve}`
+    // on the ticket's own stream now.
+    await append(wi(9), aResolution(makeStream(wi(9)), aWaitId(), { _tag: 'Approve', onSha: 'sha-9a' }).map(toAppend))
   }
   await append(lane, [
     {
@@ -363,61 +362,25 @@ async function seed(): Promise<void> {
     },
   ])
   await append(wi(9), [
-    // A failure to acknowledge and not a judgement: the approval was spent and
-    // the merge still refused, so nothing is being asked of anybody's opinion
-    // — `legacyColumns` reads the diagnosis off `diagnoseRefusal`.
-    //
-    // **No `WaitReason` reaches this shape.** `aWait`'s `holdOf` always writes
-    // `afterApproval: false` (`adapters.ts`'s `mergeRefusedHold`) — the pass's
-    // own refusal, nobody has approved this sha yet. `true` is `approve.ts`'s
-    // own producer: a person already approved this exact sha and the lane
-    // still refused (`hold.ts`'s own comment on the field) — a different code
-    // path than any `WaitReason` models, so `aLegacyHold` pins the `Hold`
-    // directly rather than inventing a `WaitReason` that does not produce it.
+    // A judgement, since #502: a conflict always escalates through
+    // `proposed` to a person now (`ProposedEscalated{MergeConflict}`),
+    // never straight to an acknowledgement-only `MergeRefused` wait — that
+    // split existed on `Hold` alone and has no `WaitReason` left to carry it.
     toAppend(
-      aLegacyHold(makeStream(wi(9)), {
-        _tag: 'MergeRefused',
+      aWait(makeStream(wi(9)), {
+        _tag: 'ProposedEscalated',
         run: { runId: attempt(9, 'a') },
-        reason: 'conflict',
-        why: 'agent/9 does not merge into develop.',
-        raw: 'agent/9 does not merge into develop: page.tsx',
-        paths: null,
-        baseSha: null,
-        headSha: null,
-        afterApproval: true,
+        proposal: {
+          _tag: 'MergeConflict',
+          output: 'agent/9 does not merge into develop: page.tsx',
+          paths: null,
+          baseSha: null,
+          headSha: null,
+        },
+        because: { _tag: 'NotAsked' },
       })[0]!,
     ),
   ])
-
-  // 15 — a ticket from before #143: run-a finished, the lane refused, the old
-  //      code bought a repair, and run-b was that repair. The rebuild has to
-  //      keep the repair's money apart, exactly as the live projection did and
-  //      as the task page's own fold still does.
-  await append(wi(15), [discovered(15, 'repaired before #143'), claimedWith(attempt(15, 'a'))])
-  await append(attempt(15, 'a'), [
-    started(15),
-    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
-  ])
-  await appendRetired(
-    wi(15),
-    'RepairRequested',
-    aRepairRequested(makeStream(wi(15)), attempt(15, 'a'))[0]!.data as object,
-  )
-  await append(wi(15), [
-    released(attempt(15, 'a'), 'repairing verify-failed (attempt 1)'),
-    claimedWith(attempt(15, 'b')),
-  ])
-  await append(attempt(15, 'b'), [
-    started(15),
-    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
-  ])
-
-  // 16 — the old code bought a repair and released the item, and then the
-  //      daemon restarted onto #143. Nothing has claimed it, so it is still
-  //      owed the backoff exemption the repair was bought with.
-  await append(wi(16), [discovered(16, 'released for a repair, then deployed'), claimed(16)])
-  await appendRetired(wi(16), 'RepairRequested', aRepairRequested(makeStream(wi(16)), run(16))[0]!.data as object)
-  await append(wi(16), [released(run(16), 'repairing verify-failed (attempt 1)')])
 
   // 10 — the branch was repaired and approval re-requested on the new head.
   //      The run produced `sha-10a` and is asking about `sha-10b`, which is
@@ -477,49 +440,54 @@ async function seed(): Promise<void> {
   //      nobody is being asked about.
   await append(wi(11), [discovered(11, 'diagnosed, with a move'), claimed(11)])
   await append(wi(11), [
-    // No `WaitReason` reaches this shape either — same gap as item 9's, a few
-    // lines up. `reason: 'conflict'` is excluded from
-    // `WaitReason.MergeRefused` outright (`wait.ts`); a conflict today
-    // escalates through `ProposedEscalated` to `Hold.Routed{when: 'conflict'}`
-    // instead (`escalatedHold`), a different tag with different composed
-    // text. This exact shape has been dead since `#472` (`hold-of.ts`'s own
-    // comment on `holdOfPass`'s `MergeRefused` branch); `aLegacyHold` pins it
-    // directly because no `WaitReason`, dead or alive, produces it.
+    // A conflict always escalates through `proposed` now
+    // (`ProposedEscalated{MergeConflict}`) — `WaitReason.MergeRefused`
+    // excludes `'conflict'` outright (`wait.ts`) — so this is the same
+    // shape row 9 uses above, rather than the dead `Hold.MergeRefused`
+    // shape `aLegacyHold` used to pin (that builder, and `Hold` itself, are
+    // both gone — #502).
     toAppend(
-      aLegacyHold(makeStream(wi(11)), {
-        _tag: 'MergeRefused',
+      aWait(makeStream(wi(11)), {
+        _tag: 'ProposedEscalated',
         run: { runId: run(11) },
-        reason: 'conflict',
-        why: 'agent/11 does not merge into develop.',
-        raw: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
-        paths: null,
-        baseSha: null,
-        headSha: null,
-        afterApproval: false,
+        proposal: {
+          _tag: 'MergeConflict',
+          output: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
+          paths: null,
+          baseSha: null,
+          headSha: null,
+        },
+        because: { _tag: 'NotAsked' },
       })[0]!,
     ),
   ])
 
   // 12 — diagnosed, then unblocked by a person.
   await append(wi(12), [discovered(12, 'diagnosed, then answered'), claimed(12)])
-  await append(wi(12), [
-    // Same gap as 11's, two items up: dead since #472, no `WaitReason`
-    // reaches it.
-    toAppend(
-      aLegacyHold(makeStream(wi(12)), {
-        _tag: 'MergeRefused',
-        run: { runId: run(12) },
-        reason: 'conflict',
-        why: 'agent/12 does not merge into develop.',
-        raw: 'CONFLICT (content): Merge conflict in apps/web/src/other.tsx',
-        paths: null,
-        baseSha: null,
-        headSha: null,
-        afterApproval: false,
-      })[0]!,
-    ),
-    ...anAnswer(makeStream(wi(12)), 'human:steven', 'requeued').map(toAppend),
-  ])
+  {
+    const waitId12 = aWaitId()
+    await append(wi(12), [
+      toAppend(
+        aWait(
+          makeStream(wi(12)),
+          {
+            _tag: 'ProposedEscalated',
+            run: { runId: run(12) },
+            proposal: {
+              _tag: 'MergeConflict',
+              output: 'agent/12 does not merge into develop: other.tsx',
+              paths: null,
+              baseSha: null,
+              headSha: null,
+            },
+            because: { _tag: 'NotAsked' },
+          },
+          waitId12,
+        )[0]!,
+      ),
+      ...aResolution(makeStream(wi(12)), waitId12, { _tag: 'Requeue' }, 'human:steven', 'requeued').map(toAppend),
+    ])
+  }
 
   // 13 — a round in flight, so the note has to say which round *of how many*.
   //      `FixRequested.of` is what makes that readable off the log: a
@@ -546,17 +514,24 @@ async function seed(): Promise<void> {
           ],
         })
         .map(toAppend),
-      // `FixRequested`/`FixApplied` with these exact round/cost figures have
-      // no dedicated builder either — `aStepEnded`'s own round>0 bookkeeping
-      // hardcodes `of: round` and `turns: 1, costUsd: null` (`events.ts`'s
-      // `openRound`/`contextFor`), so `aFixRound`/`aFixApplied` take them
-      // explicitly instead.
-      ...aFixRound(run13, 1, 3, 'review', 'sha-13').map(toAppend),
+      // `FixRequested`/`FixApplied` are gone (#502) — a round is folded off
+      // `PassRouted`'s stored offer/reply/decision now, and its cost is an
+      // `Action`-shaped `RunSpent`.
+      ...aRoute(run13, { offer: fixRoundOffer(1), reply: fixLinesReply, decision: fixLinesDecision }).map(toAppend),
       // What the round cost, which is the only thing `repair_costs` holds since
       // `#143`: a run is never a repair, so a run's money is always the work's
       // and what answering a refusal cost is keyed by the round that bought it.
-      ...aFixApplied(run13, 1, 'sha-13b', 7, 0.75).map(toAppend),
-      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
+      run13.event('RunSpent', {
+        for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
+        runtime: 'claude-code',
+        turns: 7,
+        durationMs: 10,
+        usage: [],
+        costUsd: 0.75,
+      }),
+      // `RunFinished.costUsd` is gone (#502) — spend is read at display time
+      // off `RunSpent`, never folded into this column.
+      { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10 } },
     ])
   }
 
@@ -587,16 +562,26 @@ async function seed(): Promise<void> {
         })
         .map(toAppend),
     ])
-    // `aRoute`'s `to: 'claim'` branch writes `PassRouted` on the run's own
-    // stream and `PassRestarted` on the item's — real conduct.ts's own split
-    // (`pass-next.ts`) — and `rounds: 0` rather than this fixture's `3`, which
-    // `task_view` never reads (`cardFactOf`'s `Restarted` fact carries only
-    // `restart`/`of`).
-    const [routed, restarted] = aRoute(run14, { from: 'review', to: 'claim', restart: 1, of: 2 }, makeStream(wi(14)))
-    await append(run(14), [toAppend(routed!)])
+    // `PassRestarted` is gone (#502): a restart decision writes `PassRouted`
+    // on the run's own stream alone, and `restarts`/`restarts_of` — the
+    // denominator is gone with it — comes off that (`cardFactOf`'s
+    // `Restarted` fact carries only `restart`). The release that follows is
+    // its own event, with its own reason and an explicit `cause` naming the
+    // arm, rather than `aRoute` inferring one.
+    await append(
+      run(14),
+      aRoute(run14, { offer: restartOffer(1), reply: restartReply, decision: restartDecision }).map(toAppend),
+    )
     await append(wi(14), [
-      toAppend(restarted!),
-      released(run(14), 'the review reviewer still refused after 3 round(s) — restart 1 of 2'),
+      {
+        type: 'TicketReleased',
+        actor: 'conductor',
+        data: {
+          runId: run(14),
+          reason: 'the review reviewer still refused — restart 1 of 2',
+          cause: { _tag: 'Restart', restart: 1 },
+        },
+      },
     ])
   }
 
@@ -615,19 +600,32 @@ async function seed(): Promise<void> {
 
   // 18 — the same question, answered. The answer is what a rebuild has to be
   //      able to say, and it outlives the claim that follows it.
-  await append(wi(18), [
-    toAppend(
-      aWait(makeStream(wi(18)), {
-        _tag: 'OwnQuestion',
-        question: 'Refuse at the hook, or at the claim?',
-        by: 'human:steven',
-      })[0]!,
-    ),
-    // `aResolution`'s `AnswerQuestion` case hardcodes `by: 'steven'`; the
-    // assertion below needs the real actor, so `anAnswer` takes it explicitly.
-    ...anAnswer(makeStream(wi(18)), 'human:steven', 'at the hook').map(toAppend),
-    claimed(18),
-  ])
+  {
+    const waitId18 = aWaitId()
+    await append(wi(18), [
+      toAppend(
+        aWait(
+          makeStream(wi(18)),
+          {
+            _tag: 'OwnQuestion',
+            question: 'Refuse at the hook, or at the claim?',
+            by: 'human:steven',
+          },
+          waitId18,
+        )[0]!,
+      ),
+      // `anAnswer` is gone (#502) — `aResolution` takes the real actor
+      // directly now (`by`'s own default argument used to be the one thing
+      // that builder existed to override).
+      ...aResolution(
+        makeStream(wi(18)),
+        waitId18,
+        { _tag: 'AnswerQuestion', choice: 'at the hook' },
+        'human:steven',
+      ).map(toAppend),
+      claimed(18),
+    ])
+  }
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
@@ -658,14 +656,11 @@ async function fold(): Promise<void> {
 
 const card = (tasks: Awaited<ReturnType<typeof readTasks>>, n: number) => tasks.find((t) => t.issue === String(n))
 
-// #275: `seed()` calls `appendRetired`, a raw insert of a retired event type
-// straight into `events` — the store's own `append` refuses one, which is
-// right for every real writer and leaves this as the only way to put a
-// pre-retirement row in front of a rebuild. The insert's placeholders and its
-// `::jsonb` cast are Postgres's syntax, so the whole fixture — and every case
-// below, since all of them read what `seed()` wrote — needs the real thing.
-// Skipped rather than converted where no LINGTAI_TEST_DATABASE_URL is set, so
-// the skip is visible in vitest's own count.
+// The whole fixture needs the real store (`createEventStore`/`createDb`),
+// which only exists against Postgres, so every case below — all of which
+// read what `seed()` wrote — is skipped rather than converted where no
+// LINGTAI_TEST_DATABASE_URL is set, and the skip is visible in vitest's own
+// count.
 describe.skipIf(!postgresUnderTest())('against the real store', () => {
   beforeAll(async () => {
     client = createDb()
@@ -707,7 +702,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       const two = card(tasks, 2)!
       expect(two.turns).toBe(63)
-      expect(two.costUsd).toBeCloseTo(5.42)
+      // `costUsd` has no writer here any more (#502) — spend is read at
+      // display time off `RunSpent`, never folded into this column.
+      expect(two.costUsd).toBeNull()
       // No tier on the card any more: it is the recipe's (ADR 0016 §7), and the
       // board does not read recipes.
 
@@ -742,15 +739,18 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     it('says which arm a ticket is on, and which round of that arm', async () => {
       const tasks = await readTasks({ project: PROJECT })
 
-      // The depth half, while a pass is in flight. `of` is what makes the
-      // denominator readable: a fold cannot open the recipe the ceiling is in.
-      expect(card(tasks, 13)!.note).toBe('fixing round 1 of 3: 0 finding(s) from review')
+      // The depth half, while a pass is in flight. `FixRequested.of` is gone
+      // with the event (#502) — a round is named by its number alone now.
+      expect(card(tasks, 13)!.note).toBe('fixing round 1')
 
       // The breadth half, which outlives the pass that spent it.
+      // `restartsOf` is gone with `PassRestarted`'s own ceiling (#502) —
+      // `describeArm` falls back to the number alone, the same way it
+      // always has for a row whose denominator is zero.
       const over = card(tasks, 14)!
       expect(over.restarts).toBe(1)
-      expect(over.restartsOf).toBe(2)
-      expect(describeArm(over)).toBe('restart 1 of 2')
+      expect(over.restartsOf).toBe(0)
+      expect(describeArm(over)).toBe('restart 1')
       // **Released, not waiting.** A question for a person sits in the waiting
       // lane; a restarted ticket is back in the queue for an ordinary claim.
       expect(over.state).toBe('queued')
@@ -806,8 +806,14 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
     /**
      * A waiver records who and why precisely because it is not a pass. Counting
-     * it as one threw away the distinction the record exists for — and the same
-     * held for a human approval, which is not a build going green either.
+     * it as one threw away the distinction the record exists for.
+     *
+     * **`approved` is 0, not 1, since #502.** An approval used to be its own
+     * `ApprovalGranted` verdict on the signoff action's own cell; it is
+     * `WaitResolved{Approve}` on the ticket's stream now, and nothing
+     * re-records the signoff action's own cell as anything but `pending`
+     * until the run it belongs to continues (0120 §6, #465 — not this
+     * ticket). `verdictOf` has no `'approved'` string left to write at all.
      */
     it("does not read a person's word as a gate that ran", async () => {
       const tasks = await readTasks({ project: PROJECT })
@@ -818,7 +824,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // per run, and the latest one is what stands.
       expect(eight.failed).toBe(0)
       expect(eight.waived).toBe(1)
-      expect(eight.approved).toBe(1)
+      expect(eight.approved).toBe(0)
     })
 
     /**
@@ -892,15 +898,20 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const eleven = card(await readTasks({ project: PROJECT }), 11)!
 
       expect(eleven.waiting).toBe(true)
-      expect(eleven.needs).toBe('acknowledgement')
-      expect(eleven.diagnosis?.what).toBe('agent/11 does not merge into develop.')
+      // `needs` is `judgement` now, not `acknowledgement` (#502): a conflict
+      // always escalates through `proposed` to a person, the same as a
+      // review's findings do, rather than landing as a standalone
+      // acknowledgement-only `Hold.MergeRefused` — that split lived on
+      // `Hold` alone and has no `WaitReason` left to carry it.
+      expect(eleven.needs).toBe('judgement')
+      expect(eleven.diagnosis?.what).toContain('is waiting on you')
       expect(eleven.diagnosis?.done).toContain('No agent was bought')
       // The raw failure is still reachable: a summary that hides the git output is
       // worse than the git output.
       expect(eleven.diagnosis?.raw).toContain('CONFLICT (content)')
       expect(eleven.diagnosis?.recommendation?.action).toBe('requeue')
-      // And the note names the reason, with git's own words behind it.
-      expect(eleven.note).toContain('conflict:')
+      // And the note carries git's own words, inside the router's own sentence.
+      expect(eleven.note).toContain('is waiting on you')
       expect(eleven.note).toContain('CONFLICT (content)')
       // The same four facts, as the sentences the card and `status` share.
       expect(describeHold(eleven).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
@@ -1013,17 +1024,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 })
       const thirteen = card(tasks, 13)!
 
-      expect(thirteen.costUsd).toBe(2.1)
+      // `costUsd` has no writer any more (#502) — see row 2's own case above.
+      expect(thirteen.costUsd).toBeNull()
       expect(thirteen.repairCostUsd).toBe(0.75)
-      // A ticket from before #143 keeps its repair's money apart on a rebuild:
-      // the second attempt *was* a repair, and the task page still says so.
-      const fifteen = card(tasks, 15)!
-      expect(fifteen.costUsd).toBe(2.1)
-      expect(fifteen.repairCostUsd).toBe(0.75)
-      expect(fifteen.repairPending).toBe(false)
-      // And an item released for one and not yet claimed is still owed the
-      // exemption from the backoff.
-      expect(card(tasks, 16)!.repairPending).toBe(true)
 
       // And a card that never bought a round says nothing rather than zero:
       // nothing bought and something bought for free are different facts.

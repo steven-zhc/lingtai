@@ -179,50 +179,52 @@ export const backlogProjection: Projection = {
          * function, leaving this file untouched (the design for #481).
          */
         default: {
-          const raised = findingsRaisedOf(event)
-          if (raised === null) break
-          const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
-          if (minors.length === 0) break
-          const [link] = await ctx.query<{ task_id: string }>(
-            'select task_id from finding_backlog_run where run_id = $1',
-            [raised.runId],
-          )
-          const task = link ? parseWorkItemStream(link.task_id) : null
-          // A pass on a run nothing started names no ticket, and an entry that
-          // cannot say which ticket it is about cannot open one that cites it.
-          if (!link || !task) break
-          for (const f of minors) {
-            const key = findingKey({
-              issue: task.issue,
-              step: raised.step,
-              action: raised.action,
-              file: f.file,
-              claim: f.claim,
-            })
-            await ctx.query(
-              `insert into finding_backlog
-                 (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
-                  severity, claim, failure_scenario, raised_seq, raised_at)
-               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-               on conflict (project, key) do nothing`,
-              [
-                task.project,
-                key,
-                task.issue,
-                link.task_id,
-                raised.runId,
-                raised.step,
-                raised.action,
-                raised.onSha,
-                f.file,
-                f.line,
-                f.severity,
-                f.claim,
-                f.failureScenario,
-                seq,
-                event.at,
-              ],
+          // `findingsRaisedOf` answers an array since #502 (0120 phase 2): a
+          // `StepEnded` may carry more than one accepted verdict-yield action.
+          for (const raised of findingsRaisedOf(event)) {
+            const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
+            if (minors.length === 0) continue
+            const [link] = await ctx.query<{ task_id: string }>(
+              'select task_id from finding_backlog_run where run_id = $1',
+              [raised.runId],
             )
+            const task = link ? parseWorkItemStream(link.task_id) : null
+            // A pass on a run nothing started names no ticket, and an entry that
+            // cannot say which ticket it is about cannot open one that cites it.
+            if (!link || !task) continue
+            for (const f of minors) {
+              const key = findingKey({
+                issue: task.issue,
+                step: raised.step,
+                action: raised.action,
+                file: f.file,
+                claim: f.claim,
+              })
+              await ctx.query(
+                `insert into finding_backlog
+                   (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
+                    severity, claim, failure_scenario, raised_seq, raised_at)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                 on conflict (project, key) do nothing`,
+                [
+                  task.project,
+                  key,
+                  task.issue,
+                  link.task_id,
+                  raised.runId,
+                  raised.step,
+                  raised.action,
+                  raised.onSha,
+                  f.file,
+                  f.line,
+                  f.severity,
+                  f.claim,
+                  f.failureScenario,
+                  seq,
+                  event.at,
+                ],
+              )
+            }
           }
           break
         }

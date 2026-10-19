@@ -283,11 +283,11 @@ events.push(
   }),
 )
 
-// ---- case 10: one StepPassed with no StepsResolved before it --------------
-// The one hand-written old-type event this pin allows, named as #480 named
-// `aLegacyHold`: `aRun().aStepEnded` always writes `StepsResolved` ahead of a
-// verdict, so the only way to build a `StepPassed` with none ahead of it on
-// the run's own stream is the wire shape directly.
+// ---- case 10: one StepEnded with a single accepted verdict action --------
+// Since #502 there is no `StepsResolved`/recipe lookup left in
+// `findingsRaisedOf` at all — the action's own `yields`/`result` are on the
+// event — so this no longer needs the hand-written wire shape #480's
+// `aLegacyHold` once did; a plain `StepEnded` is the whole of the fixture.
 const run10 = makeStream('pass-pin-10')
 events.push(
   run10('RunStarted', {
@@ -302,13 +302,22 @@ events.push(
   }),
 )
 events.push(
-  run10('StepPassed', {
+  ...aRun('pass-pin-10').aStepEnded({
     step: 'proposed',
-    action: 'review',
-    runId: 'pass-pin-10',
-    onSha: SHA,
-    evidence: 'looks right',
-    findings: [minorFinding('no StepsResolved ahead of this one', 1)],
+    round: 0,
+    actions: [
+      {
+        plugin: 'agent',
+        name: 'review',
+        onSha: SHA,
+        evidence: 'looks right',
+        yields: 'verdict',
+        result: {
+          _tag: 'Completed',
+          assessment: { verdict: 'accepted', findings: [minorFinding('no StepsResolved ahead of this one', 1)] },
+        },
+      },
+    ],
   }),
 )
 
@@ -370,13 +379,18 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     expect(rowsFor(backlog, wi(2))).toEqual([])
   })
 
-  it("pins each action's own insert order within one outcome's two StepPassed events", async () => {
+  it("keeps each action's own findings apart within one outcome's single StepEnded", async () => {
     const { backlog } = await fold(events)
     const first = rowFor(backlog, wi(3), 'finding from the first action')
     const second = rowFor(backlog, wi(3), 'finding from the second action')
     expect(first).toMatchObject({ action: 'first-reviewer' })
     expect(second).toMatchObject({ action: 'second-reviewer' })
-    expect(BigInt(first!.raised_seq as string)).toBeLessThan(BigInt(second!.raised_seq as string))
+    // Both actions arrive on the same `StepEnded` now (#502), so there is no
+    // longer a per-action `seq` to tell their insert order apart by — the
+    // claim this test actually pins is that both still land as their own
+    // row, attributed to their own action, rather than one overwriting the
+    // other's.
+    expect(first!.raised_seq).toBe(second!.raised_seq)
   })
 
   it("does not file a failing gate's minors", async () => {

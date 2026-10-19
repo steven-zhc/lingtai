@@ -20,18 +20,16 @@
  * from a module-global counter, so a stream built inside an `it` would get a
  * different `updated_seq` depending on which `it` ran first.
  */
-import type { Action, Envelope, StepOutcome } from '@lingtai/domain'
+import type { Action, Envelope, JudgeReply, RouteDecision, RouteOffer, StepOutcome } from '@lingtai/domain'
 import {
   aClaim,
-  aFixDeclined,
-  anApprovalRevoked,
   aRelease,
-  aRepairRequested,
   aResolution,
   aRoute,
   aRun,
   aRunRef,
   aWait,
+  aWaitId,
   aWithdrawal,
 } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -52,8 +50,9 @@ const events: Envelope[] = []
 
 // ---- row 1: a person's own question, withdrawn -----------------------------
 const question = makeStream('ticket-pin-question')
-events.push(...aWait(question, { _tag: 'OwnQuestion', question: 'which base branch?', by: 'steven' }))
-events.push(...aWithdrawal(question))
+const questionWaitId = aWaitId()
+events.push(...aWait(question, { _tag: 'OwnQuestion', question: 'which base branch?', by: 'steven' }, questionWaitId))
+events.push(...aWithdrawal(question, questionWaitId))
 
 // ---- row 2: a step stopped to ask, mid-run ----------------------------------
 const asked = makeStream('ticket-pin-asked')
@@ -68,16 +67,21 @@ events.push(
 
 // ---- row 3: a declared human sign-off, then requeued (not withdrawn) -------
 const human = makeStream('ticket-pin-human')
+const humanWaitId = aWaitId()
 events.push(
-  ...aWait(human, {
-    _tag: 'SignoffRequired',
-    run: aRunRef('pass-pin-human'),
-    step: 'merge',
-    action: 'human',
-    question: 'merge this?',
-  }),
+  ...aWait(
+    human,
+    {
+      _tag: 'SignoffRequired',
+      run: aRunRef('pass-pin-human'),
+      step: 'merge',
+      action: 'human',
+      question: 'merge this?',
+    },
+    humanWaitId,
+  ),
 )
-events.push(...aResolution(human, { _tag: 'Requeue' }))
+events.push(...aResolution(human, humanWaitId, { _tag: 'Requeue' }))
 
 // ---- row 4: a fix round's implement disagreed with the reviewer -----------
 const declined = makeStream('ticket-pin-declined')
@@ -192,116 +196,127 @@ events.push(
   }),
 )
 
-// ---- row 14: a sign-off requested, granted, then revoked -------------------
+// ---- row 14: a sign-off requested, then approved ---------------------------
+// `ApprovalRequested`/`ApprovalGranted`/`ApprovalRevoked` are gone (#502):
+// the action's own `Completed{requested}` on `StepEnded` is the request, a
+// `WaitStarted{SignoffRequired}` is the ticket-level hold, and a
+// `WaitResolved{Approve}` is the grant — there is no revocation event any
+// more (`read-model.ts`'s own `verdictOf` comment), so that half of this row
+// is gone rather than rewritten.
 const approvalStream = makeStream('ticket-pin-approval')
 const approvalRun = aRun('pass-pin-approval')
+const approvalWaitId = aWaitId()
 events.push(...aClaim(approvalStream, approvalRun.runId))
 events.push(
-  approvalRun.event('ApprovalRequested', {
-    step: 'merge',
-    action: 'human',
-    runId: approvalRun.runId,
-    onSha: SHA,
-    question: 'merge this?',
-    artifacts: [],
-  }),
-)
-const afterApprovalRequested = events.length
-events.push(
-  ...aResolution(
-    approvalStream,
-    { _tag: 'Approve', onSha: SHA },
-    {
-      event: approvalRun.event,
-      step: 'merge',
-      action: 'human',
-      runId: approvalRun.runId,
-    },
+  ...approvalRun.aStepEnded(
+    outcomeOf('merge', 0, [
+      {
+        plugin: 'human',
+        name: 'human',
+        onSha: SHA,
+        evidence: '',
+        yields: 'signoff',
+        result: { _tag: 'Completed', requested: { question: 'merge this?' } },
+      },
+    ]),
   ),
 )
-const afterApprovalGranted = events.length
 events.push(
-  ...anApprovalRevoked({ event: approvalRun.event, step: 'merge', action: 'human', runId: approvalRun.runId }, SHA),
+  ...aWait(
+    approvalStream,
+    {
+      _tag: 'SignoffRequired',
+      run: aRunRef(approvalRun.runId),
+      step: 'merge',
+      action: 'human',
+      question: 'merge this?',
+    },
+    approvalWaitId,
+  ),
 )
-const afterApprovalRevoked = events.length
+const afterApprovalRequested = events.length
+events.push(...aResolution(approvalStream, approvalWaitId, { _tag: 'Approve', onSha: SHA }))
+const afterApprovalGranted = events.length
 
-// ---- row 15: a fix round opened with no denominator, then with one --------
+// ---- row 15: a fix round opened, round 1 then round 2 ---------------------
+// `FixRequested`'s `of` denominator is gone with the event itself (#502):
+// a round is folded off `PassRouted`'s stored offer/reply/decision now, and
+// carries no ceiling of its own.
 const roundsStream = makeStream('ticket-pin-rounds')
 const roundsRun = aRun('pass-pin-rounds')
 events.push(...aClaim(roundsStream, roundsRun.runId))
-events.push(
-  roundsRun.event('FixRequested', {
-    runId: roundsRun.runId,
-    round: 1,
-    of: 0,
-    action: 'review',
-    onSha: SHA,
-    findings: [],
-  }),
-)
+function fixRoundOffer(round: number): RouteOffer {
+  return {
+    proposal: { _tag: 'ReviewFindings', findings: [] },
+    available: [
+      { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round } },
+      { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+    ],
+    unavailable: [],
+  }
+}
+const fixLinesReply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'fixable' }
+const fixLinesDecision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
+events.push(...aRoute(roundsRun, { offer: fixRoundOffer(1), reply: fixLinesReply, decision: fixLinesDecision }))
 const afterRoundOne = events.length
-events.push(
-  roundsRun.event('FixRequested', {
-    runId: roundsRun.runId,
-    round: 2,
-    of: 3,
-    action: 'review',
-    onSha: SHA,
-    findings: [],
-  }),
-)
+events.push(...aRoute(roundsRun, { offer: fixRoundOffer(2), reply: fixLinesReply, decision: fixLinesDecision }))
 const afterRoundTwo = events.length
 
 // ---- row 16: a round's own cost, uncharged then charged --------------------
+// `FixApplied.costUsd` is gone with the event (#502): a round's own cost is
+// an `Action`-shaped `RunSpent` now, keyed by the step/action/round it paid
+// for — `null` is still "not yet billed", the same reading `cardFactOf`'s
+// own `RoundSpent` case keeps.
 const roundCostStream = makeStream('ticket-pin-roundcost')
 const roundCostRun = aRun('pass-pin-roundcost')
 events.push(...aClaim(roundCostStream, roundCostRun.runId))
 events.push(
-  roundCostRun.event('FixApplied', {
-    runId: roundCostRun.runId,
-    round: 1,
-    headSha: SHA,
+  roundCostRun.event('RunSpent', {
+    for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
+    runtime: 'claude-code',
     turns: 1,
+    durationMs: 100,
+    usage: [],
     costUsd: null,
-    failure: null,
   }),
 )
 const afterRoundUncharged = events.length
 events.push(
-  roundCostRun.event('FixApplied', {
-    runId: roundCostRun.runId,
-    round: 1,
-    headSha: SHA,
+  roundCostRun.event('RunSpent', {
+    for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
+    runtime: 'claude-code',
     turns: 1,
+    durationMs: 100,
+    usage: [],
     costUsd: 0.5,
-    failure: null,
   }),
 )
 const afterRoundCharged = events.length
 
-// ---- row 17: no fix bought after the rounds spent --------------------------
-const declinedFixStream = makeStream('ticket-pin-declinedfix')
-const declinedFixRun = aRun('pass-pin-declinedfix')
-events.push(...aClaim(declinedFixStream, declinedFixRun.runId))
-events.push(...aFixDeclined(declinedFixRun, 2, 'no fix found'))
-
-// ---- row 18: the rounds were spent and the ticket started over ------------
+// ---- row 17: the rounds were spent and the ticket started over ------------
 const restartStream = makeStream('ticket-pin-restart')
 const restartRun = aRun('pass-pin-restart')
 events.push(...aClaim(restartStream, restartRun.runId))
-events.push(...aRoute(restartRun, { from: 'review', to: 'claim', restart: 1, of: 2 }, restartStream))
+const restartOffer: RouteOffer = {
+  proposal: { _tag: 'ReviewFindings', findings: [] },
+  available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } }],
+  unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+}
+events.push(
+  ...aRoute(restartRun, {
+    offer: restartOffer,
+    reply: { _tag: 'Selected', candidate: 'restart', why: 'try a fresh approach' },
+    decision: { _tag: 'Selected', candidate: 'restart' },
+  }),
+)
 const afterRestarted = events.length
-events.push(...aRelease(restartStream, restartRun.runId, 'the review reviewer still refused — restart 1 of 2'))
+events.push(
+  ...aRelease(restartStream, restartRun.runId, 'the review reviewer still refused — restart 1 of 2', {
+    _tag: 'Restart',
+    restart: 1,
+  }),
+)
 const afterReleased = events.length
-
-// ---- row 19: a pre-#143 repair, claimed and finished ------------------------
-const repairStream = makeStream('ticket-pin-repair')
-const repairRunA = aRun('pass-pin-repair-a')
-events.push(...aClaim(repairStream, repairRunA.runId))
-events.push(...aRepairRequested(repairStream, repairRunA.runId))
-const repairRunB = aRun('pass-pin-repair-b')
-events.push(...aClaim(repairStream, repairRunB.runId))
-events.push(repairRunB.event('RunFinished', { exitCode: 0, turns: 5, durationMs: 1, costUsd: 1.23 }))
 
 // ---- row 20: a dispatch refused over a standing hold must not touch it ----
 const dispatchStream = makeStream('ticket-pin-dispatch')
@@ -389,6 +404,10 @@ events.push(
     ]),
   ),
 )
+// `aStepEnded` no longer writes this for a round-0 interrupted dispatch
+// (#502 — that bookkeeping was `aRun`'s own `contextFor`, now gone), so it
+// is pushed explicitly, matching what `conduct.ts` itself still appends.
+events.push(didNotFinishRun.event('RunFailed', { kind: 'crash', detail: 'crashed partway through' }))
 
 // ---- row 25: a commit action that stopped to ask ---------------------------
 const stepAskedStream = makeStream('ticket-pin-stepasked')
@@ -410,18 +429,24 @@ events.push(
 )
 
 // ---- row 26: a person waived a refusing check ------------------------------
+// `StepWaived` is gone (#502): a waiver is one action's own `Waived{waitId}`
+// result on `StepEnded` now (0120 §6).
 const stepWaivedStream = makeStream('ticket-pin-stepwaived')
 const stepWaivedRun = aRun('pass-pin-stepwaived')
 events.push(...aClaim(stepWaivedStream, stepWaivedRun.runId))
 events.push(
-  stepWaivedRun.event('StepWaived', {
-    step: 'merge',
-    action: 'check',
-    runId: stepWaivedRun.runId,
-    onSha: SHA,
-    by: 'steven',
-    reason: 'known flake',
-  }),
+  ...stepWaivedRun.aStepEnded(
+    outcomeOf('merge', 0, [
+      {
+        plugin: 'watch',
+        name: 'check',
+        onSha: SHA,
+        evidence: 'known flake',
+        yields: 'verdict',
+        result: { _tag: 'Waived', waitId: aWaitId() },
+      },
+    ]),
+  ),
 )
 
 // ---- row 27: a RunSpent on an existing stream, which must change nothing --
@@ -463,16 +488,16 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(runs).toMatchSnapshot('final task_view_run rows')
   })
 
-  it("keeps a round's note denominator-free when none was given, and denominated once it is", async () => {
+  it("names a round by its number alone, since FixRequested's own denominator is gone (#502)", async () => {
     const before = await fold(afterRoundOne)
     expect(taskOf(before.tasks, 'ticket-pin-rounds')).toMatchObject({
-      note: 'fixing round 1: 0 finding(s) from review',
+      note: 'fixing round 1',
       state: 'running',
     })
 
     const after = await fold(afterRoundTwo)
     expect(taskOf(after.tasks, 'ticket-pin-rounds')).toMatchObject({
-      note: 'fixing round 2 of 3: 0 finding(s) from review',
+      note: 'fixing round 2',
     })
   })
 
@@ -482,15 +507,12 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
 
     const granted = await fold(afterApprovalGranted)
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: null })
-
-    const revoked = await fold(afterApprovalRevoked)
-    expect(taskOf(revoked.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA })
   })
 
-  it("marks a granted sign-off's own verdict `approved`, not the pending it replaced", async () => {
+  it("leaves a granted sign-off's own verdict `pending`, since nothing re-records the action until the run that owns it continues (0120 §6, #465)", async () => {
     const granted = await fold(afterApprovalGranted)
     const row = taskOf(granted.tasks, 'ticket-pin-approval') as { verdicts: string }
-    expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'approved' })
+    expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'pending' })
   })
 
   it("keeps a round's cost out of repair_costs until it is actually charged", async () => {
@@ -505,19 +527,16 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(taskOf(restarted.tasks, 'ticket-pin-restart')).toMatchObject({
       state: 'running',
       restarts: 1,
-      restarts_of: 2,
     })
 
     const released = await fold(afterReleased)
     const row = taskOf(released.tasks, 'ticket-pin-restart') as {
       state: string
       restarts: number
-      restarts_of: number
       note: string
     }
     expect(row.state).toBe('queued')
     expect(row.restarts).toBe(1)
-    expect(row.restarts_of).toBe(2)
     expect(row.note).toContain('restart 1 of 2')
   })
 
@@ -551,10 +570,18 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     })
   })
 
-  /** #499: nothing reads `RunSpent` yet, and `task_view` must not start now. */
-  it('leaves task_view unchanged by a RunSpent on the stream', async () => {
+  /**
+   * #499 pinned that nothing read `RunSpent` yet. Since #502,
+   * `cardFactOf`'s own `RunSpent` case folds an `Action`-shaped, costed one
+   * into `repair_costs` — the same cell a fix round's own cost lands in
+   * (row 16) — so an action's round-0 spend is no longer a no-op here.
+   */
+  it('folds a round-0 Action RunSpent into repair_costs, keyed run#fix0', async () => {
     const baseline = await fold(beforeRunSpent)
+    expect(taskOf(baseline.tasks, 'ticket-pin-steppassed')).toMatchObject({ repair_costs: '{}' })
+
     const withSpent = await fold(events.length)
-    expect(withSpent).toEqual(baseline)
+    const row = taskOf(withSpent.tasks, 'ticket-pin-steppassed') as { repair_costs: string }
+    expect(JSON.parse(row.repair_costs)).toMatchObject({ 'pass-pin-steppassed#fix0': 0.1 })
   })
 })
