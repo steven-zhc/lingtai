@@ -1715,6 +1715,20 @@ given for each decline. Nothing here restores a decision; what the note buys
 is the reason, so a finding raised again after the reset is declined on the
 same grounds rather than relitigated from zero.
 
+**Note the spend total too — a reset empties `spend` the same way.**
+`spendProjection` is a fold of `RunSpent` and nothing else
+(`packages/projector/src/spend.ts:1-12`, 0110 §11), and this section's own
+*After* step rebuilds it against the emptied log, so every run's recorded
+cost is gone once that step runs, unless it is noted first:
+
+```sql
+select project, sum(cost_usd) from spend group by project;
+```
+
+and keep what it prints. Nothing here restores the figures; the note is the
+only record of what was spent before this reset, once `/spend` and the bar
+read zero for all history again.
+
 ### Archive — outside the repository, by default
 
 **Dump the log to a file under `~/.lingtai/archive/`, not into this
@@ -1745,8 +1759,8 @@ connection string, never a pooler (#157). That string is not necessarily
 `LINGTAI_DATABASE_URL` has to be a pooler, and on the recommended setup there
 is no such export. Find it as:
 
-- `database.url` in `~/.lingtai/config.yml`, which is already the direct host
-  and never a pooler, when the log is configured there; or
+- `database.url` in `~/.lingtai/config.yml`, when the log is configured there
+  and it is not itself a pooler; or
 - the exported `LINGTAI_DATABASE_URL`, when there is no `config.yml` entry and
   it is not itself a pooler; or
 - the exported `LINGTAI_DIRECT_DATABASE_URL`, only where one of the two above
@@ -1787,16 +1801,24 @@ sqlite3 ~/.lingtai/lingtai.db \
 ```
 
 **Postgres**: restore into a scratch database with `pg_restore`, then run the
-same two queries against it and against the live one. The dump's post-data
-carries `events`'s own trigger (`lingtai_events_notify`) but not the function
-it calls — `--table` dumps only the named tables, never what they depend on
-— so `pg_restore` needs that function to already exist, or it fails the
-restore with `function lingtai_notify_event() does not exist`. Its definition
-is `schema.ts`'s `NOTIFY_SQL` (`packages/event-store/src/schema.ts:90-95`):
+same two queries against it and against the live one. The scratch database
+has to live on the same server as the log — there is no local Postgres to
+reach on the recommended setup, and `createdb` and `psql`'s bare-name form
+both assume one — so create and address it through the log's own direct
+connection string from the Archive step above, the same one `pg_dump` used.
+`createdb --maintenance-db` takes a conninfo string naming which existing
+database on that server to issue the `CREATE DATABASE` through, and `psql`
+and `pg_restore` take one directly once its database name is swapped for the
+scratch one. The dump's post-data carries `events`'s own trigger
+(`lingtai_events_notify`) but not the function it calls — `--table` dumps
+only the named tables, never what they depend on — so `pg_restore` needs that
+function to already exist, or it fails the restore with `function
+lingtai_notify_event() does not exist`. Its definition is `schema.ts`'s
+`NOTIFY_SQL` (`packages/event-store/src/schema.ts:90-95`):
 
 ```bash
-createdb lingtai_reset_check
-psql lingtai_reset_check <<'SQL'
+createdb --maintenance-db=<the log's own direct connection string> lingtai_reset_check
+psql <the log's own direct connection string, database name swapped for lingtai_reset_check> <<'SQL'
 CREATE FUNCTION lingtai_notify_event() RETURNS TRIGGER AS $$
 BEGIN
   PERFORM pg_notify('lingtai', NEW.seq::text);
@@ -1804,8 +1826,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 SQL
-pg_restore --dbname=lingtai_reset_check ~/.lingtai/archive/lingtai-<timestamp>.dump
-psql lingtai_reset_check -c "select count(*), max(seq) from events;"
+pg_restore --dbname=<same, database name swapped for lingtai_reset_check> ~/.lingtai/archive/lingtai-<timestamp>.dump
+psql <same, database name swapped for lingtai_reset_check> -c "select count(*), max(seq) from events;"
 ```
 
 **Held work items, against both copies**, the same SQL either way. This is an
@@ -1996,6 +2018,12 @@ recipes and the environment files are all untouched.
   reason given for either — is gone unless the *Before* step above noted it.
   Without that note, the next cold review raises a declined finding again and
   a person re-decides it with nothing to go on.
+- **What has been spent.** `spendProjection` is a fold of `RunSpent` and
+  nothing else (`packages/projector/src/spend.ts:1-12`, 0110 §11), so emptying
+  `events` erases every run's recorded cost — `/spend` and the bar's spend
+  objects read zero for all history once this section's own *After* step
+  rebuilds the projection. Without the note in the *Before* step above, the
+  totals are gone for good.
 - **Which GitHub App Lingtai minted.** `GitHubAppCreated` on the
   `ctl-github-app` stream (`packages/conductor/src/create-app.ts:596-606`) is
   the only record that an App exists — it is not only the state of the world,
