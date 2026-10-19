@@ -1592,12 +1592,15 @@ supervisor starts the daemon back up underneath you:
 pnpm lingtai service shutdown "resetting the log — see #448"
 ```
 
-Both append rather than block and return at once, so a successful exit means
-only that the request landed, never that the daemon is down — wait for the
-daemon itself, not the command. Poll `lingtai doctor`'s **daemon: liveness**
-row until it reads `not running` rather than `draining`
-or a beat within the last few seconds; a pass can run up to
-`runtime.limits.wall` (an hour, here) before that happens:
+Only `lingtai shutdown` appends and returns at once — a successful exit there
+means only that the request landed, never that the daemon is down.
+`lingtai service shutdown` is the one that waits: it queues for the conductor
+lock and does not unload the job until the drain finishes, so a successful
+exit there already means the daemon stopped — it is waiting on the pass in
+flight, not hung, and that wait can run as long as `runtime.limits.wall` (an
+hour, here). Either way, confirm against the daemon itself, not the command.
+Poll `lingtai doctor`'s **daemon: liveness** row until it reads `not running`
+rather than `draining` or a beat within the last few seconds:
 
 ```bash
 pnpm lingtai doctor
