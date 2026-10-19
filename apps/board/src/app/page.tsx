@@ -18,6 +18,7 @@ import { Fragment } from 'react'
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
+import { billHasAny, billText, spendChip } from '@/lib/spend'
 
 import { Close, Decide, Requeue } from './decide.tsx'
 import { Draining } from './draining.tsx'
@@ -220,7 +221,7 @@ export function Card({
           </li>
         ) : null}
         {card.turns !== null ? <li className="pill">{card.turns} turns</li> : null}
-        {card.costUsd !== null ? <li className="pill">${card.costUsd.toFixed(2)}</li> : null}
+        {billHasAny(card.costUsd) ? <li className="pill">{billText(card.costUsd)}</li> : null}
         {/* **The counters are the fallback, not the reading** (#170).
 
             `1 passed` and a green `prepared` segment are one fact at two
@@ -263,12 +264,12 @@ export function Card({
             It says *answering* rather than *repair* since 0039 §3: the column
             holds every round a pass bought — a refused review, a red build, and
             after `#142` a conflict — and only one of those was ever a repair.
-            The column is still `repair_costs`; renaming it is a projection
-            change and a rebuild, and this is the reading, which is what a person
-            sees. */}
-        {card.repairCostUsd !== null ? (
+            The figure is `spend`'s `Action` rows at round 1 or above (0039 §3,
+            `#498`) — `BoardCard.repairCostUsd`'s own doc says the same — and
+            not the `repair_costs` projection column this used to read. */}
+        {billHasAny(card.repairCostUsd) ? (
           <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
-            ${card.repairCostUsd.toFixed(2)} answering
+            {billText(card.repairCostUsd)} answering
           </li>
         ) : null}
         {/* **Which round, as one object** (#170). A card that keeps failing
@@ -505,7 +506,7 @@ export function LandedRow({
     card.closed ? 'closed' : null,
     card.kind,
     card.turns === null ? null : `${card.turns} turns`,
-    card.costUsd === null ? null : `$${card.costUsd.toFixed(2)}`,
+    billHasAny(card.costUsd) ? billText(card.costUsd) : null,
     // The lane's own word is on the card; here the column heading is already
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
@@ -659,12 +660,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, ticketSources, projects: filters, pending }, registered, control] = await Promise.all([
-    loadBoard(only),
-    loadProjects().catch(() => []),
-    readControl(),
-  ])
+  const [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control] =
+    await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()])
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
+  // Every card's money pill below is off this same `spend`. Silent when it
+  // folded cleanly — a chip is not free, and this is the ordinary case — and
+  // a sentence when it did not, because a card reading `unknown (1 run)`
+  // after a failed fold is indistinguishable from a ticket that predates
+  // `RunSpent` without one (`#498`'s review).
+  const spendCurrency = spendChip(spend.currency)
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
@@ -755,6 +759,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               action in it when either is not. Never amber — that is the
               headline's, below. */}
           <Health />
+          {/* Nothing while `spend` folded cleanly; the sentence when it did
+              not. Draws nothing in the ordinary case, the same reason
+              `Paused` and `Draining` cost the quiet row nothing. */}
+          {spendCurrency.current ? null : (
+            <>
+              <span className="sep" />
+              <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
+                {spendCurrency.label}
+              </span>
+            </>
+          )}
           {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for

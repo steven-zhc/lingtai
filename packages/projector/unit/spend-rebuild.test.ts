@@ -249,6 +249,93 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   })
 })
 
+describe('store.spend reads the folded table, filtered and ordered the way readSpend wants', () => {
+  it('reads every row, oldest first, with ticket, pass and purpose filled from the links', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      await store.transact((ctx) => spendProjection.create(ctx))
+      await store.transact((ctx) => spendProjection.apply(events, ctx))
+
+      const rows = await store.spend({})
+      expect(rows.map((r) => r.seq)).toEqual([...rows].sort((a, b) => Number(a.seq) - Number(b.seq)).map((r) => r.seq))
+      expect(rows).toHaveLength(7)
+
+      const action = rows.find((r) => r.seq === actionSpent.seq.toString())!
+      expect(action).toMatchObject({
+        streamId: runAction.runId,
+        ticket: wi(1),
+        project: PROJECT,
+        pass: runAction.runId,
+        purpose: 'Action',
+        step: 'proposed',
+        action: 'review',
+        round: 0,
+        runtime: 'claude-code',
+        turns: 3,
+        durationMs: 1000,
+        costUsd: 0.1,
+      })
+      expect(action.at).toBeInstanceOf(Date)
+      expect(action.usage).toEqual(USAGE)
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('filters by one ticket', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      await store.transact((ctx) => spendProjection.create(ctx))
+      await store.transact((ctx) => spendProjection.apply(events, ctx))
+
+      const rows = await store.spend({ ticket: wi(1) })
+      expect(rows.map((r) => r.seq).sort()).toEqual([actionSpent.seq.toString(), judgeSpent.seq.toString()].sort())
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('filters by a list of tickets', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      await store.transact((ctx) => spendProjection.create(ctx))
+      await store.transact((ctx) => spendProjection.apply(events, ctx))
+
+      const rows = await store.spend({ ticket: [wi(1), wi(2)] })
+      expect(rows.map((r) => r.ticket).sort()).toEqual([wi(1), wi(1), wi(2)].sort())
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('leaves cost_usd null rather than 0 on the row it reads back', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      await store.transact((ctx) => spendProjection.create(ctx))
+      await store.transact((ctx) => spendProjection.apply(events, ctx))
+
+      const rows = await store.spend({})
+      expect(rows.find((r) => r.seq === nullCostSpent.seq.toString())?.costUsd).toBeNull()
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('reads no spend rather than failing, on a database no projector has started', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      expect(await store.spend({})).toEqual([])
+    } finally {
+      await store.close()
+    }
+  })
+})
+
 describe('spend.ts reads RunSpent and no old spend source', () => {
   const SRC = fileURLToPath(new URL('../src/spend.ts', import.meta.url))
   const code = readFileSync(SRC, 'utf8')

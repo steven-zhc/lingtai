@@ -15,6 +15,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
@@ -330,6 +331,28 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
   }
 }
 
+/** `spend` fixtures: `round: 0` is work, `round: 1` or above is answering (0039 §3). */
+function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow> = {}): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-10T04:27:22Z'),
+    streamId: `run-${ticket}`,
+    ticket,
+    project: null,
+    pass: `run-${ticket}`,
+    purpose: 'Action',
+    step: 'proposed',
+    action: 'build',
+    round: 0,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+    ...over,
+  }
+}
+
 describe('the spend the bar handed to a page', () => {
   /**
    * `$488.52` was one figure over two repositories, because a figure per
@@ -338,15 +361,22 @@ describe('the spend the bar handed to a page', () => {
    */
   it('splits the same money by repository', () => {
     const columns = toColumns([
-      toCard(task({ project: 'lingtai', issue: '1', costUsd: 2.5, repairCostUsd: 0.75 })),
-      toCard(task({ project: 'lingtai', issue: '2', costUsd: 1.5 })),
-      toCard(task({ project: 'nextloom-ai-admin', issue: '3', costUsd: 4.0 })),
+      toCard(task({ project: 'lingtai', issue: '1' })),
+      toCard(task({ project: 'lingtai', issue: '2' })),
+      toCard(task({ project: 'nextloom-ai-admin', issue: '3' })),
     ])
+    const rows = [
+      spendRow('wi-lingtai-1', 2.5),
+      spendRow('wi-lingtai-1', 0.75, { round: 1 }),
+      spendRow('wi-lingtai-2', 1.5),
+      spendRow('wi-nextloom-ai-admin-3', 4.0),
+    ]
 
-    expect(ledger(columns).rows).toEqual([
-      { project: 'lingtai', work: 4.0, repair: 0.75, cards: 2 },
-      { project: 'nextloom-ai-admin', work: 4.0, repair: 0, cards: 1 },
-    ])
+    const byProject = ledger(columns, rows).rows
+    expect(byProject.map((r) => r.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
+    expect(byProject.map((r) => r.cards)).toEqual([2, 1])
+    expect(byProject.map((r) => r.byPurpose.Work.reportedCents)).toEqual([400, 400])
+    expect(byProject.map((r) => r.byPurpose.Answering.reportedCents)).toEqual([75, 0])
   })
 
   /**
@@ -355,10 +385,12 @@ describe('the spend the bar handed to a page', () => {
    * column and never added into the work's.
    */
   it("keeps answering's spend out of the work's, per repository", () => {
-    const { rows } = ledger(toColumns([toCard(task({ project: 'lingtai', costUsd: 1.0, repairCostUsd: 9.0 }))]))
+    const columns = toColumns([toCard(task({ project: 'lingtai' }))])
+    const rows = [spendRow('wi-lingtai-1', 1.0), spendRow('wi-lingtai-1', 9.0, { round: 1 })]
 
-    expect(rows[0]?.work).toBeCloseTo(1.0, 5)
-    expect(rows[0]?.repair).toBeCloseTo(9.0, 5)
+    const row = ledger(columns, rows).rows[0]!
+    expect(row.byPurpose.Work.reportedCents).toBe(100)
+    expect(row.byPurpose.Answering.reportedCents).toBe(900)
   })
 
   /**
@@ -368,16 +400,16 @@ describe('the spend the bar handed to a page', () => {
    * the board.
    */
   it('puts every card in exactly one row', () => {
-    const { rows, total } = ledger(
-      toColumns([
-        toCard(task({ project: 'lingtai', issue: '1', costUsd: 2.5, repairCostUsd: 0.75 })),
-        toCard(task({ project: 'retired', issue: '2', costUsd: 3.25 })),
-        // Never claimed, so it cost nothing — still a card, and still counted.
-        toCard(task({ project: 'retired', issue: '3', costUsd: null })),
-      ]),
-    )
+    const columns = toColumns([
+      toCard(task({ project: 'lingtai', issue: '1' })),
+      toCard(task({ project: 'retired', issue: '2' })),
+      // Never claimed, so it cost nothing — still a card, and still counted.
+      toCard(task({ project: 'retired', issue: '3' })),
+    ])
+    const rows = [spendRow('wi-lingtai-1', 2.5), spendRow('wi-retired-2', 3.25)]
 
-    expect(rows.map((r) => r.project)).toEqual(['lingtai', 'retired'])
+    const { rows: byProject, total } = ledger(columns, rows)
+    expect(byProject.map((r) => r.project)).toEqual(['lingtai', 'retired'])
     expect(total.cards).toBe(3)
   })
 
@@ -386,25 +418,25 @@ describe('the spend the bar handed to a page', () => {
    * apiece; a footer summed over the cards and rounded on its own prints $0.01
    * too — under a column that reads $0.03. The page's comment said that could
    * not happen, and it could, because the rows and the footer were two folds.
-   * They are one now, and this is checked on the strings the page renders.
+   * They are one now, because `billOf` rounds each row to the cent exactly
+   * once, whichever way the rows are grouped.
    */
   it('prints a column that adds up to its printed footer', () => {
-    const { rows, total } = ledger(
-      toColumns(
-        ['a', 'b', 'c'].map((project, i) =>
-          toCard(task({ project, issue: String(i), costUsd: 0.005, repairCostUsd: 0.005 })),
-        ),
-      ),
-    )
-    const cents = (usd: number) => Math.round(Number(usd.toFixed(2)) * 100)
+    const columns = toColumns(['a', 'b', 'c'].map((project, i) => toCard(task({ project, issue: String(i) }))))
+    const rows = ['a', 'b', 'c'].map((project, i) => spendRow(`wi-${project}-${i}`, 0.005))
 
-    expect(rows.reduce((n, r) => n + cents(r.work), 0)).toBe(cents(total.work))
-    expect(rows.reduce((n, r) => n + cents(r.repair), 0)).toBe(cents(total.repair))
-    expect(rows.reduce((n, r) => n + cents(r.work + r.repair), 0)).toBe(cents(total.work + total.repair))
+    const { rows: byProject, total } = ledger(columns, rows)
+    const work = (r: (typeof byProject)[number]) => r.byPurpose.Work.reportedCents
+
+    expect(total.byPurpose.Work.reportedCents).toBe(3)
+    expect(byProject.reduce((n, r) => n + work(r), 0)).toBe(total.byPurpose.Work.reportedCents)
   })
 
   /** And no row for a repository that has nothing on this board. */
   it('has nothing to say about a board with nothing on it', () => {
-    expect(ledger(toColumns([]))).toEqual({ rows: [], total: { work: 0, repair: 0, cards: 0 } })
+    const { rows, total } = ledger(toColumns([]), [])
+    expect(rows).toEqual([])
+    expect(total.cards).toBe(0)
+    expect(total.byPurpose.Work.reportedRuns).toBe(0)
   })
 })

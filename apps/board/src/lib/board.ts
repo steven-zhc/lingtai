@@ -5,6 +5,7 @@ import { loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
+import type { SpendRow } from '@lingtai/projector'
 /**
  * The board's data: one table, plus one question put to GitHub.
  *
@@ -41,6 +42,17 @@ import {
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { describeHeld, foldProgress, type RunProgress } from './progress.ts'
+import {
+  addBills,
+  billOf,
+  currentSpend,
+  emptyBill,
+  emptyBills,
+  withNoSpendFallback,
+  type Bill,
+  type Purpose,
+  type SpendCurrency,
+} from './spend.ts'
 
 /**
  * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
@@ -106,7 +118,13 @@ export interface BoardCard {
   waived: number
   approved: number
   turns: number | null
-  costUsd: number | null
+  /**
+   * What this ticket's `Action`-round-0 runs cost — read off `spend`, grouped
+   * by ticket once for the whole board and never per card (`#498`). No longer
+   * `task_view.cost_usd`, which was `RunFinished`'s alone and so showed a
+   * card's *last pass's implement* and nothing before it (0110 §13).
+   */
+  costUsd: Bill
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
   note: string | null
   /**
@@ -192,10 +210,11 @@ export interface BoardCard {
    */
   diagnosis: BlockDiagnosis | null
   /**
-   * What diagnosis has cost, separately from the work. Null on the cards that
-   * have never bought one, which is nearly all of them.
+   * What diagnosis has cost, separately from the work — an `Action` row at
+   * round 1 or above (0039 §3). An empty bill on the cards that have never
+   * bought one, which is nearly all of them.
    */
-  repairCostUsd: number | null
+  repairCostUsd: Bill
   /**
    * When the backoff stops holding this card, ISO. Null when nothing is holding
    * it — which is every card that is not queued, and most that are.
@@ -313,6 +332,12 @@ export interface Board {
    * be, because it has no recipe to be asked under.
    */
   pending: PendingProject[]
+  /**
+   * This board's own `spend` — the same rows every card's bill came from, so
+   * `/spend`'s `ledger` reads the one this render already paid for rather than
+   * asking a second time.
+   */
+  spend: { rows: SpendRow[]; currency: SpendCurrency }
 }
 
 /**
@@ -477,6 +502,14 @@ export function toCard(
    * where the recipe could not be read; `held` then reads the log alone.
    */
   limits: Pick<PassLimitsView, 'rounds' | 'restarts'> | null = null,
+  /**
+   * This ticket's `spend`, already split by `billOf` — read once for the whole
+   * board and handed in here, never read per card (`#498`). Empty bills on
+   * every card until a caller has `spend` to give: the queued-card stub never
+   * does, because nothing has run.
+   */
+  costUsd: Bill = emptyBill(),
+  repairCostUsd: Bill = emptyBill(),
 ): BoardCard {
   return {
     taskId: t.taskId,
@@ -495,7 +528,7 @@ export function toCard(
     waived: t.waived,
     approved: t.approved,
     turns: t.turns,
-    costUsd: t.costUsd,
+    costUsd,
     note: t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
@@ -514,7 +547,7 @@ export function toCard(
     wait: describeWait(t),
     needs: t.needs,
     diagnosis: t.diagnosis,
-    repairCostUsd: t.repairCostUsd,
+    repairCostUsd,
     runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
     progress,
   }
@@ -715,7 +748,8 @@ export async function queuedCards(
         waived: 0,
         approved: 0,
         turns: null,
-        costUsd: null,
+        // Nothing has run, so there is nothing to bill.
+        costUsd: emptyBill(),
         note: null,
         attempts: 0,
         // Nothing has run, so no approach has been abandoned.
@@ -734,7 +768,7 @@ export async function queuedCards(
         // Nothing has run, so nothing is held and nothing has been diagnosed.
         needs: null,
         diagnosis: null,
-        repairCostUsd: null,
+        repairCostUsd: emptyBill(),
         // Nothing in the log has touched this one, so there is no time to
         // show. See the field: the render clock is not an answer.
         updatedAt: null,
@@ -863,7 +897,24 @@ export async function loadBoard(project?: string): Promise<Board> {
   // Before the fold, because the fold needs what it learned: a card the backoff
   // is holding is a card the log wrote, and how long it is held for is in the
   // recipe this just read (0028).
-  const queued = await queuedCards(registered.filter((p) => project === undefined || p.project === project))
+  //
+  // `spend` beside it rather than after, for `#112`'s own reason: it is one
+  // more read that is nobody's argument. Read once, by exactly the tickets on
+  // this board — never a read per card, and never the whole table — and
+  // `currentSpend` folds it to the head first, the way `currentBacklog` does,
+  // because the board holds no projector of its own and a bare `lingtai run`
+  // is the only thing that does on the terminal path (`#498`'s review).
+  const [queued, spend] = await Promise.all([
+    queuedCards(registered.filter((p) => project === undefined || p.project === project)),
+    // Not measured, so not claimed: a skipped fold has no lag to report, and
+    // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
+    // this is a board with nothing to bill rather than a fold that ran and
+    // failed — the two used to read identically as a bare `lag: null`
+    // (`#498`'s review).
+    tasks.length === 0
+      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
+      : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
+  ])
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
@@ -872,9 +923,23 @@ export async function loadBoard(project?: string): Promise<Board> {
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).
   const limitsByProject = new Map(queued.limits.map((l) => [l.project, l]))
+  // Keyed by ticket, so every card's bill is a lookup rather than a scan of
+  // the whole board's spend on every card.
+  const spendByTicket = new Map<string, SpendRow[]>()
+  for (const row of spend.rows) {
+    if (row.ticket === null) continue
+    const rows = spendByTicket.get(row.ticket)
+    if (rows) rows.push(row)
+    else spendByTicket.set(row.ticket, [row])
+  }
   const now = Date.now()
-  const fromLog = tasks.map((t) =>
-    toCard(
+  const fromLog = tasks.map((t) => {
+    // A ticket whose runs predate `RunSpent` contributes not one row here —
+    // `billOf` would fold it to five empty bills, which reads as nothing
+    // spent rather than as unknown (0110 §7, `#498`'s review).
+    const rowsForTicket = spendByTicket.get(t.taskId) ?? []
+    const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
+    return toCard(
       t,
       t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
       progress.get(t.taskId) ?? null,
@@ -883,8 +948,10 @@ export async function loadBoard(project?: string): Promise<Board> {
       // cards say which repository they are from for the same reason.
       queued.kindColors.get(t.project)?.[t.kind] ?? null,
       limitsByProject.get(t.project) ?? null,
-    ),
-  )
+      bills.Work,
+      bills.Answering,
+    )
+  })
   // A task released back to the queue has a row *and* is offered by GitHub, so
   // it would otherwise appear twice. The row wins: it carries the attempts.
   const known = new Set(fromLog.map((c) => c.taskId))
@@ -903,6 +970,7 @@ export async function loadBoard(project?: string): Promise<Board> {
     // saying which repository they are looking at, and another one arriving is
     // as much a distraction here as a card would be.
     pending: pending.filter((p) => project === undefined || p.project === project),
+    spend,
   }
 }
 
@@ -1167,68 +1235,70 @@ function newestFirst(a: BoardCard, b: BoardCard): number {
 }
 
 /**
- * What the board in front of you has cost.
- *
- * The cards on the screen and nothing else — not a window over the log, not the
- * project's lifetime. Every card has carried its own dollars since 0012 and
- * nobody ever added them up (#81), so the one number an operator acts on was on
- * the page eleven times and stated once, never.
- *
- * Answering a refusal is a second number for the reason the card keeps it as
- * one: it is default-on and spends an agent without being asked again, and
- * folding it into the figure beside it makes it an invisible bill (#84). The
- * field is still called `repair` because the column is still `repair_costs`;
- * what it holds is every round a pass bought (0039 §3), which since `#143` is
- * the whole of it.
+ * One repository's — or the board's own — bill, by purpose. See `Purpose`.
  */
-export interface Spend {
-  /** What the work itself cost, over every card on the board. */
-  work: number
-  /** What diagnosing it cost, over the same cards. */
-  repair: number
+export interface LedgerRow {
+  project: string
   /** How many cards that is, so the total can say what it totals. */
   cards: number
+  byPurpose: Record<Purpose, Bill>
 }
 
 /**
- * What the board's cards cost, per repository and in all — the `/spend` page.
+ * What the board's cards cost, per repository and in all — the `/spend` page
+ * (`#498`, 0110 §7, §11, §13).
  *
- * The bar carried the total and could not carry the split: a figure per project
- * is a chip per project, on a rail that has to be read in a glance
- * ([the-bar.md](../../../../doc/design/the-bar.md)). A page can, and it is the
- * breakdown the total was standing in for — *whose* money this is being spent
- * is the first thing anybody asks after *how much*.
+ * **Reads `spend` and nothing off the cards.** `row.costUsd`, `t.costUsd` and
+ * `repair_costs` are three names for the bill this file used to read off
+ * `task_view` — `RunFinished`'s alone, so a card showed its *last pass's
+ * implement* and nothing before it, and a null repair summed as zero (0110
+ * §13). `rows` is `spend`'s own, read once for the whole board by `loadBoard`.
  *
- * A card's project rather than the register's list, for the reason `onBoard`
- * is built from the cards: a card can outlive the project that made it, and a
- * ledger that omits it is a ledger that does not add up.
+ * **The cards on the screen decide which rows count, and whose project they
+ * count under.** A `SpendRow` whose `ticket` is not a card on this board is
+ * not counted — the `/spend` page's own claim is "the cards the board is
+ * showing", not a window over the log — and a row's project is the *card's*
+ * `project`, never `row.project`: a card can outlive the project that made it.
  *
- * **One fold, and the total is the sum of the rows as printed.** Each row is
- * rounded to the cent once, here, and `total` adds those cents — never a second
- * pass over the cards. Summing the cards separately and rounding each side on
- * its own prints a column that is a cent off its own footer, on the page whose
- * whole claim is that the money adds up.
+ * **One fold, and the total is the sum of the rows as printed.** `billOf`
+ * rounds each row to the cent once; grouping the rows by ticket first and
+ * summing the cards' own bills, rather than grouping by project directly,
+ * changes nothing about what gets summed — a row is still rounded exactly
+ * once, inside `billOf` — so a column always adds up to its own footer.
+ *
+ * **Reads `attempts` off the cards, and otherwise nothing.** A card whose
+ * ticket contributed not one row to `spend` — one that predates `RunSpent` —
+ * takes the same `withNoSpendFallback` the card's own pill takes (0110 §7):
+ * unknown rather than nothing, when `attempts` says it ran.
  */
-export function ledger(columns: readonly BoardColumn[]): {
-  rows: (Spend & { project: string })[]
-  total: Spend
-} {
-  const raw = new Map<string, Spend & { project: string }>()
-  for (const card of columns.flatMap((c) => c.cards)) {
-    const row = raw.get(card.project) ?? { project: card.project, work: 0, repair: 0, cards: 0 }
-    row.work += card.costUsd ?? 0
-    row.repair += card.repairCostUsd ?? 0
-    row.cards += 1
-    raw.set(card.project, row)
+export function ledger(
+  columns: readonly BoardColumn[],
+  rows: readonly SpendRow[],
+): { rows: LedgerRow[]; total: LedgerRow } {
+  const cards = columns.flatMap((c) => c.cards)
+
+  const rowsByTicket = new Map<string, SpendRow[]>()
+  for (const row of rows) {
+    if (row.ticket === null) continue
+    const list = rowsByTicket.get(row.ticket)
+    if (list) list.push(row)
+    else rowsByTicket.set(row.ticket, [row])
   }
-  const cents = (usd: number) => Math.round(usd * 100)
-  const rows = [...raw.values()].map((r) => ({ ...r, work: cents(r.work), repair: cents(r.repair) }))
-  const total = rows.reduce(
-    (t, r) => ({ work: t.work + r.work, repair: t.repair + r.repair, cards: t.cards + r.cards }),
-    { work: 0, repair: 0, cards: 0 },
-  )
-  const dollars = <T extends Spend>(r: T): T => ({ ...r, work: r.work / 100, repair: r.repair / 100 })
-  return { rows: rows.map(dollars), total: dollars(total) }
+
+  const byProject = new Map<string, { cards: number; byPurpose: Record<Purpose, Bill> }>()
+  let totalBills = emptyBills()
+  for (const card of cards) {
+    const ticketRows = rowsByTicket.get(card.taskId) ?? []
+    const bill = withNoSpendFallback(billOf(ticketRows), card.attempts, ticketRows)
+    totalBills = addBills(totalBills, bill)
+    const row = byProject.get(card.project) ?? { cards: 0, byPurpose: emptyBills() }
+    byProject.set(card.project, { cards: row.cards + 1, byPurpose: addBills(row.byPurpose, bill) })
+  }
+
+  return {
+    rows: [...byProject.entries()].map(([project, r]) => ({ project, cards: r.cards, byPurpose: r.byPurpose })),
+    total: { project: 'all', cards: cards.length, byPurpose: totalBills },
+  }
 }
 
 /**

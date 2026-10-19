@@ -237,18 +237,8 @@ about something else are the three whose spend is not recorded.
 
 ## Not built yet
 
-- **`RunSpent` and the `spend` projection are not built.** Every paid call
-  still records spend on the event it ends on, under decision 13's old fields.
-  The cold reviewer's and the designer's turns and dollars appear only inside
-  `evidence` prose (`packages/actions/src/agent-action.ts`), and are dropped
-  on every failure branch. A judge's spend appears only inside `PassRouted.why`
-  and the run log. Implement drops its spend when the run crashes. A
-  discussion sums its processes into one `DiscussionAnswered`.
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.
-- **`task_view.cost_usd` is assigned, not added,** by each `RunFinished`, so a
-  card shows its latest pass's implement and nothing else; `ledger` in
-  `apps/board/src/lib/board.ts` adds a null `costUsd` as 0.
 - **Nothing reads the rate card.** No code prices tokens, so under decision 7
   every run without a reported `costUsd`, every Codex run among them, is
   unknown until it does. (#208)

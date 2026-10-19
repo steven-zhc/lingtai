@@ -1,3 +1,4 @@
+import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard } from '@lingtai/projector/task-view'
 /**
  * What the board gives weight to, and what it leads with.
@@ -96,6 +97,28 @@ describe("the Landed lane's order", () => {
   })
 })
 
+/** `spend` fixtures: `round: 0` is work, `round: 1` or above is answering (0039 §3). */
+function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow> = {}): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-10T04:27:22Z'),
+    streamId: `run-${ticket}`,
+    ticket,
+    project: null,
+    pass: `run-${ticket}`,
+    purpose: 'Action',
+    step: 'proposed',
+    action: 'build',
+    round: 0,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+    ...over,
+  }
+}
+
 describe('what the board says it has cost', () => {
   /**
    * Roughly $16 was on the #81 screenshot, one card at a time, and stated
@@ -103,14 +126,20 @@ describe('what the board says it has cost', () => {
    */
   it('totals the cards in front of you, across every lane', () => {
     const columns = toColumns([
-      toCard(task({ state: 'landed', issue: '1', costUsd: 0.97 })),
-      toCard(task({ state: 'landed', issue: '2', costUsd: 1.78 })),
-      toCard(task({ state: 'waiting', issue: '3', costUsd: 3.4 })),
-      toCard(task({ state: 'running', issue: '4', costUsd: null })),
+      toCard(task({ state: 'landed', issue: '1' })),
+      toCard(task({ state: 'landed', issue: '2' })),
+      toCard(task({ state: 'waiting', issue: '3' })),
+      toCard(task({ state: 'running', issue: '4' })),
     ])
+    const rows = [
+      spendRow('wi-esctest-1', 0.97),
+      spendRow('wi-esctest-2', 1.78),
+      spendRow('wi-esctest-3', 3.4),
+      // Never spent, so this card contributes nothing — still a card, still counted.
+    ]
 
-    const { total } = ledger(columns)
-    expect(total.work).toBeCloseTo(6.15, 5)
+    const { total } = ledger(columns, rows)
+    expect(total.byPurpose.Work.reportedCents).toBe(615)
     expect(total.cards).toBe(4)
   })
 
@@ -120,15 +149,33 @@ describe('what the board says it has cost', () => {
    * would make it an invisible bill (#84).
    */
   it("keeps repair out of the work's figure and still shows it", () => {
-    const columns = toColumns([toCard(task({ costUsd: 1.0, repairCostUsd: 0.5 }))])
-    const { total } = ledger(columns)
+    const columns = toColumns([toCard(task())])
+    const rows = [spendRow('wi-esctest-1', 1.0), spendRow('wi-esctest-1', 0.5, { round: 1 })]
+    const { total } = ledger(columns, rows)
 
-    expect(total.work).toBeCloseTo(1.0, 5)
-    expect(total.repair).toBeCloseTo(0.5, 5)
+    expect(total.byPurpose.Work.reportedCents).toBe(100)
+    expect(total.byPurpose.Answering.reportedCents).toBe(50)
   })
 
   it('says nothing spent rather than nothing at all on an empty board', () => {
-    expect(ledger(toColumns([])).total).toEqual({ work: 0, repair: 0, cards: 0 })
+    const { total } = ledger(toColumns([]), [])
+    expect(total.cards).toBe(0)
+    expect(total.byPurpose.Work.reportedRuns).toBe(0)
+    expect(total.byPurpose.Work.unknown).toBe(0)
+  })
+
+  /**
+   * `wi-lingtai-89` ran twice before `spend` existed, so `readSpend({ ticket })`
+   * returns `[]` for it — `attempts: 2` says it ran, but no row names it.
+   * `billOf` used to fold that to five empty bills, which `ledger` printed as
+   * `—` in every column: the same reading an unclaimed card gets, though one
+   * of them ran and one never did (0110 §7).
+   */
+  it('reads a ticket with attempts but not one spend row as unknown, never as nothing', () => {
+    const columns = toColumns([toCard(task({ attempts: 2 }))])
+    const { total } = ledger(columns, [])
+
+    expect(total.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
   })
 })
 

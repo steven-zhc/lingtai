@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
+import { billText, spendChip } from '@/lib/spend'
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
 
 import { Evidence, RunDiff } from '../../evidence.tsx'
@@ -213,7 +214,7 @@ export function Attempt({
             one page along. */}
         <span className="afig">{run.turns === null ? '—' : `${run.turns} turns`}</span>
         <span className="afig">{run.durationMs === null ? '—' : elapsed(run.durationMs)}</span>
-        <span className="afig">{run.costUsd === null ? '—' : `$${run.costUsd.toFixed(2)}`}</span>
+        <span className="afig">{billText(run.costUsd)}</span>
         <span className="afig">
           {run.diff === null ? '—' : `${run.diff.files}f +${run.diff.insertions} −${run.diff.deletions}`}
         </span>
@@ -692,6 +693,12 @@ export function TaskBody({ task }: { task: TaskDetail }) {
   // anything that does not parse is an id that was never one.
   const ref = Number(task.ticket?.ref)
   const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null
+  // Every attempt's `costUsd` and `totals` below are off `spend` — this page's
+  // own fold, not the board's. Silent while it folded cleanly, the same `#498`
+  // posture every other reading on this bar takes; the sentence only when it
+  // did not, because `unknown (1 run)` otherwise reads exactly like a ticket
+  // that predates `RunSpent` (`#498`'s review).
+  const spendCurrency = spendChip(task.spendCurrency)
 
   return (
     <main className="detail">
@@ -702,6 +709,11 @@ export function TaskBody({ task }: { task: TaskDetail }) {
         <span className="sep" />
         {/* Rank 8: one muted line, each identifier once. */}
         <Coords standing={task.standing} taskId={task.taskId} queued={task.queued} />
+        {spendCurrency.current ? null : (
+          <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
+            {spendCurrency.label}
+          </span>
+        )}
         {/* Nothing while the page follows the log; the sentence when it stopped. */}
         <Following />
       </div>
@@ -731,6 +743,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           }
           taskId={task.taskId}
           discussions={task.discussions}
+          discussionBill={task.totals.byPurpose.Discussion}
           outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`

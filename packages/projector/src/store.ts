@@ -36,6 +36,7 @@ import type { Envelope } from '@lingtai/domain'
 // erased before Node ever sees it, and keeping the board's card shape beside
 // the fold that produces it is worth more than a file with no edges.
 import type { BacklogEntry, BacklogStatus } from './backlog.ts'
+import type { SpendRow } from './spend.ts'
 import type { TaskCard } from './task-view.ts'
 
 /** A row, as a store hands it back. Column names, not field names. */
@@ -216,6 +217,19 @@ export interface BacklogQuery {
 }
 
 /**
+ * What `readSpend` asks of a store. Absent `ticket` and `project` read every
+ * row — the whole of `spend`, which is a lot of history on a log this old, so
+ * a caller that wants the board's own window passes `since` too.
+ */
+export interface SpendQuery {
+  /** One ticket, or several — a board render asks for every card at once. */
+  ticket?: string | readonly string[]
+  project?: string
+  /** `at >= since`. Absent reads from the beginning, which `readSpend({ ticket })` wants. */
+  since?: Date
+}
+
+/**
  * Every read and write of `task_view`, `task_view_run`, `finding_backlog`,
  * `finding_backlog_run`, `spend` and `spend_stream` (`#497`), and of the
  * checkpoint that says how far each has got.
@@ -293,6 +307,9 @@ export interface ProjectionStore {
 
   /** The finding backlog, oldest first within a project: it is worked from the bottom. */
   backlog(query: BacklogQuery): Promise<BacklogEntry[]>
+
+  /** One `RunSpent` per row, oldest first — the order a ledger is read in. */
+  spend(query: SpendQuery): Promise<SpendRow[]>
 
   /** Releases whatever this store holds open. */
   close(): Promise<void>

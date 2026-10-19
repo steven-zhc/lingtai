@@ -38,6 +38,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { BlockDiagnosis } from '@lingtai/domain'
 
 import type { BacklogEntry } from './backlog.ts'
+import type { SpendRow } from './spend.ts'
 import { columnOf } from './store.ts'
 import type {
   BacklogQuery,
@@ -45,6 +46,7 @@ import type {
   ProjectionLag,
   ProjectionRow,
   ProjectionStore,
+  SpendQuery,
   TaskQuery,
 } from './store.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
@@ -310,6 +312,27 @@ function toCard(row: ProjectionRow): TaskCard {
     awaitingApproval: awaitingSha !== null,
     repairPending: parseBool(row.repair_pending),
     repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
+  }
+}
+
+/** A `spend` row → `SpendRow`. `postgres.ts`'s twin. */
+function toSpendRow(row: ProjectionRow): SpendRow {
+  return {
+    seq: String(row.seq),
+    at: parseAt(row.at) as Date,
+    streamId: row.stream_id as string,
+    ticket: (row.ticket as string | null) ?? null,
+    project: (row.project as string | null) ?? null,
+    pass: (row.pass as string | null) ?? null,
+    purpose: row.purpose as SpendRow['purpose'],
+    step: (row.step as string | null) ?? null,
+    action: (row.action as string | null) ?? null,
+    round: row.round === null ? null : Number(row.round),
+    runtime: row.runtime as string,
+    turns: Number(row.turns),
+    durationMs: Number(row.duration_ms),
+    costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
+    usage: parseJson(row.usage) as SpendRow['usage'],
   }
 }
 
@@ -673,6 +696,32 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
            order by project, raised_seq`,
           args,
         ).map(toEntry),
+      )
+    },
+
+    async spend(query: SpendQuery) {
+      const where: string[] = []
+      const args: unknown[] = []
+      if (query.ticket !== undefined) {
+        const tickets = Array.isArray(query.ticket) ? query.ticket : [query.ticket]
+        where.push(`ticket in (${tickets.map(() => '?').join(', ')})`)
+        args.push(...tickets)
+      }
+      if (query.project !== undefined) {
+        where.push('project = ?')
+        args.push(query.project)
+      }
+      if (query.since !== undefined) {
+        where.push('at >= ?')
+        args.push(query.since.toISOString())
+      }
+      return read(() =>
+        allOrEmpty(
+          `select * from spend
+           ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
+           order by seq`,
+          args,
+        ).map(toSpendRow),
       )
     },
 

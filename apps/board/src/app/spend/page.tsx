@@ -29,15 +29,18 @@
 import Link from 'next/link'
 
 import { ledger, loadBoard } from '@/lib/board'
+import { spendChip } from '@/lib/spend'
+
+import { SpendTable } from '../spend-table.tsx'
 
 export const dynamic = 'force-dynamic'
 
-const money = (n: number) => `$${n.toFixed(2)}`
-
 export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
-  const { columns, limits } = await loadBoard(only)
-  const { rows: byProject, total } = ledger(columns)
+  const board = await loadBoard(only)
+  const { limits } = board
+  const chip = spendChip(board.spend.currency)
+  const { rows: byProject, total } = ledger(board.columns, board.spend.rows)
 
   return (
     <main className="detail">
@@ -47,6 +50,13 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
         </Link>
         <span className="sep" />
         <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
+        <span className="sep" />
+        {/* `backlog/page.tsx`'s own chip, for the same reason: a fold that
+            failed or never ran reads identically to a board on which nothing
+            was spent unless something here says so (`#498`'s review). */}
+        <span className={`chip ${chip.tone}`} title={chip.title}>
+          {chip.label}
+        </span>
       </div>
 
       <div className="detail-body">
@@ -64,44 +74,14 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
                 : `Nothing here for ${only}, so nothing has been spent on it.`}
             </p>
           ) : (
-            <table className="ledger money">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Cards</th>
-                  <th>Work</th>
-                  {/* Its own column and never folded into the one beside it: a
-                      default-on agent whose spend is added to the work's is an
-                      invisible bill (#84). */}
-                  <th>Answering</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byProject.map((p) => (
-                  <tr key={p.project}>
-                    <th scope="row">{p.project}</th>
-                    <td>{p.cards}</td>
-                    <td>{money(p.work)}</td>
-                    <td>{p.repair === 0 ? '—' : money(p.repair)}</td>
-                    <td>{money(p.work + p.repair)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {/* The sum of the rows above as they are printed — `ledger`
-                  rounds each row once and adds those cents — so the column adds
-                  up to its footer. A second pass over the cards, rounded on its
-                  own, is a cent off the day the fractions fall badly. */}
-              <tfoot>
-                <tr>
-                  <th scope="row">all</th>
-                  <td>{total.cards}</td>
-                  <td>{money(total.work)}</td>
-                  <td>{total.repair === 0 ? '—' : money(total.repair)}</td>
-                  <td>{money(total.work + total.repair)}</td>
-                </tr>
-              </tfoot>
-            </table>
+            <>
+              <SpendTable rows={byProject} total={total} />
+              {/* A reported dollar is a floor and not the whole of it (0110
+                  §2): a run killed before it returned appends nothing, so
+                  this total can only be short of what actually happened,
+                  never long. */}
+              <p className="hfact">this total is a floor — a run that did not finish records nothing</p>
+            </>
           )}
         </section>
 

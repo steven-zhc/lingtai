@@ -1,10 +1,21 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
-import { LANE_CARDS, SNAPSHOT_FILE, elapsed, money, readSnapshot, stamp, takeBoard } from '@/lib/snapshot'
+import {
+  LANE_CARDS,
+  SNAPSHOT_FILE,
+  elapsed,
+  money,
+  readSnapshot,
+  spendByTicket,
+  stamp,
+  takeBoard,
+  type MoneyBill,
+} from '@/lib/snapshot'
 
 /**
  * The board on the front page is the one thing on this site that is not read
@@ -61,8 +72,15 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
 
 const AT = new Date('2026-09-09T12:00:00Z')
 
-function take(tasks: TaskCard[], open: string[] = [OPEN]) {
-  return takeBoard(tasks, { open: new Set(open), capturedAt: AT, commit: 'de2bb44' })
+/** `task()`'s own `taskId`, so a card's money is a lookup rather than a fold over no rows. */
+const BILL: MoneyBill = { reportedCents: 150, reportedRuns: 1, unknown: 0 }
+
+function take(
+  tasks: TaskCard[],
+  open: string[] = [OPEN],
+  spend: ReadonlyMap<string, MoneyBill> = new Map([['wi-1', BILL]]),
+) {
+  return takeBoard(tasks, { open: new Set(open), capturedAt: AT, commit: 'de2bb44', spend })
 }
 
 describe('a build with no log', () => {
@@ -165,7 +183,9 @@ describe('a lane publishes a handful and counts all of it', () => {
     const board = take(many(12, { state: 'landed' }))
     expect(board.totals.cards).toBe(12)
     expect(board.totals.turns).toBe(12 * 7)
-    expect(board.totals.costUsd).toBe(18)
+    // Every fixture task shares `taskId: 'wi-1'`, so the one bill `take`
+    // looks up is counted once per card — $1.50 × 12.
+    expect(board.totals.costUsd).toEqual({ reportedCents: 1800, reportedRuns: 12, unknown: 0 })
   })
 
   it('shows the longest wait first in the lane that is stuck', () => {
@@ -205,7 +225,7 @@ describe('only an allowed project is named', () => {
     // What it keeps: the lane, the money, the turns, the kind. None of it names
     // anything, and dropping the card would change the totals the page argues
     // with.
-    expect(card).toMatchObject({ lane: 'landed', kind: 'feature', costUsd: 1.5, turns: 7 })
+    expect(card).toMatchObject({ lane: 'landed', kind: 'feature', costUsd: BILL, turns: 7 })
     expect(board.withheld).toBe(1)
   })
 
@@ -237,9 +257,14 @@ describe('how a figure reads', () => {
   })
 
   it('keeps the cents, because at these amounts the cents are the point', () => {
-    expect(money(13.04)).toBe('$13.04')
-    expect(money(1.9)).toBe('$1.90')
-    expect(money(null)).toBeNull()
+    expect(money({ reportedCents: 1304, reportedRuns: 1, unknown: 0 })).toBe('$13.04')
+    expect(money({ reportedCents: 190, reportedRuns: 1, unknown: 0 })).toBe('$1.90')
+    expect(money({ reportedCents: 0, reportedRuns: 0, unknown: 0 })).toBe('—')
+  })
+
+  it('never says $0.00 for a bill with an unknown run in it', () => {
+    expect(money({ reportedCents: 1304, reportedRuns: 1, unknown: 2 })).toBe('$13.04 + 2 unknown')
+    expect(money({ reportedCents: 0, reportedRuns: 0, unknown: 2 })).toBe('unknown (2 runs)')
   })
 
   it('stamps a date in UTC, which is the only zone a static page can claim', () => {
@@ -256,5 +281,56 @@ describe('how a figure reads', () => {
 
   it('carries the date it was taken', () => {
     expect(take([task()]).capturedAt).toBe(AT.toISOString())
+  })
+})
+
+function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow> = {}): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-09T00:00:00Z'),
+    streamId: `run-${ticket}`,
+    ticket,
+    project: null,
+    pass: `run-${ticket}`,
+    purpose: 'Action',
+    step: 'proposed',
+    action: 'build',
+    round: 0,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+    ...over,
+  }
+}
+
+describe('spendByTicket', () => {
+  /**
+   * `wi-89` ran twice before `spend` existed: no row at all for either
+   * attempt. `billOf([])` folds to an empty bill, which reads as nothing
+   * spent — this reader took no fallback at all, so the card's cost pill
+   * vanished rather than reading as unknown (`#498`'s review).
+   */
+  it('reads a ticket with attempts but not one row as unknown, never as nothing', () => {
+    const spend = spendByTicket([], [{ taskId: 'wi-89', attempts: 2 }])
+    expect(spend.get('wi-89')).toEqual({ reportedCents: 0, reportedRuns: 0, unknown: 2 })
+  })
+
+  it('credits only the attempt with no Action row of its own, when another attempt did report', () => {
+    const rows = [spendRow('wi-1', 1.5)]
+    const spend = spendByTicket(rows, [{ taskId: 'wi-1', attempts: 2 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 150, reportedRuns: 1, unknown: 1 })
+  })
+
+  it('does nothing when every attempt already has its own Action row', () => {
+    const rows = [spendRow('wi-1', 1.5), spendRow('wi-1', 0.5, { pass: 'run-wi-1-2' })]
+    const spend = spendByTicket(rows, [{ taskId: 'wi-1', attempts: 2 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 200, reportedRuns: 2, unknown: 0 })
+  })
+
+  it('gives a ticket with no attempts an empty bill', () => {
+    const spend = spendByTicket([], [{ taskId: 'wi-1', attempts: 0 }])
+    expect(spend.get('wi-1')).toEqual({ reportedCents: 0, reportedRuns: 0, unknown: 0 })
   })
 })

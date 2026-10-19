@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
 
 import { repoRoot } from './docs.ts'
@@ -54,7 +55,7 @@ export interface SnapshotCard {
   note: string | null
   attempts: number
   turns: number | null
-  costUsd: number | null
+  costUsd: MoneyBill
   /**
    * Hours since the log last moved this card, **as at `capturedAt`**.
    *
@@ -99,7 +100,7 @@ export interface Snapshot {
    * would make the claim smaller than the truth and, worse, make it depend on
    * `LANE_CARDS`.
    */
-  totals: { costUsd: number; turns: number; cards: number }
+  totals: { costUsd: MoneyBill; turns: number; cards: number }
   /** How many cards on the whole board had their identity withheld, so the page can say. */
   withheld: number
 }
@@ -167,6 +168,82 @@ const LANES: { id: Lane; label: string }[] = [
   { id: 'landed', label: 'Landed' },
 ]
 
+/**
+ * What a ticket's `spend` adds up to — facts, never a price invented here
+ * (`#498`, 0110 §5). No purpose split and no estimate arm: this page shows one
+ * figure per card, the way it always has, and `#208`'s rate card has not
+ * shipped.
+ */
+export interface MoneyBill {
+  reportedCents: number
+  reportedRuns: number
+  unknown: number
+}
+
+const EMPTY_BILL: MoneyBill = { reportedCents: 0, reportedRuns: 0, unknown: 0 }
+
+/** Every row, folded into one bill. `costUsd === null` is unknown, never free (0110 §4). */
+export function billOf(rows: readonly SpendRow[]): MoneyBill {
+  let reportedCents = 0
+  let reportedRuns = 0
+  let unknown = 0
+  for (const row of rows) {
+    if (row.costUsd === null) {
+      unknown += 1
+      continue
+    }
+    reportedCents += Math.round(row.costUsd * 100)
+    reportedRuns += 1
+  }
+  return { reportedCents, reportedRuns, unknown }
+}
+
+/**
+ * One bill per ticket, for every ticket named.
+ *
+ * A ticket with no rows at all is not an empty bill — `billOf([])` folds to
+ * nothing, which reads as nothing spent — it is `attempts` runs unknown
+ * (0110 §7): this reader never took that fallback at all, and a pre-`RunSpent`
+ * ticket's cost pill simply vanished (`#498`'s review). Counted the way
+ * `apps/board/src/lib/spend.ts`'s `withNoSpendFallback` counts it: the
+ * distinct runs (`SpendRow.pass`) that contributed an `Action` row, so an
+ * attempt whose only row is a `Judge` or `Discussion` one still reads as
+ * unaccounted.
+ */
+export function spendByTicket(
+  rows: readonly SpendRow[],
+  tasks: readonly { taskId: string; attempts: number }[],
+): Map<string, MoneyBill> {
+  const byTicket = new Map<string, SpendRow[]>()
+  for (const row of rows) {
+    if (row.ticket === null) continue
+    const list = byTicket.get(row.ticket)
+    if (list) list.push(row)
+    else byTicket.set(row.ticket, [row])
+  }
+  return new Map(
+    tasks.map((t) => {
+      const ticketRows = byTicket.get(t.taskId) ?? []
+      const bill = billOf(ticketRows)
+      const accounted = new Set(ticketRows.filter((r) => r.purpose === 'Action' && r.pass !== null).map((r) => r.pass))
+        .size
+      const unaccounted = t.attempts - accounted
+      return [
+        t.taskId,
+        unaccounted > 0 ? addBill(bill, { reportedCents: 0, reportedRuns: 0, unknown: unaccounted }) : bill,
+      ]
+    }),
+  )
+}
+
+function addBill(a: MoneyBill, b: MoneyBill): MoneyBill {
+  return {
+    reportedCents: a.reportedCents + b.reportedCents,
+    reportedRuns: a.reportedRuns + b.reportedRuns,
+    unknown: a.unknown + b.unknown,
+  }
+}
+
 export interface TakeOptions {
   /**
    * The projects whose tickets may be named. Everything else is withheld —
@@ -177,6 +254,8 @@ export interface TakeOptions {
   capturedAt: Date
   /** The commit the log was read at, or null outside a repository. */
   commit: string | null
+  /** This board's `spend`, by ticket — `scripts/snapshot.ts`'s `readSpend`, folded once by `spendByTicket`. */
+  spend: ReadonlyMap<string, MoneyBill>
 }
 
 /**
@@ -187,7 +266,7 @@ export interface TakeOptions {
  * make the hero flattering is in here — which cards are withheld, which are
  * drawn, what the totals are over — and each of them is a test.
  */
-export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeOptions): Snapshot {
+export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit, spend }: TakeOptions): Snapshot {
   const now = capturedAt.getTime()
   const lanes: SnapshotLane[] = LANES.map(({ id, label }) => {
     const inLane = tasks.filter((t) => LANE_OF[t.state] === id)
@@ -195,7 +274,7 @@ export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeO
       id,
       label,
       count: inLane.length,
-      cards: publish(id, inLane).map((t) => reduce(t, open.has(t.project), now)),
+      cards: publish(id, inLane).map((t) => reduce(t, open.has(t.project), now, spend.get(t.taskId) ?? EMPTY_BILL)),
     }
   })
 
@@ -204,7 +283,7 @@ export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeO
     commit,
     lanes,
     totals: {
-      costUsd: round(tasks.reduce((sum, t) => sum + (t.costUsd ?? 0), 0)),
+      costUsd: tasks.reduce((bill, t) => addBill(bill, spend.get(t.taskId) ?? EMPTY_BILL), EMPTY_BILL),
       turns: tasks.reduce((sum, t) => sum + (t.turns ?? 0), 0),
       cards: tasks.length,
     },
@@ -242,7 +321,7 @@ function publish(lane: Lane, cards: TaskCard[]): TaskCard[] {
  * lane counts and the totals are the claim the page is making, and a board that
  * quietly omits some of its work is the board nobody should believe.
  */
-function reduce(t: TaskCard, open: boolean, now: number): SnapshotCard {
+function reduce(t: TaskCard, open: boolean, now: number, costUsd: MoneyBill): SnapshotCard {
   const hours = (now - t.updatedAt.getTime()) / 3_600_000
   return {
     lane: LANE_OF[t.state],
@@ -255,14 +334,10 @@ function reduce(t: TaskCard, open: boolean, now: number): SnapshotCard {
     note: open ? t.note : null,
     attempts: t.attempts,
     turns: t.turns,
-    costUsd: t.costUsd,
+    costUsd,
     hoursSinceUpdate: Number.isFinite(hours) ? Math.max(0, Math.round(hours * 10) / 10) : null,
     waiting: t.waiting,
   }
-}
-
-function round(usd: number): number {
-  return Math.round(usd * 100) / 100
 }
 
 /**
@@ -311,7 +386,23 @@ export function elapsed(hours: number | null): string | null {
   return `${Math.round(hours / 24)} days`
 }
 
-/** `$13.04`. Cents, because at these amounts the cents are the persuasive part. */
-export function money(usd: number | null): string | null {
-  return usd === null ? null : `$${usd.toFixed(2)}`
+/**
+ * `$13.04`. Cents, because at these amounts the cents are the persuasive
+ * part — and never `$0.00` for a bill with an unknown run in it, which is
+ * every Codex run until `#208` prices one (0110 §4, `billText`'s own table,
+ * `apps/board/src/lib/spend.ts`, copied here rather than imported: a static
+ * export has its own package).
+ */
+export function money(bill: MoneyBill): string {
+  if (bill.reportedRuns > 0) {
+    const amount = `$${(bill.reportedCents / 100).toFixed(2)}`
+    return bill.unknown > 0 ? `${amount} + ${bill.unknown} unknown` : amount
+  }
+  if (bill.unknown > 0) return `unknown (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`
+  return '—'
+}
+
+/** Whether a bill has anything at all to show — the question a pill's presence answers. */
+export function hasMoney(bill: MoneyBill): boolean {
+  return bill.reportedRuns > 0 || bill.unknown > 0
 }

@@ -8,6 +8,7 @@ import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, type QueuedView } from '@/lib/queued'
+import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 
 import { Close, Decide, Requeue, RunNow, Send } from './decide.tsx'
@@ -111,6 +112,7 @@ export function Standing({
   issue,
   taskId,
   discussions,
+  discussionBill = emptyBill(),
   outgoing,
   queued,
   unknown,
@@ -144,6 +146,13 @@ export function Standing({
   issue: number | null
   taskId: string
   discussions: DiscussionView[]
+  /**
+   * Every closed conversation's own total, already folded — `task.totals.byPurpose.Discussion`,
+   * `spend`'s Discussion rows for this ticket — so the box's meter agrees with
+   * the Attempts label's split rather than re-summing `DiscussionView.costUsd`
+   * itself (`#498`).
+   */
+  discussionBill?: Bill
   /** What the next attempt will be handed. Null when there will not be one. */
   outgoing: OutgoingView | null
   /** Where it is in line and what taking it runs. Null in every other state. */
@@ -504,6 +513,7 @@ export function Standing({
           taskId={taskId}
           attempt={standing.attempt}
           discussions={discussions}
+          discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
           quiet={standing.state === 'running'}
         />
       </div>

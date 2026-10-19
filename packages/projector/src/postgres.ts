@@ -18,8 +18,9 @@ import { postgresUrl } from '@lingtai/env'
 import pg from 'pg'
 
 import type { BacklogEntry } from './backlog.ts'
+import type { SpendRow } from './spend.ts'
 import { columnOf } from './store.ts'
-import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, TaskQuery } from './store.ts'
+import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, SpendQuery, TaskQuery } from './store.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
 
 /**
@@ -160,6 +161,27 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
     proposedRef: row.proposed_ref,
     proposedUrl: row.proposed_url,
     reason: row.reason,
+  }
+}
+
+/** A `spend` row → `SpendRow`. Unchanged from `readSpend`. */
+function toSpendRow(row: pg.QueryResultRow): SpendRow {
+  return {
+    seq: String(row.seq),
+    at: row.at,
+    streamId: row.stream_id,
+    ticket: row.ticket,
+    project: row.project,
+    pass: row.pass,
+    purpose: row.purpose,
+    step: row.step,
+    action: row.action,
+    round: row.round,
+    runtime: row.runtime,
+    turns: row.turns,
+    durationMs: row.duration_ms,
+    costUsd: row.cost_usd,
+    usage: row.usage,
   }
 }
 
@@ -320,6 +342,37 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
       } catch (err) {
         // A database no projector has ever started has no table, and that is an
         // empty backlog rather than a failure.
+        if ((err as { code?: string }).code === '42P01') return []
+        throw err
+      }
+    },
+
+    async spend(query: SpendQuery) {
+      const where: string[] = []
+      const args: unknown[] = []
+      if (query.ticket !== undefined) {
+        args.push(Array.isArray(query.ticket) ? query.ticket : [query.ticket])
+        where.push(`ticket = any($${args.length}::text[])`)
+      }
+      if (query.project !== undefined) {
+        args.push(query.project)
+        where.push(`project = $${args.length}`)
+      }
+      if (query.since !== undefined) {
+        args.push(query.since)
+        where.push(`at >= $${args.length}`)
+      }
+      try {
+        const r = await pool.query(
+          `select * from spend
+           ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
+           order by seq`,
+          args,
+        )
+        return r.rows.map(toSpendRow)
+      } catch (err) {
+        // A database no projector has ever started has no table, and that is
+        // no spend rather than a failure — `backlog`'s own reason.
         if ((err as { code?: string }).code === '42P01') return []
         throw err
       }

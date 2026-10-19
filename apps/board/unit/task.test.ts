@@ -1,4 +1,5 @@
 import type { Envelope } from '@lingtai/domain'
+import type { SpendRow } from '@lingtai/projector'
 /**
  * The attempt is the unit, and the page can say what each one cost.
  *
@@ -76,7 +77,13 @@ describe('the claims an item made', () => {
 })
 
 describe('one attempt', () => {
-  it('carries the money the log has always recorded and the page never showed', () => {
+  /**
+   * `#102`'s own finding — `RunFinished` carries `turns` and `durationMs` on
+   * every run — minus the money: `costUsd` moved to `spend` (`#498`, 0110
+   * §13), so this fold carries no bill of its own. `loadTask` fills `costUsd`
+   * in from `spend`, the way it fills in `recipe`.
+   */
+  it('carries the turns and duration the log has always recorded', () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40), runtime: 'claude-code' }),
       e(RUN_1, 'RunPrompted', { promptVersion: 'ticket@1924', bytes: 4593, prompt: 'do the thing' }),
@@ -85,7 +92,6 @@ describe('one attempt', () => {
 
     expect(run.turns).toBe(92)
     expect(run.durationMs).toBe(1_405_000)
-    expect(run.costUsd).toBe(8.4)
     expect(run.outcome).toEqual({ state: 'finished', detail: null })
     expect(run.prompt).toEqual({ version: 'ticket@1924', bytes: 4593, text: 'do the thing' })
   })
@@ -181,30 +187,67 @@ describe('the totals', () => {
     return { ...foldRun(CLAIM, 1, []), ...over }
   }
 
+  /** `round: 0` is Work, `round` at 1 or above is Answering (0039 §3). */
+  function spent(round: number, costUsd: number | null, pass = RUN_1): SpendRow {
+    return {
+      seq: '1',
+      at: new Date('2026-09-08T04:12:15Z'),
+      streamId: pass,
+      ticket: 'wi-lingtai-89',
+      project: 'lingtai',
+      pass,
+      purpose: 'Action',
+      step: 'proposed',
+      action: 'build',
+      round,
+      runtime: 'claude-code',
+      turns: 1,
+      durationMs: 1000,
+      costUsd,
+      usage: [],
+    }
+  }
+
   it('adds up every attempt, which is the figure that appeared nowhere', () => {
-    const totals = totalsOf([
-      run({ turns: 92, durationMs: 1_000_000, costUsd: 8.4 }),
-      run({ turns: 55, durationMs: 405_000, costUsd: 4.64 }),
-    ])
+    const totals = totalsOf(
+      [run({ turns: 92, durationMs: 1_000_000 }), run({ turns: 55, durationMs: 405_000 })],
+      [],
+      [spent(0, 8.4), spent(0, 4.64)],
+    )
 
     expect(totals.attempts).toBe(2)
     expect(totals.turns).toBe(147)
     expect(totals.durationMs).toBe(1_405_000)
-    expect(totals.costUsd).toBeCloseTo(13.04, 5)
+    expect(totals.byPurpose.Work.reportedCents).toBe(1304)
   })
 
-  it("keeps a repair's spend beside the work's and never inside it", () => {
-    const totals = totalsOf([run({ costUsd: 8.4 }), run({ costUsd: 2.2, repair: true })])
+  it("keeps answering's spend beside the work's and never inside it", () => {
+    const totals = totalsOf([run({}), run({})], [], [spent(0, 8.4), spent(1, 2.2)])
 
-    expect(totals.costUsd).toBeCloseTo(8.4, 5)
-    expect(totals.repairUsd).toBeCloseTo(2.2, 5)
+    expect(totals.byPurpose.Work.reportedCents).toBe(840)
+    expect(totals.byPurpose.Answering.reportedCents).toBe(220)
   })
 
   it('does not read an unreported cost as a free run', () => {
-    // `RunFinished.costUsd` is nullable, and the label says no money at all
+    // `RunSpent.costUsd` is nullable, and the label says no money at all
     // rather than `$0.00` — a run whose cost was never recorded has not been
     // shown to have cost nothing.
-    expect(totalsOf([run({ costUsd: null })]).costUsd).toBe(0)
+    const totals = totalsOf([run({})], [], [spent(0, null)])
+    expect(totals.byPurpose.Work.reportedRuns).toBe(0)
+    expect(totals.byPurpose.Work.unknown).toBe(1)
+  })
+
+  /**
+   * `wi-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
+   * returns `[]`, so `billOf([])` used to fold to five empty bills and the
+   * Attempts label said nothing at all — "nothing spent" rather than
+   * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
+   * run, credited by its own `repair` flag.
+   */
+  it('reads each run with not one row in spend as unknown, never as nothing', () => {
+    const totals = totalsOf([run({ runId: RUN_1, repair: false }), run({ runId: RUN_2, repair: true })], [], [])
+    expect(totals.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
+    expect(totals.byPurpose.Answering).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
   })
 })
 
