@@ -92,10 +92,10 @@ run.
    older.
 
 5. **A claim is an append at an expected version, and it is one attempt.**
-   `WorkItemClaimed` carries the `runId` and the worker (host and pid). The
+   `TicketClaimed` carries the `runId` and the worker (host and pid). The
    store's version check decides a race, and nothing expires, so held is held. A
    conductor that takes the lock releases claims recorded by other workers. The
-   attempt ordinal `k` is the number of `WorkItemClaimed` events with distinct
+   attempt ordinal `k` is the number of `TicketClaimed` events with distinct
    run ids, counted by `priorAttempts` (`packages/conductor/src/attempts.ts`).
    Every restart is a new claim and so a new attempt. GitHub is told
    `lingtai:working` or `lingtai:waiting`, computed from state (`labelsFor`),
@@ -172,7 +172,7 @@ run.
     `landed | blocked | failed | closed` (`packages/conductor/src/end-step.ts`),
     `when:` accepts `closed`, and `when: any` includes it. `lingtai close`
     (`packages/conductor/src/close.ts`) needs a reason, refuses an item already
-    landed or closed, and appends `WorkItemClosed` together with what `end`
+    landed or closed, and appends `TicketClosed` together with what `end`
     resolved, in one append. It reads the recipe first, and an unreadable recipe
     refuses and closes nothing. It works from any non-terminal state; a run in
     flight finishes on its own and the item does not go back to the queue.
@@ -201,7 +201,7 @@ run.
 
 ## Not built yet
 
-- **`source` is still a closed enum.** `WorkItemDiscovered.source` in
+- **`source` is still a closed enum.** `TicketDiscovered.source` in
   `packages/domain/src/events.ts` is `github-issue | manual | agent-followup`.
   It is meant to be an open string, so that adding a store does not change the
   event schema. `githubTicketStore` reports `source: 'github-issue'` even when

@@ -61,7 +61,7 @@ budget.
 7. **The control is the prompt, and an edit applies to the next run only.**
    `editPrompt` appends `PromptEdited { text, hash, by, basedOn, chatId }` on the
    work item stream; `reduceWorkItem` holds it as `pendingPrompt` and the next
-   `WorkItemClaimed` consumes it. Empty `text` is the removal. `sendAttempt`
+   `TicketClaimed` consumes it. Empty `text` is the removal. `sendAttempt`
    appends the edit and then `WorkItemUnblocked`, in that order. The run's
    `promptVersion` names the edit by hashing its final text —
    `ticket@1924+failure@1c5708ba+human@a91f2e` — so two runs that share a version

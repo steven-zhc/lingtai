@@ -515,17 +515,17 @@ PassRouted { runId, offer: RouteOffer, reply: JudgeReply, decision: RouteDecisio
   is kept on purpose, so the event reads on its own.
 - **What is not recorded.** `Advance` is told by the next `StepStarted`. The
   other results of `nextOf` land through the events that already carry them:
-  `WaitStarted` (0118), `WorkItemReleased`, `WorkItemLanded`. Rounds spent are
+  `WaitStarted` (0118), `TicketReleased`, `TicketLanded`. Rounds spent are
   folded from the run's `PassRouted`; restarts spent from the work item's
-  `WorkItemReleased{cause: Restart}`, so neither fold reads another stream.
-- **`WorkItemReleased` carries a `cause`**: `Restart{restart}`,
+  `TicketReleased{cause: Restart}`, so neither fold reads another stream.
+- **`TicketReleased` carries a `cause`**: `Restart{restart}`,
   `NeverStarted{scope}`, `ByPerson{waitId}` or `ClaimUnconfirmed`. Restarts
   are counted on the work item today (`conduct.ts:946`, from `PassRestarted`,
   `work-item.ts:282`), and `PassRestarted` becomes part of `PassRouted` on the
   run stream, so the release says why on the work item. Only `Restart` counts;
   a person's requeue does not, as today.
 - **The merged sha is in three places**: `StepEnded`'s `Integrated`,
-  `IntegrationSucceeded` on the integration stream, `WorkItemLanded` on the
+  `IntegrationSucceeded` on the integration stream, `TicketLanded` on the
   work item. Each stream's fold needs its own, the same code writes all three,
   and they are not one append, so where they disagree `StepEnded` is right.
 
@@ -634,7 +634,7 @@ What each event becomes in phase 2.
 | `StepPassed`, `StepFailed`, `StepAsked`, `StepDidNotFinish`, `StepNeverRan`, `FixApplied`, `RunFailed{no-commits}` | `StepEnded`                                                     | §1; a fix round is `implement` again with `round` > 0                                                                                                                                                                                                     |
 | `StepStarted` (one per action, `events.ts:736`)                                                                    | `StepStarted`, one per step                                     | the same grain as `StepEnded`                                                                                                                                                                                                                             |
 | `StepRequested`                                                                                                    | removed                                                         | per action, before it runs (`action.ts:615`); the run log carries it                                                                                                                                                                                      |
-| `FixRequested`, `PassRestarted`, `FixDeclined`                                                                     | `PassRouted`; a restart also `WorkItemReleased{cause: Restart}` | the selected candidate's `next` is `FixRound` or `Requeued{Restart}`; a decline is `Escalated{CandidateUnavailable}`. What `PassRestarted` carried (branch, head, findings) is on the previous run, which the next prompt reads (`lastRun`, `conduct.ts`) |
+| `FixRequested`, `PassRestarted`, `FixDeclined`                                                                     | `PassRouted`; a restart also `TicketReleased{cause: Restart}` | the selected candidate's `next` is `FixRound` or `Requeued{Restart}`; a decline is `Escalated{CandidateUnavailable}`. What `PassRestarted` carried (branch, head, findings) is on the previous run, which the next prompt reads (`lastRun`, `conduct.ts`) |
 | `WorkItemBlocked{hold}`                                                                                            | `WaitStarted` (0118)                                            | _blocked by_ is GitHub's word for a dependency                                                                                                                                                                                                            |
 | `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved` (0118)                                           | one event carrying a `Resolution`; `withdrawn` is an `OwnQuestion` resolved by `Requeue`                                                                                                                                                                  |
 | `ApprovalRequested`                                                                                                | removed                                                         | a `signoff` with `requested` on `StepEnded`, then `WaitStarted{SignoffRequired}`                                                                                                                                                                          |
@@ -643,13 +643,13 @@ What each event becomes in phase 2.
 | `StepWaived`                                                                                                       | `Waived{waitId}` on the waived action                           | approval waivers live on the action; the standalone `waive()` (`approve.ts:584`) has no caller                                                                                                                                                            |
 | `RepairRequested`, `RepairDeclined`, `RunRef.repairOf`                                                             | removed                                                         | the repair purchase retired with #143 (`retiredRepairPending`, `conduct.ts:907`)                                                                                                                                                                          |
 | `HoldTriaged`                                                                                                      | `WaitTriaged` (0118)                                            | principle 5                                                                                                                                                                                                                                               |
-| `WorkItemReleased{runId, reason}`                                                                                  | adds `cause`                                                    | §5                                                                                                                                                                                                                                                        |
+| `TicketReleased{runId, reason}`                                                                                  | adds `cause`                                                    | §5                                                                                                                                                                                                                                                        |
 | `IntegrationRefused{paths?, baseSha?, headSha?}`                                                                   | without the three conflict fields                               | only `hold-of.ts:188` reads them, and they are on `StepEnded`'s `Conflicted`; the lane's serialising (`laneIsBusy`), the daemon's wake (`work-loop.ts:98`) and the board (`task-view.ts:715`) read the rest                                               |
 | `RunFinished.costUsd` and the other cost fields                                                                    | `RunSpent` (0110)                                               | one source of spend                                                                                                                                                                                                                                       |
 
 **Unchanged**: `RunAwaitingInput` (a runtime's own notification, written by
 the hook, `hook-socket.ts:249`, and read by nothing that decides),
-`WorkItemLanded`, `IntegrationAttempted`, `IntegrationSucceeded`,
+`TicketLanded`, `IntegrationAttempted`, `IntegrationSucceeded`,
 `StepsResolved`, `EndActionsResolved`, `DispatchRefused` (before `runPass`),
 and the rest of `EVENTS`.
 

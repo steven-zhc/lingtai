@@ -1311,11 +1311,16 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
 }
 
 /**
- * Whether the log holds a wait written before #445's reset of its payload —
- * the same guard daemon start and `lingtai projection rebuild` run before
- * they fold the log at all (#451). Doctor runs it as a plain check instead
- * of a refusal: a reset here is the operator's own call, not something worth
- * holding a report over.
+ * Whether the log holds a wait written before #445's reset of its payload, or
+ * a stored `type` this build's catalogue does not carry at all — the same
+ * guard daemon start and `lingtai projection rebuild` run before they fold
+ * the log at all (#451). The second condition is also what `readableTypes`
+ * above catches, but that row's own detail never says which of the two
+ * things it means; this row's `detail` is `LogPredatesHoldError`'s own
+ * message, which does — naming reset or upgrade depending on which it found
+ * (`#490`). Doctor reports both as plain checks instead of refusals: the
+ * remedy here is the operator's own call, not something worth holding a
+ * report over.
  */
 async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
   const name = 'log: predates the Hold event'

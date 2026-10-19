@@ -1723,6 +1723,23 @@ what the reset takes, the same fact [0019](decisions-archive/0019-a-second-reset
 recorded for the second reset: *"Its recipe and its GitHub state are
 untouched; only Lingtai's memory of it is."*
 
+**When the reset follows an event-type or stream-prefix rename, "untouched"
+is the trap, not the reassurance (`#490`).** Every project's `subscribers.on`
+is checked against `EVENTS` when the recipe resolves — `SubscribedEvent` in
+`packages/recipe/src/recipe.ts` refuses any entry that is not a name in the
+catalogue — so a recipe that still names a type the rename retired stops
+parsing the whole file, and `conduct.ts` answers `stage: "recipe"` for every
+ticket in that project from the next pass on. The repository's own copy of a
+subscriber list, if it has one, is edited by the same commit that renames the
+types; the recipe at `~/.lingtai/<project>/recipe.yml` is not — it is the one
+hand-written file per machine this page's own table above describes as
+persistent and yours, with no copy inside the repository for a commit to
+reach. So before registering projects back, open each one's recipe and grep
+its `on:` lists
+for the retired names, and fix them by hand — `lingtai doctor`'s
+`recipe: resolves for every project` row will not read `ok` again until you
+do.
+
 **Note every backlog decision too — a reset empties `finding_backlog` the
 same way.** `finding_backlog` is a fold of this same log (#137): a decline is
 recorded there precisely so the next pass does not ask again, and an

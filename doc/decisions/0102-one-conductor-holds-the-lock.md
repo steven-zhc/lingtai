@@ -78,7 +78,7 @@ say what code it is running and who started it.
      back.
    - **A lock file is never deleted.** The lock lives on an inode, and the holder
      confirms that the inode at the path is still the one it locked.
-   - The other keys are `decide:<workItemId>` (an approval's merge) and the board's
+   - The other keys are `decide:<ticketId>` (an approval's merge) and the board's
      own. The merge lane takes no lock, because git rejecting a second push to a
      ref is the guarantee.
 
@@ -86,7 +86,7 @@ say what code it is running and who started it.
    no expiry. A daemon that has just taken the lock knows no other conductor
    exists, so at startup `reconcile` (`packages/daemon/src/reconcile.ts`) kills
    the process each claim by another worker names (`killWorker`, with SIGKILL) and
-   then appends `WorkItemReleased` with the lock as the reason. Recovery is an
+   then appends `TicketReleased` with the lock as the reason. Recovery is an
    append, never a time-based computation, so a rebuilt projection matches the
    incremental one. Recovery happens only at startup, and that is enough: an
    orphaned claim can only come from a conductor dying, and work resumes only when
@@ -153,7 +153,7 @@ say what code it is running and who started it.
 11. **A start that takes work appends `ConductorStarted`.** The daemon itself
     appends it after it has won the lock, run reconcile and read the control
     stream. It carries `by`, `reason`, `sha`, `dirty` and `worker` (`host:pid`,
-    spelled as `WorkItemClaimed.worker` spells it). `by` is `human:$USER` for
+    spelled as `TicketClaimed.worker` spells it). `by` is `human:$USER` for
     `lingtai restart` or for a start typed at a terminal, and `daemon` when stdin
     is not a terminal, as with a supervisor. The decision to record the start and
     the decision to take work come from one read of the control stream. On the

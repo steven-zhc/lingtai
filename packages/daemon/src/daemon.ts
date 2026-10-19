@@ -82,9 +82,12 @@ export type DaemonStart =
    */
   | { ok: false; reason: 'already-running'; holder: string | null }
   /**
-   * The log holds a wait recorded in the payload shape from before #445's
-   * reset. `detail` is `LogPredatesHoldError`'s own message, naming the seq
-   * and the remedy — reset the log, never upgrade it (0118 §1).
+   * The log holds either a wait recorded in the payload shape from before
+   * #445's reset (reset the log, never upgrade it, 0118 §1), or a stored
+   * `type` this build's catalogue does not carry at all — which this daemon
+   * cannot tell from a stale checkout reading a log a newer build wrote
+   * (`#490`). `detail` is `LogPredatesHoldError`'s own message, naming
+   * whichever it is and the matching remedy.
    */
   | { ok: false; reason: 'log-predates-hold'; detail: string }
 

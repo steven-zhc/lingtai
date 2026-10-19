@@ -408,7 +408,7 @@ which kind a wait is gets inferred again in each place that needs it, from
 7. **A requeue keeps its meaning.** A person's requeue is a new pass cut from
    the base, with the recipe's rounds again. It does not spend a restart and
    does not refund one: restarts are counted from
-   `WorkItemReleased{cause: Restart}` (0120 §5), and a person's requeue
+   `TicketReleased{cause: Restart}` (0120 §5), and a person's requeue
    releases with `cause: ByPerson`. Every cost line on the page says so.
 
 8. **A merge conflict is triaged.**
@@ -466,12 +466,12 @@ which kind a wait is gets inferred again in each place that needs it, from
       pass: a `StepEnded`, then `Landed`, a new wait, or a route (a conflict
       after an approval routes as any conflict does), and `end` runs.
     - Today `approve.ts:344` integrates on its own outside the pass, writing
-      `StepWaived` and `ApprovalGranted` and then `WorkItemLanded` or
+      `StepWaived` and `ApprovalGranted` and then `TicketLanded` or
       `MergeRefused{afterApproval: true}`, and skips the checks declared at
       `merge`. Both go: a merge refused after an approval is a `MergeRefused`
       whose wait follows a `WaitResolved{Approve}`, derived, not stored.
     - **`Close` here only ends a wait.** `lingtai close` closes any ticket,
-      waiting or not, and still writes `WorkItemClosed`; a waiting ticket
+      waiting or not, and still writes `TicketClosed`; a waiting ticket
       closed also gets its `WaitResolved{Close}`.
 
 ## Consequences

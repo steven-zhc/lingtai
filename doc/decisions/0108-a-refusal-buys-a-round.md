@@ -144,7 +144,7 @@ fixes the bounds and the endings that router works inside.
 - A pass never re-implements work it still has on disk; only a judge that says
   *the approach* can buy a fresh pass.
 - The release reason carries the step, the ending and the runtime's own words
-  (`WorkItemReleased.reason`). The next attempt's brief quotes it, so changing
+  (`TicketReleased.reason`). The next attempt's brief quotes it, so changing
   that wording changes what the next agent reads.
 - A misread reset time costs a wasted pass, never a wrong decision: resuming
   early meets the wall and pauses again.
