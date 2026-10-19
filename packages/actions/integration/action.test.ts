@@ -200,42 +200,16 @@ describe('the pipeline', () => {
     ])
   })
 
-  it('puts onSha on every verdict', async () => {
-    const { events, emit } = collector()
-    await runActionPipeline({
-      step: 'proposed',
-      actions: [processAction({ name: 'build', run: 'exit 0' })],
-      context,
-      emit,
-    })
-
-    // A verdict is about a diff, not about a ticket. Bind it to the commit and a
-    // force-push invalidates the approval instead of inheriting it.
-    expect(events).toHaveLength(3)
-    expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'StepPassed'])
-    // `RunSpent`'s own data carries no `onSha` — it is about a call, not a
-    // diff — so this excludes it rather than widening the check to match.
-    for (const e of events) {
-      if (e.type === 'RunSpent') continue
-      expect(e.data.onSha).toBe('sha-a')
-    }
-  })
-
   it('runs in recipe order', async () => {
-    const { events, emit } = collector()
-    await runActionPipeline({
+    const { emit } = collector()
+    const result = await runActionPipeline({
       step: 'proposed',
       actions: [processAction({ name: 'build', run: 'exit 0' }), processAction({ name: 'lint', run: 'exit 0' })],
       context,
       emit,
     })
 
-    // `gate` is the step and `action` is what ran there — two fields, because
-    // "the build failed" and "something at the `proposed` step failed" are different
-    // questions and one name could not answer both.
-    const started = events.filter((e) => e.type === 'StepStarted')
-    expect(started.map((e) => e.data.action)).toEqual(['build', 'lint'])
-    expect(started.map((e) => e.data.step)).toEqual(['proposed', 'proposed'])
+    expect(result.results.map((r) => r.action)).toEqual(['build', 'lint'])
   })
 
   /**
@@ -244,7 +218,7 @@ describe('the pipeline', () => {
    * invites the reading that it is three-quarters fine.
    */
   it('stops at the first failure and names what it skipped', async () => {
-    const { events, emit } = collector()
+    const { emit } = collector()
     const result = await runActionPipeline({
       step: 'proposed',
       actions: [
@@ -259,11 +233,8 @@ describe('the pipeline', () => {
     expect(result.ok).toBe(false)
     expect(result.failedAt).toBe('lint')
     expect(result.skipped).toEqual(['test'])
-    // `RunSpent`'s own data carries no `step` field — it names its action's
-    // step inside `for`, not beside it — so this excludes it rather than
-    // widening the check to match.
-    expect(events.filter((e) => e.type !== 'RunSpent').map((e) => e.data.step)).not.toContain('test')
-    expect(events.at(-1)?.type).toBe('StepFailed')
+    expect(result.results.map((r) => r.action)).toEqual(['build', 'lint'])
+    expect(result.results.at(-1)?.verdict).toBe('failed')
   })
 
   /**
@@ -278,7 +249,7 @@ describe('the pipeline', () => {
    * reading a sentence.
    */
   it('appends no verdict for an action whose agent never started, and stops', async () => {
-    const { events, emit } = collector()
+    const { emit } = collector()
     const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)"
     const result = await runActionPipeline({
       step: 'proposed',
@@ -302,12 +273,9 @@ describe('the pipeline', () => {
     expect(result.neverRanAt).toEqual({ action: 'review', detail: said })
     expect(result.skipped).toEqual(['test'])
 
-    const types = events.map((e) => e.type)
-    expect(types).toContain('StepNeverRan')
-    expect(types).not.toContain('StepFailed')
     // And the build's own verdict is untouched: one action did judge the diff.
-    expect(types.filter((t) => t === 'StepPassed')).toHaveLength(1)
-    expect(events.at(-1)?.data).toMatchObject({ step: 'proposed', action: 'review', onSha: 'sha-a' })
+    expect(result.results.map((r) => r.verdict)).toEqual(['passed', 'never-ran'])
+    expect(result.results.at(-1)).toMatchObject({ action: 'review', evidence: said })
   })
 
   /**
@@ -328,8 +296,8 @@ describe('the pipeline', () => {
    * reviewer. One run, one event, and nothing on that event claiming an attempt
    * number — the fields went with the retry.
    */
-  it('appends one verdictless event for an action that did not finish, and stops', async () => {
-    const { events, emit } = collector()
+  it('runs an action that did not finish exactly once, and stops', async () => {
+    const { emit } = collector()
     const said = 'the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.'
     let attempts = 0
     const result = await runActionPipeline({
@@ -364,21 +332,13 @@ describe('the pipeline', () => {
     expect(result.didNotFinishAt).toEqual({ action: 'review', detail: said })
     expect(result.skipped).toEqual(['test'])
 
-    const types = events.map((e) => e.type)
-    expect(types).not.toContain('StepFailed')
-    expect(types).not.toContain('StepNeverRan')
-    // The build's own verdict stands: one action did judge the diff.
-    expect(types.filter((t) => t === 'StepPassed')).toHaveLength(1)
-
-    // One event for one run of the action, and one start for it: a second of
-    // either would be the retry back, or a board drawing an attempt nobody made.
-    const didNot = events.filter((e) => e.type === 'StepDidNotFinish')
-    expect(didNot.map((e) => e.data)).toEqual([
-      { step: 'proposed', action: 'review', runId: context.runId, onSha: 'sha-a', detail: said },
+    // The build's own verdict stands: one action did judge the diff, and the
+    // one run of `review` is the only result for it — a second would be the
+    // retry back.
+    expect(result.results.map((r) => ({ action: r.action, verdict: r.verdict }))).toEqual([
+      { action: 'build', verdict: 'passed' },
+      { action: 'review', verdict: 'did-not-finish' },
     ])
-    expect(didNot[0]!.data).not.toHaveProperty('attempt')
-    expect(didNot[0]!.data).not.toHaveProperty('retrying')
-    expect(events.filter((e) => e.type === 'StepStarted' && e.data.action === 'review')).toHaveLength(1)
   })
 
   it('turns an action that throws into a failure rather than an escaped exception', async () => {

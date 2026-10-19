@@ -423,11 +423,11 @@ steps:
 # block, is read again for every delivery, so setting them needs no restart.
 subscribers:
   - name: desktop
-    on: [ApprovalRequested, IntegrationRefused, RunAwaitingInput, WorkItemBlocked]
+    on: [WaitStarted, IntegrationRefused, RunAwaitingInput]
     run: node apps/cli/src/notify.ts
     env: []
   - name: telegram
-    on: [TicketLanded, WorkItemBlocked, RunFailed, ApprovalRequested, RunAwaitingInput]
+    on: [TicketLanded, WaitStarted, RunFailed, RunAwaitingInput]
     run: node packages/telegram/src/cli.ts
     env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]
 

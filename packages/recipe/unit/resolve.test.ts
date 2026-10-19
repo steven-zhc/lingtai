@@ -219,7 +219,7 @@ describe('resolveRecipe', () => {
     VALID +
     `subscribers:
   - name: telegram
-    on: [TicketLanded, WorkItemBlocked, RunFailed]
+    on: [TicketLanded, WaitStarted, RunFailed]
     run: npx @lingtai/telegram
     env: [TELEGRAM_BOT_TOKEN]
 `
@@ -227,7 +227,7 @@ describe('resolveRecipe', () => {
   it('takes a subscriber, and a recipe without one declares none', async () => {
     const with_ = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: WITH_SUBSCRIBER }), 'develop')
     expect(with_.recipe.subscribers).toHaveLength(1)
-    expect(with_.recipe.subscribers[0]!.on).toEqual(['TicketLanded', 'WorkItemBlocked', 'RunFailed'])
+    expect(with_.recipe.subscribers[0]!.on).toEqual(['TicketLanded', 'WaitStarted', 'RunFailed'])
     expect(with_.recipe.subscribers[0]!.run).toBe('npx @lingtai/telegram')
 
     // Empty rather than absent, like the four gate points a recipe never

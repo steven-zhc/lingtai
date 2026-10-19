@@ -68,10 +68,10 @@ export interface NotifyPayload {
  * repository — you had to open the issue to find out what was being asked.
  *
  * The card is named from `workItem` rather than from the stream id, and that is
- * `#123`'s other half. `ApprovalRequested`, `RunAwaitingInput` and `RunFailed`
- * are appended to a *run* stream, so a version that read the stream id and
- * nothing else rendered them with an empty `#` and no link, for the events that
- * most needed one.
+ * `#123`'s other half. `RunAwaitingInput` and `RunFailed` are appended to a
+ * *run* stream, so a version that read the stream id and nothing else
+ * rendered them with an empty `#` and no link, for the events that most
+ * needed one.
  *
  * `TicketLanded` and `RunFailed` are here for `#125`: a Telegram message is
  * read when you choose, so it can carry the good news a desktop notification
@@ -79,19 +79,24 @@ export interface NotifyPayload {
  * its `on:` line, never this function.
  */
 /**
- * The question a `Hold` carries, read untyped — this package may not import
- * `@lingtai/domain` (`unit/imports.test.ts`), so `tsc` cannot see `WorkItemBlocked`
- * carries `{hold}` rather than `{question}` since #445. `question` and `why` are
- * where every variant but `Ceiling` puts a person's words; `Ceiling` has
- * neither, so `kind`/`detail` stand in for it, the same pair `RunFailed` below
- * reads off a different event.
+ * The words a `WaitReason` carries, read untyped — this package may not
+ * import `@lingtai/domain` (`unit/imports.test.ts`), so `tsc` cannot see
+ * `WaitReason`'s twelve variants (#502, 0118 §1). Each puts a person's
+ * words under one of a few names — `question`, `said`, `evidence`, `raw`,
+ * `why` — and `ProposedEscalated` nests the same shape one level down, in
+ * its own `proposal`; `cause`/`detail` stand in for `BudgetExhausted`, which
+ * has none of the others.
  */
-function holdText(hold: unknown): string {
-  if (typeof hold !== 'object' || hold === null) return ''
-  const h = hold as Record<string, unknown>
-  if (typeof h['question'] === 'string') return h['question']
-  if (typeof h['why'] === 'string') return h['why']
-  if (typeof h['kind'] === 'string' && typeof h['detail'] === 'string') return `${h['kind']}: ${h['detail']}`
+function reasonText(reason: unknown): string {
+  if (typeof reason !== 'object' || reason === null) return ''
+  const r = reason as Record<string, unknown>
+  if (typeof r['question'] === 'string') return r['question']
+  if (typeof r['said'] === 'string') return r['said']
+  if (typeof r['evidence'] === 'string') return r['evidence']
+  if (typeof r['raw'] === 'string') return r['raw']
+  if (typeof r['why'] === 'string') return r['why']
+  if (typeof r['cause'] === 'string' && typeof r['detail'] === 'string') return `${r['cause']}: ${r['detail']}`
+  if ('proposal' in r) return reasonText(r['proposal'])
   return ''
 }
 
@@ -102,10 +107,8 @@ export function describe(payload: NotifyPayload): Notification {
   const ref = `#${workItem.issue}`
 
   switch (event.type) {
-    case 'ApprovalRequested':
-      return { title: `${ref} is waiting on you`, body: String(d['question'] ?? 'Approve the merge?'), url }
-    case 'WorkItemBlocked':
-      return { title: `${ref} is blocked`, body: holdText(d['hold']), url }
+    case 'WaitStarted':
+      return { title: `${ref} is waiting on you`, body: reasonText(d['reason']) || 'Approve the merge?', url }
     case 'RunAwaitingInput':
       return { title: `${ref} is asking`, body: String(d['prompt'] ?? ''), url }
     case 'IntegrationRefused':

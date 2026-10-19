@@ -14,7 +14,6 @@
  */
 import {
   Actor,
-  blockPredatesHold,
   type Envelope,
   MissingUpcasterError,
   SCHEMA_VER,
@@ -149,47 +148,40 @@ export class SchemaVersionUnsupportedError extends Error {
 }
 
 /**
- * The log holds something this build has no schema for — either a stored
- * `WorkItemBlocked` that predates #445's reset of this type's payload (a
- * stored v2 row or a v1 one; see `blockPredatesHold` in `@lingtai/domain` for
- * which is which), or a stored `type` this build's catalogue does not carry
- * at all.
- *
- * **The `WorkItemBlocked`-payload case has exactly one remedy.** Before 1.0
- * the log is reset rather than carried forward (0118 §1), so there: reset the
- * log, never a migration this build does not have.
- *
- * **The unknown-`type` case does not.** Doctor's own `readableTypes` row says
- * so (`apps/cli/src/doctor.ts`): a stored `type` the catalogue does not carry
+ * The log holds a stored `type` this build's catalogue does not carry at all
+ * — either a type renamed or removed while its rows were still in the log
+ * (reset it), **or this build is older than the writer** (upgrade it
+ * instead). Doctor's own `readableTypes` row says so (`apps/cli/src/doctor.ts`):
  * "means one of two things, and the detail says which is not knowable from
- * here" — a type was renamed or deleted while its rows were still in the log
- * (reset it), **or this build is older than the writer** (upgrade it instead).
- * This checkout's own worktrees and an installed binary rolled back with
- * `lingtai rollback` make the second an ordinary thing to hit, so the message
- * below names both rather than prescribing the irreversible one.
+ * here." This checkout's own worktrees and an installed binary rolled back
+ * with `lingtai rollback` make the second an ordinary thing to hit, so the
+ * message below names both rather than prescribing the irreversible one.
+ *
+ * **Before the #502 switch, this is also how a pre-switch log is caught**,
+ * with no special case for any one type's payload: a pre-switch log always
+ * holds `StepRequested` (`action.ts:712`, every `StepStarted` immediately
+ * preceded it), which this build's catalogue no longer carries at all —
+ * `isEventType` rejects it before `StepStarted`'s own changed payload is
+ * ever reached. The guard keeps its pre-#502 name (`LogPredatesHoldError`/
+ * `logPredatesHold`) because renaming it is #489's, a code-only change.
  */
 export class LogPredatesHoldError extends Error {
   override readonly name = 'LogPredatesHoldError'
   readonly seq: bigint
 
   /**
-   * `type` is given for a row whose `type` this build's catalogue does not
-   * carry at all — there is no upcaster to blame and no shape to name, only
-   * the stored name (and, where the caller counted the whole log rather than
-   * one row, how many rows carry it). Omitted, the message names
-   * `WorkItemBlocked` specifically, which is the one type whose *payload*
-   * (not its name) can predate the Hold event.
+   * `type` is the stored name this build's catalogue does not carry at all —
+   * there is no upcaster to blame and no shape to name, only the stored name
+   * (and, where the caller counted the whole log rather than one row, how
+   * many rows carry it).
    */
-  constructor(seq: bigint, type?: { readonly name: string; readonly rows?: number }) {
+  constructor(seq: bigint, type: { readonly name: string; readonly rows?: number }) {
     super(
-      type
-        ? `this build's catalogue does not carry the stored type "${type.name}"` +
-            (type.rows !== undefined ? ` (${type.rows} row${type.rows === 1 ? '' : 's'})` : ` at seq ${seq}`) +
-            `. This means one of two things: the type was renamed or removed while its rows ` +
-            `were still in the log — reset it, doc/operating.md, "Resetting the log" — or this ` +
-            `build is older than the writer that stored it — upgrade this checkout or binary instead.`
-        : `this log predates the Hold event (WorkItemBlocked at seq ${seq}); reset it — ` +
-            'doc/operating.md, "Resetting the log"',
+      `this build's catalogue does not carry the stored type "${type.name}"` +
+        (type.rows !== undefined ? ` (${type.rows} row${type.rows === 1 ? '' : 's'})` : ` at seq ${seq}`) +
+        `. This means one of two things: the type was renamed or removed while its rows ` +
+        `were still in the log — reset it, doc/operating.md, "Resetting the log" — or this ` +
+        `build is older than the writer that stored it — upgrade this checkout or binary instead.`,
     )
     this.seq = seq
   }
@@ -260,13 +252,6 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
     // exists to end.
     data = parseStoredPayload(row.type, row.schemaVer, row.data)
   } catch (err) {
-    // Checked ahead of `MissingUpcasterError` and not inside it: a stored v1
-    // `WorkItemBlocked` is *equal* to this type's supported version and fails
-    // `parseStoredPayload`'s zod parse instead, which `MissingUpcasterError`
-    // never sees (#451). `blockPredatesHold` catches both the same way.
-    if (row.type === 'WorkItemBlocked' && blockPredatesHold(row.schemaVer, row.data)) {
-      throw new LogPredatesHoldError(row.seq)
-    }
     if (err instanceof MissingUpcasterError) {
       throw new SchemaVersionUnsupportedError(row.type, row.schemaVer, SCHEMA_VER[row.type], row.seq)
     }
@@ -291,16 +276,16 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
  * `#490`). Daemon start, `lingtai doctor`, `lingtai projection rebuild` and
  * `withProjector` (#491) each call this before they fold the whole log, so a
  * person is told what is wrong instead of watching a parse stack come out of
- * whichever one ran first — `decodeRow`'s own catches above throw the same
+ * whichever one ran first — `decodeRow`'s own catch above throws the same
  * error for anything that folds the log without asking first.
  *
- * Two things disqualify a log, checked in this order: a stored `type` this
- * build's catalogue does not carry at all, caught from `typeCounts()` rather
- * than a row since there is no `WorkItemBlocked`-shaped row to look at —
- * which is either a type renamed or removed while its rows were still in the
- * log, or this build being older than the writer, and the message names both
- * because this check cannot tell which — and a stored `WorkItemBlocked`
- * whose payload predates #445's reset, which has only the one remedy.
+ * A stored `type` this build's catalogue does not carry at all disqualifies
+ * a log, caught from `typeCounts()` rather than a row — either a type
+ * renamed or removed while its rows were still in the log, or this build
+ * being older than the writer, and the message names both because this
+ * check cannot tell which. A pre-#502 log always has one: `StepRequested`,
+ * `StepPassed`, `WorkItemBlocked`, and the rest of the appendix's *Today*
+ * column are no longer in this build's catalogue at all.
  *
  * Returned rather than thrown: doctor wants a row it can show as a failing
  * check, daemon start wants a result arm, rebuild wants an exit code, and
@@ -308,15 +293,11 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
  * — none of the four wants a `try`/`catch` of their own for this.
  */
 export async function logPredatesHold(
-  queries: Pick<LogQueries, 'rowsOfType' | 'typeCounts'>,
+  queries: Pick<LogQueries, 'typeCounts'>,
 ): Promise<LogPredatesHoldError | null> {
   const counts = await queries.typeCounts()
   const unknown = counts.find((c) => !isEventType(c.type))
-  if (unknown) return new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows })
-
-  const rows = await queries.rowsOfType('WorkItemBlocked')
-  const bad = rows.find((r) => blockPredatesHold(r.schemaVer, r.data))
-  return bad ? new LogPredatesHoldError(bad.seq) : null
+  return unknown ? new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows }) : null
 }
 
 /**

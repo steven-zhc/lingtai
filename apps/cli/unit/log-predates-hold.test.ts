@@ -5,10 +5,13 @@ import type { Runtime } from '@lingtai/agent'
  * folds the log first: daemon start, `lingtai doctor`, `lingtai projection
  * rebuild`, and `withProjector` (#491).
  *
- * A pre-#445 `WorkItemBlocked` fails in one of two shapes — a stored v1 row
- * (`question`, `needsFrom`, `runId`) or a stored v2 one (those plus `needs`
- * and `diagnosis`) — and `createMemoryEventStore().plant` is the only way to
- * get either into a store at all: `append` validates on the way in.
+ * **Since #502's switch, there is no payload-shape special case** —
+ * `WorkItemBlocked` is not a type this build's catalogue carries at all, so
+ * planting one (in any shape) already takes the generic unknown-type path.
+ * A pre-switch log is caught the same way: it always holds `StepRequested`
+ * (`action.ts:712`, immediately before every `StepStarted`), which is also
+ * gone from the catalogue — `createMemoryEventStore().plant` is the only way
+ * to get either into a store at all, since `append` validates on the way in.
  */
 import { startDaemon } from '@lingtai/daemon'
 import type { StoreChoice } from '@lingtai/env'
@@ -21,12 +24,8 @@ import { type DoctorReach, runDoctor } from '../src/doctor.ts'
 import { rebuildProjection } from '../src/projection.ts'
 import { withProjector } from '../src/projector.ts'
 
-const V1_SHAPE = { question: 'what now?', needsFrom: 'human', runId: null }
-const V2_SHAPE = {
-  ...V1_SHAPE,
-  needs: 'decision',
-  diagnosis: { what: 'it broke', done: null, raw: null, recommendation: null },
-}
+/** A pre-switch step verdict, in the per-action shape `action.ts` no longer writes. */
+const PRE_SWITCH_STEP = { step: 'build', action: 'pnpm test', runId: 'pass-1', onSha: 'a'.repeat(40) }
 
 /** `database.store: sqlite`, as `storeChoice()` reads it off a written `config.yml` — the fixture `doctor.test.ts` uses. */
 const wroteSqlite = (): StoreChoice => ({
@@ -61,54 +60,58 @@ const reach: DoctorReach = {
   },
 }
 
-/** A `LogQueries` whose `rowsOfType` is the given store's, with every other question answering an empty log. */
-function queriesOver(store: Pick<LogQueries, 'rowsOfType'>): LogQueries {
+/** A `LogQueries` over the given store, with every other question answering an empty log. */
+function queriesOver(store: Pick<LogQueries, 'typeCounts'>): LogQueries {
   return {
     projectStreams: async () => [],
     endedWithoutEndActions: async () => [],
-    typeCounts: async () => [],
-    rowsOfType: (type) => store.rowsOfType(type),
+    typeCounts: () => store.typeCounts(),
+    rowsOfType: async () => [],
     unconvergedUpdates: async () => [],
     subscriberFailures: async () => [],
   }
 }
 
 describe('logPredatesHold, the one guard', () => {
-  it('finds a stored v1 WorkItemBlocked (question/needsFrom, no hold)', async () => {
+  it('finds a stored WorkItemBlocked — not a type this build carries at all since #502', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
+    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: { hold: { _tag: 'Question', question: 'now?', by: 'human:test' } } })
 
     const found = await logPredatesHold(store)
 
     expect(found).toBeInstanceOf(LogPredatesHoldError)
+    expect(found?.message).toContain('WorkItemBlocked')
   })
 
-  it('finds a stored v2 WorkItemBlocked (needs/diagnosis, schemaVer 2)', async () => {
+  it('says nothing about a log holding only types this build carries', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 2, data: V2_SHAPE })
-
-    const found = await logPredatesHold(store)
-
-    expect(found).toBeInstanceOf(LogPredatesHoldError)
-  })
-
-  it('says nothing about a current WorkItemBlocked carrying {hold}', async () => {
-    const store = createMemoryEventStore()
-    store.plant({
-      type: 'WorkItemBlocked',
-      schemaVer: 1,
-      data: { hold: { _tag: 'Question', question: 'now?', by: 'human:test' } },
-    })
+    store.plant({ type: 'TicketDiscovered', schemaVer: 1, data: { project: 'p', externalRef: '1' } })
 
     expect(await logPredatesHold(store)).toBeNull()
   })
 
   /**
+   * **The claim the guard rests on**: a pre-#502 log always holds
+   * `StepRequested`, written immediately before every `StepStarted`
+   * (`action.ts:712`), and that type is gone from this build's catalogue —
+   * so the generic unknown-type check alone is enough to catch it, with no
+   * special case for `StepStarted`'s own changed payload.
+   */
+  it('finds a pre-switch log by its StepRequested, which this build no longer carries', async () => {
+    const store = createMemoryEventStore()
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
+    store.plant({ type: 'StepStarted', schemaVer: 1, data: PRE_SWITCH_STEP })
+
+    const found = await logPredatesHold(store)
+
+    expect(found).toBeInstanceOf(LogPredatesHoldError)
+    expect(found?.message).toContain('StepRequested')
+  })
+
+  /**
    * `#490`: a log written before the `wi-`/`run-` → `ticket-`/`pass-` rename
    * holds `WorkItemDiscovered` rows, a type this build's catalogue no longer
-   * carries at all — `WorkItemBlocked` kept its name, so the check above never
-   * saw this. Without this, the guard answered `null` for exactly the log that
-   * `decodeRow` cannot read.
+   * carries at all.
    */
   it('finds a stored type this build has no schema for, naming it and its count', async () => {
     const store = createMemoryEventStore()
@@ -127,14 +130,14 @@ describe('logPredatesHold, the one guard', () => {
 describe('decodeRow, through the memory store (#451)', () => {
   it('throws LogPredatesHoldError, not a bare parse error, reading a planted stream', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE, streamId: 'ticket-lingtai-451' })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP, streamId: 'ticket-lingtai-451' })
 
     await expect(store.read('ticket-lingtai-451')).rejects.toThrow(LogPredatesHoldError)
   })
 
   it('throws the same error off readAll', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 2, data: V2_SHAPE })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
 
     await expect(store.readAll(0n, 10)).rejects.toThrow(LogPredatesHoldError)
   })
@@ -156,7 +159,7 @@ describe('decodeRow, through the memory store (#451)', () => {
 describe('daemon start refuses through the guard (#451)', () => {
   it('returns log-predates-hold and takes neither the watermark nor the lock', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
 
     const order: string[] = []
     const started = await startDaemon({
@@ -179,7 +182,7 @@ describe('daemon start refuses through the guard (#451)', () => {
 describe('lingtai doctor refuses through the guard (#451)', () => {
   it('fails "log: predates the Hold event", naming the reset, rather than throwing', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 2, data: V2_SHAPE })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
 
     const report = await runDoctor(
       {},
@@ -215,7 +218,7 @@ describe('lingtai doctor refuses through the guard (#451)', () => {
 describe('lingtai projection rebuild refuses through the guard (#451)', () => {
   it('refuses before a runner is ever built, and returns non-zero', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
     const runnerFor = vi.fn(() => {
       throw new Error('a runner must not be built once the guard has refused')
     })
@@ -257,7 +260,7 @@ describe('lingtai projection rebuild refuses through the guard (#451)', () => {
  * `#491`: `withProjector` folds the whole log too — `taskViewProjection`'s
  * checkpoint starts at 0, same as a fresh `rebuild` — but it was the one
  * caller #451 missed. Without the guard, a runner whose catch-up read hits a
- * pre-#445 `WorkItemBlocked` throws from inside `subscribe()`'s connection
+ * pre-switch `StepRequested` throws from inside `subscribe()`'s connection
  * loop, which cannot tell that failure from a dropped socket: it backs off
  * and retries the identical read forever, so `requeueCommand` (and `approve`,
  * `ask`, `end`, `backlog`, `close`, all of which share this function) hangs
@@ -266,7 +269,7 @@ describe('lingtai projection rebuild refuses through the guard (#451)', () => {
 describe('withProjector refuses through the guard (#491)', () => {
   it('logs the refusal and still runs work, without ever building a runner', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
+    store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
     const log = vi.fn()
     const runnerFor = vi.fn(() => {
       throw new Error('a runner must not be built once the guard has refused')

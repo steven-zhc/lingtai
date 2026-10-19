@@ -425,26 +425,21 @@ describe("what the drafter's own event still carries", () => {
       },
     )
 
-  it("carries the document, while the destination's event carries the sentence", async () => {
-    const passed: { action: string; evidence: string }[] = []
-    await runActionPipeline({
+  it("carries the document, while the destination's own result carries the sentence", async () => {
+    const result = await runActionPipeline({
       step: 'design',
       actions: [drafter(DOCUMENT), createFileAction({ name: 'keep it', path: 'doc/design/x.md' }, keeping())],
       context: context(NO_DESIGN),
-      emit: (event) => {
-        if (event.type === 'StepPassed') {
-          passed.push({ action: event.data.action, evidence: event.data.evidence })
-        }
-      },
+      emit: () => {},
     })
 
-    expect(passed.map((each) => each.action)).toEqual(['shape it', 'keep it'])
+    expect(result.results.map((each) => each.action)).toEqual(['shape it', 'keep it'])
     // The half this key buys: the size and the path, and no document.
-    expect(passed[1]!.evidence).toBe('wrote a 67 B design to `doc/design/x.md`, committed to the branch')
-    expect(passed[1]!.evidence).not.toContain('Six bodies')
+    expect(result.results[1]!.evidence).toBe('wrote a 67 B design to `doc/design/x.md`, committed to the branch')
+    expect(result.results[1]!.evidence).not.toContain('Six bodies')
     // And the half it does not: the document is on the log anyway, from the
     // action before it — so 0066 §1's third row is bounded (§8) and not gone,
     // and closing it is a change to `createDraftAction`.
-    expect(passed[0]!.evidence).toContain('Six bodies')
+    expect(result.results[0]!.evidence).toContain('Six bodies')
   })
 })

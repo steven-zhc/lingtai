@@ -34,27 +34,30 @@ describe('what a channel that is read later says', () => {
     expect(n.url).toBe('http://localhost:3200/task/ticket-lingtai-125')
   })
 
-  it('reads the hold a block carries, since #445 — not the question the payload no longer has', () => {
+  it('reads the WaitReason a wait carries, since #502 — not the question the payload no longer has', () => {
     const asked = render(
-      payload('WorkItemBlocked', {
-        hold: { _tag: 'Human', run: { runId: 'pass-1' }, step: 'merge', question: 'ship it?' },
+      payload('WaitStarted', {
+        waitId: 'wait-1',
+        reason: { _tag: 'SignoffRequired', run: { runId: 'pass-1' }, step: 'merge', action: 'human', question: 'ship it?' },
       }),
     )
     expect(asked.body).toBe('ship it?')
 
     const red = render(
-      payload('WorkItemBlocked', {
-        hold: { _tag: 'CheckRed', run: { runId: 'pass-1' }, step: 'build', why: 'pnpm test exited 2' },
+      payload('WaitStarted', {
+        waitId: 'wait-2',
+        reason: { _tag: 'CheckRefused', run: { runId: 'pass-1' }, step: 'merge', action: 'check', evidence: 'pnpm test exited 2', findings: [] },
       }),
     )
     expect(red.body).toBe('pnpm test exited 2')
 
-    const ceiling = render(
-      payload('WorkItemBlocked', {
-        hold: { _tag: 'Ceiling', run: { runId: 'pass-1' }, kind: 'out-of-turns', detail: '151 turns' },
+    const budget = render(
+      payload('WaitStarted', {
+        waitId: 'wait-3',
+        reason: { _tag: 'BudgetExhausted', run: { runId: 'pass-1' }, cause: 'out-of-turns', detail: '151 turns' },
       }),
     )
-    expect(ceiling.body).toBe('out-of-turns: 151 turns')
+    expect(budget.body).toBe('out-of-turns: 151 turns')
   })
 })
 

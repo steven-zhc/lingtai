@@ -735,38 +735,34 @@ describe('the action', () => {
    * survived only as prose inside `evidence`. Asserted on the event the pipeline
    * emits, because the event is what a program reads back.
    */
-  it('passes on a minor-only review and leaves its findings structured on the event', async () => {
+  it('passes on a minor-only review and leaves its findings structured on the result', async () => {
     const minor = finding({ severity: 'minor', line: 313, file: 'packages/actions/src/command.ts' })
-    const events: ActionEvent[] = []
     const result = await runActionPipeline({
       step: 'proposed',
       actions: [actionWith(outcome({ text: JSON.stringify({ findings: [minor] }) }))],
       context,
-      emit: (e) => void events.push(e),
+      emit: () => {},
     })
 
     expect(result.ok).toBe(true)
-    const passed = events.at(-1)
-    expect(passed?.type).toBe('StepPassed')
-    if (passed?.type !== 'StepPassed') return
-    expect(passed.data.findings).toEqual([minor])
+    const passed = result.results.at(-1)
+    expect(passed?.verdict).toBe('passed')
+    expect(passed?.findings).toEqual([minor])
     // The prose stays: it is what a person reads.
-    expect(passed.data.evidence).toContain('packages/actions/src/command.ts:313')
-    expect(parsePayload('StepPassed', passed.data)).toEqual(passed.data)
+    expect(passed?.evidence).toContain('packages/actions/src/command.ts:313')
   })
 
   it('writes an empty array, not an absent field, on a pass with nothing to say', async () => {
-    const events: ActionEvent[] = []
-    await runActionPipeline({
+    const result = await runActionPipeline({
       step: 'proposed',
       actions: [actionWith(outcome({ text: '{"findings":[]}' }))],
       context,
-      emit: (e) => void events.push(e),
+      emit: () => {},
     })
 
-    const passed = events.at(-1)
-    expect(passed?.type).toBe('StepPassed')
-    expect(passed?.data).toHaveProperty('findings', [])
+    const passed = result.results.at(-1)
+    expect(passed?.verdict).toBe('passed')
+    expect(passed).toHaveProperty('findings', [])
   })
 
   it("fails when the reviewer's answer cannot be read", async () => {
@@ -801,30 +797,26 @@ describe('the action', () => {
     expect(refused.unreadable).toBeUndefined()
   })
 
-  it('says on the log that the answer could not be read, and says nothing where it could', async () => {
-    const eventsFor = async (text: string): Promise<ActionEvent[]> => {
-      const events: ActionEvent[] = []
-      await runActionPipeline({
-        step: 'review',
-        actions: [actionWith(outcome({ text }))],
-        context,
-        emit: (e) => void events.push(e),
-      })
-      return events
-    }
+  it('says on the result that the answer could not be read, and says nothing where it could', async () => {
+    const resultFor = async (text: string) =>
+      (
+        await runActionPipeline({
+          step: 'review',
+          actions: [actionWith(outcome({ text }))],
+          context,
+          emit: () => {},
+        })
+      ).results.at(-1)
 
-    const dropped = (await eventsFor(REVIEW_THAT_DID_NOT_PARSE)).at(-1)
-    if (dropped?.type !== 'StepFailed') throw new Error("the reviewer's answer was read after all")
-    expect(dropped.data).toHaveProperty('unreadable', true)
-    // The schema's, not just the object's: an optional `true` is what the log
-    // holds, so a row written with it has to validate.
-    expect(parsePayload('StepFailed', dropped.data)).toEqual(dropped.data)
+    const dropped = await resultFor(REVIEW_THAT_DID_NOT_PARSE)
+    expect(dropped?.verdict).toBe('failed')
+    expect(dropped).toHaveProperty('unreadable', true)
 
     // **Absent rather than `false`** — the failures with no answer to parse are
     // most of them, and *absent* is what says so without a step over the log.
-    const refused = (await eventsFor(JSON.stringify({ findings: [finding()] }))).at(-1)
-    if (refused?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
-    expect(refused.data).not.toHaveProperty('unreadable')
+    const refused = await resultFor(JSON.stringify({ findings: [finding()] }))
+    expect(refused?.verdict).toBe('failed')
+    expect(refused).not.toHaveProperty('unreadable')
   })
 
   /**
@@ -836,25 +828,17 @@ describe('the action', () => {
    * of passes, and the only store that keeps a fortnight is `events`: a run log
    * is deleted when the item lands (0034), and `results` is memory.
    */
-  it("carries the reviewer's classification of its refusal onto the log", async () => {
+  it("carries the reviewer's classification of its refusal onto the result", async () => {
     for (const about of REFUSED_ABOUT) {
-      const events: ActionEvent[] = []
       const text = JSON.stringify({ about, findings: [finding()] })
       const result = await runActionPipeline({
         step: 'review',
         actions: [actionWith(outcome({ text }))],
         context,
-        emit: (e) => void events.push(e),
+        emit: () => {},
       })
 
       expect(result.results[0]).toMatchObject({ verdict: 'failed', about })
-
-      const failed = events.at(-1)
-      if (failed?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
-      expect(failed.data).toHaveProperty('about', about)
-      // The schema's and not just the object's: the query is a fold over stored
-      // rows, so a row written with this has to validate as one.
-      expect(parsePayload('StepFailed', failed.data)).toEqual(failed.data)
     }
   })
 
@@ -876,21 +860,15 @@ describe('the action', () => {
     ]
 
     for (const text of saidNothing) {
-      const events: ActionEvent[] = []
       const result = await runActionPipeline({
         step: 'review',
         actions: [actionWith(outcome({ text }))],
         context,
-        emit: (e) => void events.push(e),
+        emit: () => {},
       })
 
       expect(result.results[0]?.verdict).toBe('failed')
       expect(result.results[0]).not.toHaveProperty('about')
-
-      const failed = events.at(-1)
-      if (failed?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
-      expect(failed.data).not.toHaveProperty('about')
-      expect(parsePayload('StepFailed', failed.data)).toEqual(failed.data)
     }
   })
 
@@ -1256,32 +1234,25 @@ describe("the drafting agent's answer", () => {
    * same action shape, one answer a question and one a crash, and the two fields
    * are never both set.
    */
-  it('leaves a question as `askedAt` and a `StepAsked`, and a crash as neither', async () => {
+  it('leaves a question as `askedAt`, and a crash as neither', async () => {
     const asked = 'which of the two `base` values is meant?'
-    const questions: ActionEvent[] = []
     const question = await runActionPipeline({
       step: 'design',
       actions: [drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` }))],
       context,
-      emit: (e) => void questions.push(e),
+      emit: () => {},
     })
 
     expect(question.askedAt).toEqual({ action: 'draft', detail: asked })
     // And not the other field: a reader that checked `didNotFinishAt` first would
     // otherwise still see a crash where a person was being asked something.
     expect(question.didNotFinishAt).toBeNull()
-    expect(questions.at(-1)?.type).toBe('StepAsked')
-    expect(questions.at(-1)?.data).toMatchObject({ step: 'design', action: 'draft', detail: asked })
-    // The event is a real one and the schema says so, which is what makes the
-    // reset rather than an upcaster the decision it is (`#296`).
-    expect(parsePayload('StepAsked', questions.at(-1)!.data)).toEqual(questions.at(-1)!.data)
 
-    const crashes: ActionEvent[] = []
     const crash = await runActionPipeline({
       step: 'design',
       actions: [drafter(outcome({ failure: { kind: 'timeout', detail: 'no result within 60000ms' } }))],
       context,
-      emit: (e) => void crashes.push(e),
+      emit: () => {},
     })
 
     expect(crash.askedAt).toBeNull()
@@ -1289,7 +1260,6 @@ describe("the drafting agent's answer", () => {
     // No `because`: the drafting agent that crashed has no word of its own, so
     // `endingOf` spells it `did-not-finish` — and nothing routes on it.
     expect(crash.didNotFinishAt).not.toHaveProperty('because')
-    expect(crashes.at(-1)?.type).toBe('StepDidNotFinish')
   })
 
   /**
@@ -1390,11 +1360,10 @@ describe("an agent's evidence on the log", () => {
   type Step = Parameters<typeof runActionPipeline>[0]['step']
 
   const evidenceOf = async (action: Action, step: Step) => {
-    const events: ActionEvent[] = []
-    await runActionPipeline({ step, actions: [action], context, emit: (e) => void events.push(e) })
-    const last = events.at(-1)
-    if (last === undefined || !('evidence' in last.data)) throw new Error(`no evidence on ${last?.type}`)
-    return last.data.evidence as string
+    const result = await runActionPipeline({ step, actions: [action], context, emit: () => {} })
+    const last = result.results.at(-1)
+    if (last === undefined) throw new Error('no result at all')
+    return last.evidence
   }
 
   it('clips a review that said far too much, and says that it clipped it', async () => {
@@ -1514,7 +1483,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepPassed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       const spent = runSpentEvents(events)
       expect(spent).toHaveLength(1)
       expect(spent[0]!.data).toEqual({
@@ -1528,7 +1497,7 @@ describe('RunSpent, on every branch (#494)', () => {
       expect(parsePayload('RunSpent', spent[0]!.data)).toEqual(spent[0]!.data)
     })
 
-    it('on a failed verdict (findings), exactly once and before StepFailed', async () => {
+    it('on a failed verdict (findings), exactly once', async () => {
       const events: ActionEvent[] = []
       await runActionPipeline({
         step: 'review',
@@ -1537,13 +1506,8 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
-      // The step event's own schema does not change (0110 §2): spend is
-      // `RunSpent` and nothing else.
-      const failed = events.at(-1)!
-      if (failed.type !== 'StepFailed') throw new Error('expected StepFailed')
-      expect(failed.data).not.toHaveProperty('spent')
     })
 
     it('on an unreadable answer, exactly once', async () => {
@@ -1555,7 +1519,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1570,7 +1534,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1584,7 +1548,7 @@ describe('RunSpent, on every branch (#494)', () => {
           emit: (e) => void events.push(e),
         })
 
-        expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepDidNotFinish'])
+        expect(events.map((e) => e.type)).toEqual(['RunSpent'])
         expect(runSpentEvents(events)).toHaveLength(1)
       }
     })
@@ -1598,7 +1562,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepNeverRan'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1729,7 +1693,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepPassed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       const spent = runSpentEvents(events)
       expect(spent).toHaveLength(1)
       expect(spent[0]!.data).toEqual({
@@ -1751,7 +1715,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepAsked'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1764,7 +1728,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepFailed'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1777,7 +1741,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepDidNotFinish'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
 
@@ -1790,7 +1754,7 @@ describe('RunSpent, on every branch (#494)', () => {
         emit: (e) => void events.push(e),
       })
 
-      expect(events.map((e) => e.type)).toEqual(['StepRequested', 'StepStarted', 'RunSpent', 'StepNeverRan'])
+      expect(events.map((e) => e.type)).toEqual(['RunSpent'])
       expect(runSpentEvents(events)).toHaveLength(1)
     })
   })

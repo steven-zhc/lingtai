@@ -551,30 +551,21 @@ export interface Action {
   run(context: ActionContext): Promise<ActionResult>
 }
 
-/** Emitted for every action, in order. The pipeline's whole output is events. */
+/**
+ * Emitted for every action, in order. **Since #502 (0120 phase 2) this is
+ * `RunSpent` alone.** `StepStarted`/`StepEnded` belong to `pass.ts`'s
+ * `runStep`, not to the pipeline — it writes `StepStarted` once before the
+ * pipeline runs and `StepEnded{outcome}` once after, from the `StepOutcome`
+ * it already builds — so the five per-action terminal events this type used
+ * to carry (`StepPassed`, `StepFailed`, `StepNeverRan`, `StepDidNotFinish`,
+ * `StepAsked`) and the per-action `StepRequested`/`StepStarted` pair are
+ * gone. `ApprovalRequested` is gone with them: a `signoff` action's live
+ * `requested` rides on the `StepEnded` outcome itself now.
+ */
 export type ActionEvent =
-  | { type: 'StepRequested'; data: PayloadOf<'StepRequested'> }
-  | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
-  | { type: 'StepPassed'; data: PayloadOf<'StepPassed'> }
-  | { type: 'StepFailed'; data: PayloadOf<'StepFailed'> }
-  /** The step was reached and produced no verdict, because its agent never
-   *  started. Appended so that an action which did not judge is readable as that
-   *  rather than as one still running. */
-  | { type: 'StepNeverRan'; data: PayloadOf<'StepNeverRan'> }
-  /** The step was reached, its agent started and ended with no receipt, so
-   *  nothing judged the diff. Appended once, because the action is run once
-   *  (0057 §1, and §4's retry deleted by `#234`). */
-  | { type: 'StepDidNotFinish'; data: PayloadOf<'StepDidNotFinish'> }
-  /** The step's agent stopped and asked something, so nothing judged the diff
-   *  and there is a question to answer. Its own type since `#296`: it was a
-   *  `StepDidNotFinish` whose `because` happened to be `NEEDS_INPUT`, and a
-   *  destination that lives in a free-form string is one a typo loses. */
-  | { type: 'StepAsked'; data: PayloadOf<'StepAsked'> }
-  /** The same event `--no-merge` emits. One vocabulary for one idea. */
-  | { type: 'ApprovalRequested'; data: PayloadOf<'ApprovalRequested'> }
   /** What a dispatch billed, on every branch that ran a process (#494). Never
    *  a step event's field: spend is `RunSpent` and nothing else (0110 §2). */
-  | { type: 'RunSpent'; data: PayloadOf<'RunSpent'> }
+  { type: 'RunSpent'; data: PayloadOf<'RunSpent'> }
 
 export interface PipelineResult {
   /** True when every action passed. Never true when one is waiting on a person. */
@@ -704,13 +695,6 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
   let context = options.context
 
   for (const [index, action] of actions.entries()) {
-    // `step:` is the **event payload's** field and stays that spelling until the
-    // log's own vocabulary is renamed — it carries the step, and `action` beside
-    // it carries this action's name.
-    const base = { step: step, action: action.name, runId: context.runId, onSha: context.onSha }
-
-    await emit({ type: 'StepRequested', data: base })
-
     /**
      * The start and the end on the run's log, for every kind (#153).
      *
@@ -742,7 +726,6 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
      * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
      * §3c's judge, not a constant in a loop here.
      */
-    await emit({ type: 'StepStarted', data: base })
     const started = Date.now()
     context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
 
@@ -835,24 +818,15 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       }
     }
 
-    if (result.verdict === 'passed') {
-      // Findings go on a pass as well as a refusal: a minor does not stop the
-      // run, and a finding left only in `evidence` is one nothing can read (#135).
-      await emit({
-        type: 'StepPassed',
-        data: { ...base, evidence: result.evidence, findings: result.findings },
-      })
-      continue
-    }
+    if (result.verdict === 'passed') continue
 
     if (result.verdict === 'never-ran') {
-      // No verdict event, because there is no verdict: what is appended says
-      // the step was reached and its agent never started. The pipeline stops
-      // for the reason a refusal stops it and one it does not have — the actions
-      // after this one would ask the same account the same question and meet
-      // the same wall, which is 0031 §3 with a queue's worth of items replaced
-      // by a recipe's worth of actions.
-      await emit({ type: 'StepNeverRan', data: { ...base, detail: result.evidence } })
+      // No verdict here, because there is no verdict: `outcomeOf` (`pass.ts`)
+      // reads this as a `NeverStarted` result, never a pass. The pipeline
+      // stops for the reason a refusal stops it and one it does not have —
+      // the actions after this one would ask the same account the same
+      // question and meet the same wall, which is 0031 §3 with a queue's
+      // worth of items replaced by a recipe's worth of actions.
       return {
         ok: false,
         failedAt: null,
@@ -882,17 +856,10 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
        * and what leaves this function is a field and an event type.
        */
       const asked = result.because === NEEDS_INPUT
-      // No verdict event either way, for the reason `never-ran` has none: the
-      // agent judged nothing. Which of the two it was is the event's name —
-      // `StepAsked` has a question in it and `StepDidNotFinish` has broken
-      // machinery, and a board drawing them alike is `#279`'s shape. One event,
-      // because the action ran once (0057 §1, `#234`), and it stops the pass
-      // rather than the conductor, because both are local (0057 §3).
-      await emit(
-        asked
-          ? { type: 'StepAsked', data: { ...base, detail: result.evidence } }
-          : { type: 'StepDidNotFinish', data: { ...base, detail: result.evidence } },
-      )
+      // No verdict here either, for the reason `never-ran` has none: the
+      // agent judged nothing. Which of the two it was is carried by
+      // `askedAt`/`didNotFinishAt` below — `pass.ts`'s `endingOf` tells them
+      // apart the same way `StepAsked`/`StepDidNotFinish` used to.
       return {
         ok: false,
         failedAt: null,
@@ -916,12 +883,9 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
 
     if (result.verdict === 'needs-approval') {
       // Stops for the same reason a failure does — the actions after this one are
-      // about a diff that is not going anywhere yet — but it is not a failure,
-      // and the event says which.
-      await emit({
-        type: 'ApprovalRequested',
-        data: { ...base, question: result.evidence, artifacts: [] },
-      })
+      // about a diff that is not going anywhere yet — but it is not a failure:
+      // a `signoff` action's own `Completed{requested}` on the `StepEnded`
+      // outcome carries the question now, not an `ApprovalRequested` event.
       return {
         ok: false,
         failedAt: null,
@@ -934,23 +898,6 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       }
     }
 
-    await emit({
-      type: 'StepFailed',
-      data: {
-        ...base,
-        evidence: result.evidence,
-        findings: result.findings,
-        // The one refusal that is not about the diff's contents but about whether
-        // the answer could be read at all (`#279`). Absent where it could.
-        ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
-        // And, where the action said so, which kind of refusal it is (`#293`).
-        // On the event rather than only on `results` because the question it
-        // answers is asked of a fortnight of passes, and `results` is memory:
-        // a run log would do for one pass and is deleted when the item lands
-        // (0034), so the rate has to be a fold over `events` or it is a guess.
-        ...(result.about === undefined ? {} : { about: result.about }),
-      },
-    })
     return {
       ok: false,
       failedAt: action.name,

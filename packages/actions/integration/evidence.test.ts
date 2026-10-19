@@ -80,13 +80,13 @@ describe('escapes vitest does not write', () => {
 
 describe('the stored evidence', () => {
   /**
-   * `StepFailed.data.evidence` is the record: the card renders it and
-   * `attempts.ts` quotes it into the fix prompt under `budget.evidence`. So
-   * the claim is pinned at the event, through a real process, not at `tail`.
+   * The failing action's own `evidence` is the record: the card renders it
+   * and `attempts.ts` quotes it into the fix prompt under `budget.evidence`.
+   * So the claim is pinned at the result, through a real process, not at
+   * `tail`.
    */
-  it('carries no escape from a failing command into StepFailed', async () => {
-    const events: ActionEvent[] = []
-    await runActionPipeline({
+  it('carries no escape from a failing command into the result', async () => {
+    const result = await runActionPipeline({
       step: 'proposed',
       actions: [
         createProcessAction({
@@ -96,12 +96,12 @@ describe('the stored evidence', () => {
         }),
       ],
       context: { runId: 'pass-01JX', onSha: 'sha-a', cwd: process.cwd(), env: {} },
-      emit: (e) => void events.push(e),
+      emit: () => {},
     })
 
-    const failed = events.find((e) => e.type === 'StepFailed')
-    if (failed?.type !== 'StepFailed') throw new Error('the action did not fail')
-    expect(failed.data.evidence).not.toContain(ESC)
-    expect(failed.data.evidence).toContain(sentence)
+    const failed = result.results.find((r) => r.verdict === 'failed')
+    if (failed === undefined) throw new Error('the action did not fail')
+    expect(failed.evidence).not.toContain(ESC)
+    expect(failed.evidence).toContain(sentence)
   })
 })
