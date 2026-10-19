@@ -1595,7 +1595,7 @@ pnpm lingtai service shutdown "resetting the log — see #448"
 Both append rather than block and return at once, so a successful exit means
 only that the request landed, never that the daemon is down — wait for the
 daemon itself, not the command. Poll `lingtai doctor`'s **daemon: liveness**
-row (or `lingtai status`) until it reads `not running` rather than `draining`
+row until it reads `not running` rather than `draining`
 or a beat within the last few seconds; a pass can run up to
 `runtime.limits.wall` (an hour, here) before that happens:
 
@@ -1909,7 +1909,7 @@ counting from 1. A pause appended here lands below that daemon's own
 watermark exactly as it lands below a freshly started one's, and
 `readControl` filters it out the same way. Nothing makes this command hold
 off any daemon, old or new — what does that is the next paragraph's rule.
-Run it anyway, since it is what `lingtai status` and the board show while
+Run it anyway, since it is what the board shows while
 this section is in progress:
 
 ```bash
