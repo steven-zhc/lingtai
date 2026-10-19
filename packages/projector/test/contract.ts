@@ -747,11 +747,45 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('reads spend filtered by ticket and project, oldest first', async () => {
+      const f = await make()
+      const task = f.stream('wi', '45')
+      const run = f.stream('run', 'spend')
+      try {
+        const written = await f.events.append(run, 0, [
+          started(task),
+          runSpent({ _tag: 'Action', step: 'proposed', name: 'build', round: 0 }),
+        ])
+        await made(f, spendProjection, written)
+
+        const rows = await f.store.spend({ ticket: task })
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toMatchObject({
+          streamId: run,
+          ticket: task,
+          project: f.project,
+          pass: run,
+          purpose: 'Action',
+          step: 'proposed',
+          action: 'build',
+          round: 0,
+          costUsd: 0.1,
+        })
+        expect(rows[0]!.at).toBeInstanceOf(Date)
+
+        expect(await f.store.spend({ project: f.project })).toEqual(rows)
+        expect(await f.store.spend({ ticket: `${task}-nobody` })).toEqual([])
+      } finally {
+        await f.close()
+      }
+    })
+
     it('reads an empty board rather than failing, when nothing has been folded', async () => {
       const f = await make()
       try {
         expect(await f.store.tasks({ project: `${f.project}-nobody`, retentionDays: 3650 })).toEqual([])
         expect(await f.store.backlog({ project: `${f.project}-nobody` })).toEqual([])
+        expect(await f.store.spend({ project: `${f.project}-nobody` })).toEqual([])
       } finally {
         await f.close()
       }

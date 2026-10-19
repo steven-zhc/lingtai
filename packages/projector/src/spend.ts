@@ -44,10 +44,11 @@
  * precedes `admit` precedes dispatch, and a discussion is only ever dispatched
  * in reaction to its own `DiscussionRequested`.
  */
-import type { PayloadOf } from '@lingtai/domain'
+import type { PayloadOf, Usage } from '@lingtai/domain'
 import { chatStream, isPassStream, isWorkItemStream, parseWorkItemStream } from '@lingtai/domain'
 
-import type { Projection } from './store.ts'
+import { withProjectionStore } from './choose.ts'
+import type { Projection, SpendQuery } from './store.ts'
 
 export const SPEND_TABLE = 'spend'
 
@@ -177,4 +178,52 @@ export const spendProjection: Projection = {
       }
     }
   },
+}
+
+/**
+ * A `spend` row, as the board reads it — facts only, never a price (0110 §5).
+ *
+ * `purpose` is `RunSpent.for._tag` exactly as written: `step`, `action` and
+ * `round` are filled only where it is `'Action'`, and null otherwise, the same
+ * split the table itself keeps. Deciding *Work* from *Answering* within
+ * `'Action'` is a reader's job (`apps/board/src/lib/spend.ts`'s `billOf`), not
+ * this row's — a fact one layer down the stack must not also decide its own
+ * purpose.
+ *
+ * `costUsd` stays `null` rather than becoming a free lunch (0110 §4); so does
+ * `project` and `ticket` on the one row shape that can carry both null — a
+ * `RunSpent` whose stream linked to neither (`spend.ts`'s own header).
+ */
+export interface SpendRow {
+  seq: string
+  at: Date
+  streamId: string
+  ticket: string | null
+  project: string | null
+  pass: string | null
+  purpose: PayloadOf<'RunSpent'>['for']['_tag']
+  step: string | null
+  action: string | null
+  round: number | null
+  runtime: string
+  turns: number
+  durationMs: number
+  costUsd: number | null
+  usage: Usage
+}
+
+export interface ReadSpendOptions extends SpendQuery {
+  url?: string
+}
+
+/**
+ * Oldest first — a ledger is read the way a log is written. `postgres.ts`'s
+ * and `sqlite.ts`'s own queries, since #219, including the one thing that is
+ * easy to lose: **a database no projector has ever started has no table, and
+ * that is no spend rather than a failure.**
+ */
+export async function readSpend(options: ReadSpendOptions = {}): Promise<SpendRow[]> {
+  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
+    store.spend({ ticket: options.ticket, project: options.project, since: options.since }),
+  )
 }

@@ -35,6 +35,7 @@ export {
   type ProjectionLag,
   type ProjectionRow,
   type ProjectionStore,
+  type SpendQuery,
   type TaskQuery,
 } from './store.ts'
 export { projectionStore, withProjectionStore, type ProjectionStoreOptions } from './choose.ts'
@@ -56,7 +57,7 @@ export {
   type BacklogStatus,
   type ReadBacklogOptions,
 } from './backlog.ts'
-export { SPEND_TABLE, spendProjection } from './spend.ts'
+export { SPEND_TABLE, readSpend, spendProjection, type ReadSpendOptions, type SpendRow } from './spend.ts'
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
