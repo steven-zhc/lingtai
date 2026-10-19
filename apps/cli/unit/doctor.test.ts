@@ -245,7 +245,8 @@ describe('nodeRow, running below or at the floor .node-version names', () => {
 /**
  * #212: a version comparison passes Homebrew's 26.7.0, which cannot
  * `--build-sea`. `seaRow` takes the probe's answer rather than a version, so
- * this exercises the FAIL branch the ticket exists for.
+ * this exercises the WARN branches the ticket exists for — `warn`, because
+ * nothing a conductor, a daemon or a pass does ever builds a SEA.
  */
 describe('seaRow, this Node probed for --build-sea', () => {
   it('is ok when the probe says it can', () => {
@@ -253,33 +254,32 @@ describe('seaRow, this Node probed for --build-sea', () => {
     expect(row.status).toBe('ok')
   })
 
-  it('fails, naming the interpreter, the version, what Node said and the remedy, when SEA is compiled out', () => {
+  it('warns, naming the interpreter, the version, what Node said and the remedy, when SEA is compiled out', () => {
     const row = seaRow('/opt/homebrew/bin/node', '26.7.0', {
       can: false,
       why: 'disabled',
       said: 'node: Single executable application is disabled.',
     })
-    expect(row.status).toBe('fail')
+    expect(row.status).toBe('warn')
     expect(row.detail).toContain('/opt/homebrew/bin/node')
     expect(row.detail).toContain('26.7.0')
     expect(row.detail).toContain('node: Single executable application is disabled.')
     expect(row.detail).toContain('brew unlink node')
-    expect(row.restartAnswers).toBeUndefined()
   })
 
-  it('fails, naming .node-version, when this Node is below 25.5', () => {
+  it('warns, naming .node-version, when this Node is below 25.5', () => {
     const row = seaRow('/opt/homebrew/bin/node', '22.23.1', {
       can: false,
       why: 'unsupported',
       said: 'node: bad option: --build-sea',
     })
-    expect(row.status).toBe('fail')
+    expect(row.status).toBe('warn')
     expect(row.detail).toContain('.node-version')
   })
 
-  it('fails, quoting what Node said, on any other failure', () => {
+  it('warns, quoting what Node said, on any other failure', () => {
     const row = seaRow('/opt/homebrew/bin/node', '26.7.0', { can: false, why: 'failed', said: 'boom' })
-    expect(row.status).toBe('fail')
+    expect(row.status).toBe('warn')
     expect(row.detail).toContain('boom')
   })
 })

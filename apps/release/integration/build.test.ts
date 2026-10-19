@@ -49,6 +49,18 @@ const first = join(work, 'first')
 const second = join(work, 'second')
 const boards: ChildProcess[] = []
 const sea = probeSeaBuild()
+/**
+ * Skip only on a *measured* incapacity — `disabled` or `unsupported`, the two
+ * strings #212 found on real Node builds. `failed` is the probe's own
+ * trouble (a spawn error, the 30s timeout, a full or unwritable `tmpdir`),
+ * indistinguishable from a transient fault rather than this Node's actual
+ * capability — skipping on it would let a loaded runner silently drop these
+ * four tests and still exit 0. Let those run; `buildBinary` then fails for
+ * the same real reason, which is a red the job notices rather than a skip it
+ * does not.
+ */
+const seaIncapable = !sea.can && sea.why !== 'failed'
+const seaSkipReason = sea.can ? '' : sea.said
 
 beforeAll(async () => {
   // The URL is in `.env.local` beside the build and nowhere else, as it is in a
@@ -88,8 +100,8 @@ describe('pnpm build', () => {
   })
 })
 
-describe(`pnpm binary${sea.can ? '' : ` (skipped: ${sea.said})`}`, () => {
-  it.runIf(sea.can)('builds one executable beside the board, which reports its version and platform', () => {
+describe(`pnpm binary${seaIncapable ? ` (skipped: ${seaSkipReason})` : ''}`, () => {
+  it.runIf(!seaIncapable)('builds one executable beside the board, which reports its version and platform', () => {
     const binary = buildBinary({ dist: first })
     expect(binary).toBe(join(first, 'lingtai'))
 
@@ -99,7 +111,7 @@ describe(`pnpm binary${sea.can ? '' : ` (skipped: ${sea.said})`}`, () => {
     expect(version.stdout).toContain(`lingtai ${workspace.version} ${platformName()} (binary,`)
   })
 
-  it.runIf(sea.can)('serves a page from the built board, started by the binary', async () => {
+  it.runIf(!seaIncapable)('serves a page from the built board, started by the binary', async () => {
     await servesAPage(join(first, 'lingtai'), [])
   })
 
@@ -112,7 +124,7 @@ describe(`pnpm binary${sea.can ? '' : ` (skipped: ${sea.said})`}`, () => {
   // every run. Drop the signing step in `buildBinary` and the first assertion
   // fails on any Mac; the second says it is that step, so nobody "fixes" it
   // elsewhere.
-  it.runIf(sea.can && process.platform === 'darwin')('is signed, and only because buildBinary signs it', () => {
+  it.runIf(!seaIncapable && process.platform === 'darwin')('is signed, and only because buildBinary signs it', () => {
     const signed = join(first, 'lingtai')
     if (!existsSync(signed)) buildBinary({ dist: first })
     const verified = codesignVerify(signed)
@@ -124,8 +136,8 @@ describe(`pnpm binary${sea.can ? '' : ` (skipped: ${sea.said})`}`, () => {
   })
 })
 
-describe(`install.sh over the binary${sea.can ? '' : ` (skipped: ${sea.said})`}`, () => {
-  it.runIf(sea.can)(
+describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason})` : ''}`, () => {
+  it.runIf(!seaIncapable)(
     'installs it, and after an upgrade and a rollback the older directory still serves the board',
     async () => {
       const workspace = JSON.parse(readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8'))

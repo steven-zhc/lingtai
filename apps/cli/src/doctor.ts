@@ -899,7 +899,14 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
-  /** As `probeSeaBuild` answers it — required rather than optional, so the six existing `runDoctor` unit calls cannot forget it and spawn Node for real (#212). */
+  /**
+   * As `probeSeaBuild` answers it — required rather than optional, and
+   * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
+   * the requirement reaches that call boundary too, not just a literal typed
+   * `DoctorReach` in full. Without the `Pick`, `Partial<DoctorReach>` makes
+   * every key optional again and a caller can omit `sea` and spawn Node for
+   * real (#212).
+   */
   sea: () => SeaProbe
   /** As `currentRecipe` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
   recipe: RecipeFor
@@ -2286,8 +2293,11 @@ export function nodeRow(running: string, declared: string | undefined): CheckRes
  * function for the same reason `nodeRow` takes `running` and `declared` as
  * strings: it keeps this a unit test that never spawns Node.
  *
- * No `restartAnswers`, matching `nodeRow`: a daemon started on a Node that
- * cannot build a SEA is still a fact worth gating `lingtai restart` on.
+ * `warn`, not `fail` (see `CheckStatus`): nothing a conductor, a daemon or a
+ * pass does ever calls `--build-sea` — only `pnpm binary` and `release.yml`
+ * do (`buildBinary`, `apps/release/src/binary.ts`) — so this is a fact worth
+ * knowing before cutting a release and not one worth gating `lingtai
+ * restart`, `lingtai service start/install` or `lingtai upgrade`'s drain on.
  */
 export function seaRow(node: string, version: string, probe: SeaProbe): CheckResult {
   const name = 'node: can build a single executable'
@@ -2295,21 +2305,21 @@ export function seaRow(node: string, version: string, probe: SeaProbe): CheckRes
   if (probe.why === 'disabled') {
     return {
       name,
-      status: 'fail',
+      status: 'warn',
       detail:
         `${node} (node ${version}) says: ${probe.said} — this Node build has single-executable support ` +
         `compiled out, which is how Homebrew ships node. Run \`brew unlink node\`, or put a Node built ` +
-        `with SEA first on PATH (for example \`mise use node@26\`).`,
+        `with SEA first on PATH (for example \`mise use -g node@26\`).`,
     }
   }
   if (probe.why === 'unsupported') {
     return {
       name,
-      status: 'fail',
+      status: 'warn',
       detail: `${node} (node ${version}) says: ${probe.said} — --build-sea needs Node 25.5 or later; see .node-version.`,
     }
   }
-  return { name, status: 'fail', detail: `${node} (node ${version}) says: ${probe.said}` }
+  return { name, status: 'warn', detail: `${node} (node ${version}) says: ${probe.said}` }
 }
 
 /**
@@ -2339,7 +2349,7 @@ export async function runDoctor(
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
-  reach: Partial<DoctorReach> = {},
+  reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea'> = { sea: probeSeaBuild },
 ): Promise<DoctorReport> {
   const results: CheckResult[] = []
 
@@ -2369,7 +2379,7 @@ export async function runDoctor(
       declaredNode = undefined
     }
     results.push(nodeRow(process.versions.node, declaredNode))
-    results.push(seaRow(process.execPath, process.versions.node, reach.sea?.() ?? probeSeaBuild()))
+    results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
   }
 
   results.push({
