@@ -105,6 +105,7 @@ import { git } from '@lingtai/repo'
 import pg from 'pg'
 
 import { RUN_UNDER_A_PAUSE } from './run.ts'
+import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 
 /**
  * `warn` is not a weak `fail`. It means **nothing is wrong and you should know
@@ -898,6 +899,8 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** As `probeSeaBuild` answers it — required rather than optional, so the six existing `runDoctor` unit calls cannot forget it and spawn Node for real (#212). */
+  sea: () => SeaProbe
   /** As `currentRecipe` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
   recipe: RecipeFor
   /** As `resolveAgentEnv` reads it, for `declaredEnvironment`. */
@@ -2276,6 +2279,40 @@ export function nodeRow(running: string, declared: string | undefined): CheckRes
 }
 
 /**
+ * `nodeRow` answers *is this Node new enough*; this answers the question #212
+ * showed a version cannot — Homebrew's 26.7.0 is newer than the floor and
+ * still cannot `--build-sea`, because that build has single-executable
+ * support compiled out. `probe` is `probeSeaBuild`'s result, read outside this
+ * function for the same reason `nodeRow` takes `running` and `declared` as
+ * strings: it keeps this a unit test that never spawns Node.
+ *
+ * No `restartAnswers`, matching `nodeRow`: a daemon started on a Node that
+ * cannot build a SEA is still a fact worth gating `lingtai restart` on.
+ */
+export function seaRow(node: string, version: string, probe: SeaProbe): CheckResult {
+  const name = 'node: can build a single executable'
+  if (probe.can) return { name, status: 'ok', detail: `${node} (node ${version}) can build a single executable` }
+  if (probe.why === 'disabled') {
+    return {
+      name,
+      status: 'fail',
+      detail:
+        `${node} (node ${version}) says: ${probe.said} — this Node build has single-executable support ` +
+        `compiled out, which is how Homebrew ships node. Run \`brew unlink node\`, or put a Node built ` +
+        `with SEA first on PATH (for example \`mise use node@26\`).`,
+    }
+  }
+  if (probe.why === 'unsupported') {
+    return {
+      name,
+      status: 'fail',
+      detail: `${node} (node ${version}) says: ${probe.said} — --build-sea needs Node 25.5 or later; see .node-version.`,
+    }
+  }
+  return { name, status: 'fail', detail: `${node} (node ${version}) says: ${probe.said}` }
+}
+
+/**
  * `machine` reads `database.url` from `~/.lingtai/config.yml`. Asked only when
  * `LINGTAI_DATABASE_URL` is unset — the order `postgresUrl` reads them in — and
  * only where the caller hands it in: `doctorReport` does, and a test's own
@@ -2315,6 +2352,15 @@ export async function runDoctor(
       status: 'ok',
       detail: `node ${process.version} — the binary carries the Node it was built with`,
     })
+    results.push({
+      name: 'node: can build a single executable',
+      status: 'skip',
+      // `process.execPath` here is the lingtai binary, not a Node to probe —
+      // building a binary is a checkout's job, and a binary never does it to
+      // itself.
+      detail:
+        "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
+    })
   } else {
     let declaredNode: string | undefined
     try {
@@ -2323,6 +2369,7 @@ export async function runDoctor(
       declaredNode = undefined
     }
     results.push(nodeRow(process.versions.node, declaredNode))
+    results.push(seaRow(process.execPath, process.versions.node, reach.sea?.() ?? probeSeaBuild()))
   }
 
   results.push({

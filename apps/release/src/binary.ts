@@ -10,8 +10,11 @@
  * into `versions/<v>/`, and the binary finds `board/` beside itself.
  *
  * **SEA copies the Node that runs this**, so a binary is built on the platform
- * it is for — four builds, never a cross-compile. `node --build-sea` (Node
- * 25.5) does the copy and the injection itself, with no `postject`.
+ * it is for — four builds, never a cross-compile. `node --build-sea` does the
+ * copy and the injection itself, with no `postject`. Node 25.5 is necessary
+ * but not sufficient: Homebrew's own 26.7.0 ships with single-executable
+ * support compiled out, so whether *this* Node can is `probeSeaBuild`'s
+ * question, never a version comparison (#212).
  *
  * **Signing is not optional on macOS.** The injection breaks the signature the
  * copied Node shipped with and leaves the file unsigned, and on Apple Silicon
@@ -28,6 +31,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+import { classifySeaBuild } from '../../cli/src/sea-build.ts'
 import { platformName } from '../../cli/src/version.ts'
 
 export interface BinaryOptions {
@@ -44,18 +48,9 @@ export function artifactName(platform: string = platformName()): string {
   return `lingtai-${platform}`
 }
 
-/** Whether this Node can build a SEA without a separate injector. */
-export function canBuildSea(version: string = process.versions.node): boolean {
-  const [major = 0, minor = 0] = version.split('.').map(Number)
-  return major > 25 || (major === 25 && minor >= 5)
-}
-
 export function buildBinary({ dist, output = join(dist, 'lingtai'), sign = true }: BinaryOptions): string {
   const main = join(dist, 'lingtai.cjs')
   if (!existsSync(main)) throw new Error(`no ${main} — pnpm build writes it first`)
-  if (!canBuildSea()) {
-    throw new Error(`node ${process.versions.node} cannot build a SEA; node --build-sea needs 25.5 or later`)
-  }
 
   const scratch = mkdtempSync(join(tmpdir(), 'lingtai-sea-'))
   try {
@@ -79,7 +74,11 @@ export function buildBinary({ dist, output = join(dist, 'lingtai'), sign = true 
       }),
     )
     rmSync(output, { force: true })
-    run(process.execPath, ['--build-sea', config])
+    const built = spawnSync(process.execPath, ['--build-sea', config], { encoding: 'utf8' })
+    if (built.status !== 0) {
+      const probe = classifySeaBuild(built.status, built.stderr ?? '', built.error)
+      throw new Error(`node --build-sea failed: ${probe.can ? `exited ${built.status}` : probe.said}`)
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
