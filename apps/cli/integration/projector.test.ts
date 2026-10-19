@@ -33,6 +33,14 @@ const wi = `wi-${PROJECT}-1`
 const runId = `run-${PROJECT}-1`
 let store: EventStore
 
+/**
+ * `withProjector` now refuses through `logPredatesHold` (#491, reusing
+ * #451's guard) before building any runner, so a process log carrying a
+ * pre-#445 `WorkItemBlocked` makes the first test below fail fast on an
+ * empty `seen` rather than hang for 180s. That is not this file's bug: it is
+ * `doc/operating.md`'s "Resetting the log" against whichever store this
+ * suite points at (`LINGTAI_TEST_DATABASE_URL` / `LINGTAI_TEST_SQLITE_PATH`).
+ */
 beforeAll(async () => {
   store = await processEventStore()
 }, 120_000)

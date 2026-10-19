@@ -234,10 +234,17 @@ describe('withProjector refuses through the guard (#491)', () => {
     const store = createMemoryEventStore()
     store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
     const log = vi.fn()
+    const runnerFor = vi.fn(() => {
+      throw new Error('a runner must not be built once the guard has refused')
+    })
 
-    const result = await withProjector(log, async () => 'worked', { predatesHold: () => logPredatesHold(store) })
+    const result = await withProjector(log, async () => 'worked', {
+      predatesHold: () => logPredatesHold(store),
+      runnerFor,
+    })
 
     expect(result).toBe('worked')
+    expect(runnerFor).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith(expect.stringContaining('the board will not follow this run'))
     expect(log).toHaveBeenCalledWith(expect.stringContaining('reset it'))
   })

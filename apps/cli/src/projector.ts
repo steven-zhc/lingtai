@@ -74,12 +74,13 @@ async function followSecondary(
   projection: Projection,
   log: (line: string) => void,
   predates: LogPredatesHoldError | null,
+  runnerFor: (projection: Projection) => ProjectionRunner,
 ): Promise<ProjectionRunner | null> {
   if (predates) {
     log(`${projection.name} will not follow this run: ${predates.message}`)
     return null
   }
-  const runner = createProjectionRunner({ projection })
+  const runner = runnerFor(projection)
   try {
     await runner.start()
     return runner
@@ -106,6 +107,8 @@ async function releaseSecondary(
 export interface WithProjectorOptions {
   /** `logPredatesHold` against the process log's own queries. Replaceable so the guard can be asserted without a database (#491). */
   predatesHold?: () => Promise<LogPredatesHoldError | null>
+  /** Builds a projection's runner. Replaceable so a test can assert one is never built once the guard has refused (#491). */
+  runnerFor?: (projection: Projection) => ProjectionRunner
 }
 
 /**
@@ -122,14 +125,18 @@ export async function withProjector<T>(
   options: WithProjectorOptions = {},
 ): Promise<T> {
   const predates = await (options.predatesHold ?? defaultPredatesHold)()
+  const runnerFor = options.runnerFor ?? ((projection: Projection) => createProjectionRunner({ projection }))
 
   let runner: ProjectionRunner | null = null
   let following = false
   if (predates) {
+    // Not the generic "a daemon catches up from the checkpoint" line below:
+    // that is false on exactly this path — a daemon cannot follow a log that
+    // predates the Hold event either (restart.ts:461-463). `predates.message`
+    // already names the actual remedy, resetting the log.
     log(`the board will not follow this run: ${predates.message}`)
-    log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
   } else {
-    runner = createProjectionRunner({ projection: taskViewProjection })
+    runner = runnerFor(taskViewProjection)
     try {
       // Creates the tables, catches up to the head, then follows. Resolves once
       // it is current, so the board is not behind before the work even starts.
@@ -140,8 +147,8 @@ export async function withProjector<T>(
       log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
     }
   }
-  const backlog = await followSecondary(backlogProjection, log, predates)
-  const spend = await followSecondary(spendProjection, log, predates)
+  const backlog = await followSecondary(backlogProjection, log, predates, runnerFor)
+  const spend = await followSecondary(spendProjection, log, predates, runnerFor)
 
   try {
     return await work()
@@ -182,14 +189,17 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
     Effect.acquireRelease(
       Effect.promise(async () => {
         const predates = await defaultPredatesHold()
+        const runnerFor = (projection: Projection) => createProjectionRunner({ projection })
 
         let runner: ProjectionRunner | null = null
         let following = false
         if (predates) {
+          // See the matching branch in `withProjector`: the generic remedy
+          // below is false on this path, and `predates.message` already names
+          // the real one.
           log(`the board will not follow this run: ${predates.message}`)
-          log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
         } else {
-          runner = createProjectionRunner({ projection: taskViewProjection })
+          runner = runnerFor(taskViewProjection)
           try {
             await runner.start()
             following = true
@@ -198,8 +208,8 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
             log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
           }
         }
-        const backlog = await followSecondary(backlogProjection, log, predates)
-        const spend = await followSecondary(spendProjection, log, predates)
+        const backlog = await followSecondary(backlogProjection, log, predates, runnerFor)
+        const spend = await followSecondary(spendProjection, log, predates, runnerFor)
         return { runner, following, backlog, spend }
       }),
       ({ runner, following, backlog, spend }) =>
