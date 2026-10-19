@@ -116,15 +116,26 @@ export interface WithProjectorOptions {
  *
  * A projector that will not start is reported and never fatal. The log is what
  * is authoritative; refusing to do the work because the board cannot be kept
- * current would turn a stale board into no work at all, and the next daemon
- * catches up from the checkpoint regardless.
+ * current would turn a stale board into no work at all. For a `start()` that
+ * threw, the next daemon catches up from the checkpoint regardless — that is
+ * not true of a log that predates the Hold event (see the branch below):
+ * there, nothing catches up until a person resets it.
  */
 export async function withProjector<T>(
   log: (line: string) => void,
   work: () => Promise<T>,
   options: WithProjectorOptions = {},
 ): Promise<T> {
-  const predates = await (options.predatesHold ?? defaultPredatesHold)()
+  let predates: LogPredatesHoldError | null = null
+  try {
+    predates = await (options.predatesHold ?? defaultPredatesHold)()
+  } catch (err) {
+    // The guard itself reaches the store, so whatever can fail a runner's
+    // `start()` below can fail this too — reported the same way, never
+    // fatal, and the work proceeds as if nothing predates the Hold event.
+    log(`the board will not follow this run: ${(err as Error).message}`)
+    log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+  }
   const runnerFor = options.runnerFor ?? ((projection: Projection) => createProjectionRunner({ projection }))
 
   let runner: ProjectionRunner | null = null
@@ -188,7 +199,16 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
     Projector,
     Effect.acquireRelease(
       Effect.promise(async () => {
-        const predates = await defaultPredatesHold()
+        let predates: LogPredatesHoldError | null = null
+        try {
+          predates = await defaultPredatesHold()
+        } catch (err) {
+          // See the matching catch in `withProjector`: the guard reaches the
+          // store too, and `Effect.promise`'s contract is a promise that
+          // never rejects, so this must report rather than throw.
+          log(`the board will not follow this run: ${(err as Error).message}`)
+          log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+        }
         const runnerFor = (projection: Projection) => createProjectionRunner({ projection })
 
         let runner: ProjectionRunner | null = null

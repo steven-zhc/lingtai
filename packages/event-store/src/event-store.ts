@@ -251,15 +251,16 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
 
 /**
  * The first `WorkItemBlocked` row this build cannot read, in `seq` order, or
- * `null` (#451). Daemon start, `lingtai doctor` and `lingtai projection
- * rebuild` each call this before they fold the whole log, so a person is told
- * to reset it instead of watching a parse stack come out of whichever one ran
- * first — `decodeRow`'s own catch above throws the same error for anything
- * that folds the log without asking first.
+ * `null` (#451). Daemon start, `lingtai doctor`, `lingtai projection rebuild`
+ * and `withProjector` (#491) each call this before they fold the whole log,
+ * so a person is told to reset it instead of watching a parse stack come out
+ * of whichever one ran first — `decodeRow`'s own catch above throws the same
+ * error for anything that folds the log without asking first.
  *
  * Returned rather than thrown: doctor wants a row it can show as a failing
- * check, daemon start wants a result arm, and rebuild wants an exit code —
- * none of the three wants a `try`/`catch` of their own for this.
+ * check, daemon start wants a result arm, rebuild wants an exit code, and
+ * `withProjector` wants a line it can log without the call ever being fatal
+ * — none of the four wants a `try`/`catch` of their own for this.
  */
 export async function logPredatesHold(queries: Pick<LogQueries, 'rowsOfType'>): Promise<LogPredatesHoldError | null> {
   const rows = await queries.rowsOfType('WorkItemBlocked')

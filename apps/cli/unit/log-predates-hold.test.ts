@@ -1,8 +1,9 @@
 import type { Runtime } from '@lingtai/agent'
 /**
- * #451. One guard, `logPredatesHold`, and three callers refuse through it
- * rather than letting a parse stack come out of whichever one folds the log
- * first: daemon start, `lingtai doctor` and `lingtai projection rebuild`.
+ * #451 (and #491). One guard, `logPredatesHold`, and four callers refuse
+ * through it rather than letting a parse stack come out of whichever one
+ * folds the log first: daemon start, `lingtai doctor`, `lingtai projection
+ * rebuild`, and `withProjector` (#491).
  *
  * A pre-#445 `WorkItemBlocked` fails in one of two shapes — a stored v1 row
  * (`question`, `needsFrom`, `runId`) or a stored v2 one (those plus `needs`
@@ -13,7 +14,7 @@ import { startDaemon } from '@lingtai/daemon'
 import type { StoreChoice } from '@lingtai/env'
 import { LogPredatesHoldError, logPredatesHold, type LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { Projection } from '@lingtai/projector'
+import type { Projection, ProjectionRunner } from '@lingtai/projector'
 import { describe, expect, it, vi } from 'vitest'
 
 import { type DoctorReach, runDoctor } from '../src/doctor.ts'
@@ -247,5 +248,32 @@ describe('withProjector refuses through the guard (#491)', () => {
     expect(runnerFor).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith(expect.stringContaining('the board will not follow this run'))
     expect(log).toHaveBeenCalledWith(expect.stringContaining('reset it'))
+  })
+})
+
+/**
+ * `#491`: `predatesHold` reaches the store the same way `runner.start()`
+ * does, so a dropped connection there must be reported and never fatal too
+ * — "A projector that will not start is reported and never fatal" above
+ * covers the guard, not just the runner it gates.
+ */
+describe('a predatesHold that throws is reported, not fatal (#491)', () => {
+  it('still runs work, with the runner built the normal way', async () => {
+    const log = vi.fn()
+    const fakeRunner = {
+      start: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      failure: null,
+    } as unknown as ProjectionRunner
+    const runnerFor = vi.fn(() => fakeRunner)
+
+    const result = await withProjector(log, async () => 'worked', {
+      predatesHold: () => Promise.reject(new Error('connection terminated unexpectedly')),
+      runnerFor,
+    })
+
+    expect(result).toBe('worked')
+    expect(runnerFor).toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('connection terminated unexpectedly'))
   })
 })
