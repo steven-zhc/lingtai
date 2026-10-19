@@ -18,6 +18,7 @@ import { Fragment } from 'react'
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
+import { billHasAny, billText } from '@/lib/spend'
 
 import { Close, Decide, Requeue } from './decide.tsx'
 import { Draining } from './draining.tsx'
@@ -220,7 +221,7 @@ export function Card({
           </li>
         ) : null}
         {card.turns !== null ? <li className="pill">{card.turns} turns</li> : null}
-        {card.costUsd !== null ? <li className="pill">${card.costUsd.toFixed(2)}</li> : null}
+        {billHasAny(card.costUsd) ? <li className="pill">{billText(card.costUsd)}</li> : null}
         {/* **The counters are the fallback, not the reading** (#170).
 
             `1 passed` and a green `prepared` segment are one fact at two
@@ -266,9 +267,9 @@ export function Card({
             The column is still `repair_costs`; renaming it is a projection
             change and a rebuild, and this is the reading, which is what a person
             sees. */}
-        {card.repairCostUsd !== null ? (
+        {billHasAny(card.repairCostUsd) ? (
           <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
-            ${card.repairCostUsd.toFixed(2)} answering
+            {billText(card.repairCostUsd)} answering
           </li>
         ) : null}
         {/* **Which round, as one object** (#170). A card that keeps failing
@@ -505,7 +506,7 @@ export function LandedRow({
     card.closed ? 'closed' : null,
     card.kind,
     card.turns === null ? null : `${card.turns} turns`,
-    card.costUsd === null ? null : `$${card.costUsd.toFixed(2)}`,
+    billHasAny(card.costUsd) ? billText(card.costUsd) : null,
     // The lane's own word is on the card; here the column heading is already
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),

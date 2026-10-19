@@ -75,6 +75,12 @@ export const spendProjection: Projection = {
         cost_usd    double precision,
         usage       jsonb not null
       )`)
+    // `readSpend({ ticket })` and `readSpend({ project })` are both filters on
+    // a table that grows with the log's whole lifetime (0110 §10's six
+    // places, several per pass) — without these, every board render scans
+    // every row ever to bill the handful of cards on screen.
+    await ctx.query('create index if not exists spend_ticket_idx on spend (ticket)')
+    await ctx.query('create index if not exists spend_project_idx on spend (project)')
 
     // Which ticket a stream `RunSpent` arrives on is about. Kept here and not
     // read from another projection's run-link table, for `backlog.ts`'s

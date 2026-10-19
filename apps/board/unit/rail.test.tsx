@@ -36,6 +36,13 @@ import { describe, expect, it } from 'vitest'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
 import { foldProgress } from '../src/lib/progress.ts'
+import { emptyBill, type Bill } from '../src/lib/spend.ts'
+
+/** A bill with one reported row, for a card fixture that wants a single dollar figure. */
+function billFor(usd: number | null): Bill {
+  if (usd === null) return emptyBill()
+  return { reportedCents: Math.round(usd * 100), reportedRuns: 1, estimates: [], unknown: 0 }
+}
 
 const CSS = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
 
@@ -360,7 +367,18 @@ const card = (
   plan = PLAN,
   over = false,
   limits: { rounds: number; restarts: number } | null = null,
-) => toCard(task(t), null, foldProgress(events, plan, over), null, limits)
+) => {
+  const merged = task(t)
+  return toCard(
+    merged,
+    null,
+    foldProgress(events, plan, over),
+    null,
+    limits,
+    billFor(merged.costUsd),
+    billFor(merged.repairCostUsd),
+  )
+}
 
 const render = (
   t: Partial<TaskCard>,
