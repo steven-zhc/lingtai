@@ -1565,13 +1565,19 @@ decision rather than a loss.** This section is that habit, written out as
 commands rather than relearned each time.
 
 **A reset is not something to reach for.** It is cheap only while
-[0019](decisions-archive/0019-a-second-reset.md)'s precondition holds — no run
-in the log that anybody outside this repository depends on — and
-[0118](decisions/0118-a-hold-explains-itself.md) §1 is why #445's reshape of
-`WorkItemBlocked` chose this over an upcaster: *"There is no upcaster: before
-1.0 the log is reset across a change of shape, as it was in 007 and 010."*
-Where the precondition stops holding, the cost moves from this page to the
-read path, which is the other half of that choice.
+[0019](decisions-archive/0019-a-second-reset.md)'s precondition holds in
+full — no run in the log that anybody outside this repository depends on,
+**and** every run in it archived first. The *Archive* step below is what
+satisfies the second half now: it still runs before *Reset*, every time —
+it only stops committing the result under `doc/experiments/`, the way 007,
+010, 013 and 014 did, for the reason given where that step explains itself:
+the log now holds whole prompts, ticket bodies and raw tool output that a
+habit of committing would commit by default. [0118](decisions/0118-a-hold-explains-itself.md)
+§1 is why #445's reshape of `WorkItemBlocked` chose this over an upcaster:
+*"There is no upcaster: before 1.0 the log is reset across a change of
+shape, as it was in 007 and 010."* Where the no-outside-dependents half
+stops holding, the cost moves from this page to the read path, which is the
+other half of that choice.
 
 ### Before
 
@@ -1642,6 +1648,24 @@ is then read by nothing, so editing it there changes nothing. Either way,
 labelling an issue before the matching line is edited changes nothing, and
 the queue offers it again next pass regardless.
 
+**The board is what the next two notes are read off, and `service shutdown`
+just stopped it.** The drain's `stopBoard` call is unconditional once the job
+is loaded (`apps/cli/src/service.ts:1662`), so a supervised machine reaches
+this point with no board running — and *After* refuses the one supervisor verb
+that would bring it back, `service start` included, until those notes are
+done. Bring the board back on its own instead, the same command the
+supervisor's own job runs:
+
+```bash
+pnpm lingtai board start --no-open
+```
+
+Read it for the two notes below, then take it down again —
+`pnpm lingtai board stop` — before moving on. Neither verb here touches the
+daemon or the supervisor: `board start` and `board stop` hold a lock of their
+own (`apps/cli/src/board.ts:218`), never the conductor's, so reading the board
+this way claims nothing and starts no pass.
+
 **Note what is held, then hold it against the reset too.** A reset forgets
 which work items the log remembers as blocked, and the queue does not leave a
 held item alone on its own — it takes `agent:hold`, not a memory of why, and
@@ -1711,9 +1735,14 @@ pnpm lingtai backlog <project> --all
 ```
 
 and keep what it prints — every accepted and declined finding, and the reason
-given for each decline. Nothing here restores a decision; what the note buys
-is the reason, so a finding raised again after the reset is declined on the
-same grounds rather than relitigated from zero.
+given for each decline. Nothing here restores a decision inside
+`finding_backlog` itself; what the note buys is a quick read of the reason
+without restoring anything. The archive the next step makes holds the same
+findings underneath it, in the `events` that projection folds from, and can
+be read back by restoring and querying it the way the Check step below
+restores and queries the rest of the dump — slower than this note, not
+impossible. Either way, a finding raised again after the reset is declined
+on the same grounds rather than relitigated from zero.
 
 **Note the spend total too — a reset empties `spend` the same way.**
 `spendProjection` is a fold of `RunSpent` and nothing else
@@ -1725,18 +1754,26 @@ cost is gone once that step runs, unless it is noted first:
 select project, sum(cost_usd) from spend group by project;
 ```
 
-and keep what it prints. Nothing here restores the figures; the note is the
-only record of what was spent before this reset, once `/spend` and the bar
-read zero for all history again.
+and keep what it prints. Nothing here restores the figures inside `spend`
+itself; the note is the quick record. The archive the next step makes holds
+the same `RunSpent` rows, recoverable by restoring and querying it the way
+the Check step below restores and queries the rest of the dump, once
+`/spend` and the bar read zero for all history again.
 
 ### Archive — outside the repository, by default
 
 **Dump the log to a file under `~/.lingtai/archive/`, not into this
-repository.** 007, 010, 013 and 014 are committed because each was read by hand
-first and found to hold nothing that should not be: three or fifty-six events
-from a handful of runs, or no rows at all. The log now holds whole prompts,
-ticket bodies and raw tool output, and a runbook that defaults to committing an
-archive would commit all of that by habit, for every reset after this one.
+repository.** 007 and 010 are committed as verbatim transcripts — 106 events
+from three runs, and 56 from three more — each read by hand first and found
+to hold nothing that should not be, back when the old database being the
+only copy left no other way to keep it. 013 and 014 committed no event
+content at all to vet: 013 is a fold of counts read from a live database
+that stayed queryable, not a transcript — at 13,481 events *"a transcript
+was not an option"* and *"this one transcribes nothing"* (013:5,14) — and
+014 carries no numbers because the agent writing it could not reach the log
+to begin with (014:13-18). The log now holds whole prompts, ticket bodies
+and raw tool output, and a runbook that defaults to committing an archive
+would commit all of that by habit, for every reset after this one.
 
 ```bash
 umask 077
@@ -1864,6 +1901,20 @@ where rn = 1 and type = 'WorkItemBlocked';
 Compare that list, not just its count, against what you noted in the
 held-items note. A list that agrees is the restore check passing; a list that
 disagrees is a dump taken too late, or a hold the board did not show.
+
+**Postgres: drop the scratch database once this check is done, pass or
+fail.** `createdb` above fails outright on a name that already exists, so a
+`lingtai_reset_check` left on the server blocks the next reset's own check
+before it runs:
+
+```bash
+dropdb --maintenance-db=<the log's own direct connection string> lingtai_reset_check
+```
+
+The archive itself is the dump file made in the step above, not this scratch
+database — dropping it loses nothing the next reset needs. SQLite has no
+scratch database to drop; the backup file opened in place above is the
+archive, not a copy made for this check alone.
 
 ### Reset
 
@@ -2016,14 +2067,18 @@ recipes and the environment files are all untouched.
 - **What was decided about a minor finding.** `finding_backlog` folds to
   nothing along with everything else, so an accept or a decline — and the
   reason given for either — is gone unless the *Before* step above noted it.
-  Without that note, the next cold review raises a declined finding again and
-  a person re-decides it with nothing to go on.
+  Without that note, the next cold review raises a declined finding again,
+  and a person re-decides it with nothing to go on short of restoring the
+  archive dump and reading `events` back out of it, the way the Check step
+  above does.
 - **What has been spent.** `spendProjection` is a fold of `RunSpent` and
   nothing else (`packages/projector/src/spend.ts:1-12`, 0110 §11), so emptying
   `events` erases every run's recorded cost — `/spend` and the bar's spend
   objects read zero for all history once this section's own *After* step
   rebuilds the projection. Without the note in the *Before* step above, the
-  totals are gone for good.
+  totals are gone from `spend` for good — recoverable only by restoring the
+  archive dump and re-querying `events`, the way the Check step above does,
+  not by anything rebuilt here.
 - **Which GitHub App Lingtai minted.** `GitHubAppCreated` on the
   `ctl-github-app` stream (`packages/conductor/src/create-app.ts:596-606`) is
   the only record that an App exists — it is not only the state of the world,
