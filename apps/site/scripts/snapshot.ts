@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { rm, writeFile } from 'node:fs/promises'
 
+import { readSpend } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 
-import { SNAPSHOT_FILE, takeBoard } from '../src/lib/snapshot.ts'
+import { SNAPSHOT_FILE, spendByTicket, takeBoard } from '../src/lib/snapshot.ts'
 
 /**
  * Takes the board on the front page.
@@ -122,7 +123,14 @@ async function main(): Promise<void> {
     return
   }
 
-  const snapshot = takeBoard(tasks, { open, capturedAt, commit: head() })
+  // This board's whole `spend`, by the same tickets `tasks` already named —
+  // one read, never per card (`#498`, the reason `loadBoard` reads it once
+  // too).
+  const tickets = tasks.map((t) => t.taskId)
+  const rows = await readSpend({ url, ticket: tickets })
+  const spend = spendByTicket(rows, tickets)
+
+  const snapshot = takeBoard(tasks, { open, capturedAt, commit: head(), spend })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
 
   const total = snapshot.totals.cards

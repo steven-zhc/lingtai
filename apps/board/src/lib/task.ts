@@ -56,6 +56,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
+import { readSpend, type SpendRow } from '@lingtai/projector'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
@@ -64,6 +65,7 @@ import { describeHeld, elapsed, foldProgress, type RunProgress } from './progres
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
+import { billHasAny, billOf, billText, emptyBill, PURPOSES, totalBill, type Bill, type Purpose } from './spend.ts'
 
 export interface Finding {
   file: string
@@ -244,7 +246,13 @@ export interface RunView {
   recipe?: RunRecipe
   /** From `RunFinished`. Null until it lands, and for a run that never got there. */
   turns: number | null
-  costUsd: number | null
+  /**
+   * Every purpose's bill folded into one, over the `spend` rows whose `pass`
+   * is this run's own stream (`#498`). `foldRun` cannot read it — there is no
+   * database inside a pure fold — so it returns an empty bill here and
+   * `loadTask` fills it in, the same way it fills in `recipe`.
+   */
+  costUsd: Bill
   durationMs: number | null
   outcome: RunOutcome
   /** Every path, once, in the order it was first touched. */
@@ -281,51 +289,33 @@ export interface RunView {
 }
 
 /**
- * What the attempts cost, added up.
+ * What the attempts cost, added up, by purpose (`#498`, 0110 §7).
  *
  * On the section's own label rather than in a band of its own: a summary that
  * sits apart from what it summarises is a second copy of the same arithmetic,
  * and the two disagree the first time one of them is changed (design, layout
  * notes).
  *
- * `repairUsd` is apart from `costUsd` for the reason the board keeps it apart
- * (#84): a repair was default-on and spent an agent without being asked again,
- * so folding the two into one figure is exactly the invisible bill. It is zero
- * on every ticket since `#143`, because nothing buys one — and the split is
- * dropped when there is only one kind of money, so those cards say nothing
- * about it.
+ * **Five bills, not two.** *Answering* is apart from *Work* for the reason
+ * the board keeps it apart (#84): a repair was default-on and spent an agent
+ * without being asked again, so folding the two into one figure is exactly
+ * the invisible bill. *Judge* and *Triage* are new here — `task_view` never
+ * carried either — and *Discussion* is apart from the attempts' for the
+ * reason it always was: discussions come out of the same budget, and 0033 §4
+ * gives one a meter rather than a limit, so hiding its number inside another
+ * one would make the person who is supposed to be the limit unable to see
+ * what they are limiting.
  *
- * `discussions` and `discussionUsd` arrived with `#105`. They are apart from
- * the attempts' figures for the reason `repairUsd` is apart from `costUsd`:
- * they come out of the same budget, and 0033 §4 gives a discussion a meter
- * rather than a limit — so hiding the number inside another one would make the
- * person who is supposed to be the limit unable to see what they are limiting.
+ * `discussions` arrived with `#105`, counting conversations rather than
+ * dollars — the dollars are `byPurpose.Discussion` now.
  */
 export interface Totals {
   attempts: number
   turns: number
   durationMs: number
-  /** What the work cost. */
-  costUsd: number
-  /** What diagnosing it cost. */
-  repairUsd: number
   /** How many conversations have been held about this item. */
   discussions: number
-  /** What asking cost. */
-  discussionUsd: number
-  /**
-   * What this ticket has cost, whole: the work, the repairs and the asking.
-   *
-   * **The number a person acts on**, and the one the label led without. Three
-   * figures and no sum left `$13.04` — the figure `#89` is remembered by, and
-   * the one that decides whether a fourth attempt is worth buying — as
-   * arithmetic every reader did in their head (#111).
-   *
-   * Summed here rather than in the label, so the split and the total come off
-   * one fold. A component that added its own would be the second copy of the
-   * arithmetic the layout notes refuse a summary band for.
-   */
-  totalUsd: number
+  byPurpose: Record<Purpose, Bill>
 }
 
 /**
@@ -1003,7 +993,6 @@ export function foldRun(
   let headSha: string | null = null
   let configHash: string | null = null
   let turns: number | null = null
-  let costUsd: number | null = null
   let durationMs: number | null = null
   let exitCode: number | null = null
   let failure: string | null = null
@@ -1067,9 +1056,6 @@ export function foldRun(
         finished = true
         turns = Number(d['turns'] ?? 0)
         durationMs = Number(d['durationMs'] ?? 0)
-        // Nullable in the catalogue, and a null is not a zero: a run whose cost
-        // was never reported has not been shown to be free.
-        costUsd = d['costUsd'] === null || d['costUsd'] === undefined ? null : Number(d['costUsd'])
         exitCode = Number(d['exitCode'] ?? 0)
         break
 
@@ -1159,7 +1145,9 @@ export function foldRun(
     headSha,
     configHash,
     turns,
-    costUsd,
+    // Filled in by `loadTask`, from `spend` — this fold has no database to
+    // read it off (0110 §13: `RunFinished` stopped being a spend source).
+    costUsd: emptyBill(),
     durationMs,
     outcome: outcomeOf({ failure, finished, exitCode, started, released: claim.released }),
     files: [...files.values()],
@@ -1199,41 +1187,55 @@ function outcomeOf(seen: {
   return { state: 'claimed', detail: 'nothing on its stream' }
 }
 
-/** What the attempts cost, added up. See `Totals`. */
-export function totalsOf(runs: readonly RunView[], discussions: readonly DiscussionView[] = []): Totals {
-  const costUsd = runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0)
-  const repairUsd = runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0)
-  const discussionUsd = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0)
+/**
+ * What the attempts cost, added up. See `Totals`.
+ *
+ * `rows` is this ticket's whole `spend` — `loadTask`'s `readSpend({ ticket })`
+ * — and `billOf` is the one classifier every purpose goes through, here as
+ * everywhere else: a fact one layer down the stack must not also decide its
+ * own purpose.
+ */
+export function totalsOf(
+  runs: readonly RunView[],
+  discussions: readonly DiscussionView[] = [],
+  rows: readonly SpendRow[] = [],
+): Totals {
   return {
     attempts: runs.length,
     turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
     durationMs: runs.reduce((n, r) => n + (r.durationMs ?? 0), 0),
-    costUsd,
-    repairUsd,
     discussions: discussions.length,
-    discussionUsd,
-    totalUsd: costUsd + repairUsd + discussionUsd,
+    byPurpose: billOf(rows),
   }
+}
+
+const PURPOSE_LABEL: Record<Purpose, string> = {
+  Work: 'work',
+  Answering: 'answering',
+  Judge: 'judge',
+  Triage: 'triage',
+  Discussion: 'asking',
 }
 
 /**
  * The totals, as the Attempts label's one fact.
  *
- * **The total leads.** Two costs and no sum is arithmetic done by every reader:
- * `$13.04` is the number somebody acts on — it is what `#89` is remembered by,
- * and what decides whether a fourth attempt is worth buying — and the split is
- * detail (#111). So the sum first, then what bought it, then how it divides.
+ * **The total leads.** Five bills and no sum is arithmetic done by every
+ * reader: the figure in front is the number somebody acts on — it is what
+ * `#89` is remembered by, and what decides whether a fourth attempt is worth
+ * buying — and the split is detail (#111). So the sum first, then what
+ * bought it, then how it divides.
  *
- * It still divides, for the reason the board keeps it divided (#84, 0033 §4): a
- * repair is default-on and spends an agent without being asked again, and a
- * discussion has a meter instead of a limit. Those two figures have to be
- * *stated* and not merely derivable — but they are the detail, not the headline,
- * and the per-attempt figure stays on each attempt's own row.
+ * It still divides, for the reason the board keeps it divided (#84, 0033 §4):
+ * a repair is default-on and spends an agent without being asked again, and a
+ * discussion has a meter instead of a limit. Those figures have to be
+ * *stated* and not merely derivable — but they are the detail, not the
+ * headline, and the per-attempt figure stays on each attempt's own row.
  *
- * Money only when there is money: `RunFinished.costUsd` is nullable, so a run
- * whose cost was never reported has not been shown to be free and `$0.00` would
- * say it had. The split is dropped entirely when there is only one kind of
- * money, because `$7.81 · $7.81 work` is one fact twice.
+ * **`billText`'s table, not `$0.00`.** A purpose with nothing reported and no
+ * unknown run is dropped from the split entirely — `$7.81 · $7.81 work` is
+ * one fact twice — and a purpose with an unknown run says so rather than
+ * reading as free.
  *
  * `2 attempts + 3 discussions · …`, as the design's example reads it — and the
  * discussions are counted for the reason 0033's consequences give: they come
@@ -1244,14 +1246,14 @@ export function totalsOf(runs: readonly RunView[], discussions: readonly Discuss
 export function totalsFact(totals: Totals): string | null {
   if (totals.attempts === 0 && totals.discussions === 0) return null
   const held = totals.discussions
-  const split = [
-    totals.costUsd > 0 ? `$${totals.costUsd.toFixed(2)} work` : null,
-    totals.repairUsd > 0 ? `$${totals.repairUsd.toFixed(2)} repair` : null,
-    totals.discussionUsd > 0 ? `$${totals.discussionUsd.toFixed(2)} asking` : null,
-  ].filter((s): s is string => s !== null)
+  const total = totalBill(totals.byPurpose)
+  const split = PURPOSES.map((p) => {
+    const bill = totals.byPurpose[p]
+    return billHasAny(bill) ? `${billText(bill)} ${PURPOSE_LABEL[p]}` : null
+  }).filter((s): s is string => s !== null)
 
   return [
-    totals.totalUsd > 0 ? `$${totals.totalUsd.toFixed(2)}` : null,
+    billHasAny(total) ? billText(total) : null,
     `${totals.attempts} attempt${totals.attempts === 1 ? '' : 's'}` +
       (held > 0 ? ` + ${held} discussion${held === 1 ? '' : 's'}` : ''),
     totals.turns > 0 ? `${totals.turns} turns` : null,
@@ -1511,10 +1513,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // `readControl` gives: it is a handful of events, not a history. It is here
   // because a discussion that has not been concluded exists only as a request
   // on it — the work item learns about the conversation when it ends (0033 §6).
-  const [streams, ticket, control] = await Promise.all([
+  // `spend` beside the rest, for the same reason: this ticket's whole bill,
+  // read once rather than per run or per discussion (`#498`).
+  const [streams, ticket, control, spend] = await Promise.all([
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
     eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
+    readSpend({ ticket: taskId }),
   ])
 
   // **The only thing that decides a 404**, and it decides it after GitHub has
@@ -1573,7 +1578,11 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       : folded
   ).map((r) => {
     const recipe = recipes.get(r.runId)
-    return recipe ? { ...r, recipe } : r
+    // This attempt's own spend: the rows whose `pass` is this run's stream —
+    // `Action` and `Judge` both land there, because a dispatch within one
+    // pass appends to the pass's own stream (`spend.ts`, `@lingtai/projector`).
+    const costUsd = totalBill(billOf(spend.filter((row) => row.pass === r.runId)))
+    return recipe ? { ...r, recipe, costUsd } : { ...r, costUsd }
   })
 
   // The run the state names, folded with the recipe's bounds above — the same
@@ -1599,7 +1608,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     outgoing,
     queued,
     held,
-    totals: totalsOf(runs, discussions),
+    totals: totalsOf(runs, discussions, spend),
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is
     // that forty turns of exploration do not drown the thirty-six events this

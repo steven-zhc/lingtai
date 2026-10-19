@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
+import { billText } from '@/lib/spend'
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
 
 import { Evidence, RunDiff } from '../../evidence.tsx'
@@ -213,7 +214,7 @@ export function Attempt({
             one page along. */}
         <span className="afig">{run.turns === null ? '—' : `${run.turns} turns`}</span>
         <span className="afig">{run.durationMs === null ? '—' : elapsed(run.durationMs)}</span>
-        <span className="afig">{run.costUsd === null ? '—' : `$${run.costUsd.toFixed(2)}`}</span>
+        <span className="afig">{billText(run.costUsd)}</span>
         <span className="afig">
           {run.diff === null ? '—' : `${run.diff.files}f +${run.diff.insertions} −${run.diff.deletions}`}
         </span>

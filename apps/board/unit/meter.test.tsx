@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The discussion has a meter, and the ledger has a total.
  *
@@ -14,9 +13,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * Asserted on the markup for the reason `#101` established: these are facts
  * about what a reader is shown, not about the fold.
  */
+import type { SpendRow } from '@lingtai/projector'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Discussion } from '../src/app/discussion.tsx'
+import { emptyBill } from '../src/lib/spend.ts'
 import { totalsFact, totalsOf, type DiscussionView, type RunView } from '../src/lib/task.ts'
 
 function chat(over: Partial<DiscussionView> = {}): DiscussionView {
@@ -105,7 +107,7 @@ function run(over: Partial<RunView> = {}): RunView {
     headSha: null,
     configHash: null,
     turns: 73,
-    costUsd: 7.81,
+    costUsd: emptyBill(),
     durationMs: 700_000,
     outcome: { state: 'finished', detail: null },
     files: [],
@@ -118,18 +120,47 @@ function run(over: Partial<RunView> = {}): RunView {
   }
 }
 
+/** `round: 0` is Work, `round` at 1 or above is Answering (0039 §3); the other `for`s ignore it. */
+function spent(
+  purpose: SpendRow['purpose'],
+  round: number | null,
+  costUsd: number | null,
+  pass: string | null,
+): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-08T03:00:00Z'),
+    streamId: pass ?? 'chat-1',
+    ticket: 'wi-lingtai-1',
+    project: 'lingtai',
+    pass,
+    purpose,
+    step: purpose === 'Action' ? 'proposed' : null,
+    action: purpose === 'Action' ? 'build' : null,
+    round,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+  }
+}
+
 describe("the ledger's total", () => {
   /**
    * `$13.04` is the number a person acts on, so it is the first thing on the
-   * label. The split stays behind it because a repair is default-on and a
-   * discussion has a meter rather than a limit (#84, 0033 §4) — stated, but not
-   * the headline.
+   * label. The split stays behind it because answering a refusal is
+   * default-on and a discussion has a meter rather than a limit (#84, 0033
+   * §4) — stated, but not the headline. The money is `spend`'s, by purpose
+   * (`#498`) — `totalsOf`'s third argument, never `RunView.costUsd` or
+   * `DiscussionView.costUsd`.
    */
   it('leads with the sum and keeps the split behind it', () => {
     const fact = totalsFact(
       totalsOf(
-        [run(), run({ runId: 'run-2', attempt: 2, repair: true, costUsd: 5.23, turns: 74 })],
-        [chat({ held: 'none', costUsd: 0.42 })],
+        [run(), run({ runId: 'run-2', attempt: 2, turns: 74 })],
+        [chat({ held: 'none' })],
+        [spent('Action', 0, 7.81, 'run-1'), spent('Action', 1, 5.23, 'run-2'), spent('Discussion', null, 0.42, null)],
       ),
     )
 
@@ -137,7 +168,7 @@ describe("the ledger's total", () => {
     expect(fact).toContain('2 attempts + 1 discussion')
     expect(fact).toContain('147 turns')
     expect(fact).toContain('$7.81 work')
-    expect(fact).toContain('$5.23 repair')
+    expect(fact).toContain('$5.23 answering')
     expect(fact).toContain('$0.42 asking')
   })
 
@@ -146,14 +177,14 @@ describe("the ledger's total", () => {
    * twice, which is the disagreement a second copy of an arithmetic invites.
    */
   it('drops the split when there is only one kind of money', () => {
-    const fact = totalsFact(totalsOf([run()]))
+    const fact = totalsFact(totalsOf([run()], [], [spent('Action', 0, 7.81, 'run-1')]))
 
     expect(fact?.startsWith('$7.81 · 1 attempt · 73 turns')).toBe(true)
     expect(fact).not.toContain('work')
   })
 
   it('names no figure at all for an item nothing has reported a cost on', () => {
-    const fact = totalsFact(totalsOf([run({ costUsd: null })]))
+    const fact = totalsFact(totalsOf([run()]))
 
     expect(fact).toBe('1 attempt · 73 turns · 11m40s')
   })

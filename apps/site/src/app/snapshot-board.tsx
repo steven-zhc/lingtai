@@ -1,4 +1,4 @@
-import { elapsed, money, stamp, type Snapshot, type SnapshotCard, type SnapshotLane } from '@/lib/snapshot'
+import { elapsed, hasMoney, money, stamp, type Snapshot, type SnapshotCard, type SnapshotLane } from '@/lib/snapshot'
 
 /**
  * Lingtai's own board, on the front page.
@@ -117,7 +117,7 @@ function Landed({ lane }: { lane: SnapshotLane }) {
           <li key={i} className="lrow">
             <span className={card.ref === null ? 'withheld' : undefined}>{ref(card)}</span>
             <span className="proj">{card.project ?? ''}</span>
-            <span>{money(card.costUsd) ?? ''}</span>
+            <span>{hasMoney(card.costUsd) ? money(card.costUsd) : ''}</span>
           </li>
         ))}
       </ul>
@@ -134,7 +134,6 @@ function Rest({ more }: { more: number }) {
 
 function Card({ card }: { card: SnapshotCard }) {
   const age = elapsed(card.hoursSinceUpdate)
-  const cost = money(card.costUsd)
   return (
     <article className={`card ${accent(card)}`}>
       <div className="id">
@@ -155,7 +154,7 @@ function Card({ card }: { card: SnapshotCard }) {
       <ul className="meta">
         {age !== null && <li className={`pill${card.waiting ? ' sig' : ''}`}>{age}</li>}
         {card.turns !== null && <li className="pill">{card.turns} turns</li>}
-        {cost !== null && <li className="pill">{cost}</li>}
+        {hasMoney(card.costUsd) && <li className="pill">{money(card.costUsd)}</li>}
         {card.attempts > 1 && <li className="pill hold">attempt {card.attempts}</li>}
         {card.waiting && <li className="pill sig">blocked on you</li>}
       </ul>

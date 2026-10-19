@@ -10,6 +10,7 @@ import type { Envelope } from '@lingtai/domain'
  * forgot to mention it, which is why it is folded off the **ask** and not off
  * the answer.
  */
+import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { chatIdsFor, foldChat, totalsOf, type DiscussionView } from '../src/lib/task.ts'
@@ -159,17 +160,38 @@ describe('the ledger', () => {
    * `2 attempts + 3 discussions · $14.10`, as the design's example reads it.
    * Beside the attempts' money rather than inside it, for the reason `#84`
    * keeps a repair's spend apart: they come out of one budget, and folding two
-   * figures into one misstates both.
+   * figures into one misstates both. The money is `spend`'s now (`#498`),
+   * never `DiscussionView.costUsd` — `totalsOf`'s third argument.
    */
   it("counts discussions beside attempts and their money beside the work's", () => {
-    const totals = totalsOf([], [chat(0.42), chat(1.1), chat(null)])
+    const totals = totalsOf([], [chat(), chat(), chat()], [discussionSpent(0.42), discussionSpent(1.1)])
 
     expect(totals.discussions).toBe(3)
-    expect(totals.discussionUsd).toBeCloseTo(1.52, 5)
-    expect(totals.costUsd).toBe(0)
+    expect(totals.byPurpose.Discussion.reportedCents).toBe(152)
+    expect(totals.byPurpose.Work.reportedRuns).toBe(0)
   })
 })
 
-function chat(costUsd: number | null): DiscussionView {
-  return { chatId: 'chat-1', attempt: null, turns: [], costUsd, waiting: false, held: 'none' }
+function chat(): DiscussionView {
+  return { chatId: 'chat-1', attempt: null, turns: [], costUsd: null, waiting: false, held: 'none' }
+}
+
+function discussionSpent(costUsd: number | null): SpendRow {
+  return {
+    seq: '1',
+    at: new Date('2026-09-09T10:00:00Z'),
+    streamId: 'chat-1',
+    ticket: 'wi-lingtai-89',
+    project: 'lingtai',
+    pass: null,
+    purpose: 'Discussion',
+    step: null,
+    action: null,
+    round: null,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1000,
+    costUsd,
+    usage: [],
+  }
 }

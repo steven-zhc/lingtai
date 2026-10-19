@@ -4,8 +4,10 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { docRoot } from '@/lib/docs'
-import { money } from '@/lib/snapshot'
 import { ISSUES, TICKETS } from '@/lib/tickets'
+
+/** `$13.04`. `Ticket.costUsd` is a verified historical figure, never unknown — `snapshot.ts`'s `money` is a different type now (`#498`). */
+const money = (usd: number) => `$${usd.toFixed(2)}`
 
 /**
  * "Every figure on the page is real and traceable to a public ticket" (#116).
@@ -28,7 +30,7 @@ describe('the two tickets are traceable', () => {
       // a figure that drifted while the prose stayed still.
       expect(text, `doc/${ticket.source} does not mention #${ticket.ref}`).toContain(`#${ticket.ref}`)
       expect(text, `doc/${ticket.source} does not record ${money(ticket.costUsd)} for #${ticket.ref}`).toContain(
-        money(ticket.costUsd)!,
+        money(ticket.costUsd),
       )
     }
   })
