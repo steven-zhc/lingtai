@@ -1,7 +1,8 @@
 /**
  * `holdOfPass` against literals, classified by who sent the item to a
  * person (0118 §1, `8a669849`, #452) rather than by whether `stopped` is
- * set.
+ * set. Builds a `WaitReason` since #502 — the retired `Hold` translation
+ * layer is gone.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -12,21 +13,18 @@ const BASE_INPUT: HoldOfPassInput = {
   lastRoute: null,
   ceilingHit: null,
   declined: null,
-  findings: [],
   runId: 'pass-1',
-  branch: 'agent/1',
-  base: 'main',
   integrationRefusal: null,
 }
 
 describe('holdOfPass', () => {
   it('reads a merge refusal with a RefusalReason as MergeRefused, with the integration evidence', () => {
-    const hold = holdOfPass({
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: { step: 'merge', ending: { ending: 'refused', because: 'dirty-base', at: null, detail: 'main moved' } },
       integrationRefusal: { paths: ['a.ts'], baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) },
     })
-    expect(hold).toMatchObject({
+    expect(reason).toMatchObject({
       _tag: 'MergeRefused',
       run: { runId: 'pass-1' },
       reason: 'dirty-base',
@@ -34,133 +32,128 @@ describe('holdOfPass', () => {
       paths: ['a.ts'],
       baseSha: 'a'.repeat(40),
       headSha: 'b'.repeat(40),
-      // The pass's own refusal: nobody has approved this sha yet.
-      afterApproval: false,
     })
   })
 
-  it('reads a merge refusal whose `because` is not a RefusalReason as CheckRed', () => {
+  it('reads a merge refusal whose `because` is not a RefusalReason as CheckRefused', () => {
     // A declared `run:` refused with `action-refused` before the lane ran at
     // all — a free string, not one of the lane's own four reasons.
-    const hold = holdOfPass({
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: {
         step: 'merge',
         ending: { ending: 'refused', because: 'action-refused', at: 'verify', detail: 'exit 1' },
       },
     })
-    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'pass-1' }, step: 'merge', why: 'exit 1', raw: 'exit 1' })
-  })
-
-  it('reads a turn ceiling as Ceiling, carrying what the runtime reported', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      ceilingHit: { kind: 'out-of-turns', detail: '151 turns, and the recipe allows 151', turns: 151, costUsd: 20.81 },
-    })
-    expect(hold).toEqual({
-      _tag: 'Ceiling',
+    expect(reason).toEqual({
+      _tag: 'CheckRefused',
       run: { runId: 'pass-1' },
-      kind: 'out-of-turns',
-      detail: '151 turns, and the recipe allows 151',
-      turns: 151,
-      costUsd: 20.81,
-    })
-  })
-
-  it('reads the router having sent the pass to a person as Routed, when: findings', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      stopped: null,
-      lastRoute: { from: 'review', to: 'waiting', why: 'a blocker was found' },
-      findings: [{ severity: 'blocker', file: 'x.ts', line: 1, claim: 'c', failureScenario: 's' }],
-    })
-    expect(hold).toMatchObject({
-      _tag: 'Routed',
-      when: 'findings',
-      why: 'agent/1 into main is waiting on you. a blocker was found',
-      raw: 'a blocker was found',
-      findings: [{ severity: 'blocker' }],
-    })
-  })
-
-  it('falls back to a generic line when stopped and lastRoute are both null', () => {
-    const hold = holdOfPass({ ...BASE_INPUT, stopped: null, lastRoute: null })
-    expect(hold).toMatchObject({
-      _tag: 'Routed',
-      why: 'agent/1 into main is waiting on you. the pass was held for a person',
-    })
-  })
-
-  it('reads a step that stopped to ask as Asked', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      stopped: { step: 'design', ending: { ending: 'asked', at: 'draft', detail: 'which base?' } },
-    })
-    expect(hold).toEqual({ _tag: 'Asked', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' })
-  })
-
-  it('reads a declared human: action as Human, source: declared', () => {
-    const hold = holdOfPass({
-      ...BASE_INPUT,
-      stopped: { step: 'proposed', ending: { ending: 'held', at: 'human', question: 'go ahead?' } },
-    })
-    expect(hold).toEqual({
-      _tag: 'Human',
-      run: { runId: 'pass-1' },
-      step: 'proposed',
-      source: 'declared',
-      question: 'go ahead?',
+      step: 'merge',
+      action: 'verify',
+      evidence: 'exit 1',
       findings: [],
     })
   })
 
-  it('reads --no-merge at merge as Human, source: injected', () => {
-    const hold = holdOfPass({
+  it('reads a turn ceiling as BudgetExhausted, carrying what the runtime reported', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
-      stopped: { step: 'merge', ending: { ending: 'held', at: 'human', question: '--no-merge' } },
+      ceilingHit: { kind: 'out-of-turns', detail: '151 turns, and the recipe allows 151', turns: 151, costUsd: 20.81 },
     })
-    expect(hold).toMatchObject({ _tag: 'Human', step: 'merge', source: 'injected' })
+    expect(reason).toEqual({
+      _tag: 'BudgetExhausted',
+      run: { runId: 'pass-1' },
+      cause: 'out-of-turns',
+      detail: '151 turns, and the recipe allows 151',
+    })
   })
 
-  it('carries a live finding onto a Human at merge, so the merge veto can see it', () => {
-    const finding = { severity: 'major' as const, file: 'x.ts', line: 4, claim: 'claim', failureScenario: 'scenario' }
-    const hold = holdOfPass({
+  it('reads the router having sent the pass to a person as ProposedEscalated, a ReviewFindings proposal', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
-      stopped: { step: 'merge', ending: { ending: 'held', at: 'human', question: '--no-merge' } },
-      findings: [finding],
+      stopped: null,
+      lastRoute: { from: 'review', to: 'waiting', why: 'a blocker was found' },
     })
-    expect(hold).toMatchObject({ _tag: 'Human', findings: [finding] })
+    expect(reason).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'ReviewEmpty' },
+      because: { _tag: 'JudgeHandedOver', why: 'a blocker was found' },
+    })
   })
 
-  it('reads a `prepared` refusal as SetupRefused, lifts: person — excluded from step 1 by name', () => {
-    const hold = holdOfPass({
+  it('falls back to a generic line when stopped and lastRoute are both null', () => {
+    const reason = holdOfPass({ ...BASE_INPUT, stopped: null, lastRoute: null })
+    expect(reason).toMatchObject({
+      _tag: 'ProposedEscalated',
+      because: { _tag: 'JudgeHandedOver', why: 'the pass was held for a person' },
+    })
+  })
+
+  it('reads a step that stopped to ask as AgentQuestion', () => {
+    const reason = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'design', ending: { ending: 'asked', at: 'draft', detail: 'which base?' } },
+    })
+    expect(reason).toEqual({ _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' })
+  })
+
+  it('reads a declared human: action as SignoffRequired', () => {
+    const reason = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'proposed', ending: { ending: 'held', at: 'human', question: 'go ahead?' } },
+    })
+    expect(reason).toEqual({
+      _tag: 'SignoffRequired',
+      run: { runId: 'pass-1' },
+      step: 'proposed',
+      action: 'human',
+      question: 'go ahead?',
+    })
+  })
+
+  it('reads --no-merge at merge as SignoffRequired too', () => {
+    const reason = holdOfPass({
+      ...BASE_INPUT,
+      stopped: { step: 'merge', ending: { ending: 'held', at: 'no-merge', question: '--no-merge' } },
+    })
+    expect(reason).toMatchObject({ _tag: 'SignoffRequired', step: 'merge', action: 'no-merge' })
+  })
+
+  it('reads a `prepared` refusal as SetupRefused — excluded from step 1 by name', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: {
         step: 'prepared',
-        ending: { ending: 'refused', because: 'no-settings', at: null, detail: 'ENOSPC' },
+        ending: { ending: 'refused', because: 'no-settings', at: 'install', detail: 'ENOSPC' },
       },
       lastRoute: { from: 'prepared', to: 'waiting', why: 'ENOSPC' },
     })
-    expect(hold).toEqual({
+    expect(reason).toEqual({
       _tag: 'SetupRefused',
       run: { runId: 'pass-1' },
       step: 'prepared',
-      lifts: 'person',
+      action: 'install',
       why: 'ENOSPC',
-      raw: 'ENOSPC',
     })
   })
 
-  it('reads a `proposed` refusal — the router itself, never routed — as CheckRed', () => {
-    const hold = holdOfPass({
+  it('reads a `proposed` refusal — the router itself, never routed — as CheckRefused', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: { step: 'proposed', ending: { ending: 'refused', because: 'action-refused', at: null, detail: 'boom' } },
     })
-    expect(hold).toEqual({ _tag: 'CheckRed', run: { runId: 'pass-1' }, step: 'proposed', why: 'boom', raw: 'boom' })
+    expect(reason).toEqual({
+      _tag: 'CheckRefused',
+      run: { runId: 'pass-1' },
+      step: 'proposed',
+      action: '',
+      evidence: 'boom',
+      findings: [],
+    })
   })
 
-  it('reads a did-not-finish ending as Declined when a fix round committed nothing and did not fail', () => {
-    const hold = holdOfPass({
+  it('reads a did-not-finish ending as FixerDisagrees when a fix round committed nothing and did not fail', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: {
         step: 'implement',
@@ -168,28 +161,27 @@ describe('holdOfPass', () => {
       },
       declined: { said: 'the findings describe a tradeoff, not a bug — I am not changing this' },
     })
-    expect(hold).toEqual({
-      _tag: 'Declined',
+    expect(reason).toEqual({
+      _tag: 'FixerDisagrees',
       run: { runId: 'pass-1' },
-      step: 'implement',
       said: 'the findings describe a tradeoff, not a bug — I am not changing this',
     })
   })
 
-  it('reads a did-not-finish ending as DidNotFinish', () => {
-    const hold = holdOfPass({
+  it('reads a did-not-finish ending as AgentCrashed', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: {
         step: 'implement',
         ending: { ending: 'did-not-finish', because: 'crashed', at: null, detail: 'Error: boom' },
       },
     })
-    expect(hold).toEqual({
-      _tag: 'DidNotFinish',
+    expect(reason).toEqual({
+      _tag: 'AgentCrashed',
       run: { runId: 'pass-1' },
       step: 'implement',
-      why: 'Error: boom',
-      raw: 'Error: boom',
+      cause: 'crash',
+      detail: 'Error: boom',
     })
   })
 
@@ -201,18 +193,13 @@ describe('holdOfPass', () => {
     expect(() => holdOfPass({ ...BASE_INPUT, stopped: neverRan })).toThrow()
   })
 
-  it('carries unpushed and repairOf through to the run on every variant', () => {
-    const hold = holdOfPass({
+  it('carries unpushed through to the run on every variant', () => {
+    const reason = holdOfPass({
       ...BASE_INPUT,
       stopped: { step: 'build', ending: { ending: 'refused', because: 'red', at: 'test', detail: 'exit 2' } },
       unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: { after: 'pass-0', reason: 'red' },
     })
-    if (hold._tag === 'Question') throw new Error('unreachable: holdOfPass never returns Question')
-    expect(hold.run).toEqual({
-      runId: 'pass-1',
-      unpushed: { branch: 'agent/1', said: 'stale info' },
-      repairOf: { after: 'pass-0', reason: 'red' },
-    })
+    if (reason._tag === 'OwnQuestion') throw new Error('unreachable: holdOfPass never returns OwnQuestion')
+    expect(reason.run).toEqual({ runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'stale info' } })
   })
 })

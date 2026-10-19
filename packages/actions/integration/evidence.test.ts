@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { plain } from '../src/command.ts'
-import { type ActionEvent, createProcessAction, runActionPipeline, tail } from '../src/index.ts'
+import { createProcessAction, runActionPipeline, tail } from '../src/index.ts'
 
 const fixture = join(import.meta.dirname, '..', 'test', 'fixtures', 'vitest-caused-by.ansi.txt')
 const coloured = readFileSync(fixture, 'utf8')

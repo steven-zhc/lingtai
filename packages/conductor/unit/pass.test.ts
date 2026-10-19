@@ -18,7 +18,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { Action, ActionContext, ActionEvent, ActionFinding, ActionResult } from '@lingtai/actions'
+import type { Action, ActionContext, ActionFinding, ActionResult } from '@lingtai/actions'
 import { STEPS, type Step } from '@lingtai/domain'
 import { StepMap, type StepAction } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
@@ -32,6 +32,7 @@ import {
   REFUSING_STEPS,
   outcomeOf,
   runPass,
+  type PassEvent,
   type PassOptions,
   type StepBodies,
   type StepBody,
@@ -251,8 +252,8 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
   return { actionsAt, judged }
 }
 
-const events: () => { emit: PassOptions['emit']; seen: ActionEvent[] } = () => {
-  const seen: ActionEvent[] = []
+const events: () => { emit: PassOptions['emit']; seen: PassEvent[] } = () => {
+  const seen: PassEvent[] = []
   return { emit: (event) => void seen.push(event), seen }
 }
 
@@ -326,7 +327,7 @@ describe('the file may omit a step; the resolved recipe may not', () => {
 
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
-    expect(result.routes).toEqual([])
+    expect(result.routes).toMatchObject([])
     // `claim` ran before this walk started (`claimStep`), so the walk itself
     // is `admit` through `end` — nine entries, not ten.
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
@@ -391,8 +392,10 @@ describe('a step that was configured is never skipped', () => {
   /**
    * And the action is *run*, not merely built. `runActionPipeline` is what runs
    * it — the loop calls it and does not reimplement it — so the proof is the
-   * action's own `run` having been entered, and the three events the pipeline
-   * emits for it arriving on the caller's `emit` untouched.
+   * action's own `run` having been entered. A `run:` action bills nothing
+   * (#502's pipeline emits `RunSpent` alone, and only for a paid call), so the
+   * absence of one is what shows the pipeline's own events reached `emit`
+   * untouched rather than being swallowed or duplicated.
    */
   it('runs the declared action rather than only building it', async () => {
     const recipe = recipeWith({ prepared: [{ name: 'install', run: 'pnpm install' }] })
@@ -422,9 +425,10 @@ describe('a step that was configured is never skipped', () => {
     await runPass({ recipe, context, emit, bodies, actionsAt })
 
     expect(entered).toBe(1)
-    // Requested, started, passed — the pipeline's three, and nothing from the
-    // seven other steps whose lists were empty.
-    expect(seen).toHaveLength(3)
+    // A `run:` action bills nothing, so the pipeline's own contribution to
+    // `emit` is none at all — only `pass.ts`'s own `StepStarted`/`StepEnded`
+    // per step reach it.
+    expect(seen.filter((e) => e.type === 'RunSpent')).toHaveLength(0)
   })
 })
 
@@ -785,7 +789,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // nothing but a person was ever on offer — and no ceiling stood between
     // the route taken and the one candidate the offer excluded (`RouteTaken`,
     // `#271`).
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'waiting',
@@ -818,7 +822,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // held with a person even though the round was there to spend and
     // `implement` was genuinely on offer (`#462`'s own fix round, finding 1:
     // this is not the same sentence a spent ceiling would have left).
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'implement',
         chose: 'waiting',
@@ -902,7 +906,7 @@ describe('every step that does not pass arrives at proposed', () => {
 
     // The route 0058 §3c names, and the step that asked is the step it went to:
     // nobody but `design` knows the question, so nothing else was on offer.
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       { from: 'design', chose: 'design', to: 'design', why: 'because a test said so', ceiling: null },
     ])
     // Null on the way through, and the question on the way back — which is the
@@ -1523,7 +1527,7 @@ describe('every step that does not pass arrives at proposed', () => {
       step: 'implement',
       ending: { ending: 'did-not-finish', because: 'threw' },
     })
-    expect(result.routes).toEqual([])
+    expect(result.routes).toMatchObject([])
   })
 })
 
@@ -1579,7 +1583,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
     // (0058 §3) — and the pass still bought a round on the first one's
     // findings and then landed.
     expect(result.steps.filter((s) => s.step === 'review').map((s) => s.ending.ending)).toEqual(['passed', 'passed'])
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'proposed',
         chose: 'implement',
@@ -1616,7 +1620,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, actionsAt })
 
-    expect(result.routes).toEqual([])
+    expect(result.routes).toMatchObject([])
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
   })
 })
@@ -1657,7 +1661,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
     // No judge declared, so the mechanical built-in answers `red` (`BUILT_IN_FOR`).
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'implement',
@@ -1793,7 +1797,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
 
     expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       { from: 'proposed', chose: 'claim', to: 'claim', why: 'because a test said so', ceiling: null },
     ])
     // The loop does not walk back to `claim` itself (that ran before this
@@ -1981,7 +1985,7 @@ describe('a visit is judged in the round the pass is in', () => {
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'implement',
@@ -2318,7 +2322,7 @@ describe('end runs on every ending and cannot refuse', () => {
     expect(seen.filter((s) => s.step === 'end')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'end')).toHaveLength(1)
     // And it is not taken to the router: `end` runs after the decision.
-    expect(result.routes).toEqual([])
+    expect(result.routes).toMatchObject([])
   })
 
   /**

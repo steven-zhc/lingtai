@@ -103,19 +103,18 @@ import {
   offerFor,
   routeNext,
   STEPS,
+  type JudgeReply,
   type PassNext,
+  type PayloadOf,
   type Proposal,
+  type RouteDecision,
+  type RouteOffer,
   type Step,
   type StepOutcome,
 } from '@lingtai/domain'
 import type { RunRef } from '@lingtai/domain/wait'
 import type { Recipe, StepAction } from '@lingtai/recipe'
 
-// Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
-// than over a step's actions — two functions with one name would be exactly
-// the collision #466's own header warns against (`adapters.ts`'s own doc
-// comment).
-import { outcomeOf as stepOutcomeOf } from './adapters.ts'
 import type { TerminalOutcome } from './end-step.ts'
 // `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -123,6 +122,29 @@ import type { TerminalOutcome } from './end-step.ts'
 // module-evaluation time, only inside a function called later.
 import { whatArrived, type Judged, type Judging } from './pass-steps.ts'
 import { ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
+// Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
+// than over a step's actions — two functions with one name would be exactly
+// the collision #466's own header warns against (`adapters.ts`'s own doc
+// comment).
+import { outcomeOf as stepOutcomeOf } from './step-outcome.ts'
+
+/**
+ * **Every event this file itself appends, beside the `RunSpent` the pipeline
+ * still writes through the same channel** (#502, 0120 §5). `runStep` writes
+ * `StepStarted` once per step, before the pipeline runs, and `StepEnded`
+ * once after, from the `StepOutcome` it already builds — neither for
+ * `claim` (0120 §6: it runs outside `runPass`, through `claimStep`) or
+ * `end` (whose plugins are never a verdicts pipeline at all).
+ *
+ * A wider type than `ActionEvent`, not a replacement for it: `options.emit`
+ * is this file's own channel, and `runActionPipeline`'s `PipelineOptions.emit`
+ * — a narrower `(event: ActionEvent) => …` — still accepts it, since every
+ * `ActionEvent` is a `PassEvent`.
+ */
+export type PassEvent =
+  | ActionEvent
+  | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
+  | { type: 'StepEnded'; data: PayloadOf<'StepEnded'> }
 
 // ------------------------------------------------------- the ten, as data ----
 
@@ -819,14 +841,16 @@ export interface PassOptions {
    */
   readonly context: ActionContext
   /**
-   * Every event the pipeline produces, in order, before the next action starts.
+   * Every event the pipeline produces, in order, before the next action
+   * starts — plus `StepStarted`/`StepEnded`, which `runStep` itself writes
+   * through this same channel (`PassEvent`, #502).
    *
-   * Passed straight through: the pipeline does not touch the store and neither
-   * does this, for the reason `PipelineOptions` gives — *an action that ran but
-   * whose verdict was never recorded is the failure this design exists to
-   * remove.*
+   * Passed straight through to the pipeline: it does not touch the store and
+   * neither does this, for the reason `PipelineOptions` gives — *an action
+   * that ran but whose verdict was never recorded is the failure this design
+   * exists to remove.*
    */
-  readonly emit: (event: ActionEvent) => Promise<void> | void
+  readonly emit: (event: PassEvent) => Promise<void> | void
   /**
    * The ten bodies.
    *
@@ -909,6 +933,19 @@ export interface RouteTaken {
    * own grounds. `ceilingFor` is the reading, off `Offer`'s two sets.
    */
   readonly ceiling: Ceiling | null
+  /**
+   * **The triple `PassRouted` actually stores** (0120 §5, #502): the offer
+   * `offerFor` built, the reply a judge gave it, and the decision
+   * `decideRoute` read off them. `from`/`chose`/`to`/`why`/`ceiling` above
+   * are this loop's own derived reading of the same three — `conduct.ts`'s
+   * run log and its round-counting read those; the event the conductor
+   * appends is built from these three instead, so a reader can replay
+   * `routeNext(offer, reply, decision)` rather than trusting a fourth field
+   * to agree with them.
+   */
+  readonly offer: RouteOffer
+  readonly reply: JudgeReply
+  readonly decision: RouteDecision
 }
 
 /** The two limits that take a destination off the offer. */
@@ -1175,6 +1212,9 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       to: routed.to,
       why: routed.why,
       ceiling: ceilingOf(chose, offer),
+      offer,
+      reply,
+      decision,
     })
 
     const next = routeNext(offer, reply, decision, { runId: options.context.runId })
@@ -1566,6 +1606,16 @@ async function runStep(
       // second call to `actionsAt` is not a guarantee that it returns the
       // same actions in the same order twice.
       const pipelineActions = options.actionsAt(spec.step, actions)
+      // **Once per step, before its pipeline runs — never for `claim`**
+      // (0120 §6, #502): `claimStep` calls this same function, and `claim`
+      // runs outside `runPass`, so its own visit writes neither this nor the
+      // `StepEnded` below.
+      if (spec.step !== 'claim') {
+        await options.emit({
+          type: 'StepStarted',
+          data: { runId: options.context.runId, step: spec.step, round: reaching.context.round ?? 0 },
+        })
+      }
       const result = await runActionPipeline({
         step: spec.step,
         actions: pipelineActions,
@@ -1601,6 +1651,13 @@ async function runStep(
       leftTheTreeAt = headFrom(result)
       wroteTheDesign = designFrom(result)
       outcome = stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result)
+      // **A `StepEnded` exists exactly where this ran, minus `claim`**
+      // (0120 §1, §6, #502): the verdicts pipeline just produced a real
+      // `StepOutcome`, so it is appended here, before the body — which `end`
+      // never reaches either, since its own plugins are never `'verdicts'`.
+      if (spec.step !== 'claim') {
+        await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome } })
+      }
       const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.

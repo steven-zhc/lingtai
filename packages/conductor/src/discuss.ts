@@ -542,9 +542,7 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
       proposal: data.proposal,
       turns,
       durationMs,
-      costUsd: cost,
       failure: data.failure,
-      ...(usage === undefined ? {} : { usage }),
     })
 
   for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
@@ -636,8 +634,16 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
 
 // -------------------------------------------------------------- conclude ----
 
+/** A `RunSpent` whose `for` names this discussion — `holdDiscussion`'s own one-per-process append. */
+function discussionSpends(events: readonly Envelope[]): { costUsd: number | null; usage?: Usage }[] {
+  return events
+    .filter((e) => e.type === 'RunSpent' && (e.data as { for: { _tag: string } }).for._tag === 'Discussion')
+    .map((e) => e.data as { costUsd: number | null; usage?: Usage })
+}
+
 /**
- * What a whole conversation cost, from its own stream.
+ * What a whole conversation cost, from its own stream's `RunSpent` rows —
+ * spend has one source and `DiscussionAnswered` is not it (0110 §2, #502).
  *
  * Null when nothing reported a figure — which is not the same as free, and is
  * why this is nullable rather than zero. `RunFinished.costUsd` is nullable for
@@ -645,16 +651,14 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
  */
 export function spendOf(events: readonly Envelope[]): number | null {
   let total: number | null = null
-  for (const e of events) {
-    if (e.type !== 'DiscussionAnswered') continue
-    const cost = (e.data as { costUsd?: unknown } | null)?.costUsd
-    if (typeof cost === 'number') total = (total ?? 0) + cost
+  for (const spent of discussionSpends(events)) {
+    if (spent.costUsd !== null) total = (total ?? 0) + spent.costUsd
   }
   return total
 }
 
 /**
- * What a whole conversation billed, from its own stream.
+ * What a whole conversation billed, from its own stream's `RunSpent` rows.
  *
  * `undefined` where no turn reported any — not the same as an empty bill, and
  * why this is optional rather than `[]`. `DiscussionHeld.usage` is optional for
@@ -662,10 +666,8 @@ export function spendOf(events: readonly Envelope[]): number | null {
  */
 export function usageOf(events: readonly Envelope[]): Usage | undefined {
   let total: Usage | undefined
-  for (const e of events) {
-    if (e.type !== 'DiscussionAnswered') continue
-    const parsed = Usage.safeParse((e.data as { usage?: unknown } | null)?.usage)
-    if (parsed.success) total = addUsage(total ?? [], parsed.data)
+  for (const spent of discussionSpends(events)) {
+    if (spent.usage !== undefined) total = addUsage(total ?? [], spent.usage)
   }
   return total
 }

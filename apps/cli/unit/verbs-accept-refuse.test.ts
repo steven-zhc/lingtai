@@ -49,7 +49,7 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  *   it is given does throw.
  */
 import { type Envelope, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
-import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWithdrawal } from '@lingtai/domain/test/events'
+import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWaitId, aWithdrawal } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -198,18 +198,23 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     const ticketId = workItemStream(PROJECT, 114)
     const item = makeStream(ticketId)
     const run = aRun('pass-114')
+    const waitId = aWaitId()
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-114'),
-      ...aWait(item, {
-        _tag: 'SignoffRequired',
-        run: aRunRef('pass-114'),
-        step: 'proposed',
-        action: 'unfixed',
-        question: 'approve this merge?',
-      }),
+      ...aWait(
+        item,
+        {
+          _tag: 'SignoffRequired',
+          run: aRunRef('pass-114'),
+          step: 'proposed',
+          action: 'unfixed',
+          question: 'approve this merge?',
+        },
+        waitId,
+      ),
     ])
     await seed(store, 'pass-114', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
-    await seed(store, ticketId, aResolution(item, { _tag: 'Requeue' }))
+    await seed(store, ticketId, aResolution(item, waitId, { _tag: 'Requeue' }, 'steven'))
 
     const result = await approveHolding(
       { project: PROJECT, issue: 114, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
@@ -348,9 +353,10 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 123)
     const item = makeStream(ticketId)
+    const firstWaitId = aWaitId()
     await seed(store, ticketId, [
-      ...aWait(item, { _tag: 'OwnQuestion', question: 'first wording', by: 'human:steven' }),
-      ...aWithdrawal(item),
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'first wording', by: 'human:steven' }, firstWaitId),
+      ...aWithdrawal(item, firstWaitId),
       ...aWait(item, { _tag: 'OwnQuestion', question: 'second wording', by: 'human:steven' }),
     ])
 

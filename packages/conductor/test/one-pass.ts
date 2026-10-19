@@ -34,45 +34,9 @@ import { resolveRecipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
-import { eventOf } from '../src/adapters.ts'
 import { runOnce } from '../src/conduct.ts'
 import type { PassOver } from '../src/pass.ts'
 import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
-
-/**
- * The eight `ActionEvent` types `runActionPipeline` can append, by name —
- * `@lingtai/actions`' own `ActionEvent` union has no runtime list of its
- * tags, and this is the one place that needs one.
- */
-const ACTION_EVENT_TYPES = new Set([
-  'StepRequested',
-  'StepStarted',
-  'StepPassed',
-  'StepFailed',
-  'StepNeverRan',
-  'StepDidNotFinish',
-  'StepAsked',
-  'ApprovalRequested',
-])
-
-/** `{type, step, action, onSha}` — what `once()` checks `eventOf` against, and nothing finer (`#466`). */
-function actionEventFields(type: string, data: { step?: unknown; action?: unknown; onSha?: unknown }) {
-  return { type, step: data.step, action: data.action, onSha: data.onSha }
-}
-
-/**
- * **Not the pipeline's** (`#466`). `conduct.ts`'s own held ending appends one
- * more `ApprovalRequested` directly to the run stream when the branch reached
- * origin and nothing already asked — the `--no-merge`/`merge: false` request,
- * named `judge` or `unfixed` for itself rather than for any action
- * (`conduct.ts:3480`, and its own comment on why: naming it after the action
- * that refused would overwrite that action's own verdict in `task_view`). No
- * `StepOutcome` produces it, because it is not one action's verdict — so it is
- * excluded here rather than chased into `eventOf`.
- */
-function isTheHeldEndingsOwnRequest(type: string, data: { action?: unknown }): boolean {
-  return type === 'ApprovalRequested' && (data.action === 'judge' || data.action === 'unfixed')
-}
 
 /**
  * The two tags, from the plain shape.
@@ -87,16 +51,18 @@ export const withPorts = (ports: RunPorts) =>
 
 /**
  * **The proof against #461's fixture, run on every call rather than once**
- * (`#466`). `onPass` hands this the `PassOver` the moment `runOnce` has it,
- * and after the call returns, the one `pass-*` stream this attempt opened is
- * checked against `eventOf` of the very same `pass.steps` — so a mismatch is
- * `adapters.ts` disagreeing with the pipeline it is adapting, caught here
- * rather than copied into every fixture row by hand (the file header of
- * `unit/what-a-pass-writes-today.test.ts` explains why a copy would not do).
+ * (`#466`, and #502's own switch). `onPass` hands this the `PassOver` the
+ * moment `runOnce` has it, and after the call returns, the one `pass-*`
+ * stream this attempt opened is checked against the very same `pass.steps`
+ * — so a mismatch is `runStep` (`pass.ts`) disagreeing with the `StepOutcome`
+ * it just built, caught here rather than copied into every fixture row by
+ * hand (the file header of `unit/what-a-pass-writes-today.test.ts` explains
+ * why a copy would not do).
  *
- * Checks `{type, step, action, onSha}` alone: `evidence` and `findings`
- * carry prose and data this adapter is not asked to reproduce byte for byte,
- * and the ticket's own claim is about which events landed, not their text.
+ * Since #502 there is no translation to check: `StepEnded.data.outcome` is
+ * the `StepOutcome` itself, verbatim, so this compares the stored outcomes
+ * directly against `pass.steps[].outcome` rather than reconstructing an
+ * event from it first.
  */
 export const once = async (options: Parameters<typeof runOnce>[0] & { client: GitHubClient }, ports: RunPorts) => {
   const before = options.store === undefined ? new Set<string>() : new Set(streams(options.store).keys())
@@ -120,12 +86,24 @@ export const once = async (options: Parameters<typeof runOnce>[0] & { client: Gi
     const newRunId = [...streams(options.store).keys()].find((id) => id.startsWith('pass-') && !before.has(id))
     if (newRunId !== undefined) {
       const written = streams(options.store).get(newRunId) ?? []
+      type Outcome = { actions: readonly { plugin: string }[] }
+      // The "merge it anyway" offer (`conduct.ts`'s own pseudo-action, named
+      // `judge`/`unfixed`) appends its own `StepEnded` directly, outside the
+      // walk `runPass` returns — `pass.steps` never carries it, because it is
+      // built after `runPass` already returned, from the ending the walk
+      // stopped at rather than from a visit the walk itself made. Excluded by
+      // its own `plugin: 'conductor'`, the one plugin name no recipe-declared
+      // or default action ever carries.
       const actual = written
-        .filter((e) => ACTION_EVENT_TYPES.has(e.type) && !isTheHeldEndingsOwnRequest(e.type, e.data as object))
-        .map((e) => actionEventFields(e.type, e.data as { step?: unknown; action?: unknown; onSha?: unknown }))
-      const expected = pass.steps
-        .flatMap((s) => (s.outcome === undefined ? [] : eventOf(s.outcome, newRunId)))
-        .map((e) => actionEventFields(e.type, e.data))
+        .filter((e) => e.type === 'StepEnded')
+        .map((e) => (e.data as { outcome: Outcome }).outcome)
+        .filter((outcome) => !outcome.actions.some((a) => a.plugin === 'conductor'))
+      // `claim` runs through the same `runStep` and so computes a real outcome
+      // too, but never gets a `StepEnded` of its own (0120 §6, #502: `claim`
+      // runs outside `runPass`, and `runStep` skips the emit by name for it) —
+      // excluded here for the same reason `conduct.ts`'s own `[claimed,
+      // ...pass.steps]` is never compared to the wire event-for-event.
+      const expected = pass.steps.filter((s) => s.step !== 'claim' && s.outcome !== undefined).map((s) => s.outcome)
       expect(actual).toEqual(expected)
     }
   }

@@ -73,7 +73,9 @@ describe('routesOf', () => {
     const item = makeStream('ticket-1')
     const offer = {
       proposal: { _tag: 'ReviewFindings' as const, findings: [] },
-      available: [{ id: 'restart', next: { _tag: 'Requeued' as const, cause: { _tag: 'Restart' as const, restart: 1 } } }],
+      available: [
+        { id: 'restart', next: { _tag: 'Requeued' as const, cause: { _tag: 'Restart' as const, restart: 1 } } },
+      ],
       unavailable: [],
     }
     const reply = { _tag: 'Selected' as const, candidate: 'restart', why: 'patching will not converge' }
@@ -81,8 +83,9 @@ describe('routesOf', () => {
     const events = aRoute(run, { offer, reply, decision }, item)
 
     const release = events.find((e) => e.type === 'TicketReleased')
-    expect(release?.streamId).toBe('ticket-1')
-    expect((release?.data as { cause: unknown }).cause).toEqual({ _tag: 'Restart', restart: 1 })
+    if (release === undefined) throw new Error('no TicketReleased was appended')
+    expect(release.streamId).toBe('ticket-1')
+    expect((release.data as { cause: unknown }).cause).toEqual({ _tag: 'Restart', restart: 1 })
   })
 })
 
@@ -128,7 +131,11 @@ describe('cardFactOf', () => {
     const outcome: StepOutcome = {
       step: 'build',
       round: 0,
-      actions: [verdict('tsc', 'sha-a', true), verdict('test', 'sha-a', false), { ...verdict('lint', 'sha-a', true), result: { _tag: 'NotReached' } } as Action],
+      actions: [
+        verdict('tsc', 'sha-a', true),
+        verdict('test', 'sha-a', false),
+        { ...verdict('lint', 'sha-a', true), result: { _tag: 'NotReached' } } as Action,
+      ],
     }
     const events = run.aStepEnded(outcome)
     const facts = events.flatMap(cardFactOf)
@@ -143,7 +150,9 @@ describe('cardFactOf', () => {
     const item = makeStream('ticket-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }
     const facts = aWait(item, reason).flatMap(cardFactOf)
-    expect(facts).toEqual([{ _tag: 'WaitStarted', reason, card: { question: 'which base?', needs: 'judgement', diagnosis: null } }])
+    expect(facts).toEqual([
+      { _tag: 'WaitStarted', reason, card: { question: 'which base?', needs: 'judgement', diagnosis: null } },
+    ])
   })
 })
 
@@ -159,7 +168,15 @@ describe('findingsRaisedOf', () => {
     const events = run.aStepEnded(outcome)
     const raised = events.flatMap(findingsRaisedOf)
 
-    expect(raised).toEqual([{ runId: 'pass-1', step: 'review', action: 'review', onSha: 'sha-a', assessment: { verdict: 'accepted', findings: [minor] } }])
+    expect(raised).toEqual([
+      {
+        runId: 'pass-1',
+        step: 'review',
+        action: 'review',
+        onSha: 'sha-a',
+        assessment: { verdict: 'accepted', findings: [minor] },
+      },
+    ])
   })
 
   it('answers nothing for a refusing action', () => {
@@ -175,7 +192,9 @@ describe('attemptFactOf', () => {
     const outcome: StepOutcome = { step: 'build', round: 0, actions: [verdict('pnpm test', 'sha-a', false)] }
     const facts = run.aStepEnded(outcome).flatMap(attemptFactOf)
 
-    expect(facts).toEqual([{ _tag: 'StepEnded', key: 'build:pnpm test', refused: { evidence: 'exit 1', findings: [] } }])
+    expect(facts).toEqual([
+      { _tag: 'StepEnded', key: 'build:pnpm test', refused: { evidence: 'exit 1', findings: [] } },
+    ])
   })
 })
 
@@ -186,7 +205,16 @@ describe('boardFactOf', () => {
     const facts = run.aStepEnded(outcome).flatMap(boardFactOf)
 
     expect(facts).toEqual([
-      { _tag: 'StepEnded', ending: 'Passed', step: 'build', action: 'pnpm test', evidence: 'exit 0', detail: undefined, findings: [], unreadable: undefined },
+      {
+        _tag: 'StepEnded',
+        ending: 'Passed',
+        step: 'build',
+        action: 'pnpm test',
+        evidence: 'exit 0',
+        detail: undefined,
+        findings: [],
+        unreadable: undefined,
+      },
     ])
   })
 
@@ -194,7 +222,9 @@ describe('boardFactOf', () => {
     const item = makeStream('ticket-1')
     const waitId = aWaitId()
     const facts = aResolution(item, waitId, { _tag: 'Close' }, 'steven', 'no longer wanted').flatMap(boardFactOf)
-    expect(facts).toEqual([{ _tag: 'WaitResolved', by: 'steven', note: 'no longer wanted', resolution: { _tag: 'Close' } }])
+    expect(facts).toEqual([
+      { _tag: 'WaitResolved', by: 'steven', note: 'no longer wanted', resolution: { _tag: 'Close' } },
+    ])
   })
 })
 

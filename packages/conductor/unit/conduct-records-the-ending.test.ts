@@ -267,7 +267,7 @@ describe('the ending and its end actions', () => {
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
 
     const item = await store.read(`ticket-${PROJECT}-7`)
-    const at = item.findIndex((e) => e.type === 'WorkItemBlocked')
+    const at = item.findIndex((e) => e.type === 'WaitStarted')
     expect(at).toBeGreaterThanOrEqual(0)
     expect(item[at + 1]?.type).toBe('EndActionsResolved')
     expect(item[at + 1]!.data).toMatchObject({ outcome: 'blocked' })

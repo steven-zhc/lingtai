@@ -26,8 +26,8 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Hold } from '@lingtai/domain'
-import { legacyColumns } from '@lingtai/domain'
+import { legacyColumns, routesOf } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -264,13 +264,20 @@ describe('when an agent inside the pass produces no verdict', () => {
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // **The run started and was paid**, which is the fact that makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
-      turns: 3,
-      costUsd: 0.42,
-    })
-    // And the reviewer judged nothing — `never-ran`, not a refusal of the diff.
-    const never = run.find((e) => e.type === 'StepNeverRan')!
-    expect(never.data).toMatchObject({ step: 'proposed', action: 'review' })
+    // `RunFinished` carries turns alone now; spend is `RunSpent` and nothing
+    // else (0110 §2).
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 3 })
+    const implementSpent = run.find(
+      (e) => e.type === 'RunSpent' && (e.data as { for: { step: string } }).for.step === 'implement',
+    )!
+    expect(implementSpent.data).toMatchObject({ costUsd: 0.42 })
+    // And the reviewer judged nothing — `NeverStarted`, not a refusal of the diff.
+    const proposedEnded = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as { outcome: { step: string } }).outcome.step === 'proposed',
+    )!
+    const never = (proposedEnded.data as { outcome: { actions: { name: string; result: { _tag: string } }[] } }).outcome
+      .actions[0]!
+    expect(never).toMatchObject({ name: 'review', result: { _tag: 'NeverStarted' } })
 
     const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
     expect(paused).toHaveLength(1)
@@ -334,10 +341,12 @@ describe('when an agent inside the pass produces no verdict', () => {
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // The drafting agent is the one that ran, by name, and nothing after it did:
     // `RunStarted` is `firstDispatch`'s and is never reached.
-    expect(run.find((e) => e.type === 'StepNeverRan')!.data).toMatchObject({
-      step: 'design',
-      action: 'draft',
-    })
+    const designEnded = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as { outcome: { step: string } }).outcome.step === 'design',
+    )!
+    const action = (designEnded.data as { outcome: { actions: { name: string; result: { _tag: string } }[] } }).outcome
+      .actions[0]!
+    expect(action).toMatchObject({ name: 'draft', result: { _tag: 'NeverStarted' } })
     expect(run.map((e) => e.type)).not.toContain('RunStarted')
     expect(run.map((e) => e.type)).not.toContain('RunFinished')
     expect(did).not.toContain('wire')
@@ -441,11 +450,13 @@ describe('when an agent inside the pass produces no verdict', () => {
     // where a round's agent runs.
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // A round *was* bought, or this is not the branch under test.
-    expect(run.find((e) => e.type === 'FixRequested')!.data).toMatchObject({
-      round: 1,
-      action: 'merge',
+    const routed = routesOf(run).find((r) => r.runId === runId)!
+    expect(routed).toMatchObject({
+      from: 'merge',
+      decision: { _tag: 'Selected', candidate: 'fix-lines' },
+      next: { _tag: 'FixRound', to: 'implement', round: 1 },
     })
     /**
      * **And the decision that bought it is on the log, not only in the run log**
@@ -457,19 +468,19 @@ describe('when an agent inside the pass produces no verdict', () => {
      * land, which is exactly the ending whose run log survives: asserting the
      * event here says the append does not depend on the ending.
      */
-    expect(run.find((e) => e.type === 'PassRouted')!.data).toEqual({
-      from: 'merge',
-      chose: 'implement',
-      to: 'implement',
-      why: expect.stringContaining('same-worktree'),
-      ceiling: null,
+    expect(run.find((e) => e.type === 'PassRouted')!.data).toMatchObject({
+      offer: { proposal: { _tag: 'VerifyRed', output: 'policy: this branch may not land' } },
+      reply: { _tag: 'Selected', candidate: 'fix-lines' },
+      decision: { _tag: 'Selected', candidate: 'fix-lines' },
     })
     // And the run that reached it was paid for, which is what makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
-      turns: 3,
-      costUsd: 0.42,
-    })
+    // `RunFinished` carries turns alone now; spend is `RunSpent` (0110 §2).
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 3 })
+    const implementSpent = run.find(
+      (e) => e.type === 'RunSpent' && (e.data as { for: { step: string } }).for.step === 'implement',
+    )!
+    expect(implementSpent.data).toMatchObject({ costUsd: 0.42 })
 
     const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
     expect(paused).toHaveLength(1)
@@ -614,10 +625,10 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     const item = await store.read(`ticket-${PROJECT}-7`)
     const types = item.map((e) => e.type)
-    expect(types).toContain('WorkItemBlocked')
+    expect(types).toContain('WaitStarted')
     expect(types).not.toContain('TicketReleased')
 
-    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+    const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
     // Nothing is being asked of anybody's judgement about the diff: the
     // machinery broke and the log is asking for it to be acknowledged.
     expect(blocked.needs).toBe('acknowledgement')
@@ -628,10 +639,12 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     // And no round was bought to answer a judgement nobody made.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.map((e) => e.type)).not.toContain('FixRequested')
-    expect(run.find((e) => e.type === 'StepDidNotFinish')!.data).toMatchObject({
-      step: 'proposed',
-      action: 'review',
-    })
+    expect(run.map((e) => e.type)).not.toContain('PassRouted')
+    const proposedEnded = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as { outcome: { step: string } }).outcome.step === 'proposed',
+    )!
+    const action = (proposedEnded.data as { outcome: { actions: { name: string; result: { _tag: string } }[] } })
+      .outcome.actions[0]!
+    expect(action).toMatchObject({ name: 'review', result: { _tag: 'Interrupted' } })
   })
 })

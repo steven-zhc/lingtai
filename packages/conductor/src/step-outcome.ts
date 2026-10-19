@@ -1,71 +1,31 @@
 import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
 /**
- * The one module where 0120's shapes and today's events meet (`#466`).
+ * The one module where 0120's `Action`/`StepOutcome` and a running pipeline's
+ * own `ActionResult`/`PipelineResult` meet (`#466`).
  *
  * `actionOf` turns one plugin's `ActionResult` (`@lingtai/actions`) into a
  * typed `Action` (`@lingtai/domain`'s `action.ts`); `outcomeOf` zips a whole
  * step's `actions` and `PipelineResult` into the `StepOutcome` that step
- * ended with.
+ * ended with — the one `StepEnded` stores (#502, 0120 §1). `pass.ts`'s
+ * `runStep` is the only caller.
  *
- * **`eventOf` and `holdOf` moved to `@lingtai/domain/src/adapters.ts` by
- * `#473`**, so `packages/domain/test/events.ts`'s builders can call the same
- * two functions a real pass does. Re-exported below under the same names, so
- * this file's own callers (`pass.ts`, `conduct.ts`,
- * `conductor/unit/adapters.test.ts`) keep their imports unchanged. `@lingtai/domain`'s
- * own `StepEvent` is structurally identical to `@lingtai/actions`' `ActionEvent`
- * (that file's own header explains why it is declared again there rather than
- * imported), so the re-export costs no caller a cast.
- *
- * **This module exists until #464.** Phase 2 puts `StepOutcome` on the log as
- * `StepEnded` and deletes `Hold`; until then a `Hold` and the `WaitReason` it
- * would become are two spellings of one fact (`wait.ts`'s own header), and
- * this pair of files is where today's spelling and 0120's meet without
- * either having to know the other exists anywhere else.
- *
- * **`eventOf` reads `plugin`, and `nextOf` (`@lingtai/domain`'s
- * `pass-next.ts`) reads it in exactly one place.** One of 0120's result tags
- * is given one shape for two unlike real endings, because the *next step*
- * for both is the same thing: a `commit`'s `Completed{head: null, question:
- * null}` is a kept `run:` that found nothing to commit (`StepPassed`) from
- * one plugin and the work action's own "produced no commits"
- * (`StepDidNotFinish`) from another. `nextOf` is right to ignore `plugin`
- * here — the pass goes the same place either way — and `eventOf` has no
- * choice, because the event it is reproducing is not one `nextOf` ever has to
- * pick between. `lastCommitEvidence` (`pass-next.ts:366`) is the one place
- * `nextOf` reads `plugin` too, skipping a kept `run:`'s own evidence so the
- * fixer's own words are never overwritten by "nothing to commit" standing in
- * for them — a forward-direction use, and not one that needs the backward
- * distinction `eventOf` carries.
- *
- * **What is lost, named rather than papered over:**
- *
- * - `about` (`ActionResult.about`, `action.ts:192`) has no field on the
- *   domain `Action` — a reviewer's own classification of its refusal is not
- *   one of 0120 §1's facts, and `eventOf` cannot put it back.
- * - `ApprovalRequested.artifacts` is always `[]` here, as it is at the one
- *   place that appends it today (`action.ts:889`).
+ * **Not adapters, in the sense #502 deleted** — that was `eventOf`/`holdOf`
+ * in `@lingtai/domain`, the translation *back* into a shape the log no
+ * longer carries. This file goes the one direction that is still needed,
+ * forward from a plugin's own answer into the value `pass.ts` holds and the
+ * log stores; nothing here reads the old event vocabulary at all.
  *
  * **`outcomeOf` drops a trailing run of `NotReached` after an action that
  * cleared.** `commitResultOf`'s `committedNothing` cell is 0120's own
  * `changedNothing` cell (`Completed{head: null, question: null}`, cleared),
  * but the pipeline still stopped there — a `run:` declared after it in the
  * recipe never ran, and a raw zip would answer it `NotReached`. `wellFormed`
- * (`domain/src/action.ts`) forbids a `NotReached` after a deciding action that
- * cleared, and a `NotReached` carries no event either way (`eventOf` skips it
- * outright) and no effect on `cleared`/`headOf`, so dropping the trailing run
- * costs nothing once the action in front of it already cleared.
+ * (`domain/src/action.ts`) forbids a `NotReached` after a deciding action
+ * that cleared, and a `NotReached` action carries no effect on
+ * `cleared`/`headOf` either, so dropping the trailing run costs nothing once
+ * the action in front of it already cleared.
  */
-import {
-  type Action as DomainAction,
-  type RefusalReason,
-  type Step,
-  type StepOutcome,
-  cleared,
-  eventOf,
-  holdOf,
-} from '@lingtai/domain'
-
-export { eventOf, holdOf }
+import { type Action as DomainAction, type RefusalReason, type Step, type StepOutcome, cleared } from '@lingtai/domain'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]

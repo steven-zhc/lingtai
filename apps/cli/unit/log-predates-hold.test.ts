@@ -75,7 +75,11 @@ function queriesOver(store: Pick<LogQueries, 'typeCounts'>): LogQueries {
 describe('logPredatesHold, the one guard', () => {
   it('finds a stored WorkItemBlocked — not a type this build carries at all since #502', async () => {
     const store = createMemoryEventStore()
-    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: { hold: { _tag: 'Question', question: 'now?', by: 'human:test' } } })
+    store.plant({
+      type: 'WorkItemBlocked',
+      schemaVer: 1,
+      data: { hold: { _tag: 'Question', question: 'now?', by: 'human:test' } },
+    })
 
     const found = await logPredatesHold(store)
 

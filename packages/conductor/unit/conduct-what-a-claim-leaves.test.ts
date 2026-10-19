@@ -27,8 +27,8 @@
  * no socket, no network.
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Hold } from '@lingtai/domain'
 import { legacyColumns } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -154,7 +154,7 @@ describe('when the agent meets the wall', () => {
    * **The wall is a `did-not-finish` at `implement`, and it holds the item.**
    *
    * The result reads `held` where the old engine returned `ok: false, stage: "run"`
-   * *and* appended `WorkItemBlocked` — a failure and a hold at once, which is what
+   * *and* appended `WaitStarted` — a failure and a hold at once, which is what
    * the two vocabularies cost. Under the pass there is one answer: the commit is
    * the receipt (0057 §2), an agent that ran out of turns left none, and
    * `outcomeOf` reads the ending as `blocked`. Nothing else about the ending
@@ -167,17 +167,19 @@ describe('when the agent meets the wall', () => {
     expect(result.step).toBe('implement')
 
     // **Both, and in that order.** Turns were taken and money was spent, so the
-    // receipt is a fact; the ending is what `RunFailed` says.
+    // receipt is a fact; the ending is what `RunFailed` says. `RunFinished`
+    // carries turns alone now; spend is `RunSpent` and nothing else (0110 §2).
     const types = run.map((e) => e.type)
     expect(types.indexOf('RunFinished')).toBeLessThan(types.indexOf('RunFailed'))
-    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
-      turns: 151,
-      costUsd: 20.81,
-    })
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 151 })
+    const implementSpent = run.find(
+      (e) => e.type === 'RunSpent' && (e.data as { for: { step: string } }).for.step === 'implement',
+    )!
+    expect(implementSpent.data).toMatchObject({ costUsd: 20.81 })
 
-    const blocked = item.find((e) => e.type === 'WorkItemBlocked')
+    const blocked = item.find((e) => e.type === 'WaitStarted')
     expect(blocked).toBeDefined()
-    const cols = legacyColumns((blocked!.data as { hold: Hold }).hold)
+    const cols = legacyColumns((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.needsFrom).toBe('human')
     expect(cols.needs).toBe('acknowledgement')
     expect(cols.question).toContain('out-of-turns')
@@ -272,7 +274,7 @@ describe('when the agent meets the wall', () => {
         `nothing judged this diff, so there is nothing to approve (committed: ${committed})`,
       ).toBe(false)
       // Still a person's, and still with the move that is actually left on it.
-      const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+      const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
       expect(blocked.needs).toBe('acknowledgement')
       expect(blocked.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
     }
@@ -301,7 +303,7 @@ describe('when the agent meets the wall', () => {
 
     const push = 'git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1'
     expect(did).toContain(push)
-    expect(did.indexOf(push)).toBeLessThan(did.indexOf('append WorkItemBlocked'))
+    expect(did.indexOf(push)).toBeLessThan(did.indexOf('append WaitStarted'))
 
     const rows = run.filter((e) => e.type === 'RunRefsPublished')
     expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['published', 'already-published'])
@@ -347,11 +349,11 @@ describe('when the agent meets the wall', () => {
     expect(rows[0]!.data).toMatchObject({ headSha: 'b'.repeat(40), detail: rejected })
     // The item is still held, and the card carries what git said — a rescue starts
     // from knowing whether the commits reached origin.
-    const blocked = item.find((e) => e.type === 'WorkItemBlocked')
+    const blocked = item.find((e) => e.type === 'WaitStarted')
     expect(blocked).toBeDefined()
     // `was not pushed` is composed by `legacyColumns`, onto `diagnosis.what`
     // — the event itself carries git's bare words on `hold.run.unpushed.said`.
-    const cols = legacyColumns((blocked!.data as { hold: Hold }).hold)
+    const cols = legacyColumns((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.diagnosis?.what).toContain('was not pushed')
   })
 
@@ -1149,7 +1151,7 @@ describe('when the merge lane refuses what every step passed', () => {
     expect(did).toContain(both)
     expect(did.indexOf('integrate')).toBeLessThan(did.indexOf(both))
     // Before the person is asked, like every other ending that asks one.
-    expect(did.indexOf(both)).toBeLessThan(did.indexOf('append WorkItemBlocked'))
+    expect(did.indexOf(both)).toBeLessThan(did.indexOf('append WaitStarted'))
 
     // And the log says so rather than claiming the refs were already up: the
     // first row is this publish, the second is the finalizer finding nothing

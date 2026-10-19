@@ -38,7 +38,13 @@ describe('what a channel that is read later says', () => {
     const asked = render(
       payload('WaitStarted', {
         waitId: 'wait-1',
-        reason: { _tag: 'SignoffRequired', run: { runId: 'pass-1' }, step: 'merge', action: 'human', question: 'ship it?' },
+        reason: {
+          _tag: 'SignoffRequired',
+          run: { runId: 'pass-1' },
+          step: 'merge',
+          action: 'human',
+          question: 'ship it?',
+        },
       }),
     )
     expect(asked.body).toBe('ship it?')
@@ -46,7 +52,14 @@ describe('what a channel that is read later says', () => {
     const red = render(
       payload('WaitStarted', {
         waitId: 'wait-2',
-        reason: { _tag: 'CheckRefused', run: { runId: 'pass-1' }, step: 'merge', action: 'check', evidence: 'pnpm test exited 2', findings: [] },
+        reason: {
+          _tag: 'CheckRefused',
+          run: { runId: 'pass-1' },
+          step: 'merge',
+          action: 'check',
+          evidence: 'pnpm test exited 2',
+          findings: [],
+        },
       }),
     )
     expect(red.body).toBe('pnpm test exited 2')

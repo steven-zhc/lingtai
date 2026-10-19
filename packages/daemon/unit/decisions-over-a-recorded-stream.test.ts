@@ -7,9 +7,9 @@ import {
   aRoute,
   aRun,
   aRunRef,
-  anAnswer,
   anIntegrationRefusal,
   aWait,
+  aWaitId,
   aWithdrawal,
 } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -167,6 +167,31 @@ describe('what wakes the loop', () => {
       ],
     })
 
+    const finding = {
+      file: 'x.ts',
+      line: 1,
+      claim: 'claim',
+      failureScenario: 'scenario',
+      severity: 'blocker' as const,
+    }
+    const fixLinesOffer = {
+      proposal: { _tag: 'ReviewFindings' as const, findings: [finding] },
+      available: [
+        { id: 'fix-lines' as const, next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      ],
+      unavailable: [],
+    }
+    const restartOffer = {
+      proposal: { _tag: 'ReviewFindings' as const, findings: [finding] },
+      available: [
+        {
+          id: 'restart' as const,
+          next: { _tag: 'Requeued' as const, cause: { _tag: 'Restart' as const, restart: 1 } },
+        },
+      ],
+      unavailable: [],
+    }
+
     const rows: [string, Envelope[]][] = [
       ['claimed', aClaim(item, run.runId)],
       ['build passed', passed],
@@ -176,13 +201,31 @@ describe('what wakes the loop', () => {
         'agent question',
         aWait(item, { _tag: 'AgentQuestion', run: aRunRef(run.runId), step: 'implement', question: 'which way?' }),
       ],
-      ['answered', anAnswer(item, 'steven', 'go ahead')],
-      ['requeued', aResolution(item, { _tag: 'Requeue' })],
-      ['withdrawn', aWithdrawal(item)],
-      ['routed to implement', aRoute(run, { from: 'review', to: 'implement' })],
+      ['answered', aResolution(item, aWaitId(), { _tag: 'AnswerQuestion', choice: 'go ahead' }, 'steven')],
+      ['requeued', aResolution(item, aWaitId(), { _tag: 'Requeue' }, 'steven')],
+      ['withdrawn', aWithdrawal(item, aWaitId())],
+      [
+        'routed to implement',
+        aRoute(run, {
+          offer: fixLinesOffer,
+          reply: { _tag: 'Selected', candidate: 'fix-lines', why: 'fix the lines' },
+          decision: { _tag: 'Selected', candidate: 'fix-lines' },
+        }),
+      ],
       [
         'restarted at claim',
-        [...aRoute(run, { from: 'proposed', to: 'claim' }, item), ...aRelease(item, run.runId, 'starting over')],
+        [
+          ...aRoute(
+            run,
+            {
+              offer: restartOffer,
+              reply: { _tag: 'Selected', candidate: 'restart', why: 'start over' },
+              decision: { _tag: 'Selected', candidate: 'restart' },
+            },
+            item,
+          ),
+          ...aRelease(item, run.runId, 'starting over'),
+        ],
       ],
       ['released', aRelease(item, run.runId)],
       [
@@ -244,8 +287,13 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
     await appendBuilt(store, versions, [
       requeued('IssueUpdated', { project: PROJECT, issue: '603', change: 'labels', detail: 'lingtai:waiting' }),
     ])
-    await appendBuilt(store, versions, aWait(requeued, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }))
-    await appendBuilt(store, versions, aResolution(requeued, { _tag: 'Requeue' }))
+    const requeuedWaitId = aWaitId()
+    await appendBuilt(
+      store,
+      versions,
+      aWait(requeued, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, requeuedWaitId),
+    )
+    await appendBuilt(store, versions, aResolution(requeued, requeuedWaitId, { _tag: 'Requeue' }, 'steven'))
 
     // Released after a claim, with the running label stale the same way.
     const released = makeStream(`ticket-${PROJECT}-604`)

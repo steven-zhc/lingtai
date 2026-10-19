@@ -63,6 +63,9 @@ export function routesOf(events: readonly Envelope[]): RoutedPass[] {
 
 // ---------------------------------------------------------------- waitsOf ----
 
+/** The two event types a wait is made of — `WorkItemBlocked`/`WorkItemUnblocked`'s own replacement (#502). */
+export const WAIT_EVENTS = ['WaitStarted', 'WaitResolved'] as const
+
 /** One `WaitStarted` folded to its `WaitReason`, with its own `Resolution` once one lands — matched by `waitId`, never by position. */
 export type WaitFold = { readonly waitId: WaitId; readonly reason: WaitReason; readonly resolution: Resolution | null }
 
@@ -84,9 +87,7 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
 
 /** One `TicketReleased` folded to its cause — the event's own `cause` field, verbatim. */
 export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause | null> {
-  return events
-    .filter((e) => e.type === 'TicketReleased')
-    .map((e) => (e.data as PayloadOf<'TicketReleased'>).cause)
+  return events.filter((e) => e.type === 'TicketReleased').map((e) => (e.data as PayloadOf<'TicketReleased'>).cause)
 }
 
 // -------------------------------------------------------------- cardFactOf ----
@@ -274,7 +275,13 @@ export function cardFactOf(event: Envelope): CardFact[] {
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
       const cols = legacyColumns(d.reason)
-      return [{ _tag: 'WaitStarted', reason: d.reason, card: { question: cols.question, needs: cols.needs, diagnosis: cols.diagnosis } }]
+      return [
+        {
+          _tag: 'WaitStarted',
+          reason: d.reason,
+          card: { question: cols.question, needs: cols.needs, diagnosis: cols.diagnosis },
+        },
+      ]
     }
 
     case 'WaitResolved': {
@@ -347,8 +354,16 @@ export function attemptFactOf(event: Envelope): AttemptFact[] {
     .filter((action) => action.result._tag !== 'NotReached')
     .map((action) => {
       const key = `${d.outcome.step}:${action.name}`
-      if (action.yields === 'verdict' && action.result._tag === 'Completed' && action.result.assessment.verdict === 'refused') {
-        return { _tag: 'StepEnded' as const, key, refused: { evidence: action.evidence, findings: action.result.assessment.findings } }
+      if (
+        action.yields === 'verdict' &&
+        action.result._tag === 'Completed' &&
+        action.result.assessment.verdict === 'refused'
+      ) {
+        return {
+          _tag: 'StepEnded' as const,
+          key,
+          refused: { evidence: action.evidence, findings: action.result.assessment.findings },
+        }
       }
       return { _tag: 'StepEnded' as const, key, refused: null }
     })
@@ -378,8 +393,19 @@ export type BoardFact =
       readonly findings: readonly Finding[] | undefined
       readonly unreadable: true | undefined
     }
-  | { readonly _tag: 'SignoffRequested'; readonly step: Step; readonly action: string; readonly question: string; readonly onSha: string }
-  | { readonly _tag: 'RoundOpened'; readonly round: number; readonly action: string; readonly findings: readonly Finding[] }
+  | {
+      readonly _tag: 'SignoffRequested'
+      readonly step: Step
+      readonly action: string
+      readonly question: string
+      readonly onSha: string
+    }
+  | {
+      readonly _tag: 'RoundOpened'
+      readonly round: number
+      readonly action: string
+      readonly findings: readonly Finding[]
+    }
   | { readonly _tag: 'Restarted'; readonly restart: number }
   | {
       readonly _tag: 'WaitStarted'
@@ -469,7 +495,14 @@ export function boardFactOf(event: Envelope): BoardFact[] {
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
       const cols = legacyColumns(d.reason)
-      return [{ _tag: 'WaitStarted', question: cols.question, needs: cols.needs, recommendation: cols.diagnosis?.recommendation ?? null }]
+      return [
+        {
+          _tag: 'WaitStarted',
+          question: cols.question,
+          needs: cols.needs,
+          recommendation: cols.diagnosis?.recommendation ?? null,
+        },
+      ]
     }
 
     case 'WaitResolved': {

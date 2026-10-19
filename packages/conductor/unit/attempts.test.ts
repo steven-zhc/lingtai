@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs'
 
 import { EVIDENCE_BYTES, tail } from '@lingtai/actions'
-import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from '@lingtai/domain'
+import { type Envelope, type EventType, type Finding, type PayloadOf, SCHEMA_VER, parsePayload } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -63,11 +63,38 @@ const claim = (runId: string): PayloadOf<'TicketClaimed'> => ({
   kind: 'bug',
 })
 
-const step = (action: string, onSha = 'sha-1') => ({
-  step: 'proposed' as const,
-  action,
+/** `StepStarted{step: 'proposed', round}`, the pair `StepEnded` below closes. */
+const stepStarted = (round = 0) => ({ runId: 'pass-2', step: 'proposed' as const, round })
+
+/**
+ * One `StepEnded` carrying a single `verdict`-yield action, at `proposed`
+ * named for the action it stands in for (`build`, `review`, `install`) — the
+ * same key `attemptFactOf` reads as `` `${step}:${action}` ``, matching what
+ * these tests asserted of `StepFailed`/`StepPassed` before #502.
+ */
+const stepEnded = (
+  action: string,
+  verdict: 'accepted' | 'refused',
+  evidence: string,
+  findings: Finding[] = [],
+  onSha = 'sha-1',
+  round = 0,
+) => ({
   runId: 'pass-2',
-  onSha,
+  outcome: {
+    step: 'proposed' as const,
+    round,
+    actions: [
+      {
+        plugin: 'run' as const,
+        name: action,
+        onSha,
+        evidence,
+        yields: 'verdict' as const,
+        result: { _tag: 'Completed' as const, assessment: { verdict, findings } },
+      },
+    ],
+  },
 })
 
 describe('priorAttempts', () => {
@@ -96,11 +123,12 @@ describe('priorAttempts', () => {
     const e = stream('ticket-lingtai-59')
     const attempts = priorAttempts([
       e('TicketClaimed', claim('pass-1')),
-      e('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+      e('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install', cause: null }),
       e('TicketClaimed', claim('pass-2')),
       e('TicketReleased', {
         runId: 'pass-2',
         reason: 'the run was killed by an operator timeout before it produced anything',
+        cause: null,
       }),
     ])
 
@@ -121,46 +149,18 @@ describe('priorAttempts', () => {
     const e = stream('ticket-lingtai-59')
     const [attempt] = priorAttempts([
       e('TicketClaimed', claim('pass-1')),
-      e('WorkItemBlocked', {
-        hold: {
+      e('WaitStarted', {
+        waitId: 'wait-1' as never,
+        reason: {
           _tag: 'MergeRefused',
           run: { runId: 'pass-1' },
-          reason: 'conflict',
-          why: 'agent/59 does not merge into main',
+          reason: 'dirty-base',
           raw: 'agent/59 does not merge into main',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: false,
         },
       }),
     ])
 
-    expect(attempt?.ended).toBe('blocked, asking: conflict: agent/59 does not merge into main')
-  })
-
-  /**
-   * The ticket's second criterion for a merge failure: the integration refusal
-   * itself, not the category the release reason summarises it into.
-   */
-  it("carries the integrator's refusal verbatim when one bought a repair", () => {
-    const e = stream('ticket-lingtai-59')
-    const [attempt] = priorAttempts([
-      e('TicketClaimed', claim('pass-1')),
-      e('RepairRequested', {
-        runId: 'pass-1',
-        reason: 'conflict',
-        detail: 'agent/59 does not merge into main:\napps/web/src/app/page.tsx',
-        fingerprint: 'aaaaaaaaaaaa',
-        attempt: 1,
-      }),
-      e('TicketReleased', { runId: 'pass-1', reason: 'repairing conflict (attempt 1)' }),
-    ])
-
-    expect(attempt?.refusal).toEqual({
-      reason: 'conflict',
-      detail: 'agent/59 does not merge into main:\napps/web/src/app/page.tsx',
-    })
+    expect(attempt?.ended).toBe('blocked, asking: dirty-base: agent/59 does not merge into main')
   })
 })
 
@@ -176,13 +176,17 @@ describe('attemptOutcome', () => {
           insertions: 120,
           deletions: 3,
         }),
-        e('StepStarted', step('build')),
-        e('StepFailed', {
-          ...step('build'),
-          evidence: 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322',
-          findings: [],
+        e('StepStarted', stepStarted()),
+        e('StepEnded', stepEnded('build', 'refused', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322')),
+        e('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000 }),
+        e('RunSpent', {
+          for: { _tag: 'Action', step: 'proposed', name: 'build', round: 0 },
+          runtime: 'claude-code',
+          turns: 31,
+          durationMs: 900_000,
+          usage: [],
+          costUsd: 1.11,
         }),
-        e('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
       ],
       BUDGET,
     )
@@ -204,10 +208,9 @@ describe('attemptOutcome', () => {
     const e = stream('pass-2')
     const outcome = attemptOutcome(
       [
-        e('StepFailed', {
-          ...step('review'),
-          evidence: '1 blocker',
-          findings: [
+        e(
+          'StepEnded',
+          stepEnded('review', 'refused', '1 blocker', [
             {
               file: 'packages/conductor/src/queue.ts',
               line: 44,
@@ -215,8 +218,8 @@ describe('attemptOutcome', () => {
               failureScenario: 'a failing item is retaken on the next pass',
               severity: 'blocker',
             },
-          ],
-        }),
+          ]),
+        ),
       ],
       BUDGET,
     )
@@ -251,16 +254,16 @@ describe('attemptOutcome', () => {
    */
   it('names the point a run died inside', () => {
     const e = stream('pass-1')
-    const outcome = attemptOutcome([e('StepStarted', step('install'))], BUDGET)
+    const outcome = attemptOutcome([e('StepStarted', stepStarted())], BUDGET)
 
-    expect(outcome.evidence?.what).toBe('proposed:install')
+    expect(outcome.evidence?.what).toBe('proposed')
     expect(outcome.evidence?.text).toContain('never returned a verdict')
   })
 
   it('says nothing about a gate that passed', () => {
     const e = stream('pass-1')
     const outcome = attemptOutcome(
-      [e('StepStarted', step('install')), e('StepPassed', { ...step('install'), evidence: 'ok', findings: [] })],
+      [e('StepStarted', stepStarted()), e('StepEnded', stepEnded('install', 'accepted', 'ok'))],
       BUDGET,
     )
 
@@ -272,9 +275,9 @@ describe('attemptBrief', () => {
   const item = stream('ticket-lingtai-59')
   const history = [
     item('TicketClaimed', claim('pass-1')),
-    item('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+    item('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install', cause: null }),
     item('TicketClaimed', claim('pass-2')),
-    item('TicketReleased', { runId: 'pass-2', reason: 'gates refused the diff' }),
+    item('TicketReleased', { runId: 'pass-2', reason: 'gates refused the diff', cause: null }),
   ]
 
   const filled = () => {
@@ -289,12 +292,16 @@ describe('attemptBrief', () => {
           insertions: 120,
           deletions: 3,
         }),
-        run('StepFailed', {
-          ...step('build'),
-          evidence: 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322',
-          findings: [],
+        run('StepEnded', stepEnded('build', 'refused', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322')),
+        run('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000 }),
+        run('RunSpent', {
+          for: { _tag: 'Action', step: 'proposed', name: 'build', round: 0 },
+          runtime: 'claude-code',
+          turns: 31,
+          durationMs: 900_000,
+          usage: [],
+          costUsd: 1.11,
         }),
-        run('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
       ],
       BUDGET,
     )
@@ -406,13 +413,13 @@ describe('attemptBrief', () => {
     const many = stream('ticket-lingtai-59')
     const events = Array.from({ length: 8 }, (_, i) => [
       many('TicketClaimed', claim(`pass-${i + 1}`)),
-      many('TicketReleased', { runId: `pass-${i + 1}`, reason: `attempt ${i + 1} failed` }),
+      many('TicketReleased', { runId: `pass-${i + 1}`, reason: `attempt ${i + 1} failed`, cause: null }),
     ]).flat()
 
     const attempts = priorAttempts(events)
     const run = stream('pass-8')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      [run('StepFailed', { ...step('build'), evidence: 'x'.repeat(10_000), findings: [] })],
+      [run('StepEnded', stepEnded('build', 'refused', 'x'.repeat(10_000)))],
       BUDGET,
     )
 
@@ -489,9 +496,13 @@ describe('attemptBrief', () => {
       const run = stream('pass-1')
       const attempts = priorAttempts([
         stream('ticket-lingtai-169')('TicketClaimed', claim('pass-1')),
-        stream('ticket-lingtai-169')('TicketReleased', { runId: 'pass-1', reason: 'gates refused the diff' }),
+        stream('ticket-lingtai-169')('TicketReleased', {
+          runId: 'pass-1',
+          reason: 'gates refused the diff',
+          cause: null,
+        }),
       ])
-      attempts[0]!.outcome = attemptOutcome([run('StepFailed', { ...step('build'), evidence, findings: [] })], budget)
+      attempts[0]!.outcome = attemptOutcome([run('StepEnded', stepEnded('build', 'refused', evidence))], budget)
       return attemptBrief(attempts, budget)
     }
 
@@ -597,7 +608,7 @@ describe('attemptBrief', () => {
     const brief = attemptBrief(
       priorAttempts([
         e('TicketClaimed', claim('pass-1')),
-        e('TicketReleased', { runId: 'pass-1', reason: 'conflict:\napps/page.tsx\napps/x.tsx' }),
+        e('TicketReleased', { runId: 'pass-1', reason: 'conflict:\napps/page.tsx\napps/x.tsx', cause: null }),
       ]),
       BUDGET,
     )
@@ -615,9 +626,9 @@ describe('attemptBrief, naming the arms', () => {
   const item = stream('ticket-lingtai-314')
   const history = [
     item('TicketClaimed', claim('pass-1')),
-    item('TicketReleased', { runId: 'pass-1', reason: 'the run hit its session limit' }),
+    item('TicketReleased', { runId: 'pass-1', reason: 'the run hit its session limit', cause: null }),
     item('TicketClaimed', claim('pass-2')),
-    item('TicketReleased', { runId: 'pass-2', reason: 'refused: the approach' }),
+    item('TicketReleased', { runId: 'pass-2', reason: 'refused: the approach', cause: null }),
   ]
   const onOrigin = (...names: string[]) => ({ branch: 'agent/314', onOrigin: new Set(names) })
 

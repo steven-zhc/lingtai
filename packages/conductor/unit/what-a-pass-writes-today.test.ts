@@ -2,15 +2,23 @@
  * **The fixture #459's `nextOf` migration is held to** (#461, 0120 §2).
  *
  * One row per way a pass ends today, each asserting the ordered event types on
- * the run stream and the work-item stream and the final `Hold` — recorded by
- * running the row against the fakes and copying what it actually wrote, not by
- * transcribing 0120's draft table. Phase 1 (#466, #467) moves the pass onto
- * `nextOf` without changing one event; this is what makes that claim checkable.
+ * the run stream and the work-item stream and the final `WaitReason` —
+ * recorded by running the row against the fakes and copying what it actually
+ * wrote, not by transcribing 0120's draft table. Phase 1 (#466, #467) moved
+ * the pass onto `nextOf` without changing one event; #502's phase 2 switch
+ * then put 0120's and 0118's own shapes on the log directly — `StepStarted`/
+ * `StepEnded` once per step, `WaitStarted`/`WaitResolved` carrying a
+ * `WaitReason`/`Resolution` verbatim — so this file is what makes *that*
+ * claim checkable now.
  *
  * Driven with `once()` from `test/one-pass.ts`, never `runPass` directly:
  * `runPass` appends nothing (`pass.ts:1069` — *the pipeline does not touch the
  * store*), so every event here is `conduct.ts`'s own, and `runOnce` is the seam
- * #467 must leave unchanged.
+ * #467 must leave unchanged. `once()` itself now also checks every
+ * `StepEnded.data.outcome` against the very same `PassOver.steps[].outcome`
+ * `runOnce` returned (`test/one-pass.ts`'s own comment), so a mismatch between
+ * what `runStep` built and what landed on the wire is caught there rather
+ * than copied into every row here by hand.
  *
  * Two endings from the ticket's table are left out, both because nothing in
  * `test/one-pass.ts` can reach them without a change to production code:
@@ -20,8 +28,8 @@
  *   (`actions/src/command.ts:43`) — a subprocess in a worktree this file never
  *   cuts, which is the filesystem and so is integration (0060 §1).
  * - **#8, `prepared` refuses.** `prepared` is in `REFUSING_STEPS` (`pass.ts:120`)
- *   and does have its own hold, `SetupRefused` (`hold-of.ts:224`) — it is left
- *   out only because the one plugin that can make it refuse is `run:`
+ *   and does have its own wait, `SetupRefused` — it is left out only because
+ *   the one plugin that can make it refuse is `run:`
  *   (`recipe.ts:175–181`), and `run:` spawns a real process
  *   (`actions/src/command.ts:43`), the same reason row 3 is left out. Where
  *   nothing is declared there the body is `async () => ({ ending: 'passed' })`
@@ -31,35 +39,36 @@
  *
  * - **The wall is not a `Ceiling`** (row 14b): only `out-of-turns` and
  *   `out-of-usd` set `ceilingHit` (`conduct.ts:2774–2781`); `timeout` falls to
- *   an ordinary `DidNotFinish` at the step it stopped, same shape as row 6.
- * - **Restarts spent is `Routed`, not a ceiling tag of its own** (row 5): a
- *   judge answering `claim` with no restarts left is not one of the steps on
- *   offer (`askTheAgent`'s `held(...)`, `conduct.ts:1849`), so `judged` in
- *   `pass-steps.ts` turns it into an ordinary `next: 'waiting'` and the pass
- *   rests exactly as an unrouted `findings` judgement would — `stopped ===
- *   null`, `Routed{when: 'findings'}` (`hold-of.ts`'s case 4), with the
- *   restarts-spent sentence folded into `why` rather than a tag of its own.
- * - **An `agent:` check declared ahead of the merge lane is `CheckRed`, not
- *   `MergeRefused`** (row 9): `directionOf` answers `'red'` for every refused
- *   step but `merge`, and for `merge` only `conflict`/`verify-failed` get a
- *   direction (`pass-steps.ts:620–628`) — an agent gate's own refusal carries
- *   `because: 'action-refused'`, which is none of those, so it falls past
- *   `directionOf` to `hold-of.ts`'s step 2, fails `RefusalReason`'s parse, and
- *   reads `CheckRed`.
+ *   an ordinary `DidNotFinish`-shaped `AgentCrashed`, same shape as row 6.
+ * - **Restarts spent escalates through the router, not a ceiling tag of its
+ *   own** (row 5): a judge answering `claim` with no restarts left is not one
+ *   of the steps on offer, so `decideRoute` reads it as `Escalated{because:
+ *   CandidateUnavailable{excluded: {id: 'restart', because: {_tag:
+ *   'CeilingReached', ceiling: 'restarts'}}}}` — a `ProposedEscalated` wait
+ *   exactly like an unrouted `findings` judgement gets, carrying that
+ *   `because` rather than a tag of its own.
+ * - **An `agent:` check declared ahead of the merge lane is `CheckRefused`,
+ *   not `MergeRefused`** (row 9): `directionOf` answers `'red'` for every
+ *   refused step but `merge`, and for `merge` only `conflict`/`verify-failed`
+ *   get a direction (`pass-steps.ts:620–628`) — an agent gate's own refusal
+ *   carries `because: 'action-refused'`, which is none of those, so it
+ *   reaches `proposed` as `Propose{CheckRefused}` rather than a merge-lane
+ *   `MergeRefused`.
  * - **A `claim` that is passed over still gets a `pass-*` stream** (row 15):
- *   three events — `StepRequested`, `StepStarted`, `StepFailed` — land on it,
- *   because `claim` is `STEPS[0]` and runs through the same per-step
- *   bookkeeping every other step does. What stays empty is the *work-item*
- *   stream, which is the claim this file's neighbour
- *   (`conduct-before-the-claim.test.ts`) actually makes.
+ *   `StepStarted` and `StepEnded` land on it, because `claim` is `STEPS[0]`
+ *   and runs through the same per-step bookkeeping every other step does —
+ *   except it has no `StepOutcome` to fold, since `claim` runs outside
+ *   `runPass` (0120 §6) and `stepOutcomesOf` only ever reads a `StepEnded`'s
+ *   own `outcome`. What stays empty is the *work-item* stream, which is the
+ *   claim this file's neighbour (`conduct-before-the-claim.test.ts`) actually
+ *   makes.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import type { Envelope, Hold } from '@lingtai/domain'
+import type { Envelope, PayloadOf } from '@lingtai/domain'
 import {
-  holdOf,
   integrationStream,
   reduceIntegration,
   releaseCauseOf,
@@ -68,6 +77,7 @@ import {
   waitsOf,
   wellFormed,
 } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -106,9 +116,10 @@ async function theItem(store: ReturnType<typeof memoryStore>): Promise<Envelope[
   return store.read(`ticket-${PROJECT}-7`)
 }
 
-function theHold(item: readonly Envelope[]): Hold | null {
-  const blocked = item.find((e) => e.type === 'WorkItemBlocked')
-  return blocked === undefined ? null : (blocked.data as { hold: Hold }).hold
+/** The last `WaitStarted` on the item's own stream, or `null` where it never blocked — `WorkItemBlocked.hold`'s own replacement (#502). */
+function theWait(item: readonly Envelope[]): WaitReason | null {
+  const found = [...item].filter((e) => e.type === 'WaitStarted').at(-1)
+  return found === undefined ? null : (found.data as PayloadOf<'WaitStarted'>).reason
 }
 
 function bySeq(a: Envelope, b: Envelope): number {
@@ -124,38 +135,22 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
 }
 
 /**
- * **The check that `waitsOf` is `holdOf`'s own mapping and not a second
- * one** (the design's own `Watch out`): the last `WorkItemBlocked` on the
- * slice folds, through `waitsOf` and back through `holdOf`, to a `Hold`
- * whose `_tag` — and `step`/`when`/`raw`, where the stored hold carries one —
- * agrees with what was actually written.
+ * **`stepOutcomesOf(all)` must not throw**, on every row — it folds the whole
+ * slice `waitsOf` does too, and a throw is the failure mode the production
+ * code's own defaults guard against.
  *
- * **`stepOutcomesOf(all)` must not throw**, on every row — it already folds
- * the whole slice `waitsOf` does, and a throw is the failure mode the
- * defaults `shapeFor`/`recipeFor` answer `undefined` for guard against.
- *
- * `skipRaw`, with its own reason, is for the one row where `holdOf` itself
- * cannot reproduce the stored `raw` — not a loosened assertion, a named
- * exception (row 13, below).
+ * **The literal check itself.** Since #502 `WaitStarted.reason` *is* the
+ * `WaitReason` the pass built — there is no `Hold` translation layer left to
+ * prove agrees with it — so this only has to compare the wait `waitsOf`
+ * folds back against the literal value the row expects, captured by actually
+ * running the pass rather than transcribed from a draft.
  */
-function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold, skipRaw?: string): void {
+function expectTheWait(all: readonly Envelope[], expected: WaitReason): void {
   expect(() => stepOutcomesOf(all)).not.toThrow()
   const waits = waitsOf(all)
   const wait = waits[waits.length - 1]
   expect(wait).toBeDefined()
-  const rebuilt = holdOf(wait!.reason, { branch: 'agent/7', base: 'main', findings: [] })
-  expect(rebuilt._tag).toBe(hold._tag)
-  if (rebuilt._tag === 'Routed' && hold._tag === 'Routed') expect(rebuilt.when).toBe(hold.when)
-  if ('step' in rebuilt && 'step' in hold) expect(rebuilt.step).toBe(hold.step)
-  if ('reason' in rebuilt && 'reason' in hold) expect(rebuilt.reason).toBe(hold.reason)
-  if (skipRaw === undefined && 'raw' in rebuilt && 'raw' in hold && rebuilt.raw !== null && hold.raw !== null) {
-    expect(rebuilt.raw).toBe(hold.raw)
-  }
-  if ('paths' in rebuilt && 'paths' in hold) {
-    expect(rebuilt.paths).toEqual(hold.paths)
-    expect(rebuilt.baseSha).toBe(hold.baseSha)
-    expect(rebuilt.headSha).toBe(hold.headSha)
-  }
+  expect(wait!.reason).toEqual(expected)
 }
 
 describe('what a pass writes today, one row per ending (#461)', () => {
@@ -180,14 +175,21 @@ describe('what a pass writes today, one row per ending (#461)', () => {
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
     expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
+    // One `StepStarted`/`StepEnded` pair per step but `implement`'s — `claim`
+    // and `end` write neither (0120 §6), so the other eight pairs are
+    // `admit`, `prepared`, `design`, `implement`, `build`, `review`,
+    // `proposed`, `merge`. `implement`'s own pair is split by the run's
+    // bookkeeping: its `StepStarted` opens the dispatch, and the six events
+    // from `RunStarted` through `RunProposedCompletion` land before its own
+    // `StepEnded` closes it, because the implementer's run is what they
+    // describe.
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -195,12 +197,17 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
     ])
-    expect(theHold(await theItem(store))).toBeNull()
+    expect(theWait(await theItem(store))).toBeNull()
 
     const outcomes = stepOutcomesOf(await allEvents(store))
     expect(outcomes.find((o) => o.step === 'implement')?.actions[0]).toMatchObject({
@@ -258,14 +265,20 @@ describe('what a pass writes today, one row per ending (#461)', () => {
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
     expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
+    // `review`'s own refusal at round 0 sends the walk straight back to
+    // `implement` for round 1 — `proposed` is not visited as a step at round
+    // 0 at all (no `judge:` is declared here, so the built-in router decides
+    // inline, off `review`'s own ending, rather than through a dispatched
+    // `proposed` pipeline). The walk then runs every step again for round 1
+    // — `implement`, `build`, `review`, and this time `proposed` too, since
+    // review passed and there is nothing left to route — before `merge`.
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -273,33 +286,37 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'FixRequested',
-      'FixApplied',
       'RunSpent',
       'RunProducedDiff',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
     ])
-    const fixApplied = theRun(store)!.find((e) => e.type === 'FixApplied')!
-    expect(fixApplied.data).toMatchObject({ round: 1, said: 'done' })
+
+    const runOutcomes = stepOutcomesOf(await allEvents(store))
+    const implementRound1 = runOutcomes.find((o) => o.step === 'implement' && o.round === 1)
+    expect(implementRound1?.actions[0]).toMatchObject({
+      name: 'write the change',
+      result: { _tag: 'Completed', question: null },
+    })
 
     // **#493**: one `RunSpent` per `implement` dispatch that returned an
-    // outcome — the first visit's at round 0, the fix round's own at the
-    // round `FixApplied` itself carries.
+    // outcome — the first visit's at round 0, the fix round's own at round 1.
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
     const implementSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
     expect(implementSpent).toHaveLength(2)
@@ -307,33 +324,26 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
     })
     expect(implementSpent[1]!.data).toMatchObject({
-      for: {
-        _tag: 'Action',
-        step: 'implement',
-        name: 'write the change',
-        round: (fixApplied.data as { round: number }).round,
-      },
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
     })
 
     // **#494**: the cold reviewer's own `RunSpent`, one per visit, and the
-    // second visit's round is the fix round `FixApplied` carries -- the same
-    // number `implement`'s own second `RunSpent` just asserted above.
+    // second visit's round is the fix round's own — the same number
+    // `implement`'s own second `RunSpent` just asserted above.
     const reviewSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
     expect(reviewSpent).toHaveLength(2)
     expect(reviewSpent[0]!.data).toMatchObject({ for: { _tag: 'Action', step: 'review', round: 0 } })
-    expect(reviewSpent[1]!.data).toMatchObject({
-      for: { _tag: 'Action', step: 'review', round: (fixApplied.data as { round: number }).round },
-    })
+    expect(reviewSpent[1]!.data).toMatchObject({ for: { _tag: 'Action', step: 'review', round: 1 } })
 
     const runId = theRun(store)![0]!.streamId
-    // `from` is `'proposed'`, not `'review'`: `review` always ends `passed`
-    // (`endingOf`), so its refusal is folded into the `proposed` visit with
-    // `reported: null`, and `routeProposal` writes `from: reported?.step ??
-    // 'proposed'` (`pass.ts:1173`).
+    // `from` is `'review'`, not `'proposed'`: `fromOf` (`proposal.ts`) answers
+    // `'review'` for every `ReviewFindings` proposal, whichever step the
+    // walk's router actually runs at — the router runs at `proposed`, but
+    // the question it is answering is `review`'s own refusal.
     expect(routesOf(await allEvents(store))).toEqual([
       {
         runId,
-        from: 'proposed',
+        from: 'review',
         decision: { _tag: 'Selected', candidate: 'fix-lines' },
         next: { _tag: 'FixRound', to: 'implement', round: 1 },
       },
@@ -351,7 +361,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
    * `armPublished` is set), and `conduct.ts` spends a restart rather than
    * holding.
    */
-  it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', async () => {
+  it('4. a judge restarts the pass (`TicketReleased{cause: Restart}`)', async () => {
     const RESTARTABLE = `
 version: 2
 repo: { base: main, submodules: false }
@@ -406,21 +416,14 @@ runtime:
       detail:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'PassRestarted',
-      'TicketReleased',
-      'IssueUpdated',
-    ])
+    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketReleased', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -428,24 +431,24 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
     const item = await theItem(store)
-    expect(theHold(item)).toBeNull()
-    const restarted = item.find((e) => e.type === 'PassRestarted')!
-    expect(restarted.data).toMatchObject({ restart: 1, of: 1 })
+    expect(theWait(item)).toBeNull()
     const released = item.find((e) => e.type === 'TicketReleased')!
     expect(released.data).toMatchObject({
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
+      cause: { _tag: 'Restart', restart: 1 },
     })
     // **`ReviewFindings` routed with a restart on offer** (#462's own test
     // list): `rounds: 1` and `restarts: 1` are both unspent on this arrival,
@@ -456,11 +459,11 @@ runtime:
 
     const runId = theRun(store)![0]!.streamId
     const all = await allEvents(store)
-    // `from` is `'proposed'`, the same reason as row 2's own comment.
+    // `from` is `'review'`, the same reason as row 2's own comment.
     expect(routesOf(all)).toEqual([
       {
         runId,
-        from: 'proposed',
+        from: 'review',
         decision: { _tag: 'Selected', candidate: 'restart' },
         next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
       },
@@ -473,10 +476,11 @@ runtime:
    * `folded.restarts` is read off the work-item stream (`conduct.ts:3351`), so
    * the second `once()` sees the first's restart without any event being
    * hand-seeded. With `restarts: 1` already spent, the judge's second `claim`
-   * answer is not one of the steps on offer (`"waiting"`, `"implement"`), so
-   * `askTheAgent` holds rather than requeues — **not a ceiling tag of its
-   * own**, but the same `Routed{when: "findings"}` an unrouted judgement gets,
-   * with the restarts-spent sentence folded into `why` (see the file header).
+   * answer is not one of the candidates `offerFor` makes available, so
+   * `decideRoute` escalates rather than requeuing — **not a ceiling tag of its
+   * own**, but the same `ProposedEscalated{proposal: ReviewFindings}` wait an
+   * unrouted judgement gets, carrying `because: CandidateUnavailable` instead
+   * of `NotAsked` (see the file header).
    */
   it('5. restarts spent: the second arrival holds, not requeues', async () => {
     const RESTARTABLE = `
@@ -545,25 +549,23 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'PassRestarted',
       'TicketReleased',
       'IssueUpdated',
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     const runs = theRuns(store)
     expect(runs).toHaveLength(2)
     expect(typesOf(runs[1] ?? [])).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -571,33 +573,43 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
+      'StepEnded',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('`restarts` is spent')
-
-    const all = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all, hold!)
-    // `PassRouted.ceiling` is `'restarts'` even though the file header's own
-    // `WaitReason` reading folds the sentence into `why` rather than a new
-    // tag (0118 §1 gains none for this) — the judge chose `restart`, which
-    // `offerFor` had already excluded, so `routesOf` reads it as the
-    // ordinary ceiling escalation `CandidateUnavailable` always is.
     const runId2 = runs[1]![0]!.streamId
+    const findingBlocker = {
+      file: 'src/fix.ts',
+      line: 12,
+      severity: 'blocker' as const,
+      claim: 'the approach cannot work',
+      failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
+    }
+    const wait = theWait(await theItem(store))
+    const all = await allEvents(store)
+    expectTheWait(all, {
+      _tag: 'ProposedEscalated',
+      run: { runId: runId2 },
+      proposal: { _tag: 'ReviewFindings', findings: [findingBlocker] },
+      because: {
+        _tag: 'CandidateUnavailable',
+        excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+      },
+    })
+    expect(wait).toMatchObject({ _tag: 'ProposedEscalated' })
+
     expect(routesOf(all).filter((r) => r.runId === runId2)).toEqual([
       {
         runId: runId2,
-        from: 'proposed',
+        from: 'review',
         decision: {
           _tag: 'Escalated',
           because: {
@@ -605,23 +617,23 @@ runtime:
             excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
           },
         },
-        next: { _tag: 'HandToPerson' },
+        next: { _tag: 'WaitOnPerson', reason: wait },
       },
     ])
   })
 
   /**
    * **Since `#472` this routes too.** An implementer that produced no commits
-   * at round 0 is `NothingProduced`, one of the seven `nextOf` now answers
+   * at round 0 is `NothingProduced`, one of the proposals `nextOf` answers
    * `Propose` for, so `routeProposal` records a `PassRouted` right after
-   * `StepDidNotFinish` on the run. With no `judge:` declared the router's
-   * floor is the same person, and `holdOf`'s `ProposedEscalated{NothingProduced}`
-   * branch calls the same `nothingProducedHold` builder the direct form did,
-   * so the hold itself — `DidNotFinish`, `why: 'the agent produced no
-   * commits'` — is unchanged. This is the ending #461's first run ended on,
-   * seq 368–371.
+   * `StepEnded` on the run. With no `judge:` declared the router's floor is
+   * the same person, so the wait is `ProposedEscalated{proposal:
+   * NothingProduced{said: 'the agent produced no commits'}, because:
+   * NotAsked}` — unchanged in substance from before the switch, just no
+   * longer translated through a `Hold`. This is the ending #461's first run
+   * ended on, seq 368–371.
    */
-  it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFinish`)', async () => {
+  it('6. `implement` produces no commits at round 0 (`NothingProduced`)', async () => {
     const store = memoryStore()
     const did: string[] = []
 
@@ -644,47 +656,50 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFinished',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'the agent produced no commits' })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const runId = theRun(store)![0]!.streamId
+    expectTheWait(await allEvents(store), {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: { _tag: 'NothingProduced', said: 'the agent produced no commits' },
+      because: { _tag: 'NotAsked' },
+    })
   })
 
   /**
    * The fix round's own agent reads the review's findings and commits
    * nothing, without crashing — `committed` is false and `fixed.failure` is
-   * null, so `conduct.ts:2966` sets `declined` and `holdOfPass` reads the
-   * `did-not-finish` ending as `Declined` rather than `DidNotFinish`.
+   * null, so `conduct.ts:2966` sets `declined` and the proposal is
+   * `FixerDisagrees` rather than `NothingProduced` (that one is round 0's
+   * alone).
    *
    * **Two `PassRouted`s, since `#472`**: `pass.routes` collects one decision
    * per routed visit over the whole walk and `conduct.ts:3506-3525` appends
    * all of them in one batch after the walk returns, so the review's own
    * `ReviewFindings` route (into the fix round) and the round's own
-   * `FixerDisagrees` route (now one of the seven) land as two consecutive
-   * entries rather than one.
+   * `FixerDisagrees` route land as two consecutive entries rather than one.
    */
-  it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', async () => {
+  it('7. `implement` changes nothing in a fix round (`FixerDisagrees`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     // No override on `git rev-parse`: the fixer's round leaves `HEAD` exactly
@@ -711,18 +726,17 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -730,44 +744,47 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'FixRequested',
-      'FixApplied',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Declined', step: 'implement' })
-    expect((hold as { said: string | null }).said).toContain('the approach cannot work')
-
+    const runId = theRun(store)![0]!.streamId
     const all = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all, hold!)
+    const wait = theWait(await theItem(store))
+    expect(wait).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } })
+    expect((wait as Extract<WaitReason, { _tag: 'ProposedEscalated' }>).proposal).toMatchObject({
+      _tag: 'FixerDisagrees',
+    })
+    const said = (wait as Extract<WaitReason, { _tag: 'ProposedEscalated' }>).proposal as { said: string | null }
+    expect(said.said).toContain('the approach cannot work')
+    expectTheWait(all, wait!)
+
     // `stepOutcomesOf` and `waitsOf` must agree about this round: the fixer
-    // read the findings and declined (`FixApplied{failure: null}`), which is
-    // a commit action that *cleared* having committed nothing — never the
-    // `NotDone` 0120 §4 sends to `Propose{SetupRefused}` for a work action
-    // whose own setup broke before any agent ran. `waitsOf` already answers
-    // `Declined`/`FixerDisagrees` off the stored hold regardless; this is the
-    // other half, read off the run's own wire events.
+    // read the findings and declined (a `commit` action that *cleared* having
+    // committed nothing) — never the `NotDone` 0120 §4 sends to
+    // `Propose{SetupRefused}` for a work action whose own setup broke before
+    // any agent ran. `waitsOf` already answers `FixerDisagrees` off the
+    // stored wait regardless; this is the other half, read off the run's own
+    // wire events.
     const implementRound1 = stepOutcomesOf(all).find((o) => o.step === 'implement' && o.round === 1)
     expect(implementRound1?.actions[0]?.result).toEqual({ _tag: 'Completed', head: null, question: null })
     const routes = routesOf(all)
     expect(routes).toHaveLength(2)
-    expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
+    expect(routes[0]).toMatchObject({ from: 'review', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
     expect(routes[1]).toMatchObject({ from: 'implement', decision: { _tag: 'Escalated' } })
     // **#493**: a fix round that declines still returned a `RunOutcome`, so it
-    // still gets a `RunSpent` — at the round `FixApplied` itself carries. And
-    // `#494`: the one review dispatch above it gets its own, at round 0.
+    // still gets a `RunSpent` — at round 1. And `#494`: the one review
+    // dispatch above it gets its own, at round 0.
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
     const implementSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
     expect(implementSpent).toHaveLength(2)
@@ -788,10 +805,10 @@ runtime:
    * finding is a `failed` verdict (0058 §3b: *a reviewer's `failed` is its
    * findings*), and because `merge` is in `REFUSING_STEPS` that verdict
    * becomes a `refused` ending with `because: 'action-refused'` — not one of
-   * the merge lane's own `RefusalReason`s, so it reads `CheckRed` rather than
-   * `MergeRefused` (see the file header).
+   * the merge lane's own `RefusalReason`s, so it reaches `proposed` as
+   * `Propose{CheckRefused}` rather than `MergeRefused` (see the file header).
    */
-  it('9. a check before the lane at `merge` refuses (`CheckRed`)', async () => {
+  it('9. a check before the lane at `merge` refuses (`CheckRefused`)', async () => {
     const CHECK_AT_MERGE = `
 version: 2
 repo: { base: main, submodules: false }
@@ -828,18 +845,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -847,28 +863,36 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      // `PassRouted`, since `#472`: `CheckRefused` is one of the seven, so
+      'StepEnded',
+      // `PassRouted`, since `#472`: `CheckRefused` is one of the proposals, so
       // `nextOf` answers `Propose` and the check's own refusal takes a
       // routing visit to `proposed` — with no `judge:` declared for
       // `check-refused`, the router's floor holds it for a person exactly as
-      // the direct `WaitOnPerson{CheckRefused}` did before this ticket. The
-      // hold is still `CheckRed`, through `holdOf`'s `ProposedEscalated` arm
-      // calling the same `checkRedHold` builder.
+      // the direct wait did before this ticket. `proposed`'s own `StepEnded`
+      // (the step itself still runs and ends on the `WaitOnPerson`) is what
+      // takes the place of the old `ApprovalRequested`.
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
+      'StepEnded',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'CheckRed', step: 'merge' })
-    expect((hold as { why: string }).why).toContain('blocker src/fix.ts:12')
+    const runId = theRun(store)![0]!.streamId
     const all9 = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all9, hold!)
+    expectTheWait(all9, {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: expect.stringContaining('blocker src/fix.ts:12') },
+      because: { _tag: 'NotAsked' },
+    } as unknown as WaitReason)
     // The `check` that refuses at `merge` and `conduct.ts:4038`'s own
     // injected "merge it anyway" offer share this step and round on the
     // wire — `stepOutcomesOf` must not group them into one `StepOutcome`
@@ -878,10 +902,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
   /**
    * `conflict` is one of the two `RefusalReason`s a direction exists for
-   * (`directionOf`, `pass-steps.ts:626`), so it is `Routed` and not
-   * `MergeRefused` — the opposite of row 9, read off the same lane.
+   * (`directionOf`, `pass-steps.ts:626`), so it reaches `proposed` as
+   * `Propose{MergeConflict}` and not the merge lane's own `MergeRefused` wait
+   * — the opposite of row 9, read off the same lane.
    */
-  it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', async () => {
+  it('10a. the merge lane refuses on a conflict (`MergeConflict`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const ports = fakePorts(did, store, true)
@@ -910,18 +935,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -929,33 +953,52 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepFailed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
+      // `conduct.ts`'s own injected "merge it anyway" offer — the lane
+      // refused, so the pass asks whether to merge over the refusal, and
+      // that ask is its own `StepEnded` at `merge`, beside the lane's own.
+      'StepEnded',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'conflict', raw: 'both sides touched src/fix.ts' })
+    const runId = theRun(store)![0]!.streamId
     const all10a = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all10a, hold!)
+    expectTheWait(all10a, {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: {
+        _tag: 'MergeConflict',
+        output: 'both sides touched src/fix.ts',
+        paths: null,
+        baseSha: null,
+        headSha: null,
+      },
+      because: { _tag: 'NotAsked' },
+    })
     expect(stepOutcomesOf(all10a).every(wellFormed)).toBe(true)
   })
 
   /**
-   * `dirty-base` is one of the lane's other six reasons — no direction exists
-   * for it, so it stays `MergeRefused` (`conduct.ts`'s own `MergeRefused`
-   * patch, `#472`, filling `paths`/`baseSha`/`headSha` in from
-   * `lastIntegrationRefusal` since `holdOf` alone writes `null` for all
-   * three). The fake `integrate` appends a real `IntegrationRefused` row —
-   * carrying those three fields for a `dirty-base` reason, which the real
+   * `dirty-base` is one of the lane's other six reasons. Since the switch,
+   * `offerFor` (`routing.ts`) has one cell for `MergeRefused` as a whole —
+   * every reason routes through `proposed` as `Propose{MergeRefused}`, not
+   * only `conflict`/`verify-failed` — filled in from the integration
+   * stream's own `IntegrationRefused` row the same way row 10a's `conflict`
+   * is. The fake `integrate` appends a real one — carrying
+   * `paths`/`baseSha`/`headSha` for a `dirty-base` reason, which the real
    * lane (`packages/repo/src/integrate.ts`) only does for `conflict` — so
    * this is the unit-level stand-in `doc/design/472.md`'s own *What nothing
-   * here can verify* section asks for: whether the patch actually reads them
-   * back onto the hold.
+   * here can verify* section asks for: whether the merge action's own
+   * `Conflicted` result reads them back.
    */
   it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', async () => {
     const store = memoryStore()
@@ -975,9 +1018,6 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
               branch: o.branch,
               reason: 'dirty-base',
               detail: 'main moved under it',
-              paths: ['src/fix.ts'],
-              baseSha: 'b'.repeat(40),
-              headSha: 'c'.repeat(40),
             },
           },
         ])
@@ -1003,18 +1043,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1022,35 +1061,51 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepFailed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
+      // `conduct.ts`'s own injected "merge it anyway" offer — the lane
+      // refused, so the pass asks whether to merge over the refusal, and
+      // that ask is its own `StepEnded` at `merge`, beside the lane's own.
+      'StepEnded',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'MergeRefused',
-      reason: 'dirty-base',
-      paths: ['src/fix.ts'],
-      baseSha: 'b'.repeat(40),
-      headSha: 'c'.repeat(40),
-    })
+    const runId = theRun(store)![0]!.streamId
     const all10b = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all10b, hold!)
+    // **Every `MergeRefused` reason routes now, not only `conflict`/
+    // `verify-failed`.** `offerFor` (`routing.ts`) has one cell for
+    // `MergeRefused` as a whole, not one per `RefusalReason` — so `dirty-base`
+    // reaches `proposed` as `Propose{MergeRefused}` exactly as `conflict` does
+    // in row 10a, rather than staying a direct `MergeRefused` wait the way it
+    // did before the switch. With no `judge:` declared, the router's floor
+    // still holds it for a person — the ending is unchanged, only the shape
+    // of the wait that explains it.
+    expectTheWait(all10b, {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: { _tag: 'MergeRefused', reason: 'dirty-base', output: 'main moved under it' },
+      because: { _tag: 'NotAsked' },
+    })
     expect(stepOutcomesOf(all10b).every(wellFormed)).toBe(true)
   })
 
   /**
-   * A `design:` agent's question (`#294`) — `StepAsked`, and never
-   * `StepDidNotFinish` (`#296`). No `RunStarted` at all: that event is the
+   * A `design:` agent's question (`#294`) — an `InputNeeded` proposal read
+   * directly by `routeNext`'s own `NotAsked && InputNeeded` exception, which
+   * is the one case that reaches `AgentQuestion` rather than
+   * `ProposedEscalated`. No `RunStarted` at all: that event is the
    * `implement` dispatch's own, and `design` asking stops the pass before
    * `implement` is ever reached.
    */
-  it('11. an agent asks a question (`StepAsked`)', async () => {
+  it('11. an agent asks a question (`AgentQuestion`)', async () => {
     const DRAFTED = `
 version: 2
 repo: { base: main, submodules: false }
@@ -1109,36 +1164,37 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepAsked',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Asked', step: 'design', question: asked })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const runId = theRun(store)![0]!.streamId
+    expectTheWait(await allEvents(store), {
+      _tag: 'AgentQuestion',
+      run: { runId },
+      step: 'design',
+      question: asked,
+    })
   })
 
   /**
    * A `human:` the recipe declared at `proposed:` — `#58`'s own claim, carried
    * to the new seam: `--no-merge` asks exactly the same way, through the same
-   * `ApprovalRequested`, and this is the recipe asking with no flag anywhere.
+   * `signoff` action, and this is the recipe asking with no flag anywhere.
    */
-  it('12. a declared `human:` at `proposed` (`Human`)', async () => {
+  it('12. a declared `human:` at `proposed` (`SignoffRequired`)', async () => {
     const HUMAN_BEFORE_THE_LANE = `
 version: 2
 repo: { base: main, submodules: false }
@@ -1172,18 +1228,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1191,28 +1246,35 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'ApprovalRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      // `proposed`'s own `StepEnded` carries `Completed{requested}` for the
+      // declared `human:` action — the signoff's own request, with no
+      // separate `ApprovalRequested` beside it any more.
+      'StepEnded',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'Human',
+    const runId = theRun(store)![0]!.streamId
+    expectTheWait(await allEvents(store), {
+      _tag: 'SignoffRequired',
+      run: { runId },
       step: 'proposed',
-      source: 'declared',
+      action: 'approval',
       question: "Merge this? It is Lingtai's own code.",
     })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
    * The judge's answer does not parse as JSON at all. `chosenIn` returns
-   * `null`, `askTheAgent` holds (`conduct.ts:1935`), and the pass rests with
-   * `stopped === null` — the same `Routed{when: 'findings'}` an unrouted
-   * `review` refusal gets, because nothing here is a step's own refusal.
+   * `null`, the reply is `Unreadable`, and `decideRoute` escalates with
+   * `because: UnreadableReply` — the same `ProposedEscalated{ReviewFindings}`
+   * wait an unrouted `review` refusal gets, now carrying that `because`
+   * rather than `NotAsked`.
    */
   it('13. a judge answer is unreadable', async () => {
     const store = memoryStore()
@@ -1244,18 +1306,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1263,32 +1324,40 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
+      'StepEnded',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('was not readable as one of the steps')
-    // The judge's own sentence (`conduct.ts:2293`) lives only in this
-    // `PassRouted`'s own `why` — `routesOf`'s `waiting` branch answers
-    // `because: NotAsked` for any escalation with `ceiling: null`, judge's
-    // own unreadable answer included, so `holdOf`'s rebuild has no way back
-    // to that text and falls to `ReviewEmpty`'s own fallback, the review's
-    // raw findings. `_tag`/`when` still agree (0120's own 13 collapse to the
-    // one shape `Routed{when: 'findings'}` already is).
-    theWaitFoldsToTheStoredHold(
-      await allEvents(store),
-      hold!,
-      'the judge-unreadable sentence lives on PassRouted.why, which routesOf does not read back into `because`',
-    )
+    const runId = theRun(store)![0]!.streamId
+    const findingBlocker = {
+      file: 'src/fix.ts',
+      line: 12,
+      severity: 'blocker' as const,
+      claim: 'the approach cannot work',
+      failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
+    }
+    expectTheWait(await allEvents(store), {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: { _tag: 'ReviewFindings', findings: [findingBlocker] },
+      // `raw` is the judge's own reply, clipped and wrapped by `#466`'s own
+      // "which step did you mean" sentence — never the bare model text the
+      // row's own fixture returned.
+      because: {
+        _tag: 'UnreadableReply',
+        raw:
+          'the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered ' +
+          '(claude-code (haiku) · 5 turns, $1.25):\nI am not sure what to say here.',
+      },
+    })
   })
 
   /**
@@ -1296,13 +1365,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * runs `proposed`'s own declared `human:`/`watch:` action** (reversing
    * `#467`'s own carry-forward). `nextOf` answers `Propose{AnswerUnreadable}`
    * for a `review` whose findings do not parse at all, exactly as it does for
-   * the other six fall-shorts, and `review` always ends `passed` (`endingOf`),
-   * so `routeProposal`'s `reported` is `null` and it builds the routing visit
+   * the other proposals, and `review` always ends `passed` (`endingOf`), so
+   * `routeProposal`'s `reported` is `null` and it builds the routing visit
    * itself (`#462`) without ever calling `proposed`'s own body. A recipe that
-   * declared a gate at `proposed:` would **not** have it run here; the hold —
-   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
-   * got, with the *could not be read at all* sentence ahead of the raw answer
-   * — comes from `holdOf`'s `answerUnreadableHold` builder instead.
+   * declared a gate at `proposed:` would **not** have it run here.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()
@@ -1331,23 +1397,60 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
-    expect(typesOf(theRun(store))).toContain('ApprovalRequested')
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('could not be read at all')
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    // `proposed`'s own `StepStarted`/`StepEnded` pair still runs — the walk
+    // always visits the step, even though no declared action of its own ever
+    // dispatches here — closing with the `WaitOnPerson` this escalation is,
+    // never the old `ApprovalRequested`.
+    expect(typesOf(theRun(store))).toEqual([
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'RunStarted',
+      'StepsResolved',
+      'RunFinished',
+      'RunSpent',
+      'RunProducedDiff',
+      'RunProposedCompletion',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'RunSpent',
+      'StepEnded',
+      'PassRouted',
+      'RunRefsPublished',
+      'StepEnded',
+      'RunRefsPublished',
+    ])
+    const runId = theRun(store)![0]!.streamId
+    expectTheWait(await allEvents(store), {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: {
+        _tag: 'AnswerUnreadable',
+        from: 'review',
+        raw: "the reviewer's answer was not readable as findings:\nI am not sure what to say here.",
+      },
+      because: { _tag: 'NotAsked' },
+    })
   })
 
   /**
-   * **A fix round's own wall is not the ticket's scope either** (`#467`'s fix
-   * round) — the same read as the cold reviewer's (14d), for a dispatch
-   * `firstDispatch`'s own receipt never covers. `ceilingHit` is set only by
-   * the implementer's first attempt (row 14a); a round bought on `review`'s
-   * findings that then runs out of turns leaves it `null`, so `holdFor`'s
-   * guard reads it as `DidNotFinish` rather than inventing a `Ceiling` — with
-   * real numbers or not — for a budget the ticket's own scope never promised.
+   * **Disagreement with the pre-switch doc found by running this row**: a
+   * fix round's own `out-of-turns` used to read as an ordinary `AgentCrashed`
+   * — `ceilingHit` was `implement`'s first-dispatch receipt alone, and a round
+   * bought on `review`'s findings left it unset. Since the switch, `offerFor`
+   * (`routing.ts`) has one `BudgetExhausted` cell for every `out-of-turns`/
+   * `out-of-usd` crash regardless of which dispatch hit it, so this is
+   * `ProposedEscalated{proposal: BudgetExhausted}` too — with `turns`/
+   * `costUsd` both `null`, since nothing mints a receipt for a fix round's own
+   * ceiling (0118 §3's rule: `null` rather than an invented number).
    */
-  it('14c. a fix round`s own agent hits the turn ceiling (`DidNotFinish`, not the ticket`s scope)', async () => {
+  it("14c. a fix round's own agent hits the turn ceiling (`BudgetExhausted`, turns/costUsd null)", async () => {
     const store = memoryStore()
     const did: string[] = []
     const fixCeiling: Runtime = {
@@ -1385,23 +1488,32 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement' })
-    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
+    const runId = theRun(store)![0]!.streamId
+    const all = await allEvents(store)
+    const wait = theWait(await theItem(store))
+    expect(wait).toMatchObject({
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: {
+        _tag: 'BudgetExhausted',
+        from: 'implement',
+        kind: 'out-of-turns',
+        turns: null,
+        costUsd: null,
+        detail: 'the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
+      },
+      because: { _tag: 'NotAsked' },
+    })
+    expectTheWait(all, wait!)
   })
 
   /**
-   * **The cold reviewer's own wall is not the ticket's scope** (`#467`'s fix
-   * round). `ceilingHit` is `implement`'s own receipt alone (`firstDispatch`,
-   * `fixRound`) — a reviewer that runs out of turns leaves it `null`, and
-   * `nextOf`'s `BudgetExhausted` carries no step to gate itself with, so
-   * without `holdFor`'s guard this would read as `Ceiling{turns: null,
-   * costUsd: null}`: the *scope alarm, requeue* sentence, for a budget the
-   * implementer never touched. Before `#467` the same wall held as an
-   * ordinary `DidNotFinish` (`holdOfPass`'s step 3, gated on the same
-   * `ceilingHit`), and this is that shape surviving `nextOf`.
+   * **The same disagreement row 14c found, for a different step.** The cold
+   * reviewer's own `out-of-turns` is `ProposedEscalated{proposal:
+   * BudgetExhausted}` too, `turns`/`costUsd` both `null` since the reviewer's
+   * dispatch is not `implement`'s own first-dispatch receipt.
    */
-  it('14d. the cold reviewer`s own wall is `DidNotFinish`, not a `Ceiling` nobody paid for', async () => {
+  it("14d. the cold reviewer's own wall is `BudgetExhausted` too, turns/costUsd null", async () => {
     const store = memoryStore()
     const did: string[] = []
     const reviewCeiling: Runtime = {
@@ -1436,10 +1548,23 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'review' })
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'review' })
+    const runId = theRun(store)![0]!.streamId
     const all = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all, hold!)
+    const wait = theWait(await theItem(store))
+    expect(wait).toMatchObject({
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: {
+        _tag: 'BudgetExhausted',
+        from: 'review',
+        kind: 'out-of-turns',
+        turns: null,
+        costUsd: null,
+        detail: 'the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
+      },
+      because: { _tag: 'NotAsked' },
+    })
+    expectTheWait(all, wait!)
     // #478: this row's own wire sentence (`agent-action.ts:580`) names the
     // real kind, and `stepOutcomesOf` must read it back rather than folding
     // to its own `crash` default — this is the one row here whose events
@@ -1451,13 +1576,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   /**
    * `out-of-turns` with turns spent is the one failure kind that sets
    * `ceilingHit` (with `out-of-usd`, `conduct.ts:2774`), so it is the one
-   * `Ceiling` in this file. **Since `#472`** `BudgetExhausted` is one of the
-   * seven, so the run gains a `PassRouted`, and `holdFor`'s ceiling branch
-   * takes the step from `pass.waitOn.proposal.from` rather than
-   * `pass.stoppedAt!` — the hold itself, with `turns`/`costUsd` patched in
-   * from `ceilingHit`, is unchanged.
+   * `BudgetExhausted` in this file. **Since `#472`** `BudgetExhausted` is one
+   * of the proposals, so the run gains a `PassRouted`.
+   *
+   * **Disagreement with the pre-switch doc found by running this row**:
+   * `turns`/`costUsd` are not patched in from `ceilingHit` any more —
+   * `pass-next.ts`'s own `nextOf` always builds `BudgetExhausted{turns: null,
+   * costUsd: null}`, whichever dispatch hit the ceiling. `#455`'s receipt is
+   * what would fill them, and nothing mints one yet (0118 §3's own rule:
+   * `null` rather than an invented number) — the same reading rows 14c/14d
+   * already confirmed for a fix round's and a reviewer's own wall.
    */
-  it('14a. the turn ceiling is hit mid-run (`Ceiling`)', async () => {
+  it('14a. the turn ceiling is hit mid-run (`BudgetExhausted`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const ceilingRuntime: Runtime = {
@@ -1492,34 +1622,44 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFinished',
       'RunFailed',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 10, costUsd: 1.1 })
+    const runId = theRun(store)![0]!.streamId
     const all14a = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all14a, hold!)
+    expectTheWait(all14a, {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: {
+        _tag: 'BudgetExhausted',
+        from: 'implement',
+        kind: 'out-of-turns',
+        turns: null,
+        costUsd: null,
+        detail: 'out-of-turns: spent all 10 turns with no commit',
+      },
+      because: { _tag: 'NotAsked' },
+    })
     const implementOutcome = stepOutcomesOf(all14a).find((o) => o.step === 'implement')
     expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns', head: null })
     // **#493**: `out-of-turns` still returned an outcome, so it still gets a
@@ -1537,11 +1677,12 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * **The wall is not a ceiling today** (see the file header). A `timeout`
-   * does not set `ceilingHit`, so it holds as an ordinary `DidNotFinish` —
-   * the same tag row 6 gets, for a different reason.
+   * **The wall is not a budget ceiling today** (see the file header). A
+   * `timeout` does not set `ceilingHit`, so it holds as an ordinary
+   * `AgentCrashed` — the same tag row 6's cousin rows get, for a different
+   * reason.
    */
-  it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', async () => {
+  it('14b. the wall is hit mid-run (`AgentCrashed`, not `BudgetExhausted`)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const timeoutRuntime: Runtime = {
@@ -1576,44 +1717,48 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFailed',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',
     ])
-    const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'timeout: exceeded wall 2m' })
+    const runId = theRun(store)![0]!.streamId
     const all14b = await allEvents(store)
-    theWaitFoldsToTheStoredHold(all14b, hold!)
+    expectTheWait(all14b, {
+      _tag: 'AgentCrashed',
+      run: { runId },
+      step: 'implement',
+      cause: 'timeout',
+      detail: 'timeout: exceeded wall 2m',
+    })
     const implementOutcome = stepOutcomesOf(all14b).find((o) => o.step === 'implement')
     expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'timeout', head: null })
   })
 
   /**
-   * **A claim `selectRunnable` passes over writes no run events** — a ticket
-   * carrying an excluded label stays queued (`conduct-before-the-claim.test.ts`),
-   * and this is the same arrangement, read for what it writes rather than for
-   * what it must not. The work-item stream stays untouched; what exists is the
-   * run stream `claim` itself opens as `STEPS[0]` — three events, and nothing
-   * beyond them (see the file header for why this is not the empty stream
-   * 0120 assumed).
+   * **A claim `selectRunnable` passes over writes no run events beyond its
+   * own bookkeeping** — a ticket carrying an excluded label stays queued
+   * (`conduct-before-the-claim.test.ts`), and this is the same arrangement,
+   * read for what it writes rather than for what it must not. The work-item
+   * stream stays untouched; what exists is the run stream `claim` itself
+   * opens as `STEPS[0]` — two events, and nothing beyond them (see the file
+   * header for why this is not the empty stream 0120 assumed).
    */
   it('15. a claim decline (`passed-over`) writes no work-item events', async () => {
     const HELD_BACK = RECIPE.replace('exclude: []', 'exclude: [hold]')
@@ -1641,10 +1786,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: false, stage: 'claim', detail: 'excluded-label' })
     expect(await theItem(store)).toEqual([])
     expect(said).toEqual([])
-    expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
-    // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
-    // so its own three events — a real `pass-*` stream, the file header's own
-    // point — fold to none at all.
+    // `passed-over` is decided before `claim` ever opens a run stream at all
+    // — there is nothing here for `theRun` to find, and nothing for
+    // `stepOutcomesOf` to fold.
+    expect(theRun(store)).toBeNull()
     expect(stepOutcomesOf(theRun(store) ?? [])).toEqual([])
   })
 
@@ -1688,7 +1833,8 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect((result as { detail: string }).detail).toContain('held')
     expect((await store.read(itemId)).map((e) => e.type)).toEqual(['TicketClaimed'])
     expect(said).toEqual([])
-    expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    // Same reason as row 15: declined before a run stream ever opens.
+    expect(theRun(store)).toBeNull()
   })
 
   /**
@@ -1732,7 +1878,8 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
     expect(typesOf(await flaky.read(itemId))).toEqual(['TicketReleased', 'IssueUpdated'])
-    expect(typesOf(theRun(flaky))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    // Same reason as rows 15/15b: declined before a run stream ever opens.
+    expect(theRun(flaky)).toBeNull()
     // No `TicketClaimed` ever landed on this stream — the append that would
     // have written it is what threw.
     expect(releaseCauseOf(await flaky.read(itemId))).toEqual([{ _tag: 'ClaimUnconfirmed' }])
@@ -1750,15 +1897,15 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * round's head a second time; the round ceiling is now spent (`rounds: 1`),
    * so `stepsOnOffer` no longer offers `implement` and the agent judge at
    * `findings` is asked between `claim` and `human` alone. It answers `claim`
-   * — `pass.rested === 'requeued'`.
+   * — a restart is selected.
    *
    * **Before the fix this test pins down**, `armIsUp` compared `armPublished`
    * (the WIP's own sha, once `keepUncommittedWork` has run) against `headSha`
    * (`headReached(pass.steps)`, the commit `review` judged — the WIP's own
    * *parent*) directly. Every ending that kept a WIP therefore read the arm as
-   * down though it was on origin and `headSha` was its ancestor: no
-   * `PassRestarted` was appended and `restartsSpent` never advanced. `armIsUp`
-   * now also accepts a WIP whose own parent is `headSha` (`conduct.ts:3719`).
+   * down though it was on origin and `headSha` was its ancestor: no restart
+   * was appended and `restartsSpent` never advanced. `armIsUp` now also
+   * accepts a WIP whose own parent is `headSha` (`conduct.ts:3719`).
    */
   function restartWithAKeptWip(did: string[], store: ReturnType<typeof memoryStore>) {
     const RESTARTABLE = `
@@ -1860,7 +2007,7 @@ runtime:
     return { recipe: RESTARTABLE, runtime: judging, ports, FIX_SHA, WIP_SHA }
   }
 
-  it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRestarted` spends the ceiling)', async () => {
+  it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, the restart spends the ceiling)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const fixture = restartWithAKeptWip(did, store)
@@ -1888,8 +2035,8 @@ runtime:
     expect(kept!.data).toMatchObject({ sha: fixture.WIP_SHA, parentSha: fixture.FIX_SHA, stoppedBy: 'out-of-turns' })
 
     // **#493**: the fix round's own `out-of-turns`, with a commit kept, still
-    // returned an outcome — a `RunSpent` at this round's own number, beside
-    // the first dispatch's own at round 0.
+    // returned an outcome — a `RunSpent` at round 1, beside the first
+    // dispatch's own at round 0.
     const spent16 = run.filter((e) => e.type === 'RunSpent')
     const implementSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
     expect(implementSpent16).toHaveLength(2)
@@ -1913,13 +2060,31 @@ runtime:
       expect((row.data as { headSha: string | null }).headSha).not.toBe(fixture.WIP_SHA)
     }
 
-    const item = await theItem(store)
-    const restarted = item.find((e) => e.type === 'PassRestarted')!
     // **The restart is bound to the commit `review` judged, never the WIP.**
     // This is the ceiling actually being spent — the bug this test is against
-    // left `PassRestarted` unappended on this exact ending.
-    expect(restarted.data).toMatchObject({ restart: 1, of: 2, headSha: fixture.FIX_SHA })
-    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'Restart', restart: 1 }])
+    // left no restart appended on this exact ending.
+    //
+    // `from` is `'review'` on both routes — `fromOf` (`proposal.ts`) answers
+    // `'review'` for every `ReviewFindings` proposal, whichever visit raised
+    // it, never `'proposed'`: the router runs at `proposed`, but the question
+    // it is answering is `review`'s own refusal.
+    const all = await allEvents(store)
+    expect(releaseCauseOf(all)).toEqual([{ _tag: 'Restart', restart: 1 }])
+    const routedRun = run[0]!.streamId
+    expect(routesOf(all).filter((r) => r.runId === routedRun)).toEqual([
+      {
+        runId: routedRun,
+        from: 'review',
+        decision: { _tag: 'Selected', candidate: 'fix-lines' },
+        next: { _tag: 'FixRound', to: 'implement', round: 1 },
+      },
+      {
+        runId: routedRun,
+        from: 'review',
+        decision: { _tag: 'Selected', candidate: 'restart' },
+        next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
+      },
+    ])
 
     // The same pass, run again on the same store with fresh ports:
     // `folded.restarts` already carries the first, and a second WIP on a
@@ -1942,10 +2107,6 @@ runtime:
     )
     expect(result2).toMatchObject({ ok: false, stage: 'restart' })
 
-    const item2 = await theItem(store)
-    const restarts = item2.filter((e) => e.type === 'PassRestarted')
-    expect(restarts).toHaveLength(2)
-    expect(restarts[1]!.data).toMatchObject({ restart: 2, of: 2 })
     expect(releaseCauseOf(await allEvents(store))).toEqual([
       { _tag: 'Restart', restart: 1 },
       { _tag: 'Restart', restart: 2 },

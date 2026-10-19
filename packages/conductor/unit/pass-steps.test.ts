@@ -1463,6 +1463,16 @@ describe('proposed is the only step that routes, and one judge answers each when
         to: 'implement',
         why: expect.stringContaining('same-worktree'),
         ceiling: null,
+        offer: {
+          proposal: { _tag: 'BuildRed', output: 'pnpm install exited 1' },
+          available: [
+            { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+            { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+          ],
+          unavailable: [],
+        },
+        reply: { _tag: 'Selected', candidate: 'fix-lines', why: expect.stringContaining('same-worktree') },
+        decision: { _tag: 'Selected', candidate: 'fix-lines' },
       },
     ])
     expect(asked.judge.map((on) => on.when)).toEqual(['red'])
@@ -1542,6 +1552,20 @@ describe('proposed is the only step that routes, and one judge answers each when
         // person would have to grep the source for to find the entry to edit.
         why: expect.stringContaining('the "a red build is the agent\'s to fix, where it already is" judge'),
         ceiling: null,
+        offer: {
+          proposal: { _tag: 'BuildRed', output: 'pnpm install exited 1' },
+          available: [
+            { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+            { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+          ],
+          unavailable: [],
+        },
+        reply: {
+          _tag: 'Selected',
+          candidate: 'fix-lines',
+          why: expect.stringContaining('the "a red build is the agent\'s to fix, where it already is" judge'),
+        },
+        decision: { _tag: 'Selected', candidate: 'fix-lines' },
       },
     ])
     // And it says what it declares rather than calling a `red` mechanical: the

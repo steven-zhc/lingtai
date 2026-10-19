@@ -2,25 +2,27 @@
  * **What the conductor asks a person, when nothing at the point asked for
  * them.**
  *
- * A plugin that wants a person emits its own `ApprovalRequested` through the
- * pipeline; a plugin that *refused* emits a `StepFailed` and nothing else, so
- * the request that reaches a person over a refusal is `conduct.ts`'s own — and
- * the two events land in the same place.
+ * A plugin that wants a person yields its own `signoff` action through the
+ * pipeline; a plugin that *refused* ends with an ordinary refused `verdict`
+ * action and nothing else, so the request that reaches a person over a
+ * refusal is `conduct.ts`'s own — a second, synthetic `StepEnded` for the
+ * same step, appended after the one the refusing action's own pipeline wrote
+ * (`conduct.ts`'s "merge it anyway" offer, #502).
  *
- * `task-view.ts` folds both through one `setStep`, keyed
- * `${runId}:${gate}:${action}`, with `VERDICT.StepFailed = "failed"` and
- * `VERDICT.ApprovalRequested = "pending"`. **So the name on the request is not
- * decoration.** Named after the action that refused, the request overwrites
- * that action's verdict with `pending`: the card's `failed` count drops to zero
- * and the board shows a change that was refused as merely waiting, on every
- * projection and every rebuild. The old engine named its request `unfixed` or
- * `disagreement` for precisely this reason and wrote the collision out in a
- * comment at the append; the name is what survived the engine swap badly.
+ * `task_view` folds every action in a `StepEnded.outcome` through one
+ * `setStep`, keyed `${runId}:${step}:${action}`. **So the name on the
+ * synthetic action is not decoration.** Named after the action that refused,
+ * the synthetic action would overwrite that action's verdict with `pending`:
+ * the card's `failed` count drops to zero and the board shows a change that
+ * was refused as merely waiting, on every projection and every rebuild. The
+ * old engine named its request `unfixed` or `disagreement` for precisely
+ * this reason; the name is what survived the engine swap, and then the #502
+ * switch, unchanged.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import type { Hold } from '@lingtai/domain'
+import type { PayloadOf } from '@lingtai/domain'
 import { legacyColumns } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
@@ -73,43 +75,58 @@ describe('the approval a refusal reaches a person with', () => {
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
 
-    const failed = run.find((e) => e.type === 'StepFailed')!
-    expect(failed.data).toMatchObject({ step: 'proposed', action: 'review' })
+    // Two `StepEnded`s share `step: 'proposed'` here: the pipeline's own,
+    // carrying the refusing `review` action, and the synthetic one
+    // `conduct.ts` appends after it for the offer — told apart by `plugin`,
+    // since no recipe-declared or default action is ever `'conductor'`.
+    const endedAtProposed = run
+      .filter((e) => e.type === 'StepEnded')
+      .map((e) => (e.data as PayloadOf<'StepEnded'>).outcome)
+      .filter((o) => o.step === 'proposed')
+    const refusedOutcome = endedAtProposed.find((o) => o.actions.some((a) => a.plugin !== 'conductor'))!
+    const offerOutcome = endedAtProposed.find((o) => o.actions.some((a) => a.plugin === 'conductor'))!
 
-    const asked = run.find((e) => e.type === 'ApprovalRequested')!
+    const refusedAction = refusedOutcome.actions[0]!
+    expect(refusedAction.name).toBe('review')
+    expect(refusedAction.result).toMatchObject({ _tag: 'Completed', assessment: { verdict: 'refused' } })
+
+    const askedAction = offerOutcome.actions[0]!
     /**
      * **Bound to what the publish put on origin**, which is what makes the
      * question answerable: `approve()` compares `onSha` to what origin has for the
      * branch and refuses anything else as `stale` (`#92`). `published` is the head
      * `publishWhatIsCommitted` pushed, and it is what `conduct.ts` binds to —
      * never `headReached`, which is the last head a *visit* reported.
+     *
+     * `ApprovalRequested.artifacts` is gone with the event itself (#502): a
+     * `signoff` action's `Completed{requested}` carries only `question`, so
+     * the branch-ref list that field used to show is not something this row
+     * can still pin — `onSha` against `RunProducedDiff.headSha` is what is
+     * left of that claim.
      */
-    expect(asked.data).toMatchObject({
-      onSha: 'b'.repeat(40),
-      artifacts: [`agent/7@${'b'.repeat(40)}`],
-    })
-    expect((run.find((e) => e.type === 'RunProducedDiff')!.data as { headSha: string }).headSha).toBe(
-      (asked.data as { onSha: string }).onSha,
-    )
-    const key = (data: unknown) => {
-      const d = data as { step: string; action: string }
-      return `${d.step}:${d.action}`
-    }
+    expect(askedAction.onSha).toBe('b'.repeat(40))
+    expect((run.find((e) => e.type === 'RunProducedDiff')!.data as { headSha: string }).headSha).toBe(askedAction.onSha)
     // The whole of it: one key per verdict, so the `pending` cannot land on the
-    // `failed`.
-    expect(key(asked.data)).not.toBe(key(failed.data))
-    expect((asked.data as { action: string }).action).toBe('unfixed')
+    // `failed` — the two actions never share a name, which is what keeps
+    // `${step}:${action}` from colliding in `task_view`.
+    expect(askedAction.name).not.toBe(refusedAction.name)
+    expect(askedAction.name).toBe('unfixed')
 
     // **And what the key stops carrying travels in the question**, which is
     // what a person reads — the pointer to the action, and the step it ran at.
-    const question = (asked.data as { question: string }).question
+    const question = askedAction.evidence
     expect(question).toContain('review')
     expect(question).toContain('proposed')
 
     // The card's own sentence still names the refusal, and this is a diff two
     // agents disagreed about rather than a green run — so no move is
     // recommended over it.
-    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+    const started = item.find((e) => e.type === 'WaitStarted')!
+    const blocked = legacyColumns((started.data as PayloadOf<'WaitStarted'>).reason, {
+      branch: 'agent/7',
+      base: 'main',
+      findings: [],
+    })
     expect(blocked.needs).toBe('acknowledgement')
     expect(blocked.diagnosis?.recommendation).toBeNull()
   })

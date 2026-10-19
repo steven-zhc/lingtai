@@ -292,9 +292,7 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
  * `withProjector` wants a line it can log without the call ever being fatal
  * — none of the four wants a `try`/`catch` of their own for this.
  */
-export async function logPredatesHold(
-  queries: Pick<LogQueries, 'typeCounts'>,
-): Promise<LogPredatesHoldError | null> {
+export async function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
   const counts = await queries.typeCounts()
   const unknown = counts.find((c) => !isEventType(c.type))
   return unknown ? new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows }) : null

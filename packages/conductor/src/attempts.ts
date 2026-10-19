@@ -134,8 +134,6 @@ export interface PriorAttempt {
    * a caller reading before its own claim will never see for itself.
    */
   ended: string | null
-  /** The integrator's refusal, when a repair was requested or declined for it. */
-  refusal: { reason: string; detail: string } | null
   outcome: AttemptOutcome | null
 }
 
@@ -156,15 +154,17 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
     // switch (`read-model.ts`, shared with `task_view`) is the one place
     // that has to move when #464 renames the event, rather than this file
     // also carrying a case label that would silently stop matching.
-    const card = cardFactOf(event)
-    if (card !== null && card._tag === 'WaitStarted') {
+    let waitStarted = false
+    for (const card of cardFactOf(event)) {
+      if (card._tag !== 'WaitStarted') continue
+      waitStarted = true
       const runId = 'run' in card.reason ? card.reason.run.runId : null
       const attempt = runId === null ? undefined : byRun.get(runId)
       // An attempt that ended by asking a person ended just as much as one
       // that was released, and the question is the reason.
       if (attempt) attempt.ended = `blocked, asking: ${card.card.question}`
-      continue
     }
+    if (waitStarted) continue
 
     switch (event.type) {
       case 'TicketClaimed': {
@@ -178,7 +178,6 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
           n: attempts.length + 1,
           runId: d.runId,
           ended: null,
-          refusal: null,
           outcome: null,
         }
         attempts.push(attempt)
@@ -193,13 +192,8 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         break
       }
 
-      default: {
-        const fact = attemptFactOf(event)
-        if (fact?._tag !== 'RepairRefused') break
-        const attempt = byRun.get(fact.runId)
-        if (attempt) attempt.refusal = { reason: fact.reason, detail: fact.detail }
+      default:
         break
-      }
     }
   }
 
@@ -218,9 +212,14 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
 export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBudget): AttemptOutcome {
   let produced: AttemptOutcome['produced'] = null
   let kept: AttemptOutcome['kept'] = null
-  let receipt: AttemptOutcome['receipt'] = null
+  let turns: number | null = null
+  let costUsd: number | null = null
   let evidence: AttemptOutcome['evidence'] = null
   let failed: AttemptOutcome['evidence'] = null
+  // `StepStarted` is once per step now, carrying no action (#502) — so this
+  // tracks by step alone, not `step:action`: a run that died mid-step is
+  // nameable only as the step, never the action, under 0120's own loss of
+  // which action of a step was running.
   const unfinished = new Set<string>()
 
   for (const event of runEvents) {
@@ -239,7 +238,15 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
 
       case 'RunFinished': {
         const d = event.data as PayloadOf<'RunFinished'>
-        receipt = { turns: d.turns, costUsd: d.costUsd }
+        turns = d.turns
+        break
+      }
+
+      // `costUsd`/`usage` left `RunFinished` with `#502` (0110 §9): spend has
+      // one source, `RunSpent`, summed here the way the spend projection does.
+      case 'RunSpent': {
+        const d = event.data as PayloadOf<'RunSpent'>
+        if (d.costUsd !== null) costUsd = (costUsd ?? 0) + d.costUsd
         break
       }
 
@@ -249,27 +256,28 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
         break
       }
 
+      case 'StepStarted': {
+        const d = event.data as PayloadOf<'StepStarted'>
+        unfinished.add(d.step)
+        break
+      }
+
       /**
-       * Everything else a step ends with — `StepStarted` opens `unfinished`;
-       * `StepPassed`/`StepWaived`/`StepNeverRan`/`StepDidNotFinish`/`StepAsked`
-       * close it with nothing to show (a quota, a crash, a question — none of
-       * them judged the code, so the failure block for each is empty on
-       * purpose, `#133`/0057 §1/`#296`); `StepFailed` closes it **with**
-       * evidence, the most specific thing on the stream, so the last one wins
-       * over anything else recorded here.
+       * `StepEnded` closes whatever `StepStarted` opened for its own step,
+       * carrying every action the step declared — `refused` is set for
+       * whichever one (`Completed{refused}`) answers the review question,
+       * the most specific thing on the stream, so the last one wins over
+       * anything else recorded here.
        */
       default: {
-        const fact = attemptFactOf(event)
-        if (fact === null || fact._tag === 'RepairRefused') break
-        if (fact._tag === 'StepStarted') {
-          unfinished.add(fact.key)
-          break
-        }
-        unfinished.delete(fact.key)
-        if (fact.refused !== null) {
-          evidence = {
-            what: fact.key,
-            text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
+        for (const fact of attemptFactOf(event)) {
+          const [step] = fact.key.split(':')
+          if (step !== undefined) unfinished.delete(step)
+          if (fact.refused !== null) {
+            evidence = {
+              what: fact.key,
+              text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
+            }
           }
         }
         break
@@ -287,7 +295,7 @@ export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBud
     }
   }
 
-  return { produced, kept, evidence, receipt }
+  return { produced, kept, evidence, receipt: turns === null ? null : { turns, costUsd } }
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
@@ -352,17 +360,6 @@ export function attemptBrief(
       "Where a row names a ref, that attempt's commits are on it and readable from this",
       'worktree — `git show <ref>:<path>`, `git diff HEAD <ref>`. Read them against how',
       'that attempt ended; whether any of it is worth anything here is yours to judge.',
-    )
-  }
-
-  if (last.refusal) {
-    lines.push(
-      '',
-      `The integrator refused attempt ${last.n} with **${last.refusal.reason}**:`,
-      '',
-      '```',
-      clamp(last.refusal.detail, budget.evidence),
-      '```',
     )
   }
 

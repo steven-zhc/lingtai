@@ -1,4 +1,4 @@
-import { parsePayload, reduceWorkItem } from '@lingtai/domain'
+import { parsePayload, reduceWorkItem, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -136,10 +136,11 @@ export async function releaseWorkItem(
   runId: string,
   reason: string,
   store: EventStore = eventStore,
+  cause: ReleaseCause | null = null,
 ): Promise<void> {
   const events = await store.read(ticketId)
   const state = reduceWorkItem(events)
   await store.append(ticketId, state.version, [
-    { type: 'TicketReleased', actor: 'conductor', data: parsePayload('TicketReleased', { runId, reason }) },
+    { type: 'TicketReleased', actor: 'conductor', data: parsePayload('TicketReleased', { runId, reason, cause }) },
   ])
 }

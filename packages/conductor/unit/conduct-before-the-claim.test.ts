@@ -18,8 +18,8 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no disk. The fixtures are `test/one-pass.ts`.
  */
-import type { Hold } from '@lingtai/domain'
 import { legacyColumns } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import type { GitHubClient } from '@lingtai/github'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -415,7 +415,7 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
  * step off — so `PassResult.stoppedAt` is `{step: "claim"}` and `outcomeOf`,
  * which reads any non-`never-ran` stop as `blocked`, sends it to the blocked
  * ending. Left there, `conduct.ts` appends `ApprovalRequested` to a run stream
- * with no `RunStarted`, appends `WorkItemBlocked` to the item, comments
+ * with no `RunStarted`, appends `WaitStarted` to the item, comments
  * **Lingtai is waiting on you** and writes `lingtai:waiting` — about an item
  * this pass never took.
  *
@@ -593,10 +593,10 @@ describe('a failure acquiring what a step needs is answered at that step', () =>
     // This run claimed it, so this run is what holds it — and a person is asked
     // rather than the queue, because the next pass meets the same disk.
     expect(types).toContain('TicketClaimed')
-    expect(types).toContain('WorkItemBlocked')
+    expect(types).toContain('WaitStarted')
     expect(types).not.toContain('TicketReleased')
 
-    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+    const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
     expect(blocked.question).toContain('the cold reviewer had no settings')
     expect(blocked.diagnosis?.raw).toContain('ENOSPC')
     // Nothing was cut, so there is nothing on origin and nothing to approve.
