@@ -50,8 +50,10 @@ function turn(question: string, costUsd: number | null) {
   }
 }
 
-const render = (discussions: DiscussionView[]) =>
-  renderToStaticMarkup(<Discussion taskId="wi-lingtai-89" attempt={2} discussions={discussions} />)
+const render = (discussions: DiscussionView[], discussionTotal: string | null = null) =>
+  renderToStaticMarkup(
+    <Discussion taskId="wi-lingtai-89" attempt={2} discussions={discussions} discussionTotal={discussionTotal} />,
+  )
 
 describe('the meter', () => {
   /**
@@ -90,8 +92,15 @@ describe('the meter', () => {
     expect(html).not.toContain('$0.00')
   })
 
+  /**
+   * `discussionTotal` is `spend`'s own Discussion rows, already formatted —
+   * `task.totals.byPurpose.Discussion` through `billText` — never
+   * `DiscussionView.costUsd` summed here (`#498`): the per-turn `costUsd`
+   * above stays what `DiscussionAnswered` recorded, but the conversation's
+   * running total moved.
+   */
   it('reports what closed conversations came to once none is open', () => {
-    const html = render([chat({ held: 'none', costUsd: 0.42, turns: [turn('why?', 0.42)] })])
+    const html = render([chat({ held: 'none', costUsd: 0.42, turns: [turn('why?', 0.42)] })], '$0.42')
 
     expect(html).toContain('1 held · $0.42 · no limit')
   })
@@ -183,9 +192,16 @@ describe("the ledger's total", () => {
     expect(fact).not.toContain('work')
   })
 
-  it('names no figure at all for an item nothing has reported a cost on', () => {
+  /**
+   * An attempt that contributed not one row to `spend` — `rows` defaults to
+   * `[]` here, the no-row case a pre-`RunSpent` ticket like `wi-lingtai-89`
+   * is always in — is unknown, never nothing: 0110 §7 asks for `unknown`,
+   * not silence, and `$0.00` is a third answer this bill must never give.
+   */
+  it('says unknown rather than nothing for an attempt that reported no cost at all', () => {
     const fact = totalsFact(totalsOf([run()]))
 
-    expect(fact).toBe('1 attempt · 73 turns · 11m40s')
+    expect(fact).toBe('unknown (1 run) · 1 attempt · 73 turns · 11m40s')
+    expect(fact).not.toContain('$0.00')
   })
 })

@@ -5,7 +5,18 @@ import type { SpendRow } from '@lingtai/projector'
  */
 import { describe, expect, it } from 'vitest'
 
-import { addBill, billOf, billText, emptyBill, PURPOSES, totalBill, type RateCard } from '../src/lib/spend.ts'
+import {
+  addBill,
+  billHasAny,
+  billOf,
+  billText,
+  emptyBill,
+  PURPOSES,
+  totalBill,
+  unknownBill,
+  withNoSpendFallback,
+  type RateCard,
+} from '../src/lib/spend.ts'
 
 function row(over: Partial<SpendRow> = {}): SpendRow {
   return {
@@ -134,5 +145,48 @@ describe('billText renders the one table every reader shows', () => {
     const price: RateCard = () => 0.5
     const bills = billOf([row({ costUsd: 3.1 }), row({ costUsd: null })], price)
     expect(billText(bills.Work)).toBe('$3.10 ~$0.50 est.')
+  })
+
+  /**
+   * A row with no reported figure and no unknown count — every row priced by
+   * the rate card — used to fall through `billText`'s first two arms and hit
+   * the `—` meant for a bill with nothing in it at all, dropping a priced run
+   * on the floor: `billHasAny` agreed, since it only asked about `reportedRuns`
+   * and `unknown`, so the pill that would have shown it never rendered either.
+   */
+  it('shows the estimate alone when nothing was reported and nothing is unknown', () => {
+    const price: RateCard = () => 0.42
+    const bills = billOf([row({ costUsd: null })], price)
+    expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [0.42], unknown: 0 })
+    expect(billText(bills.Work)).toBe('~$0.42 est.')
+    expect(billHasAny(bills.Work)).toBe(true)
+  })
+})
+
+describe('unknownBill and withNoSpendFallback', () => {
+  it('unknownBill credits unknown runs and nothing else', () => {
+    expect(unknownBill(2)).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
+  })
+
+  /**
+   * A ticket like `wi-lingtai-89` whose runs predate `RunSpent`: `billOf`
+   * folds its (empty) rows to five empty bills, which reads as nothing spent
+   * rather than as unknown. `withNoSpendFallback` is the one place every
+   * reader (the card, `/spend`'s ledger) takes that fallback, credited to
+   * Work since neither carries a per-attempt repair flag to split it by.
+   */
+  it('credits Work with one unknown run per attempt when spend has nothing at all', () => {
+    const bills = withNoSpendFallback(billOf([]), 2)
+    expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
+    expect(bills.Answering).toEqual(emptyBill())
+  })
+
+  it('does nothing for a ticket that never ran', () => {
+    expect(withNoSpendFallback(billOf([]), 0)).toEqual(billOf([]))
+  })
+
+  it('does nothing when any purpose already has reported or unknown data', () => {
+    const bills = billOf([row({ purpose: 'Judge', round: null, costUsd: 1 })])
+    expect(withNoSpendFallback(bills, 3)).toBe(bills)
   })
 })

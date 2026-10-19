@@ -57,9 +57,43 @@ export function addBill(a: Bill, b: Bill): Bill {
   }
 }
 
+/** One run, or several, with not one row in `spend` — unknown, never free (0110 §7). */
+export function unknownBill(count: number): Bill {
+  return { reportedCents: 0, reportedRuns: 0, estimates: [], unknown: count }
+}
+
 /** Every purpose's bill, folded into one — what a single figure on a card or a row shows. */
 export function totalBill(bills: Readonly<Record<Purpose, Bill>>): Bill {
   return PURPOSES.reduce((sum, p) => addBill(sum, bills[p]), emptyBill())
+}
+
+/** Five empty bills, one per purpose — `billOf`'s own starting point, and `ledger`'s running total. */
+export function emptyBills(): Record<Purpose, Bill> {
+  return { Work: emptyBill(), Answering: emptyBill(), Judge: emptyBill(), Triage: emptyBill(), Discussion: emptyBill() }
+}
+
+/** Two purpose-keyed bills, added purpose by purpose. */
+export function addBills(
+  a: Readonly<Record<Purpose, Bill>>,
+  b: Readonly<Record<Purpose, Bill>>,
+): Record<Purpose, Bill> {
+  const sum = emptyBills()
+  for (const p of PURPOSES) sum[p] = addBill(a[p], b[p])
+  return sum
+}
+
+/**
+ * A ticket (or a card) known to have run — `attempts` claims, at least one —
+ * but that contributed not one row to `spend` is unknown, never free (0110
+ * §7): a ticket like `wi-lingtai-89` that predates `RunSpent` folds `billOf`
+ * to five empty bills otherwise, and an empty bill reads as nothing spent.
+ * Credited to Work, since a ticket's cards and rows carry no per-attempt
+ * repair flag to split the credit by — `totalsOf`'s own per-run fallback does
+ * that split, where a `RunView` is available to read it off.
+ */
+export function withNoSpendFallback(bills: Record<Purpose, Bill>, attempts: number): Record<Purpose, Bill> {
+  if (attempts === 0 || PURPOSES.some((p) => billHasAny(bills[p]))) return bills
+  return { ...bills, Work: addBill(bills.Work, unknownBill(attempts)) }
 }
 
 /**
@@ -83,13 +117,7 @@ function purposeOf(row: SpendRow): Purpose {
  * unknown — the one fold every reader in this directory goes through.
  */
 export function billOf(rows: readonly SpendRow[], price: RateCard = noRateCard): Record<Purpose, Bill> {
-  const bills: Record<Purpose, Bill> = {
-    Work: emptyBill(),
-    Answering: emptyBill(),
-    Judge: emptyBill(),
-    Triage: emptyBill(),
-    Discussion: emptyBill(),
-  }
+  const bills = emptyBills()
   for (const row of rows) {
     const bill = bills[purposeOf(row)]
     if (row.costUsd !== null) {
@@ -114,15 +142,17 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`
  *
  * | reported | unknown | text |
  * |---|---|---|
- * | 0 | 0 | `—` |
+ * | 0 | 0 | `—` (no estimate either) |
  * | >0 | 0 | `$3.10` |
  * | >0 | >0 | `$3.10 + 2 unknown` |
  * | 0 | >0 | `unknown (2 runs)` |
  *
- * An estimate (`#208`, not built) follows as `~$x est.` and never folds into
- * the reported figure. **No row of this table is `$0.00` for a bill that has
- * an unknown run in it** — that is the line a bill with nothing reported and
- * nothing estimated takes instead.
+ * An estimate (`#208`) follows as `~$x est.` and never folds into the
+ * reported figure — including on a bill with no reported figure and no
+ * unknown run at all, which is the one arm with nothing else to lead it: a
+ * row priced entirely by the rate card still has to print its estimate, and
+ * not the `—` the first row of this table is for. **No row of this table is
+ * `$0.00` for a bill that has an unknown run in it.**
  */
 export function billText(bill: Bill): string {
   const parts: string[] = []
@@ -131,7 +161,7 @@ export function billText(bill: Bill): string {
     if (bill.unknown > 0) parts.push(`+ ${bill.unknown} unknown`)
   } else if (bill.unknown > 0) {
     parts.push(`unknown (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`)
-  } else {
+  } else if (bill.estimates.length === 0) {
     return '—'
   }
   const est = bill.estimates.reduce((a, b) => a + b, 0)
@@ -141,7 +171,7 @@ export function billText(bill: Bill): string {
 
 /** Whether a bill has anything at all to show — the question a pill's presence answers. */
 export function billHasAny(bill: Bill): boolean {
-  return bill.reportedRuns > 0 || bill.unknown > 0
+  return bill.reportedRuns > 0 || bill.unknown > 0 || bill.estimates.length > 0
 }
 
 export interface SpendCurrency {
@@ -178,4 +208,32 @@ export async function currentSpend(
   }
   const rows = await readSpend(query)
   return { rows, currency: error ? { lag, error } : { lag } }
+}
+
+/** What the bar says about `spend`'s currency — `backlogChip`'s own shape, for the same reason: a fold nobody reports on is a figure nobody can trust. */
+export function spendChip(c: SpendCurrency): {
+  current: boolean
+  label: string
+  tone: 'live' | 'idle' | 'warn'
+  title: string
+} {
+  const repair = 'lingtai projection rebuild spend'
+  if (c.error) {
+    return {
+      current: false,
+      label: c.lag === null ? 'not current' : `behind ${c.lag}`,
+      tone: 'warn',
+      title: `spend could not be brought to the head: ${c.error} — ${repair}`,
+    }
+  }
+  if (c.lag === null) {
+    return { current: false, label: 'unknown', tone: 'warn', title: `could not read spend's lag — ${repair}` }
+  }
+  if (c.lag === 0) return { current: true, label: 'current', tone: 'live', title: 'spend is at the head' }
+  return {
+    current: false,
+    label: `behind ${c.lag}`,
+    tone: 'idle',
+    title: `${c.lag} event(s) arrived after this page folded spend — reload to fold them`,
+  }
 }

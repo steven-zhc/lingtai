@@ -163,6 +163,20 @@ describe('what the board says it has cost', () => {
     expect(total.byPurpose.Work.reportedRuns).toBe(0)
     expect(total.byPurpose.Work.unknown).toBe(0)
   })
+
+  /**
+   * `wi-lingtai-89` ran twice before `spend` existed, so `readSpend({ ticket })`
+   * returns `[]` for it — `attempts: 2` says it ran, but no row names it.
+   * `billOf` used to fold that to five empty bills, which `ledger` printed as
+   * `—` in every column: the same reading an unclaimed card gets, though one
+   * of them ran and one never did (0110 §7).
+   */
+  it('reads a ticket with attempts but not one spend row as unknown, never as nothing', () => {
+    const columns = toColumns([toCard(task({ attempts: 2 }))])
+    const { total } = ledger(columns, [])
+
+    expect(total.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
+  })
 })
 
 describe("where a card's reference points", () => {

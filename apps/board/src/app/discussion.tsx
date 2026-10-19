@@ -102,13 +102,19 @@ function openMeter(open: DiscussionView): string {
  * many were held, and what they came to. The total joins the attempts' figures
  * in `totalsFact`, where it is counted into `$13.04` rather than sitting beside
  * it (0033 §4, #111).
+ *
+ * `total` is read off `spend`'s own Discussion rows, already formatted by
+ * `billText` — `task/[id]/page.tsx`'s `task.totals.byPurpose.Discussion`, the
+ * same figure `totalsFact` sums in (`#498`). Not `DiscussionAnswered.costUsd`
+ * summed here with `?? 0`: that read a Codex discussion, which 0110 §1 says
+ * always records null, as free. Null when `billHasAny` says there is nothing
+ * to show — never `$0.00` for a bill with an unknown conversation in it.
  */
-function closedMeter(discussions: readonly DiscussionView[]): string {
+function closedMeter(discussions: readonly DiscussionView[], total: string | null): string {
   if (discussions.length === 0) {
     return 'reads the log, the ticket and the code — it cannot run anything'
   }
-  const spend = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0)
-  return `${discussions.length} held${spend > 0 ? ` · $${spend.toFixed(2)}` : ''} · no limit`
+  return `${discussions.length} held${total === null ? '' : ` · ${total}`} · no limit`
 }
 
 const HELD: Record<NonNullable<DiscussionView['held']>, string> = {
@@ -394,12 +400,21 @@ export function Discussion({
   taskId,
   attempt,
   discussions,
+  discussionTotal = null,
   quiet = false,
 }: {
   taskId: string
   /** The attempt a new question is about — the newest one, or null. */
   attempt: number | null
   discussions: DiscussionView[]
+  /**
+   * What every closed conversation on this ticket came to, already formatted
+   * by `billText` — `spend`'s own Discussion rows, read server-side so this
+   * client component never has to import `@lingtai/projector` to compute it.
+   * Null when there is nothing to show, the same `billHasAny` question every
+   * other reader asks.
+   */
+  discussionTotal?: string | null
   /**
    * No brass in the box. Brass is *a person is being waited on*, and while an
    * item is running nobody is, so on that page Ask and a proposal's buttons are
@@ -543,7 +558,7 @@ export function Discussion({
         {/* Live without a poller: every append re-renders this page
             (`Follow`, in `live.tsx`), so the figure on screen is the figure on
             the log. */}
-        <span className="chatfact">{open === null ? closedMeter(discussions) : openMeter(open)}</span>
+        <span className="chatfact">{open === null ? closedMeter(discussions, discussionTotal) : openMeter(open)}</span>
       </p>
 
       {/* The conversation, in its own scroller. The box has one height and this

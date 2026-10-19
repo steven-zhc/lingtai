@@ -42,7 +42,17 @@ import {
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { describeHeld, foldProgress, type RunProgress } from './progress.ts'
-import { billOf, currentSpend, emptyBill, type Bill, type Purpose, type SpendCurrency } from './spend.ts'
+import {
+  addBills,
+  billOf,
+  currentSpend,
+  emptyBill,
+  emptyBills,
+  withNoSpendFallback,
+  type Bill,
+  type Purpose,
+  type SpendCurrency,
+} from './spend.ts'
 
 /**
  * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
@@ -896,8 +906,10 @@ export async function loadBoard(project?: string): Promise<Board> {
   // is the only thing that does on the terminal path (`#498`'s review).
   const [queued, spend] = await Promise.all([
     queuedCards(registered.filter((p) => project === undefined || p.project === project)),
+    // Not measured, so not claimed: a skipped fold has no lag to report, and
+    // `{ lag: 0 }` would say it checked.
     tasks.length === 0
-      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: 0 } as SpendCurrency })
+      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null } as SpendCurrency })
       : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
@@ -919,7 +931,10 @@ export async function loadBoard(project?: string): Promise<Board> {
   }
   const now = Date.now()
   const fromLog = tasks.map((t) => {
-    const bills = billOf(spendByTicket.get(t.taskId) ?? [])
+    // A ticket whose runs predate `RunSpent` contributes not one row here —
+    // `billOf` would fold it to five empty bills, which reads as nothing
+    // spent rather than as unknown (0110 §7, `#498`'s review).
+    const bills = withNoSpendFallback(billOf(spendByTicket.get(t.taskId) ?? []), t.attempts)
     return toCard(
       t,
       t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
@@ -1239,39 +1254,45 @@ export interface LedgerRow {
  * count under.** A `SpendRow` whose `ticket` is not a card on this board is
  * not counted — the `/spend` page's own claim is "the cards the board is
  * showing", not a window over the log — and a row's project is the *card's*
- * `project`, never `row.project`: a card can outlive the project that made it,
- * and `onBoard` is built from the cards for the same reason.
+ * `project`, never `row.project`: a card can outlive the project that made it.
  *
  * **One fold, and the total is the sum of the rows as printed.** `billOf`
- * rounds each row to the cent once; grouping the same rows by project or not
- * at all changes nothing about what gets summed, so a column always adds up
- * to its own footer.
+ * rounds each row to the cent once; grouping the rows by ticket first and
+ * summing the cards' own bills, rather than grouping by project directly,
+ * changes nothing about what gets summed — a row is still rounded exactly
+ * once, inside `billOf` — so a column always adds up to its own footer.
+ *
+ * **Reads `attempts` off the cards, and otherwise nothing.** A card whose
+ * ticket contributed not one row to `spend` — one that predates `RunSpent` —
+ * takes the same `withNoSpendFallback` the card's own pill takes (0110 §7):
+ * unknown rather than nothing, when `attempts` says it ran.
  */
 export function ledger(
   columns: readonly BoardColumn[],
   rows: readonly SpendRow[],
 ): { rows: LedgerRow[]; total: LedgerRow } {
   const cards = columns.flatMap((c) => c.cards)
-  const projectOf = new Map(cards.map((c) => [c.taskId, c.project]))
-  const cardCounts = new Map<string, number>()
-  for (const card of cards) cardCounts.set(card.project, (cardCounts.get(card.project) ?? 0) + 1)
 
-  const onBoard = rows.filter((r) => r.ticket !== null && projectOf.has(r.ticket))
-  const rowsByProject = new Map<string, SpendRow[]>()
-  for (const row of onBoard) {
-    const project = projectOf.get(row.ticket as string) as string
-    const list = rowsByProject.get(project)
+  const rowsByTicket = new Map<string, SpendRow[]>()
+  for (const row of rows) {
+    if (row.ticket === null) continue
+    const list = rowsByTicket.get(row.ticket)
     if (list) list.push(row)
-    else rowsByProject.set(project, [row])
+    else rowsByTicket.set(row.ticket, [row])
+  }
+
+  const byProject = new Map<string, { cards: number; byPurpose: Record<Purpose, Bill> }>()
+  let totalBills = emptyBills()
+  for (const card of cards) {
+    const bill = withNoSpendFallback(billOf(rowsByTicket.get(card.taskId) ?? []), card.attempts)
+    totalBills = addBills(totalBills, bill)
+    const row = byProject.get(card.project) ?? { cards: 0, byPurpose: emptyBills() }
+    byProject.set(card.project, { cards: row.cards + 1, byPurpose: addBills(row.byPurpose, bill) })
   }
 
   return {
-    rows: [...cardCounts.entries()].map(([project, count]) => ({
-      project,
-      cards: count,
-      byPurpose: billOf(rowsByProject.get(project) ?? []),
-    })),
-    total: { project: 'all', cards: cards.length, byPurpose: billOf(onBoard) },
+    rows: [...byProject.entries()].map(([project, r]) => ({ project, cards: r.cards, byPurpose: r.byPurpose })),
+    total: { project: 'all', cards: cards.length, byPurpose: totalBills },
   }
 }
 

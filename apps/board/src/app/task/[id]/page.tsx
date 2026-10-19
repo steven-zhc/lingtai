@@ -732,6 +732,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           }
           taskId={task.taskId}
           discussions={task.discussions}
+          discussionBill={task.totals.byPurpose.Discussion}
           outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `wi-<p>-<n>`

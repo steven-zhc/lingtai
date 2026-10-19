@@ -29,6 +29,7 @@
 import Link from 'next/link'
 
 import { ledger, loadBoard } from '@/lib/board'
+import { spendChip } from '@/lib/spend'
 
 import { SpendTable } from '../spend-table.tsx'
 
@@ -38,6 +39,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
   const only = (await searchParams).project
   const board = await loadBoard(only)
   const { limits } = board
+  const chip = spendChip(board.spend.currency)
   const { rows: byProject, total } = ledger(board.columns, board.spend.rows)
 
   return (
@@ -48,6 +50,13 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
         </Link>
         <span className="sep" />
         <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
+        <span className="sep" />
+        {/* `backlog/page.tsx`'s own chip, for the same reason: a fold that
+            failed or never ran reads identically to a board on which nothing
+            was spent unless something here says so (`#498`'s review). */}
+        <span className={`chip ${chip.tone}`} title={chip.title}>
+          {chip.label}
+        </span>
       </div>
 
       <div className="detail-body">

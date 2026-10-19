@@ -264,9 +264,9 @@ export function Card({
             It says *answering* rather than *repair* since 0039 §3: the column
             holds every round a pass bought — a refused review, a red build, and
             after `#142` a conflict — and only one of those was ever a repair.
-            The column is still `repair_costs`; renaming it is a projection
-            change and a rebuild, and this is the reading, which is what a person
-            sees. */}
+            The figure is `spend`'s `Action` rows at round 1 or above (0039 §3,
+            `#498`) — `BoardCard.repairCostUsd`'s own doc says the same — and
+            not the `repair_costs` projection column this used to read. */}
         {billHasAny(card.repairCostUsd) ? (
           <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
             {billText(card.repairCostUsd)} answering

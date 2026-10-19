@@ -56,7 +56,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
-import { readSpend, type SpendRow } from '@lingtai/projector'
+import type { SpendRow } from '@lingtai/projector'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
@@ -65,7 +65,19 @@ import { describeHeld, elapsed, foldProgress, type RunProgress } from './progres
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
-import { billHasAny, billOf, billText, emptyBill, PURPOSES, totalBill, type Bill, type Purpose } from './spend.ts'
+import {
+  addBill,
+  billHasAny,
+  billOf,
+  billText,
+  currentSpend,
+  emptyBill,
+  PURPOSES,
+  totalBill,
+  unknownBill,
+  type Bill,
+  type Purpose,
+} from './spend.ts'
 
 export interface Finding {
   file: string
@@ -1190,22 +1202,35 @@ function outcomeOf(seen: {
 /**
  * What the attempts cost, added up. See `Totals`.
  *
- * `rows` is this ticket's whole `spend` — `loadTask`'s `readSpend({ ticket })`
+ * `rows` is this ticket's whole `spend` — `loadTask`'s `currentSpend({ ticket })`
  * — and `billOf` is the one classifier every purpose goes through, here as
  * everywhere else: a fact one layer down the stack must not also decide its
  * own purpose.
+ *
+ * **A run that contributed not one `Action` row is unknown, never free**
+ * (0110 §7): `wi-lingtai-89`'s two attempts predate `RunSpent`, so `rows` is
+ * empty and `billOf([])` folds to five empty bills — which reads as nothing
+ * spent, the defect this ticket exists to remove. Credited to Work or
+ * Answering by `run.repair`, the same split `billOf` makes for a row that did
+ * arrive.
  */
 export function totalsOf(
   runs: readonly RunView[],
   discussions: readonly DiscussionView[] = [],
   rows: readonly SpendRow[] = [],
 ): Totals {
+  const byPurpose = billOf(rows)
+  for (const run of runs) {
+    if (rows.some((row) => row.pass === run.runId && row.purpose === 'Action')) continue
+    const purpose = run.repair ? 'Answering' : 'Work'
+    byPurpose[purpose] = addBill(byPurpose[purpose], unknownBill(1))
+  }
   return {
     attempts: runs.length,
     turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
     durationMs: runs.reduce((n, r) => n + (r.durationMs ?? 0), 0),
     discussions: discussions.length,
-    byPurpose: billOf(rows),
+    byPurpose,
   }
 }
 
@@ -1514,13 +1539,17 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // because a discussion that has not been concluded exists only as a request
   // on it — the work item learns about the conversation when it ends (0033 §6).
   // `spend` beside the rest, for the same reason: this ticket's whole bill,
-  // read once rather than per run or per discussion (`#498`).
-  const [streams, ticket, control, spend] = await Promise.all([
+  // read once rather than per run or per discussion (`#498`). Folded to the
+  // head first, the way `loadBoard`'s card read does — a bare read left the
+  // task page and the board reading two different currencies of the same
+  // money (`#498`'s review).
+  const [streams, ticket, control, spendFold] = await Promise.all([
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
     eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
-    readSpend({ ticket: taskId }),
+    currentSpend({ ticket: taskId }),
   ])
+  const spend = spendFold.rows
 
   // **The only thing that decides a 404**, and it decides it after GitHub has
   // been asked rather than before. See `exists`.
@@ -1581,7 +1610,10 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     // This attempt's own spend: the rows whose `pass` is this run's stream —
     // `Action` and `Judge` both land there, because a dispatch within one
     // pass appends to the pass's own stream (`spend.ts`, `@lingtai/projector`).
-    const costUsd = totalBill(billOf(spend.filter((row) => row.pass === r.runId)))
+    // An attempt that predates `RunSpent` contributes not one row, and that
+    // is unknown rather than free (0110 §7, `#498`'s review).
+    const rowsForRun = spend.filter((row) => row.pass === r.runId)
+    const costUsd = rowsForRun.length > 0 ? totalBill(billOf(rowsForRun)) : unknownBill(1)
     return recipe ? { ...r, recipe, costUsd } : { ...r, costUsd }
   })
 

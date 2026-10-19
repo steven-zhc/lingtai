@@ -236,6 +236,19 @@ describe('the totals', () => {
     expect(totals.byPurpose.Work.reportedRuns).toBe(0)
     expect(totals.byPurpose.Work.unknown).toBe(1)
   })
+
+  /**
+   * `wi-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
+   * returns `[]`, so `billOf([])` used to fold to five empty bills and the
+   * Attempts label said nothing at all — "nothing spent" rather than
+   * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
+   * run, credited by its own `repair` flag.
+   */
+  it('reads each run with not one row in spend as unknown, never as nothing', () => {
+    const totals = totalsOf([run({ runId: RUN_1, repair: false }), run({ runId: RUN_2, repair: true })], [], [])
+    expect(totals.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
+    expect(totals.byPurpose.Answering).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
+  })
 })
 
 describe('the history', () => {
