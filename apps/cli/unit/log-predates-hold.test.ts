@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { type DoctorReach, runDoctor } from '../src/doctor.ts'
 import { rebuildProjection } from '../src/projection.ts'
+import { withProjector } from '../src/projector.ts'
 
 const V1_SHAPE = { question: 'what now?', needsFrom: 'human', runId: null }
 const V2_SHAPE = {
@@ -215,5 +216,29 @@ describe('lingtai projection rebuild refuses through the guard (#451)', () => {
     expect(rebuild).toHaveBeenCalledTimes(1)
     expect(close).toHaveBeenCalledTimes(1)
     expect(code).toBe(0)
+  })
+})
+
+/**
+ * `#491`: `withProjector` folds the whole log too — `taskViewProjection`'s
+ * checkpoint starts at 0, same as a fresh `rebuild` — but it was the one
+ * caller #451 missed. Without the guard, a runner whose catch-up read hits a
+ * pre-#445 `WorkItemBlocked` throws from inside `subscribe()`'s connection
+ * loop, which cannot tell that failure from a dropped socket: it backs off
+ * and retries the identical read forever, so `requeueCommand` (and `approve`,
+ * `ask`, `end`, `backlog`, `close`, all of which share this function) hangs
+ * until something outside the process kills it rather than failing.
+ */
+describe('withProjector refuses through the guard (#491)', () => {
+  it('logs the refusal and still runs work, without ever building a runner', async () => {
+    const store = createMemoryEventStore()
+    store.plant({ type: 'WorkItemBlocked', schemaVer: 1, data: V1_SHAPE })
+    const log = vi.fn()
+
+    const result = await withProjector(log, async () => 'worked', { predatesHold: () => logPredatesHold(store) })
+
+    expect(result).toBe('worked')
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('the board will not follow this run'))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('reset it'))
   })
 })

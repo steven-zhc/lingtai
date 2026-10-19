@@ -32,6 +32,7 @@
  * which is exactly what those paths need and what a pair of statements would
  * not give them.
  */
+import { logPredatesHold, type LogPredatesHoldError, processLog } from '@lingtai/event-store'
 import {
   backlogProjection,
   createProjectionRunner,
@@ -41,6 +42,21 @@ import {
   taskViewProjection,
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
+
+/**
+ * The guard #451 put in front of daemon start, `lingtai doctor` and `lingtai
+ * projection rebuild` — asked here too, and for the same reason: a runner
+ * whose checkpoint sits before a stored `WorkItemBlocked` that predates #445's
+ * reset of that type's payload cannot read past it. `subscribe()` has no way
+ * to tell that failure from a dropped connection, so it backs off and retries
+ * the identical read for ever (#491) — exponential backoff capped at 10s,
+ * forever, because the row never changes. Asking first, before a runner is
+ * built, turns that hang into the same one-line refusal the other three
+ * callers already give.
+ */
+async function defaultPredatesHold(): Promise<LogPredatesHoldError | null> {
+  return logPredatesHold((await processLog()).queries)
+}
 
 /**
  * The backlog and `spend` follow too (`#137`, `#498`): a passing review's
@@ -54,7 +70,15 @@ import { Context, Effect, Layer } from 'effect'
  * each has its own checkpoint. Its failure is reported and never fatal, for
  * the reason the board's is not: the log is intact either way.
  */
-async function followSecondary(projection: Projection, log: (line: string) => void): Promise<ProjectionRunner | null> {
+async function followSecondary(
+  projection: Projection,
+  log: (line: string) => void,
+  predates: LogPredatesHoldError | null,
+): Promise<ProjectionRunner | null> {
+  if (predates) {
+    log(`${projection.name} will not follow this run: ${predates.message}`)
+    return null
+  }
   const runner = createProjectionRunner({ projection })
   try {
     await runner.start()
@@ -79,6 +103,11 @@ async function releaseSecondary(
   await runner.close().catch(() => {})
 }
 
+export interface WithProjectorOptions {
+  /** `logPredatesHold` against the process log's own queries. Replaceable so the guard can be asserted without a database (#491). */
+  predatesHold?: () => Promise<LogPredatesHoldError | null>
+}
+
 /**
  * Runs `work` with the projections following the log, and releases them after.
  *
@@ -87,21 +116,32 @@ async function releaseSecondary(
  * current would turn a stale board into no work at all, and the next daemon
  * catches up from the checkpoint regardless.
  */
-export async function withProjector<T>(log: (line: string) => void, work: () => Promise<T>): Promise<T> {
-  const runner = createProjectionRunner({ projection: taskViewProjection })
+export async function withProjector<T>(
+  log: (line: string) => void,
+  work: () => Promise<T>,
+  options: WithProjectorOptions = {},
+): Promise<T> {
+  const predates = await (options.predatesHold ?? defaultPredatesHold)()
 
+  let runner: ProjectionRunner | null = null
   let following = false
-  try {
-    // Creates the tables, catches up to the head, then follows. Resolves once
-    // it is current, so the board is not behind before the work even starts.
-    await runner.start()
-    following = true
-  } catch (err) {
-    log(`the board will not follow this run: ${(err as Error).message}`)
+  if (predates) {
+    log(`the board will not follow this run: ${predates.message}`)
     log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+  } else {
+    runner = createProjectionRunner({ projection: taskViewProjection })
+    try {
+      // Creates the tables, catches up to the head, then follows. Resolves once
+      // it is current, so the board is not behind before the work even starts.
+      await runner.start()
+      following = true
+    } catch (err) {
+      log(`the board will not follow this run: ${(err as Error).message}`)
+      log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+    }
   }
-  const backlog = await followSecondary(backlogProjection, log)
-  const spend = await followSecondary(spendProjection, log)
+  const backlog = await followSecondary(backlogProjection, log, predates)
+  const spend = await followSecondary(spendProjection, log, predates)
 
   try {
     return await work()
@@ -109,11 +149,11 @@ export async function withProjector<T>(log: (line: string) => void, work: () => 
     // Said out loud rather than left to be noticed. A projection that stopped
     // part-way through leaves a board that is half-current, which is worse than
     // one that is plainly behind because nobody distrusts it.
-    if (following && runner.failure) {
+    if (following && runner?.failure) {
       log(`the projection stopped during this run: ${String(runner.failure)}`)
       log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
     }
-    await runner.close().catch(() => {})
+    await runner?.close().catch(() => {})
     await releaseSecondary(backlogProjection.name, backlog, log)
     await releaseSecondary(spendProjection.name, spend, log)
   }
@@ -141,28 +181,36 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
     Projector,
     Effect.acquireRelease(
       Effect.promise(async () => {
-        const runner = createProjectionRunner({ projection: taskViewProjection })
+        const predates = await defaultPredatesHold()
+
+        let runner: ProjectionRunner | null = null
         let following = false
-        try {
-          await runner.start()
-          following = true
-        } catch (err) {
-          log(`the board will not follow this run: ${(err as Error).message}`)
+        if (predates) {
+          log(`the board will not follow this run: ${predates.message}`)
           log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+        } else {
+          runner = createProjectionRunner({ projection: taskViewProjection })
+          try {
+            await runner.start()
+            following = true
+          } catch (err) {
+            log(`the board will not follow this run: ${(err as Error).message}`)
+            log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+          }
         }
-        const backlog = await followSecondary(backlogProjection, log)
-        const spend = await followSecondary(spendProjection, log)
+        const backlog = await followSecondary(backlogProjection, log, predates)
+        const spend = await followSecondary(spendProjection, log, predates)
         return { runner, following, backlog, spend }
       }),
       ({ runner, following, backlog, spend }) =>
         Effect.promise(async () => {
-          if (following && runner.failure) {
+          if (following && runner?.failure) {
             log(`the projection stopped during this run: ${String(runner.failure)}`)
             log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
           }
-          await runner.close().catch(() => {})
+          await runner?.close().catch(() => {})
           await releaseSecondary(backlogProjection.name, backlog, log)
           await releaseSecondary(spendProjection.name, spend, log)
         }),
-    ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner.failure }))),
+    ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner?.failure ?? null }))),
   )
