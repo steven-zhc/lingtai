@@ -655,10 +655,9 @@ function reviewAnswer(outcome: RunOutcome): ActionResult {
   }
 
   const verdict = verdictFor(findings)
-  const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
   return {
     verdict,
-    evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns${cost})`),
+    evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns)`),
     findings,
     /**
      * **The reviewer's own classification of its refusal, and only of a
@@ -1014,7 +1013,6 @@ function draftAnswer(outcome: RunOutcome): ActionResult {
   }
 
   const drafted = parseDraft(outcome.text)
-  const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
 
   if (drafted.kind === 'question') {
     /**
@@ -1089,7 +1087,7 @@ function draftAnswer(outcome: RunOutcome): ActionResult {
     // the issue either way — and two different things to a person reading
     // what this pass spent its turns on.
     evidence: boundedEvidence(
-      (document === '' ? 'no design: this change needs none' : document) + `\n\n(${outcome.turns} turns${cost})`,
+      (document === '' ? 'no design: this change needs none' : document) + `\n\n(${outcome.turns} turns)`,
     ),
     findings: [],
     document,

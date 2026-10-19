@@ -1407,8 +1407,8 @@ describe("an agent's evidence on the log", () => {
     expect(evidence.length).toBeLessThan(BOUND)
     // The start is what a reader needs first, and `tail` keeps it.
     expect(evidence).toContain('src/f0.ts:0')
-    // The end is what carries the cost, and it is the last thing appended.
-    expect(evidence).toContain('(7 turns · $0.42)')
+    // The end is what carries the turn count, and it is the last thing appended.
+    expect(evidence).toContain('(7 turns)')
     expect(evidence).toContain('this is not the whole answer')
   })
 
@@ -1439,7 +1439,7 @@ describe("an agent's evidence on the log", () => {
     expect(document.length).toBeGreaterThan(80_000)
     expect(evidence.length).toBeLessThan(BOUND)
     expect(evidence).toContain('- line 0 of the design')
-    expect(evidence).toContain('(7 turns · $0.42)')
+    expect(evidence).toContain('(7 turns)')
     expect(evidence).toContain('this is not the whole answer')
   })
 
@@ -1454,7 +1454,37 @@ describe("an agent's evidence on the log", () => {
       'review',
     )
 
-    expect(evidence).toBe('blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns · $0.42)')
+    expect(evidence).toBe('blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns)')
+  })
+
+  it('carries no dollar figure for the reviewer: the spend is on RunSpent, not evidence (#324)', async () => {
+    const evidence = await evidenceOf(
+      actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })),
+      'review',
+    )
+
+    expect(evidence).not.toContain('0.42')
+    expect(evidence).not.toMatch(/\$\d/)
+    expect(evidence).toContain('(7 turns)')
+  })
+
+  it('carries no dollar figure for the designer: the spend is on RunSpent, not evidence (#324)', async () => {
+    const drafter = createDraftAction(
+      { name: 'draft', prompt: '' },
+      {
+        runtime: reviewer(outcome({ text: 'a short design document' })),
+        issue: async () => ISSUE,
+        diff: async () => '',
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+
+    const evidence = await evidenceOf(drafter, 'design')
+
+    expect(evidence).not.toContain('0.42')
+    expect(evidence).not.toMatch(/\$\d/)
+    expect(evidence).toContain('(7 turns)')
   })
 })
 
