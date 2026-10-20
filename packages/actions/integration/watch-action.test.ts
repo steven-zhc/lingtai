@@ -16,7 +16,6 @@
 import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import type { ActionEvent } from '../src/action.ts'
 import { runActionPipeline } from '../src/action.ts'
 import { createHumanAction } from '../src/human-action.ts'
 import { createProcessAction } from '../src/process-action.ts'
@@ -98,14 +97,11 @@ describe('the human action', () => {
 })
 
 describe('the pipeline, when an action wants a person', () => {
-  const collect = async (actions: Parameters<typeof runActionPipeline>[0]['actions']) => {
-    const events: ActionEvent[] = []
-    const result = await runActionPipeline({ step: 'proposed', actions, context, emit: (e) => void events.push(e) })
-    return { result, types: events.map((e) => e.type) }
-  }
+  const collect = (actions: Parameters<typeof runActionPipeline>[0]['actions']) =>
+    runActionPipeline({ step: 'proposed', actions, context, emit: () => {} })
 
   it('stops, and asks in the vocabulary --no-merge already used', async () => {
-    const { result, types } = await collect([
+    const result = await collect([
       createProcessAction({ name: 'build', run: 'true', timeout: '1m', env: shellEnv }),
       createHumanAction({ name: 'approval' }),
       createProcessAction({ name: 'after', run: 'true', timeout: '1m', env: shellEnv }),
@@ -115,24 +111,20 @@ describe('the pipeline, when an action wants a person', () => {
     expect(result.heldAt).toBe('approval')
     // Not a failure. Nothing refused.
     expect(result.failedAt).toBeNull()
-    // The same event the flag emits, so the two never become two vocabularies
-    // for one idea.
-    expect(types).toContain('ApprovalRequested')
-    expect(types).not.toContain('StepFailed')
+    expect(result.results.find((r) => r.action === 'approval')?.verdict).toBe('needs-approval')
     // And it stops, for the same reason a failure stops: the actions after it are
     // about a diff that is not going anywhere yet.
     expect(result.skipped).toEqual(['after'])
   })
 
   it('keeps failure and hold distinguishable all the way out', async () => {
-    const { result, types } = await collect([
+    const result = await collect([
       createProcessAction({ name: 'build', run: 'exit 1', timeout: '1m', env: shellEnv }),
       createHumanAction({ name: 'approval' }),
     ])
 
     expect(result.failedAt).toBe('build')
     expect(result.heldAt).toBeNull()
-    expect(types).toContain('StepFailed')
-    expect(types).not.toContain('ApprovalRequested')
+    expect(result.results.find((r) => r.action === 'build')?.verdict).toBe('failed')
   })
 })

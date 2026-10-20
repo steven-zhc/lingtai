@@ -27,7 +27,7 @@ const declaring = (project: string): ProjectFilter =>
     project,
     ok: true,
     recipe: {
-      subscribers: [{ name: 'desktop', on: ['ApprovalRequested', 'WorkItemBlocked'], run: 'true', env: [] }],
+      subscribers: [{ name: 'desktop', on: ['StepEnded', 'WaitStarted'], run: 'true', env: [] }],
     },
   }) as unknown as ProjectFilter
 
@@ -68,7 +68,7 @@ describe('a recipe that could not be read at startup', () => {
     reachable = true
     await set.retry()
     expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])
-    expect(said.join('\n')).toContain('subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked')
+    expect(said.join('\n')).toContain('subscriber lingtai/desktop on StepEnded, WaitStarted')
     expect(set.describe().join('\n')).not.toContain('unknown')
   })
 
@@ -102,7 +102,7 @@ describe('a recipe that could not be read at startup', () => {
     })
 
     const lines = set.describe().join('\n')
-    expect(lines).toContain('subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked')
+    expect(lines).toContain('subscriber lingtai/desktop on StepEnded, WaitStarted')
     expect(lines).toContain('admin declares none')
   })
 

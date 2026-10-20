@@ -14,7 +14,9 @@ import { requeue } from '@lingtai/conductor'
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { projectStream, reduceWorkItem, type ToAppend, workItemStream } from '@lingtai/domain'
+import { aClaim, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -53,25 +55,25 @@ const discovered = (n: number) => ({
   },
 })
 
-const claimed = (n: number) => ({
-  type: 'TicketClaimed',
-  actor: 'conductor',
-  data: { runId: run(n), worker: 'w', title: null, kind: null },
-})
+const toAppend = (events: ReturnType<typeof aClaim>): ToAppend => {
+  const [e] = events
+  return { type: e!.type, actor: e!.actor, data: e!.data }
+}
 
-const blocked = (n: number) => ({
-  type: 'WorkItemBlocked',
-  actor: 'conductor',
-  data: {
-    hold: {
-      _tag: 'CheckRed' as const,
+const claimed = (n: number): ToAppend => toAppend(aClaim(makeStream(wi(n)), run(n), 'w'))
+
+/** A check declared before the lane refused — `CheckRed`'s successor (#473). */
+const blocked = (n: number): ToAppend =>
+  toAppend(
+    aWait(makeStream(wi(n)), {
+      _tag: 'CheckRefused',
       run: { runId: run(n) },
-      step: 'build' as const,
-      why: 'the agent gate returned a refusal instead of findings',
-      raw: null,
-    },
-  },
-})
+      step: 'proposed',
+      action: 'build',
+      evidence: 'the agent gate returned a refusal instead of findings',
+      findings: [],
+    }),
+  )
 
 beforeAll(async () => {
   store = await processEventStore()
@@ -102,8 +104,8 @@ describe('lingtai requeue', () => {
 
     const events = await store.read(wi(FROM_CLI))
     const last = events[events.length - 1]!
-    expect(last.type).toBe('WorkItemUnblocked')
-    expect(last.data).toEqual({ by: ACTOR, note: NOTE })
+    expect(last.type).toBe('WaitResolved')
+    expect(last.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: NOTE })
     expect(reduceWorkItem(events).lifecycle.status).toBe('backlog')
   })
 
@@ -114,7 +116,9 @@ describe('lingtai requeue', () => {
    * account and the operator's note, which is exactly what is compared.
    *
    * Everything but the envelope's own bookkeeping: `seq`, `streamId` and `at`
-   * differ between any two events and say nothing about who decided.
+   * differ between any two events and say nothing about who decided — and
+   * neither does `data.waitId`, which names *which* wait was resolved rather
+   * than how.
    */
   it('appends what the board appends, and nothing that says which side asked', async () => {
     const board = await requeue({
@@ -128,8 +132,9 @@ describe('lingtai requeue', () => {
 
     const decided = async (n: number) => {
       const events = await store.read(wi(n))
-      const { seq, streamId, at, ...rest } = events[events.length - 1]!
-      return rest
+      const { seq, streamId, at, data, ...rest } = events[events.length - 1]!
+      const { waitId, ...restData } = data as { waitId: string; by: string; resolution: unknown; note: string }
+      return { ...rest, data: restData }
     }
 
     expect(await decided(FROM_CLI)).toEqual(await decided(FROM_BOARD))
@@ -143,7 +148,7 @@ describe('lingtai requeue', () => {
     // "not blocked" on its own sends nobody anywhere; the state it *is* in does.
     expect(said.join('\n')).toContain('claimed')
     expect(said.join('\n')).toContain(wi(RUNNING))
-    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WorkItemUnblocked')).toBe(false)
+    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WaitResolved')).toBe(false)
   })
 
   /**
@@ -161,8 +166,8 @@ describe('lingtai requeue', () => {
 
     const events = await store.read(wi(BLANK_NOTE))
     const last = events[events.length - 1]!
-    expect(last.type).toBe('WorkItemUnblocked')
-    expect(last.data).toEqual({ by: ACTOR, note: '' })
+    expect(last.type).toBe('WaitResolved')
+    expect(last.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: '' })
   })
 
   it('says so when the project was never added', async () => {

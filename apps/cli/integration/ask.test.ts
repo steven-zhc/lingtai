@@ -74,9 +74,10 @@ describe('lingtai ask / answer', () => {
     expect(await askCommand({ project: PROJECT, issue: ASKED, text: QUESTION }, (l) => said.push(l))).toBe(0)
 
     const events = await store.read(wi(ASKED))
-    expect(events.map((e) => e.type)).toEqual(['WorkItemBlocked'])
+    expect(events.map((e) => e.type)).toEqual(['WaitStarted'])
     expect(events[0]!.data).toEqual({
-      hold: { _tag: 'Question', question: QUESTION, by: ACTOR },
+      waitId: expect.any(String),
+      reason: { _tag: 'OwnQuestion', question: QUESTION, by: ACTOR },
     })
     expect(reduceWorkItem(events).lifecycle.status).toBe('blocked')
 
@@ -94,7 +95,7 @@ describe('lingtai ask / answer', () => {
     const said: string[] = []
     expect(await askCommand({ project: PROJECT, issue: RUNNING, text: QUESTION }, (l) => said.push(l))).toBe(1)
     expect(said.join('\n')).toContain('claimed')
-    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WorkItemBlocked')).toBe(false)
+    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WaitStarted')).toBe(false)
   })
 
   it('refuses a blank question and a blank answer rather than defaulting either', async () => {
@@ -119,7 +120,14 @@ describe('lingtai ask / answer', () => {
     expect(said.join('\n')).toContain('withdrawn')
 
     const events = await store.read(wi(WITHDRAWN))
-    expect(events[events.length - 1]!.data).toEqual({ by: ACTOR, note: 'asked by mistake, ignore', withdrawn: true })
+    const last = events[events.length - 1]!
+    expect(last.type).toBe('WaitResolved')
+    expect(last.data).toEqual({
+      waitId: expect.any(String),
+      by: ACTOR,
+      resolution: { _tag: 'Requeue' },
+      note: 'asked by mistake, ignore',
+    })
     const item = reduceWorkItem(events)
     expect(item.lifecycle.status).toBe('backlog')
     expect(item.answers).toEqual([])
@@ -134,8 +142,13 @@ describe('lingtai ask / answer', () => {
 
     const events = await store.read(wi(ASKED))
     const last = events[events.length - 1]!
-    expect(last.type).toBe('WorkItemUnblocked')
-    expect(last.data).toEqual({ by: ACTOR, note: CHOICE })
+    expect(last.type).toBe('WaitResolved')
+    expect(last.data).toEqual({
+      waitId: expect.any(String),
+      by: ACTOR,
+      resolution: { _tag: 'AnswerQuestion', choice: CHOICE },
+      note: CHOICE,
+    })
 
     const item = reduceWorkItem(events)
     expect(item.lifecycle.status).toBe('backlog')

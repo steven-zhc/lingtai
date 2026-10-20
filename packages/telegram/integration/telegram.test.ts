@@ -158,7 +158,7 @@ describe("the command's exit code", () => {
   it('is 1 when a name is missing, naming the command lingtai env actually takes', async () => {
     const said: string[] = []
     const code = await telegramCommand({
-      read: read(payload('WorkItemBlocked', {})),
+      read: read(payload('WaitStarted', {})),
       env: { TELEGRAM_CHAT_ID: '42' },
       log: (line) => said.push(line),
     })
@@ -195,7 +195,20 @@ describe("the command's exit code", () => {
           stdio: ['pipe', 'ignore', 'ignore'],
         })
         child.on('close', resolve)
-        child.stdin.end(JSON.stringify(payload('ApprovalRequested', { question: 'Merge agent/125?' })))
+        child.stdin.end(
+          JSON.stringify(
+            payload('WaitStarted', {
+              waitId: 'wait-1',
+              reason: {
+                _tag: 'SignoffRequired',
+                run: { runId: 'pass-0' },
+                step: 'merge',
+                action: 'approval',
+                question: 'Merge agent/125?',
+              },
+            }),
+          ),
+        )
       })
 
     expect(await run({ TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_CHAT_ID: '42', TELEGRAM_API_ROOT: api.root })).toBe(0)

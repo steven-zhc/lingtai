@@ -669,6 +669,9 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
               // able to check the claim: `life.worker` is not `mine`, and there
               // is only ever one of us.
               reason: `${mine} holds ${DAEMON_LOCK_KEY}, so ${life.worker} was not coming back`,
+              // Neither caller here has one of 0120's ReleaseCause variants to
+              // name — none describes "the conductor holding this claim died".
+              cause: null,
             }),
           },
         ])
