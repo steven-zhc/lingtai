@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { applyWorkItem, reduceWorkItem, type Envelope } from '@lingtai/domain'
+import { applyWorkItem, reduceWorkItem, waitsOf, workItemStream, type Envelope } from '@lingtai/domain'
+import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { GitHubClient } from '@lingtai/github'
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
@@ -232,6 +235,39 @@ describe('closing runs the end point', () => {
     // point is the silence this whole mechanism exists to prevent.
     expect(s.appends).toEqual([])
     expect(g.closedIssues).toEqual([])
+  })
+})
+
+/**
+ * **A blocked item resolves its wait in the same append as the close**
+ * (#465, 0118 §11). No recipe and no client here — the point is the wait,
+ * which `resolveWaitHolding` handles whether or not `end` has anything to
+ * resolve (`closes a backlog item` elsewhere pins the no-recipe path too).
+ */
+describe('closing a blocked item', () => {
+  it('appends WaitResolved{Close} and TicketClosed in one transaction', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = workItemStream('lingtai', 40)
+    const item = makeStream(ticketId)
+    await store.append(ticketId, 0, [
+      ...aClaim(item, 'pass-40'),
+      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-40'), step: 'implement', question: 'which helper?' }),
+    ])
+
+    const outcome = await close({
+      project: 'lingtai',
+      issue: 40,
+      by: 'human:steven',
+      reason: 'no longer wanted',
+      store,
+    })
+
+    expect(outcome.ok).toBe(true)
+    const events = await store.read(ticketId)
+    expect(events.map((e) => e.type)).toEqual(['TicketClaimed', 'WaitStarted', 'WaitResolved', 'TicketClosed'])
+    const wait = waitsOf(events).at(-1)
+    expect(wait?.resolution).toEqual({ _tag: 'Close' })
+    expect(reduceWorkItem(events).lifecycle).toMatchObject({ status: 'closed', by: 'human:steven' })
   })
 })
 
