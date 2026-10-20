@@ -208,7 +208,7 @@ add(
     approvalRequested(
       'pass-pin-pe-buildred',
       'proposed',
-      'judge',
+      'conductor:judge',
       'Merge agent/473 into main anyway? agent/473 into main is waiting on you. tsc failed',
     ),
     ...aWait(item, {
@@ -231,7 +231,7 @@ add(
     approvalRequested(
       'pass-pin-pe-verifyred',
       'proposed',
-      'judge',
+      'conductor:judge',
       'Merge agent/473 into main anyway? agent/473 into main is waiting on you. verify red output',
     ),
     ...aWait(item, {
@@ -254,7 +254,7 @@ add(
     approvalRequested(
       'pass-pin-pe-mergeconflict',
       'proposed',
-      'judge',
+      'conductor:judge',
       'Merge agent/473 into main anyway? agent/473 into main is waiting on you. conflict output',
     ),
     ...aWait(item, {
@@ -283,7 +283,7 @@ add(
     approvalRequested(
       'pass-pin-pe-reviewfindings',
       'proposed',
-      'judge',
+      'conductor:judge',
       'Merge agent/473 into main anyway? agent/473 into main is waiting on you. bug',
     ),
     ...aWait(item, {
@@ -343,7 +343,7 @@ add(
     approvalRequested(
       'pass-pin-checkrefused',
       'merge',
-      'unfixed',
+      'conductor:unfixed',
       'Merge agent/473 into main anyway? the `merge` step refused: ci red (`ci`)',
     ),
     ...aWait(item, {
@@ -372,7 +372,7 @@ add(
     approvalRequested(
       'pass-pin-mergerefused',
       'merge',
-      'unfixed',
+      'conductor:unfixed',
       'Merge agent/473 into main anyway? dirty-base: uncommitted changes present (`land the branch`)',
     ),
     ...aWait(item, {
@@ -454,7 +454,7 @@ add(
     approvalRequested(
       'pass-pin-answerunreadable',
       'proposed',
-      'judge',
+      'conductor:judge',
       "Merge agent/473 into main anyway? agent/473 into main is waiting on you. `review`'s findings could not be read at all: not json",
     ),
     ...aWait(item, {

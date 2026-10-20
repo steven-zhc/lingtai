@@ -242,6 +242,28 @@ describe('the accessors', () => {
   })
 
   /**
+   * **A `:` in a declared name is refused** (0110 §9, `#503`): `conduct.ts`
+   * appends its own merge-anyway signoff as `conductor:judge`/
+   * `conductor:unfixed`, inside the same `${step}:${name}` key a declared
+   * action's name shares — a declared name could otherwise stand in that key
+   * and be overwritten by the signoff, erasing its own refusal. Refusing any
+   * `:` here is what keeps `conductor:` a namespace nothing else can write
+   * into.
+   */
+  it('refuses a declared name containing ":" by name', () => {
+    const colon = Recipe.safeParse({
+      ...WRITTEN,
+      steps: {
+        build: [{ name: 'conductor:judge', run: 'pnpm lint' }],
+      },
+    })
+    expect(colon.success).toBe(false)
+    const said = JSON.stringify(colon.error?.issues)
+    expect(said).toContain('conductor:judge')
+    expect(said).toContain('reserved for the conductor')
+  })
+
+  /**
    * **A name is unique within its step** (0110 §9, `#499`): `step`, `name`
    * and `round` are what find the `RunSpent` for an action, which holds only
    * while no two actions in one step share a name.

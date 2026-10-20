@@ -3910,13 +3910,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * some `StepEnded`, and the router sending a pass here is not one —
          * it runs no action at all. So this appends one itself, on the run's
          * own stream, naming the point the merge-anyway question is standing
-         * in for: `judge` off the spine (`ProposedEscalated`/
-         * `AnswerUnreadable`/a `review` that passed carrying findings), the
-         * same name `ApprovalRequested{step:'proposed'}` used, or `unfixed`
-         * where the merge lane itself refused, the name
-         * `ApprovalRequested{step:'merge'}` used. `onSha` is `headSha` —
-         * `approve.ts`'s own fallback and this offer's subject are the same
-         * commit, or a correct approval reads as stale.
+         * in for.
+         *
+         * **Named `conductor:judge`/`conductor:unfixed`, not `judge`/`unfixed`**
+         * (`#503`). This `StepEnded` is appended last, so it wins every key it
+         * shares with the step's own `StepEnded` —
+         * `task_view.verdicts["${runId}:${step}:${name}"]`, `run.steps`, and
+         * `run.lifecycle.step`, which `refusingOn` (`approve.ts`) then
+         * *excludes* as the signoff an approval is itself answering. A
+         * declared action named plainly `judge` (legal: that is what people
+         * actually call a `judge:` entry, `recipe.ts`'s `judgePlugin`) would
+         * have its own refusal overwritten and then filtered out of what
+         * Approve demands a reason for — landing a refused check with nothing
+         * on the log saying it was waived. `conductor:` is a namespace the
+         * recipe validator now refuses any declared name from entering
+         * (0110 §9, `:` reserved), so this key can never collide. `onSha` is
+         * `headSha` — `approve.ts`'s own fallback and this offer's subject are
+         * the same commit, or a correct approval reads as stale.
          */
         if (!held && judged && onOrigin !== null) {
           yield* Effect.promise(() =>
@@ -3932,7 +3942,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     actions: [
                       {
                         plugin: 'conductor',
-                        name: stopped?.step === 'merge' ? 'unfixed' : 'judge',
+                        name: stopped?.step === 'merge' ? 'conductor:unfixed' : 'conductor:judge',
                         onSha: headSha,
                         evidence: question,
                         yields: 'signoff',

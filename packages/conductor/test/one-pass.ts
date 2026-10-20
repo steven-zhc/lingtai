@@ -190,6 +190,30 @@ runtime:
 `
 
 /**
+ * **`restartRecipe`, with the `proposed` agent named `judge`** (`#503`).
+ *
+ * The conductor's own merge-anyway signoff is appended under `conductor:judge`
+ * — before #503 it was plain `judge` — so a declared action sharing that name
+ * is the fixture this ticket needs: same refused ending as `restartRecipe`
+ * (`stopped.step === 'proposed'`, `judged`), but with a `proposed:judge` key
+ * on the run for the signoff to collide with under the old naming.
+ */
+export const restartRecipeNamedJudge = (restarts: number) => `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  proposed:
+    - name: judge
+      agent: claude-code
+      prompt: look at it coldly
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+`
+
+/**
  * The same recipe with the cold reviewer this repository actually runs.
  *
  * The reviewer alone, and no `run:` action beside it: a command would spawn a

@@ -2423,6 +2423,36 @@ function actionsAt(step: Step) {
         }
 
         /**
+         * **A `:` in a declared name is the conductor's, not the operator's**
+         * (0110 §9, `#503`). `conduct.ts` appends a signoff of its own —
+         * `conductor:judge` or `conductor:unfixed` — naming it inside the
+         * stopping step's action namespace, and a declared action sharing that
+         * key would have the signoff overwrite it on the log: the refusal it
+         * carried erased from `task_view` and excluded from what an approval
+         * must ask a reason for. Refusing any `:` here, ahead of the
+         * uniqueness check below, is what turns `conductor:` into a namespace
+         * a recipe cannot collide with rather than a convention it happens not
+         * to.
+         */
+        const entryName = nameOf(action)
+        if (entryName.includes(':')) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              entryName,
+              `its name contains ":", which is reserved for the conductor's own actions ` +
+                '(0110 §9) — a declared name sharing one could be overwritten by a signoff the ' +
+                'conductor appends under the same key. Give this one a name with no ":"',
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          })
+          return
+        }
+
+        /**
          * **An action's `name` is unique within its step** (0110 §9): `step`,
          * `name` and `round` are what find the `RunSpent` for an action, and
          * that holds only while no two actions in one step share a name.
@@ -2430,7 +2460,6 @@ function actionsAt(step: Step) {
          * Checked here, where `cuts` and `takes` are filled, so a refused
          * entry — one that never reached `resolved` — is never compared.
          */
-        const entryName = nameOf(action)
         const firstAt = namesAt.get(entryName)
         if (firstAt !== undefined) {
           ctx.addIssue({
