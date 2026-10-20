@@ -53,7 +53,7 @@ import {
   reduceWorkItem,
   type ToAppend,
   type WaitId,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { StepAction } from '@lingtai/recipe'
@@ -113,7 +113,7 @@ export async function close(options: {
   store?: EventStore
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = ticketStream(options.project, options.issue)
 
   if (!options.reason.trim()) {
     return { ok: false, ticketId, detail: 'a close needs a reason' }

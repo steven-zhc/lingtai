@@ -73,7 +73,7 @@ import { promisify } from 'node:util'
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { reduceWorkItem, parsePayload, type ProjectState, workItemStreamsOf } from '@lingtai/domain'
+import { reduceWorkItem, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { projectionLag } from '@lingtai/projector'
@@ -456,7 +456,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   if (names.length === 0) return []
 
   const streams = await withStreams(options, (it) =>
-    it.streams({ prefixes: names.map((n) => `${workItemStreamsOf(n)}%`), types: ['TicketClaimed'] }),
+    it.streams({ prefixes: names.map((n) => `${ticketStreamsOf(n)}%`), types: ['TicketClaimed'] }),
   )
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same

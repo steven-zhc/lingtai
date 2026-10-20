@@ -48,7 +48,7 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * `recipe` refusal line this header used to carve out no longer exists to
  * reach or not reach.
  */
-import { type Envelope, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
+import { type Envelope, reduceWorkItem, waitsOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWaitId, aWithdrawal } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
@@ -83,7 +83,7 @@ function fakeClient(refSha: string | null): ApproveOptions['client'] {
 describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuestion", () => {
   it('refuses an item nothing is holding', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 101)
+    const ticketId = ticketStream(PROJECT, 101)
 
     const result = await requeueHolding({ by: 'human:steven', note: '' }, store, ticketId)
 
@@ -102,7 +102,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
   it('withdraws a question asked before any run, rather than refusing it', async () => {
     const store = createMemoryEventStore()
     await ask({ project: PROJECT, issue: 102, question: 'which design?', by: 'human:steven', store })
-    const ticketId = workItemStream(PROJECT, 102)
+    const ticketId = ticketStream(PROJECT, 102)
 
     const result = await requeueHolding({ by: 'human:steven', note: 'asked by mistake' }, store, ticketId)
 
@@ -115,7 +115,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
 
   it("requeues a run's wait, with an answers entry carrying the run", async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 103)
+    const ticketId = ticketStream(PROJECT, 103)
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-103'),
@@ -141,7 +141,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
 describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
   it('refuses when the item has never been run — backlog is not blocked', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 110)
+    const ticketId = ticketStream(PROJECT, 110)
 
     const result = await approveHolding(
       { project: PROJECT, issue: 110, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
@@ -153,7 +153,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
 
   it('refuses when the run is not awaiting approval', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 111)
+    const ticketId = ticketStream(PROJECT, 111)
     const item = makeStream(ticketId)
     // The item has to be `blocked` to get past `not-blocked`, and the run
     // itself has to carry no signoff request and no head, so `onSha` falls
@@ -191,7 +191,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
    */
   it('refuses when the item is not blocked (requeued after the request)', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 114)
+    const ticketId = ticketStream(PROJECT, 114)
     const item = makeStream(ticketId)
     const run = aRun('pass-114')
     const waitId = aWaitId()
@@ -227,7 +227,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
    */
   it('refuses a refusing step with no reason, and no --note was given', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 112)
+    const ticketId = ticketStream(PROJECT, 112)
     const item = makeStream(ticketId)
     const run = aRun('pass-112')
     await seed(store, ticketId, [
@@ -278,7 +278,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
    */
   it('refuses a stale remote — the branch moved since the approval was recorded', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 115)
+    const ticketId = ticketStream(PROJECT, 115)
     const item = makeStream(ticketId)
     const run = aRun('pass-115')
     await seed(store, ticketId, [
@@ -308,7 +308,7 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
 
     const result = await answer({ project: PROJECT, issue: 120, answer: '  ', by: 'human:steven', store })
 
-    expect(result).toEqual({ ok: false, ticketId: workItemStream(PROJECT, 120), detail: 'an answer needs an answer' })
+    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 120), detail: 'an answer needs an answer' })
   })
 
   it('refuses an item nothing is asking anything of', async () => {
@@ -322,7 +322,7 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
 
   it("refuses a block a run holds — only an OwnQuestion's AnswerQuestion is offered", async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 122)
+    const ticketId = ticketStream(PROJECT, 122)
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-122'),
@@ -347,7 +347,7 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
    */
   it('answers whatever is currently asked, with no check that it is the question last read', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 123)
+    const ticketId = ticketStream(PROJECT, 123)
     const item = makeStream(ticketId)
     const firstWaitId = aWaitId()
     await seed(store, ticketId, [
@@ -384,7 +384,7 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
 
     const result = await close({ project: PROJECT, issue: 130, reason: '  ', by: 'human:steven', store })
 
-    expect(result).toEqual({ ok: false, ticketId: workItemStream(PROJECT, 130), detail: 'a close needs a reason' })
+    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 130), detail: 'a close needs a reason' })
   })
 
   it('refuses an item already closed', async () => {
@@ -399,7 +399,7 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
 
   it('refuses a landed item — there is nothing to close', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 132)
+    const ticketId = ticketStream(PROJECT, 132)
     await seed(store, ticketId, aLanding(makeStream(ticketId), 'c'.repeat(40)))
 
     const result = await close({ project: PROJECT, issue: 132, reason: 'moot', by: 'human:steven', store })
@@ -410,7 +410,7 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
 
   it('closes a backlog item, with no end step to resolve', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 133)
+    const ticketId = ticketStream(PROJECT, 133)
 
     const result = await close({ project: PROJECT, issue: 133, reason: 'no longer wanted', by: 'human:steven', store })
 

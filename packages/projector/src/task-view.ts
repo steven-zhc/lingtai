@@ -48,7 +48,7 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { cardFactOf, parseWorkItemStream } from '@lingtai/domain'
+import { cardFactOf, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
@@ -693,7 +693,7 @@ export const taskViewProjection: Projection = {
 function splitTaskId(taskId: string): { project: string; issue: string } {
   // A projection must fold anything the log holds, including an id it cannot
   // parse — hence the fallback rather than a null the caller has to handle.
-  return parseWorkItemStream(taskId) ?? { project: taskId.replace(/^wi-/, ''), issue: '' }
+  return parseTicketStream(taskId) ?? { project: taskId.replace(/^wi-/, ''), issue: '' }
 }
 
 async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): Promise<void> {

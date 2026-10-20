@@ -13,7 +13,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import { legacyColumns, reduceRun, waitsOf, workItemStream } from '@lingtai/domain'
+import { legacyColumns, reduceRun, waitsOf, ticketStream } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -64,7 +64,7 @@ describe('a continuation never diffs against the sha it was approved at', () => 
     if (first.ok !== 'held') throw new Error('it merged, before anybody approved anything')
     expect(first.step).toBe('proposed')
 
-    const ticketId = workItemStream(PROJECT, 7)
+    const ticketId = ticketStream(PROJECT, 7)
     const wait = waitsOf(await store.read(ticketId)).at(-1)!
     const onSha = first.headSha
 

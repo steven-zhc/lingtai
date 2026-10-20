@@ -10,7 +10,7 @@ import { userInfo } from 'node:os'
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { projectStream, reduceWorkItem, ticketStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -28,7 +28,7 @@ const RUNNING = 52
 /** Asked by mistake, then withdrawn. */
 const WITHDRAWN = 53
 
-const wi = (n: number) => workItemStream(PROJECT, n)
+const wi = (n: number) => ticketStream(PROJECT, n)
 const ACTOR = `human:${userInfo().username}`
 const QUESTION = 'which of the three designs for the production-credential tripwire?'
 const CHOICE = 'the second — refuse at the hook'

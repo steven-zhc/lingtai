@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { applyWorkItem, reduceWorkItem, waitsOf, workItemStream, type Envelope } from '@lingtai/domain'
+import { applyWorkItem, reduceWorkItem, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
 import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -247,7 +247,7 @@ describe('closing runs the end point', () => {
 describe('closing a blocked item', () => {
   it('appends WaitResolved{Close} and TicketClosed in one transaction', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream('lingtai', 40)
+    const ticketId = ticketStream('lingtai', 40)
     const item = makeStream(ticketId)
     await store.append(ticketId, 0, [
       ...aClaim(item, 'pass-40'),

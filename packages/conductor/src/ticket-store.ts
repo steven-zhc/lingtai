@@ -23,7 +23,7 @@
  * GitHub, the kind is a label, so is a hold, and the key is a comment in the
  * body.
  */
-import { parseWorkItemStream, type ProjectState, workItemStreamsOf } from '@lingtai/domain'
+import { parseTicketStream, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
 import type { LogQueries, TicketSql } from '@lingtai/event-store'
 import { BodyChanged, type GitHubClient } from '@lingtai/github'
 import type { Recipe } from '@lingtai/recipe'
@@ -241,7 +241,7 @@ async function defaultLogQueries(): Promise<Pick<LogQueries, 'projectStreams'>> 
  *
  * **The refusal.** A project whose log already has `ticket-<project>-*` streams
  * and whose recipe newly says `db` would number tickets from 1 into streams
- * that belong to GitHub issues (`workItemStream`, `@lingtai/domain`). Once
+ * that belong to GitHub issues (`ticketStream`, `@lingtai/domain`). Once
  * `dbTickets` holds any ticket of its own, the project switched deliberately
  * and this passes regardless of what the log holds from before.
  */
@@ -262,8 +262,8 @@ export async function ticketsFor(
   const already = await tickets.listIssuesSince(new Date(0))
   if (already.length === 0) {
     const log = options.log ?? (await defaultLogQueries())
-    const streams = (await log.projectStreams(workItemStreamsOf(project))).filter(
-      (id) => parseWorkItemStream(id)?.project === project,
+    const streams = (await log.projectStreams(ticketStreamsOf(project))).filter(
+      (id) => parseTicketStream(id)?.project === project,
     )
     if (streams.length > 0) throw new TicketSourceConflict(project, streams)
   }

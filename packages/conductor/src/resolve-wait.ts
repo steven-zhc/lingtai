@@ -26,7 +26,7 @@
 import {
   CONTROL_STREAM,
   parsePayload,
-  parseWorkItemStream,
+  parseTicketStream,
   reduceRun,
   reduceWorkItem,
   type RunState,
@@ -187,7 +187,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     item.lifecycle.waitId === options.waitId &&
     item.lifecycle.onSha === options.resolution.onSha
   ) {
-    const parsed = parseWorkItemStream(ticketId)!
+    const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
     return unscheduled === null ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
   }
@@ -266,7 +266,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // a reason to say the approval itself did not happen.
   let unscheduled: string | undefined
   if (options.resolution._tag === 'Approve') {
-    const parsed = parseWorkItemStream(ticketId)
+    const parsed = parseTicketStream(ticketId)
     if (parsed !== null) {
       unscheduled =
         (await requestContinuation(store, options.by, parsed.project, parsed.issue, block.runId!)) ?? undefined

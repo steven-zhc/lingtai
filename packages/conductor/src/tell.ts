@@ -26,7 +26,7 @@
  * it structurally, and a test satisfies it with four functions and no
  * network — which is the whole point of a caller naming its own requirement.
  */
-import { parseWorkItemStream } from '@lingtai/domain'
+import { parseTicketStream } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
@@ -119,7 +119,7 @@ export interface TellOptions {
 
 /** `ticket-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
 function split(ticketId: string): { project: string; issue: number } | null {
-  const parsed = parseWorkItemStream(ticketId)
+  const parsed = parseTicketStream(ticketId)
   if (!parsed) return null
   // This path nominates issues by number; a non-numeric ref is not one it can
   // tell GitHub about.

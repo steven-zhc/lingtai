@@ -56,7 +56,7 @@ import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { runLogPath } from '@lingtai/conductor/run-log'
 import {
   chatStream,
-  parseWorkItemStream,
+  parseTicketStream,
   reduceControl,
   reduceWorkItem,
   CONTROL_STREAM,
@@ -166,7 +166,7 @@ export function headOf(run: readonly Envelope[]): string | null {
  * cloned yet is a fact, and "no file can be read" is the honest brief for it.
  */
 export async function gatherEvidence(request: DiscussionRequest): Promise<DiscussionEvidence> {
-  const parsed = parseWorkItemStream(request.ticketId)
+  const parsed = parseTicketStream(request.ticketId)
   const project = parsed?.project ?? ''
   const own = await eventStore.read(request.ticketId)
   const item = reduceWorkItem(own)
@@ -271,7 +271,7 @@ export async function answerDiscussion(
   request: DiscussionRequest,
   log: (line: string) => void = () => {},
 ): Promise<void> {
-  const project = parseWorkItemStream(request.ticketId)?.project ?? ''
+  const project = parseTicketStream(request.ticketId)?.project ?? ''
   const evidence = await gatherEvidence(request)
   const { cwd, settingsPath } = await prepare(request.chatId)
   /**

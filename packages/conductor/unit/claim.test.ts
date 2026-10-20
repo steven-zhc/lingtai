@@ -3,7 +3,7 @@
  * state it refuses — `approved` — and the claim a continuation makes onto
  * the same run the approval was about.
  */
-import { type Action, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { type Action, reduceWorkItem, ticketStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
@@ -30,7 +30,7 @@ function signoffAsks(onSha: string): Action {
 
 async function approvedTicket(issue: number, runId: string) {
   const store = createMemoryEventStore()
-  const ticketId = workItemStream(PROJECT, issue)
+  const ticketId = ticketStream(PROJECT, issue)
   const item = makeStream(ticketId)
   const run = aRun(runId)
   const waitId = aWaitId()
@@ -65,7 +65,7 @@ async function approvedTicket(issue: number, runId: string) {
 describe('continueWorkItem', () => {
   it('refuses an item that is not approved', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 1)
+    const ticketId = ticketStream(PROJECT, 1)
 
     const result = await continueWorkItem(ticketId, 'pass-1', { store })
 

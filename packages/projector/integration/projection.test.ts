@@ -194,7 +194,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       project,
       // Registered by hand rather than through `streamId()`, because the contract
       // needs the project and the issue to be readable out of the id — a card is
-      // found by project, and `parseWorkItemStream` splits at the last hyphen.
+      // found by project, and `parseTicketStream` splits at the last hyphen.
       stream(kind, suffix) {
         const id = `${kind}-${project}-${suffix}`
         created.add(id)

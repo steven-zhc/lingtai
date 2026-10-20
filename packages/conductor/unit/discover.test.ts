@@ -1,4 +1,4 @@
-import { workItemStream } from '@lingtai/domain'
+import { ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHubClient, Issue, Label } from '@lingtai/github'
@@ -503,7 +503,7 @@ describe('runnableNow', () => {
 
     // The whole point of 0012: which issues exist is GitHub's state, and one
     // event per issue per pass was reproducing a fact GitHub answers on demand.
-    expect(await store.read(workItemStream(PROJECT, 201))).toEqual([])
+    expect(await store.read(ticketStream(PROJECT, 201))).toEqual([])
   })
 
   /**

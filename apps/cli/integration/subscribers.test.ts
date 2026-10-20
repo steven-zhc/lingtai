@@ -1,4 +1,4 @@
-import { integrationStream, type ToAppend, workItemStream } from '@lingtai/domain'
+import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
 /**
  * Which project an event is about, against the real log.
  *
@@ -25,7 +25,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { createSubjectResolver } from '../src/subscribers.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
-const wi = workItemStream(PROJECT, 7)
+const wi = ticketStream(PROJECT, 7)
 const runId = `pass-${crypto.randomUUID()}`
 const startless = `pass-${crypto.randomUUID()}`
 const lane = integrationStream(PROJECT, 'main')

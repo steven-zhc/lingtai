@@ -31,7 +31,7 @@
  * fixing agent is handed.
  */
 import type { Finding, PayloadOf } from '@lingtai/domain'
-import { findingKey, findingsRaisedOf, parseWorkItemStream } from '@lingtai/domain'
+import { findingKey, findingsRaisedOf, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection } from './store.ts'
@@ -188,7 +188,7 @@ export const backlogProjection: Projection = {
               'select task_id from finding_backlog_run where run_id = $1',
               [raised.runId],
             )
-            const task = link ? parseWorkItemStream(link.task_id) : null
+            const task = link ? parseTicketStream(link.task_id) : null
             // A pass on a run nothing started names no ticket, and an entry that
             // cannot say which ticket it is about cannot open one that cites it.
             if (!link || !task) continue

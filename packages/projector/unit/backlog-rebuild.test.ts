@@ -153,7 +153,7 @@ events.push(
   }),
 )
 
-// ---- case 7: a ticketId parseWorkItemStream refuses ----------------------
+// ---- case 7: a ticketId parseTicketStream refuses ----------------------
 const run7 = aRun('pass-pin-7')
 events.push(aRunStarted(run7, 'noprojectissue'))
 events.push(

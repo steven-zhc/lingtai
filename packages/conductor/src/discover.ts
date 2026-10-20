@@ -28,7 +28,7 @@
  */
 import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 
-// `workItemStream` and its inverse moved to `domain` (0022): the projector
+// `ticketStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 import type { Tickets } from './ticket-store.ts'
 

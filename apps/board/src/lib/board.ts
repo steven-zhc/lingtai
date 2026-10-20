@@ -10,7 +10,7 @@ import {
   isPending,
   isRegistered,
   reduceWorkItem,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { SpendRow } from '@lingtai/projector'
@@ -907,7 +907,7 @@ async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, { wa
       // The same bound `resolve-wait.ts`'s own retried append uses.
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          const item = reduceWorkItem(await eventStore.read(workItemStream(t.project, Number(t.issue))))
+          const item = reduceWorkItem(await eventStore.read(ticketStream(t.project, Number(t.issue))))
           if (item.lifecycle.status !== 'blocked') return null
           // **`note` read off the same fold as `waitId`, never off `t.note`**
           // (#465). `t` is `task_view`'s own row — a projection, built by a
