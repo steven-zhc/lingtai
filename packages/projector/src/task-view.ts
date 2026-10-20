@@ -118,7 +118,9 @@ export const taskViewProjection: Projection = {
         note         text,
 
         -- The sha the open question is about, and null when nothing is being
-        -- asked. Written from ApprovalRequested.onSha, which is the value
+        -- asked. ApprovalRequested is gone (#502) — written from
+        -- cardFactOf's Verdict.approval.onSha now, a signoff action's own
+        -- onSha off the StepEnded that requested it, which is the value
         -- approve() compares a caller's onSha against.
         --
         -- Not head_sha. That one is what the last run *produced*, and it is a
@@ -142,8 +144,10 @@ export const taskViewProjection: Projection = {
         -- exactly as it always did.
         needs        text,
 
-        -- { what, done, raw, recommendation }, as WorkItemBlocked.diagnosis.
-        -- One column rather than five, because it is written and cleared as one
+        -- { what, done, raw, recommendation }, as WaitStarted's own
+        -- cardFactOf fact carries it now (WorkItemBlocked.diagnosis is gone,
+        -- #502) — fact.card.diagnosis, below. One column rather than five,
+        -- because it is written and cleared as one
         -- thing: a block either carries a diagnosis or does not, and half a
         -- diagnosis is not a state the card has to render.
         --
@@ -158,23 +162,26 @@ export const taskViewProjection: Projection = {
         -- records and #84 must not reintroduce. A refused dispatch moves an
         -- item that was merely queued nowhere (#405: it was already queued,
         -- because the refusal is the pass's rather than this item's), and
-        -- never this column: only WorkItemUnblocked may answer a question
-        -- already standing on an item, so a refusal found one leaves it be.
+        -- never this column: only WaitResolved (WorkItemUnblocked's
+        -- replacement, #502) may answer a question already standing on an
+        -- item, so a refusal found one leaves it be.
         waiting      boolean not null default false,
 
-        -- Whether that question was asked **before any run** — a
-        -- WorkItemBlocked with runId null, which only lingtai ask writes
-        -- (#147). It is what tells waiting-for-an-answer apart from
+        -- Whether that question was asked **before any run** — WaitStarted's
+        -- own reason._tag === 'OwnQuestion' now (WorkItemBlocked with
+        -- runId null is gone, #502), which only lingtai ask writes (#147).
+        -- It is what tells waiting-for-an-answer apart from
         -- waiting-for-a-review: nothing has been produced, so there is nothing
         -- to approve and the only move is to answer.
         asked        boolean not null default false,
 
         -- { question, answer, by } — the last block a person answered, and
-        -- what with. WorkItemUnblocked.note, which no column held before #147:
-        -- a rebuild could say what was asked and never what was decided.
-        -- Assignment, not a list, so a replay lands on the same value; the
-        -- whole history is the fold's (WorkItemState.answers). Kept across a
-        -- claim and a landing, because a decision outlives the attempt at it.
+        -- what with. WaitResolved's own payload now (WorkItemUnblocked.note
+        -- is gone, #502): a rebuild could say what was asked and never what
+        -- was decided before this existed. Assignment, not a list, so a replay
+        -- lands on the same value; the whole history is the fold's
+        -- (WorkItemState.answers). Kept across a claim and a landing, because
+        -- a decision outlives the attempt at it.
         answer       jsonb,
 
         -- A repair bought and not yet claimed, and which run was one. Written
@@ -223,11 +230,17 @@ export const taskViewProjection: Projection = {
         -- acts on differently.
         --
         -- Assignment and not an increment, which is why there is no updated_seq
-        -- subtlety here: PassRestarted carries its own ordinal, so a replay
-        -- lands on the same number. attempts has to increment because a claim
+        -- subtlety here: TicketReleased{cause: Restart} carries its own
+        -- ordinal now (PassRestarted is gone, #502), so a replay lands on
+        -- the same number. attempts has to increment because a claim
         -- carries none.
         --
-        -- Zero means no restart has been bought, which is every row today.
+        -- restarts_of has had no writer at all since #502 — the cause carries
+        -- {after, restart} alone, with no ceiling, so this column reads zero
+        -- on every row regardless of how many times a ticket has restarted.
+        -- describeArm's own second argument, the recipe's runtime.limits.
+        -- restarts, is the caller's fallback for the denominator this column
+        -- can no longer carry.
         restarts     int not null default 0,
         restarts_of  int not null default 0,
 
@@ -374,17 +387,17 @@ export const taskViewProjection: Projection = {
           // than asking a person about this one ticket — so the item is still
           // what the queue should offer once the pause lifts.
           //
-          // **Conditional on the standing hold.** Only `WorkItemUnblocked` may
-          // clear `waiting`, and only a person's answer may replace the
-          // question `note` holds — a dispatch refused on top of a block
-          // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
-          // is not an event about *this item*, so where `waiting` is already
-          // true this leaves state, note and every hold column exactly as
-          // they were. Writing `state: 'queued'` and clearing the hold here
-          // regardless put `task_view` and the domain fold
-          // (`packages/domain/src/work-item.ts`, still `blocked`) in
-          // disagreement forever, and destroyed the question before any
-          // `WorkItemUnblocked` had answered it.
+          // **Conditional on the standing hold.** Only `WaitResolved`
+          // (`WorkItemUnblocked`'s replacement, #502) may clear `waiting`, and
+          // only a person's answer may replace the question `note` holds — a
+          // dispatch refused on top of a block (`lingtai ask`, then a forced
+          // `lingtai run` under an unmet tier) is not an event about *this
+          // item*, so where `waiting` is already true this leaves state, note
+          // and every hold column exactly as they were. Writing `state:
+          // 'queued'` and clearing the hold here regardless put `task_view`
+          // and the domain fold (`packages/domain/src/work-item.ts`, still
+          // `blocked`) in disagreement forever, and destroyed the question
+          // before any `WaitResolved` had answered it.
           //
           // An upsert, because this can be a task's first event: it refuses
           // before anything is claimed, and nothing is appended when an issue
@@ -1097,11 +1110,15 @@ export function describeWait(
  * on every row would spend the reader's attention on an absence. That is the
  * same reading `[not offered]` earns by saying nothing (#100).
  *
- * **The other half of the sentence is the note.** `round 2 of 3` is what
- * `FixRequested` writes there, because depth is a fact about the pass in flight
- * and lives as long as that pass; this is a fact about the ticket and outlives
- * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
- * what 0040 §3 asks a card to be able to say.
+ * **The other half of the sentence is the note.** `fixing round 2` is what
+ * `cardFactOf`'s `RoundOpened` writes there now (`FixRequested` is gone,
+ * #502, and with it the note's own denominator — `RouteOffer` never stored
+ * the recipe's own ceiling, only what it decided from it), because depth is a
+ * fact about the pass in flight and lives as long as that pass; this is a
+ * fact about the ticket and outlives every pass of it. Together they used to
+ * read *round 2 of 3, restart 1 of 2*, which is what 0040 §3 asks a card to be
+ * able to say — today's note carries no denominator of its own to complete
+ * that sentence with.
  */
 export function describeArm(
   card: Pick<TaskCard, 'restarts' | 'restartsOf'>,

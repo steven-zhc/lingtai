@@ -314,7 +314,16 @@ export async function status(
       // prints only where a person is holding a question (below); on the board
       // it is on every card. So this line is the whole of what a terminal says
       // about a running arm, which is why it is not inside that `if`.
-      const arm = describeArm({ restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 })
+      // The ceiling, same fallback `board.ts`'s `toCard` reads: `filter.limits`
+      // where the recipe resolved, null where it did not — never the row's own
+      // `restartsOf`, which `#502` left at zero on every ticket (the event it
+      // used to come from carries no ceiling any more). Reading `filter.limits`
+      // is what keeps this line and the board's card saying `of N` for the same
+      // ticket rather than one of them dropping it silently (#100).
+      const arm = describeArm(
+        { restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 },
+        filter.ok ? filter.limits.restarts : null,
+      )
       if (arm) log(`             ${paint.muted(arm)}`)
 
       // **The same thing the card says.** This line used to stop at `[waiting]`:

@@ -28,7 +28,15 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
-import { boardFactOf, fromOf, legacyColumns, PASS_STREAM_PREFIX, routeNext } from '@lingtai/domain'
+import {
+  agentBranchOf,
+  boardFactOf,
+  fromOf,
+  legacyColumns,
+  parseWorkItemStream,
+  PASS_STREAM_PREFIX,
+  routeNext,
+} from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -77,7 +85,17 @@ export interface PayloadDocument {
 }
 
 type Payload = Record<string, unknown>
-type Formatter = (d: Payload) => string
+/**
+ * `branch` is the one piece of context a formatter may need that is not on
+ * its own event — `PassRouted`'s is appended to the *run's* stream, which
+ * carries no ticket id to parse, unlike every other formatter here, which
+ * reads off the item's own stream. `''` where `summarise` was not handed one,
+ * the same default `legacyColumns`'s own `pass` argument carries.
+ */
+interface FormatContext {
+  branch: string
+}
+type Formatter = (d: Payload, ctx: FormatContext) => string
 
 /**
  * How much free text a row carries before it is cut.
@@ -275,8 +293,16 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * never `routedVisit`'s own `chose`/`ceiling` split, which is
    * `packages/conductor`'s own reading of the offer and not this package's
    * to duplicate.
+   *
+   * **`ctx.branch` supplies what `event.streamId` cannot here** — every other
+   * formatter in this file reads a ticket's own stream, where `branchOf`
+   * (`read-model.ts`) parses the id directly; this one is on the *run's*
+   * stream, which carries no ticket id to parse. `summarise`'s caller hands
+   * it in from the ticket id it already has (`groupHistory`/`toLine`), the
+   * same `agentBranchOf` reading `cardFactOf`/`boardFactOf`/`work-item.ts`
+   * use.
    */
-  PassRouted: (d) => {
+  PassRouted: (d, ctx) => {
     const data = d as unknown as PayloadOf<'PassRouted'>
     const from = fromOf(data.offer.proposal)
     const next = routeNext(data.offer, data.reply, data.decision, { runId: data.runId })
@@ -285,7 +311,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       // reaching here with one is that mapping disagreeing with this one.
       throw new Error(`PassRouted formatted as a wait, but routeNext answered ${next._tag}`)
     }
-    return `${from} → waiting — ${clip(legacyColumns(next.reason).question)}`
+    const cols = legacyColumns(next.reason, { branch: ctx.branch, base: '', findings: [] })
+    return `${from} → waiting — ${clip(cols.question)}`
   },
 
   // -------------------------------------------------------------- control --
@@ -441,9 +468,16 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // own `policy.rounds`, only what it decided from it, so there is nothing
   // here for "round 1 of N" to read — the ceiling is `routing.ts`'s own
   // argument, not a field on the event.
+  //
+  // **`need`, not `f.action` directly** — `cardFactOf`'s own `RoundOpened`
+  // always answers `action: ''`, because `PassRouted` carries the step a
+  // round was bought for (`FixRound.to`) and never the action, so there is
+  // nothing here to fill that slot with. Rule 2 applies: a formatter that
+  // cannot say which action the round answers yields to the payload rather
+  // than printing the sentence with a blank where that word belongs.
   RoundOpened: (f) => {
     const n = f.findings.length
-    return `round ${f.round} for ${f.action} — ${n} finding${n === 1 ? '' : 's'}`
+    return `round ${f.round} for ${need({ action: f.action }, 'action')} — ${n} finding${n === 1 ? '' : 's'}`
   },
 
   // **Just the ordinal since #502.** `PassRouted{decision: Selected{restart}}`
@@ -522,9 +556,17 @@ function scalar(v: unknown): string {
  * `boardFactOf` is tried first: a type it owns answers through `FACT_FORMAT`,
  * and a type it does not own (`null`) falls to `FORMAT`, exactly as it did
  * before this read-model fact existed.
+ *
+ * `ticketId` is optional and read by exactly one entry in `FORMAT`
+ * (`PassRouted`, which sits on a run's stream and so has no ticket id of its
+ * own to parse) — every caller inside this package that knows the ticket
+ * (`toLine`/`groupHistory`) hands it in; a caller that does not reads that
+ * one row with no subject, the same as before this existed.
  */
-export function summarise(event: Envelope): string {
+export function summarise(event: Envelope, ticketId?: string): string {
   const data = event.data ?? {}
+  const parsed = ticketId === undefined ? null : parseWorkItemStream(ticketId)
+  const ctx: FormatContext = { branch: parsed === null ? '' : agentBranchOf(parsed.issue) }
   try {
     const facts = boardFactOf(event)
     // One event may answer several facts since #502 — a `StepEnded` names
@@ -546,7 +588,7 @@ export function summarise(event: Envelope): string {
   const format = FORMAT[event.type as EventType]
   if (format) {
     try {
-      const said = format(data as Payload).trim()
+      const said = format(data as Payload, ctx).trim()
       if (said) return said
     } catch {
       // Fall through to the payload.
@@ -640,14 +682,20 @@ export function splitPayload(data: unknown, type?: string): { raw: string; docum
   return { raw: rawPayload(lift(data ?? null, '')), documents }
 }
 
-/** One event, as a row. */
-export function toLine(event: Envelope): HistoryLine {
+/**
+ * One event, as a row.
+ *
+ * `ticketId` is this item's own stream id — passed through to `summarise`
+ * for the one formatter (`PassRouted`) that cannot read it off `event`
+ * itself. Optional for the reason `summarise`'s own doc gives.
+ */
+export function toLine(event: Envelope, ticketId?: string): HistoryLine {
   const { raw, documents } = splitPayload(event.data, event.type)
   return {
     at: event.at.toISOString(),
     type: event.type,
     actor: event.actor,
-    summary: summarise(event),
+    summary: summarise(event, ticketId),
     seq: String(event.seq),
     streamId: event.streamId,
     version: event.version,

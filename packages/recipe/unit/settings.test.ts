@@ -263,6 +263,24 @@ describe('the accessors', () => {
   })
 
   /**
+   * **`judge` and `unfixed` are reserved** (`#502`): `conduct.ts` appends a
+   * second `StepEnded` under one of those names after an escalating step's
+   * own, and that append wins every key it shares with a declared action of
+   * the same name — so a recipe naming one is refused before any pass runs,
+   * rather than silently overwriting the refusal it escalated.
+   */
+  it.each(['judge', 'unfixed'])('refuses a declared action named "%s"', (name) => {
+    const reserved = Recipe.safeParse({
+      ...WRITTEN,
+      steps: { build: [{ name, run: 'pnpm lint' }] },
+    })
+    expect(reserved.success).toBe(false)
+    const said = JSON.stringify(reserved.error?.issues)
+    expect(said).toContain('is reserved')
+    expect(said).toContain(name)
+  })
+
+  /**
    * **The lane is the last action at `merge`, and the refusal says why rather than
    * where** (0065 §8, `#270`).
    *

@@ -169,9 +169,11 @@ import {
   baseDivergence,
   baseOf,
   ceilingOf,
+  JUDGE_SIGNOFF_NAME,
   parseDuration,
   queueOf,
   submodulesOf,
+  UNFIXED_SIGNOFF_NAME,
   type QueueSettings,
   type ResolvedRecipe,
   type StepAction,
@@ -3917,6 +3919,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * `ApprovalRequested{step:'merge'}` used. `onSha` is `headSha` —
          * `approve.ts`'s own fallback and this offer's subject are the same
          * commit, or a correct approval reads as stale.
+         *
+         * **Both names are reserved** (`RESERVED_ACTION_NAMES`, `recipe.ts`):
+         * this `StepEnded` is appended last and wins every key it shares with
+         * a declared action of the same name, so a recipe may not name one
+         * `judge` or `unfixed` — the resolve that would collide is refused
+         * before any pass runs.
          */
         if (!held && judged && onOrigin !== null) {
           yield* Effect.promise(() =>
@@ -3932,7 +3940,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     actions: [
                       {
                         plugin: 'conductor',
-                        name: stopped?.step === 'merge' ? 'unfixed' : 'judge',
+                        name: stopped?.step === 'merge' ? UNFIXED_SIGNOFF_NAME : JUDGE_SIGNOFF_NAME,
                         onSha: headSha,
                         evidence: question,
                         yields: 'signoff',

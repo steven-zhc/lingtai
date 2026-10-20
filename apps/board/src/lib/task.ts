@@ -1311,8 +1311,16 @@ export function totalsFact(totals: Totals): string | null {
  * Nothing is dropped and nothing is reordered inside a group: this is *what
  * actually happened, in order, with who did it*, and the grouping is a way in
  * rather than a filter.
+ *
+ * `ticketId` is passed through to `toLine` for the one formatter
+ * (`PassRouted`) that needs it and cannot read it off a run's own event —
+ * `history.ts`'s own doc on `summarise` has the reason.
  */
-export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<string, number>): HistoryGroup[] {
+export function groupHistory(
+  events: readonly Envelope[],
+  attempts: ReadonlyMap<string, number>,
+  ticketId?: string,
+): HistoryGroup[] {
   // Insertion order is first-seq order, which is the order the groups read in.
   const groups = new Map<string, HistoryGroup>()
 
@@ -1330,7 +1338,7 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       }
       groups.set(e.streamId, group)
     }
-    group.lines.push(toLine(e))
+    group.lines.push(toLine(e, ticketId))
     group.to = String(e.seq)
   }
 
@@ -1663,6 +1671,6 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     // that forty turns of exploration do not drown the thirty-six events this
     // section exists to show. The work item's own `DiscussionHeld` is here, and
     // it is the two lines the ticket's history was promised to grow by.
-    history: groupHistory([...own, ...streams.flat()], attempts),
+    history: groupHistory([...own, ...streams.flat()], attempts, taskId),
   }
 }

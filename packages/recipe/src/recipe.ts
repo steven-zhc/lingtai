@@ -2274,6 +2274,22 @@ function nameOf(action: unknown): string {
  * `z.unknown()` rather than the union, so the dispatch is the key's and not
  * zod's: a union tries six schemas and reports six failures about one action.
  */
+/**
+ * **Reserved, for the signoff `conduct.ts` appends after an escalation**
+ * (`#502`'s merge-anyway offer): a stopping step gets a second `StepEnded`
+ * naming one of these after its own, and that append wins every key it
+ * shares with a declared action of the same name — `task_view.verdicts`,
+ * `run.steps` and `run.lifecycle.step` — which erases the refusal
+ * `refusingOn` would otherwise ask a person to waive. The uniqueness check
+ * below only compares a recipe's own entries against each other, never
+ * against the name the conductor adds afterwards, so this is refused here
+ * rather than discovered on the log. `conduct.ts` names its signoff action
+ * off these same constants, so the two cannot drift apart.
+ */
+export const JUDGE_SIGNOFF_NAME = 'judge'
+export const UNFIXED_SIGNOFF_NAME = 'unfixed'
+export const RESERVED_ACTION_NAMES = new Set([JUDGE_SIGNOFF_NAME, UNFIXED_SIGNOFF_NAME])
+
 function actionsAt(step: Step) {
   return z
     .array(z.unknown())
@@ -2431,6 +2447,23 @@ function actionsAt(step: Step) {
          * entry — one that never reached `resolved` — is never compared.
          */
         const entryName = nameOf(action)
+        if (RESERVED_ACTION_NAMES.has(entryName)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              entryName,
+              `"${entryName}" is reserved: the conductor appends a second \`StepEnded\` naming it when a ` +
+                "refusal at this step escalates to a person, and a declared action with the same name " +
+                "would have that refusal overwritten rather than offered for a waiver. Give this one a " +
+                'different name',
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          })
+          return
+        }
         const firstAt = namesAt.get(entryName)
         if (firstAt !== undefined) {
           ctx.addIssue({
