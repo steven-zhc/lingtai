@@ -25,7 +25,7 @@ exports[`task_view rebuilds through cardFactOf exactly as it did through the dir
     "restarts": 0,
     "restarts_of": 0,
     "run_id": "pass-pin-approval",
-    "state": "running",
+    "state": "approved",
     "task_id": "ticket-pin-approval",
     "tier": "guarded",
     "title": null,

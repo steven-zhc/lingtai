@@ -66,7 +66,7 @@ import { CONTROL_STREAM, type ControlState, type ShutdownRequest, parsePayload, 
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { readTasks } from '@lingtai/projector'
+import { readTasks, type TaskCard } from '@lingtai/projector'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -361,10 +361,9 @@ export async function withdrawShutdown(
 /**
  * What the conductor is holding right now, as `project#issue`.
  *
- * Read from `task_view` rather than tracked in the process, because the
- * question is asked by three different processes — the draining daemon, the
- * board's chip and `lingtai doctor` — and only one of them is the daemon. A
- * claim folds as `running`, so this is the projection's own answer.
+ * A claim folds as `running`, and an approval folds as `approved` (#510) —
+ * so this list only ever names a pass a conductor is actually holding, never
+ * an approved item still waiting for `continueWorkItem` to claim it.
  *
  * `verifying` counts as in flight and that is the boundary 0030 §1 draws: the
  * agent exiting is not the end of a pass, and an item whose steps are running
@@ -373,9 +372,18 @@ export async function withdrawShutdown(
  * Empty is an ordinary answer: between passes there is nothing in flight, and
  * a drain that starts then is over immediately.
  */
+export function held(tasks: readonly Pick<TaskCard, 'project' | 'issue' | 'state'>[]): string[] {
+  return tasks.filter((t) => t.state === 'running' || t.state === 'verifying').map((t) => `${t.project}#${t.issue}`)
+}
+
+/**
+ * Read from `task_view` rather than tracked in the process, because the
+ * question is asked by three different processes — the draining daemon, the
+ * board's chip and `lingtai doctor` — and only one of them is the daemon.
+ */
 export async function inFlight(url?: string): Promise<string[]> {
   const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => [])
-  return tasks.filter((t) => t.state === 'running' || t.state === 'verifying').map((t) => `${t.project}#${t.issue}`)
+  return held(tasks)
 }
 
 /** The sentence a drain leads with, for whoever is doing the draining. */

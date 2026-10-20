@@ -605,18 +605,25 @@ export const taskViewProjection: Projection = {
                   // Decide/Requeue over a question that is answered, and
                   // `page.tsx`'s own `card.waiting` is what decides that.
                   //
-                  // `state: 'running'`, not `'queued'` — `selectRunnable`
-                  // reads `state === 'queued'` as *the queue may claim this*
-                  // (`queue.ts`), and an approved item is not the queue's to
-                  // claim: `claimWorkItem` refuses it by name
-                  // (`not-claimable, status: approved`), and the only way it
-                  // moves is `continueWorkItem`, straight off the ticket
-                  // stream. `'running'` is the same reading
-                  // `labelState`'s own `approved` row gives the GitHub label
-                  // (`@lingtai/daemon`'s `converge.ts`): Lingtai, not a
-                  // person, holds the next move.
+                  // `state: 'approved'`, not `'running'` and not `'queued'`
+                  // (#510). `selectRunnable` reads `state === 'queued'` as
+                  // *the queue may claim this* (`queue.ts`), and an approved
+                  // item is not the queue's to claim: `claimWorkItem` refuses
+                  // it by name (`not-claimable, status: approved`), and the
+                  // only way it moves is `continueWorkItem`, straight off the
+                  // ticket stream. It is not `'running'` either: nothing is
+                  // holding this row — no agent, no worktree, no claim — until
+                  // `continueWorkItem` appends the next `TicketClaimed`, which
+                  // folds it back to `'running'` below. `inFlight()`
+                  // (`@lingtai/daemon`'s `control.ts`) reads `running` as *a
+                  // conductor is holding this*, so an approval that folded as
+                  // `running` read as a pass in flight that did not exist.
+                  // `labelsFor('approved')` still gives the same GitHub label
+                  // as `running`/`verifying` (`@lingtai/conductor`'s
+                  // `labels.ts`), so this changes nothing a person sees on the
+                  // issue, only what the projection and `inFlight()` are told.
                   await set(ctx, event.streamId, seq, at, {
-                    state: 'running',
+                    state: 'approved',
                     note: 'approved — continues once a conductor is free',
                     awaiting_sha: null,
                     waiting: false,

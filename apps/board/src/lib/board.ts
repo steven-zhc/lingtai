@@ -491,6 +491,9 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
   running: 'running',
   // `verifying` is a task state and no longer a lane; it belongs with `running`.
   verifying: 'running',
+  // Lingtai holds the next move on an approved item, not a person (#510), so
+  // it belongs with `running` rather than `waiting`.
+  approved: 'running',
   waiting: 'waiting',
   landed: 'landed',
   // Closed shares Landed's column and not Queued's. Both are over, and Landed
