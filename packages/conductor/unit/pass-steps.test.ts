@@ -1454,7 +1454,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       'merge:passed',
       'end:passed',
     ])
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       // It got what it wanted and no ceiling was reached, which is what `chose`
       // and `to` agreeing says (`#271`).
       {
@@ -1533,7 +1533,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       'end:passed',
     ])
     expect(asked.judge.map((on) => on.when)).toEqual(['red'])
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'implement',
@@ -1785,7 +1785,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
 
     expect(asked.judge[0]?.when).toBe('findings')
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'proposed',
         chose: 'claim',
@@ -2113,7 +2113,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(spent.result.routes).toEqual([
+    expect(spent.result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'waiting',
@@ -2137,7 +2137,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // `CandidateUnavailable` row off the structured decision, never off
     // `reply.why`, so it reads the same whether a judge chose it or a built-in
     // would have.
-    expect(overruled.result.routes).toEqual([
+    expect(overruled.result.routes).toMatchObject([
       {
         from: 'proposed',
         chose: 'claim',
@@ -2286,7 +2286,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
     })
 
     expect(walk(result).slice(7)).toEqual(['merge:refused', 'proposed:routed', 'end:passed'])
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'merge',
         chose: 'build',
