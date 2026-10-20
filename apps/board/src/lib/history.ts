@@ -377,8 +377,6 @@ type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { 
  * with no `question` at all) falls to the raw payload exactly as before.
  */
 const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
-  ActionRequested: (f) => stepAt({ step: f.step, action: f.action }),
-
   StepEnded: (f) => {
     const head = stepAt({ step: f.step, action: f.action })
     switch (f.ending) {
@@ -405,66 +403,49 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
         return n > 0 ? `${head} — ${n} finding${n === 1 ? '' : 's'}` : head
       }
       case 'NeverRan':
-        return `${head} — never ran: ${clip(f.detail)}`
+        return `${head} — never ran: ${clip(f.detail ?? '')}`
       // One line, because the action ran once: 0057 §4's retry is deleted
       // (`#234`), and with it the *attempt 2, no more attempts* this line
       // used to print about a second attempt that never left the starting
       // block.
       case 'DidNotFinish':
-        return `${head} — did not finish: ${clip(f.detail)}`
+        return `${head} — did not finish: ${clip(f.detail ?? '')}`
       // Its own line since `#296`, and the verb is the whole of it: this row
       // read *did not finish* over a question for as long as the two shared
       // an event.
       case 'Asked':
-        return `${head} — asked: ${clip(f.detail)}`
+        return `${head} — asked: ${clip(f.detail ?? '')}`
+      // Not run: a person approved past it in that wait (0120 §6). One more
+      // `StepEnded` outcome since #502, not a fact of its own.
+      case 'Waived':
+        return `${head} — waived`
     }
   },
 
-  Waived: (f) => `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}: ${clip(f.reason)}`,
-
   SignoffRequested: (f) =>
     `${stepAt({ step: f.step, action: f.action })} — ${clip(need({ question: f.question }, 'question'))}`,
-  SignoffGranted: (f) =>
-    `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}${f.note ? `: ${clip(f.note)}` : ''}`,
-  SignoffRevoked: (f) =>
-    `${stepAt({ step: f.step, action: f.action })} — ${need({ by: f.by }, 'by')}: ${clip(f.reason)}`,
 
   // The other purse (0038 §4). A round says how many findings it was bought
   // for, because that is the size of what the fixer was asked to do; the
   // scenarios themselves are in the disclosure, verbatim, where the contract
   // lives.
+  //
+  // **No denominator since #502.** `RouteOffer` never stored the recipe's
+  // own `policy.rounds`, only what it decided from it, so there is nothing
+  // here for "round 1 of N" to read — the ceiling is `routing.ts`'s own
+  // argument, not a field on the event.
   RoundOpened: (f) => {
     const n = f.findings.length
-    // `of` is zero on an event written before the field existed, and the
-    // reading of zero is *not recorded* — so the round is named without a
-    // denominator rather than as `round 1 of 0`.
-    const of = f.of > 0 ? ` of ${f.of}` : ''
-    return `round ${f.round}${of} for ${f.action} — ${n} finding${n === 1 ? '' : 's'}`
+    return `round ${f.round} for ${f.action} — ${n} finding${n === 1 ? '' : 's'}`
   },
-  // The cost is on the row because a fix is bought without being asked
-  // again, the same argument `#84` made for a repair's. A default-on agent
-  // whose spend appears nowhere is one nobody can audit, and the payload
-  // carries it.
-  RoundEnded: (f) =>
-    `round ${f.round}: ${f.headSha === null ? 'committed nothing' : f.headSha.slice(0, 7)}` +
-    ` · ${f.turns} turns` +
-    (typeof f.costUsd === 'number' ? ` · $${f.costUsd.toFixed(2)}` : '') +
-    (f.failure === null ? '' : ` · ${clip(f.failure)}`),
-  RoundsDeclined: (f) => `${f.action} — ${clip(f.why)}`,
 
-  // The row a person reads to learn that the ticket, and not just this diff,
-  // is what was in doubt (0040). It says which arm and what the spent arm
-  // cost in rounds; the findings it carries are in the disclosure, verbatim,
-  // because they are the only copy — the run they refused is on a stream no
-  // later pass reads.
-  Restarted: (f) => {
-    const n = f.findings.length
-    return (
-      `restart ${f.restart} of ${f.of} — ${f.action} refused ` +
-      `${f.branch} after ${f.rounds} round(s), ` +
-      `${n} finding${n === 1 ? '' : 's'} left live`
-    )
-  },
+  // **Just the ordinal since #502.** `PassRouted{decision: Selected{restart}}`
+  // carries the offer and the reply it chose from, not the abandoned branch,
+  // its head or the findings still live — those are on the *previous* run's
+  // own stream, which `attempts.ts`'s `lastRun` already reads (`TicketReleased`
+  // is what used to repeat them here, and `#502`'s header says there is
+  // nothing left for the release to repeat).
+  Restarted: (f) => `restart ${f.restart}`,
 
   /**
    * Which kind of hold, then the question, then the move that was
@@ -492,23 +473,11 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   },
   WaitTriaged: (f) => {
     const result = f.result
-    if (result._tag === 'Failed') return `attempt ${f.attempt} · failed: ${clip(result.failure)}`
-    if (result._tag !== 'Advised' || !result.cause?._tag || !result.move?._tag) throw new Error('no result')
-    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.move._tag}: ${clip(result.sentence)}`
+    if (result._tag === 'TriageFailed') return `attempt ${f.attempt} · failed: ${clip(result.why)}`
+    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.resolution._tag}: ${clip(result.summary)}`
   },
 
   RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,
-
-  // Both of a failure's outcomes read on the history, including the one
-  // where nothing happened: "no agent was bought, and here is the rule that
-  // said so" is the half an operator otherwise has to guess at.
-  //
-  // **Retired, and still read for ever** (0019, `#143`), exactly as the
-  // outbox pair above is. A refusal buys no run now, so nothing appends
-  // either of these — and a row that renders nothing is as unreadable
-  // whether or not anything appends the type again.
-  RepairBought: (f) => `attempt ${f.attempt} on ${f.reason}`,
-  RepairRefused: (f) => `${f.reason} — ${clip(f.why)}`,
 }
 
 /**
@@ -550,9 +519,16 @@ function scalar(v: unknown): string {
 export function summarise(event: Envelope): string {
   const data = event.data ?? {}
   try {
-    const fact = boardFactOf(event)
-    if (fact) {
-      const said = (FACT_FORMAT[fact._tag] as (f: typeof fact) => string)(fact).trim()
+    const facts = boardFactOf(event)
+    // One event may answer several facts since #502 — a `StepEnded` names
+    // one per action the step declared, and a `PassRouted` may open a round
+    // and record a restart at once. One row still renders one sentence, so
+    // this joins them in the order `boardFactOf` gave them.
+    if (facts.length > 0) {
+      const said = facts
+        .map((fact) => (FACT_FORMAT[fact._tag] as (f: typeof fact) => string)(fact).trim())
+        .filter((s) => s !== '')
+        .join('; ')
       return said || describePayload(data)
     }
   } catch {
