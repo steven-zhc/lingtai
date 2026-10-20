@@ -134,7 +134,7 @@ describe('17821, reserved', () => {
     // Or the scan found nothing and the assertion below is vacuous: this file's
     // own package is in it, and so is the declaration.
     expect(files.length).toBeGreaterThan(50)
-    expect(files.some((f) => readFileSync(f, 'utf8').includes('export const RESERVED_PORT = 17821;'))).toBe(true)
+    expect(files.some((f) => readFileSync(f, 'utf8').includes('export const RESERVED_PORT = 17821'))).toBe(true)
     const mentions: string[] = []
     for (const path of files) {
       for (const line of named(readFileSync(path, 'utf8'))) mentions.push(`${path}: ${line}`)
@@ -158,6 +158,7 @@ describe('17821, reserved', () => {
     // And prose is still prose, or the test above never passes at all.
     expect(named(' * `17821` is reserved, and `RESERVED_PORT` is where it is written down.\n')).toEqual([])
     expect(named('export const RESERVED_PORT = 17821;\n')).toEqual([])
+    expect(named('export const RESERVED_PORT = 17821\n')).toEqual([])
   })
 })
 
@@ -181,7 +182,7 @@ function named(text: string): string[] {
     // A comment, or the declaration itself. Anything else — a `listen`, a
     // default, a URL, an import — is a port that is no longer reserved, and the
     // comment beside `RESERVED_PORT` saying so is no longer true.
-    const prose = /^\s*(\/\/|\*|\/\*)/.test(line) || /^export const RESERVED_PORT = 17821;$/.test(line.trim())
+    const prose = /^\s*(\/\/|\*|\/\*)/.test(line) || /^export const RESERVED_PORT = 17821;?$/.test(line.trim())
     if (!prose) out.push(line.trim())
   }
   return out
