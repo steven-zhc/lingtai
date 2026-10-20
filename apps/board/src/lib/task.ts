@@ -12,6 +12,7 @@ import {
   type BlockDiagnosis,
   type BoardFact,
   type Envelope,
+  type WaitId,
   type WorkItemLifecycle,
 } from '@lingtai/domain'
 /**
@@ -475,6 +476,15 @@ export interface StandingView {
    */
   restarts: number
   restartsOf: number
+  /**
+   * The wait a card renders, so `Approve`/`Requeue`/`AnswerQuestion`/`Close`
+   * can send back **the wait it was shown**, not whatever the ticket is
+   * blocked on by the time the click lands (#465). Null off the render path
+   * entirely: a command run under `deciding` reads and resolves inside one
+   * lock hold, so there sending nothing and letting `resolveWaitHolding` read
+   * fresh is correct, not a gap this field has to close.
+   */
+  waitId: WaitId | null
 }
 
 /**
@@ -727,6 +737,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     // `restartsOf > 0 ? … : limits?.restarts` already falls back to the
     // recipe for it.
     restartsOf: 0,
+    waitId: blocked ? life.waitId : null,
   }
 }
 

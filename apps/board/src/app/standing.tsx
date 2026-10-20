@@ -413,6 +413,7 @@ export function Standing({
               project={project}
               issue={issue}
               onSha={standing.awaitingSha}
+              waitId={standing.waitId}
               refusing={standing.failed.length > 0}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
             />
@@ -443,6 +444,7 @@ export function Standing({
             <Requeue
               project={project}
               issue={issue}
+              waitId={standing.waitId}
               asked={standing.asked}
               question={standing.askedQuestion}
               recommended={standing.diagnosis?.recommendation?.action ?? null}
@@ -454,7 +456,7 @@ export function Standing({
               all three assume the ticket is still wanted. This is the one that
               says it is not — and it is offered on every acting row, because
               the moment you decide a ticket is over is whenever you read it. */}
-          <Close project={project} issue={issue} />
+          <Close project={project} issue={issue} waitId={standing.waitId} />
         </div>
       ) : null}
 

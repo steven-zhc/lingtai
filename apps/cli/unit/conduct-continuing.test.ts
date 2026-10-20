@@ -152,6 +152,59 @@ describe('conductWork: a continuing row that has gone stale', () => {
   })
 })
 
+describe('conductWork: a continuing row declined at claim', () => {
+  it('falls through to the queue in the same pass, rather than ending it as if nothing were runnable', async () => {
+    const store = createMemoryEventStore()
+    await approvedTicket(store, 470, 'pass-470')
+
+    const { resolved, tickets } = await worldFor()
+    const runOnceCalls: { issue: number; continuing: unknown }[] = []
+    const runQueueCalls: string[] = []
+    const world: ConductWorld = {
+      createGitHubClient: () => {
+        throw new Error('not reached — no owner')
+      },
+      currentRecipe: async () => resolved,
+      ticketsFor: async () => tickets,
+      selectRunnable: async ({ offered }) =>
+        offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
+      runOnce: (options) => {
+        runOnceCalls.push({ issue: options.issue, continuing: options.continuing })
+        return Effect.succeed({
+          ok: false,
+          ticketId: 't-470',
+          runId: 'pass-470',
+          stage: 'claim',
+          detail: 'passed over: excluded-label',
+        })
+      },
+      runQueue: (options) => {
+        runQueueCalls.push(options.project.project!)
+        return Effect.succeed({ ran: [], stopped: 'empty', attempted: [] })
+      },
+    }
+
+    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([{ project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' }]),
+        outcome,
+        log: () => {},
+        store,
+      },
+      world,
+    )
+
+    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+
+    expect(runQueueCalls).toEqual(['lingtai'])
+    expect(outcome.ran).toBe(0)
+    expect(runOnceCalls).toEqual([{ issue: 470, continuing: { runId: 'pass-470' } }])
+  })
+})
+
 describe('conductWork: two continuing rows for the same project', () => {
   it('skips the stale first row and dispatches the live second one, rather than shadowing it forever', async () => {
     const store = createMemoryEventStore()

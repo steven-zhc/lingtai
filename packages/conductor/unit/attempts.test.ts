@@ -25,6 +25,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import {
+  armFor,
   attemptBrief,
   attemptOutcome,
   clamp,
@@ -158,6 +159,47 @@ describe('priorAttempts', () => {
     ])
 
     expect(attempt?.ended).toBe('blocked, asking: unexpected: agent/59 does not merge into main')
+  })
+})
+
+/**
+ * **A continuation publishes to the held run's own arm, never `nextAttempt`'s**
+ * (#465). `conduct.ts`'s own comment explains why: a continuation's
+ * `next.attempt` is one higher than the held run's — the re-claim is on the
+ * stream too — so pushing there would force-push over the commits this claim
+ * exists to keep, and the next genuine attempt would compute that same
+ * number for itself and force-push over them a second time.
+ */
+describe('armFor', () => {
+  it("names the held run's own attempt for a continuation, not nextAttempt's", () => {
+    const e = stream('ticket-lingtai-465')
+    const before = [
+      e('TicketClaimed', claim('pass-1')),
+      e('WaitStarted', {
+        waitId: 'wait-1' as PayloadOf<'WaitStarted'>['waitId'],
+        reason: {
+          _tag: 'SignoffRequired',
+          run: { runId: 'pass-1' },
+          step: 'merge',
+          action: 'human:land',
+          question: 'land it?',
+        },
+      }),
+    ]
+
+    expect(armFor(before, 'agent/465', 'pass-1', 2)).toBe('agent/465-attempt-1')
+  })
+
+  it("names nextAttempt's arm for a fresh claim, with no continuing run", () => {
+    const e = stream('ticket-lingtai-465')
+    const before = [e('TicketClaimed', claim('pass-1')), e('TicketReleased', released('pass-1', 'exhausted'))]
+
+    expect(armFor(before, 'agent/465', null, 2)).toBe('agent/465-attempt-2')
+  })
+
+  it('throws rather than silently falling back when the continuing run has no claim on this stream', () => {
+    const before: Envelope[] = []
+    expect(() => armFor(before, 'agent/465', 'pass-1', 2)).toThrow('pass-1')
   })
 })
 

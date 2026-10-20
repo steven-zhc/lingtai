@@ -200,6 +200,40 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
 }
 
 /**
+ * Which arm a claim publishes its commits to (#465).
+ *
+ * **The held run's own, for a continuation — never `nextAttempt`'s.** A
+ * continuation's `TicketClaimed` is already on `before`; `priorAttempts`
+ * numbers it there, and that number is the attempt whose arm the held run's
+ * dispatch already pushed to and the one the next prompt names
+ * (`priorAttempts(...).at(-1)`'s own `n`, read by whichever attempt comes
+ * after this one). `nextAttempt` is a different number for exactly this
+ * case — one higher, because the continuation's re-claim is on the stream
+ * too — so pushing there would force-push over the commits this call is
+ * meant to keep, and the next genuine attempt would force-push over them a
+ * second time computing that same number for itself.
+ *
+ * `continuingRunId` is `null` for an ordinary claim, which always uses
+ * `nextAttempt`. A continuation names a run `priorAttempts(before)` cannot
+ * find only when `continueWorkItem`'s own preconditions were not checked
+ * against this same `before` — a caller's bug, not a state this function
+ * should paper over.
+ */
+export function armFor(
+  before: readonly Envelope[],
+  branch: string,
+  continuingRunId: string | null,
+  nextAttempt: number,
+): string {
+  if (continuingRunId === null) return armBranch(branch, nextAttempt)
+  const held = priorAttempts(before).find((a) => a.runId === continuingRunId)
+  if (held === undefined) {
+    throw new Error(`armFor: ${continuingRunId} is continuing but has no claim on ${branch}'s own item stream`)
+  }
+  return armBranch(branch, held.n)
+}
+
+/**
  * What one earlier run produced and what refused it.
  *
  * Read from the envelopes rather than through `reduceRun` because the two facts

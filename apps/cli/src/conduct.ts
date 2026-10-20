@@ -243,35 +243,44 @@ export function conductWork(
     // **The row never expires on its own** — `ContinueRequested` has no
     // "consumed" counterpart, the same choice `RunRequested` makes, so
     // `control.continuing` only ever grows and a row an earlier pass already
-    // continued stays on the stream forever. `requested` goes stale
-    // harmlessly because it is filtered on `queued.has(r.issue)`, below; this
-    // is that filter's own analogue — the first row for this project whose
-    // ticket is **still** `approved` on the same run, read fresh rather than
-    // trusted from the fold. A row whose ticket landed, moved to a new wait,
-    // or was requeued back to the backlog is skipped rather than matched: the
-    // alternative is the first approval ever made for a project shadowing
-    // every one after it, and a project with nothing left but stale rows
-    // never falling through to its own queue.
-    let continuing: ControlState['continuing'][number] | undefined
+    // continued stays on the stream forever. Bounding it here costs one
+    // `runOnce` per pass per stranded row, which is cheap next to a second
+    // state machine that marks one "consumed" — and a row's ticket leaving
+    // `approved` (landed, requeued, moved to a new wait) already makes the
+    // next pass's fresh read skip it, so the only rows this loop spends
+    // anything on are ones genuinely still owed a continuation.
+    //
+    // **A declined claim must fall through to this project's own queue in
+    // the same pass**, not end the pass pretending nothing is runnable: a row
+    // whose ticket is still `approved` on the log but that GitHub stops
+    // offering (closed, `agent:hold` added, a new open blocker, a reassigned
+    // `take: mine`) matches on every pass for ever otherwise, since declining
+    // at claim appends nothing and releases nothing (`stage: 'claim'`, above)
+    // — the lifecycle stays `approved` and the row stays live. So this walks
+    // **every** live row for the project, in order, filtered the same way as
+    // before — the first for this project whose ticket is **still**
+    // `approved` on this run, read fresh rather than trusted from the fold —
+    // and only a `runOnce` that actually claimed something ends the pass.
+    // One that declined at claim is logged and passed over, same as any other
+    // `notClaimed`, and the walk continues to the next row.
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
       const ticket = reduceWorkItem(await store.read(workItemStream(name, Number(c.issue))))
-      if (ticket.lifecycle.status === 'approved' && ticket.lifecycle.runId === c.runId) {
-        continuing = c
-        break
-      }
-    }
-    if (continuing) {
-      options.log(`${name}: continuing #${continuing.issue} — asked for by ${continuing.by}`)
+      if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
+      options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
       const result: RunOnceResult = await Effect.runPromise(
         world
           .runOnce({
             ...common,
-            issue: Number(continuing.issue),
-            continuing: { runId: continuing.runId },
+            issue: Number(c.issue),
+            continuing: { runId: c.runId },
           })
           .pipe(Effect.provide(PortsLive)),
       )
+      if (result.ok === false && result.stage === 'claim') {
+        options.log(`${name}: continuation of #${c.issue} declined at claim — ${result.detail}`)
+        continue
+      }
       options.outcome.ran += 1
       if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
       else if (result.ok === 'held') options.log(`held at ${result.step}`)

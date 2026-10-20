@@ -87,6 +87,7 @@ export { refusingOn, resolveWait, type ResolveWaitOptions, type ResolveWaitResul
 export { diagnoseRefusal, whoseFailure, type AttributedFailure as Failure, type FailureOwner } from '@lingtai/domain'
 export {
   answersBrief,
+  armFor,
   attemptBrief,
   attemptOutcome,
   editHash,

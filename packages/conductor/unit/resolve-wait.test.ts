@@ -485,9 +485,10 @@ describe('resolveWait', () => {
      * that is never going to clear — the approval already on the ticket
      * stream is still reported as granted. The gap left behind (no
      * `ContinueRequested` on the log) is a different problem's to notice,
-     * never this call's to misreport.
+     * never this call's to misreport — but it is carried on `unscheduled`
+     * rather than lost outright, so a caller can say why.
      */
-    it('reports the approval granted even when the control-stream append never lands at all', async () => {
+    it('reports the approval granted, with `unscheduled` set, when the control-stream append never lands at all', async () => {
       const store = createMemoryEventStore()
       const ticketId = workItemStream(PROJECT, 33)
       const item = makeStream(ticketId)
@@ -529,11 +530,202 @@ describe('resolveWait', () => {
         },
         ticketId,
       )
-      expect(result).toEqual({ ok: true, ticketId })
+      expect(result.ok).toBe(true)
+      expect(result).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
 
       const events = await store.read(ticketId)
       expect(reduceWorkItem(events).lifecycle).toMatchObject({ status: 'approved' })
       expect((await store.read(CONTROL_STREAM)).some((e) => e.type === 'ContinueRequested')).toBe(false)
+    })
+
+    /**
+     * **The retry has to cover the read, not only the append** (#465). A
+     * dropped connection on `store.read(CONTROL_STREAM)` is as transient as
+     * a lost version race on the append after it — this repo's own notes on
+     * the pooler record that failure as routine — and before this fix it
+     * threw straight out of `resolveWaitHolding` after `WaitResolved` had
+     * already committed.
+     */
+    it('retries the control-stream read too, not only the append, on a dropped connection', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 34)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-34')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-34'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-34'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-34', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      let readFailedOnce = false
+      const flaky: EventStore = {
+        ...store,
+        read: async (streamId, fromVersion) => {
+          if (streamId === CONTROL_STREAM && !readFailedOnce) {
+            readFailedOnce = true
+            throw new Error('connection terminated unexpectedly')
+          }
+          return store.read(streamId, fromVersion)
+        },
+      }
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 34),
+          issue: 34,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store: flaky,
+        },
+        ticketId,
+      )
+      expect(result).toEqual({ ok: true, ticketId })
+      expect(readFailedOnce).toBe(true)
+      expect((await store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['ContinueRequested'])
+    })
+
+    /**
+     * Every other error, not only `ConcurrencyError`, is retried — the same
+     * dropped-connection reasoning, this time on the append itself.
+     */
+    it('retries the control-stream append on any error, not only a ConcurrencyError', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 35)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-35')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-35'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-35'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-35', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      let appendFailedOnce = false
+      const flaky: EventStore = {
+        ...store,
+        append: async (streamId, expectedVersion, events) => {
+          if (streamId === CONTROL_STREAM && !appendFailedOnce) {
+            appendFailedOnce = true
+            throw new Error('connection terminated unexpectedly')
+          }
+          return store.append(streamId, expectedVersion, events)
+        },
+      }
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 35),
+          issue: 35,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store: flaky,
+        },
+        ticketId,
+      )
+      expect(result).toEqual({ ok: true, ticketId })
+      expect(appendFailedOnce).toBe(true)
+      expect((await store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['ContinueRequested'])
+    })
+
+    /**
+     * **The way out** (#465). The first approval's `ContinueRequested` never
+     * lands (the control stream always refuses), so the row is lost even
+     * though `WaitResolved{Approve}` committed and the item sits `approved`.
+     * A second `Approve` naming the same wait and the same sha reschedules
+     * it — no second `WaitResolved` (`resolveWait` stays the only writer,
+     * checked below the same way the file's own header test does), only the
+     * `ContinueRequested` row.
+     */
+    it('reschedules a lost continuation on a second Approve of the same wait and sha, writing no second WaitResolved', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 36)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-36')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-36'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-36'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-36', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      const neverSchedules: EventStore = {
+        ...store,
+        append: async (streamId, expectedVersion, events) => {
+          if (streamId === CONTROL_STREAM) throw new Error('connection terminated unexpectedly')
+          return store.append(streamId, expectedVersion, events)
+        },
+      }
+
+      const first = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 36),
+          issue: 36,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store: neverSchedules,
+        },
+        ticketId,
+      )
+      expect(first).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
+      expect((await store.read(CONTROL_STREAM)).some((e) => e.type === 'ContinueRequested')).toBe(false)
+
+      const second = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 36),
+          issue: 36,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
+        ticketId,
+      )
+      expect(second).toEqual({ ok: true, ticketId })
+
+      const control = await store.read(CONTROL_STREAM)
+      expect(control.map((e) => e.type)).toEqual(['ContinueRequested'])
+      expect(control[0]?.data).toMatchObject({ issue: '36', runId: 'pass-36' })
+
+      const ticketEvents = await store.read(ticketId)
+      expect(ticketEvents.filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
     })
 
     it('requires a note when a refusal still stands on the sha, and refuses without one', async () => {

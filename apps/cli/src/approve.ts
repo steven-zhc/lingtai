@@ -68,7 +68,11 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
     })
 
     if (result.ok) {
-      log(`approved ${result.ticketId} — continues at ${result.continuesAt}`)
+      log(
+        result.unscheduled === undefined
+          ? `approved ${result.ticketId} — continues at ${result.continuesAt}`
+          : `approved ${result.ticketId} — but the continuation was not scheduled (${result.unscheduled}); run lingtai approve again to schedule it`,
+      )
       return 0
     }
     log(`not approved (${result.reason}): ${result.detail}`)

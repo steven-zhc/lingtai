@@ -51,6 +51,7 @@ import {
   parseWorkItemStream,
   reduceWorkItem,
   waitsOf,
+  type WaitId,
   workItemStream,
 } from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
@@ -80,6 +81,8 @@ export async function approveCard(input: {
   issue: number
   onSha: string
   note?: string
+  /** The wait the card rendered — `StandingView.waitId` — so a stale card refuses rather than resolving one it never showed (#465). */
+  waitId?: WaitId
 }): Promise<ActionResult> {
   try {
     const state = await loadProject(input.project)
@@ -111,13 +114,20 @@ export async function approveCard(input: {
       // what the CLI accepts (#92).
       onSha: input.onSha,
       note: input.note,
+      waitId: input.waitId,
     })
 
     revalidatePath('/')
     // Does not merge (#465) — the continuation is whichever process holds the
     // conductor lock's, not this server action's.
     return result.ok
-      ? { ok: true, detail: `approved — continues at ${result.continuesAt}` }
+      ? {
+          ok: true,
+          detail:
+            result.unscheduled === undefined
+              ? `approved — continues at ${result.continuesAt}`
+              : `approved — but the continuation was not scheduled (${result.unscheduled}); approve again to schedule it`,
+        }
       : { ok: false, detail: `${result.reason}: ${result.detail}` }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -139,6 +149,8 @@ export async function answerCard(input: {
   answer: string
   /** The question the page showed, whole — `answer()` refuses if it has changed. */
   question: string
+  /** The wait the card rendered — `StandingView.waitId` (#465). */
+  waitId?: WaitId
 }): Promise<ActionResult> {
   try {
     const result = await answer({
@@ -147,6 +159,7 @@ export async function answerCard(input: {
       by: actor(),
       answer: input.answer,
       question: input.question,
+      waitId: input.waitId,
     })
     revalidatePath('/')
     return { ok: result.ok, detail: result.detail }
@@ -169,13 +182,20 @@ export async function answerCard(input: {
  * about the *ticket*. A stale sha is the reason to do it, not a reason to
  * refuse.
  */
-export async function requeueCard(input: { project: string; issue: number; note: string }): Promise<ActionResult> {
+export async function requeueCard(input: {
+  project: string
+  issue: number
+  note: string
+  /** The wait the card rendered — `StandingView.waitId` (#465). */
+  waitId?: WaitId
+}): Promise<ActionResult> {
   try {
     const result = await requeue({
       project: input.project,
       issue: input.issue,
       by: actor(),
       note: input.note,
+      waitId: input.waitId,
     })
 
     revalidatePath('/')
@@ -205,7 +225,13 @@ export async function requeueCard(input: { project: string; issue: number; note:
  * GitHub issue stayed open, which is half the thing a person clicking *Close*
  * is asking for.
  */
-export async function closeCard(input: { project: string; issue: number; reason: string }): Promise<ActionResult> {
+export async function closeCard(input: {
+  project: string
+  issue: number
+  reason: string
+  /** The wait the card rendered — `StandingView.waitId`, when closing a blocked item (#465). */
+  waitId?: WaitId
+}): Promise<ActionResult> {
   try {
     if (!input.reason.trim()) return { ok: false, detail: 'a close needs a reason' }
     if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
@@ -220,6 +246,7 @@ export async function closeCard(input: { project: string; issue: number; reason:
       state,
       client,
       recipe: async () => resolved,
+      waitId: input.waitId,
     })
 
     revalidatePath('/')

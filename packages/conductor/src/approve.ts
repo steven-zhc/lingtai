@@ -1,4 +1,4 @@
-import { reduceRun, reduceWorkItem, stepOutcomesOf, workItemStream } from '@lingtai/domain'
+import { reduceRun, reduceWorkItem, stepOutcomesOf, waitsOf, type WaitId, workItemStream } from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -58,12 +58,28 @@ export interface ApproveOptions {
    * (#150). See `refusingOn`.
    */
   note?: string
+  /**
+   * The wait the caller was shown, and is resolving — checked against the
+   * one currently open rather than trusted from the fold (#465). Omitted by
+   * the CLI, which reads and resolves inside one `deciding` hold, so "the
+   * wait it was shown" and "the wait now" are the same read; the board
+   * always sends the id its card rendered (`StandingView.waitId`), so two
+   * open cards for the same item cannot resolve the wait neither was shown.
+   */
+  waitId?: WaitId
   store?: EventStore
   log?: (line: string) => void
 }
 
 export type ApproveResult =
-  | { ok: true; ticketId: string; runId: string; continuesAt: string }
+  | {
+      ok: true
+      ticketId: string
+      runId: string
+      continuesAt: string
+      /** Passed through from `resolveWaitHolding` — see its own field. */
+      unscheduled?: string
+    }
   | { ok: false; ticketId: string; reason: string; detail: string }
 
 export async function approve(options: ApproveOptions): Promise<ApproveResult> {
@@ -93,7 +109,55 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   const store = options.store ?? eventStore
   const log = options.log ?? (() => {})
 
-  const item = reduceWorkItem(await store.read(ticketId))
+  const events = await store.read(ticketId)
+  const item = reduceWorkItem(events)
+
+  // **The way out of a continuation `resolveWaitHolding` could not schedule**
+  // (#465). `WaitResolved{Approve}` already committed — the lifecycle is
+  // `approved` — but the retried `ContinueRequested` append inside it may
+  // still have exhausted its retries and left no row for a conductor to act
+  // on. A second `Approve` of the same wait and sha asks only for that row:
+  // `resolveWaitHolding` matches this exact state before its `not-blocked`
+  // refusal and appends `ContinueRequested` alone, writing no second
+  // `WaitResolved` — `resolveWait` stays the only writer of that event.
+  if (item.lifecycle.status === 'approved') {
+    if (options.onSha && options.onSha !== item.lifecycle.onSha) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail:
+          `the card showed ${options.onSha.slice(0, 7)} and the approval on record is for ` +
+          `${item.lifecycle.onSha.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
+      }
+    }
+    const resolved = await resolveWaitHolding(
+      {
+        ticketId,
+        issue: options.issue,
+        waitId: options.waitId ?? item.lifecycle.waitId,
+        resolution: { _tag: 'Approve', onSha: item.lifecycle.onSha },
+        by: options.by,
+        note: options.note,
+        client: options.client,
+        store,
+      },
+      ticketId,
+    )
+    if (!resolved.ok) {
+      return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+    }
+    const { runId, waitId, onSha } = item.lifecycle
+    const runEvents = await store.read(runId)
+    // The `WaitStarted` this approval already answered is still on the
+    // stream — `waitsOf` matches it by `waitId`, never by position — so the
+    // continuation is read the same way the first approval read it.
+    const fold = waitsOf(events).find((w) => w.waitId === waitId)!
+    const continuation = continuationOf(fold.reason, stepOutcomesOf(runEvents))!
+    log(`approved ${onSha.slice(0, 7)} by ${options.by} — rescheduled to continue at ${continuation.step}`)
+    return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
+  }
+
   if (item.lifecycle.status !== 'blocked') {
     return {
       ok: false,
@@ -160,7 +224,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     {
       ticketId,
       issue: options.issue,
-      waitId: block.waitId,
+      waitId: options.waitId ?? block.waitId,
       resolution: { _tag: 'Approve', onSha },
       by: options.by,
       note: options.note,
@@ -174,7 +238,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   }
 
   log(`approved ${onSha.slice(0, 7)} by ${options.by} — continues at ${continuation.step}`)
-  return { ok: true, ticketId, runId, continuesAt: continuation.step }
+  return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
 }
 
 /**
@@ -221,6 +285,8 @@ export async function requeue(options: {
    * and this read would otherwise be withdrawn under a note about a document.
    */
   onQuestion?: 'withdraw' | 'refuse'
+  /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
+  waitId?: WaitId
   store?: EventStore
 }): Promise<{ ok: boolean; ticketId: string; detail: string }> {
   const store = options.store ?? eventStore
@@ -245,7 +311,7 @@ export async function requeue(options: {
 
 /** Exported for the unit half alone — see `approveHolding`'s own comment. */
 export async function requeueHolding(
-  options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse' },
+  options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse'; waitId?: WaitId },
   store: EventStore,
   ticketId: string,
 ): Promise<{ ok: boolean; ticketId: string; detail: string }> {
@@ -285,7 +351,14 @@ export async function requeueHolding(
   const note = options.note.trim() ? options.note : ''
 
   const resolved = await resolveWaitHolding(
-    { ticketId, waitId: item.lifecycle.waitId, resolution: { _tag: 'Requeue' }, by: options.by, note, store },
+    {
+      ticketId,
+      waitId: options.waitId ?? item.lifecycle.waitId,
+      resolution: { _tag: 'Requeue' },
+      by: options.by,
+      note,
+      store,
+    },
     ticketId,
   )
   if (!resolved.ok) {

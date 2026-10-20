@@ -13,6 +13,7 @@
  * card rendering and the click, so the diff being approved is not the diff that
  * was read. That has to be visible, not swallowed.
  */
+import type { WaitId } from '@lingtai/domain'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
@@ -57,6 +58,7 @@ export function Decide({
   project,
   issue,
   onSha,
+  waitId = null,
   refusing,
   recommended,
 }: {
@@ -68,6 +70,15 @@ export function Decide({
    * approvals `lingtai approve` accepted (#92).
    */
   onSha: string
+  /**
+   * The wait this card is rendering — `StandingView.waitId` — so a second
+   * card open on an item whose wait has since moved resolves the one it was
+   * shown rather than whatever is open now (#465). Null where the caller has
+   * no wait id to offer (the home board's own cards, off `task_view`, which
+   * gains no `wait_id` column for this) — the server then falls back to
+   * resolving whatever is open, as it always did.
+   */
+  waitId?: WaitId | null
   /**
    * Whether the card knows of a gate that refused, so the reason is asked for
    * before the click rather than after a refusal. A hint, and only that: the
@@ -93,7 +104,13 @@ export function Decide({
     setPending(true)
     setRefusal(null)
     startTransition(async () => {
-      const result: ActionResult = await approveCard({ project, issue, onSha, note: withNote })
+      const result: ActionResult = await approveCard({
+        project,
+        issue,
+        onSha,
+        note: withNote,
+        ...(waitId === null ? {} : { waitId }),
+      })
       setPending(false)
       if (result.ok) {
         setDone(result.detail)
@@ -183,12 +200,15 @@ export function Decide({
 export function Requeue({
   project,
   issue,
+  waitId = null,
   recommended,
   asked = false,
   question = null,
 }: {
   project: string
   issue: number
+  /** The wait this card is rendering — see `Decide`'s own comment. */
+  waitId?: WaitId | null
   /**
    * Whether the block is a question asked before any run (#147). Then the move
    * is an *answer* — the same event, through `answer()`, which refuses anything
@@ -274,8 +294,14 @@ export function Requeue({
             startTransition(async () => {
               const result =
                 asked && !withdrawing
-                  ? await answerCard({ project, issue, answer: note, question: question ?? '' })
-                  : await requeueCard({ project, issue, note })
+                  ? await answerCard({
+                      project,
+                      issue,
+                      answer: note,
+                      question: question ?? '',
+                      ...(waitId === null ? {} : { waitId }),
+                    })
+                  : await requeueCard({ project, issue, note, ...(waitId === null ? {} : { waitId }) })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -321,10 +347,16 @@ export function Requeue({
 export function Close({
   project,
   issue,
+  waitId = null,
   prefill,
 }: {
   project: string
   issue: number
+  /**
+   * The wait this card is rendering, when there is one — see `Decide`'s own
+   * comment. Null on a queued card, which closes nothing it is waiting on.
+   */
+  waitId?: WaitId | null
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
 }) {
@@ -369,7 +401,7 @@ export function Close({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = await closeCard({ project, issue, reason })
+              const result = await closeCard({ project, issue, reason, ...(waitId === null ? {} : { waitId }) })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)

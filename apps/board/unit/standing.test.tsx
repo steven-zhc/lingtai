@@ -1,4 +1,5 @@
 import type { Action, Envelope, Finding, Step } from '@lingtai/domain'
+import { aWaitId } from '@lingtai/domain/test/events'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The page says why a task is not moving, and says it first.
@@ -579,6 +580,7 @@ const HELD: StandingView = {
   deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …' },
   restarts: 0,
   restartsOf: 0,
+  waitId: aWaitId(),
 }
 
 describe('the block, rendered', () => {

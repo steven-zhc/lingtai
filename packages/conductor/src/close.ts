@@ -47,7 +47,14 @@
  * how the silence gets in. Read from the base branch, never from an agent's
  * (0005).
  */
-import { parsePayload, type ProjectState, reduceWorkItem, type ToAppend, workItemStream } from '@lingtai/domain'
+import {
+  parsePayload,
+  type ProjectState,
+  reduceWorkItem,
+  type ToAppend,
+  type WaitId,
+  workItemStream,
+} from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
@@ -92,6 +99,12 @@ export async function close(options: {
   client?: IssueChannel & RefChannel
   /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
+  /**
+   * The wait the caller was shown, when closing a blocked item — checked
+   * against the one currently open rather than trusted from the fold
+   * (#465). Omitted by the CLI; the board always sends it.
+   */
+  waitId?: WaitId
   store?: EventStore
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
@@ -149,7 +162,7 @@ export async function close(options: {
     const resolved = await resolveWaitHolding(
       {
         ticketId,
-        waitId: item.lifecycle.waitId,
+        waitId: options.waitId ?? item.lifecycle.waitId,
         resolution: { _tag: 'Close' },
         by: options.by,
         note: options.reason,

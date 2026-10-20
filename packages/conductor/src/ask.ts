@@ -21,7 +21,7 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
+import { parsePayload, reduceWorkItem, waitsOf, type WaitId, workItemStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -118,6 +118,13 @@ export async function answer(options: {
    * passes it; the CLI, which shows nothing first, passes none.
    */
   question?: string
+  /**
+   * The wait the caller was shown, and is resolving — checked against the
+   * one currently open rather than trusted from the fold (#465), the same
+   * reason `question` above is. Omitted by the CLI, which reads and resolves
+   * inside one command; the board always sends it.
+   */
+  waitId?: WaitId
   by: string
   store?: EventStore
 }): Promise<AskOutcome> {
@@ -169,7 +176,7 @@ export async function answer(options: {
     {
       ticketId,
       issue: options.issue,
-      waitId: wait.waitId,
+      waitId: options.waitId ?? wait.waitId,
       resolution: { _tag: 'AnswerQuestion', choice: options.answer },
       by: options.by,
       note: options.answer,

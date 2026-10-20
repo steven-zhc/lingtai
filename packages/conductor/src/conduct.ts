@@ -184,8 +184,8 @@ import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
-import { priorAttempts } from './attempts.ts'
-import { agentBranch, armBranch } from './branches.ts'
+import { armFor, priorAttempts } from './attempts.ts'
+import { agentBranch } from './branches.ts'
 import { claimWorkItem, continueWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
@@ -991,13 +991,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // **Not a new attempt — but only for a genuine continuation** (#465). A
     // continuation's own `TicketClaimed` is already on `before`, blocked by
     // the very wait it is continuing from, so `priorAttempts` would otherwise
-    // count this run as the one before itself and hand it `attempt: 2`'s arm,
-    // which nothing ever pushed to. `previous: undefined` here is what a
-    // continuation's first and only claim already computed, so `arm` below
-    // lands on the same branch the held run's own dispatch used. Guarded on
-    // `continuation !== null`, not `options.continuing !== undefined`: a
-    // stale request is an ordinary fresh claim, with its own prior attempts
-    // to carry into the prompt like any other.
+    // count this run as the one before itself and hand it `attempt: 2`'s
+    // brief for a run that is not attempt 2. `previous: undefined` decides
+    // only that — no prior-attempt brief is fetched for a continuation, which
+    // already has the context its own prompt was built with. **It says
+    // nothing about the arm**: that is `armFor`, below, which reads the held
+    // run's own attempt number off `priorAttempts(before)` directly rather
+    // than assuming it agrees with `next.attempt` — because it does not: a
+    // continuation's `next.attempt` is one higher (the re-claim is on the
+    // stream too), and pushing there would force-push over the commits this
+    // claim exists to keep, onto a ref the next genuine attempt would then
+    // force-push over a second time. Guarded on `continuation !== null`, not
+    // `options.continuing !== undefined`: a stale request is an ordinary
+    // fresh claim, with its own prior attempts to carry into the prompt like
+    // any other.
     const previous = continuation !== null ? undefined : priorAttempts(before).at(-1)
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
@@ -1017,7 +1024,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (previous) {
       log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? 'no ending recorded'}`)
     }
-    const arm = armBranch(branch, next.attempt)
+    const arm = armFor(before, branch, continuation !== null ? runId : null, next.attempt)
 
     /**
      * **What the back edges may spend** (0061 §3, and 0040's two dimensions).

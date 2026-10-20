@@ -252,6 +252,53 @@ describe('requeue', () => {
       { question: 'the `implement` step asked: which helper?', runId: 'pass-13', answer: '', by: 'human:steven' },
     ])
   })
+
+  /**
+   * **The finding this `waitId` option closes** (#465). Two cards for one
+   * ticket can be open at once — tab A still showing the wait it loaded,
+   * tab B having requeued it and watched the item block again on a new
+   * wait. Without a `waitId` to check, `requeueHolding` re-reads `blocked`
+   * off the current item and resolves *whatever is open now* rather than
+   * the wait tab A actually read — so a stale click would have withdrawn or
+   * resolved wait B under tab A's note about wait A.
+   */
+  it('refuses a requeue naming a wait the item has since moved past, leaving the live wait untouched', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = workItemStream(PROJECT, 14)
+    const item = makeStream(ticketId)
+    await seed(store, ticketId, [
+      ...aClaim(item, 'pass-14'),
+      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-14'), step: 'implement', question: 'which helper?' }),
+    ])
+    const waitA = waitsOf(await store.read(ticketId)).at(-1)!.waitId
+
+    // Tab B's own requeue, then a reclaim onto a new wait — tab A never sees
+    // either append.
+    const first = await requeueHolding({ by: 'human:someone-else', note: 'try the other one' }, store, ticketId)
+    expect(first.ok).toBe(true)
+    await seed(store, ticketId, [
+      ...aClaim(item, 'pass-14-b'),
+      ...aWait(item, {
+        _tag: 'SignoffRequired',
+        run: aRunRef('pass-14-b'),
+        step: 'merge',
+        action: 'human:land',
+        question: 'land it?',
+      }),
+    ])
+    const events = await store.read(ticketId)
+    const waitB = waitsOf(events).at(-1)!.waitId
+    expect(waitB).not.toEqual(waitA)
+
+    // Tab A's stale click, naming the wait it was shown.
+    const stale = await requeueHolding({ by: 'human:steven', note: 'from the old tab', waitId: waitA }, store, ticketId)
+    expect(stale).toMatchObject({ ok: false })
+    expect(stale.detail).toContain('not waiting on')
+
+    const after = reduceWorkItem(await store.read(ticketId))
+    expect(after.lifecycle).toMatchObject({ status: 'blocked', waitId: waitB })
+    expect(waitsOf(await store.read(ticketId)).find((w) => w.waitId === waitB)?.resolution).toBeNull()
+  })
 })
 
 describe('approve', () => {

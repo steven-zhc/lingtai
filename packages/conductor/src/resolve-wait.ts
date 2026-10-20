@@ -131,7 +131,18 @@ export interface ResolveWaitOptions {
 }
 
 export type ResolveWaitResult =
-  | { ok: true; ticketId: string }
+  | {
+      ok: true
+      ticketId: string
+      /**
+       * Set only when the `ContinueRequested` append below exhausted its
+       * retries — the approval still happened, but nothing is yet waiting
+       * to take the continuation up. The last error's own message, so a
+       * caller can say why rather than just that. See the append's own
+       * comment for what makes this never a reason to answer `ok: false`.
+       */
+      unscheduled?: string
+    }
   | { ok: false; ticketId: string; reason: string; detail: string }
 
 export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveWaitResult> {
@@ -159,6 +170,28 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   const note = options.note?.trim() ?? ''
 
   const item = reduceWorkItem(await store.read(ticketId))
+
+  // **The way out of a continuation this call could not schedule**, read
+  // before the `not-blocked` refusal below rather than instead of it (#465).
+  // `WaitResolved{Approve}` already committed the first time — the
+  // lifecycle moved to `approved` — but the retried `ContinueRequested`
+  // append further down may have exhausted its retries and left no row for
+  // a conductor to act on. A second `Approve` naming the very same wait and
+  // sha is not a second resolution, so it writes no second `WaitResolved`
+  // — `resolveWait` stays the only writer of that event, which
+  // `resolve-wait.test.ts`'s own check holds to — and asks only for the
+  // row the first one was owed.
+  if (
+    options.resolution._tag === 'Approve' &&
+    item.lifecycle.status === 'approved' &&
+    item.lifecycle.waitId === options.waitId &&
+    item.lifecycle.onSha === options.resolution.onSha
+  ) {
+    const parsed = parseWorkItemStream(ticketId)!
+    const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
+    return unscheduled === null ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+  }
+
   if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
     return {
       ok: false,
@@ -219,44 +252,60 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // never offered rather than acted on wrongly.
   //
   // **For that to be true, this must never throw.** `WaitResolved` above has
-  // already committed — this is a second, separate append, and a caller that
-  // reported the approval failed because *this* one lost a race would be
-  // reporting something false. Retried on a `ConcurrencyError` up to five
-  // times, the same bound `recordStart`/`requestShutdownUnlessStanding`
-  // (`@lingtai/daemon`'s own `CONTROL_STREAM` writers) use — a webhook route
-  // or the reconcile sweep appending to the same stream is exactly the race
-  // those retry — and, unlike those two, where the append *is* the whole
-  // operation, never rethrown even once the retries run out: a continuation
-  // this call could not schedule is a gap for something else to notice, not a
-  // reason to say the approval itself did not happen.
+  // already committed — this is a second, separate operation, and a caller
+  // that reported the approval failed because *this* one lost a race would
+  // be reporting something false. Retried on *any* error, never only a
+  // `ConcurrencyError`: a dropped connection is as transient as a lost
+  // version race (`CLAUDE.md`'s own notes on the pooler record it as
+  // routine), and both the read and the append below can hit one. The bound
+  // is still five attempts, the same `recordStart`/
+  // `requestShutdownUnlessStanding` (`@lingtai/daemon`'s own `CONTROL_STREAM`
+  // writers) use. Never rethrown even once the retries run out: a
+  // continuation this call could not schedule is a gap for something else to
+  // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
+  // a reason to say the approval itself did not happen.
+  let unscheduled: string | undefined
   if (options.resolution._tag === 'Approve') {
     const parsed = parseWorkItemStream(ticketId)
     if (parsed !== null) {
-      for (let attempt = 0; ; attempt++) {
-        const at = (await store.read(CONTROL_STREAM)).length
-        try {
-          await store.append(CONTROL_STREAM, at, [
-            {
-              type: 'ContinueRequested',
-              actor: options.by,
-              data: parsePayload('ContinueRequested', {
-                project: parsed.project,
-                issue: parsed.issue,
-                runId: block.runId!,
-                by: options.by,
-              }),
-            },
-          ])
-          break
-        } catch (err) {
-          if (err instanceof ConcurrencyError && attempt < 4) continue
-          break
-        }
-      }
+      unscheduled =
+        (await requestContinuation(store, options.by, parsed.project, parsed.issue, block.runId!)) ?? undefined
     }
   }
 
-  return { ok: true, ticketId }
+  return unscheduled === undefined ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+}
+
+/**
+ * The `ContinueRequested` append, retried on any error up to five attempts
+ * — never thrown, because a caller already holds a committed `WaitResolved`
+ * and must not report that as a failed approval (see the call sites' own
+ * comments). `null` once it lands; otherwise the last error's message.
+ */
+async function requestContinuation(
+  store: EventStore,
+  by: string,
+  project: string,
+  issue: string,
+  runId: string,
+): Promise<string | null> {
+  let lastError: unknown = null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const at = (await store.read(CONTROL_STREAM)).length
+      await store.append(CONTROL_STREAM, at, [
+        {
+          type: 'ContinueRequested',
+          actor: by,
+          data: parsePayload('ContinueRequested', { project, issue, runId, by }),
+        },
+      ])
+      return null
+    } catch (err) {
+      lastError = err
+    }
+  }
+  return lastError instanceof Error ? lastError.message : String(lastError)
 }
 
 /**
