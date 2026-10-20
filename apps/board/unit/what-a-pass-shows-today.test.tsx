@@ -692,11 +692,11 @@ it('1. lands with no rounds spent', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -704,15 +704,15 @@ it('1. lands with no rounds spent', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'merge',
@@ -1570,11 +1570,11 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -1582,7 +1582,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -1590,7 +1590,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'never-ran',
     },
     {
       step: 'merge',
@@ -3005,11 +3005,11 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -3017,7 +3017,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -3498,7 +3498,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement \u00b7 write the change \u2014 did not finish: the agent produced no commits',
         },
         {
           type: 'PassRouted',
@@ -3529,15 +3529,15 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
-      state: 'passed',
+      state: 'did-not-finish',
     },
     {
       step: 'build',
@@ -4288,7 +4288,8 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary:
+            'implement \u00b7 write the change \u2014 did not finish: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it twice and the second call deadlo…',
         },
         {
           type: 'PassRouted',
@@ -4331,19 +4332,19 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
-      state: 'passed',
+      state: 'did-not-finish',
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -5087,11 +5088,11 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -5099,15 +5100,15 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'merge',
@@ -5773,11 +5774,11 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -5785,15 +5786,15 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'merge',
@@ -6461,11 +6462,11 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -6473,15 +6474,15 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'merge',
@@ -6814,7 +6815,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
@@ -7420,11 +7421,11 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -7432,15 +7433,15 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'proposed',
-      state: 'running',
+      state: 'pending',
     },
     {
       step: 'merge',
@@ -8154,11 +8155,11 @@ it('13. a judge answer is unreadable', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -8166,7 +8167,7 @@ it('13. a judge answer is unreadable', () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -8836,11 +8837,11 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -8848,7 +8849,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -9402,11 +9403,11 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -9890,11 +9891,11 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -10703,11 +10704,11 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -10715,7 +10716,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',
@@ -11374,11 +11375,11 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
     },
     {
       step: 'prepared',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'design',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'implement',
@@ -11386,7 +11387,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
     },
     {
       step: 'build',
-      state: 'running',
+      state: 'skipped',
     },
     {
       step: 'review',

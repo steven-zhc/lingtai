@@ -522,11 +522,21 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(taskOf(charged.tasks, 'ticket-pin-roundcost')).toMatchSnapshot('round cost, charged')
   })
 
-  it('carries which arm a ticket is on before the release that follows it moves it to queued', async () => {
+  /**
+   * **The count waits for `TicketReleased`, not `PassRouted`** (0040, `#502`).
+   * `PassRouted` is the router's own decision, before `conduct.ts`'s own
+   * `armIsUp` guard — a push that then fails falls through to `failed`
+   * rather than `TicketReleased{cause: Restart}`, and counting on the
+   * decision alone is what let this column disagree with
+   * `work-item.restarts`, which only `TicketReleased` feeds. Still `running`
+   * and `0` at the decision; `queued` and `1` once the release that may or
+   * may not follow it lands.
+   */
+  it('counts a restart off the release that spends it, not the route that decided it', async () => {
     const restarted = await fold(afterRestarted)
     expect(taskOf(restarted.tasks, 'ticket-pin-restart')).toMatchObject({
       state: 'running',
-      restarts: 1,
+      restarts: 0,
     })
 
     const released = await fold(afterReleased)
@@ -571,17 +581,18 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
   })
 
   /**
-   * #499 pinned that nothing read `RunSpent` yet. Since #502,
-   * `cardFactOf`'s own `RunSpent` case folds an `Action`-shaped, costed one
-   * into `repair_costs` — the same cell a fix round's own cost lands in
-   * (row 16) — so an action's round-0 spend is no longer a no-op here.
+   * #499 pinned that nothing read `RunSpent` yet. Since #502, `cardFactOf`'s
+   * own `RunSpent` case folds an `Action`-shaped, costed one into
+   * `repair_costs` where the round is a bought fix (round > 0, row 16) —
+   * round 0 is the pass's ordinary first attempt at the action, never a fix,
+   * so it stays the no-op #499 pinned.
    */
-  it('folds a round-0 Action RunSpent into repair_costs, keyed run#fix0', async () => {
+  it('leaves repair_costs untouched by a round-0 Action RunSpent', async () => {
     const baseline = await fold(beforeRunSpent)
     expect(taskOf(baseline.tasks, 'ticket-pin-steppassed')).toMatchObject({ repair_costs: '{}' })
 
     const withSpent = await fold(events.length)
     const row = taskOf(withSpent.tasks, 'ticket-pin-steppassed') as { repair_costs: string }
-    expect(JSON.parse(row.repair_costs)).toMatchObject({ 'pass-pin-steppassed#fix0': 0.1 })
+    expect(JSON.parse(row.repair_costs)).toEqual({})
   })
 })

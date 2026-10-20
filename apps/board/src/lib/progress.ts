@@ -397,6 +397,17 @@ export function foldProgress(
     if (now?.label === key) now = null
   }
 
+  // A `StepEnded` for `step`, read off the raw payload rather than a fact —
+  // see its one caller's own header on why. A closure, as `close` above is,
+  // rather than inline: TS narrows `now` to `never` on the second of two
+  // sequential `now?.label` reads inlined in the same block, the same
+  // control-flow limit `conduct.ts`'s own `wipNow` works around.
+  const clearRunningPlaceholder = (step: string) => {
+    verdicts.delete(`${step}:`)
+    if (now?.label === step) now = null
+    if (fixing !== null && now?.label === fixing) now = null
+  }
+
   // The agent phase is over; the next one announces itself. Guarded on the
   // label because a `proposed` gate can outlive the event that ended the
   // agent, and clearing unconditionally would lose it. Shared by `RunFinished`
@@ -448,6 +459,19 @@ export function foldProgress(
         // so there is no `ActionRequested` fact left to pre-mark a point
         // `pending` ahead of its own `StepStarted` — the case above this
         // switch is the whole of that announcement now.
+
+        // **A `StepEnded` closes the placeholder even where it declared no
+        // actions at all.** `boardFactOf` answers `[]` for an outcome with an
+        // empty `actions` list, so the loop below never runs for a step a
+        // recipe leaves empty — and the bare `${step}:` key `StepStarted` set
+        // above would read `running` for ever on a ticket that has already
+        // landed. Read off the raw payload rather than a fact, since there is
+        // no fact for this case to be.
+        if (event.type === 'StepEnded') {
+          const step = (data['outcome'] as { step?: string } | undefined)?.step
+          if (step !== undefined) clearRunningPlaceholder(step)
+        }
+
         for (const fact of boardFactOf(event)) {
           switch (fact._tag) {
             // One per action, because the action is run once (`#234`). `Asked`

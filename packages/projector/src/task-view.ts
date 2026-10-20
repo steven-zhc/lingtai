@@ -314,6 +314,12 @@ export const taskViewProjection: Projection = {
             asked: false,
             needs: null,
             diagnosis: null,
+            // **The restart count's one writer** (0040, `#502`). `PassRouted`
+            // only decides a restart; this is the event `conduct.ts`'s own
+            // `armIsUp` guard withholds where the arm never reached origin, so
+            // counting here is what keeps this column and `work-item.restarts`
+            // — folded off the same event — from disagreeing.
+            ...(d.cause?._tag === 'Restart' ? { restarts: d.cause.restart } : {}),
           })
           break
         }
@@ -593,33 +599,6 @@ export const taskViewProjection: Projection = {
                 )
                 break
               }
-
-              /**
-               * A pass spent its rounds and the ticket is starting over (0040).
-               *
-               * The row is still `running` here — the release that follows
-               * moves it to `queued` and writes the reason as the note — so
-               * what this records is only which arm the item is now on. **Not
-               * `repair_pending`**: a restart is an ordinary claim and
-               * `source.backoff` is exactly the guard that should apply to it:
-               * an arm that comes straight back is the whole queue on a
-               * repository running one ticket at a time.
-               *
-               * `restarts_of` is gone with the ceiling `PassRestarted` used to
-               * carry (#502) — this leaves that column at whatever it already
-               * was, rather than guessing at a denominator the event no longer
-               * states.
-               *
-               * **`viaRun`, not `set`.** `PassRestarted` lived on the work
-               * item's own stream; `PassRouted` (what this fact is folded from
-               * now) lives on the run's (`routing.ts`'s own header), so
-               * `event.streamId` here is the run id and the ticket has to be
-               * found through the link table, the same as every other
-               * run-stream fact in this switch.
-               */
-              case 'Restarted':
-                await viaRun(ctx, event.streamId, seq, at, { restarts: fact.restart })
-                break
 
               case 'WaitStarted': {
                 // An upsert, because since #147 this can be a task's first

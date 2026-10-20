@@ -1097,6 +1097,16 @@ export function foldRun(
         break
 
       default: {
+        // **A `StepEnded` deletes the bare `${step}:` placeholder above, even
+        // where it declared no actions at all** — `boardFactOf` answers `[]`
+        // for an empty outcome, so the loop below never reaches this case,
+        // and the placeholder would sit in `steps` for ever, counted as one
+        // more verdict the task page was never asked about.
+        if (e.type === 'StepEnded') {
+          const step = (d['outcome'] as { step?: string } | undefined)?.step
+          if (step !== undefined) steps.delete(`${step}:`)
+        }
+
         for (const fact of boardFactOf(e)) {
           switch (fact._tag) {
             // `Waived` closes here too since #502 — one more `StepEnded`
