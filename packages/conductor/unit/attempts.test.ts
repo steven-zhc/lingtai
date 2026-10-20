@@ -13,7 +13,15 @@
 import { readFileSync } from 'node:fs'
 
 import { EVIDENCE_BYTES, tail } from '@lingtai/actions'
-import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from '@lingtai/domain'
+import {
+  type Action,
+  type Envelope,
+  type EventType,
+  type Finding,
+  type PayloadOf,
+  SCHEMA_VER,
+  parsePayload,
+} from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -63,11 +71,31 @@ const claim = (runId: string): PayloadOf<'TicketClaimed'> => ({
   kind: 'bug',
 })
 
-const step = (action: string, onSha = 'sha-1') => ({
-  step: 'proposed' as const,
-  action,
-  runId: 'pass-2',
-  onSha,
+/** A `TicketReleased` payload with no cause worth naming — a release this file is not about. */
+const released = (runId: string, reason: string): PayloadOf<'TicketReleased'> => ({ runId, reason, cause: null })
+
+/** A `StepStarted` payload for the given step, round 0 unless said otherwise. */
+const started = (runId: string, step: PayloadOf<'StepStarted'>['step'], round = 0) => ({ runId, step, round })
+
+/** A `verdict`-yield action, the shape a gate's own check or review declares. */
+const verdictAction = (
+  name: string,
+  evidence: string,
+  verdict: 'accepted' | 'refused' = 'accepted',
+  findings: Finding[] = [],
+): Action => ({
+  plugin: 'run',
+  name,
+  onSha: 'sha-1',
+  evidence,
+  yields: 'verdict',
+  result: { _tag: 'Completed', assessment: { verdict, findings } },
+})
+
+/** A `StepEnded` payload closing the given step with one verdict action. */
+const ended = (runId: string, step: PayloadOf<'StepStarted'>['step'], action: Action, round = 0) => ({
+  runId,
+  outcome: { step, round, actions: [action] },
 })
 
 describe('priorAttempts', () => {
@@ -96,12 +124,12 @@ describe('priorAttempts', () => {
     const e = stream('ticket-lingtai-59')
     const attempts = priorAttempts([
       e('TicketClaimed', claim('pass-1')),
-      e('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+      e('TicketReleased', released('pass-1', 'prepare failed at prepared:install')),
       e('TicketClaimed', claim('pass-2')),
-      e('TicketReleased', {
-        runId: 'pass-2',
-        reason: 'the run was killed by an operator timeout before it produced anything',
-      }),
+      e(
+        'TicketReleased',
+        released('pass-2', 'the run was killed by an operator timeout before it produced anything'),
+      ),
     ])
 
     expect(attempts.map((a) => [a.n, a.runId, a.ended])).toEqual([
@@ -117,50 +145,22 @@ describe('priorAttempts', () => {
   })
 
   /** An attempt that ended by asking a person ended, and the question is why. */
-  it('reads a block as an ending, with its question', () => {
+  it('reads a wait as an ending, with its question', () => {
     const e = stream('ticket-lingtai-59')
     const [attempt] = priorAttempts([
       e('TicketClaimed', claim('pass-1')),
-      e('WorkItemBlocked', {
-        hold: {
+      e('WaitStarted', {
+        waitId: 'wait-1' as PayloadOf<'WaitStarted'>['waitId'],
+        reason: {
           _tag: 'MergeRefused',
           run: { runId: 'pass-1' },
-          reason: 'conflict',
-          why: 'agent/59 does not merge into main',
+          reason: 'unexpected',
           raw: 'agent/59 does not merge into main',
-          paths: null,
-          baseSha: null,
-          headSha: null,
-          afterApproval: false,
         },
       }),
     ])
 
-    expect(attempt?.ended).toBe('blocked, asking: conflict: agent/59 does not merge into main')
-  })
-
-  /**
-   * The ticket's second criterion for a merge failure: the integration refusal
-   * itself, not the category the release reason summarises it into.
-   */
-  it("carries the integrator's refusal verbatim when one bought a repair", () => {
-    const e = stream('ticket-lingtai-59')
-    const [attempt] = priorAttempts([
-      e('TicketClaimed', claim('pass-1')),
-      e('RepairRequested', {
-        runId: 'pass-1',
-        reason: 'conflict',
-        detail: 'agent/59 does not merge into main:\napps/web/src/app/page.tsx',
-        fingerprint: 'aaaaaaaaaaaa',
-        attempt: 1,
-      }),
-      e('TicketReleased', { runId: 'pass-1', reason: 'repairing conflict (attempt 1)' }),
-    ])
-
-    expect(attempt?.refusal).toEqual({
-      reason: 'conflict',
-      detail: 'agent/59 does not merge into main:\napps/web/src/app/page.tsx',
-    })
+    expect(attempt?.ended).toBe('blocked, asking: unexpected: agent/59 does not merge into main')
   })
 })
 
@@ -176,13 +176,16 @@ describe('attemptOutcome', () => {
           insertions: 120,
           deletions: 3,
         }),
-        e('StepStarted', step('build')),
-        e('StepFailed', {
-          ...step('build'),
-          evidence: 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322',
-          findings: [],
-        }),
-        e('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
+        e('StepStarted', started('pass-2', 'build')),
+        e(
+          'StepEnded',
+          ended(
+            'pass-2',
+            'build',
+            verdictAction('tsc', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322', 'refused'),
+          ),
+        ),
+        e('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000 }),
       ],
       BUDGET,
     )
@@ -194,9 +197,9 @@ describe('attemptOutcome', () => {
       insertions: 120,
       deletions: 3,
     })
-    expect(outcome.evidence?.what).toBe('proposed:build')
+    expect(outcome.evidence?.what).toBe('build:tsc')
     expect(outcome.evidence?.text).toContain('error TS2322')
-    expect(outcome.receipt).toEqual({ turns: 31, costUsd: 1.11 })
+    expect(outcome.receipt).toEqual({ turns: 31 })
   })
 
   /** A review gate's findings are the evidence; its output alone is a summary. */
@@ -204,19 +207,22 @@ describe('attemptOutcome', () => {
     const e = stream('pass-2')
     const outcome = attemptOutcome(
       [
-        e('StepFailed', {
-          ...step('review'),
-          evidence: '1 blocker',
-          findings: [
-            {
-              file: 'packages/conductor/src/queue.ts',
-              line: 44,
-              claim: 'the backoff is never applied',
-              failureScenario: 'a failing item is retaken on the next pass',
-              severity: 'blocker',
-            },
-          ],
-        }),
+        e(
+          'StepEnded',
+          ended(
+            'pass-2',
+            'review',
+            verdictAction('cold reviewer', '1 blocker', 'refused', [
+              {
+                file: 'packages/conductor/src/queue.ts',
+                line: 44,
+                claim: 'the backoff is never applied',
+                failureScenario: 'a failing item is retaken on the next pass',
+                severity: 'blocker',
+              },
+            ]),
+          ),
+        ),
       ],
       BUDGET,
     )
@@ -251,16 +257,19 @@ describe('attemptOutcome', () => {
    */
   it('names the point a run died inside', () => {
     const e = stream('pass-1')
-    const outcome = attemptOutcome([e('StepStarted', step('install'))], BUDGET)
+    const outcome = attemptOutcome([e('StepStarted', started('pass-1', 'build'))], BUDGET)
 
-    expect(outcome.evidence?.what).toBe('proposed:install')
+    expect(outcome.evidence?.what).toBe('build')
     expect(outcome.evidence?.text).toContain('never returned a verdict')
   })
 
   it('says nothing about a gate that passed', () => {
     const e = stream('pass-1')
     const outcome = attemptOutcome(
-      [e('StepStarted', step('install')), e('StepPassed', { ...step('install'), evidence: 'ok', findings: [] })],
+      [
+        e('StepStarted', started('pass-1', 'build')),
+        e('StepEnded', ended('pass-1', 'build', verdictAction('tsc', 'ok', 'accepted'))),
+      ],
       BUDGET,
     )
 
@@ -272,9 +281,9 @@ describe('attemptBrief', () => {
   const item = stream('ticket-lingtai-59')
   const history = [
     item('TicketClaimed', claim('pass-1')),
-    item('TicketReleased', { runId: 'pass-1', reason: 'prepare failed at prepared:install' }),
+    item('TicketReleased', released('pass-1', 'prepare failed at prepared:install')),
     item('TicketClaimed', claim('pass-2')),
-    item('TicketReleased', { runId: 'pass-2', reason: 'gates refused the diff' }),
+    item('TicketReleased', released('pass-2', 'gates refused the diff')),
   ]
 
   const filled = () => {
@@ -289,12 +298,11 @@ describe('attemptBrief', () => {
           insertions: 120,
           deletions: 3,
         }),
-        run('StepFailed', {
-          ...step('build'),
-          evidence: 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322',
-          findings: [],
-        }),
-        run('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000, costUsd: 1.11 }),
+        run(
+          'StepEnded',
+          ended('pass-2', 'build', verdictAction('tsc', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322', 'refused')),
+        ),
+        run('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000 }),
       ],
       BUDGET,
     )
@@ -406,13 +414,13 @@ describe('attemptBrief', () => {
     const many = stream('ticket-lingtai-59')
     const events = Array.from({ length: 8 }, (_, i) => [
       many('TicketClaimed', claim(`pass-${i + 1}`)),
-      many('TicketReleased', { runId: `pass-${i + 1}`, reason: `attempt ${i + 1} failed` }),
+      many('TicketReleased', released(`pass-${i + 1}`, `attempt ${i + 1} failed`)),
     ]).flat()
 
     const attempts = priorAttempts(events)
     const run = stream('pass-8')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      [run('StepFailed', { ...step('build'), evidence: 'x'.repeat(10_000), findings: [] })],
+      [run('StepEnded', ended('pass-8', 'build', verdictAction('tsc', 'x'.repeat(10_000), 'refused')))],
       BUDGET,
     )
 
@@ -489,9 +497,9 @@ describe('attemptBrief', () => {
       const run = stream('pass-1')
       const attempts = priorAttempts([
         stream('ticket-lingtai-169')('TicketClaimed', claim('pass-1')),
-        stream('ticket-lingtai-169')('TicketReleased', { runId: 'pass-1', reason: 'gates refused the diff' }),
+        stream('ticket-lingtai-169')('TicketReleased', released('pass-1', 'gates refused the diff')),
       ])
-      attempts[0]!.outcome = attemptOutcome([run('StepFailed', { ...step('build'), evidence, findings: [] })], budget)
+      attempts[0]!.outcome = attemptOutcome([run('StepEnded', ended('pass-1', 'build', verdictAction('tsc', evidence, 'refused')))], budget)
       return attemptBrief(attempts, budget)
     }
 
@@ -597,7 +605,7 @@ describe('attemptBrief', () => {
     const brief = attemptBrief(
       priorAttempts([
         e('TicketClaimed', claim('pass-1')),
-        e('TicketReleased', { runId: 'pass-1', reason: 'conflict:\napps/page.tsx\napps/x.tsx' }),
+        e('TicketReleased', released('pass-1', 'conflict:\napps/page.tsx\napps/x.tsx')),
       ]),
       BUDGET,
     )
@@ -615,9 +623,9 @@ describe('attemptBrief, naming the arms', () => {
   const item = stream('ticket-lingtai-314')
   const history = [
     item('TicketClaimed', claim('pass-1')),
-    item('TicketReleased', { runId: 'pass-1', reason: 'the run hit its session limit' }),
+    item('TicketReleased', released('pass-1', 'the run hit its session limit')),
     item('TicketClaimed', claim('pass-2')),
-    item('TicketReleased', { runId: 'pass-2', reason: 'refused: the approach' }),
+    item('TicketReleased', released('pass-2', 'refused: the approach')),
   ]
   const onOrigin = (...names: string[]) => ({ branch: 'agent/314', onOrigin: new Set(names) })
 
