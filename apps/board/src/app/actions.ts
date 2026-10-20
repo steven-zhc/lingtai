@@ -48,11 +48,11 @@ import { requestRun, resumeConductor } from '@lingtai/daemon/control'
 import {
   CONTROL_STREAM,
   parsePayload,
-  parseWorkItemStream,
+  parseTicketStream,
   reduceWorkItem,
   waitsOf,
   type WaitId,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
@@ -492,7 +492,7 @@ export async function concludeChat(input: {
   text: string
 }): Promise<ActionResult> {
   try {
-    const parsed = parseWorkItemStream(input.taskId)
+    const parsed = parseTicketStream(input.taskId)
     if (!parsed) return { ok: false, detail: 'this id is not a work item' }
 
     let ticket: { github: IssueChannel; body: string } | undefined
@@ -556,7 +556,7 @@ export async function editPrompt(input: {
   basedOn: string
 }): Promise<ActionResult> {
   try {
-    if (!parseWorkItemStream(input.taskId)) return { ok: false, detail: 'this id is not a work item' }
+    if (!parseTicketStream(input.taskId)) return { ok: false, detail: 'this id is not a work item' }
     const text = input.text
     const by = actor()
     const events = await eventStore.read(input.taskId)
@@ -625,7 +625,7 @@ export async function sendAttempt(input: {
   basedOn?: string | null
 }): Promise<ActionResult> {
   try {
-    const parsed = parseWorkItemStream(input.taskId)
+    const parsed = parseTicketStream(input.taskId)
     if (!parsed) return { ok: false, detail: 'this id is not a work item' }
 
     const by = actor()
@@ -698,7 +698,7 @@ export async function runNow(input: { project: string; issue: string }): Promise
     await requestRun(input.project, input.issue, by)
     // The id said once, by the function that owns its shape — a second copy of
     // `ticket-<project>-<n>` here is a revalidation that quietly stops matching.
-    revalidatePath(`/task/${workItemStream(input.project, input.issue)}`)
+    revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
     revalidatePath('/')
     return { ok: true, detail: `asked for by ${by} — the next pass takes it` }
   } catch (err) {

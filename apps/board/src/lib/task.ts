@@ -8,7 +8,7 @@ import {
   emptyWorkItem,
   reduceControl,
   CONTROL_STREAM,
-  parseWorkItemStream,
+  parseTicketStream,
   WAIT_EVENTS,
   type BlockDiagnosis,
   type BoardFact,
@@ -1352,7 +1352,7 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
   for (const e of [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))) {
     if (e.type === 'RunStarted') {
       const ticketId = (e.data as { ticketId?: unknown } | null)?.ticketId
-      const parsed = typeof ticketId === 'string' ? parseWorkItemStream(ticketId) : null
+      const parsed = typeof ticketId === 'string' ? parseTicketStream(ticketId) : null
       if (parsed) branchByRun.set(e.streamId, agentBranchOf(parsed.issue))
     }
     let group = groups.get(e.streamId)
@@ -1385,7 +1385,7 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
  * costs the body and not the page.
  */
 async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
-  const parsed = parseWorkItemStream(taskId)
+  const parsed = parseTicketStream(taskId)
   if (!parsed) return null
   const { project, issue } = parsed
 

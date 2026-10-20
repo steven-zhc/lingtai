@@ -11,7 +11,7 @@ import { approveHolding, type ApproveOptions } from '@lingtai/conductor/decide'
  * output the way `standing.tsx` reads it — sent through `approveHolding`,
  * the function `approveCard` calls underneath the lock.
  */
-import { type Action, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
+import { type Action, reduceWorkItem, waitsOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore, type MemoryEventStore } from '@lingtai/event-store/memory'
@@ -45,7 +45,7 @@ function fakeClient(refSha: string | null): ApproveOptions['client'] {
 describe("the approved card's continue button", () => {
   it('sends back the wait and sha standingOf renders, and is refused once the item has moved to a new wait', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 508)
+    const ticketId = ticketStream(PROJECT, 508)
     const item = makeStream(ticketId)
     const run = aRun('pass-508')
     await seed(store, ticketId, [
