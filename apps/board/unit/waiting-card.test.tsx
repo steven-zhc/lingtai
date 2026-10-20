@@ -23,7 +23,7 @@
  * #484's to rewrite, so a pin built on them could not survive either ticket
  * unedited.
  */
-import type { Envelope } from '@lingtai/domain'
+import type { Envelope, Step } from '@lingtai/domain'
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { WaitReason } from '@lingtai/domain/wait'
@@ -53,6 +53,36 @@ interface Fixture {
 }
 
 const FIXTURES: Fixture[] = []
+
+/**
+ * **What turns on `task_view.awaiting_sha` since #502.** `ApprovalRequested`
+ * is gone — a card's Approve sha is read off `cardFactOf`'s `Verdict` fact
+ * now, through the `signoff` action a `StepEnded` carries whenever one is
+ * live (`task-view.ts`'s `fact.approval.onSha`, `read-model.ts`'s
+ * `approvalEffectOf`). This builds exactly that `StepEnded`, standing in for
+ * whatever declared the signoff (a `human:` action, or the router's own
+ * floor) so this fixture file does not have to change shape, only the event
+ * it is fed.
+ */
+function approvalRequested(runId: string, step: Step, action: string, question: string): Envelope {
+  return makeStream(runId)('StepEnded', {
+    runId,
+    outcome: {
+      step,
+      round: 0,
+      actions: [
+        {
+          plugin: 'conductor',
+          name: action,
+          onSha: SHA,
+          evidence: '',
+          yields: 'signoff',
+          result: { _tag: 'Completed', requested: { question } },
+        },
+      ],
+    },
+  })
+}
 
 function add(
   tag: string,
@@ -105,14 +135,7 @@ add(
   'signoffrequired',
   (item) => [
     ...aClaim(item, 'pass-pin-signoffrequired'),
-    makeStream('pass-pin-signoffrequired')('ApprovalRequested', {
-      step: 'merge',
-      action: 'human',
-      runId: 'pass-pin-signoffrequired',
-      onSha: SHA,
-      question: 'merge this?',
-      artifacts: [],
-    }),
+    approvalRequested('pass-pin-signoffrequired', 'merge', 'human', 'merge this?'),
     ...aWait(item, {
       _tag: 'SignoffRequired',
       run: { runId: 'pass-pin-signoffrequired' },
@@ -167,14 +190,12 @@ add(
     // That is not unconditional, though: a push to origin that itself failed
     // leaves `onOrigin` null and no `ApprovalRequested` at all — the
     // `proposedescalated-unpushed` fixture below is that case.
-    makeStream('pass-pin-pe-buildred')('ApprovalRequested', {
-      step: 'proposed',
-      action: 'judge',
-      runId: 'pass-pin-pe-buildred',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. tsc failed',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-pe-buildred',
+      'proposed',
+      'judge',
+      'Merge agent/473 into main anyway? agent/473 into main is waiting on you. tsc failed',
+    ),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-pin-pe-buildred' },
@@ -192,14 +213,12 @@ add(
   'proposedescalated-verifyred',
   (item) => [
     ...aClaim(item, 'pass-pin-pe-verifyred'),
-    makeStream('pass-pin-pe-verifyred')('ApprovalRequested', {
-      step: 'proposed',
-      action: 'judge',
-      runId: 'pass-pin-pe-verifyred',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. verify red output',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-pe-verifyred',
+      'proposed',
+      'judge',
+      'Merge agent/473 into main anyway? agent/473 into main is waiting on you. verify red output',
+    ),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-pin-pe-verifyred' },
@@ -217,14 +236,12 @@ add(
   'proposedescalated-mergeconflict',
   (item) => [
     ...aClaim(item, 'pass-pin-pe-mergeconflict'),
-    makeStream('pass-pin-pe-mergeconflict')('ApprovalRequested', {
-      step: 'proposed',
-      action: 'judge',
-      runId: 'pass-pin-pe-mergeconflict',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. conflict output',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-pe-mergeconflict',
+      'proposed',
+      'judge',
+      'Merge agent/473 into main anyway? agent/473 into main is waiting on you. conflict output',
+    ),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-pin-pe-mergeconflict' },
@@ -248,14 +265,12 @@ add(
   'proposedescalated-reviewfindings',
   (item) => [
     ...aClaim(item, 'pass-pin-pe-reviewfindings'),
-    makeStream('pass-pin-pe-reviewfindings')('ApprovalRequested', {
-      step: 'proposed',
-      action: 'judge',
-      runId: 'pass-pin-pe-reviewfindings',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? agent/473 into main is waiting on you. bug',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-pe-reviewfindings',
+      'proposed',
+      'judge',
+      'Merge agent/473 into main anyway? agent/473 into main is waiting on you. bug',
+    ),
     ...aWait(item, {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-pin-pe-reviewfindings' },
@@ -310,14 +325,12 @@ add(
     // `merge` ran), so production pairs this ending with
     // `ApprovalRequested{step:'merge',action:'unfixed'}` regardless (RUN_9),
     // which still turns on the Approve button.
-    makeStream('pass-pin-checkrefused')('ApprovalRequested', {
-      step: 'merge',
-      action: 'unfixed',
-      runId: 'pass-pin-checkrefused',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? the `merge` step refused: ci red (`ci`)',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-checkrefused',
+      'merge',
+      'unfixed',
+      'Merge agent/473 into main anyway? the `merge` step refused: ci red (`ci`)',
+    ),
     ...aWait(item, {
       _tag: 'CheckRefused',
       run: { runId: 'pass-pin-checkrefused' },
@@ -341,14 +354,12 @@ add(
     // the pill null, but `onOrigin !== null` and the refused lane's own
     // ending still pair an `ApprovalRequested{step:'merge',action:'unfixed'}`
     // (RUN_10b), so Approve is offered.
-    makeStream('pass-pin-mergerefused')('ApprovalRequested', {
-      step: 'merge',
-      action: 'unfixed',
-      runId: 'pass-pin-mergerefused',
-      onSha: SHA,
-      question: 'Merge agent/473 into main anyway? dirty-base: uncommitted changes present (`land the branch`)',
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-mergerefused',
+      'merge',
+      'unfixed',
+      'Merge agent/473 into main anyway? dirty-base: uncommitted changes present (`land the branch`)',
+    ),
     ...aWait(item, {
       _tag: 'MergeRefused',
       run: { runId: 'pass-pin-mergerefused' },
@@ -425,15 +436,12 @@ add(
     // treats it as `stopped === null`: the request it writes names
     // `step: 'proposed', action: 'judge'` (never `'review'`/`'reviewer'`,
     // which are the failure's own step/action, not the request's — RUN_13b).
-    makeStream('pass-pin-answerunreadable')('ApprovalRequested', {
-      step: 'proposed',
-      action: 'judge',
-      runId: 'pass-pin-answerunreadable',
-      onSha: SHA,
-      question:
-        "Merge agent/473 into main anyway? agent/473 into main is waiting on you. `review`'s findings could not be read at all: not json",
-      artifacts: [],
-    }),
+    approvalRequested(
+      'pass-pin-answerunreadable',
+      'proposed',
+      'judge',
+      "Merge agent/473 into main anyway? agent/473 into main is waiting on you. `review`'s findings could not be read at all: not json",
+    ),
     ...aWait(item, {
       _tag: 'AnswerUnreadable',
       run: { runId: 'pass-pin-answerunreadable' },
