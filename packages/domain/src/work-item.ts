@@ -68,6 +68,15 @@ export type WorkItemLifecycle =
    * wanting it again is a new ticket.
    */
   | { status: 'closed'; by: string; reason: string }
+  /**
+   * `WaitResolved{Approve}` landed, and the run it approved has not yet
+   * been reclaimed to continue (#465, 0118 §11). Not `blocked` — the
+   * question is answered — and not `backlog` either: the queue must not
+   * cut a fresh pass for this item while the run it already spent is owed
+   * a continuation. `continueWorkItem` (`claim.ts`) is the only way out,
+   * onto the same `runId`.
+   */
+  | { status: 'approved'; runId: string; waitId: WaitId; onSha: string }
 
 export type WorkItemStatus = WorkItemLifecycle['status']
 
@@ -356,10 +365,21 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       if (d.resolution._tag === 'Requeue' && block?.reason._tag === 'OwnQuestion') {
         return { ...state, ...at, lifecycle: { status: 'backlog' } }
       }
-      // `Close`/`Approve` do not return the item to the backlog on their own —
-      // `TicketClosed`/`TicketLanded` (or a continued run, #465) say what
-      // actually happened — so only the resolutions that are themselves a
-      // requeue move the lifecycle here.
+      // **`Approve` moves to `approved`** (#465) — a continuation is owed,
+      // not a fresh claim, and `block.runId` is never null here:
+      // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
+      // a run.
+      if (d.resolution._tag === 'Approve' && block !== null) {
+        return {
+          ...state,
+          ...at,
+          lifecycle: { status: 'approved', runId: block.runId!, waitId: block.waitId, onSha: d.resolution.onSha },
+        }
+      }
+      // `Close` does not return the item to the backlog on its own —
+      // `TicketClosed` (`close.ts`) says what actually happened — so only
+      // the resolutions that are themselves a requeue move the lifecycle
+      // here.
       if (
         d.resolution._tag !== 'Requeue' &&
         d.resolution._tag !== 'EditBodyAndRequeue' &&

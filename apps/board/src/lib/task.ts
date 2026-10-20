@@ -349,7 +349,7 @@ export interface Deciding {
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
-export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed'
+export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed' | 'approved'
 
 /**
  * Why this task is not moving — the answer the page never gave.
@@ -661,6 +661,8 @@ function whoWaits(life: WorkItemLifecycle): string {
       return 'an agent is working'
     case 'landed':
       return `merged into ${life.base}`
+    case 'approved':
+      return 'approved — waiting for a conductor to continue it'
     default:
       // Not stuck. The reading #94 got wrong: an item nobody is holding comes
       // back on its own, and the page has to say so in as many words.

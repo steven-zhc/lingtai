@@ -309,7 +309,7 @@ describe('resolveWait', () => {
       expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
     })
 
-    it('appends WaitResolved{Approve} once every check passes, and does not move the lifecycle off blocked on its own', async () => {
+    it('appends WaitResolved{Approve} once every check passes, and moves the lifecycle to approved', async () => {
       const store = createMemoryEventStore()
       const ticketId = workItemStream(PROJECT, 9)
       const item = makeStream(ticketId)
@@ -348,9 +348,14 @@ describe('resolveWait', () => {
       const events = await store.read(ticketId)
       const wait = waitsOf(events).at(-1)
       expect(wait?.resolution).toEqual({ _tag: 'Approve', onSha: SHA })
-      // `Approve` does not move the lifecycle off `blocked` on its own
-      // (0118 §11) — a continuation is what says what actually happened.
-      expect(reduceWorkItem(events).lifecycle.status).toBe('blocked')
+      // `Approve` moves the lifecycle to `approved` (#465) — a continuation
+      // is owed, not a fresh claim, until `continueWorkItem` takes it.
+      expect(reduceWorkItem(events).lifecycle).toMatchObject({
+        status: 'approved',
+        runId: 'pass-9',
+        waitId,
+        onSha: SHA,
+      })
     })
 
     it('requires a note when a refusal still stands on the sha, and refuses without one', async () => {
