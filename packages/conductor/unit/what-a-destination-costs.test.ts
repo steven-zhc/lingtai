@@ -50,12 +50,12 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { NEEDS_INPUT, type Action, type ActionEvent, type ActionResult } from '@lingtai/actions'
+import { NEEDS_INPUT, type Action, type ActionResult } from '@lingtai/actions'
 import { offerFor, type Proposal, type Step } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { outcomeOf, runPass, type Ceilings, type PassOptions, type PassOver } from '../src/pass.ts'
+import { outcomeOf, runPass, type Ceilings, type PassEvent, type PassOptions, type PassOver } from '../src/pass.ts'
 import { destinationOf } from '../src/proposed-route.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
@@ -83,9 +83,16 @@ const answering = (result: ActionResult): PassOptions['actionsAt'] => {
   return (step, actions) => (step === 'design' ? [kept] : actions.map((a) => ({ ...kept, name: a.name })))
 }
 
+/** A `StepEnded` event, narrowed from the union `emit` is handed. */
+function stepEndedFor(events: readonly PassEvent[], step: Step): Extract<PassEvent, { type: 'StepEnded' }> | undefined {
+  return events.find(
+    (e): e is Extract<PassEvent, { type: 'StepEnded' }> => e.type === 'StepEnded' && e.data.outcome.step === step,
+  )
+}
+
 /** One pass with a destination at `design`, and the events it appended. */
-async function passWith(result: ActionResult): Promise<{ result: PassOver; events: ActionEvent[] }> {
-  const events: ActionEvent[] = []
+async function passWith(result: ActionResult): Promise<{ result: PassOver; events: PassEvent[] }> {
+  const events: PassEvent[] = []
   const passed = await runPass({
     recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
     context: { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
@@ -227,10 +234,10 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       // 0066 §6, about a configuration error that reaches run time.
       expect(outcomeOf(result.end)).toBe('blocked')
       expect(outcomeOf(result.end)).not.toBe('failed')
-      // `StepDidNotFinish` and not `StepAsked` — broken machinery, not a
-      // question (0068).
-      expect(events.filter((e) => e.type === 'StepAsked')).toEqual([])
-      expect(events.some((e) => e.type === 'StepDidNotFinish')).toBe(true)
+      // `design`'s own `StepEnded` carries the did-not-finish ending — broken
+      // machinery, not a question (0068) — which `result.stopped` above
+      // already pins; this is the one event the pipeline wrote for it.
+      expect(stepEndedFor(events, 'design')).toBeDefined()
     })
 
     /**
@@ -290,13 +297,9 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       ])
       expect(result.end._tag).toBe('WaitOnPerson')
       expect(outcomeOf(result.end)).toBe('blocked')
-      // The question is on `StepAsked.detail`, which is where a person reads it.
-      expect(events.filter((e) => e.type === 'StepDidNotFinish')).toEqual([])
-      expect(events.find((e) => e.type === 'StepAsked')?.data).toMatchObject({
-        step: 'design',
-        action: 'keep it',
-        detail: 'which Confluence space should the design go in?',
-      })
+      // The question is on `result.steps`'s own `ending.detail`, asserted
+      // above; this is the one `StepEnded` the pipeline wrote for it.
+      expect(stepEndedFor(events, 'design')).toBeDefined()
     })
 
     /**

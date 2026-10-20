@@ -32,6 +32,7 @@ import {
   REFUSING_STEPS,
   outcomeOf,
   runPass,
+  type PassEvent,
   type PassOptions,
   type StepBodies,
   type StepBody,
@@ -251,8 +252,8 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
   return { actionsAt, judged }
 }
 
-const events: () => { emit: PassOptions['emit']; seen: ActionEvent[] } = () => {
-  const seen: ActionEvent[] = []
+const events: () => { emit: PassOptions['emit']; seen: PassEvent[] } = () => {
+  const seen: PassEvent[] = []
   return { emit: (event) => void seen.push(event), seen }
 }
 
