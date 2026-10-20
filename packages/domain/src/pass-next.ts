@@ -144,7 +144,7 @@ function fellShortAs(step: Step, action: Action, run: RunRef): NextOfResult {
 function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: RunRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
-      return verdictRefusedAs(step, action.evidence, action.result.assessment.findings)
+      return verdictRefusedAs(step, action.name, action.evidence, action.result.assessment.findings)
     case 'NeverStarted':
       return requeuedNeverStarted(action.result.scope)
     case 'AnswerUnreadable':
@@ -249,7 +249,7 @@ function nothingFellShort(step: Step, action: OfYields<'nothing'>): NextOfResult
 }
 
 /** A refusing `verdict`, by step (0120 §2's table). No `default` — `claim`, `end` cannot carry one, and `admit`, `design`, `implement` never legally run a `verdict`. */
-function verdictRefusedAs(step: Step, evidence: string, findings: Finding[]): NextOfResult {
+function verdictRefusedAs(step: Step, actionName: string, evidence: string, findings: Finding[]): NextOfResult {
   switch (step) {
     case 'prepared':
       return setupRefused(step, evidence)
@@ -264,7 +264,7 @@ function verdictRefusedAs(step: Step, evidence: string, findings: Finding[]): Ne
     }
     case 'proposed':
     case 'merge':
-      return checkRefused(step, evidence)
+      return checkRefused(step, actionName, evidence)
     case 'claim':
     case 'admit':
     case 'design':
@@ -323,11 +323,11 @@ function setupRefused(step: Step, why: string): NextOfResult {
   return { _tag: 'Propose', proposal: { _tag: 'SetupRefused', from: step, output: why } }
 }
 
-function checkRefused(step: Step, evidence: string): NextOfResult {
+function checkRefused(step: Step, actionName: string, evidence: string): NextOfResult {
   if (step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'verdict', `CheckRefused cannot happen at ${step}`)
   }
-  return { _tag: 'Propose', proposal: { _tag: 'CheckRefused', from: step, output: evidence } }
+  return { _tag: 'Propose', proposal: { _tag: 'CheckRefused', from: step, output: evidence, action: actionName } }
 }
 
 function signoffRequired(step: Step, actionName: string, question: string, run: RunRef): NextOfResult {

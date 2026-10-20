@@ -173,8 +173,11 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         const d = event.data as PayloadOf<'TicketClaimed'>
         // A second claim by the same run is the same attempt claiming again,
         // not a new one — the same reason `WorkItemState.runs` will not list it
-        // twice. Nothing writes one today; the guard is about the fold, not
-        // about a caller.
+        // twice. `continueWorkItem` (`claim.ts`) writes exactly this, on every
+        // continuation (#465): its own re-claim lands on the log as a second
+        // `TicketClaimed` naming the run already in `runs`, and `armFor`
+        // (below) depends on this guard de-duplicating it — a continuation's
+        // own claim must not count as a fresh attempt.
         if (byRun.has(d.runId)) break
         const attempt: PriorAttempt = {
           n: attempts.length + 1,

@@ -271,7 +271,7 @@ describe('nextOf: §4 Fell short as table', () => {
     )
     expect(result).toEqual({
       _tag: 'Propose',
-      proposal: { _tag: 'CheckRefused', from: 'proposed', output: 'ci red' },
+      proposal: { _tag: 'CheckRefused', from: 'proposed', output: 'ci red', action: 'watch:ci' },
     })
   })
 
@@ -288,7 +288,7 @@ describe('nextOf: §4 Fell short as table', () => {
     )
     expect(result).toEqual({
       _tag: 'Propose',
-      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'ci red again' },
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'ci red again', action: 'watch:ci' },
     })
   })
 

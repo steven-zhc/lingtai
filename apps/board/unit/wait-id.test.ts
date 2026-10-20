@@ -65,3 +65,29 @@ describe("a card's own wait id", () => {
     expect(toCard(t).waitId).toBeNull()
   })
 })
+
+/**
+ * **A card must not show one wait's question beside a different wait's id**
+ * (#465, round 3's own finding). `laneWaitIds` reads `note` off the same
+ * fold as `waitId` — never off `task_view`'s own row, which can lag behind
+ * a reclaim that already produced a new wait. `toCard`'s `freshNote`
+ * argument is where that pairing is kept: it overrides `t.note` whenever
+ * the caller has a fresher one to give.
+ */
+describe("a card's own question, paired with its wait id", () => {
+  it("uses the fresh note handed in alongside the wait id, not task_view's own, lagging one", () => {
+    const t = blocked()
+    const waitId = aWaitId()
+
+    const card = toCard(t, null, null, null, null, undefined, undefined, waitId, 'which helper — a or b?')
+
+    expect(card.note).toBe('which helper — a or b?')
+    expect(card.note).not.toBe(t.note)
+  })
+
+  it("falls back to task_view's own note when the caller has no fresher one", () => {
+    const t = blocked()
+
+    expect(toCard(t).note).toBe(t.note)
+  })
+})

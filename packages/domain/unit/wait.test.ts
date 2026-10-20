@@ -387,7 +387,26 @@ describe('continuationOf', () => {
     expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
   })
 
-  it("ProposedEscalated{CheckRefused}: continues at the proposal's own step, waiving the name read off the run", () => {
+  it('ProposedEscalated{CheckRefused}: waives the name the proposal itself carries, reading nothing off the run', () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'refused', action: 'watch:ci' },
+      because: { _tag: 'NotAsked' },
+    })
+    // Empty `runOutcomes` on purpose — the whole point of #465's own fix is
+    // that a proposal carrying its own `action` needs no run read at all,
+    // unlike the fallback below.
+    expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: 'watch:ci' })
+  })
+
+  /**
+   * **The fallback, for a proposal persisted before `action` existed**
+   * (#465) — `proposal.action` is `undefined`, so `continuationOf` falls
+   * back to the run's own last `StepEnded` at that step, same as before
+   * this field was added.
+   */
+  it('ProposedEscalated{CheckRefused} with no action of its own: falls back to the name read off the run', () => {
     const reason = parseReason({
       _tag: 'ProposedEscalated',
       run,
@@ -414,7 +433,7 @@ describe('continuationOf', () => {
     expect(continuationOf(reason, runOutcomes)).toEqual({ step: 'merge', waive: 'watch:ci' })
   })
 
-  it("ProposedEscalated{CheckRefused}: null action name when the run's own outcomes say nothing", () => {
+  it("ProposedEscalated{CheckRefused} with no action of its own: null when the run's own outcomes say nothing", () => {
     const reason = parseReason({
       _tag: 'ProposedEscalated',
       run,
@@ -422,6 +441,56 @@ describe('continuationOf', () => {
       because: { _tag: 'NotAsked' },
     })
     expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
+  })
+
+  /**
+   * **The bug this fallback used to have** (#465's blocker finding, part
+   * a): the run's own *last* `StepEnded` at a step can be the merge-anyway
+   * signoff `conduct.ts` appends after the step's own, named
+   * `conductor:judge`/`conductor:unfixed` — never the check a `CheckRefused`
+   * is actually about. Excluded here so the fallback still finds the real
+   * check, even with no `action` to read directly.
+   */
+  it('ProposedEscalated{CheckRefused} with no action of its own: skips the synthetic conductor: signoff appended after the real check', () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'CheckRefused', from: 'proposed', output: 'refused' },
+      because: { _tag: 'NotAsked' },
+    })
+    const runOutcomes: (StepOutcome & { runId: string })[] = [
+      {
+        runId: 'pass-1',
+        step: 'proposed',
+        round: 0,
+        actions: [
+          {
+            plugin: 'watch',
+            name: 'tamper',
+            onSha: 'sha-1',
+            evidence: 'refused',
+            yields: 'verdict',
+            result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+          },
+        ],
+      },
+      {
+        runId: 'pass-1',
+        step: 'proposed',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:judge',
+            onSha: 'sha-1',
+            evidence: 'merge anyway?',
+            yields: 'signoff',
+            result: { _tag: 'Completed', requested: { question: 'merge anyway?' } },
+          },
+        ],
+      },
+    ]
+    expect(continuationOf(reason, runOutcomes)).toEqual({ step: 'proposed', waive: 'tamper' })
   })
 
   it('null exactly where allowedResolutions does not offer Approve', () => {

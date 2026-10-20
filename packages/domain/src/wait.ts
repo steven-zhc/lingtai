@@ -281,12 +281,16 @@ export interface Continuation {
  * {@link allowedResolutions} does not offer `Approve` — there is nothing to
  * continue, so there is nowhere to name.
  *
- * `runOutcomes` is only read for `ProposedEscalated{CheckRefused}` — that
- * `Proposal` carries `from` and `output` and no action name (`proposal.ts`),
- * so the name is read off the run's own last `StepEnded` at that step, the
- * same read `refusingOn` (`approve.ts`) makes: the first action there that did
- * not clear. Every other variant names its own step and (where one is waived)
- * its own action directly, and reads nothing off a run.
+ * `runOutcomes` is read only as a fallback for `ProposedEscalated{CheckRefused}`
+ * proposals persisted before `Proposal.CheckRefused` carried its own `action`
+ * (#465) — those still fall back to the run's own last `StepEnded` at that
+ * step, the same read `refusingOn` (`approve.ts`) makes. A proposal made
+ * since then carries the name it was about directly, read once, at the
+ * moment it refused — not re-derived every time a continuation asks, which
+ * is what let the name drift to whichever check decided the *latest* visit
+ * to the step rather than the one `reason` is actually about. Every other
+ * variant names its own step and (where one is waived) its own action
+ * directly, and reads nothing off a run either way.
  */
 export function continuationOf(
   reason: WaitReason,
@@ -311,7 +315,10 @@ export function continuationOf(
           return { step: 'merge', waive: null }
         case 'CheckRefused': {
           const step = fromOf(proposal)
-          return { step, waive: lastRefusedActionName(runOutcomes, reason.run.runId, step) }
+          return {
+            step,
+            waive: proposal.action ?? lastRefusedActionName(runOutcomes, reason.run.runId, step),
+          }
         }
         case 'BuildRed':
         case 'InputNeeded':
@@ -380,13 +387,25 @@ export function waivedActionsAt(
   return out
 }
 
-/** The name of the action that refused, off the run's last visit to `step` — `null` where none did. */
+/**
+ * The name of the action that refused, off the run's last visit to `step` —
+ * `null` where none did. The fallback path only (#465's own doc, above) —
+ * `conductor:judge`/`conductor:unfixed` (`conduct.ts`) are the merge-anyway
+ * signoff's own synthetic `StepEnded`, appended after the step's own and
+ * sharing its `step` field, never the check this name is being asked about
+ * — excluded here so "last visit" means the last one a declared action
+ * actually decided. `conductor:` is a namespace no declared action may use
+ * (`recipe.ts`'s validator, 0110 §9), so filtering it out can never drop a
+ * real visit.
+ */
 function lastRefusedActionName(
   runOutcomes: readonly (StepOutcome & { readonly runId: string })[],
   runId: string,
   step: Step,
 ): string | null {
-  const visits = runOutcomes.filter((o) => o.runId === runId && o.step === step)
+  const visits = runOutcomes.filter(
+    (o) => o.runId === runId && o.step === step && decidingAction(o)?.plugin !== 'conductor',
+  )
   const last = visits.at(-1)
   if (last === undefined) return null
   return decidingAction(last)?.name ?? null

@@ -529,6 +529,15 @@ export function toCard(
   repairCostUsd: Bill = emptyBill(),
   /** Read off the item's own stream by `laneWaitIds`, for every Waiting card — unlike `progress`, never cut. Null off every lane but Waiting. */
   waitId: WaitId | null = null,
+  /**
+   * The question paired with `waitId`, off the same read — never `t.note`
+   * (#465, round 3's own finding). `t` is `task_view`'s own row, a
+   * projection that can lag behind the fold `laneWaitIds` just read; a card
+   * must not show one wait's question beside a different wait's id. Null
+   * falls back to `t.note`, the same way `waitId` itself falls back to
+   * nothing when `laneWaitIds` could not read one.
+   */
+  freshNote: string | null = null,
 ): BoardCard {
   return {
     taskId: t.taskId,
@@ -549,7 +558,7 @@ export function toCard(
     approved: t.approved,
     turns: t.turns,
     costUsd,
-    note: t.note,
+    note: freshNote ?? t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t, limits?.restarts ?? null),
@@ -847,9 +856,10 @@ async function laneProgress(
 }
 
 /**
- * Each waiting card's own wait id, read off its item stream — the id
- * `Approve`/`Requeue`/`Close` send back so a stale card resolves the wait it
- * rendered rather than whatever is open by the time the click lands (#465).
+ * Each waiting card's own wait id and question, read off its item stream —
+ * the id `Approve`/`Requeue`/`Close` send back so a stale card resolves the
+ * wait it rendered rather than whatever is open by the time the click lands
+ * (#465), and the question paired with it.
  *
  * **Never bounded, unlike `laneProgress`** — a card past some cut that
  * rendered `waitId={null}` was reachable on every Waiting lane bigger than
@@ -864,24 +874,58 @@ async function laneProgress(
  * first `WAITING_RAILS` of them, same as `laneProgress` already pays for a
  * Running lane that can be just as large.
  *
+ * **The question comes back from the same read, not from `task_view`** — a
+ * second finding on top of #465 (round 3). `BoardCard.note` used to stay
+ * `t.note`, off `task_view`, while `waitId` came from this fresher read: two
+ * sources that move on different schedules. Where the projection lagged
+ * behind a reclaim — a requeue and a re-run that already produced a new
+ * wait — this function's own read already saw the new wait and handed back
+ * its id, while `t.note` still held the *old* wait's question. The id was
+ * live, so the server accepted it; the question on the card was not about
+ * the wait the id named. `loadBoard`'s own caller now takes `note` from
+ * here too, so a card never pairs one wait's question with a different
+ * wait's id. Retried up to five times, the same bound `resolve-wait.ts`'s
+ * own retried append uses: a read that fails once must not read as "no id
+ * to show", which is the same dangerous fallback as never reading one.
+ *
  * `OwnQuestion` is included on purpose: it is the one `WaitReason` with no
  * run, so it is also the one `railCandidates`' own `runId !== null` filter
  * would have dropped — reading the item stream directly rather than reusing
  * that list is what keeps it in.
  */
-async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, WaitId>> {
+async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, { waitId: WaitId; note: string }>> {
   const waiting = tasks.filter((t) => COLUMN_OF[t.state] === 'waiting')
   const folded = await Promise.all(
     waiting.map(async (t) => {
-      try {
-        const item = reduceWorkItem(await eventStore.read(workItemStream(t.project, Number(t.issue))))
-        return item.lifecycle.status === 'blocked' ? ([t.taskId, item.lifecycle.waitId] as const) : null
-      } catch {
-        return null
+      // **Retried, not just read once** — a dropped Postgres connection is
+      // routine here (`CLAUDE.md`'s own notes on the pooler), and a read that
+      // fails once reads as "no id to show" on the very next line, which is
+      // the dangerous fallback this function exists to avoid, not a shrug.
+      // The same bound `resolve-wait.ts`'s own retried append uses.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const item = reduceWorkItem(await eventStore.read(workItemStream(t.project, Number(t.issue))))
+          if (item.lifecycle.status !== 'blocked') return null
+          // **`note` read off the same fold as `waitId`, never off `t.note`**
+          // (#465). `t` is `task_view`'s own row — a projection, built by a
+          // second process from the same log on its own schedule — and
+          // `item.lifecycle.question` is folded fresh, by `legacyColumns`,
+          // in the same `reduceWorkItem` call that produced `waitId`
+          // (`work-item.ts`'s `WaitStarted` case). Where the projection has
+          // not yet caught up to the wait this read already sees, `t.note`
+          // is still the *previous* wait's question — a card that paired it
+          // with this fresh `waitId` would send a technically-live id that
+          // the server accepts, under a question the card never actually
+          // asked about it.
+          return [t.taskId, { waitId: item.lifecycle.waitId, note: item.lifecycle.question }] as const
+        } catch {
+          continue
+        }
       }
+      return null
     }),
   )
-  return new Map(folded.filter((e): e is readonly [string, WaitId] => e !== null))
+  return new Map(folded.filter((e): e is readonly [string, { waitId: WaitId; note: string }] => e !== null))
 }
 
 /** A card that draws a rail, and whether this run's pass landed. */
@@ -999,6 +1043,7 @@ export async function loadBoard(project?: string): Promise<Board> {
     // spent rather than as unknown (0110 §7, `#498`'s review).
     const rowsForTicket = spendByTicket.get(t.taskId) ?? []
     const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
+    const fresh = waitIds.get(t.taskId) ?? null
     return toCard(
       t,
       t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
@@ -1010,7 +1055,9 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
-      waitIds.get(t.taskId) ?? null,
+      fresh?.waitId ?? null,
+      // The same read's own question, not `t.note` — see `toCard`'s own doc.
+      fresh?.note ?? null,
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so

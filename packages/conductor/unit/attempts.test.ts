@@ -137,8 +137,16 @@ describe('priorAttempts', () => {
     ])
   })
 
-  /** A second claim by one run is not a second attempt, any more than a second run. */
-  it('counts a re-claim by the same run once', () => {
+  /**
+   * A second claim by one run is not a second attempt, any more than a
+   * second run. **This is `continueWorkItem`'s own re-claim** (`claim.ts`,
+   * #465) — every continuation appends a second `TicketClaimed` naming the
+   * run already in `runs`, and `armFor` (below) depends on this guard
+   * de-duplicating it so a continuation counts as the attempt it already
+   * was, not a fresh one. Pinned here by name so a reader who finds the
+   * guard unreached by any test does not delete it.
+   */
+  it("counts a continuation's re-claim by the same run once, not as a fresh attempt", () => {
     const e = stream('ticket-lingtai-59')
     expect(priorAttempts([e('TicketClaimed', claim('pass-1')), e('TicketClaimed', claim('pass-1'))])).toHaveLength(1)
   })

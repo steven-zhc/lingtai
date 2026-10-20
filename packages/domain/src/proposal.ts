@@ -102,6 +102,24 @@ const CheckRefused = z.object({
   _tag: z.literal('CheckRefused'),
   from: Step.extract(['proposed', 'merge']),
   output: z.string(),
+  /**
+   * The action that refused (#465). `wait.ts`'s `continuationOf` used to
+   * re-derive this from the run's own last `StepEnded` at `from`, read at
+   * the moment a continuation asked rather than at the moment this proposal
+   * was made — wrong the first time (that "last" visit is the merge-anyway
+   * signoff `conduct.ts` appends after the step's own, named
+   * `conductor:judge`) and wrong again once a second check refuses at the
+   * same step, when it drifts to naming whatever decided the later visit.
+   * Naming the action here, once, at the moment it refused, is what a
+   * continuation reads back unchanged no matter how many later visits the
+   * same step gets.
+   *
+   * `.nullable().optional()` only for what is already on the log: a
+   * `ProposedEscalated{CheckRefused}` persisted before this field existed
+   * parses with `action: undefined`, and `continuationOf` falls back to the
+   * old re-derivation for exactly that case.
+   */
+  action: z.string().nullable().optional(),
 })
 type CheckRefused = z.infer<typeof CheckRefused>
 
