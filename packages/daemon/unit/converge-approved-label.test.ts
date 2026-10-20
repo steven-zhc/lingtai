@@ -7,7 +7,7 @@
  * Unit, by 0060 §1: a memory log, a fake `DaemonStore` naming one stream, and
  * a GitHub client that is a set of labels — no Postgres, no network.
  */
-import { workItemStream } from '@lingtai/domain'
+import { ticketStream } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { aClaim, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -20,7 +20,7 @@ import type { DaemonStore } from '../src/store.ts'
 
 const PROJECT = 'lingtai'
 const ISSUE = 465
-const STREAM = workItemStream(PROJECT, ISSUE)
+const STREAM = ticketStream(PROJECT, ISSUE)
 const SHA = 'a'.repeat(40)
 
 const project: ProjectState = {

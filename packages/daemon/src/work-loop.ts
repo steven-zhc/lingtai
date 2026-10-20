@@ -370,7 +370,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
 
     // The subscriber's own project when it has one. Otherwise only what the
     // event names *exactly* — its `ticket-` stream or its `ticketId` — and null
-    // rather than a guess: `parseWorkItemStream` cuts any id at its last dash,
+    // rather than a guess: `parseTicketStream` cuts any id at its last dash,
     // so `pass-3f2a…-0123` would be recorded as project `pass-3f2a…`.
     const project = owner ?? workItemOf(event)?.project ?? null
     const data = { name, eventType: event.type, project, reason }

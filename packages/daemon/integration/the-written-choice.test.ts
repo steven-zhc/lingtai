@@ -101,10 +101,10 @@ describe('a machine that wrote sqlite', () => {
       const { eventStore, log } = await import(${EVENT_STORE});
       const { createProjectionRunner, projectionLag, readTasks, taskViewProjection } = await import(${PROJECTOR});
       const { beat, createStatusTable, readStatus } = await import(${CONTROL});
-      const { parsePayload, workItemStream } = await import(${DOMAIN});
+      const { parsePayload, ticketStream } = await import(${DOMAIN});
 
       const project = "esctest" + Math.random().toString(16).slice(2, 8);
-      await eventStore.append(workItemStream(project, 1), 0, [{
+      await eventStore.append(ticketStream(project, 1), 0, [{
         type: "TicketDiscovered",
         actor: "conductor",
         data: parsePayload("TicketDiscovered", {

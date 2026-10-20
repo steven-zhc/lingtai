@@ -68,11 +68,11 @@ import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
 import { passClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
-  parseWorkItemStream,
+  parseTicketStream,
   parsePayload,
   reduceWorkItem,
   WAIT_EVENTS,
-  WORK_ITEM_STREAM_PREFIX,
+  TICKET_STREAM_PREFIX,
   type LabelState,
   type PayloadOf,
   type ProjectState,
@@ -299,7 +299,7 @@ function logOf(options: ConvergeOptions): EventStore {
 async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
-      prefixes: [`${WORK_ITEM_STREAM_PREFIX}%`],
+      prefixes: [`${TICKET_STREAM_PREFIX}%`],
       types: ['TicketClaimed', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
     }),
   )
@@ -327,7 +327,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
   const found: Divergence[] = []
 
   for (const ticketId of streams) {
-    const parsed = parseWorkItemStream(ticketId)
+    const parsed = parseTicketStream(ticketId)
     if (!parsed) continue
     const issue = Number(parsed.issue)
     if (!Number.isInteger(issue)) continue
