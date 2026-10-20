@@ -10,6 +10,15 @@
  * file disagrees with `wait.ts`'s own table, the disagreement is named and
  * kept, on purpose.
  *
+ * **`#465`'s own exception to that rule: the `approve` describe block below
+ * is rewritten, not pinned.** `approveHolding` no longer merges — it appends
+ * `WaitResolved{Approve}` through `resolveWaitHolding` and reports the step
+ * the run continues at — and it now *does* gate on `allowedResolutions`,
+ * which is exactly the disagreement this file's header used to name and
+ * keep. `#443`'s column drop (`blocked`/`asked`/`needs`/`diagnosis`) is still
+ * untouched; only the gate itself moved from "not enforced" to "enforced,
+ * for every caller, in `resolveWaitHolding`".
+ *
  * Builders from `@lingtai/domain/test/events` only, and assertions through
  * `waitsOf`, `reduceWorkItem(...).answers` and `cardFactOf(...).card` — never
  * through a type name, so `#464`'s event-shape change leaves this file alone.
@@ -57,26 +66,9 @@ function approvalRequested(onSha: string, question = 'approve this merge?'): Act
   }
 }
 
-/** A fake `approve()` client that never reaches `integrate()` — every pin here stops before a real merge. */
-function fakeClient(refSha: string): ApproveOptions['client'] {
-  const notUsed = (..._args: unknown[]): never => {
-    throw new Error('not used in this test')
-  }
-  return {
-    owner: 'nobody',
-    repo: 'lingtai',
-    refSha: async () => refSha,
-    listOpenIssues: notUsed,
-    listIssuesSince: notUsed,
-    getIssue: notUsed,
-    createIssue: notUsed,
-    comment: notUsed,
-    setLabels: notUsed,
-    closeIssue: notUsed,
-    updateBody: notUsed,
-    matchingRefs: notUsed,
-    deleteRef: notUsed,
-  } as unknown as ApproveOptions['client']
+/** A fake `approve()` client — `refSha` is the only thing `approveHolding` reads off it now. */
+function fakeClient(refSha: string | null): ApproveOptions['client'] {
+  return { refSha: async () => refSha }
 }
 
 describe('ask', () => {
@@ -263,14 +255,14 @@ describe('requeue', () => {
 })
 
 describe('approve', () => {
-  it('refuses when the item has never been run', async () => {
+  it('refuses when the item has never been run — backlog is not blocked', async () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 20)
     const result = await approveHolding(
-      { project: PROJECT, issue: 20, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 20, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
-    expect(result).toMatchObject({ ok: false, reason: 'no-run' })
+    expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })
 
   it('refuses when the run is not awaiting approval', async () => {
@@ -292,7 +284,7 @@ describe('approve', () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 21, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 21, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-awaiting-approval' })
@@ -306,7 +298,7 @@ describe('approve', () => {
     await seed(store, 'pass-22', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 22, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 22, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
@@ -330,7 +322,7 @@ describe('approve', () => {
     await seed(store, 'pass-23', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 23, base: 'main', by: 'human:steven', onSha: SHA2, client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 23, by: 'human:steven', onSha: SHA2, client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'stale' })
@@ -357,7 +349,7 @@ describe('approve', () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 24, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 24, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'reason-required' })
@@ -381,13 +373,13 @@ describe('approve', () => {
     await seed(store, 'pass-25', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 25, base: 'main', by: 'human:steven', client: fakeClient(SHA2), store },
+      { project: PROJECT, issue: 25, by: 'human:steven', client: fakeClient(SHA2), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'stale' })
   })
 
-  it('refuses when the recipe cannot be read, after every other gate passed', async () => {
+  it('appends WaitResolved{Approve} and reports the step it continues at, once every check passes', async () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 26)
     const item = makeStream(ticketId)
@@ -397,39 +389,33 @@ describe('approve', () => {
       ...aWait(item, {
         _tag: 'SignoffRequired',
         run: aRunRef('pass-26'),
-        step: 'proposed',
+        step: 'merge',
         action: 'unfixed',
-        question: 'approve this merge?',
+        question: 'land it?',
       }),
     ])
-    await seed(store, 'pass-26', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
+    await seed(store, 'pass-26', run.aStepEnded({ step: 'merge', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      {
-        project: PROJECT,
-        issue: 26,
-        base: 'main',
-        by: 'human:steven',
-        client: fakeClient(SHA),
-        recipe: async () => {
-          throw new Error('no recipe here')
-        },
-        store,
-      },
+      { project: PROJECT, issue: 26, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
-    expect(result).toMatchObject({ ok: false, reason: 'recipe' })
+    expect(result).toEqual({ ok: true, ticketId, runId: 'pass-26', continuesAt: 'merge' })
+
+    const resolved = waitsOf(await store.read(ticketId)).at(-1)
+    expect(resolved?.resolution).toEqual({ _tag: 'Approve', onSha: SHA })
   })
 
   /**
-   * **The disagreement `wait.ts`'s own table and today's `approve` land on
-   * differently.** `allowedResolutions` omits `Approve` for a build refused
-   * and escalated to a person (`wait.ts:239`'s `BuildRed` row) — `#443`
-   * decides whether `approve` should refuse that. Today it does not: the
-   * ticket's own Watch out says the move must not change that, so this pins
-   * today's answer rather than the table's.
+   * **`#465` resolves the disagreement `wait.ts`'s own table and `approve`
+   * used to land on differently** (`#443`'s first half). `allowedResolutions`
+   * omits `Approve` for a build refused and escalated to a person
+   * (`wait.ts`'s `BuildRed` row): before this ticket `approveHolding` never
+   * consulted that table at all and reached the recipe anyway; now
+   * `resolveWaitHolding`'s own gate, read through `continuationOf`, refuses
+   * it by name before anything is appended.
    */
-  it('does not gate on allowedResolutions — a refused, escalated build still reaches the recipe today', async () => {
+  it('now refuses — Approve is not offered for ProposedEscalated{BuildRed}', async () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 30)
     const item = makeStream(ticketId)
@@ -455,17 +441,14 @@ describe('approve', () => {
       {
         project: PROJECT,
         issue: 30,
-        base: 'main',
         by: 'human:steven',
         note: 'waiving the build failure',
         client: fakeClient(SHA),
-        recipe: async () => {
-          throw new Error('no recipe here')
-        },
         store,
       },
       ticketId,
     )
-    expect(result).toMatchObject({ ok: false, reason: 'recipe' })
+    expect(result).toMatchObject({ ok: false, reason: 'not-offered' })
+    expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
   })
 })

@@ -33,20 +33,20 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * `waitsOf`/`reduceWorkItem(...)`, never through a type name — the same rule
  * `wait-handlers-answer-as-today.test.ts` states for itself.
  *
- * **Three things this file does not reach:**
+ * **Two things this file does not reach:**
  * - `lingtai status`. `status()` reaches the log through `selectRunnable`/
  *   `readTasks` and is not unit-reachable (`status.test.ts`'s own header);
  *   `task-view-rebuild.test.ts` and `status.test.ts` cover it.
  * - The `busy` arm `approve()`/`requeue()` return when the lock is already
- *   held (`approve.ts:180-189`, `:501-507`). That is lock behaviour, reads
- *   no event and no `Hold`, and no read-model move changes it.
- * - The `recipe` refusal line (`reason: 'recipe'`). `approveCommand` resolves
- *   the recipe itself before calling `approveRun` (`approve.ts:41` and
- *   `:54-56`) and hands it `recipe: async () => resolved` (`:72`) — a thunk
- *   over an already-resolved value, which cannot throw. So that refusal is
- *   unreachable from the CLI; `wait-handlers-answer-as-today.test.ts:377`
- *   and `:419` already pin `approveHolding`'s own behaviour when the thunk
- *   it is given does throw.
+ *   held (`approve.ts`'s own `deciding`). That is lock behaviour, reads no
+ *   event and no `Hold`, and no read-model move changes it.
+ *
+ * **`#465` removed the `recipe`/`base` fields and the merge-refusal path
+ * entirely** — `approveHolding` no longer reads a recipe or calls
+ * `integrate()`, it appends `WaitResolved{Approve}` through
+ * `resolveWaitHolding` and reports the step the run continues at, so the
+ * `recipe` refusal line this header used to carve out no longer exists to
+ * reach or not reach.
  */
 import { type Envelope, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
 import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWaitId, aWithdrawal } from '@lingtai/domain/test/events'
@@ -75,26 +75,9 @@ function approvalRequested(onSha: string) {
   }
 }
 
-/** A fake `approve()` client that never reaches `integrate()` — every pin here stops before a real merge. */
-function fakeClient(refSha: string): ApproveOptions['client'] {
-  const notUsed = (..._args: unknown[]): never => {
-    throw new Error('not used in this test')
-  }
-  return {
-    owner: 'nobody',
-    repo: 'lingtai',
-    refSha: async () => refSha,
-    listOpenIssues: notUsed,
-    listIssuesSince: notUsed,
-    getIssue: notUsed,
-    createIssue: notUsed,
-    comment: notUsed,
-    setLabels: notUsed,
-    closeIssue: notUsed,
-    updateBody: notUsed,
-    matchingRefs: notUsed,
-    deleteRef: notUsed,
-  } as unknown as ApproveOptions['client']
+/** A fake `approve()` client — `refSha` is the only thing `approveHolding` reads off it now (#465). */
+function fakeClient(refSha: string | null): ApproveOptions['client'] {
+  return { refSha: async () => refSha }
 }
 
 describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuestion", () => {
@@ -156,16 +139,16 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
 })
 
 describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
-  it('refuses when the item has never been run', async () => {
+  it('refuses when the item has never been run — backlog is not blocked', async () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 110)
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 110, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 110, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
 
-    expect(result).toMatchObject({ ok: false, reason: 'no-run' })
+    expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })
 
   it('refuses when the run is not awaiting approval', async () => {
@@ -187,7 +170,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 111, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 111, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -230,7 +213,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     await seed(store, ticketId, aResolution(item, waitId, { _tag: 'Requeue' }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 114, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 114, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -276,7 +259,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 112, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 112, by: 'human:steven', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -311,7 +294,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     await seed(store, 'pass-115', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 115, base: 'main', by: 'human:steven', client: fakeClient(SHA2), store },
+      { project: PROJECT, issue: 115, by: 'human:steven', client: fakeClient(SHA2), store },
       ticketId,
     )
 

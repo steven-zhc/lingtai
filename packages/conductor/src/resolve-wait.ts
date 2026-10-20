@@ -88,7 +88,8 @@ async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T
   }
 }
 
-function describeReason(reason: WaitReason): string {
+/** `SignoffRequired`, or `ProposedEscalated{BuildRed}` — a wait reason, in the words a refusal names it by. */
+export function describeReason(reason: WaitReason): string {
   return reason._tag === 'ProposedEscalated' ? `ProposedEscalated{${reason.proposal._tag}}` : reason._tag
 }
 
