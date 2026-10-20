@@ -222,10 +222,13 @@ function labelState(status: WorkItemStatus): LabelState {
     // **An approval is not finished with** (#465) — a continuation is owed,
     // and the `default` arm below would strip the label entirely, making an
     // approved issue indistinguishable from a landed or untouched one.
-    // `running` is read here for the same reason `claimed` is: Lingtai, not
-    // a person, holds the next move.
+    // `'approved'` and not `'running'` (#510): `labelsFor` gives it the same
+    // `working` label `claimed` gets, because Lingtai, not a person, holds
+    // the next move — but `running` is read by `inFlight()` as a conductor
+    // actually holding the item, which an approval with no continuation
+    // claimed yet is not.
     case 'approved':
-      return 'running'
+      return 'approved'
     default:
       // `backlog`, `landed` and `closed` all want no Lingtai label — a
       // queued item has not been touched, and a landed or closed one is

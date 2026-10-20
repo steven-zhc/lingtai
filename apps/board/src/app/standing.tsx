@@ -411,12 +411,12 @@ export function Standing({
           // Defensive, not reachable in the ordinary case: `standingOf` sets
           // `waitId` from the same fold as `state`, so a `blocked` standing
           // carries one by construction. Kept rather than asserted past,
-          // because a button `Decide`/`Requeue` cannot send a wait id to is
-          // exactly the `#84` complaint this file's own header states as a
-          // rule — a card must never offer a control bound to refuse (#508).
+          // because a button `Decide`/`Requeue`/`Close` cannot send a wait id
+          // to is exactly the `#84` complaint this file's own header states as
+          // a rule — a card must never offer a control bound to refuse (#508),
+          // so none is offered here.
           <div className="btnrow smoves" data-rank="moves">
             <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-            <Close project={project} issue={issue} waitId={null} />
           </div>
         ) : (
           <div className="btnrow smoves" data-rank="moves">

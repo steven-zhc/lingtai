@@ -202,6 +202,7 @@ export async function status(
     const NAMES: Record<string, string> = {
       running: 'running',
       verifying: 'running',
+      approved: 'approved, not yet taken up',
       waiting: 'waiting on you',
       landed: 'landed',
     }

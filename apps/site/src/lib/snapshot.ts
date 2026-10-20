@@ -154,6 +154,9 @@ export const LANE_OF: Record<TaskState, Lane> = {
   queued: 'queued',
   running: 'running',
   verifying: 'running',
+  // Lingtai holds the next move on an approved item, not a person (#510), so
+  // it shares `running`'s lane rather than `waiting`'s.
+  approved: 'running',
   waiting: 'waiting',
   landed: 'landed',
   // Closed shares Landed's lane, as it does on the board: both are over, and

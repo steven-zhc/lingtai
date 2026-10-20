@@ -79,9 +79,10 @@ it("an approved item still wants a Lingtai label — not the default arm's none 
     clients: new Map([[PROJECT, fakeClient(['lingtai:waiting'])]]),
   })
 
-  // `labelState('approved')` now reads `running`, so `labelsFor` wants
-  // `lingtai:working` rather than `[]` — the issue still carrying
-  // `lingtai:waiting` is drift towards that, not towards no label at all.
+  // `labelState('approved')` now reads `approved` (#510), and `labelsFor`
+  // gives it the same `lingtai:working` `running`/`verifying` get, rather
+  // than the default arm's `[]` — the issue still carrying `lingtai:waiting`
+  // is drift towards that, not towards no label at all.
   const drift = found.find((d) => d.change === 'labels')
   expect(drift?.expected).toBe('lingtai:working')
 })

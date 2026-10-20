@@ -380,13 +380,12 @@ export function Card({
         card.waitId === null ? (
           // `laneWaitIds`' own read failed five times, or the fold had moved
           // off `blocked` by the time it ran — not "no rail drawn" (#508):
-          // `Decide`/`Requeue` need a wait id to send back, and a button
-          // bound to resolve "whatever is open now" is the `#84` complaint
-          // this file already states as a rule. Close still works — see its
-          // own doc for why `null` is a value it accepts on purpose.
+          // `Decide`/`Requeue`/`Close` all need a wait id to send back, and a
+          // button bound to resolve "whatever is open now" is the `#84`
+          // complaint this file already states as a rule, so none is offered
+          // on a card whose wait could not be read.
           <div className="btnrow">
             <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-            <Close project={card.project} issue={Number(card.ref)} waitId={null} />
           </div>
         ) : (
           <div className="btnrow">

@@ -618,6 +618,31 @@ describe('the block, rendered', () => {
   })
 
   /**
+   * #510: a `waitId` of null is "this read failed", not "no id to show" —
+   * `Decide`/`Requeue`/`Close` all need one to send back, and a button bound
+   * to resolve whatever wait is open now is the `#84` complaint this file's
+   * own header states as a rule.
+   */
+  it('offers no Decide/Requeue/Close when the wait could not be read', () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={{ ...HELD, waitId: null }}
+        project="lingtai"
+        issue={112}
+        taskId="ticket-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+
+    expect(html).toContain('the wait on this card could not be read')
+    const moves = /<div class="btnrow smoves"[^>]*>(.*?)<\/div>/.exec(html)?.[1] ?? ''
+    expect(moves).not.toContain('<button')
+  })
+
+  /**
    * The four ranks (#132), on the block that has all of them.
    *
    * Two things this asserts that the block used to get wrong: the refusal is

@@ -34,6 +34,7 @@ export function labelsFor(state: LabelState): string[] {
   switch (state) {
     case 'running':
     case 'verifying':
+    case 'approved':
       return [`${LINGTAI_LABEL_PREFIX}working`]
     case 'waiting':
       return [`${LINGTAI_LABEL_PREFIX}waiting`]

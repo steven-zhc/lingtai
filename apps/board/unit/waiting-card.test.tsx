@@ -528,3 +528,36 @@ describe('the waiting card is pinned for every WaitReason (#482)', () => {
     })
   }
 })
+
+describe('a card whose wait id could not be read (#510)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows the refusal and offers no Decide/Requeue/Close', async () => {
+    const fx = FIXTURES[0]!
+    const db = openSqliteProjections(':memory:')
+    let html: string
+    try {
+      const store = createSqliteProjectionStore(db)
+      await store.transact((ctx) => taskViewProjection.create(ctx))
+      await store.transact((ctx) => taskViewProjection.apply(fx.events, ctx))
+      const rows = await store.tasks({ retentionDays: 2 })
+      const row = rows.find((r) => r.taskId === fx.taskId)
+      if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
+      // `laneWaitIds`'s own read failed (or the fold moved off `blocked`
+      // before it ran) — the null this test is about, distinct from the
+      // staleness guard the fixtures above pass a real id for.
+      const card = toCard(row, null, null, null, null, undefined, undefined, null)
+      html = renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
+    } finally {
+      db.close()
+    }
+    expect(html).toContain('the wait on this card could not be read')
+    expect(buttonsOf(html)).toEqual([])
+  })
+})
