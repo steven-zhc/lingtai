@@ -101,6 +101,7 @@ export const COMPLETION_EVENTS = [
   // now rather than at the next completion.
   'ConductorResumed',
   'RunRequested',
+  'ContinueRequested',
   // And a shutdown, most of all. An idle daemon appends nothing, so without
   // this a `lingtai shutdown` would sit unread until the next sweep — five
   // minutes of a command that has already returned looking ignored (0030 §2).
