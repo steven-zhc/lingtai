@@ -314,6 +314,14 @@ export const WaitResolved = z.object({
 })
 
 /**
+ * The two event types that mean a work item is waiting on somebody — a block
+ * starting or ending — named once so a caller that wants *every* wait event
+ * on a stream (`converge.ts`'s own candidates, `work-loop.ts`'s completion
+ * events) does not spell the pair out itself.
+ */
+export const WAIT_EVENTS = ['WaitStarted', 'WaitResolved'] as const
+
+/**
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed
  * against code that #58 had already merged, and nothing connected them.
  */

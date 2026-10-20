@@ -1,4 +1,4 @@
-import type { Envelope, ProjectState, ToAppend } from '@lingtai/domain'
+import { decideRoute, offerFor, type Envelope, type ProjectState, type ToAppend } from '@lingtai/domain'
 import {
   aClaim,
   aLanding,
@@ -7,9 +7,9 @@ import {
   aRoute,
   aRun,
   aRunRef,
-  anAnswer,
-  anIntegrationRefusal,
   aWait,
+  aWaitId,
+  anIntegrationRefusal,
   aWithdrawal,
 } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -167,22 +167,52 @@ describe('what wakes the loop', () => {
       ],
     })
 
+    const ownQuestionId = aWaitId()
+    const requeuedId = aWaitId()
+    const withdrawnId = aWaitId()
+
+    // `fix-lines`, offered off a `ReviewFindings` with a criterion, selected
+    // by a judge — the shape `#472`'s own `FixRound` candidate takes.
+    const reviewFindings = { _tag: 'ReviewFindings' as const, findings: [{ file: 'x.ts', line: 1, claim: 'no', failureScenario: 'it breaks', severity: 'blocker' as const }] }
+    const reviewOffer = offerFor(reviewFindings, { rounds: 1, restarts: 1 }, { rounds: 0, restarts: 0 })
+    const reviewReply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'fixable' }
+    const reviewDecision = decideRoute(reviewOffer, reviewReply)
+
+    // `restart`, offered off a `CheckRefused` at `proposed` with no round left
+    // — the shape a restart is actually chosen from.
+    const checkRefused = { _tag: 'CheckRefused' as const, from: 'proposed' as const, output: 'still refuses' }
+    const restartOffer = offerFor(checkRefused, { rounds: 1, restarts: 1 }, { rounds: 1, restarts: 0 })
+    const restartReply = { _tag: 'Selected' as const, candidate: 'restart' as const, why: 'start over' }
+    const restartDecision = decideRoute(restartOffer, restartReply)
+
     const rows: [string, Envelope[]][] = [
       ['claimed', aClaim(item, run.runId)],
       ['build passed', passed],
       ['review refused', refused],
-      ['own question', aWait(item, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' })],
+      ['own question', aWait(item, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, ownQuestionId)],
       [
         'agent question',
         aWait(item, { _tag: 'AgentQuestion', run: aRunRef(run.runId), step: 'implement', question: 'which way?' }),
       ],
-      ['answered', anAnswer(item, 'steven', 'go ahead')],
-      ['requeued', aResolution(item, { _tag: 'Requeue' })],
-      ['withdrawn', aWithdrawal(item)],
-      ['routed to implement', aRoute(run, { from: 'review', to: 'implement' })],
+      [
+        'answered',
+        (() => {
+          const answeredId = aWaitId()
+          return [
+            ...aWait(item, { _tag: 'OwnQuestion', question: 'ready?', by: 'steven' }, answeredId),
+            ...aResolution(item, answeredId, { _tag: 'AnswerQuestion', choice: 'go ahead' }, 'steven'),
+          ]
+        })(),
+      ],
+      [
+        'requeued',
+        aResolution(item, requeuedId, { _tag: 'Requeue' }),
+      ],
+      ['withdrawn', aWithdrawal(item, withdrawnId)],
+      ['routed to implement', aRoute(run, { offer: reviewOffer, reply: reviewReply, decision: reviewDecision })],
       [
         'restarted at claim',
-        [...aRoute(run, { from: 'proposed', to: 'claim' }, item), ...aRelease(item, run.runId, 'starting over')],
+        aRoute(run, { offer: restartOffer, reply: restartReply, decision: restartDecision }, item),
       ],
       ['released', aRelease(item, run.runId)],
       [
@@ -244,8 +274,13 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
     await appendBuilt(store, versions, [
       requeued('IssueUpdated', { project: PROJECT, issue: '603', change: 'labels', detail: 'lingtai:waiting' }),
     ])
-    await appendBuilt(store, versions, aWait(requeued, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }))
-    await appendBuilt(store, versions, aResolution(requeued, { _tag: 'Requeue' }))
+    const requeuedWaitId = aWaitId()
+    await appendBuilt(
+      store,
+      versions,
+      aWait(requeued, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, requeuedWaitId),
+    )
+    await appendBuilt(store, versions, aResolution(requeued, requeuedWaitId, { _tag: 'Requeue' }))
 
     // Released after a claim, with the running label stale the same way.
     const released = makeStream(`ticket-${PROJECT}-604`)
