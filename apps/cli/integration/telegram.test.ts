@@ -30,7 +30,7 @@ import { join } from 'node:path'
 import { projectEnvPath, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
 import { createWorkLoop, type WorkLoop } from '@lingtai/daemon'
-import { SUBSCRIBER_STREAM, workItemStream } from '@lingtai/domain'
+import { SUBSCRIBER_STREAM, ticketStream } from '@lingtai/domain'
 import { boardUrl } from '@lingtai/env'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { resolveRecipe, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
@@ -143,7 +143,7 @@ let issue = 0
 /** A work item and a run for it, opened the way `conduct.ts` opens one. */
 async function aRun() {
   issue += 1
-  const wi = workItemStream(PROJECT, issue)
+  const wi = ticketStream(PROJECT, issue)
   const runId = `pass-${crypto.randomUUID()}`
   created.add(wi)
   created.add(runId)

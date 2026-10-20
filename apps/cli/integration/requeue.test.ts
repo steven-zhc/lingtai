@@ -14,7 +14,7 @@ import { requeue } from '@lingtai/conductor'
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, type ToAppend, workItemStream } from '@lingtai/domain'
+import { projectStream, reduceWorkItem, type ToAppend, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
@@ -33,7 +33,7 @@ const RUNNING = 125
 /** Blocked, requeued with no note. */
 const BLANK_NOTE = 126
 
-const wi = (n: number) => workItemStream(PROJECT, n)
+const wi = (n: number) => ticketStream(PROJECT, n)
 const run = (n: number) => `pass-${PROJECT}-${n}`
 
 /** What the board's `requeueCard` records, which is the local account (0007). */

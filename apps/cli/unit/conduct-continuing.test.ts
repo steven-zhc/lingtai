@@ -1,5 +1,5 @@
 import { memoryTickets } from '@lingtai/conductor/memory-tickets'
-import { type ControlState, type ProjectState, workItemStream } from '@lingtai/domain'
+import { type ControlState, type ProjectState, ticketStream } from '@lingtai/domain'
 import { aClaim, aLanding, aResolution, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -66,7 +66,7 @@ function controlWith(continuing: ControlState['continuing']): ControlState {
 }
 
 async function approvedTicket(store: ReturnType<typeof createMemoryEventStore>, issue: number, runId: string) {
-  const ticketId = workItemStream('lingtai', issue)
+  const ticketId = ticketStream('lingtai', issue)
   const item = makeStream(ticketId)
   const waitId = aWaitId()
   await store.append(ticketId, 0, [
@@ -81,7 +81,7 @@ async function approvedTicket(store: ReturnType<typeof createMemoryEventStore>, 
 }
 
 async function alreadyLandedTicket(store: ReturnType<typeof createMemoryEventStore>, issue: number, runId: string) {
-  const ticketId = workItemStream('lingtai', issue)
+  const ticketId = ticketStream('lingtai', issue)
   const item = makeStream(ticketId)
   const waitId = aWaitId()
   await store.append(ticketId, 0, [

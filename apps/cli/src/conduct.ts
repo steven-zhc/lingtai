@@ -41,7 +41,7 @@ import {
   projectStream,
   reduceProject,
   reduceWorkItem,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -265,7 +265,7 @@ export function conductWork(
     // `notClaimed`, and the walk continues to the next row.
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
-      const ticket = reduceWorkItem(await store.read(workItemStream(name, Number(c.issue))))
+      const ticket = reduceWorkItem(await store.read(ticketStream(name, Number(c.issue))))
       if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
       const result: RunOnceResult = await Effect.runPromise(
