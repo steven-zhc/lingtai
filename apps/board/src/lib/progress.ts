@@ -266,6 +266,7 @@ const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['endin
   NeverRan: 'never-ran',
   DidNotFinish: 'did-not-finish',
   Asked: 'asked',
+  Waived: 'waived',
 }
 
 /**
@@ -445,92 +446,75 @@ export function foldProgress(
       }
 
       default: {
-        const fact = boardFactOf(event)
-        if (fact === null) break
-        switch (fact._tag) {
-          case 'ActionRequested': {
-            const key = `${fact.step}:${fact.action}`
-            // Never over a verdict: requested and started are appended back to
-            // back, and a re-request after a force-push carries its own start.
-            if (!verdicts.has(key)) verdicts.set(key, 'pending')
-            break
+        // `StepStarted` carries no action any more (0120's own Consequences),
+        // so there is no `ActionRequested` fact left to pre-mark a point
+        // `pending` ahead of its own `StepStarted` — the case above this
+        // switch is the whole of that announcement now.
+        for (const fact of boardFactOf(event)) {
+          switch (fact._tag) {
+            // One per action, because the action is run once (`#234`). `Asked`
+            // is not always the ending — a judge can send the asking step round
+            // again — but every other ending here is the pass's last word on
+            // this point. `Waived` closes here too since #502: a waived action
+            // is one more `StepEnded` outcome, not a fact of its own.
+            case 'StepEnded':
+              close(`${fact.step}:${fact.action}`, STEP_ENDING_STATE[fact.ending])
+              // The round's own agent just reported — clear a `fixing` phase
+              // this `StepEnded` is the answer to, same guard `RunFinished`'s
+              // `clearAgentPhase` uses, for the ordinary path where the next
+              // `StepStarted` has not landed to clear it first.
+              if (fixing !== null && now?.label === fixing) now = null
+              break
+
+            case 'SignoffRequested': {
+              // A person is what this is waiting on, and a person has no
+              // timeout. The phase is still named, because "waiting, on the
+              // merge point" is the answer somebody opened the card for.
+              //
+              // **Nothing here ever resolves it** (`SignoffGranted`/
+              // `SignoffRevoked` are gone with `ApprovalGranted`/
+              // `ApprovalRevoked`, #502): continuing a signed-off run is
+              // #465's, not this ticket's, so a requested signoff stays
+              // `pending` on this fold until that lands.
+              const key = `${fact.step}:${fact.action}`
+              verdicts.set(key, 'pending')
+              now = { label: key, since: event.at.toISOString(), budgetMs: null }
+              break
+            }
+
+            /**
+             * **A bought round is an agent running inside the pass**, and it is the
+             * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
+             *
+             * It opens a round, runs a fixing agent against the findings, and
+             * ends that round when that agent is done (`conduct.ts`'s fix
+             * round). No `RunStarted` between them, because a
+             * round is a step inside a run and not a run of its own — so without
+             * this the fold had nothing in flight for the whole of that agent's
+             * run, and a card spending money to answer a refusal said the
+             * refusal was what the pass came to and that a person was being
+             * waited on. `task_view` has said `running` on this event since the
+             * day it was added (`task-view.ts:554`).
+             *
+             * **The ceiling (`roundsOf`) is not on the event any more** (#502):
+             * `RouteOffer` never stored `policy.rounds`, only what it decided
+             * from it, so a total a caller wants has to come off the recipe —
+             * `roundsOf` stays null from this fold.
+             */
+            case 'RoundOpened': {
+              fixing = `${FIXING} round ${String(fact.round)}`
+              now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
+              roundsSpent = Math.max(roundsSpent, fact.round)
+              break
+            }
+
+            case 'RunEnded':
+              clearAgentPhase()
+              break
+
+            default:
+              break
           }
-
-          // One per action, because the action is run once (`#234`). `Asked`
-          // is not always the ending — a judge can send the asking step round
-          // again — but every other ending here is the pass's last word on
-          // this point.
-          case 'StepEnded':
-            close(`${fact.step}:${fact.action}`, STEP_ENDING_STATE[fact.ending])
-            break
-
-          case 'Waived':
-            close(`${fact.step}:${fact.action}`, 'waived')
-            break
-
-          case 'SignoffRequested': {
-            // A person is what this is waiting on, and a person has no
-            // timeout. The phase is still named, because "waiting, on the
-            // merge point" is the answer somebody opened the card for.
-            const key = `${fact.step}:${fact.action}`
-            verdicts.set(key, 'pending')
-            now = { label: key, since: event.at.toISOString(), budgetMs: null }
-            break
-          }
-
-          // Maps to `passed`, not `approved` — the board's own word for a
-          // point that cleared, however it cleared.
-          case 'SignoffGranted':
-            close(`${fact.step}:${fact.action}`, 'passed')
-            break
-
-          case 'SignoffRevoked':
-            verdicts.set(`${fact.step}:${fact.action}`, 'pending')
-            break
-
-          /**
-           * **A bought round is an agent running inside the pass**, and it is the
-           * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
-           *
-           * It opens a round, runs a fixing agent against the findings, and
-           * ends that round when that agent is done (`conduct.ts`'s fix
-           * round). No `RunStarted` between them, because a
-           * round is a step inside a run and not a run of its own — so without
-           * this the fold had nothing in flight for the whole of that agent's
-           * run, and a card spending money to answer a refusal said the
-           * refusal was what the pass came to and that a person was being
-           * waited on. `task_view` has said `running` on this event since the
-           * day it was added (`task-view.ts:554`).
-           */
-          case 'RoundOpened': {
-            fixing = `${FIXING} round ${String(fact.round)}${fact.of > 0 ? ` of ${fact.of}` : ''}`
-            now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
-            roundsSpent = Math.max(roundsSpent, fact.round)
-            if (fact.of > 0) roundsOf = fact.of
-            break
-          }
-
-          // Guarded on the label for the reason `RunFinished` is: only the
-          // phase this event is about. What follows is the point being asked
-          // again, or the refusal standing — both announce themselves.
-          case 'RoundEnded':
-            if (fixing !== null && now?.label === fixing) now = null
-            break
-
-          // No phase to clear: a decline is appended instead of a round being
-          // bought, never after one — the pass asks a person rather than going
-          // round again. `round` is "rounds already spent", the same reading
-          // `RunProgress.rounds` documents.
-          case 'RoundsDeclined':
-            roundsSpent = Math.max(roundsSpent, fact.round)
-            break
-
-          case 'RunEnded':
-            clearAgentPhase()
-            break
-
-          default:
-            break
         }
       }
     }

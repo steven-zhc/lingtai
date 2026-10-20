@@ -33,7 +33,7 @@ import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { STEPS, retiredRepairPending, type Envelope } from '@lingtai/domain'
+import { STEPS, type Envelope } from '@lingtai/domain'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
 
 /** One of the ten steps, and what the recipe runs there. */
@@ -195,19 +195,20 @@ export function planOf(
 /**
  * When the backoff stops holding this item, from its own stream.
  *
- * The two inputs `heldUntil` reads, folded here rather than read back off
- * `task_view`: the projection writes `last_attempt_at` from the claim's own
- * timestamp and clears `repair_pending` on the same event, so this fold and
- * that row cannot disagree. A pending repair is only ever one a log written
- * before `#143` holds, and it is read here for the reason the projection still
- * reads it: an item released for one is owed the exemption it was bought with.
- * The *rule* is still imported — this supplies its arguments and nothing else,
- * which is the split every fold in `task.ts` makes.
+ * The one input `heldUntil` reads off this stream, folded here rather than
+ * read back off `task_view`: the projection writes `last_attempt_at` from the
+ * claim's own timestamp, so this fold and that row cannot disagree. `repair
+ * Pending` is always `false` since #502 — nothing buys a repair since `#143`,
+ * and the event the old exemption read (`RepairRequested`) is gone from the
+ * catalogue with the log reset this ticket's merge runs, so there is no log
+ * left for a pending repair to be read off. The *rule* is still imported —
+ * this supplies its arguments and nothing else, which is the split every
+ * fold in `task.ts` makes.
  */
 export function backoffOf(own: readonly Envelope[], backoffMs: number, now: number = Date.now()): Date | null {
   let lastAttemptAt: Date | null = null
   for (const e of own) if (e.type === 'TicketClaimed') lastAttemptAt = e.at
-  return heldUntil({ lastAttemptAt, repairPending: retiredRepairPending(own) !== null }, backoffMs, now)
+  return heldUntil({ lastAttemptAt, repairPending: false }, backoffMs, now)
 }
 
 function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {

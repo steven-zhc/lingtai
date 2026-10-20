@@ -713,7 +713,13 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
         : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
     deciding: decidingOf(runs, run),
     restarts: item.restarts.length,
-    restartsOf: item.restarts.at(-1)?.of ?? 0,
+    // `RestartRecord` carries no ceiling since #502 (`TicketReleased{cause:
+    // Restart}` is `{after, restart}` alone — the policy it was spent against
+    // lives in the recipe, never on the event). Zero here is "the log has
+    // none", the same reading a missing ceiling always got; `board.ts`'s own
+    // `restartsOf > 0 ? … : limits?.restarts` already falls back to the
+    // recipe for it.
+    restartsOf: 0,
   }
 }
 
@@ -951,6 +957,7 @@ const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['endin
   NeverRan: 'never-ran',
   DidNotFinish: 'did-not-finish',
   Asked: 'asked',
+  Waived: 'waived',
 }
 
 /**
@@ -968,17 +975,19 @@ const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['endin
  */
 export function claimsOf(own: readonly Envelope[]): Claim[] {
   const claims: Claim[] = []
-  let pendingRepair = false
+  // `RepairBought` is not a fact `boardFactOf` can answer any more — nothing
+  // buys a repair since #143, and the event itself is gone with the switch
+  // (#502): the field stays on `Claim` for a log still carrying the old
+  // purchase, which the reset this ticket's merge runs leaves behind.
+  const pendingRepair = false
 
   for (const e of own) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    if (boardFactOf(e)?._tag === 'RepairBought') pendingRepair = true
     if (e.type === 'TicketClaimed') {
       const runId = String(d['runId'] ?? '')
       if (runId && !claims.some((c) => c.runId === runId)) {
         claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null })
       }
-      pendingRepair = false
     }
     if (e.type === 'TicketReleased') {
       const held = claims.find((c) => c.runId === String(d['runId'] ?? ''))
@@ -1088,60 +1097,44 @@ export function foldRun(
         break
 
       default: {
-        const fact = boardFactOf(e)
-        if (fact === null) break
-        switch (fact._tag) {
-          case 'ActionRequested':
-            setStep(fact.step, fact.action, 'pending', null, [])
-            break
+        for (const fact of boardFactOf(e)) {
+          switch (fact._tag) {
+            // `Waived` closes here too since #502 — one more `StepEnded`
+            // outcome, not a fact of its own.
+            case 'StepEnded':
+              setStep(
+                fact.step,
+                fact.action,
+                STEP_ENDING_STATE[fact.ending],
+                // Called `detail` rather than `evidence` on the ending that is
+                // not `Passed`/`Failed`, because it is evidence about the
+                // *account* and never about the diff (#133). Read here rather
+                // than renamed at the seam, because `Evidence` shows only gates
+                // that said something (`evidence.tsx:114`): reading the wrong
+                // key would drop the one gate that stopped the run off the page
+                // ADR 0041 §2 wrote it for.
+                fact.evidence ?? fact.detail ?? null,
+                [...(fact.findings ?? [])],
+              )
+              break
 
-          case 'StepEnded':
-            setStep(
-              fact.step,
-              fact.action,
-              STEP_ENDING_STATE[fact.ending],
-              // Called `detail` rather than `evidence` on the ending that is
-              // not `Passed`/`Failed`, because it is evidence about the
-              // *account* and never about the diff (#133). Read here rather
-              // than renamed at the seam, because `Evidence` shows only gates
-              // that said something (`evidence.tsx:114`): reading the wrong
-              // key would drop the one gate that stopped the run off the page
-              // ADR 0041 §2 wrote it for.
-              fact.evidence ?? fact.detail ?? null,
-              [...(fact.findings ?? [])],
-            )
-            break
+            // **Only the request survives** (#502): `SignoffGranted`/
+            // `SignoffRevoked` are gone with `ApprovalGranted`/
+            // `ApprovalRevoked`, and continuing a signed-off run is #465's,
+            // not this ticket's — so a requested signoff stays `pending` and
+            // `awaitingSha` stays set until that lands.
+            case 'SignoffRequested':
+              awaitingSha = fact.onSha || null
+              setStep(fact.step, fact.action, 'pending', null, [])
+              break
 
-          case 'Waived':
-            setStep(fact.step, fact.action, 'waived', null, [])
-            break
+            case 'RunEnded':
+              failure = fact.kind || 'failed'
+              break
 
-          // The three that decide whether anything is being asked. Requested
-          // opens the question, granted spends it, revoked opens it again on
-          // the sha the withdrawal names — the same three lines `task_view`
-          // folds, so the page and the card cannot come to disagree about
-          // whether Approve can work.
-          case 'SignoffRequested':
-            awaitingSha = fact.onSha || null
-            setStep(fact.step, fact.action, 'pending', null, [])
-            break
-
-          case 'SignoffGranted':
-            awaitingSha = null
-            setStep(fact.step, fact.action, 'passed', null, [])
-            break
-
-          case 'SignoffRevoked':
-            awaitingSha = fact.onSha || null
-            setStep(fact.step, fact.action, 'pending', null, [])
-            break
-
-          case 'RunEnded':
-            failure = fact.kind || 'failed'
-            break
-
-          default:
-            break
+            default:
+              break
+          }
         }
       }
     }
