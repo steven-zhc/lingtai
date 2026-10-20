@@ -91,7 +91,7 @@ export interface ActionDeps {
    */
   merge?: MergeActionDeps
   /**
-   * The take a `queue:` action runs — `runnableNow` and `claimWorkItem`, as the
+   * The take a `queue:` action runs — `runnableNow` and `claimTicket`, as the
    * conductor already calls them (0065 §2, `#269`).
    *
    * Optional for the reason the other three are, and absent it refuses a

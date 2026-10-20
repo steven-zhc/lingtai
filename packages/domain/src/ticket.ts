@@ -73,7 +73,7 @@ export type TicketLifecycle =
    * been reclaimed to continue (#465, 0118 §11). Not `blocked` — the
    * question is answered — and not `backlog` either: the queue must not
    * cut a fresh pass for this item while the run it already spent is owed
-   * a continuation. `continueWorkItem` (`claim.ts`) is the only way out,
+   * a continuation. `continueTicket` (`claim.ts`) is the only way out,
    * onto the same `runId`.
    */
   | { status: 'approved'; runId: string; waitId: WaitId; onSha: string }

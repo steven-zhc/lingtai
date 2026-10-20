@@ -37,7 +37,7 @@
  *
  * **It wraps and does not reimplement.** The selection is `runnableNow` and
  * `considerIssue`'s, in `packages/conductor/src/discover.ts`, and the taking is
- * `claimWorkItem`'s append at an expected version, which is the whole of the
+ * `claimTicket`'s append at an expected version, which is the whole of the
  * mutual exclusion (`claim.ts`); the caller hands both over as
  * `QueueActionDeps.take` for the reason `worktree:` is handed the cut — only a
  * caller with a GitHub client and a store under it can build one, and an action
@@ -52,7 +52,7 @@ import type { Action, ActionContext, ActionResult } from './action.ts'
  * What the take answered — four branches, and the fourth is why there are not
  * three.
  *
- * `claimWorkItem` appends at an expected version and answers a `ConcurrencyError`
+ * `claimTicket` appends at an expected version and answers a `ConcurrencyError`
  * with `lost-race`; every other failure of that append **throws**, and an append
  * that committed and then lost its connection throws the same way. So there is a
  * state in which the item is held by this run and the take has no result to show

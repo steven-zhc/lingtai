@@ -155,7 +155,7 @@ export function resolveEndActions(
  * The same thing, on its own append.
  *
  * For the one caller that cannot batch: a release is appended by
- * `releaseWorkItem`, which owns its own read and version. Everything else
+ * `releaseTicket`, which owns its own read and version. Everything else
  * should use `resolveEndActions` and keep the two facts in one transaction.
  */
 export async function appendEndActions(

@@ -489,9 +489,9 @@ describe('a claim that took nothing writes nothing', () => {
   /**
    * **The item another conductor is mid-run on**, which is the expensive one.
    *
-   * `claimWorkItem` answers `held` and the pass declines; a block here replaces
+   * `claimTicket` answers `held` and the pass declines; a block here replaces
    * that run's lifecycle with `blocked` and relabels its issue while its agent
-   * is still working, and `releaseWorkItem` appends `TicketReleased` to
+   * is still working, and `releaseTicket` appends `TicketReleased` to
    * whoever holds it rather than only to this run.
    */
   it('touches nothing on an item another run holds', async () => {
@@ -539,7 +539,7 @@ describe('a claim that took nothing writes nothing', () => {
  * The cold reviewer's settings file was written above the pass as
  * `host.unhookedSettings(…).pipe(Effect.orDie)`, which is a *defect* channel
  * inside the scope the `catchAllDefect` at the bottom of `runOnce` guards — and
- * that handler answers with `release("unexpected failure: …")`. `releaseWorkItem`
+ * that handler answers with `release("unexpected failure: …")`. `releaseTicket`
  * reads the stream and appends unconditionally (`claim.ts:137`), so on a pass
  * whose item another conductor claimed a second earlier an ENOSPC here appended
  * `TicketReleased{runId: <this run>}` to that conductor's live item, folded it

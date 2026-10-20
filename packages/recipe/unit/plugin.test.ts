@@ -686,7 +686,7 @@ describe('the two the pass stopped calling itself', () => {
  *
  * Like `worktree:` and `merge:` above, it is a name for code that already runs —
  * `runnableNow`, `considerIssue` and `assigneeSkip` in
- * `packages/conductor/src/discover.ts`, and `claimWorkItem` in
+ * `packages/conductor/src/discover.ts`, and `claimTicket` in
  * `packages/conductor/src/claim.ts` — and **since `#269` the recipe is what tells
  * it to**: the plugin gained a key and `CALLED_DIRECTLY.queue` went, in the one
  * diff 0065 §7 asks for. So what these cases hold is:

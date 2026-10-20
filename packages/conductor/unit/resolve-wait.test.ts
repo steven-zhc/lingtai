@@ -394,7 +394,7 @@ describe('resolveWait', () => {
       const wait = waitsOf(events).at(-1)
       expect(wait?.resolution).toEqual({ _tag: 'Approve', onSha: SHA })
       // `Approve` moves the lifecycle to `approved` (#465) — a continuation
-      // is owed, not a fresh claim, until `continueWorkItem` takes it.
+      // is owed, not a fresh claim, until `continueTicket` takes it.
       expect(reduceTicket(events).lifecycle).toMatchObject({
         status: 'approved',
         runId: 'pass-9',

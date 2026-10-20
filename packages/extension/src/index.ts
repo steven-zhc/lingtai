@@ -56,7 +56,7 @@ export interface NotifiedWorkItem {
 
 export interface NotifyPayload {
   event: NotifiedEvent
-  workItem: NotifiedWorkItem
+  ticket: NotifiedWorkItem
   board: string
 }
 
@@ -67,7 +67,7 @@ export interface NotifyPayload {
  * is the whole reason the old review queue was unworkable from outside the
  * repository — you had to open the issue to find out what was being asked.
  *
- * The card is named from `workItem` rather than from the stream id, and that is
+ * The card is named from `ticket` rather than from the stream id, and that is
  * `#123`'s other half. `RunAwaitingInput` and `RunFailed` are appended to a
  * *run* stream, so a version that read the stream id and nothing else
  * rendered them with an empty `#` and no link, for the events that most
@@ -101,10 +101,10 @@ function reasonText(reason: unknown): string {
 }
 
 export function describe(payload: NotifyPayload): Notification {
-  const { event, workItem } = payload
+  const { event, ticket } = payload
   const d = (event.data ?? {}) as Record<string, unknown>
-  const url = `${payload.board}/task/${encodeURIComponent(workItem.id)}`
-  const ref = `#${workItem.issue}`
+  const url = `${payload.board}/task/${encodeURIComponent(ticket.id)}`
+  const ref = `#${ticket.issue}`
 
   switch (event.type) {
     case 'WaitStarted':
@@ -151,16 +151,16 @@ export function parsePayload(text: string): NotifyPayload {
   }
   const body = parsed as Partial<NotifyPayload> | null
   const event = body?.event
-  const workItem = body?.workItem
+  const ticket = body?.ticket
   if (!event || typeof event.type !== 'string') {
-    throw new Error('stdin carried no event — expected {"event":{"type","data"},"workItem":…}')
+    throw new Error('stdin carried no event — expected {"event":{"type","data"},"ticket":…}')
   }
-  if (!workItem || typeof workItem.id !== 'string' || typeof workItem.issue !== 'string') {
-    throw new Error('stdin carried no workItem — expected {"id","project","issue"}')
+  if (!ticket || typeof ticket.id !== 'string' || typeof ticket.issue !== 'string') {
+    throw new Error('stdin carried no ticket — expected {"id","project","issue"}')
   }
   return {
     event,
-    workItem,
+    ticket,
     // The board's address on the one machine this runs on (0008). Defaulted
     // rather than refused: a notification with a link that may be wrong beats
     // no notification, which is the trade the rest of this file does not make

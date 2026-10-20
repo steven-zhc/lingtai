@@ -232,7 +232,7 @@ export function conductWork(
     }
 
     // **An approval owed a continuation jumps the queue too, and before a
-    // hand-picked issue does** (#465, 0120 §6). `continueWorkItem` is the
+    // hand-picked issue does** (#465, 0120 §6). `continueTicket` is the
     // authority on whether this is still good — `not-approved`, `wrong-run`
     // and `lost-race` are all read off the store at the moment of the claim,
     // inside `runOnce` — so this is a dispatch rather than a second check:

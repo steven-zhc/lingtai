@@ -605,11 +605,11 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * gone entirely, #502).
    *
    * The sibling this test used to have — refusing `claim`'s own take, before
-   * `claimWorkItem` appends — has no append left to refuse: `queue-action.ts`'s
+   * `claimTicket` appends — has no append left to refuse: `queue-action.ts`'s
    * `run()` only calls `deps.take`, and `emit` fires only where `result.spent`
    * is set (`action.ts:749`), which a queue action never is. `claim` and `end`
    * are outside `runPass`'s loop and get no `StepStarted`/`StepEnded` of their
-   * own either, so there is nothing `emit`-shaped before `claimWorkItem`'s
+   * own either, so there is nothing `emit`-shaped before `claimTicket`'s
    * append any more — `#269`'s *different case* is gone with the event it
    * needed.
    */
@@ -663,14 +663,14 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * refused"*).
    *
    * It pinned a `StepRequested` the queue action's own append wrote, *before*
-   * `claimWorkItem`'s append — the ordering a dropped connection there needed
+   * `claimTicket`'s append — the ordering a dropped connection there needed
    * to matter. Both halves of that ordering are gone with `#502`: per-action
    * events (`StepRequested` and the rest) no longer exist, `queue-action.ts`'s
    * `run()` calls only `deps.take` and never sets `result.spent`, so `emit`
    * never fires for it at all, and `claim` gets no `StepStarted`/`StepEnded`
    * either — `pass.ts`'s loop never visits it (`claimStep` runs outside the
-   * loop). So there is no append left anywhere before `claimWorkItem`'s own,
-   * and the one case this test could still ask about — `claimWorkItem`'s own
+   * loop). So there is no append left anywhere before `claimTicket`'s own,
+   * and the one case this test could still ask about — `claimTicket`'s own
    * append refused — is a different claim already pinned elsewhere, by
    * `because: 'claim-unconfirmed'` reaching `conduct.ts`'s own `mayHold`
    * handling (`queue-action.ts`'s own doc on `TakeAnswer`): that throw is

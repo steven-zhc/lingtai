@@ -1695,7 +1695,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   /**
    * **`not-claimed`: another conductor already holds the item** (`#463`).
    *
-   * `claimWorkItem` reads `held` off the `TicketClaimed` seeded below and the
+   * `claimTicket` reads `held` off the `TicketClaimed` seeded below and the
    * claim declines before `runPass` ever starts. Same shape as row 15: the item
    * stream is exactly what was seeded (nothing of this run's own), and the run
    * stream still opens through `claim`'s own bookkeeping.

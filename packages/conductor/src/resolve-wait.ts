@@ -248,7 +248,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // separate append, on the control stream rather than the ticket's, so a
   // store that refuses it costs this approval nothing: `conductWork` re-reads
   // the ticket stream before acting on a row here and refuses the stale ones
-  // on its own (`continueWorkItem`), so a request this append loses is simply
+  // on its own (`continueTicket`), so a request this append loses is simply
   // never offered rather than acted on wrongly.
   //
   // **For that to be true, this must never throw.** `WaitResolved` above has

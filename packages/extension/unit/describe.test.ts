@@ -1,6 +1,6 @@
 /**
  * The two types `#125` added to `describe`, and the rule that the card comes
- * off `workItem` rather than the stream.
+ * off `ticket` rather than the stream.
  *
  * `RunFailed` is appended to a *run* stream, so a payload for one carries a
  * `pass-<uuid>` stream id and the work item the daemon resolved through the
@@ -13,7 +13,7 @@ import { describe as render, isMain, type NotifyPayload } from '../src/index.ts'
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
-  workItem: { id: 'ticket-lingtai-125', project: 'lingtai', issue: '125' },
+  ticket: { id: 'ticket-lingtai-125', project: 'lingtai', issue: '125' },
   board: 'http://localhost:3200',
 })
 

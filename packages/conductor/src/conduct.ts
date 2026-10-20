@@ -94,7 +94,7 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  * through `stepDeps` rather than through the pass (`#269`, `#268`, `#270`):
  *
  * ```
- * take      runnableNow + claimWorkItem      a `queue:` action's, at `claim`
+ * take      runnableNow + claimTicket      a `queue:` action's, at `claim`
  * cut       repo.provision                   a `worktree:` action's, at `admit`
  * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
  * judge     judgeDeclaredAt                  the recipe's own `proposed:` judges
@@ -186,7 +186,7 @@ import { Effect, Either } from 'effect'
 import { armsOnOrigin } from './arms.ts'
 import { armFor, diffBaseShaOf, priorAttempts } from './attempts.ts'
 import { agentBranch } from './branches.ts'
-import { claimWorkItem, continueWorkItem, releaseWorkItem } from './claim.ts'
+import { claimTicket, continueTicket, releaseTicket } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
@@ -1133,7 +1133,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      *
      * So it is held here and appended *by* the ending, in one transaction with
      * it. Where the ending is a release the two cannot be one transaction —
-     * `releaseWorkItem` owns its own read and version — and there the order is
+     * `releaseTicket` owns its own read and version — and there the order is
      * what carries the rule: the release first, the resolution after it.
      */
     let endPlan: readonly ToAppend[] = []
@@ -1157,7 +1157,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * recording that resolution and carrying it out.
      *
      * **The release goes first, and this is the one ending where the two are two
-     * appends.** `releaseWorkItem` owns its own read and version, which is
+     * appends.** `releaseTicket` owns its own read and version, which is
      * `appendEndActions`'s *the one caller that cannot batch* arriving from the
      * other side. The direction is what stands in for the transaction: losing the
      * second append leaves effects unrecorded, where losing the first would leave
@@ -1189,7 +1189,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         /**
          * **A run that took nothing releases nothing** (`#269`).
          *
-         * `releaseWorkItem` appends whoever holds it (`claim.ts`), so a release
+         * `releaseTicket` appends whoever holds it (`claim.ts`), so a release
          * from a run that never claimed writes `TicketReleased` over **another
          * conductor's live item** and `lingtai:queued` over its `lingtai:working`
          * while its agent is still working. The `claim` branch at the bottom
@@ -1214,7 +1214,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           try: async () => {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseWorkItem(ticketId, runId, reason, store, cause).catch((err: unknown) => {
+            await releaseTicket(ticketId, runId, reason, store, cause).catch((err: unknown) => {
               backInTheQueue = false
               log(`the item was not released: ${whyOf(err)}`)
             })
@@ -2040,7 +2040,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * is also the only way a label edit takes effect without a second mechanism.
        *
        * The four answers are `Taken`'s, and the fourth is the one worth naming:
-       * `claimWorkItem` answers a `ConcurrencyError` with `lost-race` and
+       * `claimTicket` answers a `ConcurrencyError` with `lost-race` and
        * **throws** every other failure, including an append that committed and
        * then lost its connection. Reported as `mayHold` rather than let escape, so
        * the pass stops with the item named and `end` resolves against the stream
@@ -2076,16 +2076,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         let claim
         try {
           // **A continuation reclaims the same run, never a fresh one**
-          // (#465, 0120 §6) — `continueWorkItem` is `claimWorkItem`'s
+          // (#465, 0120 §6) — `continueTicket` is `claimTicket`'s
           // sibling for the one state the latter refuses, `approved`, and
           // `continuation` (above) is what makes this branch `null` rather
           // than acted on wrongly when the request has gone stale.
           claim =
             options.continuing !== undefined && continuation !== null
-              ? await continueWorkItem(ticketId, runId, { store })
+              ? await continueTicket(ticketId, runId, { store })
               : // The claim carries what the task is, because it is now the
                 // only place a title enters the log at all.
-                await claimWorkItem(ticketId, {
+                await claimTicket(ticketId, {
                   runId,
                   store,
                   title: runnable.title,
@@ -2162,7 +2162,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * lost the race for, one per pass and never removed (`runLog`). And a
          * write that failed — ENOSPC, `~/.lingtai` not writable after a
          * permissions change — became a **defect**, which the handler at the
-         * bottom of `runOnce` answers with `release(…)`: `releaseWorkItem`
+         * bottom of `runOnce` answers with `release(…)`: `releaseTicket`
          * appends whoever holds it (`claim.ts`), so a failure here appended
          * `TicketReleased` to another conductor's live item and wrote
          * `lingtai:queued` over its `lingtai:working` while its agent was still
@@ -3619,7 +3619,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * So: nothing is appended and nothing is told. `released` is set because
        * the `ensuring` at the bottom would otherwise append `TicketReleased`
        * and write `lingtai:queued` over exactly those two items —
-       * `releaseWorkItem` appends whoever holds it.
+       * `releaseTicket` appends whoever holds it.
        *
        * **`claim-unconfirmed` is the exception, and it is the reason `Taken` has
        * four cases.** The append may have committed and then lost its

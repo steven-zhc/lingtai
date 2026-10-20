@@ -147,7 +147,7 @@ describe('the ending and its end actions', () => {
 
   /**
    * **The `failed` ending is the one where the two cannot be one append**, and
-   * the order is what stands in for the transaction: `releaseWorkItem` owns its
+   * the order is what stands in for the transaction: `releaseTicket` owns its
    * own read and version (`appendEndActions`'s *the one caller that cannot
    * batch*), so the release goes first and the resolution after it.
    *

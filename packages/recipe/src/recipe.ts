@@ -1193,7 +1193,7 @@ export type QueueSettings = z.infer<typeof QueueSettings>
  * `packages/conductor/src/discover.ts`, which is what has always decided this
  * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3,
  * [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3), and
- * for what `claimWorkItem` in `packages/conductor/src/claim.ts` then does with
+ * for what `claimTicket` in `packages/conductor/src/claim.ts` then does with
  * the one that survives.
  *
  * A map, by §2's rule — four settings and no principal one — and three of them

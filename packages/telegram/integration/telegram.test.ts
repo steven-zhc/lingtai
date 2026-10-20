@@ -24,7 +24,7 @@ const TOKEN = '123456:secret-bot-token'
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
-  workItem: { id: 'ticket-lingtai-125', project: 'lingtai', issue: '125' },
+  ticket: { id: 'ticket-lingtai-125', project: 'lingtai', issue: '125' },
   board: 'http://localhost:3200',
 })
 

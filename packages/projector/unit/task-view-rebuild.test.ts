@@ -431,7 +431,7 @@ events.push(
 )
 
 // ---- row 28: #509 — a continuation re-claims the same run; attempts stays 1 ----
-// `continueWorkItem` appends an ordinary `TicketClaimed` onto a run already
+// `continueTicket` appends an ordinary `TicketClaimed` onto a run already
 // holding the item (`claim.ts:150-152`), approved twice over. The fold must
 // not count either re-claim as a fresh attempt.
 const continuedStream = makeStream('ticket-pin-continued')
@@ -523,7 +523,7 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     // `waiting: true` with no sha for Approve to work against. `state:
     // 'approved'` (#510), never `'running'` and never `'queued'`: not
     // `'queued'` since `selectRunnable` reads `'queued'` as *the queue may
-    // claim this* and an approved item is only `continueWorkItem`'s to move;
+    // claim this* and an approved item is only `continueTicket`'s to move;
     // not `'running'` since nothing has claimed it yet, and `inFlight()`
     // reads `'running'` as a conductor actually holding the item.
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
@@ -540,7 +540,7 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
   })
 
   /**
-   * `#509`: `continueWorkItem` appends an ordinary `TicketClaimed` for the
+   * `#509`: `continueTicket` appends an ordinary `TicketClaimed` for the
    * run the row is already on, approved twice over. `attempts` must stay 1
    * across both, since the run id never changes — only a claim naming a
    * different run id (the restart below) may move it.

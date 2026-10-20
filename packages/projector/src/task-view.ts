@@ -608,12 +608,12 @@ export const taskViewProjection: Projection = {
                   // `state: 'approved'`, not `'running'` and not `'queued'`
                   // (#510). `selectRunnable` reads `state === 'queued'` as
                   // *the queue may claim this* (`queue.ts`), and an approved
-                  // item is not the queue's to claim: `claimWorkItem` refuses
+                  // item is not the queue's to claim: `claimTicket` refuses
                   // it by name (`not-claimable, status: approved`), and the
-                  // only way it moves is `continueWorkItem`, straight off the
+                  // only way it moves is `continueTicket`, straight off the
                   // ticket stream. It is not `'running'` either: nothing is
                   // holding this row — no agent, no worktree, no claim — until
-                  // `continueWorkItem` appends the next `TicketClaimed`, which
+                  // `continueTicket` appends the next `TicketClaimed`, which
                   // folds it back to `'running'` below. `inFlight()`
                   // (`@lingtai/daemon`'s `control.ts`) reads `running` as *a
                   // conductor is holding this*, so an approval that folded as
@@ -746,7 +746,7 @@ async function upsert(
            kind = coalesce(excluded.kind, task_view.kind),
            state = excluded.state,
            run_id = coalesce(excluded.run_id, task_view.run_id),
-           -- A continuation claims the same run again (continueWorkItem,
+           -- A continuation claims the same run again (continueTicket,
            -- claim.ts:150-152): the row's own run_id is still that run, so
            -- this counts a fresh attempt only when the claim names a run the
            -- row was not already on. task_view_run is not the "seen" test --

@@ -1,5 +1,5 @@
 /**
- * `continueWorkItem` (#465, 0118 §11): `claimWorkItem`'s sibling for the one
+ * `continueTicket` (#465, 0118 §11): `claimTicket`'s sibling for the one
  * state it refuses — `approved` — and the claim a continuation makes onto
  * the same run the approval was about.
  */
@@ -10,7 +10,7 @@ import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { continueWorkItem } from '../src/claim.ts'
+import { continueTicket } from '../src/claim.ts'
 import { resolveWaitHolding } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
@@ -62,12 +62,12 @@ async function approvedTicket(issue: number, runId: string) {
   return { store, ticketId }
 }
 
-describe('continueWorkItem', () => {
+describe('continueTicket', () => {
   it('refuses an item that is not approved', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 1)
 
-    const result = await continueWorkItem(ticketId, 'pass-1', { store })
+    const result = await continueTicket(ticketId, 'pass-1', { store })
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'not-approved', status: 'backlog' } })
   })
@@ -75,7 +75,7 @@ describe('continueWorkItem', () => {
   it('refuses a run that is not the one approved', async () => {
     const { store, ticketId } = await approvedTicket(2, 'pass-2')
 
-    const result = await continueWorkItem(ticketId, 'pass-wrong', { store })
+    const result = await continueTicket(ticketId, 'pass-wrong', { store })
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'wrong-run', runId: 'pass-2' } })
   })
@@ -83,7 +83,7 @@ describe('continueWorkItem', () => {
   it('claims onto the approved run, with a TicketClaimed the fold recognises', async () => {
     const { store, ticketId } = await approvedTicket(3, 'pass-3')
 
-    const result = await continueWorkItem(ticketId, 'pass-3', { worker: 'daemon:1', store })
+    const result = await continueTicket(ticketId, 'pass-3', { worker: 'daemon:1', store })
 
     expect(result).toMatchObject({ ok: true, claim: { ticketId, runId: 'pass-3', worker: 'daemon:1' } })
     const state = reduceTicket(await store.read(ticketId))
@@ -97,14 +97,14 @@ describe('continueWorkItem', () => {
     const { store, ticketId } = await approvedTicket(4, 'pass-4')
     const stale = await store.read(ticketId)
     // A second decision lands between this call's read and its append —
-    // simulated by handing `continueWorkItem` a store whose `read` answers
+    // simulated by handing `continueTicket` a store whose `read` answers
     // the pre-race snapshot while the real log has already moved past it.
     await store.append(ticketId, stale.length, [
       { type: 'TicketReleased', actor: 'conductor', data: { runId: 'pass-4', reason: 'raced', cause: null } },
     ])
     const staleRead: EventStore = { ...store, read: async () => stale }
 
-    const result = await continueWorkItem(ticketId, 'pass-4', { store: staleRead })
+    const result = await continueTicket(ticketId, 'pass-4', { store: staleRead })
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'lost-race' } })
   })

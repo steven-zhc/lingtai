@@ -11590,7 +11590,7 @@ it('15. a claim decline (`passed-over`) writes no work-item events', () => {
 // Row 15b, `what-a-pass-writes-today.test.ts:1698` — a claim decline (`not-claimed`) writes no work-item events
 it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
   // The item stream does carry one event here — `TicketClaimed` by
-  // `pass-somebody-else`, seeded so `claimWorkItem` reads the item as held — but
+  // `pass-somebody-else`, seeded so `claimTicket` reads the item as held — but
   // it is that run's write, not this one's, so it is left out of the pin rather
   // than read as if this run had written it (file header). Claim writes no run
   // events at all under #502 either way.
