@@ -80,9 +80,10 @@ export {
   type ScheduleResult,
   type StoppedBecause,
 } from './schedule.ts'
-export { approve, refusingOn, requeue, type ApproveOptions, type ApproveResult } from './approve.ts'
+export { approve, requeue, type ApproveOptions, type ApproveResult } from './approve.ts'
 export { answer, ask, type AskOutcome } from './ask.ts'
 export { close, type CloseOutcome } from './close.ts'
+export { refusingOn, resolveWait, type ResolveWaitOptions, type ResolveWaitResult } from './resolve-wait.ts'
 export { diagnoseRefusal, whoseFailure, type AttributedFailure as Failure, type FailureOwner } from '@lingtai/domain'
 export {
   answersBrief,

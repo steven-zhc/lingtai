@@ -25,6 +25,8 @@ import { parsePayload, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
+import { resolveWaitHolding } from './resolve-wait.ts'
+
 export interface AskOutcome {
   ok: boolean
   ticketId: string
@@ -156,24 +158,27 @@ export async function answer(options: {
     }
   }
 
-  try {
-    await store.append(ticketId, item.version, [
-      {
-        type: 'WaitResolved',
-        actor: options.by,
-        data: parsePayload('WaitResolved', {
-          waitId: wait.waitId,
-          by: options.by,
-          resolution: { _tag: 'AnswerQuestion', choice: options.answer },
-          note: options.answer,
-        }),
-      },
-    ])
-  } catch (err) {
-    if (err instanceof ConcurrencyError) {
-      return { ok: false, ticketId, detail: `${ticketId} changed while answering — read it again` }
-    }
-    throw err
+  // The append itself, and the version check that guards it, are
+  // `resolveWait`'s now (#465) — every check above this line is `answer`'s
+  // own reading of what a question may be answered at all, which
+  // `resolveWaitHolding`'s generic `allowedResolutions` check re-asks and
+  // agrees with by construction. `answer` never took the decide-lock
+  // `approve`/`requeue` do (#150 was never its problem), so it calls the
+  // unlocked half directly rather than gaining one now.
+  const resolved = await resolveWaitHolding(
+    {
+      ticketId,
+      issue: options.issue,
+      waitId: wait.waitId,
+      resolution: { _tag: 'AnswerQuestion', choice: options.answer },
+      by: options.by,
+      note: options.answer,
+      store,
+    },
+    ticketId,
+  )
+  if (!resolved.ok) {
+    return { ok: false, ticketId, detail: resolved.detail }
   }
 
   return { ok: true, ticketId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }

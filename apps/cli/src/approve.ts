@@ -1,17 +1,21 @@
 import { userInfo } from 'node:os'
 
 /**
- * `lingtai approve <project> --issue <n>` — merge what a held run actually produced.
+ * `lingtai approve <project> --issue <n>` — grant the approval a held run is
+ * waiting for.
  *
- * The counterpart to `lingtai run --once --no-merge`. Without it that flag is half a
- * feature: the only other way to finish a held run is to run it again without
- * the flag, which starts a new run with a new worktree and a new diff — so the
- * thing that merges is not the thing anyone looked at.
+ * The counterpart to `lingtai run --once --no-merge`. Without it that flag is
+ * half a feature: the only other way to finish a held run is to run it again
+ * without the flag, which starts a new run with a new worktree and a new diff
+ * — so the thing that lands is not the thing anyone looked at.
+ *
+ * **Does not merge** (#465). It appends `WaitResolved{Approve}`, and whoever
+ * holds the conductor lock continues the run from there; this command's exit
+ * code says whether the approval was granted, not whether anything landed.
  */
 import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubApp } from '@lingtai/env'
-import { baseOf } from '@lingtai/recipe/settings'
 
 import { withProjector } from './projector.ts'
 
@@ -30,20 +34,12 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
   }
 
   // **A project with no owner has no App to check and no GitHub client to
-  // build** — the same branch `conductWork` takes (`conduct.ts`). Everything
-  // from `approveRun` on is shared; only how the client was built differs.
+  // build** — the same branch `conductWork` takes (`conduct.ts`). Only
+  // `refSha` is read off it now (`ApproveOptions.client`).
   let client: Parameters<typeof approveRun>[0]['client']
-  let resolved: Awaited<ReturnType<typeof projectClient>>['resolved']
-  let base: string
-  let token: (() => Promise<string>) | undefined
-
   if (project.owner === null) {
-    resolved = await currentRecipe(project)
-    base = project.base ?? baseOf(resolved.recipe)
+    const resolved = await currentRecipe(project)
     client = (await ownerlessClient(project, resolved.recipe)).client
-    // No token: `ownerlessClient`'s remote pushes with this machine's own git
-    // credentials, the same as every other caller of it.
-    token = undefined
   } else {
     if (!hasGitHubApp()) {
       log(
@@ -51,11 +47,7 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
       )
       return 1
     }
-    const built = await projectClient(project)
-    client = built.client
-    resolved = built.resolved
-    base = project.base ?? (await built.client.defaultBranch())
-    token = () => built.client.token()
+    client = (await projectClient(project)).client
   }
 
   const by = options.by ?? `human:${userInfo().username}`
@@ -67,22 +59,19 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
     const result = await approveRun({
       project: options.project,
       issue: options.issue,
-      base,
       client,
-      recipe: async () => resolved,
       // An approval is never anonymous. The local account is a weak claim, but it
       // is a true one, and it is what a single-machine deployment has (0007).
       by,
       note: options.note,
-      token,
       log,
     })
 
     if (result.ok) {
-      log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
+      log(`approved ${result.ticketId} — continues at ${result.continuesAt}`)
       return 0
     }
-    log(`did not merge (${result.reason}): ${result.detail}`)
+    log(`not approved (${result.reason}): ${result.detail}`)
     return 1
   })
 }

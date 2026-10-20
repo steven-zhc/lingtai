@@ -77,6 +77,16 @@ export interface ControlState {
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[]
   /**
+   * Approvals owed a continuation, oldest first, not yet taken (#465, 0120
+   * §6). `ContinueRequested`'s own header: it is what tells the next pass
+   * which issue to look at, not what wakes it — `WaitResolved` is already in
+   * `WAIT_EVENTS`, which `@lingtai/daemon`'s `COMPLETION_EVENTS` wakes the
+   * work loop on. Satisfied the same way `requested` is: once the item
+   * stops being `approved`, which `continueWorkItem` does, a stale row here
+   * simply matches nothing and is dropped rather than tracked.
+   */
+  continuing: { project: string; issue: string; runId: string; by: string }[]
+  /**
    * Questions asked of the discussion assistant, oldest first — every one of
    * them, answered or not.
    *
@@ -108,6 +118,7 @@ export const emptyControl: ControlState = {
   holdsAcrossStarts: false,
   shutdown: null,
   requested: [],
+  continuing: [],
   discussions: [],
 }
 
@@ -123,7 +134,7 @@ export const emptyControl: ControlState = {
  * reading it at fold time is a timer somebody has to still be holding.
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  const state: ControlState = { ...emptyControl, requested: [], discussions: [] }
+  const state: ControlState = { ...emptyControl, requested: [], continuing: [], discussions: [] }
 
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>
@@ -187,6 +198,14 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
         state.requested.push({
           project: str('project') ?? '',
           issue: str('issue') ?? '',
+          by: str('by') ?? '',
+        })
+        break
+      case 'ContinueRequested':
+        state.continuing.push({
+          project: str('project') ?? '',
+          issue: str('issue') ?? '',
+          runId: str('runId') ?? '',
           by: str('by') ?? '',
         })
         break

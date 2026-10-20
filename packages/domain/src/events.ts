@@ -1455,6 +1455,34 @@ export const RunRequested = z.object({
 })
 
 /**
+ * An `Approve` was granted, and the run it approved is owed a continuation
+ * (#465, 0118 §11, 0120 §6).
+ *
+ * On the control stream beside `RunRequested`, for the same reason and by the
+ * same precedent: `RunRequested` is already taken ahead of the queue
+ * (`conductWork`), and `WaitResolved` is already in `WAIT_EVENTS`, which
+ * `@lingtai/daemon`'s `COMPLETION_EVENTS` already wakes the work loop on — so
+ * appending this is what tells the *next* pass which issue to look at, not
+ * what wakes it.
+ *
+ * **Carries `runId`, though the ticket's own `approved` lifecycle already
+ * names one.** `conductWork` re-reads the ticket stream before acting on
+ * this and checks the two agree — a second approval cycle between the append
+ * and the pass that would otherwise act on a request that now names a run
+ * nobody is waiting on.
+ *
+ * No `consumed` event, for `RunRequested`'s own reason: a request is
+ * satisfied when the item stops being `approved`, which taking the
+ * continuation's claim does.
+ */
+export const ContinueRequested = z.object({
+  project: z.string(),
+  issue: z.string(),
+  runId: z.string(),
+  by: z.string(),
+})
+
+/**
  * Somebody asked a question about one work item.
  *
  * On the control stream, beside `pause` and `now`, because it is the same kind
@@ -1957,6 +1985,7 @@ export const EVENTS = {
   IssueUpdateFailed,
   QueueChanged,
   RunRequested,
+  ContinueRequested,
   DiscussionRequested,
   DiscussionAsked,
   DiscussionAnswered,

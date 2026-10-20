@@ -111,6 +111,7 @@ import {
   type RouteOffer,
   type Step,
   type StepOutcome,
+  type WaitId,
 } from '@lingtai/domain'
 import type { RunRef } from '@lingtai/domain/wait'
 import type { Recipe, StepAction } from '@lingtai/recipe'
@@ -884,6 +885,39 @@ export interface PassOptions {
    * fake for one.
    */
   readonly judge?: (on: Judging) => Promise<Judged>
+  /**
+   * **Where an approved wait continues the run** (#465, 0120 §6) — absent for
+   * an ordinary pass, which starts at `admit` as it always has.
+   *
+   * `admit` and `prepared` still run: the worktree a held pass left is gone
+   * ("removed when this scope closes"), and a check declared at `merge` needs
+   * an installed tree, so the walk visits both before it jumps. A refused
+   * cut or a refused `prepared` check is `admit`/`prepared` reporting its own
+   * ending exactly as it would on a fresh pass — this is a reading of 0120
+   * §6's *"continues the run at the step its wait arose at"*, not a
+   * departure from it: nothing between `prepared` and `step` is skipped
+   * because it was judged before, only because this file has nothing to
+   * re-judge there until the tree exists again.
+   */
+  readonly from?: {
+    /** The step the wait arose at — `design` through `review` are skipped to reach it, and `proposed` too when this is `merge`. */
+    readonly step: Step
+    /**
+     * The action waived there, and the wait that waived it — `null` for a
+     * continuation with nothing to waive (`FixerDisagrees`, `MergeRefused`,
+     * and their `ProposedEscalated` kin: the lane or the router runs again,
+     * unwaived). Applied only to **this step's first visit** in the walk: a
+     * fix round that sends it back through `step` on a new head is not the
+     * head the approval was about.
+     */
+    readonly waive: { readonly name: string; readonly waitId: WaitId } | null
+    /**
+     * What the held run had already spent, so a continuation does not start
+     * the round budget over — `ceilings.rounds` bounds the pass's total, not
+     * this one visit's.
+     */
+    readonly roundsSpent?: number
+  }
 }
 
 /**
@@ -1112,10 +1146,20 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   let end: PassEnd | null = null
   /** The merge commit a `Landed` visit reported, read back once the walk is over. */
   let landed: string | null = null
-  let roundsSpent = 0
+  let roundsSpent = options.from?.roundsSpent ?? 0
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'admit'
+
+  /**
+   * The step after this one — `after(step)` on an ordinary pass, and
+   * `options.from.step` the one time the walk leaves `prepared` on a
+   * continuation (`PassOptions.from`'s own doc). `prepared` is visited at
+   * most once a lap, so there is nothing to guard beyond asking which step
+   * is being left.
+   */
+  const nextStep = (from: Step): Step | null =>
+    from === 'prepared' && options.from !== undefined && options.from.step !== 'admit' ? options.from.step : after(from)
 
   /**
    * The three fields of the context that move while the pass runs, and the one
@@ -1316,7 +1360,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       // still reaches on the way through; anything that did not pass here has
       // nothing for `nextOf` to read at all.
       if (ending.ending === 'passed') {
-        at = after(at)
+        at = nextStep(at)
         continue
       }
       stopped = { step: at, ending }
@@ -1335,7 +1379,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         break
       }
       if (next._tag === 'Landed') landed = next.integrated
-      at = after(at)
+      at = nextStep(at)
       continue
     }
 
@@ -1615,9 +1659,22 @@ async function runStep(
       // second call to `actionsAt` is not a guarantee that it returns the
       // same actions in the same order twice.
       const pipelineActions = options.actionsAt(spec.step, actions)
+      /**
+       * **Only `options.from.step`'s own first visit** (`PassOptions.from`'s
+       * own doc) — `reached` already carries every visit this walk has made,
+       * so a step that appears there has been visited before and a fix round
+       * sending the pass back through it is not the visit the approval named.
+       */
+      const waived =
+        options.from?.step === spec.step &&
+        options.from.waive !== null &&
+        !reached.some((visit) => visit.step === spec.step)
+          ? options.from.waive
+          : undefined
       const result = await runActionPipeline({
         step: spec.step,
         actions: pipelineActions,
+        ...(waived === undefined ? {} : { waived }),
         /**
          * **The two facts a plugin cannot read off `onSha`** (`#266`).
          *

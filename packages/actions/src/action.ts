@@ -35,7 +35,15 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from '@lingtai/agent/run-log'
-import type { Action as DomainAction, Finding, Interrupted, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
+import type {
+  Action as DomainAction,
+  Finding,
+  Interrupted,
+  Step,
+  PayloadOf,
+  RefusedAbout,
+  WaitId,
+} from '@lingtai/domain'
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -76,7 +84,7 @@ import type { Action as DomainAction, Finding, Interrupted, Step, PayloadOf, Ref
  * that works: this is not a refusal, it buys no round, and it stands the pass
  * down rather than the conductor.
  */
-export type ActionVerdict = 'passed' | 'failed' | 'needs-approval' | 'never-ran' | 'did-not-finish'
+export type ActionVerdict = 'passed' | 'failed' | 'needs-approval' | 'never-ran' | 'did-not-finish' | 'waived'
 
 /**
  * One finding, exactly as a reviewer reported it — `@lingtai/domain`'s own
@@ -639,10 +647,12 @@ export interface PipelineResult {
     interrupted?: InterruptedCause
     /** The work action ran and left no commit, where that happened. `ActionResult.committedNothing`. */
     committedNothing?: true
-    /** The merge lane's own commit, where it landed one. `ActionResult.merged`. */
-    merged?: string
     /** The three fields a real conflict carries, where the lane refused with one. `ActionResult.conflict`. */
     conflict?: { paths: string[]; baseSha: string; headSha: string }
+    /** The merge lane's own commit, where it landed one. `ActionResult.merged`. */
+    merged?: string
+    /** Set only on `verdict: 'waived'` — the wait an approval waived this action in (#465, 0120 §6). */
+    waitId?: WaitId
   }[]
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[]
@@ -661,6 +671,16 @@ export interface PipelineOptions {
    * keeping the append in one place makes that impossible to forget.
    */
   emit: (event: ActionEvent) => Promise<void> | void
+  /**
+   * An approval that waived one of this step's declared actions, by name
+   * (#465, 0120 §6) — **the first action with that name, and that one alone**:
+   * a second entry declared under the same name still runs.
+   *
+   * The waived action is never called. Its result is `Waived{waitId}`, which
+   * `cleared()` (`@lingtai/domain`) counts as passing for every `yields`, and
+   * every action after it in the step's list runs as it would have.
+   */
+  waived?: { name: string; waitId: WaitId }
 }
 
 /**
@@ -693,8 +713,24 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
    * read instead of `designOn`'s answer.
    */
   let context = options.context
+  // Consumed by at most the first action it names — a later entry declared
+  // under the same name is not the one an approval waived (`PipelineOptions.waived`).
+  let waiverSpent = false
 
   for (const [index, action] of actions.entries()) {
+    if (options.waived !== undefined && !waiverSpent && action.name === options.waived.name) {
+      waiverSpent = true
+      context.log?.note(`${step}:${action.name}`, 'waived — a person approved past it')
+      results.push({
+        action: action.name,
+        verdict: 'waived',
+        evidence: '',
+        findings: [],
+        waitId: options.waived.waitId,
+      })
+      continue
+    }
+
     /**
      * The start and the end on the run's log, for every kind (#153).
      *

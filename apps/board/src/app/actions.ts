@@ -58,7 +58,7 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
-import { baseOf, kindsOf } from '@lingtai/recipe/settings'
+import { kindsOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
 
@@ -87,33 +87,21 @@ export async function approveCard(input: {
 
     // **A project with no owner has no App to check and no GitHub client to
     // build** — the same branch `approveCommand` takes (`apps/cli/src/approve.ts`).
+    // Only `refSha` is read off it now (`ApproveOptions.client`, #465).
     let client: Parameters<typeof approve>[0]['client']
-    let resolved: Awaited<ReturnType<typeof projectClient>>['resolved']
-    let base: string
-    let token: (() => Promise<string>) | undefined
 
     if (state.owner === null) {
-      resolved = await currentRecipe(state)
-      base = state.base ?? baseOf(resolved.recipe)
+      const resolved = await currentRecipe(state)
       client = (await ownerlessClient(state, resolved.recipe)).client
-      // No token: `ownerlessClient`'s remote pushes with this machine's own git
-      // credentials, the same as every other caller of it.
-      token = undefined
     } else {
       if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
-      const built = await projectClient(state)
-      client = built.client
-      resolved = built.resolved
-      base = state.base ?? (await built.client.defaultBranch())
-      token = () => built.client.token()
+      client = (await projectClient(state)).client
     }
 
     const result = await approve({
       project: input.project,
       issue: input.issue,
-      base,
       client,
-      recipe: async () => resolved,
       by: actor(),
       // The sha the card was offering, which is the one the run is *asking*
       // about (`task_view.awaiting_sha`) and not the one it produced. Checked
@@ -123,12 +111,13 @@ export async function approveCard(input: {
       // what the CLI accepts (#92).
       onSha: input.onSha,
       note: input.note,
-      token,
     })
 
     revalidatePath('/')
+    // Does not merge (#465) — the continuation is whichever process holds the
+    // conductor lock's, not this server action's.
     return result.ok
-      ? { ok: true, detail: `landed ${result.mergeCommit.slice(0, 7)}` }
+      ? { ok: true, detail: `approved — continues at ${result.continuesAt}` }
       : { ok: false, detail: `${result.reason}: ${result.detail}` }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }

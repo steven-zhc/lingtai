@@ -1820,6 +1820,120 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
   // restates.
 })
 
+// -------------------------------------------------- continuing an approval ----
+
+/** A `human:`/`watch:`-style action that would hold the pipeline if it ran. */
+const asksIfRun = (name: string, calls: string[]): Action => ({
+  name,
+  kind: 'human',
+  yields: 'signoff',
+  run: async () => {
+    calls.push(name)
+    return { verdict: 'needs-approval', evidence: 'ship it?', findings: [] }
+  },
+})
+
+describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
+  it('visits admit and prepared, then jumps straight to merge — design through proposed never run', async () => {
+    const recipe = recipeWith({})
+    const { bodies, seen } = watching()
+    const { actionsAt } = watchingActions({ merge: [lands('land it')] })
+    const { emit } = events()
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'merge', waive: null },
+    })
+
+    expect(seen.map((s) => s.step)).toEqual(['admit', 'prepared', 'merge', 'end'])
+    expect(result.steps.map((s) => s.step)).toEqual(['admit', 'prepared', 'merge', 'end'])
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('records the waived action Waived{waitId}, and still runs the other checks declared at merge before the lane', async () => {
+    const calls: string[] = []
+    const recipe = recipeWith({})
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      merge: [canned('watch:ci', PASSED), asksIfRun('human:land', calls), lands('land it')],
+    })
+    const { emit } = events()
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'merge', waive: { name: 'human:land', waitId: 'wait-1' as never } },
+    })
+
+    expect(calls).toEqual([]) // the signoff action was never called
+    const merge = result.steps.find((s) => s.step === 'merge')
+    expect(merge?.outcome?.actions.map((a) => ({ name: a.name, tag: a.result._tag }))).toEqual([
+      { name: 'watch:ci', tag: 'Completed' },
+      { name: 'human:land', tag: 'Waived' },
+      { name: 'land it', tag: 'Completed' },
+    ])
+    expect(merge?.outcome?.actions.find((a) => a.name === 'human:land')?.result).toMatchObject({
+      _tag: 'Waived',
+      waitId: 'wait-1',
+    })
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('applies the waiver only to the first visit — a fix round back through the step runs the named action for real', async () => {
+    const recipe = recipeWith({})
+    const { bodies } = watching()
+    const watchCalls: string[] = []
+    const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+      if (step === 'implement') return [committedSomething('write the fix')]
+      if (step !== 'merge') return actions.length > 0 ? [canned('check', PASSED)] : []
+      return [
+        {
+          name: 'watch:ci',
+          kind: 'watch',
+          yields: 'verdict',
+          run: async () => {
+            watchCalls.push('watch:ci')
+            return { ...PASSED, evidence: 'checked' }
+          },
+        },
+        // Refuses every visit, so there is always something for the router
+        // to send back to `implement` within the ceiling spent below.
+        canned('again', { verdict: 'failed', evidence: 'refused, try again', findings: [] }),
+      ]
+    }
+    const { emit } = events()
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      from: { step: 'merge', waive: { name: 'watch:ci', waitId: 'wait-1' as never } },
+      // `check-refused` has no built-in (`BUILT_IN_FOR`, `judge.ts`) — a
+      // declared judge is what sends it to `implement` here, same as a
+      // recipe's own `judge:` would.
+      judge: async () => ({ next: 'implement', named: 'test', why: 'test fix round' }),
+    })
+
+    // Waived on the first visit — never called — and genuinely run on the
+    // second, once the fix round sends the walk back through `merge`.
+    expect(watchCalls).toEqual(['watch:ci'])
+    expect(result.steps.filter((s) => s.step === 'merge')).toHaveLength(2)
+    expect(result.steps.filter((s) => s.step === 'merge')[0]?.outcome?.actions[0]?.result._tag).toBe('Waived')
+    expect(result.steps.filter((s) => s.step === 'merge')[1]?.outcome?.actions[0]?.result._tag).not.toBe('Waived')
+    expect(result.end._tag).toBe('WaitOnPerson')
+  })
+})
+
 // ------------------------------------------- the head, the round, the findings ----
 
 describe('a visit is judged against the head the walk has reached', () => {

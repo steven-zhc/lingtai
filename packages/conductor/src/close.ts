@@ -47,7 +47,7 @@
  * how the silence gets in. Read from the base branch, never from an agent's
  * (0005).
  */
-import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { parsePayload, type ProjectState, reduceWorkItem, type ToAppend, workItemStream } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
@@ -55,6 +55,7 @@ import type { ResolvedRecipe } from '@lingtai/recipe'
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
 import { currentRecipe } from './projects.ts'
+import { resolveWaitHolding } from './resolve-wait.ts'
 import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
 
 export interface CloseOutcome {
@@ -132,22 +133,45 @@ export async function close(options: {
   // One transaction. The outcome and what its point resolved to cannot come
   // apart, and the version check that guards the close guards both.
   const ended = resolveEndActions(events, end, 'closed')
-  try {
-    await store.append(ticketId, item.version, [
+  const closedEvent: ToAppend = {
+    type: 'TicketClosed',
+    actor: options.by,
+    data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
+  }
+
+  // **A blocked item resolves its wait in the same append as the close**
+  // (#465, 0118 §11) — `Close` is always offered, so `resolveWaitHolding`'s
+  // `allowedResolutions` check never refuses it; closing is still the fact
+  // that is on the log either way. A close while nothing is waiting — the
+  // ordinary case — appends `TicketClosed` and `ended` directly, as it
+  // always has: there is no wait here for anything to resolve.
+  if (item.lifecycle.status === 'blocked') {
+    const resolved = await resolveWaitHolding(
       {
-        type: 'TicketClosed',
-        actor: options.by,
-        data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
+        ticketId,
+        waitId: item.lifecycle.waitId,
+        resolution: { _tag: 'Close' },
+        by: options.by,
+        note: options.reason,
+        with: [closedEvent, ...ended],
+        store,
       },
-      ...ended,
-    ])
-  } catch (err) {
-    // Something moved between the read and the append — a pass claimed it, or a
-    // gate answered. Say so rather than closing over a decision nobody saw.
-    if (err instanceof ConcurrencyError) {
-      return { ok: false, ticketId, detail: `${ticketId} changed while closing — read it again` }
+      ticketId,
+    )
+    if (!resolved.ok) {
+      return { ok: false, ticketId, detail: resolved.detail }
     }
-    throw err
+  } else {
+    try {
+      await store.append(ticketId, item.version, [closedEvent, ...ended])
+    } catch (err) {
+      // Something moved between the read and the append — a pass claimed it, or
+      // a gate answered. Say so rather than closing over a decision nobody saw.
+      if (err instanceof ConcurrencyError) {
+        return { ok: false, ticketId, detail: `${ticketId} changed while closing — read it again` }
+      }
+      throw err
+    }
   }
 
   // Resolved, then done, in that order and never the reverse: the resolution is

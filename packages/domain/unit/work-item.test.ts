@@ -110,6 +110,47 @@ describe('reduceWorkItem', () => {
   })
 
   /**
+   * **`Approve` moves to `approved`, not `backlog`** (#465, 0118 §11) — a
+   * continuation is owed, and the queue must not cut a fresh pass for an
+   * item whose run has already been spent and is waiting to be resumed.
+   */
+  it('moves an Approve to approved, carrying the run and the sha it approved', () => {
+    const e = makeStream('ticket-p-2')
+    const reason = {
+      _tag: 'SignoffRequired' as const,
+      run: { runId: 'pass-b' },
+      step: 'merge' as const,
+      action: 'human:land',
+      question: 'land it?',
+    }
+    const events = [
+      e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
+      e('WaitStarted', { waitId: 'wait-2' as WaitId, reason }),
+      e('WaitResolved', {
+        waitId: 'wait-2' as WaitId,
+        by: 'human:steven',
+        resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) },
+        note: '',
+      }),
+    ]
+
+    const approved = reduceWorkItem(events)
+    expect(approved.lifecycle).toEqual({
+      status: 'approved',
+      runId: 'pass-b',
+      waitId: 'wait-2' as WaitId,
+      onSha: 'a'.repeat(40),
+    })
+
+    // A continuation claims onto the same run, the same way any claim does.
+    const claimed = reduceWorkItem([
+      ...events,
+      e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
+    ])
+    expect(claimed.lifecycle).toEqual({ status: 'claimed', runId: 'pass-b', worker: 'w' })
+  })
+
+  /**
    * A question asked before anything is spent (#147).
    *
    * `runId: null` was written into the type and never into the log: all three

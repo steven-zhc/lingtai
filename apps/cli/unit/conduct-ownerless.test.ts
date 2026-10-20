@@ -39,6 +39,7 @@ const EMPTY_CONTROL: ControlState = {
   holdsAcrossStarts: false,
   shutdown: null,
   requested: [],
+  continuing: [],
   discussions: [],
 }
 

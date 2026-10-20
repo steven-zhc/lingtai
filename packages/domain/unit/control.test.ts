@@ -320,6 +320,7 @@ describe('a withdrawal written with a handoff, before #167', () => {
     expect(state.shutdown).toBeNull()
     expect(Object.keys(state).sort()).toEqual([
       'by',
+      'continuing',
       'discussions',
       'holdsAcrossStarts',
       'paused',
@@ -345,6 +346,28 @@ describe('a withdrawal written with a handoff, before #167', () => {
  * unanswerable for exactly the starts nobody witnessed. This is the assertion
  * that stops it going quiet again.
  */
+describe('ContinueRequested (#465)', () => {
+  it('folds into continuing, oldest first', () => {
+    const state = reduceControl(
+      log([
+        {
+          type: 'ContinueRequested',
+          data: { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
+        },
+        {
+          type: 'ContinueRequested',
+          data: { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
+        },
+      ]),
+      NOW,
+    )
+    expect(state.continuing).toEqual([
+      { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
+      { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
+    ])
+  })
+})
+
 describe('who may append', () => {
   it("accepts a supervisor's start", () => {
     expect(Actor.safeParse('daemon').success).toBe(true)

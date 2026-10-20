@@ -594,12 +594,36 @@ export const taskViewProjection: Projection = {
 
               case 'WaitResolved':
                 if (fact.resolution._tag === 'Approve') {
-                  // The same narrow clear `ApprovalGranted` used to make, and
-                  // nothing else: 0118's own work-item fold leaves the
-                  // lifecycle alone on an Approve (`work-item.ts`), because
-                  // what actually moves the ticket on is the integration that
-                  // follows, synchronously, inside `approve.ts`.
-                  await set(ctx, event.streamId, seq, at, { awaiting_sha: null })
+                  // **Clears the hold rather than narrowly clearing `awaiting_sha`**
+                  // (#465). 0118's own work-item fold used to leave the
+                  // lifecycle alone on an Approve because what actually moved
+                  // the ticket on was the integration that followed,
+                  // synchronously, inside `approve.ts` — that integration is
+                  // gone, and the fold now moves the lifecycle to `approved`
+                  // (`work-item.ts`), so a row left `waiting` here would
+                  // disagree with it: the home board would keep rendering
+                  // Decide/Requeue over a question that is answered, and
+                  // `page.tsx`'s own `card.waiting` is what decides that.
+                  //
+                  // `state: 'running'`, not `'queued'` — `selectRunnable`
+                  // reads `state === 'queued'` as *the queue may claim this*
+                  // (`queue.ts`), and an approved item is not the queue's to
+                  // claim: `claimWorkItem` refuses it by name
+                  // (`not-claimable, status: approved`), and the only way it
+                  // moves is `continueWorkItem`, straight off the ticket
+                  // stream. `'running'` is the same reading
+                  // `labelState`'s own `approved` row gives the GitHub label
+                  // (`@lingtai/daemon`'s `converge.ts`): Lingtai, not a
+                  // person, holds the next move.
+                  await set(ctx, event.streamId, seq, at, {
+                    state: 'running',
+                    note: 'approved — continues once a conductor is free',
+                    awaiting_sha: null,
+                    waiting: false,
+                    asked: false,
+                    needs: null,
+                    diagnosis: null,
+                  })
                   break
                 }
                 // The answer, beside the question it answered — which is the
