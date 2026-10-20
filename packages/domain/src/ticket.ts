@@ -8,7 +8,7 @@
  * time, and no code was wrong; the model was.
  *
  * So `lifecycle` here is a discriminated union rather than a bag of flags. There
- * is no value of `WorkItemState` in which an item is both claimed and blocked,
+ * is no value of `TicketState` in which an item is both claimed and blocked,
  * because there is no way to write one down. The facts that outlive a
  * transition — title, labels, links — sit outside the union, where they belong.
  *
@@ -26,7 +26,7 @@ import { legacyColumns } from './legacy-columns.ts'
 import { agentBranchOf } from './streams.ts'
 import type { WaitReason } from './wait.ts'
 
-export type WorkItemLifecycle =
+export type TicketLifecycle =
   | { status: 'backlog' }
   /**
    * Held. There is no expiry in this shape and that is the whole of 0027: a
@@ -78,7 +78,7 @@ export type WorkItemLifecycle =
    */
   | { status: 'approved'; runId: string; waitId: WaitId; onSha: string }
 
-export type WorkItemStatus = WorkItemLifecycle['status']
+export type TicketStatus = TicketLifecycle['status']
 
 /**
  * An approach this ticket abandoned, as `TicketReleased{cause: Restart}`
@@ -119,8 +119,8 @@ export interface WorkItemLink {
   otherRef: string
 }
 
-export interface WorkItemState {
-  lifecycle: WorkItemLifecycle
+export interface TicketState {
+  lifecycle: TicketLifecycle
 
   /** Null until `TicketDiscovered`; a stream can be read before it exists. */
   project: string | null
@@ -194,7 +194,7 @@ export interface WorkItemState {
   lastSeq: bigint | null
 }
 
-export const emptyWorkItem: WorkItemState = {
+export const emptyTicket: TicketState = {
   lifecycle: { status: 'backlog' },
   project: null,
   source: null,
@@ -227,7 +227,7 @@ const LIFECYCLE_EVENTS = new Set([
   'TicketClosed',
 ])
 
-export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemState {
+export function applyTicket(state: TicketState, event: Envelope): TicketState {
   const at = { version: event.version, lastSeq: event.seq }
 
   /**
@@ -442,6 +442,6 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
   }
 }
 
-export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
-  return events.reduce(applyWorkItem, emptyWorkItem)
+export function reduceTicket(events: readonly Envelope[]): TicketState {
+  return events.reduce(applyTicket, emptyTicket)
 }
