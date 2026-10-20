@@ -23,6 +23,9 @@ import { cp, mkdtemp, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { describe as render, parsePayload, type NotifyPayload } from '../../../packages/extension/src/index.ts'
@@ -32,6 +35,27 @@ const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
   workItem: { id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' },
   board: 'http://localhost:3200',
+})
+
+/** A `WaitStarted` payload, with a `WaitReason` that carries `question` — what `reasonText` reads. */
+const waitStarted = makeStream('notify-scratch')
+const waiting = (reason: WaitReason) => payload('WaitStarted', aWait(waitStarted, reason)[0]!.data)
+
+/** The step stopped to ask, mid-run — the commonest reason a card waits on a person. */
+const agentQuestion = (question: string): WaitReason => ({
+  _tag: 'AgentQuestion',
+  run: { runId: 'pass-0' },
+  step: 'implement',
+  question,
+})
+
+/** A declared `human:` or an injected `--no-merge`, with every step green. */
+const signoffRequired = (question: string): WaitReason => ({
+  _tag: 'SignoffRequired',
+  run: { runId: 'pass-0' },
+  step: 'merge',
+  action: 'approval',
+  question,
 })
 
 /** Records what was spawned, and answers with whatever the test wants. */
@@ -46,7 +70,7 @@ const recorder = (answer: (bin: string) => number | null = () => 0) => {
 
 describe('what the operator reads', () => {
   it('asks the question rather than stating the fact', () => {
-    const n = render(payload('ApprovalRequested', { question: 'Merge agent/123 into main?' }))
+    const n = render(waiting(signoffRequired('Merge agent/123 into main?')))
 
     expect(n.title).toBe('#123 is waiting on you')
     expect(n.body).toBe('Merge agent/123 into main?')
@@ -76,7 +100,7 @@ describe('which channel, and what it does with the link', () => {
   it('uses terminal-notifier when it is installed, and hands it the card to open', async () => {
     const { calls, exec } = recorder()
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'which base?' } })))
+    await channel.send(render(waiting(agentQuestion('which base?'))))
 
     expect(channel.name).toBe('terminal-notifier')
     const sent = calls.find((c) => c.bin === 'terminal-notifier')
@@ -92,7 +116,7 @@ describe('which channel, and what it does with the link', () => {
   it('falls back to osascript and writes the link where it can be read', async () => {
     const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'which base?' } })))
+    await channel.send(render(waiting(agentQuestion('which base?'))))
 
     expect(channel.name).toBe('osascript')
     const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
@@ -103,7 +127,7 @@ describe('which channel, and what it does with the link', () => {
   it('escapes a body that would otherwise close the AppleScript string', async () => {
     const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
     const channel = await macNotifier(exec)
-    await channel.send(render(payload('WorkItemBlocked', { hold: { question: 'ok" & (do shell script "id") & "' } })))
+    await channel.send(render(waiting(agentQuestion('ok" & (do shell script "id") & "'))))
 
     const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
     expect(script).not.toMatch(/[^\\]"\s*&/)
@@ -116,7 +140,7 @@ describe('what the exit code says', () => {
   it('is 0 when the notification went out', async () => {
     const { exec } = recorder()
     const code = await notifyCommand({
-      read: stdin(payload('WorkItemBlocked', { hold: { question: 'which base?' } })),
+      read: stdin(waiting(agentQuestion('which base?'))),
       channelFor: () => macNotifier(exec),
       log: () => {},
     })
@@ -133,7 +157,7 @@ describe('what the exit code says', () => {
     const said: string[] = []
     const { exec } = recorder((bin) => (bin === 'which' ? 1 : 5))
     const code = await notifyCommand({
-      read: stdin(payload('WorkItemBlocked', { hold: { question: 'which base?' } })),
+      read: stdin(waiting(agentQuestion('which base?'))),
       channelFor: () => macNotifier(exec),
       log: (line) => said.push(line),
     })
@@ -145,7 +169,7 @@ describe('what the exit code says', () => {
   it('is 1 when stdin was not the payload, rather than notifying about nothing', async () => {
     const said: string[] = []
     const code = await notifyCommand({
-      read: async () => '{"event":{"type":"WorkItemBlocked"}}',
+      read: async () => '{"event":{"type":"WaitStarted"}}',
       channelFor: () => macNotifier(recorder().exec),
       log: (line) => said.push(line),
     })
@@ -163,7 +187,7 @@ describe('parsePayload', () => {
   it('defaults the board rather than refusing over it', () => {
     const parsed = parsePayload(
       JSON.stringify({
-        event: { type: 'WorkItemBlocked', data: {} },
+        event: { type: 'WaitStarted', data: {} },
         workItem: { id: 'ticket-a-1', project: 'a', issue: '1' },
       }),
     )
