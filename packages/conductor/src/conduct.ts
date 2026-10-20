@@ -39,6 +39,7 @@ import {
   passIdOf,
   passStream,
   reduceControl,
+  reduceRun,
   reduceWorkItem,
   routesOf,
   stepOutcomesOf,
@@ -962,6 +963,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         waive: next.waive === null ? null : { name: next.waive, waitId: approvedWaitId },
         onSha: approvedOnSha,
         roundsSpent: lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+        /**
+         * **The base every "what changed" read has to diff against — never
+         * `onSha` above** (#465). `onSha` is where this re-cut's worktree is
+         * checked out, which is the run's own prior head; diffing against it
+         * reads as no change at all until a new commit lands, so a `watch:`
+         * or a cold reviewer's `diff` reached for the first time after the
+         * approval sees an empty file list and clears a diff it never read.
+         *
+         * `RunStarted.baseSha` is this run's own first cut — written once,
+         * by `firstDispatch`, before this run could ever reach a wait that
+         * offers `Approve` (every such wait arises at `proposed` or later,
+         * all of them downstream of `implement`) — so it is on `runEvents`
+         * and it is never null by the time `continuationOf` above has
+         * already said this wait offers one.
+         */
+        diffBaseSha: reduceRun(runEvents).baseSha!,
       }
     })
 
@@ -1487,7 +1504,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
       const gitAsked = (args: string[]) => Effect.runPromise(Effect.either(gitHere(args)))
 
-      const baseShaOr = (fallback: string) => worktree?.baseSha ?? fallback
+      /**
+       * **Never `worktree.baseSha` on its own, once there is a continuation**
+       * (#465) — `worktree.baseSha` is where this re-cut's tree was checked
+       * out, the run's own prior head, and diffing against it is diffing a
+       * commit against itself until a new one lands. `continuation.diffBaseSha`
+       * is this run's real cut, read off its own `RunStarted` — see its own
+       * comment, above, for why it is never missing by the time there is a
+       * `continuation` to ask.
+       */
+      const baseShaOr = (fallback: string) => continuation?.diffBaseSha ?? worktree?.baseSha ?? fallback
 
       /**
        * Both ends default to what every existing caller already meant —
@@ -3339,7 +3365,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return { stopped: `the fixing agent had no settings: ${settings.left.detail}` }
         }
 
-        const underReview = await gitOrDie(['diff', `${tree.baseSha}...HEAD`])
+        // Never `tree.baseSha` alone once there is a continuation — see
+        // `baseShaOr`'s own comment: `tree.baseSha` is this re-cut's own
+        // head, and a fixing agent briefed against its own starting point
+        // would be shown nothing to fix.
+        const underReview = await gitOrDie(['diff', `${continuation?.diffBaseSha ?? tree.baseSha}...HEAD`])
         // The same flag `firstDispatch` sets before its own dispatch, and for
         // the same reason (`#468`): an agent is running, and nothing has
         // judged what it leaves in the worktree if it is interrupted here.

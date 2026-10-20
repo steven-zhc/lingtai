@@ -3,7 +3,15 @@ import { passCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
-import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from '@lingtai/domain'
+import {
+  type BlockDiagnosis,
+  type ProjectState,
+  type WaitId,
+  isPending,
+  isRegistered,
+  reduceWorkItem,
+  workItemStream,
+} from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { SpendRow } from '@lingtai/projector'
 /**
@@ -107,6 +115,14 @@ export interface BoardCard {
    * refuses what `lingtai approve` accepts (#92).
    */
   awaitingSha: string | null
+  /**
+   * The wait this card is rendering, read off the item's own stream rather
+   * than trusted from `task_view`, which carries none (#465) — so Approve,
+   * Requeue and Close resolve the wait this card showed rather than
+   * whatever is open by the time the click lands. Null off every lane but
+   * Waiting, and off a Waiting card past `laneWaitIds`'s own bound.
+   */
+  waitId: WaitId | null
   /**
    * Counts, not verdicts, and only from the run this card names — the verdicts
    * themselves are on the task's own page. Waived and approved are separate
@@ -511,6 +527,8 @@ export function toCard(
    */
   costUsd: Bill = emptyBill(),
   repairCostUsd: Bill = emptyBill(),
+  /** Read off the item's own stream by `laneWaitIds`, bounded the same way `progress` is. Null off every lane but Waiting. */
+  waitId: WaitId | null = null,
 ): BoardCard {
   return {
     taskId: t.taskId,
@@ -524,6 +542,7 @@ export function toCard(
     tier: t.tier,
     headSha: t.headSha,
     awaitingSha: t.awaitingSha,
+    waitId,
     passed: t.passed,
     failed: t.failed,
     waived: t.waived,
@@ -744,6 +763,8 @@ export async function queuedCards(
         tier: 'guarded',
         headSha: null,
         awaitingSha: null,
+        // Nothing has run, so there is no wait to resolve.
+        waitId: null,
         passed: 0,
         failed: 0,
         waived: 0,
@@ -823,6 +844,39 @@ async function laneProgress(
     }),
   )
   return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null))
+}
+
+/**
+ * Each waiting card's own wait id, read off its item stream — the id
+ * `Approve`/`Requeue`/`Close` send back so a stale card resolves the wait it
+ * rendered rather than whatever is open by the time the click lands (#465).
+ *
+ * **Bounded the way `laneProgress` is, and for the same reason.** `task_view`
+ * carries no `wait_id` column by design — the task page's own `standingOf`
+ * folds the item's live events for exactly this, because it already reads
+ * them for the detail view — so the home board's list has no cheap column to
+ * read it from either. The Waiting lane alone is a handful of cards, the same
+ * `WAITING_RAILS` cut `railCandidates` uses, so this costs the render one
+ * more stream per card already paying for one.
+ *
+ * `OwnQuestion` is included on purpose: it is the one `WaitReason` with no
+ * run, so it is also the one `railCandidates`' own `runId !== null` filter
+ * would have dropped — reading the item stream directly rather than reusing
+ * that list is what keeps it in.
+ */
+async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, WaitId>> {
+  const waiting = tasks.filter((t) => COLUMN_OF[t.state] === 'waiting').slice(0, WAITING_RAILS)
+  const folded = await Promise.all(
+    waiting.map(async (t) => {
+      try {
+        const item = reduceWorkItem(await eventStore.read(workItemStream(t.project, Number(t.issue))))
+        return item.lifecycle.status === 'blocked' ? ([t.taskId, item.lifecycle.waitId] as const) : null
+      } catch {
+        return null
+      }
+    }),
+  )
+  return new Map(folded.filter((e): e is readonly [string, WaitId] => e !== null))
 }
 
 /** A card that draws a rail, and whether this run's pass landed. */
@@ -919,7 +973,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const progress = await laneProgress(tasks, queued.plans)
+  const [progress, waitIds] = await Promise.all([laneProgress(tasks, queued.plans), laneWaitIds(tasks)])
   // Keyed by project, for `held`'s fallback when a run's own stream named no
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).
@@ -951,6 +1005,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
+      waitIds.get(t.taskId) ?? null,
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so

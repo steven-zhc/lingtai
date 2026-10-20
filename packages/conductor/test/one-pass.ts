@@ -735,7 +735,14 @@ export function fakePorts(
           // submodules come off the `worktree:` action rather than off `repo:`,
           // and *which values reached the cut* is the claim a pasted block needs.
           did.push(`cut from origin/${o.base}${o.submodules ? ' with submodules' : ''}`)
-          return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: 'a'.repeat(40) } as never
+          // `o.at` is a continuation's own re-cut (#465, `provisionWorktree`'s
+          // own option) — honoured here so a test can tell a worktree cut at
+          // the base apart from one cut at an approved sha.
+          return {
+            path: `/tmp/fake/${o.runId}`,
+            branch: `agent/${o.runId}`,
+            baseSha: o.at ?? 'a'.repeat(40),
+          } as never
         }),
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
       git: (args) =>
@@ -755,7 +762,15 @@ export function fakePorts(
           // is a variable rather than the constant it was.
           if (args[0] === 'rev-parse') return tree.at
           if (args[0] === 'diff' && args[1] === '--numstat') return '3\t1\tsrc/fix.ts\n'
-          if (args[0] === 'diff' && args[1] === '--name-only') return 'src/fix.ts\n'
+          // Sha-aware, unlike the two below it: a `from...HEAD` range whose
+          // `from` is the current head is an empty diff, same as real git —
+          // which is exactly the range a continuation computes when it diffs
+          // against the sha it was approved at rather than the run's own base
+          // (#465).
+          if (args[0] === 'diff' && args[1] === '--name-only') {
+            const [from] = (args.at(-1) ?? '').split('...')
+            return from === tree.at ? '' : 'src/fix.ts\n'
+          }
           // `base...HEAD`, which is what a reviewer is shown. Non-empty on
           // purpose: an `agent:` gate short-circuits to `passed` on an empty
           // diff, so a fake that answered "" would make every review pass and

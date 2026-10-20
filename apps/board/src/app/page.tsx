@@ -383,6 +383,7 @@ export function Card({
               project={card.project}
               issue={Number(card.ref)}
               onSha={card.awaitingSha}
+              waitId={card.waitId}
               refusing={card.failed > 0}
               recommended={card.diagnosis?.recommendation?.action ?? null}
             />
@@ -390,6 +391,7 @@ export function Card({
           <Requeue
             project={card.project}
             issue={Number(card.ref)}
+            waitId={card.waitId}
             asked={card.asked}
             question={card.note}
             recommended={card.diagnosis?.recommendation?.action ?? null}
@@ -399,7 +401,7 @@ export function Card({
               throws it away and asks for another, and both assume the work is
               still wanted. Without this, a card you have decided against could
               only be argued with. */}
-          <Close project={card.project} issue={Number(card.ref)} />
+          <Close project={card.project} issue={Number(card.ref)} waitId={card.waitId} />
         </div>
       ) : null}
 
