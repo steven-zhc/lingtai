@@ -23,15 +23,7 @@
  * built by this file; `continuationOf` (`@lingtai/domain/wait`) is what tells
  * it where to continue and what to waive once it does.
  */
-import {
-  parsePayload,
-  reduceRun,
-  reduceWorkItem,
-  type RunState,
-  type ToAppend,
-  type WaitId,
-  workItemStream,
-} from '@lingtai/domain'
+import { parsePayload, reduceRun, reduceWorkItem, type RunState, type ToAppend, type WaitId } from '@lingtai/domain'
 import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
@@ -101,8 +93,12 @@ function describeReason(reason: WaitReason): string {
 }
 
 export interface ResolveWaitOptions {
-  project: string
-  issue: number
+  ticketId: string
+  /**
+   * The GitHub issue number — read only for `Approve`'s branch check
+   * (`agentBranch`). A caller resolving anything else never needs one.
+   */
+  issue?: number
   waitId: WaitId
   resolution: Resolution
   /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
@@ -129,7 +125,7 @@ export type ResolveWaitResult =
   | { ok: false; ticketId: string; reason: string; detail: string }
 
 export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveWaitResult> {
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = options.ticketId
   return deciding<ResolveWaitResult>(
     ticketId,
     () => ({
@@ -277,7 +273,7 @@ async function checkApprove(
   // The branch may have moved since the approval was recorded — including
   // the agent, on a re-run. Continuing then would run past something nobody
   // looked at, which is exactly what the old label-based approval did.
-  if (options.client) {
+  if (options.client && options.issue !== undefined) {
     const branch = agentBranch(options.issue)
     const remoteHead = await options.client.refSha(`heads/${branch}`).catch(() => null)
     if (remoteHead !== onSha) {

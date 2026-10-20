@@ -58,7 +58,14 @@ describe('resolveWait', () => {
     ])
 
     const result = await resolveWaitHolding(
-      { project: PROJECT, issue: 1, waitId: aWaitId(), resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
+      {
+        ticketId: workItemStream(PROJECT, 1),
+        issue: 1,
+        waitId: aWaitId(),
+        resolution: { _tag: 'Requeue' },
+        by: 'human:steven',
+        store,
+      },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
@@ -69,7 +76,14 @@ describe('resolveWait', () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 2)
     const result = await resolveWaitHolding(
-      { project: PROJECT, issue: 2, waitId: aWaitId(), resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
+      {
+        ticketId: workItemStream(PROJECT, 2),
+        issue: 2,
+        waitId: aWaitId(),
+        resolution: { _tag: 'Requeue' },
+        by: 'human:steven',
+        store,
+      },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
@@ -92,7 +106,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 3),
           issue: 3,
           waitId,
           resolution: { _tag: 'AnswerQuestion', choice: 'the first' },
@@ -129,7 +143,14 @@ describe('resolveWait', () => {
       ])
 
       const result = await resolveWaitHolding(
-        { project: PROJECT, issue: 4, waitId, resolution: { _tag: 'Approve', onSha: SHA }, by: 'human:steven', store },
+        {
+          ticketId: workItemStream(PROJECT, 4),
+          issue: 4,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          store,
+        },
         ticketId,
       )
       expect(result).toMatchObject({
@@ -160,7 +181,14 @@ describe('resolveWait', () => {
       ])
 
       const result = await resolveWaitHolding(
-        { project: PROJECT, issue: 5, waitId, resolution: { _tag: 'Approve', onSha: SHA }, by: 'human:steven', store },
+        {
+          ticketId: workItemStream(PROJECT, 5),
+          issue: 5,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          store,
+        },
         ticketId,
       )
       expect(result).toMatchObject({ ok: false, reason: 'not-offered' })
@@ -189,7 +217,14 @@ describe('resolveWait', () => {
       ])
 
       const result = await resolveWaitHolding(
-        { project: PROJECT, issue: 6, waitId, resolution: { _tag: 'Approve', onSha: SHA }, by: 'human:steven', store },
+        {
+          ticketId: workItemStream(PROJECT, 6),
+          issue: 6,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          store,
+        },
         ticketId,
       )
       expect(result).toMatchObject({ ok: false, reason: 'not-awaiting-approval' })
@@ -219,7 +254,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 7),
           issue: 7,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA2 },
@@ -257,7 +292,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 8),
           issue: 8,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -295,7 +330,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 9),
           issue: 9,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -342,7 +377,7 @@ describe('resolveWait', () => {
 
       const withoutNote = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 10),
           issue: 10,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -357,7 +392,7 @@ describe('resolveWait', () => {
 
       const withNote = await resolveWaitHolding(
         {
-          project: PROJECT,
+          ticketId: workItemStream(PROJECT, 10),
           issue: 10,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -392,7 +427,14 @@ describe('resolveWait', () => {
     ])
 
     const result = await resolveWaitHolding(
-      { project: PROJECT, issue: 11, waitId, resolution: { _tag: 'EditBodyAndRequeue' }, by: 'human:steven', store },
+      {
+        ticketId: workItemStream(PROJECT, 11),
+        issue: 11,
+        waitId,
+        resolution: { _tag: 'EditBodyAndRequeue' },
+        by: 'human:steven',
+        store,
+      },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
