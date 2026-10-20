@@ -21,7 +21,7 @@
  * so every case here seeds both an offender and a near-miss and checks that the
  * offender comes back and the near-miss does not.
  */
-import { STEPS, parsePayload, workItemStream } from '@lingtai/domain'
+import { STEPS, parsePayload, ticketStream } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import type { EventStore } from '../src/event-store.ts'
@@ -146,7 +146,7 @@ export function describeLogQueriesContract(
 
     it('finds a landed item whose run planned end actions and resolved none', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 301)
+      const item = ticketStream(h.project, 301)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
       await h.store.append(item, 0, [landed()])
@@ -158,7 +158,7 @@ export function describeLogQueriesContract(
 
     it('says nothing about an item that resolved the point for the outcome it reached', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 302)
+      const item = ticketStream(h.project, 302)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
       await h.store.append(item, 0, [landed(), resolved('landed')])
@@ -174,7 +174,7 @@ export function describeLogQueriesContract(
      */
     it('is not satisfied by a resolution for a different outcome', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 303)
+      const item = ticketStream(h.project, 303)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
       await h.store.append(item, 0, [resolved('blocked'), landed()])
@@ -188,7 +188,7 @@ export function describeLogQueriesContract(
     /** A close is a terminal outcome too (0044), and it reaches `end` as one. */
     it('reports a closed item as closed, not as landed', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 304)
+      const item = ticketStream(h.project, 304)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
       await h.store.append(item, 0, [closed()])
@@ -202,7 +202,7 @@ export function describeLogQueriesContract(
     /** The last ending, not the first: an item that landed and was then closed ended closed. */
     it('takes the ending the item actually reached last', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 305)
+      const item = ticketStream(h.project, 305)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
       await h.store.append(item, 0, [landed(), closed()])
@@ -218,7 +218,7 @@ export function describeLogQueriesContract(
      */
     it('says nothing about an item whose run planned nothing at end', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 306)
+      const item = ticketStream(h.project, 306)
       h.note?.(item)
       await run(h, item, { proposed: ['build'] })
       await h.store.append(item, 0, [landed()])
@@ -228,7 +228,7 @@ export function describeLogQueriesContract(
 
     it('says nothing about an item that has not ended', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 307)
+      const item = ticketStream(h.project, 307)
       h.note?.(item)
       await run(h, item, { end: ['close the ticket'] })
 
@@ -251,7 +251,7 @@ export function describeLogQueriesContract(
      */
     it('counts the rows of each type it holds, in byte order of the type', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 501)
+      const item = ticketStream(h.project, 501)
       h.note?.(item)
       // Failed then updated, on one change: converged, so `unconvergedUpdates`
       // below goes on saying nothing about this item.
@@ -294,7 +294,7 @@ export function describeLogQueriesContract(
 
     it('returns every row of a type, in seq order, with its schemaVer and undecoded data', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 509)
+      const item = ticketStream(h.project, 509)
       h.note?.(item)
       await h.store.append(item, 0, [landed(), closed()])
 
@@ -330,7 +330,7 @@ export function describeLogQueriesContract(
 
     it('finds an issue whose last word about a change was a failure', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 502)
+      const item = ticketStream(h.project, 502)
       h.note?.(item)
       await h.store.append(item, 0, [said('IssueUpdateFailed', h.project, '502', 'labels')])
 
@@ -344,7 +344,7 @@ export function describeLogQueriesContract(
     /** Only the last one is the state of the world: the log keeps both. */
     it('says nothing about a failure a later attempt fixed', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 503)
+      const item = ticketStream(h.project, 503)
       h.note?.(item)
       await h.store.append(item, 0, [
         said('IssueUpdateFailed', h.project, '503', 'labels'),
@@ -364,7 +364,7 @@ export function describeLogQueriesContract(
      */
     it('is per change, not per issue', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 504)
+      const item = ticketStream(h.project, 504)
       h.note?.(item)
       await h.store.append(item, 0, [
         said('IssueUpdateFailed', h.project, '504', 'comment'),
@@ -378,7 +378,7 @@ export function describeLogQueriesContract(
     /** A success that came *before* the failure converges nothing. */
     it('is not satisfied by a success older than the failure', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 505)
+      const item = ticketStream(h.project, 505)
       h.note?.(item)
       await h.store.append(item, 0, [
         said('IssueUpdated', h.project, '505', 'closed'),
@@ -407,7 +407,7 @@ export function describeLogQueriesContract(
 
     it("counts a subscriber's failures all-time and since the cutoff, with the latest reason", async () => {
       const h = await make()
-      const item = workItemStream(h.project, 506)
+      const item = ticketStream(h.project, 506)
       h.note?.(item)
       const name = `sub-${h.project}`
       await h.store.append(item, 0, [failed(name, 'first'), failed(name, 'second')])
@@ -423,7 +423,7 @@ export function describeLogQueriesContract(
      */
     it('keeps the all-time count and drops the recent one past the cutoff', async () => {
       const h = await make()
-      const item = workItemStream(h.project, 507)
+      const item = ticketStream(h.project, 507)
       h.note?.(item)
       const name = `sub-${h.project}-later`
       await h.store.append(item, 0, [failed(name, 'only')])
