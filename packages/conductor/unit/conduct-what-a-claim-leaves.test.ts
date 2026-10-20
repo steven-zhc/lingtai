@@ -276,9 +276,7 @@ describe('when the agent meets the wall', () => {
         `nothing judged this diff, so there is nothing to approve (committed: ${committed})`,
       ).toBe(false)
       // Still a person's, and still with the move that is actually left on it.
-      const blocked = legacyColumns(
-        (item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason,
-      )
+      const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
       expect(blocked.needs).toBe('acknowledgement')
       expect(blocked.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
     }

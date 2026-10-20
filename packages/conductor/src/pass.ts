@@ -115,11 +115,6 @@ import {
 import type { RunRef } from '@lingtai/domain/wait'
 import type { Recipe, StepAction } from '@lingtai/recipe'
 
-// Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
-// than over a step's actions — two functions with one name would be exactly
-// the collision #466's own header warns against (`step-outcome.ts`'s own doc
-// comment).
-import { outcomeOf as stepOutcomeOf } from './step-outcome.ts'
 import type { TerminalOutcome } from './end-step.ts'
 // `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -127,6 +122,11 @@ import type { TerminalOutcome } from './end-step.ts'
 // module-evaluation time, only inside a function called later.
 import { whatArrived, type Judged, type Judging } from './pass-steps.ts'
 import { ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
+// Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
+// than over a step's actions — two functions with one name would be exactly
+// the collision #466's own header warns against (`step-outcome.ts`'s own doc
+// comment).
+import { outcomeOf as stepOutcomeOf } from './step-outcome.ts'
 
 // ------------------------------------------------------- the ten, as data ----
 

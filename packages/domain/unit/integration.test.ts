@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyIntegration, laneIsBusy, parsePayload, reduceIntegration } from '../src/index.ts'
+import { emptyIntegration, laneIsBusy, reduceIntegration } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const LANE = 'int-nextloom-ai-admin-develop'

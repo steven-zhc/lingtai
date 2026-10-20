@@ -50,7 +50,11 @@ export function aRun(runId: string): RunFixture {
 }
 
 /** `WaitStarted{waitId, reason}` — the event a real pass, `ask.ts` or `approve.ts` writes for a wait starting. */
-export function aWait(itemStream: ReturnType<typeof makeStream>, reason: WaitReason, waitId: WaitId = aWaitId()): Envelope[] {
+export function aWait(
+  itemStream: ReturnType<typeof makeStream>,
+  reason: WaitReason,
+  waitId: WaitId = aWaitId(),
+): Envelope[] {
   return [itemStream('WaitStarted', { waitId, reason })]
 }
 

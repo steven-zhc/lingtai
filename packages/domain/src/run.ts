@@ -396,7 +396,12 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
           next = {
             ...next,
-            lifecycle: { status: 'awaiting-approval', step: key, onSha: action.onSha, question: action.result.requested.question },
+            lifecycle: {
+              status: 'awaiting-approval',
+              step: key,
+              onSha: action.onSha,
+              question: action.result.requested.question,
+            },
           }
         }
       }

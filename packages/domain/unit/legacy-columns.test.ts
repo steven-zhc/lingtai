@@ -21,7 +21,12 @@ describe('legacyColumns', () => {
   })
 
   it('composes the step prefix for AgentQuestion, from the run it belongs to', () => {
-    const reason: WaitReason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', question: 'which base?' }
+    const reason: WaitReason = {
+      _tag: 'AgentQuestion',
+      run: { runId: 'pass-1' },
+      step: 'design',
+      question: 'which base?',
+    }
     const cols = legacyColumns(reason)
     expect(cols.question).toBe('the `design` step asked: which base?')
     expect(cols.runId).toBe('pass-1')
@@ -91,7 +96,10 @@ describe('legacyColumns', () => {
     const reason: WaitReason = {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-1' },
-      proposal: { _tag: 'ReviewFindings', findings: [{ severity: 'blocker', file: 'x.ts', line: 1, claim: 'c', failureScenario: 's' }] },
+      proposal: {
+        _tag: 'ReviewFindings',
+        findings: [{ severity: 'blocker', file: 'x.ts', line: 1, claim: 'c', failureScenario: 's' }],
+      },
       because: { _tag: 'NotAsked' },
     }
     const cols = legacyColumns(reason, { branch: 'agent/1', base: 'main', findings: [] })

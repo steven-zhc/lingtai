@@ -173,7 +173,10 @@ describe('what wakes the loop', () => {
 
     // `fix-lines`, offered off a `ReviewFindings` with a criterion, selected
     // by a judge — the shape `#472`'s own `FixRound` candidate takes.
-    const reviewFindings = { _tag: 'ReviewFindings' as const, findings: [{ file: 'x.ts', line: 1, claim: 'no', failureScenario: 'it breaks', severity: 'blocker' as const }] }
+    const reviewFindings = {
+      _tag: 'ReviewFindings' as const,
+      findings: [{ file: 'x.ts', line: 1, claim: 'no', failureScenario: 'it breaks', severity: 'blocker' as const }],
+    }
     const reviewOffer = offerFor(reviewFindings, { rounds: 1, restarts: 1 }, { rounds: 0, restarts: 0 })
     const reviewReply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'fixable' }
     const reviewDecision = decideRoute(reviewOffer, reviewReply)
@@ -204,10 +207,7 @@ describe('what wakes the loop', () => {
           ]
         })(),
       ],
-      [
-        'requeued',
-        aResolution(item, requeuedId, { _tag: 'Requeue' }),
-      ],
+      ['requeued', aResolution(item, requeuedId, { _tag: 'Requeue' })],
       ['withdrawn', aWithdrawal(item, withdrawnId)],
       ['routed to implement', aRoute(run, { offer: reviewOffer, reply: reviewReply, decision: reviewDecision })],
       [

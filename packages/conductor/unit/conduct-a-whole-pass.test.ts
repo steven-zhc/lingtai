@@ -560,7 +560,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * `question`, or a `design` agent that answered `Asked`.
    */
   const askedBy = (action: Action): string | null => {
-    if (action.yields === 'signoff' && action.result._tag === 'Completed') return action.result.requested?.question ?? null
+    if (action.yields === 'signoff' && action.result._tag === 'Completed')
+      return action.result.requested?.question ?? null
     if (action.yields === 'commit' && action.result._tag === 'Completed') return action.result.question
     if (action.yields === 'design' && action.result._tag === 'Asked') return action.result.question
     return null

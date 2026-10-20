@@ -90,7 +90,12 @@ describe('reduceWorkItem', () => {
 
     const unblocked = reduceWorkItem([
       ...events,
-      e('WaitResolved', { waitId: 'wait-1' as WaitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'develop' }),
+      e('WaitResolved', {
+        waitId: 'wait-1' as WaitId,
+        by: 'human:steven',
+        resolution: { _tag: 'Requeue' },
+        note: 'develop',
+      }),
     ])
     expect(unblocked.lifecycle).toEqual({ status: 'backlog' })
     // The answer is not dropped with the question (#147).
@@ -232,7 +237,10 @@ describe('reduceWorkItem', () => {
     const e = makeStream('ticket-nextloom-ai-admin-35')
     const s = reduceWorkItem([
       e('TicketDiscovered', discovered),
-      e('WaitStarted', { waitId: 'wait-1' as WaitId, reason: { _tag: 'OwnQuestion' as const, question: '?', by: 'steven' } }),
+      e('WaitStarted', {
+        waitId: 'wait-1' as WaitId,
+        reason: { _tag: 'OwnQuestion' as const, question: '?', by: 'steven' },
+      }),
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
 
@@ -391,7 +399,14 @@ describe('WaitStarted is strict about what rides beside reason', () => {
     ['needs', { waitId: 'wait-1' as WaitId, reason, needs: ['design'] }],
     ['question', { waitId: 'wait-1' as WaitId, reason, question: 'which design?' }],
     ['runId', { waitId: 'wait-1' as WaitId, reason, runId: 'pass-1' }],
-    ['diagnosis', { waitId: 'wait-1' as WaitId, reason, diagnosis: { what: 'merge conflict', done: null, raw: null, recommendation: null } }],
+    [
+      'diagnosis',
+      {
+        waitId: 'wait-1' as WaitId,
+        reason,
+        diagnosis: { what: 'merge conflict', done: null, raw: null, recommendation: null },
+      },
+    ],
   ])('refuses a payload carrying %s beside reason', (_name, payload) => {
     expect(WaitStarted.safeParse(payload).success).toBe(false)
   })

@@ -85,7 +85,12 @@ function acknowledgement(question: string, run: RunRef, raw: string | null): Leg
   }
 }
 
-function mergeRefusedColumns(run: RunRef, reason: RefusalReason, raw: string, pass: { branch: string; base: string }): LegacyColumns {
+function mergeRefusedColumns(
+  run: RunRef,
+  reason: RefusalReason,
+  raw: string,
+  pass: { branch: string; base: string },
+): LegacyColumns {
   const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
   const question = `${reason}: ${raw}`.slice(0, 400)
   return {
@@ -174,7 +179,12 @@ function routedRefusalColumns(
     asked: false,
     needs: 'judgement',
     needsFrom: 'human',
-    diagnosis: { what: question + unpushedSuffix(run), done: reading.done, raw, recommendation: reading.recommendation },
+    diagnosis: {
+      what: question + unpushedSuffix(run),
+      done: reading.done,
+      raw,
+      recommendation: reading.recommendation,
+    },
   }
 }
 
@@ -204,9 +214,21 @@ function escalatedColumns(
     // — the owner sentence and the move, which a plain `judgement()` cannot
     // carry on its own.
     case 'VerifyRed':
-      return routedRefusalColumns('verify-failed', proposal.output, run, pass, why(reasonText !== '' ? reasonText : proposal.output))
+      return routedRefusalColumns(
+        'verify-failed',
+        proposal.output,
+        run,
+        pass,
+        why(reasonText !== '' ? reasonText : proposal.output),
+      )
     case 'MergeConflict':
-      return routedRefusalColumns('conflict', proposal.output, run, pass, why(reasonText !== '' ? reasonText : proposal.output))
+      return routedRefusalColumns(
+        'conflict',
+        proposal.output,
+        run,
+        pass,
+        why(reasonText !== '' ? reasonText : proposal.output),
+      )
     case 'ReviewFindings': {
       const detail = reasonText !== '' ? reasonText : reviewFindingsOwnText(proposal)
       const question = why(detail ?? '')
@@ -230,7 +252,8 @@ function escalatedColumns(
         const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + proposal.raw, 400)}`
         return judgement(question, run, proposal.raw)
       }
-      if (proposal.from === 'merge') return acknowledgement(stepLine('merge', 'refused', proposal.raw), run, proposal.raw)
+      if (proposal.from === 'merge')
+        return acknowledgement(stepLine('merge', 'refused', proposal.raw), run, proposal.raw)
       return acknowledgement(stepLine(proposal.from, 'did-not-finish', proposal.raw), run, proposal.raw)
     }
     case 'NothingProduced':
@@ -324,7 +347,8 @@ export function legacyColumns(
         const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + reason.raw, 400)}`
         return judgement(question, reason.run, reason.raw)
       }
-      if (reason.step === 'merge') return acknowledgement(stepLine('merge', 'refused', reason.raw), reason.run, reason.raw)
+      if (reason.step === 'merge')
+        return acknowledgement(stepLine('merge', 'refused', reason.raw), reason.run, reason.raw)
       return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.raw), reason.run, reason.raw)
     }
   }

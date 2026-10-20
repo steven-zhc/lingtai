@@ -39,13 +39,7 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * outright) and no effect on `cleared`/`headOf`, so dropping the trailing run
  * costs nothing once the action in front of it already cleared.
  */
-import {
-  type Action as DomainAction,
-  type RefusalReason,
-  type Step,
-  type StepOutcome,
-  cleared,
-} from '@lingtai/domain'
+import { type Action as DomainAction, type RefusalReason, type Step, type StepOutcome, cleared } from '@lingtai/domain'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]

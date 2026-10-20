@@ -29,14 +29,7 @@ import {
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import {
-  type SpentFor,
-  type Tier,
-  WIP_COMMIT_PREFIX,
-  legacyColumns,
-  parsePayload,
-} from '@lingtai/domain'
-import type { RunRef, WaitReason } from '@lingtai/domain/wait'
+import { type SpentFor, type Tier, WIP_COMMIT_PREFIX, legacyColumns, parsePayload } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type ReleaseCause,
@@ -50,6 +43,7 @@ import {
   workItemStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
+import type { RunRef, WaitReason } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
@@ -3352,7 +3346,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                 'so there is nothing new for the review to read'
-              : fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read',
+              : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
             // **`committed` false and no `failure`** is the fixer reading the
             // findings and declining, not crashing — the `commit
             // Completed{head: null, question: null}` cell rather than

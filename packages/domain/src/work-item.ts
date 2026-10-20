@@ -351,7 +351,11 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // `TicketClosed`/`TicketLanded` (or a continued run, #465) say what
       // actually happened — so only the resolutions that are themselves a
       // requeue move the lifecycle here.
-      if (d.resolution._tag !== 'Requeue' && d.resolution._tag !== 'EditBodyAndRequeue' && d.resolution._tag !== 'AnswerQuestion') {
+      if (
+        d.resolution._tag !== 'Requeue' &&
+        d.resolution._tag !== 'EditBodyAndRequeue' &&
+        d.resolution._tag !== 'AnswerQuestion'
+      ) {
         return { ...state, ...at }
       }
       return {

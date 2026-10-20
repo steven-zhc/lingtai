@@ -111,7 +111,12 @@ describe('reduceRun', () => {
       step: 'proposed',
       round: 0,
       actions: [
-        verdictAction('build', 'sha-a', { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } }, 'exit 0'),
+        verdictAction(
+          'build',
+          'sha-a',
+          { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+          'exit 0',
+        ),
         verdictAction(
           'review',
           'sha-a',
@@ -199,7 +204,14 @@ describe('reduceRun', () => {
     const outcome: StepOutcome = {
       step: 'proposed',
       round: 0,
-      actions: [verdictAction('build', 'sha-a', { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } }, 'exit 0')],
+      actions: [
+        verdictAction(
+          'build',
+          'sha-a',
+          { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+          'exit 0',
+        ),
+      ],
     }
     const mergeOutcome: StepOutcome = {
       step: 'merge',
@@ -297,7 +309,10 @@ describe('reduceRun', () => {
 
   it('records a failure with its kind', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([e('RunStarted', started), e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' })])
+    const s = reduceRun([
+      e('RunStarted', started),
+      e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' }),
+    ])
 
     expect(s.lifecycle).toEqual({ status: 'failed', kind: 'timeout', detail: '2h wall clock' })
   })

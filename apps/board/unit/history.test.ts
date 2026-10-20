@@ -294,9 +294,18 @@ describe('a line of history', () => {
     const event = makeStream('pass-1')
     const ended = (
       evidence: string,
-      result: { _tag: 'AnswerUnreadable'; raw: string } | { _tag: 'Completed'; assessment: { verdict: 'refused'; findings: Finding[] } },
+      result:
+        | { _tag: 'AnswerUnreadable'; raw: string }
+        | { _tag: 'Completed'; assessment: { verdict: 'refused'; findings: Finding[] } },
     ): Envelope => {
-      const action: Action = { plugin: 'agent', name: 'cold reviewer', onSha: 'a'.repeat(40), evidence, yields: 'verdict', result }
+      const action: Action = {
+        plugin: 'agent',
+        name: 'cold reviewer',
+        onSha: 'a'.repeat(40),
+        evidence,
+        yields: 'verdict',
+        result,
+      }
       return event('StepEnded', { runId: 'pass-1', outcome: anOutcome('review', 0, [action]) })
     }
 

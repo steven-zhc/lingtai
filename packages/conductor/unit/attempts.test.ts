@@ -126,10 +126,7 @@ describe('priorAttempts', () => {
       e('TicketClaimed', claim('pass-1')),
       e('TicketReleased', released('pass-1', 'prepare failed at prepared:install')),
       e('TicketClaimed', claim('pass-2')),
-      e(
-        'TicketReleased',
-        released('pass-2', 'the run was killed by an operator timeout before it produced anything'),
-      ),
+      e('TicketReleased', released('pass-2', 'the run was killed by an operator timeout before it produced anything')),
     ])
 
     expect(attempts.map((a) => [a.n, a.runId, a.ended])).toEqual([
@@ -300,7 +297,11 @@ describe('attemptBrief', () => {
         }),
         run(
           'StepEnded',
-          ended('pass-2', 'build', verdictAction('tsc', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322', 'refused')),
+          ended(
+            'pass-2',
+            'build',
+            verdictAction('tsc', 'tsc: apps/board/src/lib/board.ts(12,5): error TS2322', 'refused'),
+          ),
         ),
         run('RunFinished', { exitCode: 0, turns: 31, durationMs: 900_000 }),
       ],
@@ -499,7 +500,10 @@ describe('attemptBrief', () => {
         stream('ticket-lingtai-169')('TicketClaimed', claim('pass-1')),
         stream('ticket-lingtai-169')('TicketReleased', released('pass-1', 'gates refused the diff')),
       ])
-      attempts[0]!.outcome = attemptOutcome([run('StepEnded', ended('pass-1', 'build', verdictAction('tsc', evidence, 'refused')))], budget)
+      attempts[0]!.outcome = attemptOutcome(
+        [run('StepEnded', ended('pass-1', 'build', verdictAction('tsc', evidence, 'refused')))],
+        budget,
+      )
       return attemptBrief(attempts, budget)
     }
 
