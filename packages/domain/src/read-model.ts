@@ -18,7 +18,7 @@ import { legacyColumns, type LegacyColumns } from './legacy-columns.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
-import { agentBranchOf, parseWorkItemStream } from './streams.ts'
+import { agentBranchOf, parseTicketStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import type { Resolution, TriageResult, WaitReason } from './wait.ts'
 
@@ -29,7 +29,7 @@ import type { Resolution, TriageResult, WaitReason } from './wait.ts'
  * default `legacyColumns`'s own `pass` argument carries.
  */
 function branchOf(event: Envelope): string {
-  const parsed = parseWorkItemStream(event.streamId)
+  const parsed = parseTicketStream(event.streamId)
   return parsed === null ? '' : agentBranchOf(parsed.issue)
 }
 

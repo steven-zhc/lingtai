@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { CHAT_STREAM_PREFIX, PASS_STREAM_PREFIX, PROJECT_STREAM_PREFIX, WORK_ITEM_STREAM_PREFIX } from './streams.ts'
+import { CHAT_STREAM_PREFIX, PASS_STREAM_PREFIX, PROJECT_STREAM_PREFIX, TICKET_STREAM_PREFIX } from './streams.ts'
 
 /**
  * What wraps every event. The store fills `seq` and `at`; everything else is
@@ -42,7 +42,7 @@ function noDash(prefix: string): string {
  * pattern's `.source` is byte-identical to the one it replaced.
  */
 export const STREAM_ID_PATTERN = new RegExp(
-  `^(${noDash(WORK_ITEM_STREAM_PREFIX)}|${noDash(PASS_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl)-[\\w.-]+$`,
+  `^(${noDash(TICKET_STREAM_PREFIX)}|${noDash(PASS_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl)-[\\w.-]+$`,
 )
 
 export const StreamId = z.string().regex(

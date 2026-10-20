@@ -10,18 +10,18 @@
  * imports nothing, so everything can import `domain`.
  */
 
-export const WORK_ITEM_STREAM_PREFIX = 'ticket-'
+export const TICKET_STREAM_PREFIX = 'ticket-'
 
 export const PASS_STREAM_PREFIX = 'pass-'
 
 /** `ticket-{project}-`, every work item's stream for one project. */
-export function workItemStreamsOf(project: string): string {
-  return `${WORK_ITEM_STREAM_PREFIX}${project}-`
+export function ticketStreamsOf(project: string): string {
+  return `${TICKET_STREAM_PREFIX}${project}-`
 }
 
 /** `ticket-{project}-{n}`, the work item's own stream. */
-export function workItemStream(project: string, externalRef: string | number): string {
-  return `${workItemStreamsOf(project)}${externalRef}`
+export function ticketStream(project: string, externalRef: string | number): string {
+  return `${ticketStreamsOf(project)}${externalRef}`
 }
 
 /**
@@ -32,8 +32,8 @@ export function workItemStream(project: string, externalRef: string | number): s
  * regex written out at each call site. It was three copies before `#69` needed
  * a fourth.
  */
-export function parseWorkItemStream(id: string): { project: string; issue: string } | null {
-  const body = id.startsWith(WORK_ITEM_STREAM_PREFIX) ? id.slice(WORK_ITEM_STREAM_PREFIX.length) : id
+export function parseTicketStream(id: string): { project: string; issue: string } | null {
+  const body = id.startsWith(TICKET_STREAM_PREFIX) ? id.slice(TICKET_STREAM_PREFIX.length) : id
   const cut = body.lastIndexOf('-')
   if (cut < 0) return null
   const project = body.slice(0, cut)
@@ -43,8 +43,8 @@ export function parseWorkItemStream(id: string): { project: string; issue: strin
 }
 
 /** Whether `id` is a work item's own stream. */
-export function isWorkItemStream(id: string): boolean {
-  return id.startsWith(WORK_ITEM_STREAM_PREFIX)
+export function isTicketStream(id: string): boolean {
+  return id.startsWith(TICKET_STREAM_PREFIX)
 }
 
 /**
@@ -163,7 +163,7 @@ export type LabelState = (typeof LABEL_STATES)[number]
  * `RunStarted` on `pass-<uuid>` has. It is read rather than the stream id
  * because `int-{project}-{base}` cannot be split back: a base branch may hold a
  * `-` and an issue number may not, so the last-dash rule that makes
- * `parseWorkItemStream` exact makes an integration stream a guess.
+ * `parseTicketStream` exact makes an integration stream a guess.
  *
  * **Null is not "no project", it is "not from here".** The third way is
  * `StepEnded` and `RunAwaitingInput`, which carry a `runId` and no work
@@ -176,8 +176,8 @@ export function workItemOf(event: { streamId: string; data?: unknown }): {
   project: string
   issue: string
 } | null {
-  if (isWorkItemStream(event.streamId)) return parseWorkItemStream(event.streamId)
+  if (isTicketStream(event.streamId)) return parseTicketStream(event.streamId)
   const named = (event.data as { ticketId?: unknown } | null | undefined)?.ticketId
-  if (typeof named !== 'string' || !isWorkItemStream(named)) return null
-  return parseWorkItemStream(named)
+  if (typeof named !== 'string' || !isTicketStream(named)) return null
+  return parseTicketStream(named)
 }
