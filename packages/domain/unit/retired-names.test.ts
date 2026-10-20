@@ -1016,28 +1016,30 @@ describe('the scanner', () => {
     /**
      * **Inside one token**, which is `words()` already splitting the camel,
      * snake and shout case apart — the same split that lets the four words
-     * reach `GatePlan`. And a stylesheet's selector, which `classes()` keeps
-     * its dash in, falls into this case too: `words("work-item")` is
-     * `["work", "item"]`, the same as `words("workItem")`.
+     * reach `GatePlan`.
      */
     it('matches a pair glued inside one token', () => {
       expect(hitsOf('const workItem = 1;\n', 'f.ts')).toContain('workItem')
       expect(hitsOf('const WORK_ITEM = 1;\n', 'f.ts')).toContain('WORK_ITEM')
       expect(hitsOf('const work_item = 1;\n', 'f.ts')).toContain('work_item')
-      expect(hitsOf('.work-item { color: red; }\n', 'globals.css')).toContain('work-item')
     })
 
     /**
      * **Across two, inside the same entry, glued by nothing but whitespace or
      * a dash.** This is the half a token cannot see: `"work item"` is two
      * regex matches, not one, because the space is not an identifier
-     * character — the same reason `tokens()` never joins them either.
+     * character — the same reason `tokens()` never joins them either. A
+     * stylesheet's selector falls in here too, not in the inside-one-token
+     * case above: `classes()` keeps `work-item`'s dash in the entry it
+     * returns, but the identifier regex `pairHits` runs over that entry still
+     * splits on the dash, the same two runs `"work item"` gives it.
      */
     it('matches a pair across two tokens separated by a space or a dash, in one entry', () => {
       expect(hitsOf('const s = "work item";\n', 'f.ts')).toContain('work-item')
       expect(hitsOf('const s = "Work items";\n', 'f.ts')).toContain('work-items')
       expect(hitsOf("type X = 'work-item';\n", 'f.ts')).toContain('work-item')
       expect(hitsOf('const F = () => <p>a work item</p>;\n', 'f.tsx')).toContain('work-item')
+      expect(hitsOf('.work-item { color: red; }\n', 'globals.css')).toContain('work-item')
     })
 
     /**
@@ -1445,7 +1447,7 @@ describe('the allowlist', () => {
    * only debt the allowlist may carry, and the equality in the case above
    * still catches every one of them if it drifts from `src/`.
    */
-  it('is empty, which is the acceptance and not a count that got small', async () => {
+  it('carries no four word or glued token, which is the acceptance and not a count that got small', async () => {
     const g = await glossary()
     const found = await violations(g)
     const retired = new Set(g.retired)

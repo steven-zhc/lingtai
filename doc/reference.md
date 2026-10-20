@@ -588,14 +588,14 @@ lets the log, the recipe and the board say where a pass is. What is left of
 `proposed` was called `diff` until
 [0018](decisions-archive/0018-the-proposed-point.md); stored events are upcast on read.
 
-## retired name — 4 words and a pair, and an allowlist of 32
+## retired name — 4 words and a pair, and an allowlist that is no longer empty
 
 **This is the one section that describes code the repository has moved away
 from.** Everything else here says what is true; this says what is no longer. The
 four words' allowlist is empty — `#247` closed it on 2026-09-27 — and the
 section stayed closed until `#450`'s epic named its own retired pair, *work* +
 *item*, and `#516` added the rule that catches it: the table below carries that
-debt now, 32 occurrences in 21 files, none of it the four words coming back. The
+debt now, none of it the four words coming back. The
 pipeline epic ([the-pipeline](design/the-pipeline.md)) renames the vocabulary
 over several tickets, and a rename spread over several tickets ends as two
 vocabularies for one thing unless something counts — which is
@@ -950,7 +950,7 @@ not, and a test that claimed to would be refusing the diff that fixes something.
 about the four words, not about the table reading empty forever.** `#246` and
 `#247` reached it between them, and a test with a lower bound under it would
 have redded the `build` gate on the diff that finished that job — which is why
-`is empty, which is the acceptance and not a count that got small`,
+`carries no four word or glued token, which is the acceptance and not a count that got small`,
 in `packages/domain/unit/retired-names.test.ts`, was narrowed by `#516` rather
 than kept as an equality against `{ occurrences: 0, files: 0 }`: it now asks
 whether the four words or a glued token are in the table, not whether the table
