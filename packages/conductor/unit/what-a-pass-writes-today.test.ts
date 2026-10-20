@@ -162,13 +162,12 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
     expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -176,10 +175,15 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
     ])
     expect(theHold(await theItem(store))).toBeNull()
 
@@ -240,13 +244,12 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
     expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -254,33 +257,41 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'FixRequested',
-      'FixApplied',
       'RunSpent',
       'RunProducedDiff',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
     ])
-    const fixApplied = theRun(store)!.find((e) => e.type === 'FixApplied')!
-    expect(fixApplied.data).toMatchObject({ round: 1, said: 'done' })
+    // **`FixApplied` is gone (#502): the fix round's own `StepEnded{step:
+    // 'implement', round: 1}` is the one event now.**
+    const fixApplied = theRun(store)!.find(
+      (e) =>
+        e.type === 'StepEnded' &&
+        (e.data as PayloadOf<'StepEnded'>).outcome.step === 'implement' &&
+        (e.data as PayloadOf<'StepEnded'>).outcome.round === 1,
+    )!
+    const fixRound = (fixApplied.data as PayloadOf<'StepEnded'>).outcome.round
+    expect(fixRound).toBe(1)
 
     // **#493**: one `RunSpent` per `implement` dispatch that returned an
     // outcome — the first visit's at round 0, the fix round's own at the
-    // round `FixApplied` itself carries.
+    // round the fix round's own `StepEnded` carries.
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
     const implementSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
     expect(implementSpent).toHaveLength(2)
@@ -292,29 +303,29 @@ describe('what a pass writes today, one row per ending (#461)', () => {
         _tag: 'Action',
         step: 'implement',
         name: 'write the change',
-        round: (fixApplied.data as { round: number }).round,
+        round: fixRound,
       },
     })
 
     // **#494**: the cold reviewer's own `RunSpent`, one per visit, and the
-    // second visit's round is the fix round `FixApplied` carries -- the same
-    // number `implement`'s own second `RunSpent` just asserted above.
+    // second visit's round is the fix round's own `StepEnded` carries -- the
+    // same number `implement`'s own second `RunSpent` just asserted above.
     const reviewSpent = spent.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
     expect(reviewSpent).toHaveLength(2)
     expect(reviewSpent[0]!.data).toMatchObject({ for: { _tag: 'Action', step: 'review', round: 0 } })
     expect(reviewSpent[1]!.data).toMatchObject({
-      for: { _tag: 'Action', step: 'review', round: (fixApplied.data as { round: number }).round },
+      for: { _tag: 'Action', step: 'review', round: fixRound },
     })
 
     const runId = theRun(store)![0]!.streamId
-    // `from` is `'proposed'`, not `'review'`: `review` always ends `passed`
-    // (`endingOf`), so its refusal is folded into the `proposed` visit with
-    // `reported: null`, and `routeProposal` writes `from: reported?.step ??
-    // 'proposed'` (`pass.ts:1173`).
+    // `from` is `'review'` since #502: `routesOf` reads it off
+    // `fromOf(offer.proposal)`, and `fromOf` answers `'review'` for a
+    // `ReviewFindings` proposal directly (`proposal.ts`) — there is no
+    // `reported`/`'proposed'` fallback left to prefer.
     expect(routesOf(await allEvents(store))).toEqual([
       {
         runId,
-        from: 'proposed',
+        from: 'review',
         decision: { _tag: 'Selected', candidate: 'fix-lines' },
         next: { _tag: 'FixRound', to: 'implement', round: 1 },
       },
@@ -387,21 +398,14 @@ runtime:
       detail:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'PassRestarted',
-      'TicketReleased',
-      'IssueUpdated',
-    ])
+    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketReleased', 'IssueUpdated'])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -409,11 +413,12 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
@@ -526,25 +531,23 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'PassRestarted',
       'TicketReleased',
       'IssueUpdated',
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     const runs = theRuns(store)
     expect(runs).toHaveLength(2)
     expect(typesOf(runs[1] ?? [])).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -552,15 +555,15 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -625,24 +628,23 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFinished',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
@@ -692,18 +694,17 @@ runtime:
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -711,17 +712,15 @@ runtime:
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'FixRequested',
-      'FixApplied',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'PassRouted',
       'RunRefsPublished',
@@ -809,18 +808,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -828,21 +826,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
-      // `PassRouted`, since `#472`: `CheckRefused` is one of the seven, so
-      // `nextOf` answers `Propose` and the check's own refusal takes a
-      // routing visit to `proposed` — with no `judge:` declared for
-      // `check-refused`, the router's floor holds it for a person exactly as
-      // the direct `WaitOnPerson{CheckRefused}` did before this ticket. The
-      // hold is still `CheckRed`, through `holdOf`'s `ProposedEscalated` arm
-      // calling the same `checkRedHold` builder.
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -891,18 +886,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -910,13 +904,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepFailed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -984,18 +982,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1003,13 +1000,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepFailed',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -1090,21 +1091,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepAsked',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
@@ -1153,18 +1151,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1172,10 +1169,13 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'ApprovalRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
@@ -1225,18 +1225,17 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
@@ -1244,15 +1243,15 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'RunProducedDiff',
       'RunProposedCompletion',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunSpent',
-      'StepFailed',
+      'StepEnded',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
-      'ApprovalRequested',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -1473,25 +1472,24 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFinished',
       'RunFailed',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'PassRouted',
       'RunRefsPublished',
       'RunProducedDiff',
@@ -1557,24 +1555,23 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(await theItem(store))).toEqual([
       'TicketClaimed',
       'IssueUpdated',
-      'WorkItemBlocked',
+      'WaitStarted',
       'IssueUpdated',
       'IssueUpdated',
     ])
     expect(typesOf(theRun(store))).toEqual([
-      'StepRequested',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
       'StepStarted',
-      'StepPassed',
-      'StepRequested',
+      'StepEnded',
+      'StepStarted',
+      'StepEnded',
       'StepStarted',
       'RunStarted',
       'StepsResolved',
       'RunFailed',
       'RunSpent',
-      'StepDidNotFinish',
+      'StepEnded',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',
@@ -1622,7 +1619,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result).toMatchObject({ ok: false, stage: 'claim', detail: 'excluded-label' })
     expect(await theItem(store)).toEqual([])
     expect(said).toEqual([])
-    expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    expect(typesOf(theRun(store))).toEqual([])
     // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
     // so its own three events — a real `pass-*` stream, the file header's own
     // point — fold to none at all.
@@ -1669,7 +1666,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect((result as { detail: string }).detail).toContain('held')
     expect((await store.read(itemId)).map((e) => e.type)).toEqual(['TicketClaimed'])
     expect(said).toEqual([])
-    expect(typesOf(theRun(store))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    expect(typesOf(theRun(store))).toEqual([])
   })
 
   /**
@@ -1713,7 +1710,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: false, stage: 'claim' })
     expect(typesOf(await flaky.read(itemId))).toEqual(['TicketReleased', 'IssueUpdated'])
-    expect(typesOf(theRun(flaky))).toEqual(['StepRequested', 'StepStarted', 'StepFailed'])
+    expect(typesOf(theRun(flaky))).toEqual([])
     // No `TicketClaimed` ever landed on this stream — the append that would
     // have written it is what threw.
     expect(releaseCauseOf(await flaky.read(itemId))).toEqual([{ _tag: 'ClaimUnconfirmed' }])
