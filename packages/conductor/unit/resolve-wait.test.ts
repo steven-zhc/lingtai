@@ -2,6 +2,9 @@
  * `resolveWait` (#465, 0118 §11): the sole writer of `WaitResolved`, checked
  * against `createMemoryEventStore()` — no filesystem, no network (0060 §1).
  */
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { type Action, type Envelope, reduceRun, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -447,5 +450,22 @@ describe('resolveWait', () => {
 
     const folded = reduceRun(await store.read('pass-12'))
     expect(refusingOn(folded, SHA)).toEqual([])
+  })
+
+  /**
+   * **The claim this file's own header makes, checked against the source
+   * tree rather than asserted in prose.** `approve.ts`, `ask.ts` and
+   * `close.ts` each wrote `WaitResolved` once before #465 — three separate
+   * append sites a fourth caller could drift from. A grep rather than an
+   * import list, so a thirteenth file added later and forgetting this rule
+   * fails here too.
+   */
+  it("is the only src file that writes type: 'WaitResolved'", () => {
+    const srcDir = fileURLToPath(new URL('../src', import.meta.url))
+    const offenders = readdirSync(srcDir)
+      .filter((name) => name.endsWith('.ts'))
+      .filter((name) => name !== 'resolve-wait.ts')
+      .filter((name) => readFileSync(`${srcDir}/${name}`, 'utf8').includes("type: 'WaitResolved'"))
+    expect(offenders).toEqual([])
   })
 })
