@@ -423,9 +423,13 @@ describe('a step that was configured is never skipped', () => {
     await runPass({ recipe, context, emit, bodies, actionsAt })
 
     expect(entered).toBe(1)
-    // Requested, started, passed — the pipeline's three, and nothing from the
-    // seven other steps whose lists were empty.
-    expect(seen).toHaveLength(3)
+    // **Only one action ever ran**, which is what this test is about — not
+    // how many events that bought. `StepStarted`/`StepEnded` are written once
+    // per *step* since #502, whichever steps the walk visits, not once per
+    // declared action: the eight steps `admit` through `merge` each write the
+    // pair whether or not anything was declared there, so sixteen events say
+    // the same thing `entered === 1` does, at a different level.
+    expect(seen.filter((e) => e.type === 'StepEnded')).toHaveLength(8)
   })
 })
 
@@ -786,7 +790,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // nothing but a person was ever on offer — and no ceiling stood between
     // the route taken and the one candidate the offer excluded (`RouteTaken`,
     // `#271`).
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'waiting',
@@ -819,7 +823,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // held with a person even though the round was there to spend and
     // `implement` was genuinely on offer (`#462`'s own fix round, finding 1:
     // this is not the same sentence a spent ceiling would have left).
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'implement',
         chose: 'waiting',
@@ -903,7 +907,7 @@ describe('every step that does not pass arrives at proposed', () => {
 
     // The route 0058 §3c names, and the step that asked is the step it went to:
     // nobody but `design` knows the question, so nothing else was on offer.
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       { from: 'design', chose: 'design', to: 'design', why: 'because a test said so', ceiling: null },
     ])
     // Null on the way through, and the question on the way back — which is the
@@ -1580,7 +1584,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
     // (0058 §3) — and the pass still bought a round on the first one's
     // findings and then landed.
     expect(result.steps.filter((s) => s.step === 'review').map((s) => s.ending.ending)).toEqual(['passed', 'passed'])
-    expect(result.routes).toEqual([
+    expect(result.routes).toMatchObject([
       {
         from: 'proposed',
         chose: 'implement',
@@ -1658,7 +1662,10 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
     // No judge declared, so the mechanical built-in answers `red` (`BUILT_IN_FOR`).
-    expect(result.routes).toEqual([
+    // `toMatchObject`, not `toEqual`: `RouteTaken` also carries the offer, the
+    // reply and the decision `PassRouted` stores (#502) — this pins the five
+    // derived fields this file is about, not the triple a reader replays them from.
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'implement',
@@ -1794,7 +1801,8 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
 
     expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
-    expect(result.routes).toEqual([
+    // `toMatchObject`, not `toEqual` — see the sibling pin above.
+    expect(result.routes).toMatchObject([
       { from: 'proposed', chose: 'claim', to: 'claim', why: 'because a test said so', ceiling: null },
     ])
     // The loop does not walk back to `claim` itself (that ran before this
@@ -1982,7 +1990,8 @@ describe('a visit is judged in the round the pass is in', () => {
       ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     })
 
-    expect(result.routes).toEqual([
+    // `toMatchObject`, not `toEqual` — see the sibling pin above.
+    expect(result.routes).toMatchObject([
       {
         from: 'build',
         chose: 'implement',
