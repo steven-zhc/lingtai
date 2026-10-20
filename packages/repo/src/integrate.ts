@@ -274,7 +274,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    * defect no handler sees leaves `Effect.runPromise` as a rejected promise.
    * Neither caller has a `try` around it — `approve.ts` has already spent the
    * approval by then — so an escaping defect is the #84 dead end: no
-   * `IntegrationRefused`, no `WorkItemBlocked`, no diagnosis, and a second
+   * `IntegrationRefused`, no `WaitStarted`, no diagnosis, and a second
    * attempt refused.
    *
    * So a defect becomes the refusal it always was. **And if recording that

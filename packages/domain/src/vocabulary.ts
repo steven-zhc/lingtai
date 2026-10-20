@@ -1,9 +1,10 @@
 /**
  * Leaf vocabulary: zod and nothing else.
  *
- * `events.ts` and `hold.ts` both need `Step`, `RefusalReason`, the run-failure
- * kinds and `Finding` — and `hold.ts` is built from `Hold` types that
- * `events.ts`'s own `WorkItemBlocked` carries (#445). A module that imports
+ * `events.ts` and `hold.ts` both needed `Step`, `RefusalReason`, the run-failure
+ * kinds and `Finding` — and `hold.ts` was built from `Hold` types that
+ * `events.ts`'s own `WorkItemBlocked` carried (#445); both `hold.ts` and
+ * `WorkItemBlocked` are gone with #502, but the split stays. A module that imports
  * `events.ts` and is imported back by it is an ESM cycle: Node throws a
  * `ReferenceError` on load rather than resolving the two in either order. So
  * the shared pieces live here, where nothing is imported but `zod`, and both

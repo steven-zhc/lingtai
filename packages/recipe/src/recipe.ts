@@ -488,8 +488,8 @@ function whyNotThatPlaceholder(each: string): string {
  * worktree** — the substitution `#310` buys, and the second half of 0066 §6.
  *
  * A fixed path keeps **one** document, the newest, under a name the log hands
- * out to every pass: ticket A's locator on `StepPassed.evidence` opens ticket
- * B's design a week later, with nothing anywhere saying so. So the path is
+ * out to every pass: ticket A's locator on a `StepEnded` action's `evidence`
+ * opens ticket B's design a week later, with nothing anywhere saying so. So the path is
  * per-ticket, and `{{issue}}` is how a recipe says which part of it.
  *
  * ## Why this runs when the action runs, and not when the recipe resolves
@@ -536,7 +536,7 @@ export function thePathForThisTicket(written: string, ref: string): ThePathForTh
  * A design was *bought, used once and could not be kept*
  * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §1): the document lived on `WroteTheDesign.design` until the pass ended, in
- * `implement`'s prompt for one dispatch, and on `StepPassed.evidence` uncapped.
+ * `implement`'s prompt for one dispatch, and on a `StepEnded` action's `evidence` uncapped.
  * This writes it to a path and returns that path as the **locator** — a string,
  * and nothing above this plugin reads it (§4,
  * [0069](../../../doc/decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)

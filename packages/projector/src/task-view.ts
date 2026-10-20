@@ -117,7 +117,7 @@ export const taskViewProjection: Projection = {
         note         text,
 
         -- The sha the open question is about, and null when nothing is being
-        -- asked. Written from ApprovalRequested.onSha, which is the value
+        -- asked. Written from a signoff action's onSha, which is the value
         -- approve() compares a caller's onSha against.
         --
         -- Not head_sha. That one is what the last run *produced*, and it is a
@@ -141,7 +141,8 @@ export const taskViewProjection: Projection = {
         -- exactly as it always did.
         needs        text,
 
-        -- { what, done, raw, recommendation }, as WorkItemBlocked.diagnosis.
+        -- { what, done, raw, recommendation }, as legacyColumns's
+        -- diagnosis, off WaitStarted.reason.
         -- One column rather than five, because it is written and cleared as one
         -- thing: a block either carries a diagnosis or does not, and half a
         -- diagnosis is not a state the card has to render.
@@ -157,19 +158,19 @@ export const taskViewProjection: Projection = {
         -- records and #84 must not reintroduce. A refused dispatch moves an
         -- item that was merely queued nowhere (#405: it was already queued,
         -- because the refusal is the pass's rather than this item's), and
-        -- never this column: only WorkItemUnblocked may answer a question
+        -- never this column: only WaitResolved may answer a question
         -- already standing on an item, so a refusal found one leaves it be.
         waiting      boolean not null default false,
 
         -- Whether that question was asked **before any run** — a
-        -- WorkItemBlocked with runId null, which only lingtai ask writes
-        -- (#147). It is what tells waiting-for-an-answer apart from
-        -- waiting-for-a-review: nothing has been produced, so there is nothing
-        -- to approve and the only move is to answer.
+        -- WaitStarted{reason: OwnQuestion}, with runId null, which only
+        -- lingtai ask writes (#147). It is what tells waiting-for-an-answer
+        -- apart from waiting-for-a-review: nothing has been produced, so there
+        -- is nothing to approve and the only move is to answer.
         asked        boolean not null default false,
 
         -- { question, answer, by } — the last block a person answered, and
-        -- what with. WorkItemUnblocked.note, which no column held before #147:
+        -- what with. WaitResolved.note, which no column held before #147:
         -- a rebuild could say what was asked and never what was decided.
         -- Assignment, not a list, so a replay lands on the same value; the
         -- whole history is the fold's (WorkItemState.answers). Kept across a
@@ -203,7 +204,7 @@ export const taskViewProjection: Projection = {
         -- acts on differently.
         --
         -- Assignment and not an increment, which is why there is no updated_seq
-        -- subtlety here: PassRestarted carries its own ordinal, so a replay
+        -- subtlety here: TicketReleased{cause: Restart} carries its own ordinal, so a replay
         -- lands on the same number. attempts has to increment because a claim
         -- carries none.
         --
@@ -354,7 +355,7 @@ export const taskViewProjection: Projection = {
           // than asking a person about this one ticket — so the item is still
           // what the queue should offer once the pause lifts.
           //
-          // **Conditional on the standing hold.** Only `WorkItemUnblocked` may
+          // **Conditional on the standing hold.** Only `WaitResolved` may
           // clear `waiting`, and only a person's answer may replace the
           // question `note` holds — a dispatch refused on top of a block
           // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
@@ -364,7 +365,7 @@ export const taskViewProjection: Projection = {
           // regardless put `task_view` and the domain fold
           // (`packages/domain/src/work-item.ts`, still `blocked`) in
           // disagreement forever, and destroyed the question before any
-          // `WorkItemUnblocked` had answered it.
+          // `WaitResolved` had answered it.
           //
           // An upsert, because this can be a task's first event: it refuses
           // before anything is claimed, and nothing is appended when an issue
@@ -976,7 +977,7 @@ export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldL
  * **`needs` is read, and that is what makes the third sentence true** (`#197`).
  * It used to hold by accident: the only blocks written `acknowledgement` — the
  * merge lane's own undirected reasons (`dirty-base` and the rest), the
- * out-of-turns one, a spent approval's — left no open `ApprovalRequested`, so
+ * out-of-turns one, a spent approval's — left no open `signoff`, so
  * `awaitingSha` was null and this returned null without ever asking. A fixer
  * killed mid-round now writes `acknowledgement` on a block that *does* hold a
  * sha, and the chip read *waiting for your review* — whose move is approve or
@@ -1023,10 +1024,11 @@ export function describeWait(
  * on every row would spend the reader's attention on an absence. That is the
  * same reading `[not offered]` earns by saying nothing (#100).
  *
- * **The other half of the sentence is the note.** `round 2 of 3` is what
- * `FixRequested` writes there, because depth is a fact about the pass in flight
+ * **The other half of the sentence is the note.** `fixing round 2` is what
+ * `RoundOpened` writes there (#502 dropped the denominator with `FixRequested`:
+ * there is no `of 3` any more), because depth is a fact about the pass in flight
  * and lives as long as that pass; this is a fact about the ticket and outlives
- * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
+ * every pass of it. Together they read *fixing round 2, restart 1 of 2*, which is
  * what 0040 §3 asks a card to be able to say.
  */
 export function describeArm(card: Pick<TaskCard, 'restarts'>, restartsOf: number | null): string | null {

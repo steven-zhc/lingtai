@@ -10,7 +10,7 @@
  * issue.**
  *
  * **It is a fold and nothing else.** No command writes here. An entry exists
- * because a passing gate's assessment carried a minor — read off `StepPassed`
+ * because a passing gate's assessment carried a minor — read off `StepEnded`
  * through `findingsRaisedOf` (`@lingtai/domain`, #481) — it is closed because
  * a `FindingAccepted` or `FindingDeclined` says so, and an accepted one names
  * its issue once `FindingProposed` does. Dropping the table and
@@ -107,7 +107,7 @@ export const backlogProjection: Projection = {
       )`)
     await ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
 
-    // Which ticket a run belongs to. `StepPassed` is on the run's stream and
+    // Which ticket a run belongs to. `StepEnded` is on the run's stream and
     // names only the run; `RunStarted` names the work item. Kept here rather
     // than read from `task_view_run`, because another projection's table is
     // at another projection's checkpoint.

@@ -90,7 +90,7 @@ export interface RestartRecord {
 /**
  * A block a person answered, and what they answered it with.
  *
- * `WorkItemUnblocked.note` reached no state before #147: a replay could say what
+ * `WaitResolved.note` reached no state before #147: a replay could say what
  * was asked and never what was decided. `question` and `runId` are the block's,
  * copied at the moment it was answered, because the lifecycle that held them is
  * replaced by the answer — and null only for an unblock the log holds without a
