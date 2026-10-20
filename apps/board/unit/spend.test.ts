@@ -233,6 +233,25 @@ describe('unknownBill and withNoSpendFallback', () => {
     const bills = billOf(rows)
     expect(withNoSpendFallback(bills, 2, rows)).toEqual(bills)
   })
+
+  /**
+   * `#509`'s own arithmetic: a continuation's `Action` rows carry the same
+   * `pass` as the attempt they continue, so `accounted` stays 1 across both
+   * approvals. The bug was `task_view.attempts` reading 2 for this ticket —
+   * fixed in the fold, not here — so this pins that the fallback would have
+   * added a phantom unknown run had the count stayed wrong.
+   */
+  it('adds no unknown run when attempts agrees with the one pass that reported, but does once attempts over-counts', () => {
+    const rows = [row({ pass: 'pass-A', round: 0, costUsd: 4.21 })]
+    const bills = billOf(rows)
+    expect(withNoSpendFallback(bills, 1, rows)).toEqual(bills)
+    expect(withNoSpendFallback(bills, 2, rows).Work).toEqual({
+      reportedCents: 421,
+      reportedRuns: 1,
+      estimates: [],
+      unknown: 1,
+    })
+  })
 })
 
 describe('spendChip', () => {

@@ -717,7 +717,11 @@ async function upsert(
     kind: string | null
     state: TaskState
     runId?: string
-    /** True when this event is a fresh attempt, so the backoff can count it. */
+    /**
+     * True when this event is a claim, so the hold state can be reset. Set on
+     * every claim including a continuation's; the SQL decides from the row's
+     * own run_id whether the claim is a fresh attempt.
+     */
     attempt?: boolean
   },
 ): Promise<void> {
@@ -735,7 +739,14 @@ async function upsert(
            kind = coalesce(excluded.kind, task_view.kind),
            state = excluded.state,
            run_id = coalesce(excluded.run_id, task_view.run_id),
-           attempts = task_view.attempts + $10::int,
+           -- A continuation claims the same run again (continueWorkItem,
+           -- claim.ts:150-152): the row's own run_id is still that run, so
+           -- this counts a fresh attempt only when the claim names a run the
+           -- row was not already on. task_view_run is not the "seen" test --
+           -- linkRun runs before this upsert in the same case, so it is
+           -- always already written by the time this runs.
+           attempts = task_view.attempts
+             + case when $10::int > 0 and task_view.run_id is distinct from excluded.run_id then 1 else 0 end,
            last_attempt_at = case when $10::int > 0 then excluded.updated_at else task_view.last_attempt_at end,
            note = case when $10::int > 0 then null else task_view.note end,
            -- A fresh attempt is nobody's question yet.

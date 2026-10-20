@@ -430,6 +430,51 @@ events.push(
   }),
 )
 
+// ---- row 28: #509 — a continuation re-claims the same run; attempts stays 1 ----
+// `continueWorkItem` appends an ordinary `TicketClaimed` onto a run already
+// holding the item (`claim.ts:150-152`), approved twice over. The fold must
+// not count either re-claim as a fresh attempt.
+const continuedStream = makeStream('ticket-pin-continued')
+const continuedRun = aRun('pass-pin-continued')
+events.push(...aClaim(continuedStream, continuedRun.runId))
+
+function aSignoffApproved(run: typeof continuedRun, question: string): Envelope[] {
+  const waitId = aWaitId()
+  return [
+    ...run.aStepEnded(
+      outcomeOf('merge', 0, [
+        {
+          plugin: 'human',
+          name: 'human',
+          onSha: SHA,
+          evidence: '',
+          yields: 'signoff',
+          result: { _tag: 'Completed', requested: { question } },
+        },
+      ]),
+    ),
+    ...aWait(
+      continuedStream,
+      { _tag: 'SignoffRequired', run: aRunRef(run.runId), step: 'merge', action: 'human', question },
+      waitId,
+    ),
+    ...aResolution(continuedStream, waitId, { _tag: 'Approve', onSha: SHA }),
+  ]
+}
+
+events.push(...aSignoffApproved(continuedRun, 'merge this?'))
+events.push(...aClaim(continuedStream, continuedRun.runId)) // the continuation's own claim
+events.push(...aSignoffApproved(continuedRun, 'merge this, again?'))
+events.push(...aClaim(continuedStream, continuedRun.runId)) // approved twice over
+const afterSecondContinuation = events.length
+
+// A claim after a release with a *different* run id must still count: this
+// pins that the new condition cannot pass by never counting at all.
+events.push(...aRelease(continuedStream, continuedRun.runId, 'restart 1 of 1', { _tag: 'Restart', restart: 1 }))
+const continuedRestartRunId = 'pass-pin-continued-restart'
+events.push(...aClaim(continuedStream, continuedRestartRunId))
+const afterContinuedRestart = events.length
+
 function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow | undefined {
   return rows.find((r) => r.task_id === taskId)
 }
@@ -490,6 +535,30 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     const granted = await fold(afterApprovalGranted)
     const row = taskOf(granted.tasks, 'ticket-pin-approval') as { verdicts: string }
     expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'pending' })
+  })
+
+  /**
+   * `#509`: `continueWorkItem` appends an ordinary `TicketClaimed` for the
+   * run the row is already on, approved twice over. `attempts` must stay 1
+   * across both, since the run id never changes — only a claim naming a
+   * different run id (the restart below) may move it.
+   */
+  it('does not count a continuation re-claiming the same run as a fresh attempt', async () => {
+    const { tasks } = await fold(afterSecondContinuation)
+    expect(taskOf(tasks, 'ticket-pin-continued')).toMatchObject({
+      attempts: 1,
+      run_id: continuedRun.runId,
+      state: 'running',
+    })
+  })
+
+  it('still counts a claim naming a new run after a release as a fresh attempt', async () => {
+    const { tasks } = await fold(afterContinuedRestart)
+    expect(taskOf(tasks, 'ticket-pin-continued')).toMatchObject({
+      attempts: 2,
+      run_id: continuedRestartRunId,
+      state: 'running',
+    })
   })
 
   /**
