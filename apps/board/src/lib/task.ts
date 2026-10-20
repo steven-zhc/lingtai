@@ -2,10 +2,10 @@ import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conducto
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import {
   agentBranchOf,
-  applyWorkItem,
+  applyTicket,
   boardFactOf,
   chatStream,
-  emptyWorkItem,
+  emptyTicket,
   reduceControl,
   CONTROL_STREAM,
   parseTicketStream,
@@ -14,7 +14,7 @@ import {
   type BoardFact,
   type Envelope,
   type WaitId,
-  type WorkItemLifecycle,
+  type TicketLifecycle,
 } from '@lingtai/domain'
 /**
  * One task, folded from its streams on demand.
@@ -367,7 +367,7 @@ export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'close
  * second is not an annotation on the first — *blocked* and *blocked for four
  * days* are different facts, and only the second is an emergency.
  *
- * Folded from the item's own stream through `applyWorkItem`, so the word here
+ * Folded from the item's own stream through `applyTicket`, so the word here
  * is the aggregate's and not a second opinion about it. What the log cannot
  * say — the diagnosis, the recommendation — is null until #83 writes one, and
  * the block renders without it.
@@ -463,7 +463,7 @@ export interface StandingView {
   /**
    * How many approaches this ticket has abandoned, and the ceiling of the
    * arm that bought it — `item.restarts.length` and the last record's `of`,
-   * read off `applyWorkItem` rather than refolded here (`#415`).
+   * read off `applyTicket` rather than refolded here (`#415`).
    *
    * The same two numbers `TaskCard.restarts`/`.restartsOf` carry, so the
    * page's own `held` line and the board's cannot word one ticket's budget
@@ -527,7 +527,7 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
 }
 
 /**
- * The five events that replace the lifecycle in `applyWorkItem`.
+ * The five events that replace the lifecycle in `applyTicket`.
  *
  * Listed rather than inferred, because *when the state began* is the second
  * half of this block and nothing else on the item's stream may move it: a
@@ -671,7 +671,7 @@ function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding |
   return null
 }
 
-function whoWaits(life: WorkItemLifecycle): string {
+function whoWaits(life: TicketLifecycle): string {
   switch (life.status) {
     case 'blocked':
       if (life.needsFrom === 'external') return 'waiting on something outside Lingtai'
@@ -701,10 +701,10 @@ function whoWaits(life: WorkItemLifecycle): string {
  * envelopes and nothing else.
  */
 export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
-  let item = emptyWorkItem
+  let item = emptyTicket
   let since = own[0]?.at ?? null
   for (const e of own) {
-    item = applyWorkItem(item, e)
+    item = applyTicket(item, e)
     if (LIFECYCLE_MOVES.has(e.type)) since = e.at
   }
 

@@ -11,7 +11,7 @@ import { approveHolding, type ApproveOptions } from '@lingtai/conductor/decide'
  * output the way `standing.tsx` reads it — sent through `approveHolding`,
  * the function `approveCard` calls underneath the lock.
  */
-import { type Action, reduceWorkItem, waitsOf, ticketStream } from '@lingtai/domain'
+import { type Action, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore, type MemoryEventStore } from '@lingtai/event-store/memory'
@@ -109,7 +109,7 @@ describe("the approved card's continue button", () => {
     expect(stale.detail).toContain(waitA)
     expect(stale.detail).toContain(waitB)
 
-    const after = reduceWorkItem(await store.read(ticketId))
+    const after = reduceTicket(await store.read(ticketId))
     expect(after.lifecycle).toMatchObject({ status: 'blocked', waitId: waitB })
     expect(waitsOf(await store.read(ticketId)).find((w) => w.waitId === waitB)?.resolution).toBeNull()
   })
