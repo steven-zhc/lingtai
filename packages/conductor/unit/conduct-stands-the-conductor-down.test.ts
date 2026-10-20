@@ -26,8 +26,7 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Hold } from '@lingtai/domain'
-import { legacyColumns } from '@lingtai/domain'
+import { legacyColumns, type PayloadOf } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -614,10 +613,10 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     const item = await store.read(`ticket-${PROJECT}-7`)
     const types = item.map((e) => e.type)
-    expect(types).toContain('WorkItemBlocked')
+    expect(types).toContain('WaitStarted')
     expect(types).not.toContain('TicketReleased')
 
-    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
+    const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as PayloadOf<'WaitStarted'>).reason)
     // Nothing is being asked of anybody's judgement about the diff: the
     // machinery broke and the log is asking for it to be acknowledged.
     expect(blocked.needs).toBe('acknowledgement')

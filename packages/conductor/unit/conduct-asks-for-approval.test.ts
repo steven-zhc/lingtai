@@ -2,26 +2,19 @@
  * **What the conductor asks a person, when nothing at the point asked for
  * them.**
  *
- * A plugin that wants a person emits its own `ApprovalRequested` through the
- * pipeline; a plugin that *refused* emits a `StepFailed` and nothing else, so
- * the request that reaches a person over a refusal is `conduct.ts`'s own — and
- * the two events land in the same place.
- *
- * `task-view.ts` folds both through one `setStep`, keyed
- * `${runId}:${gate}:${action}`, with `VERDICT.StepFailed = "failed"` and
- * `VERDICT.ApprovalRequested = "pending"`. **So the name on the request is not
- * decoration.** Named after the action that refused, the request overwrites
- * that action's verdict with `pending`: the card's `failed` count drops to zero
- * and the board shows a change that was refused as merely waiting, on every
- * projection and every rebuild. The old engine named its request `unfixed` or
- * `disagreement` for precisely this reason and wrote the collision out in a
- * comment at the append; the name is what survived the engine swap badly.
+ * `ApprovalRequested` is gone (#502): a refusal a person must see is carried
+ * on the single `WaitStarted` `conduct.ts` appends for every blocked ending,
+ * named for the reason itself (`CheckRefused`) rather than for a second,
+ * run-level event that used to risk colliding with the step's own
+ * `StepEnded` — `task_view`'s old `${runId}:${gate}:${action}` key could be
+ * overwritten by a request sharing it, which this shape has no way to do: one
+ * event, on the ticket's own stream.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import type { Hold } from '@lingtai/domain'
-import { legacyColumns } from '@lingtai/domain'
+import { legacyColumns, type Action, type PayloadOf } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -73,10 +66,13 @@ describe('the approval a refusal reaches a person with', () => {
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
 
-    const failed = run.find((e) => e.type === 'StepFailed')!
-    expect(failed.data).toMatchObject({ step: 'proposed', action: 'review' })
+    const ended = run.find((e) => e.type === 'StepEnded')!
+    const outcome = (ended.data as PayloadOf<'StepEnded'>).outcome
+    expect(outcome.step).toBe('proposed')
+    const review = outcome.actions.find((a: Action) => a.name === 'review')!
+    expect(review.result._tag).toBe('Completed')
+    expect((review.result as { assessment: { verdict: string } }).assessment.verdict).toBe('refused')
 
-    const asked = run.find((e) => e.type === 'ApprovalRequested')!
     /**
      * **Bound to what the publish put on origin**, which is what makes the
      * question answerable: `approve()` compares `onSha` to what origin has for the
@@ -84,33 +80,22 @@ describe('the approval a refusal reaches a person with', () => {
      * `publishWhatIsCommitted` pushed, and it is what `conduct.ts` binds to —
      * never `headReached`, which is the last head a *visit* reported.
      */
-    expect(asked.data).toMatchObject({
-      onSha: 'b'.repeat(40),
-      artifacts: [`agent/7@${'b'.repeat(40)}`],
-    })
-    expect((run.find((e) => e.type === 'RunProducedDiff')!.data as { headSha: string }).headSha).toBe(
-      (asked.data as { onSha: string }).onSha,
-    )
-    const key = (data: unknown) => {
-      const d = data as { step: string; action: string }
-      return `${d.step}:${d.action}`
-    }
-    // The whole of it: one key per verdict, so the `pending` cannot land on the
-    // `failed`.
-    expect(key(asked.data)).not.toBe(key(failed.data))
-    expect((asked.data as { action: string }).action).toBe('unfixed')
+    expect(review.onSha).toBe('b'.repeat(40))
+    expect((run.find((e) => e.type === 'RunProducedDiff')!.data as { headSha: string }).headSha).toBe(review.onSha)
 
-    // **And what the key stops carrying travels in the question**, which is
-    // what a person reads — the pointer to the action, and the step it ran at.
-    const question = (asked.data as { question: string }).question
-    expect(question).toContain('review')
-    expect(question).toContain('proposed')
+    // **One event, on the ticket's own stream, named for the reason itself**
+    // — there is no second, run-level request for it to collide with.
+    const started = item.find((e) => e.type === 'WaitStarted')!
+    const reason = (started.data as PayloadOf<'WaitStarted'>).reason as Extract<WaitReason, { _tag: 'CheckRefused' }>
+    expect(reason._tag).toBe('CheckRefused')
+    expect(reason.step).toBe('proposed')
+    expect(reason.action).toBe('review')
 
     // The card's own sentence still names the refusal, and this is a diff two
     // agents disagreed about rather than a green run — so no move is
     // recommended over it.
-    const blocked = legacyColumns((item.find((e) => e.type === 'WorkItemBlocked')!.data as { hold: Hold }).hold)
-    expect(blocked.needs).toBe('acknowledgement')
-    expect(blocked.diagnosis?.recommendation).toBeNull()
+    const columns = legacyColumns(reason)
+    expect(columns.needs).toBe('acknowledgement')
+    expect(columns.diagnosis?.recommendation).toBeNull()
   })
 })
