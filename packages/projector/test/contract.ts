@@ -1,5 +1,5 @@
 import type { Envelope, Finding, PayloadOf, ToAppend } from '@lingtai/domain'
-import { aRun, aWait } from '@lingtai/domain/test/events'
+import { aRun, aRunFailure, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
 /**
@@ -176,32 +176,16 @@ const runAwaitingInput = (prompt: string) => ({
 })
 
 /**
- * `RunFailed`, built through `aStepEnded`'s own `contextFor` — the same path
- * a round-0 commit action interrupted with no head writes it on a real pass
- * (`read-model.ts`'s `commitContextFor`). 0120 retires it, so this goes
- * through the builder rather than the wire shape directly (#480).
+ * `RunFailed{kind, detail}` — still in `EVENTS`, still appended by the
+ * conductor and still folded into the card's note (`read-model.ts`'s
+ * `cardFactOf`), so built through `aRunFailure` rather than the wire shape
+ * directly (#480).
  */
 const runFailed = (
   runId: string,
-  cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
+  kind: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
   detail: string,
-): ToAppend[] =>
-  aRun(runId)
-    .aStepEnded({
-      step: 'implement',
-      round: 0,
-      actions: [
-        {
-          plugin: 'agent',
-          name: 'write the change',
-          onSha: 'a'.repeat(40),
-          evidence: detail,
-          yields: 'commit',
-          result: { _tag: 'Interrupted', cause, head: null },
-        },
-      ],
-    })
-    .map(toAppend)
+): ToAppend[] => aRunFailure(aRun(runId), kind, detail).map(toAppend)
 
 /**
  * `WorkItemBlocked{hold: Asked}`, built through `aWait` — 0120 retires both,

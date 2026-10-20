@@ -5,7 +5,16 @@
  * have, with no translation layer in between (the adapters these builders
  * used to go through, `eventOf`/`holdOf`, are deleted with the switch).
  */
-import type { Action, Envelope, RefusalReason, ReleaseCause, Step, StepOutcome, WaitId } from '../src/index.ts'
+import type {
+  Action,
+  Envelope,
+  RefusalReason,
+  ReleaseCause,
+  RunFailureKind,
+  Step,
+  StepOutcome,
+  WaitId,
+} from '../src/index.ts'
 import { routeNext, STEPS, type RouteOffer, type JudgeReply, type RouteDecision } from '../src/index.ts'
 import type { RunRef } from '../src/wait.ts'
 import type { Resolution, WaitReason } from '../src/wait.ts'
@@ -106,6 +115,11 @@ export function aRelease(
   cause: ReleaseCause | null = null,
 ): Envelope[] {
   return [itemStream('TicketReleased', { runId, reason, cause })]
+}
+
+/** `RunFailed{kind, detail}` — the event the conductor appends when a run stops without reaching an outcome. */
+export function aRunFailure(run: RunFixture, kind: RunFailureKind, detail: string): Envelope[] {
+  return [run.event('RunFailed', { kind, detail })]
 }
 
 /** `TicketClaimed` — the claim `releaseCauseOf` looks for since the item's last release or landing. */
