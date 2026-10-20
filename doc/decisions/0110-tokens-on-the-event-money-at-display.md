@@ -176,6 +176,13 @@ about something else are the three whose spend is not recorded.
    while an action's `name` is unique within its step. A wait that a ceiling
    stopped finds its run's spend the same way, through its `run`.
 
+   **A declared `name` may not contain `:`** (`#503`): `run.steps` and
+   `task_view` key an action by this same `step`/`name` pair, and the
+   conductor appends its own signoff — `conductor:judge`/`conductor:unfixed`
+   — into that key space after the stopping step's own `StepEnded`. `:` is
+   reserved so `conductor:` is a namespace a declared name can never collide
+   with; the recipe validator refuses any declared name that contains one.
+
 10. **The six paid calls** are every place that calls `Runtime.run`:
 
     | Run               | Where                                                            | `for`                 |
