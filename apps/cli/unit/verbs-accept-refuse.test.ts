@@ -30,7 +30,7 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * CLI omits and why that changes what the call accepts.
  *
  * Builders from `@lingtai/domain/test/events`, assertions through
- * `waitsOf`/`reduceWorkItem(...)`, never through a type name — the same rule
+ * `waitsOf`/`reduceTicket(...)`, never through a type name — the same rule
  * `wait-handlers-answer-as-today.test.ts` states for itself.
  *
  * **Two things this file does not reach:**
@@ -48,7 +48,7 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * `recipe` refusal line this header used to carve out no longer exists to
  * reach or not reach.
  */
-import { type Envelope, reduceWorkItem, waitsOf, ticketStream } from '@lingtai/domain'
+import { type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWaitId, aWithdrawal } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
@@ -108,7 +108,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
 
     expect(result.ok).toBe(true)
     expect(result.detail).toContain('withdrawn')
-    const item = reduceWorkItem(await store.read(ticketId))
+    const item = reduceTicket(await store.read(ticketId))
     expect(item.lifecycle.status).toBe('backlog')
     expect(item.answers).toEqual([])
   })
@@ -126,7 +126,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
 
     expect(result.ok).toBe(true)
     expect(result.detail).not.toContain('withdrawn')
-    const answers = reduceWorkItem(await store.read(ticketId)).answers
+    const answers = reduceTicket(await store.read(ticketId)).answers
     expect(answers).toEqual([
       {
         question: 'the `implement` step asked: which helper?',
@@ -424,6 +424,6 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
     // resolve and nothing is appended for it (`resolveEndActions`, `actions.
     // length === 0`) — read through the count rather than a type name.
     expect(events.length).toBe(1)
-    expect(reduceWorkItem(events).lifecycle.status).toBe('closed')
+    expect(reduceTicket(events).lifecycle.status).toBe('closed')
   })
 })

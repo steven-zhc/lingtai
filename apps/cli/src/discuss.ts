@@ -58,7 +58,7 @@ import {
   chatStream,
   parseTicketStream,
   reduceControl,
-  reduceWorkItem,
+  reduceTicket,
   CONTROL_STREAM,
   type DiscussionRequest,
   type Envelope,
@@ -169,7 +169,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   const parsed = parseTicketStream(request.ticketId)
   const project = parsed?.project ?? ''
   const own = await eventStore.read(request.ticketId)
-  const item = reduceWorkItem(own)
+  const item = reduceTicket(own)
 
   const runIds = [...item.runs]
   const streams = await Promise.all(runIds.map((id) => eventStore.read(id)))
