@@ -87,7 +87,7 @@ export function conductorWorker(): string {
  * looking at the same queue, and a caller that has to catch an exception to
  * discover it will eventually forget to.
  */
-export async function claimWorkItem(ticketId: string, options: ClaimOptions): Promise<ClaimResult> {
+export async function claimTicket(ticketId: string, options: ClaimOptions): Promise<ClaimResult> {
   const store = options.store ?? eventStore
   const worker = options.worker ?? conductorWorker()
 
@@ -141,8 +141,8 @@ export type ContinueRefusal =
 export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: ContinueRefusal }
 
 /**
- * Takes a run back up for its continuation (#465, 0118 §11) — `claimWorkItem`'s
- * sibling, for the one state `claimWorkItem` itself refuses: `approved`,
+ * Takes a run back up for its continuation (#465, 0118 §11) — `claimTicket`'s
+ * sibling, for the one state `claimTicket` itself refuses: `approved`,
  * never `backlog`.
  *
  * **The same `TicketClaimed`, naming the same `runId` the approval was
@@ -155,7 +155,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  * off the state this call itself fetched, for a caller that wants to say
  * *why* before it ever reaches the store.
  */
-export async function continueWorkItem(
+export async function continueTicket(
   ticketId: string,
   runId: string,
   options: { worker?: string; store?: EventStore } = {},
@@ -196,7 +196,7 @@ export async function continueWorkItem(
  * choice 4) — and `{_tag: 'Restart', restart}` for `conduct.ts`'s own restart,
  * which calls this directly rather than through a second function.
  */
-export async function releaseWorkItem(
+export async function releaseTicket(
   ticketId: string,
   runId: string,
   reason: string,

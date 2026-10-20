@@ -16,7 +16,7 @@ import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { claimWorkItem, releaseWorkItem } from '../src/index.ts'
+import { claimTicket, releaseTicket } from '../src/index.ts'
 
 const created = new Set<string>()
 let a: Db
@@ -72,10 +72,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     }
   })
 
-  describe('claimWorkItem', () => {
+  describe('claimTicket', () => {
     it('takes an unclaimed item and records who took it', async () => {
       const id = await discovered()
-      const result = await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
+      const result = await claimTicket(id, { runId: 'pass-a', worker: 'w1', store })
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
@@ -86,9 +86,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
     it('refuses an item someone else holds, naming who', async () => {
       const id = await discovered()
-      await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
+      await claimTicket(id, { runId: 'pass-a', worker: 'w1', store })
 
-      const second = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
+      const second = await claimTicket(id, { runId: 'pass-b', worker: 'w2', store })
       expect(second.ok).toBe(false)
       if (second.ok) return
       expect(second.refusal).toEqual({ reason: 'held', by: 'w1', runId: 'pass-a' })
@@ -103,10 +103,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
      */
     it('stays held, with no elapsed time that would take it back', async () => {
       const id = await discovered()
-      const held = await claimWorkItem(id, { runId: 'pass-dead', worker: 'killed', store })
+      const held = await claimTicket(id, { runId: 'pass-dead', worker: 'killed', store })
       expect(held.ok).toBe(true)
 
-      const next = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
+      const next = await claimTicket(id, { runId: 'pass-b', worker: 'w2', store })
 
       expect(next.ok).toBe(false)
       if (next.ok) return
@@ -115,10 +115,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
     it('a released item is claimable again, and the release is on the record', async () => {
       const id = await discovered()
-      await claimWorkItem(id, { runId: 'pass-a', worker: 'w1', store })
-      await releaseWorkItem(id, 'pass-a', 'gate failed', store)
+      await claimTicket(id, { runId: 'pass-a', worker: 'w1', store })
+      await releaseTicket(id, 'pass-a', 'gate failed', store)
 
-      const again = await claimWorkItem(id, { runId: 'pass-b', worker: 'w2', store })
+      const again = await claimTicket(id, { runId: 'pass-b', worker: 'w2', store })
       expect(again.ok).toBe(true)
 
       const types = (await store.read(id)).map((e) => e.type)
@@ -131,7 +131,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
         { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc', base: 'develop' } },
       ])
 
-      const result = await claimWorkItem(id, { runId: 'pass-a', store })
+      const result = await claimTicket(id, { runId: 'pass-a', store })
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.refusal).toEqual({ reason: 'not-claimable', status: 'landed' })
@@ -147,8 +147,8 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
         const id = await discovered()
 
         const [first, second] = await Promise.all([
-          claimWorkItem(id, { runId: `pass-a${round}`, worker: 'w1', store }),
-          claimWorkItem(id, { runId: `pass-b${round}`, worker: 'w2', store: rival }),
+          claimTicket(id, { runId: `pass-a${round}`, worker: 'w1', store }),
+          claimTicket(id, { runId: `pass-b${round}`, worker: 'w2', store: rival }),
         ])
 
         const winners = [first, second].filter((r) => r.ok)

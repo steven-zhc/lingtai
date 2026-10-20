@@ -522,7 +522,7 @@ export interface PassPorts {
    * (`conduct.ts`'s `endPlan`).
    *
    * Where the ending is an append the caller does not own — a release, which
-   * `releaseWorkItem` reads and versions for itself — the two cannot be one
+   * `releaseTicket` reads and versions for itself — the two cannot be one
    * transaction and the *order* carries the rule instead: the outcome first, the
    * resolution after it. That is what `appendEndActions` is for, it being this
    * module's entry point *for the one caller that cannot batch*.
@@ -623,7 +623,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * one `conduct.ts`'s `defaultsAt` supplies where a recipe declares nothing —
      * and the loop has run it by the time this is called, so a second take written
      * here would be the reimplementation 0061 §3 exists to prevent. At `claim` it
-     * would be worse than a duplicate: a second `claimWorkItem` at an expected
+     * would be worse than a duplicate: a second `claimTicket` at an expected
      * version the first one moved is a lost race against this same run.
      *
      * **It cannot refuse, and that is the pipeline's rule rather than this body's**

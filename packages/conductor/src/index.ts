@@ -1,7 +1,7 @@
 export {
-  claimWorkItem,
+  claimTicket,
   conductorWorker,
-  releaseWorkItem,
+  releaseTicket,
   type Claim,
   type ClaimOptions,
   type ClaimRefusal,

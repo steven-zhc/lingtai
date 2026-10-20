@@ -139,7 +139,7 @@ describe('priorAttempts', () => {
 
   /**
    * A second claim by one run is not a second attempt, any more than a
-   * second run. **This is `continueWorkItem`'s own re-claim** (`claim.ts`,
+   * second run. **This is `continueTicket`'s own re-claim** (`claim.ts`,
    * #465) — every continuation appends a second `TicketClaimed` naming the
    * run already in `runs`, and `armFor` (below) depends on this guard
    * de-duplicating it so a continuation counts as the attempt it already

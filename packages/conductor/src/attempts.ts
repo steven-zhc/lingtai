@@ -173,7 +173,7 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         const d = event.data as PayloadOf<'TicketClaimed'>
         // A second claim by the same run is the same attempt claiming again,
         // not a new one — the same reason `TicketState.runs` will not list it
-        // twice. `continueWorkItem` (`claim.ts`) writes exactly this, on every
+        // twice. `continueTicket` (`claim.ts`) writes exactly this, on every
         // continuation (#465): its own re-claim lands on the log as a second
         // `TicketClaimed` naming the run already in `runs`, and `armFor`
         // (below) depends on this guard de-duplicating it — a continuation's
@@ -218,7 +218,7 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
  *
  * `continuingRunId` is `null` for an ordinary claim, which always uses
  * `nextAttempt`. A continuation names a run `priorAttempts(before)` cannot
- * find only when `continueWorkItem`'s own preconditions were not checked
+ * find only when `continueTicket`'s own preconditions were not checked
  * against this same `before` — a caller's bug, not a state this function
  * should paper over.
  */
