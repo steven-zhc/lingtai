@@ -11,8 +11,8 @@
  * `evidence` carries in place of the document.
  *
  * **It does not take the document off the log, and 0066 §1 is not closed here.**
- * The drafter is a second action at the same step with a `StepPassed` of its
- * own, and `createDraftAction` still writes the document into that one
+ * The drafter is a second action at the same step with its own entry on
+ * `StepEnded`, and `createDraftAction` still writes the document into that one
  * (`agent-action.ts`, through `boundedEvidence`). §1's *uncapped* has been
  * answered since 0066 §8 — `command.ts`'s 60 lines and 8,000 bytes, pinned by
  * `agent-action.test.ts`'s *clips a design document, and leaves the document
@@ -63,7 +63,7 @@
  * `{{issue}}` in `spec.path` becomes the ticket's ref before anything is
  * written (`#310`). A fixed path keeps **one** document — the newest — under a
  * name the log handed to every pass, so the locator this action put on ticket
- * A's `StepPassed` opens ticket B's design a week later, with nothing anywhere
+ * A's `StepEnded` opens ticket B's design a week later, with nothing anywhere
  * saying so. That is 0066 §1's *bought, used once, and cannot be kept* under a
  * new spelling, and it is the failure this substitution closes.
  *

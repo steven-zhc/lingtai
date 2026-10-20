@@ -209,7 +209,7 @@ export function fixStopOf(failure: { kind: RunFailureKind; detail: string }): Fi
 
 /**
  * What the block this ending produces asks of a person —
- * `WorkItemBlocked.needs`.
+ * `legacyColumns`'s `needs`, off a `WaitReason`.
  *
  * **Beside the headlines, because it is the line printed directly above one**
  * (`#197`). `describeHold` emits the `needs` line first and the diagnosis's
@@ -242,7 +242,8 @@ export function stopNeeds(stop: FixStop): 'judgement' | 'acknowledgement' {
 }
 
 /**
- * What to call a findings-shaped block on the log — `ApprovalRequested.action`.
+ * What to call a findings-shaped block on the log — `ApprovalRequested.action`,
+ * before #502 deleted that event and left the name behind.
  *
  * **The name outlives every sentence** (`#197`). The headline is a card's, the
  * question is a notification's, and both are read once; this is the key the
@@ -830,7 +831,8 @@ export function diagnoseDisagreement(input: {
    * tested is that the arms disagree about *different* things: arm A's third
    * refusal in experiment 011 was a deadlock round 2 had created, and a person
    * shown only the last arm cannot see that. They live on run streams no later
-   * pass reads, which is why `PassRestarted` carries them.
+   * pass reads, which is why this field is handed in rather than read off
+   * `TicketReleased` — no event carries them forward any more (#502).
    */
   earlier?: readonly RestartArm[]
 }): BlockDiagnosis {
@@ -1464,8 +1466,8 @@ export function disagreementQuestion(input: {
  * be merging over.
  *
  * **The third sentence, and the only one of the three that is kept for ever**
- * (`#197`). `ApprovalRequested.question` is written to the log and read back by
- * every later pass, by `lingtai status` and by the approval prompt itself, and
+ * (`#197`). A `signoff`'s `Completed{requested}` question is written to the log
+ * and read back by every later pass, by `lingtai status` and by the approval prompt itself, and
  * it opened with *Two agents disagreed* whatever ended the pass — so `#187`'s
  * rate limit is on that stream, under that sentence, permanently. The headline
  * and the block's one line are both `stop`'s now; a record that still said

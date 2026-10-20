@@ -23,7 +23,7 @@
  *
  * The second rule needs somebody to say which project an event is *about*, and
  * three of the four types Lingtai's own recipe names cannot answer that from
- * their own bytes: `ApprovalRequested` and `RunAwaitingInput` are on a run
+ * their own bytes: `StepEnded` and `RunAwaitingInput` are on a run
  * stream, `IntegrationRefused` on an integration lane. So `subject` is asked,
  * and it is a callback for the reason `ActionDeps.env` is one — only the caller
  * has the log to read, and this package deliberately has no store. A `subject`

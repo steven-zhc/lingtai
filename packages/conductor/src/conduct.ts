@@ -408,7 +408,7 @@ export interface RunOnceOptions {
    * recorded, and asks a person for the merge.
    *
    * This is not a separate mechanism from the human gate (#20). It requests the
-   * same `ApprovalRequested` a `human:` action at `merge` requests, which is
+   * same `signoff` a `human:` action at `merge` requests, which is
    * what keeps it from becoming a second vocabulary for one idea. A recipe that
    * declares nothing at `merge` still holds under the flag; one that declares a
    * person there holds whether or not the flag was passed. The hold is
@@ -543,7 +543,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * are answered for. That was true of every append while the old engine made
      * them, and the swap to `pass.ts` quietly made it false for the ones made
      * from inside the walk — `emit`'s verdicts, `dispatch`'s `RunStarted`, a
-     * round's `FixRequested`. `runStep` catches whatever a step throws and
+     * round's `PassRouted`. `runStep` catches whatever a step throws and
      * reports it as that step having *did-not-finish: threw* (`pass.ts`), so a
      * dropped Postgres connection — the disconnect CLAUDE.md documents against
      * `#157` — came back as `blocked` with `needs: "acknowledgement"` and a
@@ -1012,7 +1012,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * read the way it states itself — *batching is the caller's because the
      * ending is the caller's*. It used to append on the spot, and that put the
      * resolution on the item's stream **before** the `TicketLanded` or
-     * `WorkItemBlocked` it is about: the exact split `resolveEndActions` says is
+     * `WaitStarted` it is about: the exact split `resolveEndActions` says is
      * impossible — *one transaction, so the outcome and its resolution cannot
      * come apart* (`end-step.ts`).
      *
@@ -1454,10 +1454,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * this head with no arm anywhere, which is what the end-of-pass publish
        * asks about before it decides it has nothing to do.
        *
-       * It exists because `PassRestarted` makes a claim about this ref and
-       * nothing else could check it. That event names `arm` as where the
-       * abandoned approach is fetchable, `attempts.ts` tells the next agent to
-       * `git fetch origin <arm>`, and appending it consumes one of
+       * It exists because `attempts.ts`'s `armOf` derives the abandoned arm's
+       * ref name live, against what origin actually has, and nothing else
+       * here could say whether a push claimed by a restart actually landed.
+       * `attempts.ts` tells the next agent to `git fetch origin <arm>`, and
+       * appending `TicketReleased{cause: Restart}` consumes one of
        * `ceilings.restartsLeft` — so a restart recorded over a publish that was
        * refused spends a restart, points the next attempt at a ref that has
        * never existed, and loses the commits with the worktree. The old engine
@@ -1784,7 +1785,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * row naming an `arm` that is on no remote. The person requeues, the
            * next attempt's `--force-with-lease` matches and overwrites
            * `agent/<n>` from a fresh base, and the commits the live
-           * `ApprovalRequested` named are unreachable — which is the loss the
+           * `signoff` named are unreachable — which is the loss the
            * arm ref exists to prevent, under a log row asserting it was
            * prevented.
            *
@@ -2356,7 +2357,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * outcome and its resolution cannot come apart*, and `PassPorts.recordEnd`
        * says whose transaction it is: *batching is the caller's because the ending
        * is the caller's*. The pass runs `end` before this file writes
-       * `TicketLanded` or `WorkItemBlocked`, so an append here is the resolution
+       * `TicketLanded` or `WaitStarted`, so an append here is the resolution
        * landing first and a dropped connection leaving it there alone. See
        * `endPlan` for what that cost.
        *
@@ -2681,7 +2682,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * **`--no-merge`, as the `human:` action it always was.**
        *
        * This is not a second mechanism (#20). It asks for the same
-       * `ApprovalRequested` a declared `human:` at `merge` asks for, and the way to
+       * `signoff` a declared `human:` at `merge` asks for, and the way to
        * ask for it is to be one: `runActionPipeline` emits the event for a
        * `needs-approval` verdict, `endingOf` reads it as `held`, the pass stops,
        * and `outcomeOf` says `blocked`. A recipe that declares a person there holds
@@ -3466,8 +3467,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
        * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`.
-       * Left to fall through, a blocked branch appends `ApprovalRequested` to a
-       * run stream with no `RunStarted`, appends `WorkItemBlocked` to
+       * Left to fall through, a blocked branch appends a `signoff`'s request to a
+       * run stream with no `RunStarted`, appends `WaitStarted` to
        * `ticketId`, comments **Lingtai is waiting on you** and sets
        * `lingtai:waiting` — for an item this pass never claimed.
        *
@@ -3702,7 +3703,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * shape, so there is nothing left for this file to rebuild: `holdOf`,
        * `holdOfPass` and `hold-of.ts` are gone, and so is the patching they
        * did — `ceilingHit`'s turns/dollars and `declined`'s `said` are spend,
-       * which lives on `RunSpent`/`FixApplied` and not on the wait (0110), and
+       * which lives on `RunSpent` alone and not on the wait (0110), and
        * `MergeRefused`'s `paths`/`baseSha`/`headSha` go with `IntegrationRefused`'s
        * own fields, which 0120 drops in favour of the merge action's own
        * `Conflicted` result. `legacyColumns` turns the reason back into the
@@ -3867,7 +3868,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
          * an agent stopped at `runtime.limits.turns` having committed twice — and
-         * `admit`'s is a clone that did not finish. Asked there, `ApprovalRequested`
+         * `admit`'s is a clone that did not finish. Asked there, a `signoff`'s request
          * sets `task_view.awaitingSha`, `standing.tsx` draws **Approve**, and
          * `refusingOn` (`approve.ts`) finds nothing to be refusing — the pass stopped
          * at `implement`, so `build` and `review` never ran and left no row — so one

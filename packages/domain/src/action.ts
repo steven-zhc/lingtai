@@ -221,8 +221,7 @@ export type StepOutcome = z.infer<typeof StepOutcome>
  * Whether an action cleared, derived from its yield and result alone (0120
  * §1's *Cleared when* table) — never stored. No `default`: with `strict` on,
  * a new `yields` or result `_tag` makes this non-exhaustive and
- * `pnpm typecheck` goes red rather than silently falling through (the same
- * mechanism `moves.ts`'s `allowedMoves` relies on).
+ * `pnpm typecheck` goes red rather than silently falling through.
  */
 export function cleared(action: Action): boolean {
   switch (action.yields) {

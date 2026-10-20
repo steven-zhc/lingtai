@@ -347,7 +347,8 @@ function requeuedNeverStarted(scope: 'conductor' | 'work-item'): NextOfResult {
  * also yields `commit` — it commits what the agent left behind — but its
  * `evidence` is the command's own output, never the agent's words, and
  * `said` is specifically the agent's last words (`hold.ts`'s `Declined`,
- * `events.ts`'s `FixApplied`). Skipping it is what keeps a kept run's
+ * `events.ts`'s `FixApplied` — both gone with #502, but the name stayed).
+ * Skipping it is what keeps a kept run's
  * `"nothing to commit"` from overwriting what the fixer actually said.
  */
 function lastCommitEvidence(outcome: StepOutcome): string | null {

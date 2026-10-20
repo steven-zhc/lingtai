@@ -371,7 +371,7 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
  * anti-joins that return only the offending rows, and the reason they are
  * translated rather than replaced by a fold over `readAll` is the gate audit:
  * it compares fourteen event types' whole history against a plan, and
- * `StepPassed` carries an agent's entire review output. Reading those rows out
+ * `StepEnded` carries an agent's entire review output. Reading those rows out
  * to compare them here would transfer and validate tens of megabytes to produce
  * an empty list.
  *

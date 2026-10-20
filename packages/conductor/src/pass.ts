@@ -974,7 +974,7 @@ export interface PassOver {
    *
    * **Still here though `end` carries the terminal now**, because `end` alone
    * is `landed`/`blocked`/`failed` and the sentence a person or a judge reads
-   * is worded from the step and the ending, not from the tag: `ApprovalRequested`,
+   * is worded from the step and the ending, not from the tag: a `signoff`'s request,
    * `holdFor`'s branches and the stand-down all read `stopped` rather than
    * `end`. Null is a pass that got through, or one the router sent to a person
    * on the way through with nothing of its own to report — `build` and `review`

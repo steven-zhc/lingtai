@@ -166,7 +166,7 @@ export type LabelState = (typeof LABEL_STATES)[number]
  * `parseWorkItemStream` exact makes an integration stream a guess.
  *
  * **Null is not "no project", it is "not from here".** The third way is
- * `ApprovalRequested` and `RunAwaitingInput`, which carry a `runId` and no work
+ * `StepEnded` and `RunAwaitingInput`, which carry a `runId` and no work
  * item at all: the run stream names one, in its own `RunStarted`, and reading
  * it is a question for the log rather than for this function. `ctl-conductor`,
  * `chat-…` and `ext-subscribers` are the genuine none — they belong to the

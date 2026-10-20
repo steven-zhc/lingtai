@@ -202,8 +202,7 @@ export type Resolution = z.infer<typeof Resolution>
 /**
  * The resolutions a wait allows, from the wait alone — 0118 §1's table,
  * column order. No `default`: a tenth… thirteenth `WaitReason` tag makes this
- * non-exhaustive and `pnpm typecheck` goes red, the same mechanism
- * `moves.ts`'s `allowedMoves` relies on.
+ * non-exhaustive and `pnpm typecheck` goes red.
  */
 function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
   switch (reason._tag) {
@@ -255,14 +254,13 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 
 /**
  * `tableResolutions` plus one rule 0118 §1's table is silent on, applied
- * uniformly to every variant rather than to `Routed`/`CheckRed`/`MergeRefused`
- * alone the way today's `allowedMoves` has it (`moves.ts:34-47`): if the run
- * is `unpushed`, `Approve` is dropped. The branch never reached origin and
- * the worktree that held it is gone when the pass ends (`hold.ts:63-66`), so
- * `Approve{onSha}` would name a sha that exists nowhere, whatever the
- * variant — including `SignoffRequired` and `FixerDisagrees`, which
- * `moves.ts` does not refuse today. `OwnQuestion` has no `run` and is
- * unaffected.
+ * uniformly to every variant — before #502, `moves.ts`'s `allowedMoves` only
+ * applied it to `Routed`/`CheckRed`/`MergeRefused`: if the run is `unpushed`,
+ * `Approve` is dropped. The branch never reached origin and the worktree
+ * that held it is gone when the pass ends, so `Approve{onSha}` would name a
+ * sha that exists nowhere, whatever the variant — including `SignoffRequired`
+ * and `FixerDisagrees`, which `moves.ts` did not refuse before the switch.
+ * `OwnQuestion` has no `run` and is unaffected.
  */
 export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const table = tableResolutions(reason)

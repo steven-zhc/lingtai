@@ -235,8 +235,8 @@ export const TicketReleased = z.object({ runId: z.string(), reason: z.string(), 
  * What to do about a block, in the vocabulary of the controls that exist.
  *
  * **`approve` is a legitimate value, and most of the time it is the right one**
- * (#83). A card has two moves since #150: `approve` answers an
- * `ApprovalRequested`, and `requeue` ends the wait with a new run, with or
+ * (#83). A card has two moves since #150: `approve` answers a `WaitStarted`'s
+ * signoff, and `requeue` ends the wait with a new run, with or
  * without a diff to answer about. `reject` stays in the enum because the log
  * holds it, and has no button of its own: the board reads it as `requeue`
  * (`primaryMove` in `apps/board/src/app/decide.tsx`), so a diagnosis that means
@@ -1054,7 +1054,7 @@ export const FindingAccepted = z.object({
  * decides which issue is the finding's, and nothing is left open that the log
  * does not name.
  *
- * The finding itself is not repeated: it is on the `StepPassed` the backlog
+ * The finding itself is not repeated: it is on the `StepEnded` the backlog
  * folded, and `key` is how the two are joined.
  */
 export const FindingProposed = z.object({
@@ -1810,7 +1810,7 @@ export const GitHubAppCreated = z.object({
 // ---------------------------------------------------------------- triage ----
 
 /**
- * Who answered a triage attempt, on both `TriageStarted` and `HoldTriaged`
+ * Who answered a triage attempt, on both `TriageStarted` and `WaitTriaged`
  * (0118 §3). Named `Triage…` rather than a bare `Agent`/`Mechanical`:
  * `index.ts` re-exports `events.ts` and `triage.ts` side by side with
  * `export *`, and `'Mechanical'` is already a hunk `_tag` in `triage.ts`.

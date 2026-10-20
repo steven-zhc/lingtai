@@ -20,9 +20,9 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  * this; a per-recipe one does, and **three of the four kinds Lingtai's own
  * recipe names cannot answer it from their own bytes**:
  *
- *   `WorkItemBlocked`      `ticket-lingtai-123`      the stream says it
+ *   `WaitStarted`          `ticket-lingtai-123`      the stream says it
  *   `IntegrationRefused`   `int-lingtai-main`    `data.ticketId` says it
- *   `ApprovalRequested`    `pass-<uuid>`          neither: only `runId`
+ *   `StepEnded`            `pass-<uuid>`          neither: only `runId`
  *   `RunAwaitingInput`     `pass-<uuid>`          neither
  *
  * So the last two are answered by the log: a run stream opens with

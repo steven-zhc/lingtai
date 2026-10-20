@@ -119,7 +119,7 @@
  * ## What the pass does not write
  *
  * **The item's ending.** `outcomeOf` says which of the four it is and
- * `PassResult` reports it, and appending `TicketLanded`, `WorkItemBlocked` or
+ * `PassResult` reports it, and appending `TicketLanded`, `WaitStarted` or
  * `TicketReleased` belongs to whoever holds the claim — `conduct.ts` today,
  * T5's caller after it. `end` here resolves the declared effects against that
  * outcome and records the resolution, which is 0058 §3's *runs on every ending*
@@ -513,7 +513,7 @@ export interface PassPorts {
    * pass writing an item's ending on the way past. What that leaves the caller is
    * not a free choice: `resolveEndActions`'s own doc is *one transaction, so the
    * outcome and its resolution cannot come apart*, and `end` runs **before** the
-   * caller writes `TicketLanded` or `WorkItemBlocked`. So a live implementation
+   * caller writes `TicketLanded` or `WaitStarted`. So a live implementation
    * holds this plan and appends it beside the event that makes its outcome true;
    * one that appended here instead would put the resolution on the stream first,
    * and a dropped connection on the next append leaves it there alone — an

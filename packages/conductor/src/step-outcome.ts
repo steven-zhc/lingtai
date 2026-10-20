@@ -26,8 +26,8 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * - `about` (`ActionResult.about`, `action.ts:192`) has no field on the
  *   domain `Action` — a reviewer's own classification of its refusal is not
  *   one of 0120 §1's facts, and `eventOf` cannot put it back.
- * - `ApprovalRequested.artifacts` is always `[]` here, as it is at the one
- *   place that appends it today (`action.ts:889`).
+ * - `ApprovalRequested.artifacts` was always `[]` here, as it was at the one
+ *   place that appended it (`action.ts:889`) — both are gone with #502.
  *
  * **`outcomeOf` drops a trailing run of `NotReached` after an action that
  * cleared.** `commitResultOf`'s `committedNothing` cell is 0120's own

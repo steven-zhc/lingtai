@@ -154,7 +154,7 @@ export interface LogQueries {
    * through `decodeRow`, which is exactly the thing `logPredatesHold` (#451)
    * has to look past to find the first row that would throw. Named by type
    * rather than by stream, for the same reason `typeCounts` is: the guard
-   * does not know which streams hold a `WorkItemBlocked` and asking it to
+   * does not know which streams hold a `WaitStarted` and asking it to
    * find out first would be the fold it exists to avoid.
    */
   rowsOfType(type: EventType): Promise<TypeRow[]>
