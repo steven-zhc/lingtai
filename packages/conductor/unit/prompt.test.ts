@@ -105,14 +105,20 @@ describe("the next attempt's prompt", () => {
 
   it('carries an answer given before any run into every attempt, without the issue body', () => {
     const e = stream('ticket-lingtai-51')
-    const asked = e('WorkItemBlocked', {
-      hold: {
-        _tag: 'Question',
+    const asked = e('WaitStarted', {
+      waitId: 'wait-1' as PayloadOf<'WaitStarted'>['waitId'],
+      reason: {
+        _tag: 'OwnQuestion',
         question: 'Which of the three designs for the production-credential tripwire?',
         by: 'human:steven',
       },
     })
-    const answered = e('WorkItemUnblocked', { by: 'human:steven', note: 'the second: refuse at the hook' })
+    const answered = e('WaitResolved', {
+      waitId: 'wait-1' as PayloadOf<'WaitResolved'>['waitId'],
+      by: 'human:steven',
+      resolution: { _tag: 'AnswerQuestion', choice: 'the second: refuse at the hook' },
+      note: 'the second: refuse at the hook',
+    })
 
     const first = nextPrompt({
       base: 'ticket@1924',
@@ -140,7 +146,7 @@ describe("the next attempt's prompt", () => {
         asked,
         answered,
         e('TicketClaimed', claim('pass-a')),
-        e('TicketReleased', { runId: 'pass-a', reason: 'killed' }),
+        e('TicketReleased', { runId: 'pass-a', reason: 'killed', cause: null }),
       ],
       lastRun: null,
     })
@@ -155,20 +161,21 @@ describe("the next attempt's prompt", () => {
       item: [
         e('TicketDiscovered', discovered),
         e('TicketClaimed', claim('pass-a')),
-        e('WorkItemBlocked', {
-          hold: {
+        e('WaitStarted', {
+          waitId: 'wait-2' as PayloadOf<'WaitStarted'>['waitId'],
+          reason: {
             _tag: 'MergeRefused',
             run: { runId: 'pass-a' },
-            reason: 'conflict',
-            why: 'agent/51 does not merge into main',
+            reason: 'unexpected',
             raw: 'agent/51 does not merge into main',
-            paths: null,
-            baseSha: null,
-            headSha: null,
-            afterApproval: false,
           },
         }),
-        e('WorkItemUnblocked', { by: 'human:steven', note: 'the base has moved' }),
+        e('WaitResolved', {
+          waitId: 'wait-2' as PayloadOf<'WaitResolved'>['waitId'],
+          by: 'human:steven',
+          resolution: { _tag: 'Requeue' },
+          note: 'the base has moved',
+        }),
       ],
       lastRun: null,
     })
@@ -258,7 +265,7 @@ describe("the next attempt's prompt", () => {
     const item = [
       e('TicketDiscovered', discovered),
       e('TicketClaimed', claim('pass-1')),
-      e('TicketReleased', { runId: 'pass-1', reason: 'the build refused' }),
+      e('TicketReleased', { runId: 'pass-1', reason: 'the build refused', cause: null }),
       e('PromptEdited', edit('the flag is in the binary, not in --help')),
     ]
     const next = nextPrompt({ base: 'ticket@1924', budget: BUDGET, item, lastRun: [] })
@@ -285,7 +292,7 @@ describe("the next attempt's prompt", () => {
     const item = [
       e('TicketDiscovered', discovered),
       e('TicketClaimed', claim('pass-1')),
-      e('TicketReleased', { runId: 'pass-1', reason: 'timeout' }),
+      e('TicketReleased', { runId: 'pass-1', reason: 'timeout', cause: null }),
     ]
 
     const read = nextPrompt({ base: 'ticket@1924', budget: BUDGET, item, lastRun: [] })
