@@ -1544,7 +1544,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 for  \u2014 1 finding',
+          summary: 'round 1 \u2014 1 finding',
         },
       ],
     },
@@ -2792,6 +2792,33 @@ const RUN_5: EventSpec[] = [
     },
   },
   {
+    type: 'StepEnded',
+    data: {
+      runId: 'pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9',
+      outcome: {
+        step: 'proposed',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:judge',
+            onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            evidence:
+              'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+            yields: 'signoff',
+            result: {
+              _tag: 'Completed',
+              requested: {
+                question:
+                  'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  {
     type: 'RunRefsPublished',
     data: {
       branch: 'agent/7',
@@ -2972,12 +2999,19 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'review \u2192 waiting \u2014 is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary:
+            'review \u2192 waiting \u2014 agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
           summary: 'agent/7 and agent/7-attempt-2 at bbbbbbb',
+        },
+        {
+          type: 'StepEnded',
+          actor: 'conductor',
+          summary:
+            'proposed \u00b7 conductor:judge \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'RunRefsPublished',
@@ -4293,7 +4327,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 for  \u2014 1 finding',
+          summary: 'round 1 \u2014 1 finding',
         },
         {
           type: 'PassRouted',
@@ -4872,6 +4906,33 @@ const RUN_9: EventSpec[] = [
     },
   },
   {
+    type: 'StepEnded',
+    data: {
+      runId: 'pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb',
+      outcome: {
+        step: 'merge',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:unfixed',
+            onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            evidence:
+              'Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 — the approach cannot work\n\n(5 turns) (`check`)',
+            yields: 'signoff',
+            result: {
+              _tag: 'Completed',
+              requested: {
+                question:
+                  'Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 — the approach cannot work\n\n(5 turns) (`check`)',
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  {
     type: 'RunRefsPublished',
     data: {
       branch: 'agent/7',
@@ -5055,6 +5116,12 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
           summary: 'agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
         {
+          type: 'StepEnded',
+          actor: 'conductor',
+          summary:
+            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns) (`check`)',
+        },
+        {
           type: 'RunRefsPublished',
           actor: 'conductor',
           summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
@@ -5074,6 +5141,14 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
     {
       type: 'PassRouted',
       field: 'offer.proposal.output',
+    },
+    {
+      type: 'StepEnded',
+      field: 'outcome.actions[0].evidence',
+    },
+    {
+      type: 'StepEnded',
+      field: 'outcome.actions[0].result.requested.question',
     },
   ])
   expect(stripOf(runEvents, false)).toEqual([
@@ -5580,6 +5655,33 @@ const RUN_10a: EventSpec[] = [
     },
   },
   {
+    type: 'StepEnded',
+    data: {
+      runId: 'pass-1ba1768c-940f-4433-9095-fe318e6519df',
+      outcome: {
+        step: 'merge',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:unfixed',
+            onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            evidence:
+              'Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
+            yields: 'signoff',
+            result: {
+              _tag: 'Completed',
+              requested: {
+                question:
+                  'Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  {
     type: 'RunRefsPublished',
     data: {
       branch: 'agent/7',
@@ -5747,12 +5849,18 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'merge \u2192 waiting \u2014 is waiting on you. both sides touched src/fix.ts',
+          summary: 'merge \u2192 waiting \u2014 agent/7 is waiting on you. both sides touched src/fix.ts',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
           summary: 'agent/7 and agent/7-attempt-1 at bbbbbbb',
+        },
+        {
+          type: 'StepEnded',
+          actor: 'conductor',
+          summary:
+            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
         },
         {
           type: 'RunRefsPublished',
@@ -6268,6 +6376,31 @@ const RUN_10b: EventSpec[] = [
     },
   },
   {
+    type: 'StepEnded',
+    data: {
+      runId: 'pass-5631c913-c309-4330-9d68-512fc7caa03f',
+      outcome: {
+        step: 'merge',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:unfixed',
+            onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            evidence: 'Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
+            yields: 'signoff',
+            result: {
+              _tag: 'Completed',
+              requested: {
+                question: 'Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  {
     type: 'RunRefsPublished',
     data: {
       branch: 'agent/7',
@@ -6441,6 +6574,12 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
           type: 'RunRefsPublished',
           actor: 'conductor',
           summary: 'agent/7 and agent/7-attempt-1 at bbbbbbb',
+        },
+        {
+          type: 'StepEnded',
+          actor: 'conductor',
+          summary:
+            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
         },
         {
           type: 'RunRefsPublished',
@@ -7949,6 +8088,33 @@ const RUN_13: EventSpec[] = [
     },
   },
   {
+    type: 'StepEnded',
+    data: {
+      runId: 'pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d',
+      outcome: {
+        step: 'proposed',
+        round: 0,
+        actions: [
+          {
+            plugin: 'conductor',
+            name: 'conductor:judge',
+            onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            evidence:
+              'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (claude-code (haiku) · 5 turns, $1.25): I am not sure what to say here.',
+            yields: 'signoff',
+            result: {
+              _tag: 'Completed',
+              requested: {
+                question:
+                  'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (claude-code (haiku) · 5 turns, $1.25): I am not sure what to say here.',
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  {
     type: 'RunRefsPublished',
     data: {
       branch: 'agent/7',
@@ -8110,12 +8276,18 @@ it('13. a judge answer is unreadable', () => {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'review \u2192 waiting \u2014 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (cl\u2026',
+            'review \u2192 waiting \u2014 agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off\u2026',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
           summary: 'agent/7 and agent/7-attempt-1 at bbbbbbb',
+        },
+        {
+          type: 'StepEnded',
+          actor: 'conductor',
+          summary:
+            'proposed \u00b7 conductor:judge \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was n\u2026',
         },
         {
           type: 'RunRefsPublished',
@@ -8792,7 +8964,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            "review \u2192 waiting \u2014 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
+            "review \u2192 waiting \u2014 agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         },
         {
           type: 'RunRefsPublished',
@@ -10665,7 +10837,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 for  \u2014 1 finding',
+          summary: 'round 1 \u2014 1 finding',
         },
         {
           type: 'PassRouted',
@@ -12365,7 +12537,7 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 for  \u2014 1 finding',
+          summary: 'round 1 \u2014 1 finding',
         },
         {
           type: 'PassRouted',
