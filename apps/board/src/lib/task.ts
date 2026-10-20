@@ -1,6 +1,7 @@
 import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import {
+  agentBranchOf,
   applyWorkItem,
   boardFactOf,
   chatStream,
@@ -1329,8 +1330,17 @@ export function totalsFact(totals: Totals): string | null {
 export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<string, number>): HistoryGroup[] {
   // Insertion order is first-seq order, which is the order the groups read in.
   const groups = new Map<string, HistoryGroup>()
+  // A run stream's own subject, read off its `RunStarted` — the one event on
+  // that stream carrying a ticket id, and always the first (#505). Without
+  // it, a `PassRouted` on that same stream has nothing to open its sentence on.
+  const branchByRun = new Map<string, string>()
 
   for (const e of [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))) {
+    if (e.type === 'RunStarted') {
+      const ticketId = (e.data as { ticketId?: unknown } | null)?.ticketId
+      const parsed = typeof ticketId === 'string' ? parseWorkItemStream(ticketId) : null
+      if (parsed) branchByRun.set(e.streamId, agentBranchOf(parsed.issue))
+    }
     let group = groups.get(e.streamId)
     if (!group) {
       const attempt = attempts.get(e.streamId) ?? null
@@ -1344,7 +1354,7 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       }
       groups.set(e.streamId, group)
     }
-    group.lines.push(toLine(e))
+    group.lines.push(toLine(e, branchByRun.get(e.streamId)))
     group.to = String(e.seq)
   }
 

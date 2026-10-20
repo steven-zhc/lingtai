@@ -77,7 +77,8 @@ export interface PayloadDocument {
 }
 
 type Payload = Record<string, unknown>
-type Formatter = (d: Payload) => string
+/** `branch` is the ticket's `agent/<n>`, when the caller has one to give — only `PassRouted` reads it. */
+type Formatter = (d: Payload, branch?: string) => string
 
 /**
  * How much free text a row carries before it is cut.
@@ -276,7 +277,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * `packages/conductor`'s own reading of the offer and not this package's
    * to duplicate.
    */
-  PassRouted: (d) => {
+  PassRouted: (d, branch) => {
     const data = d as unknown as PayloadOf<'PassRouted'>
     const from = fromOf(data.offer.proposal)
     const next = routeNext(data.offer, data.reply, data.decision, { runId: data.runId })
@@ -285,7 +286,21 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       // reaching here with one is that mapping disagreeing with this one.
       throw new Error(`PassRouted formatted as a wait, but routeNext answered ${next._tag}`)
     }
-    return `${from} → waiting — ${clip(legacyColumns(next.reason).question)}`
+    // `PassRouted` is on the run's own stream, which carries no ticket id of
+    // its own — `branch` is `groupHistory`'s reading of that run's
+    // `RunStarted`, the one event on the stream that has one. Most
+    // `WaitReason`s never open on it at all (an agent's own question names
+    // no subject), so a missing branch is only a problem once
+    // `legacyColumns` actually reached for one — the one shape of sentence
+    // that does is `"${subjectOf} is waiting on you. …"`, and `subjectOf`
+    // reads as the empty string when `branch` is `''`. Falling back to the
+    // payload there, rather than rendering a sentence open on nothing, is
+    // rule 2.
+    const question = legacyColumns(next.reason, { branch: branch ?? '', base: '', findings: [] }).question
+    if (branch === undefined && question.trimStart().startsWith('is waiting on you')) {
+      throw new Error('PassRouted opens on a subject, but no branch was given')
+    }
+    return `${from} → waiting — ${clip(question)}`
   },
 
   // -------------------------------------------------------------- control --
@@ -441,9 +456,17 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // own `policy.rounds`, only what it decided from it, so there is nothing
   // here for "round 1 of N" to read — the ceiling is `routing.ts`'s own
   // argument, not a field on the event.
+  //
+  // **No action either, since #505.** `boardFactOf` always sets `action: ''`
+  // — `PassRouted` never carried the name a round was bought for, only the
+  // offer and reply a round was routed from, so there is nothing here `need`
+  // could fall back over: the field is never present, not merely sometimes
+  // empty. The next row is already `StepStarted … step=implement round=1`,
+  // so the destination a `for ${action}` clause used to name is still on the
+  // page.
   RoundOpened: (f) => {
     const n = f.findings.length
-    return `round ${f.round} for ${f.action} — ${n} finding${n === 1 ? '' : 's'}`
+    return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}`
   },
 
   // **Just the ordinal since #502.** `PassRouted{decision: Selected{restart}}`
@@ -522,8 +545,13 @@ function scalar(v: unknown): string {
  * `boardFactOf` is tried first: a type it owns answers through `FACT_FORMAT`,
  * and a type it does not own (`null`) falls to `FORMAT`, exactly as it did
  * before this read-model fact existed.
+ *
+ * `branch` is `groupHistory`'s reading of the run's own `RunStarted` — the
+ * only subject `FORMAT.PassRouted` has, since `PassRouted` sits on a stream
+ * with no ticket id of its own (#505). Optional so every other formatter,
+ * and every existing caller, is unaffected.
  */
-export function summarise(event: Envelope): string {
+export function summarise(event: Envelope, branch?: string): string {
   const data = event.data ?? {}
   try {
     const facts = boardFactOf(event)
@@ -546,7 +574,7 @@ export function summarise(event: Envelope): string {
   const format = FORMAT[event.type as EventType]
   if (format) {
     try {
-      const said = format(data as Payload).trim()
+      const said = format(data as Payload, branch).trim()
       if (said) return said
     } catch {
       // Fall through to the payload.
@@ -640,14 +668,14 @@ export function splitPayload(data: unknown, type?: string): { raw: string; docum
   return { raw: rawPayload(lift(data ?? null, '')), documents }
 }
 
-/** One event, as a row. */
-export function toLine(event: Envelope): HistoryLine {
+/** One event, as a row. `branch` is `groupHistory`'s, passed through to `summarise`. */
+export function toLine(event: Envelope, branch?: string): HistoryLine {
   const { raw, documents } = splitPayload(event.data, event.type)
   return {
     at: event.at.toISOString(),
     type: event.type,
     actor: event.actor,
-    summary: summarise(event),
+    summary: summarise(event, branch),
     seq: String(event.seq),
     streamId: event.streamId,
     version: event.version,
