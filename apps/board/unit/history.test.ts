@@ -75,6 +75,12 @@ describe('a line of history', () => {
    * only ever reached for the remaining case, `routeNext` answering
    * `WaitOnPerson`. Two ways there: no judge declared (`NotAsked`), and a
    * judge choosing a candidate a spent ceiling had already excluded.
+   *
+   * **The subject comes from `groupHistory`'s own reading of `RunStarted`**
+   * (`#505`), not from this event — `PassRouted` sits on the run's stream,
+   * which has no ticket id of its own, so the branch is the second argument
+   * a caller supplies, same as `boardFactOf` supplies it from the item
+   * stream.
    */
   it('says where a route went, when it lands on a person', () => {
     const buildRed: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
@@ -86,8 +92,10 @@ describe('a line of history', () => {
         reply: { _tag: 'NotAsked' },
         decision: decideRoute(notAsked, { _tag: 'NotAsked' }),
       }),
+      'agent/7',
     )
     expect(said).toContain('build → waiting')
+    expect(said).toContain('agent/7 is waiting on you')
     expect(said).toContain('tsc failed')
 
     const reviewFindings: Proposal = {
@@ -98,9 +106,32 @@ describe('a line of history', () => {
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'start over' }
     const said2 = summarise(
       e('PassRouted', { runId: 'pass-1', offer: spent, reply, decision: decideRoute(spent, reply) }),
+      'agent/7',
     )
     expect(said2).toContain('review → waiting')
+    expect(said2).toContain('agent/7 is waiting on you')
     expect(said2).toContain('restarts` is spent')
+  })
+
+  /**
+   * **No branch, no subject — the fallback is the payload, never a sentence
+   * that opens on nothing** (#505, rule 2). `groupHistory` always has one by
+   * the time it reaches a `PassRouted`, because `RunStarted` is the first
+   * event on every run stream; a caller with none is the case this guards.
+   */
+  it('falls back to the payload for a routed wait with no branch to open on', () => {
+    const buildRed: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
+    const notAsked = offerFor(buildRed, { rounds: 0, restarts: 0 }, { rounds: 0, restarts: 0 })
+    const said = summarise(
+      e('PassRouted', {
+        runId: 'pass-1',
+        offer: notAsked,
+        reply: { _tag: 'NotAsked' },
+        decision: decideRoute(notAsked, { _tag: 'NotAsked' }),
+      }),
+    )
+    expect(said).not.toContain('is waiting on you')
+    expect(said).toContain('tsc failed')
   })
 
   /** A copy with no checkout records `sha: null`, which the schema allows. */
