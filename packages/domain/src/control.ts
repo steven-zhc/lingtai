@@ -82,7 +82,7 @@ export interface ControlState {
    * which issue to look at, not what wakes it — `WaitResolved` is already in
    * `WAIT_EVENTS`, which `@lingtai/daemon`'s `COMPLETION_EVENTS` wakes the
    * work loop on. Satisfied the same way `requested` is: once the item
-   * stops being `approved`, which `continueWorkItem` does, a stale row here
+   * stops being `approved`, which `continueTicket` does, a stale row here
    * simply matches nothing and is dropped rather than tracked.
    */
   continuing: { project: string; issue: string; runId: string; by: string }[]
