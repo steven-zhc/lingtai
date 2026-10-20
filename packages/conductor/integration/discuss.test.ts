@@ -132,10 +132,14 @@ describe('a discussion, on the log', () => {
     const own = await store.read(ticketId)
     // Two lines and not forty: the edit, and the pointer at the conversation.
     expect(own.map((e) => e.type)).toEqual(['PromptEdited', 'DiscussionHeld'])
-    const held = own[1]?.data as { chatId: string; costUsd: number; outcome: string }
+    const held = own[1]?.data as { chatId: string; outcome: string }
     expect(held.chatId).toBe(chatId)
-    expect(held.costUsd).toBeCloseTo(0.42, 5)
     expect(held.outcome).toBe('prompt')
+
+    // What it cost is RunSpent's alone (0110 §9/§13), on the chat stream.
+    const spent = (await store.read(chatId)).find((e) => e.type === 'RunSpent')
+    expect(spent).toBeDefined()
+    expect((spent!.data as { costUsd: number }).costUsd).toBeCloseTo(0.42, 5)
   })
 
   /**
