@@ -66,7 +66,7 @@ describe('startDaemon', () => {
     const order: string[] = []
     const started = await startDaemon({
       projections: [],
-      predatesHold: async () => (order.push('predates-hold'), new LogPredatesHoldError(5n)),
+      predatesHold: async () => (order.push('predates-hold'), new LogPredatesHoldError(5n, { name: 'StepRequested' })),
       watermark: async () => (order.push('watermark'), 0),
       acquire: async () => (order.push('lock taken'), { ok: false, holder: null }),
     })
@@ -77,7 +77,7 @@ describe('startDaemon', () => {
     expect(started).toEqual({
       ok: false,
       reason: 'log-predates-hold',
-      detail: new LogPredatesHoldError(5n).message,
+      detail: new LogPredatesHoldError(5n, { name: 'StepRequested' }).message,
     })
   })
 })
