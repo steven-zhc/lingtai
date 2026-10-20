@@ -50,8 +50,8 @@ function stepLine(step: string, word: string, text: string): string {
 /**
  * `${branch} into ${base}`, or just `${branch}` where `base` is not known.
  *
- * `cardFactOf`/`boardFactOf`/`work-item.ts` each call `legacyColumns` off one
- * event (or, for `work-item.ts`, off an aggregate with no run stream to
+ * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `legacyColumns` off one
+ * event (or, for `ticket.ts`, off an aggregate with no run stream to
  * read), and none of the three has a projection of the recipe's own `base` —
  * only `conduct.ts`, composing the GitHub comment, does. `branch` they can
  * still supply (the ticket id's issue number makes it, deterministically);

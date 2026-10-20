@@ -277,7 +277,7 @@ export function cardFactOf(event: Envelope): CardFact[] {
       // **No `Restarted` fact here** (`#502` had one): `PassRouted` is the
       // decision, not the restart — `conduct.ts`'s own `armIsUp` guard can
       // still let the pass fall through to `failed` with the arm unpublished,
-      // and `work-item.ts` counts a restart only off `TicketReleased{cause:
+      // and `ticket.ts` counts a restart only off `TicketReleased{cause:
       // Restart}`, the event that guard gates. A second counter here, driven
       // by the decision alone, is the one `task_view.restarts` and
       // `work-item.restarts` could then disagree about.
