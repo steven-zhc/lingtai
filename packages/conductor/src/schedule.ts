@@ -1,5 +1,5 @@
 import type { Runtime } from '@lingtai/agent'
-import { type ProjectState, reduceWorkItem } from '@lingtai/domain'
+import { type ProjectState, reduceTicket } from '@lingtai/domain'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
  * Taking the queue, rather than one issue somebody named.
@@ -301,7 +301,7 @@ export async function tallyPass(ran: readonly RunOnceResult[], store: EventStore
       continue
     }
 
-    const status = reduceWorkItem(events).lifecycle.status
+    const status = reduceTicket(events).lifecycle.status
     if (status === 'landed') tally.landed += 1
     else if (status === 'blocked') tally.held += 1
     else tally.stopped += 1

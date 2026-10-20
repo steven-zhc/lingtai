@@ -1,4 +1,4 @@
-import { reduceRun, reduceWorkItem, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
+import { reduceRun, reduceTicket, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -118,7 +118,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   const log = options.log ?? (() => {})
 
   const events = await store.read(ticketId)
-  const item = reduceWorkItem(events)
+  const item = reduceTicket(events)
 
   // **The way out of a continuation `resolveWaitHolding` could not schedule**
   // (#465). `WaitResolved{Approve}` already committed — the lifecycle is
@@ -354,7 +354,7 @@ export async function requeueHolding(
   ticketId: string,
 ): Promise<{ ok: boolean; ticketId: string; detail: string }> {
   const events = await store.read(ticketId)
-  const item = reduceWorkItem(events)
+  const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked') {
     // Saying which state it is in, for the reason `approve` does: "not blocked"
     // sends somebody nowhere, and "it is already running" answers the question.

@@ -1,4 +1,4 @@
-import { emptyWorkItem, type RestartRecord, type WorkItemState } from '@lingtai/domain'
+import { emptyTicket, type RestartRecord, type TicketState } from '@lingtai/domain'
 /**
  * Whether a pass whose rounds are spent starts the work over, or asks a person.
  *
@@ -27,8 +27,8 @@ const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
   ...over,
 })
 
-const item = (restarts: readonly RestartRecord[] = []): WorkItemState => ({
-  ...emptyWorkItem,
+const item = (restarts: readonly RestartRecord[] = []): TicketState => ({
+  ...emptyTicket,
   restarts,
 })
 

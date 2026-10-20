@@ -28,7 +28,7 @@ import {
   parsePayload,
   parseTicketStream,
   reduceRun,
-  reduceWorkItem,
+  reduceTicket,
   type RunState,
   type ToAppend,
   type WaitId,
@@ -169,7 +169,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   const store = options.store ?? eventStore
   const note = options.note?.trim() ?? ''
 
-  const item = reduceWorkItem(await store.read(ticketId))
+  const item = reduceTicket(await store.read(ticketId))
 
   // **The way out of a continuation this call could not schedule**, read
   // before the `not-blocked` refusal below rather than instead of it (#465).

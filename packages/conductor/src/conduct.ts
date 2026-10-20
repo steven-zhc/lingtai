@@ -39,7 +39,7 @@ import {
   passIdOf,
   passStream,
   reduceControl,
-  reduceWorkItem,
+  reduceTicket,
   routesOf,
   stepOutcomesOf,
   waitsOf,
@@ -933,7 +933,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * is what `Ceilings.restartsLeft` is.
      */
     const before = yield* Effect.promise(() => store.read(ticketId))
-    const folded = reduceWorkItem(before)
+    const folded = reduceTicket(before)
 
     /**
      * **Resuming a held run, read fresh off the log rather than trusted from
@@ -1123,7 +1123,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * The window was not theoretical and it was the expensive kind. A dropped
      * connection on the next append — the disconnect CLAUDE.md documents against
      * `#157` — left `EndActionsResolved{landed}` over a commit that is on the
-     * base branch with no landing recorded: `reduceWorkItem` reads `backlog`,
+     * base branch with no landing recorded: `reduceTicket` reads `backlog`,
      * the issue is relabelled `lingtai:queued`, the next queue pass buys a whole
      * agent to re-implement merged work, and because the point resolves **once
      * per outcome** the real landing can never resolve it again —

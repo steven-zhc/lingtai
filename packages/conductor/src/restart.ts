@@ -42,7 +42,7 @@
  * imports a type from `fix.ts`, so anything importing a *name* from here was
  * importing the whole fix machinery to get a string.
  */
-import type { WorkItemState } from '@lingtai/domain'
+import type { TicketState } from '@lingtai/domain'
 
 import type { FixOn } from './fix.ts'
 
@@ -75,7 +75,7 @@ export interface RestartInput {
   /** `runtime.limits.restarts`. Zero is the default and is today's behaviour. */
   restarts: number
   /** The work item, folded. Carries the bound: `restarts`. */
-  item: WorkItemState
+  item: TicketState
   /**
    * What else on this pass is asking for a person, named, or null.
    *

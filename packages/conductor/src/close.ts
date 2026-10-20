@@ -50,7 +50,7 @@
 import {
   parsePayload,
   type ProjectState,
-  reduceWorkItem,
+  reduceTicket,
   type ToAppend,
   type WaitId,
   ticketStream,
@@ -120,7 +120,7 @@ export async function close(options: {
   }
 
   const events = await store.read(ticketId)
-  const item = reduceWorkItem(events)
+  const item = reduceTicket(events)
 
   if (item.lifecycle.status === 'closed') {
     return { ok: false, ticketId, detail: `${ticketId} is already closed` }

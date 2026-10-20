@@ -1,4 +1,4 @@
-import { parsePayload, reduceWorkItem, type ReleaseCause } from '@lingtai/domain'
+import { parsePayload, reduceTicket, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -92,7 +92,7 @@ export async function claimWorkItem(ticketId: string, options: ClaimOptions): Pr
   const worker = options.worker ?? conductorWorker()
 
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
 
   if (state.lifecycle.status === 'claimed') {
     // Held is held. There is no expiry to fall through to, so the only way past
@@ -164,7 +164,7 @@ export async function continueWorkItem(
   const worker = options.worker ?? conductorWorker()
 
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
 
   if (state.lifecycle.status !== 'approved') {
     return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } }
@@ -204,7 +204,7 @@ export async function releaseWorkItem(
   cause: ReleaseCause | null = null,
 ): Promise<void> {
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
   await store.append(ticketId, state.version, [
     {
       type: 'TicketReleased',

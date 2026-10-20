@@ -1035,7 +1035,7 @@ export function diagnoseDisagreement(input: {
 }
 
 /**
- * One abandoned approach, as `WorkItemState.restarts` holds it.
+ * One abandoned approach, as `TicketState.restarts` holds it.
  *
  * Declared here rather than imported from `@lingtai/domain` for the reason
  * `PromptBudget` is declared in `attempts.ts`: this module is pure decisions

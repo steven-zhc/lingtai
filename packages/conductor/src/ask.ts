@@ -1,7 +1,7 @@
 /**
  * Asking a person something **before** a run, and recording what they said.
  *
- * `WorkItemLifecycle` has carried `runId: string | null` since the beginning,
+ * `TicketLifecycle` has carried `runId: string | null` since the beginning,
  * and all three callers that start a wait ran inside a pass (#147). So the
  * one question that must be asked before anything is spent — *which of these
  * designs?* — was the one the model could not ask: every path to `blocked`
@@ -21,7 +21,7 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceWorkItem, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
+import { parsePayload, reduceTicket, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -56,7 +56,7 @@ export async function ask(options: {
     return { ok: false, ticketId, detail: 'a question needs a question' }
   }
 
-  const item = reduceWorkItem(await store.read(ticketId))
+  const item = reduceTicket(await store.read(ticketId))
   if (item.lifecycle.status !== 'backlog') {
     // The state it is in, for the reason `requeue` names it: "cannot ask" sends
     // nobody anywhere, and "it is already running" answers why.
@@ -136,7 +136,7 @@ export async function answer(options: {
   }
 
   const events = await store.read(ticketId)
-  const item = reduceWorkItem(events)
+  const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked') {
     return { ok: false, ticketId, detail: `${ticketId} is ${item.lifecycle.status}, not asking anything` }
   }

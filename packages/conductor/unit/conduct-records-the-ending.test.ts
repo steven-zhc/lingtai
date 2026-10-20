@@ -14,7 +14,7 @@
  *
  *   `EndActionsResolved{landed}` lands, the next append meets the dropped
  *   connection CLAUDE.md documents against `#157`, and the commit is on the base
- *   branch with no landing on the log — so `reduceWorkItem` reads `backlog`, the
+ *   branch with no landing on the log — so `reduceTicket` reads `backlog`, the
  *   issue is relabelled `lingtai:queued`, and the next queue pass buys a whole
  *   agent to re-implement merged work.
  *

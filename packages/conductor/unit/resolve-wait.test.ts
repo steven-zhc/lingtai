@@ -11,7 +11,7 @@ import {
   type Envelope,
   parsePayload,
   reduceRun,
-  reduceWorkItem,
+  reduceTicket,
   waitsOf,
   ticketStream,
 } from '@lingtai/domain'
@@ -395,7 +395,7 @@ describe('resolveWait', () => {
       expect(wait?.resolution).toEqual({ _tag: 'Approve', onSha: SHA })
       // `Approve` moves the lifecycle to `approved` (#465) — a continuation
       // is owed, not a fresh claim, until `continueWorkItem` takes it.
-      expect(reduceWorkItem(events).lifecycle).toMatchObject({
+      expect(reduceTicket(events).lifecycle).toMatchObject({
         status: 'approved',
         runId: 'pass-9',
         waitId,
@@ -534,7 +534,7 @@ describe('resolveWait', () => {
       expect(result).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
 
       const events = await store.read(ticketId)
-      expect(reduceWorkItem(events).lifecycle).toMatchObject({ status: 'approved' })
+      expect(reduceTicket(events).lifecycle).toMatchObject({ status: 'approved' })
       expect((await store.read(CONTROL_STREAM)).some((e) => e.type === 'ContinueRequested')).toBe(false)
     })
 
