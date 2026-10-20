@@ -244,13 +244,6 @@ export type CardFact =
   | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: string; readonly approval: ApprovalEffect }
   | { readonly _tag: 'RoundOpened'; readonly round: number; readonly findings: number; readonly action: string }
   | {
-      readonly _tag: 'RoundSpent'
-      readonly runId: string
-      readonly round: number
-      readonly action: string
-      readonly costUsd: number
-    }
-  | {
       readonly _tag: 'WaitStarted'
       readonly reason: WaitReason
       readonly card: Pick<LegacyColumns, 'question' | 'needs' | 'diagnosis'>
@@ -289,22 +282,6 @@ export function cardFactOf(event: Envelope): CardFact[] {
       // by the decision alone, is the one `task_view.restarts` and
       // `work-item.restarts` could then disagree about.
       return facts
-    }
-
-    case 'RunSpent': {
-      const d = event.data as PayloadOf<'RunSpent'>
-      // `round > 0`: round 0 is the pass's ordinary first attempt at the
-      // action, never a bought fix — `repair_costs` is "what answering
-      // refusals cost, apart from the work" (`task-view.ts`'s own DDL
-      // comment), and a round this narrow would otherwise merge every
-      // action's round-0 spend under one run-keyed cell, each overwriting
-      // the last.
-      if (d.for._tag !== 'Action' || d.costUsd === null || d.for.round <= 0) return []
-      // `action` too, and not just `round`: a bought round re-runs more than
-      // one action (`implement`, then `build`/`review` again), and each of
-      // those writes its own `RunSpent` at the same round — `d.for.name` is
-      // unique within a step for exactly this reason (`SpentFor`'s own doc).
-      return [{ _tag: 'RoundSpent', runId: event.streamId, round: d.for.round, action: d.for.name, costUsd: d.costUsd }]
     }
 
     case 'WaitStarted': {

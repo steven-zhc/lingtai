@@ -268,9 +268,6 @@ function toCard(row: ProjectionRow): TaskCard {
         .map(([, verdict]) => verdict)
     : []
   const count = (v: string) => verdicts.filter((x) => x === v).length
-  const spent = Object.values((parseJson(row.repair_costs) ?? {}) as Record<string, number | null>).filter(
-    (v): v is number => typeof v === 'number',
-  )
   const issue = row.issue as string
   const awaitingSha = (row.awaiting_sha as string | null) ?? null
   return {
@@ -283,7 +280,6 @@ function toCard(row: ProjectionRow): TaskCard {
     tier: row.tier as string,
     runId: (row.run_id as string | null) ?? null,
     turns: row.turns === null ? null : Number(row.turns),
-    costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
     passed: count('passed'),
     failed: count('failed'),
     waived: count('waived'),
@@ -311,7 +307,6 @@ function toCard(row: ProjectionRow): TaskCard {
     awaitingSha,
     awaitingApproval: awaitingSha !== null,
     repairPending: parseBool(row.repair_pending),
-    repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
   }
 }
 

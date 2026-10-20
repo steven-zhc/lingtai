@@ -262,37 +262,6 @@ const afterRoundOne = events.length
 events.push(...aRoute(roundsRun, { offer: fixRoundOffer(2), reply: fixLinesReply, decision: fixLinesDecision }))
 const afterRoundTwo = events.length
 
-// ---- row 16: a round's own cost, uncharged then charged --------------------
-// `FixApplied.costUsd` is gone with the event (#502): a round's own cost is
-// an `Action`-shaped `RunSpent` now, keyed by the step/action/round it paid
-// for — `null` is still "not yet billed", the same reading `cardFactOf`'s
-// own `RoundSpent` case keeps.
-const roundCostStream = makeStream('ticket-pin-roundcost')
-const roundCostRun = aRun('pass-pin-roundcost')
-events.push(...aClaim(roundCostStream, roundCostRun.runId))
-events.push(
-  roundCostRun.event('RunSpent', {
-    for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
-    runtime: 'claude-code',
-    turns: 1,
-    durationMs: 100,
-    usage: [],
-    costUsd: null,
-  }),
-)
-const afterRoundUncharged = events.length
-events.push(
-  roundCostRun.event('RunSpent', {
-    for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
-    runtime: 'claude-code',
-    turns: 1,
-    durationMs: 100,
-    usage: [],
-    costUsd: 0.5,
-  }),
-)
-const afterRoundCharged = events.length
-
 // ---- row 17: the rounds were spent and the ticket started over ------------
 const restartStream = makeStream('ticket-pin-restart')
 const restartRun = aRun('pass-pin-restart')
@@ -450,7 +419,6 @@ events.push(
 )
 
 // ---- row 27: a RunSpent on an existing stream, which must change nothing --
-const beforeRunSpent = events.length
 events.push(
   stepPassedRun.event('RunSpent', {
     for: { _tag: 'Action', step: 'review', name: 'reviewer', round: 0 },
@@ -515,13 +483,6 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'pending' })
   })
 
-  it("keeps a round's cost out of repair_costs until it is actually charged", async () => {
-    const uncharged = await fold(afterRoundUncharged)
-    const charged = await fold(afterRoundCharged)
-    expect(taskOf(uncharged.tasks, 'ticket-pin-roundcost')).toMatchSnapshot('round cost, uncharged')
-    expect(taskOf(charged.tasks, 'ticket-pin-roundcost')).toMatchSnapshot('round cost, charged')
-  })
-
   /**
    * **The count waits for `TicketReleased`, not `PassRouted`** (0040, `#502`).
    * `PassRouted` is the router's own decision, before `conduct.ts`'s own
@@ -578,21 +539,5 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
       note: 'crash: crashed partway through',
       verdicts: JSON.stringify({ 'pass-pin-didnotfinish:implement:write the change': 'did-not-finish' }),
     })
-  })
-
-  /**
-   * #499 pinned that nothing read `RunSpent` yet. Since #502, `cardFactOf`'s
-   * own `RunSpent` case folds an `Action`-shaped, costed one into
-   * `repair_costs` where the round is a bought fix (round > 0, row 16) —
-   * round 0 is the pass's ordinary first attempt at the action, never a fix,
-   * so it stays the no-op #499 pinned.
-   */
-  it('leaves repair_costs untouched by a round-0 Action RunSpent', async () => {
-    const baseline = await fold(beforeRunSpent)
-    expect(taskOf(baseline.tasks, 'ticket-pin-steppassed')).toMatchObject({ repair_costs: '{}' })
-
-    const withSpent = await fold(events.length)
-    const row = taskOf(withSpent.tasks, 'ticket-pin-steppassed') as { repair_costs: string }
-    expect(JSON.parse(row.repair_costs)).toEqual({})
   })
 })

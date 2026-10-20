@@ -107,7 +107,6 @@ describe('a closed item in the archive', () => {
     tier: 'guarded',
     runId: null,
     turns: 67,
-    costUsd: 20.3,
     passed: 0,
     failed: 0,
     waived: 0,
@@ -132,7 +131,6 @@ describe('a closed item in the archive', () => {
     repairPending: false,
     restarts: 0,
     restartsOf: 0,
-    repairCostUsd: null,
     ...over,
   })
 

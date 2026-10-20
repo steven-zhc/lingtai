@@ -53,6 +53,22 @@ describe('billOf sorts every row into exactly one of five purposes', () => {
     expect(bills.Answering.reportedCents).toBe(250)
   })
 
+  /**
+   * `#506`'s own failure scenario: a pass that buys no fix round at all still
+   * writes an `implement` and a `review` `RunSpent` at round 0, and both must
+   * sum into Work rather than the second overwriting the first — the bug a
+   * `task_view.repair_costs` column (keyed `run#fix0`) had, and `spend` never
+   * did, because `billOf` sums rather than assigns.
+   */
+  it('sums every round-0 Action rather than letting one overwrite another', () => {
+    const bills = billOf([
+      row({ action: 'write the change', round: 0, costUsd: 0.42 }),
+      row({ action: 'reviewer', round: 0, costUsd: 1.25 }),
+    ])
+    expect(bills.Answering.reportedCents).toBe(0)
+    expect(bills.Work.reportedCents).toBe(167)
+  })
+
   it('puts Judge, Triage and Discussion in their own purpose, untouched by round', () => {
     const judge = billOf([row({ purpose: 'Judge', round: null, costUsd: 1.5 })])
     const triage = billOf([row({ purpose: 'Triage', round: null, costUsd: 0.75 })])

@@ -22,7 +22,6 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     tier: 'guarded',
     runId: null,
     turns: null,
-    costUsd: null,
     passed: 0,
     failed: 0,
     waived: 0,
@@ -47,7 +46,6 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     asked: false,
     answer: null,
     repairPending: false,
-    repairCostUsd: null,
     ...over,
   }
 }
