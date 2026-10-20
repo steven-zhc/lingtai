@@ -57,9 +57,8 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import type { Envelope, Hold } from '@lingtai/domain'
+import type { Envelope, PayloadOf } from '@lingtai/domain'
 import {
-  holdOf,
   integrationStream,
   reduceIntegration,
   releaseCauseOf,
@@ -68,6 +67,7 @@ import {
   waitsOf,
   wellFormed,
 } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -106,9 +106,9 @@ async function theItem(store: ReturnType<typeof memoryStore>): Promise<Envelope[
   return store.read(`ticket-${PROJECT}-7`)
 }
 
-function theHold(item: readonly Envelope[]): Hold | null {
-  const blocked = item.find((e) => e.type === 'WorkItemBlocked')
-  return blocked === undefined ? null : (blocked.data as { hold: Hold }).hold
+function theHold(item: readonly Envelope[]): WaitReason | null {
+  const started = item.find((e) => e.type === 'WaitStarted')
+  return started === undefined ? null : (started.data as PayloadOf<'WaitStarted'>).reason
 }
 
 function bySeq(a: Envelope, b: Envelope): number {
@@ -124,38 +124,19 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
 }
 
 /**
- * **The check that `waitsOf` is `holdOf`'s own mapping and not a second
- * one** (the design's own `Watch out`): the last `WorkItemBlocked` on the
- * slice folds, through `waitsOf` and back through `holdOf`, to a `Hold`
- * whose `_tag` — and `step`/`when`/`raw`, where the stored hold carries one —
- * agrees with what was actually written.
- *
- * **`stepOutcomesOf(all)` must not throw**, on every row — it already folds
- * the whole slice `waitsOf` does, and a throw is the failure mode the
- * defaults `shapeFor`/`recipeFor` answer `undefined` for guard against.
- *
- * `skipRaw`, with its own reason, is for the one row where `holdOf` itself
- * cannot reproduce the stored `raw` — not a loosened assertion, a named
- * exception (row 13, below).
+ * **The last `WaitStarted` on the slice is the same `WaitReason` `waitsOf`
+ * reads back** (#502) — there is no `holdOf` translation left to cross-check:
+ * `WaitStarted.reason` is `@lingtai/domain/wait`'s own `WaitReason`, stored
+ * verbatim, so `waitsOf`'s fold and the stored payload are the same object by
+ * construction. What is still worth pinning is that `stepOutcomesOf(all)`
+ * does not throw on the slice every row produces.
  */
-function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: Hold, skipRaw?: string): void {
+function theWaitFoldsToTheStoredHold(all: readonly Envelope[], hold: WaitReason, _skipRaw?: string): void {
   expect(() => stepOutcomesOf(all)).not.toThrow()
   const waits = waitsOf(all)
   const wait = waits[waits.length - 1]
   expect(wait).toBeDefined()
-  const rebuilt = holdOf(wait!.reason, { branch: 'agent/7', base: 'main', findings: [] })
-  expect(rebuilt._tag).toBe(hold._tag)
-  if (rebuilt._tag === 'Routed' && hold._tag === 'Routed') expect(rebuilt.when).toBe(hold.when)
-  if ('step' in rebuilt && 'step' in hold) expect(rebuilt.step).toBe(hold.step)
-  if ('reason' in rebuilt && 'reason' in hold) expect(rebuilt.reason).toBe(hold.reason)
-  if (skipRaw === undefined && 'raw' in rebuilt && 'raw' in hold && rebuilt.raw !== null && hold.raw !== null) {
-    expect(rebuilt.raw).toBe(hold.raw)
-  }
-  if ('paths' in rebuilt && 'paths' in hold) {
-    expect(rebuilt.paths).toEqual(hold.paths)
-    expect(rebuilt.baseSha).toBe(hold.baseSha)
-    expect(rebuilt.headSha).toBe(hold.headSha)
-  }
+  expect(wait!.reason).toEqual(hold)
 }
 
 describe('what a pass writes today, one row per ending (#461)', () => {
