@@ -26,7 +26,7 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
-import { legacyColumns, type PayloadOf } from '@lingtai/domain'
+import { legacyColumns, routesOf, type PayloadOf } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -263,13 +263,15 @@ describe('when an agent inside the pass produces no verdict', () => {
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // **The run started and was paid**, which is the fact that makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
-      turns: 3,
-      costUsd: 0.42,
-    })
-    // And the reviewer judged nothing — `never-ran`, not a refusal of the diff.
-    const never = run.find((e) => e.type === 'StepNeverRan')!
-    expect(never.data).toMatchObject({ step: 'proposed', action: 'review' })
+    // `costUsd` is `RunSpent`'s alone since #502 (0110 §9).
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 3 })
+    expect(run.find((e) => e.type === 'RunSpent')!.data).toMatchObject({ costUsd: 0.42 })
+    // And the reviewer judged nothing — `NeverStarted`, not a refusal of the diff.
+    const ended = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as PayloadOf<'StepEnded'>).outcome.step === 'proposed',
+    )!
+    const review = (ended.data as PayloadOf<'StepEnded'>).outcome.actions.find((a) => a.name === 'review')!
+    expect(review.result._tag).toBe('NeverStarted')
 
     const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
     expect(paused).toHaveLength(1)
@@ -333,10 +335,11 @@ describe('when an agent inside the pass produces no verdict', () => {
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     // The drafting agent is the one that ran, by name, and nothing after it did:
     // `RunStarted` is `firstDispatch`'s and is never reached.
-    expect(run.find((e) => e.type === 'StepNeverRan')!.data).toMatchObject({
-      step: 'design',
-      action: 'draft',
-    })
+    const ended = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as PayloadOf<'StepEnded'>).outcome.step === 'design',
+    )!
+    const draft = (ended.data as PayloadOf<'StepEnded'>).outcome.actions.find((a) => a.name === 'draft')!
+    expect(draft.result._tag).toBe('NeverStarted')
     expect(run.map((e) => e.type)).not.toContain('RunStarted')
     expect(run.map((e) => e.type)).not.toContain('RunFinished')
     expect(did).not.toContain('wire')
@@ -441,11 +444,6 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    // A round *was* bought, or this is not the branch under test.
-    expect(run.find((e) => e.type === 'FixRequested')!.data).toMatchObject({
-      round: 1,
-      action: 'merge',
-    })
     /**
      * **And the decision that bought it is on the log, not only in the run log**
      * (`#271`).
@@ -455,20 +453,24 @@ describe('when an agent inside the pass produces no verdict', () => {
      * there was no account anywhere of why a round was spent. This run does not
      * land, which is exactly the ending whose run log survives: asserting the
      * event here says the append does not depend on the ending.
+     *
+     * **`FixRequested` is gone (#502): `PassRouted{next: FixRound}` is the one
+     * event that says a round was bought**, round and `from` included.
      */
-    expect(run.find((e) => e.type === 'PassRouted')!.data).toEqual({
+    const routed = routesOf(run)
+    expect(routed).toHaveLength(1)
+    expect(routed[0]).toMatchObject({
       from: 'merge',
-      chose: 'implement',
-      to: 'implement',
-      why: expect.stringContaining('same-worktree'),
-      ceiling: null,
+      decision: { _tag: 'Selected', candidate: 'fix-lines' },
+      next: { _tag: 'FixRound', to: 'implement', round: 1 },
     })
+    const passRouted = run.find((e) => e.type === 'PassRouted')!.data as PayloadOf<'PassRouted'>
+    expect((passRouted.reply as { why: string }).why).toContain('same-worktree')
     // And the run that reached it was paid for, which is what makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
-      turns: 3,
-      costUsd: 0.42,
-    })
+    // `costUsd` is `RunSpent`'s alone since #502 (0110 §9).
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 3 })
+    expect(run.find((e) => e.type === 'RunSpent')!.data).toMatchObject({ costUsd: 0.42 })
 
     const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
     expect(paused).toHaveLength(1)
@@ -627,10 +629,11 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     // And no round was bought to answer a judgement nobody made.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.map((e) => e.type)).not.toContain('FixRequested')
-    expect(run.find((e) => e.type === 'StepDidNotFinish')!.data).toMatchObject({
-      step: 'proposed',
-      action: 'review',
-    })
+    expect(routesOf(run).some((r) => r.next._tag === 'FixRound')).toBe(false)
+    const ended = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as PayloadOf<'StepEnded'>).outcome.step === 'proposed',
+    )!
+    const review = (ended.data as PayloadOf<'StepEnded'>).outcome.actions.find((a) => a.name === 'review')!
+    expect(review.result._tag).toBe('Interrupted')
   })
 })

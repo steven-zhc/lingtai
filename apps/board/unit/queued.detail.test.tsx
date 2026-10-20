@@ -193,30 +193,17 @@ describe("the backoff, folded from the item's own stream", () => {
   })
 
   /**
-   * **A repair the old code bought jumps it, until a claim consumes it** (0028,
-   * `#143`).
-   *
-   * The guard is against *blind* retries, and a repair was told what went wrong
-   * and capped by the recipe. Nothing buys one since `#143` — but an item the
-   * old code released for a repair just before a deploy is still owed it, and
-   * holding it for an hour would leave it stuck for an hour longer.
+   * **The repair exemption is gone with the log it read** (`#502`). Nothing
+   * has bought a repair since `#143`, and `RepairRequested` — the event the
+   * old exemption read — is not a type this build's catalogue carries any
+   * more: the reset this ticket's merge runs leaves no pre-`#143` row for
+   * `backoffOf` to find pending. `queued.ts`'s own `backoffOf` passes
+   * `repairPending: false` unconditionally now, so a claim inside the window
+   * holds exactly as any other does.
    */
-  it('does not hold an item a retired repair request is still pending on', () => {
-    const own = [
-      e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T03:45:00Z'),
-      e(
-        'ticket-lingtai-89',
-        'RepairRequested',
-        {
-          runId: 'pass-1',
-          attempt: 1,
-          reason: 'conflict',
-          after: 'pass-1',
-        },
-        '2026-09-09T03:50:00Z',
-      ),
-    ]
-    expect(backoffOf(own, HOUR, now)).toBeNull()
+  it('holds an item inside the window even where a repair would once have jumped it', () => {
+    const own = [e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' }, '2026-09-09T03:45:00Z')]
+    expect(backoffOf(own, HOUR, now)?.toISOString()).toBe('2026-09-09T04:45:00.000Z')
   })
 
   /**

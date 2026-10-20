@@ -3502,7 +3502,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const stopped = { step: 'claim' as const, ending: claimed.ending as StepReport }
         const why = detailOf(stopped)
         const mayHold = stopped.ending.ending === 'did-not-finish' && stopped.ending.because === 'claim-unconfirmed'
-        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`)
+        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`, { _tag: 'ClaimUnconfirmed' })
         released = true
         log(`nothing claimed: ${said(why)}`)
         return {

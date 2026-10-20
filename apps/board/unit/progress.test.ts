@@ -1,5 +1,14 @@
 import type { StepPlan } from '@lingtai/conductor/filter'
-import { STEPS, type Envelope, type Step } from '@lingtai/domain'
+import {
+  decideRoute,
+  offerFor,
+  STEPS,
+  type Action,
+  type Envelope,
+  type JudgeReply,
+  type Proposal,
+  type Step,
+} from '@lingtai/domain'
 /**
  * What a running card says about *now*.
  *
@@ -8,6 +17,11 @@ import { STEPS, type Envelope, type Step } from '@lingtai/domain'
  * while the truth was "the agent finished three minutes ago; the build gate is
  * 2m34s into a 20m budget". Every fact in that sentence is in the events below,
  * and none of it reached the card.
+ *
+ * **Since `#502`, `StepStarted` carries `{step, round}` alone** — 0120's own
+ * Consequences: the board loses which action of a step is running, and with
+ * it the per-action budget this file used to read while a point was still in
+ * flight. What a `StepEnded` carries once the point is done is unchanged.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -30,12 +44,20 @@ function at(time: string, type: string, data: unknown): Envelope {
   }
 }
 
-const step = (step: Step, action: string) => ({
-  step: step,
-  action,
-  runId: 'pass-59',
-  onSha: 'b1b8694',
-})
+/** A `verdict`-yield action, the shape a gate's own check declares. */
+function verdictAction(name: string, verdict: 'accepted' | 'refused', evidence: string): Action {
+  return {
+    plugin: 'run',
+    name,
+    onSha: 'b1b8694',
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict, findings: [] } },
+  }
+}
+
+const started = (step: Step, round = 0) => ({ runId: 'pass-59', step, round })
+const ended = (step: Step, actions: Action[], round = 0) => ({ runId: 'pass-59', outcome: { step, round, actions } })
 
 /**
  * This repository's own recipe, as `stepPlan` reduces it — every point present
@@ -55,9 +77,8 @@ const PLAN: StepPlan = new Map([
 function timeline(): Envelope[] {
   seq = 0n
   return [
-    at('2026-09-04T17:12:20Z', 'StepRequested', step('prepared', 'install')),
-    at('2026-09-04T17:12:20Z', 'StepStarted', step('prepared', 'install')),
-    at('2026-09-04T17:12:26Z', 'StepPassed', { ...step('prepared', 'install'), evidence: 'ok', findings: [] }),
+    at('2026-09-04T17:12:20Z', 'StepStarted', started('prepared')),
+    at('2026-09-04T17:12:26Z', 'StepEnded', ended('prepared', [verdictAction('install', 'accepted', 'ok')])),
     at('2026-09-04T17:12:30Z', 'RunStarted', {
       ticketId: 'ticket-lingtai-59',
       invocation: { command: 'claude', args: [], tier: 'guarded', limits: { turns: 150, wallMs: 3_600_000 } },
@@ -77,8 +98,7 @@ function timeline(): Envelope[] {
       durationMs: 492_000,
       costUsd: 2.19,
     }),
-    at('2026-09-04T17:20:43Z', 'StepRequested', step('proposed', 'build')),
-    at('2026-09-04T17:20:43Z', 'StepStarted', step('proposed', 'build')),
+    at('2026-09-04T17:20:43Z', 'StepStarted', started('proposed')),
   ]
 }
 
@@ -86,14 +106,16 @@ const stateOf = (steps: readonly { step: string; state: StepState }[], step: str
   steps.find((p) => p.step === step)?.state
 
 describe('where a run has got to', () => {
-  it("names the point it is at and how far into that point's budget", () => {
+  it('names the point it is at, with no per-action budget to show', () => {
     const progress = foldProgress(timeline(), PLAN)
 
-    expect(progress?.now?.label).toBe('proposed:build')
+    // **Since `#502`**: `StepStarted` carries no action, so `now.label` is
+    // the bare step — `stepOf` already reads a label's head rather than
+    // assuming `point:action` — and there is no per-action budget to read
+    // while the point is still in flight.
+    expect(progress?.now?.label).toBe('proposed')
     expect(progress?.now?.since).toBe('2026-09-04T17:20:43.000Z')
-    // The recipe's own `timeout: 20m`, parsed once by `stepPlan`. Without the
-    // denominator "slow" and "about to be killed" read the same.
-    expect(progress?.now?.budgetMs).toBe(20 * 60_000)
+    expect(progress?.now?.budgetMs).toBeNull()
   })
 
   it("measures elapsed from the run's first event, not from the agent's", () => {
@@ -103,7 +125,7 @@ describe('where a run has got to', () => {
   })
 
   it('is at the agent, against the wall clock as applied, while the agent runs', () => {
-    const upToAgent = timeline().slice(0, 5)
+    const upToAgent = timeline().slice(0, 4)
     const progress = foldProgress(upToAgent, PLAN)
 
     expect(progress?.now?.label).toBe(AGENT)
@@ -118,7 +140,7 @@ describe('where a run has got to', () => {
    * Nothing is executing in between, and saying so beats saying the agent is.
    */
   it('says so when the agent has finished and no point has started', () => {
-    const between = timeline().slice(0, 7)
+    const between = timeline().slice(0, 6)
     expect(foldProgress(between, PLAN)?.now).toBeNull()
   })
 
@@ -145,7 +167,7 @@ describe('where a run has got to', () => {
    * recipe is the only thing that can say a point exists.
    */
   it('names a configured point before StepsResolved has landed', () => {
-    const first = timeline().slice(0, 3)
+    const first = timeline().slice(0, 2)
     const steps = foldProgress(first, PLAN)?.steps ?? []
 
     expect(stateOf(steps, 'proposed')).toBe('pending')
@@ -156,11 +178,7 @@ describe('where a run has got to', () => {
   it('reads a failure at a point as failed, whatever else that point did', () => {
     const failed = [
       ...timeline(),
-      at('2026-09-04T17:34:00Z', 'StepFailed', {
-        ...step('proposed', 'build'),
-        evidence: '2 tests failed',
-        findings: [],
-      }),
+      at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
     ]
     const progress = foldProgress(failed, PLAN)
 
@@ -178,35 +196,46 @@ describe('where a run has got to', () => {
    * this, it broke* and the other is *answer this*.
    */
   it('reads a step that asked as asked, and a crash beside it as did-not-finish', () => {
-    const asked = [
-      ...timeline(),
-      at('2026-09-04T17:34:00Z', 'StepAsked', {
-        ...step('proposed', 'build'),
-        detail: 'the ticket names two `base` values — which did you mean?',
-      }),
-    ]
+    const askedAction: Action = {
+      plugin: 'agent',
+      name: 'build',
+      onSha: 'b1b8694',
+      evidence: '',
+      yields: 'commit',
+      result: { _tag: 'Completed', head: null, question: 'the ticket names two `base` values — which did you mean?' },
+    }
+    const asked = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [askedAction]))]
     expect(stateOf(foldProgress(asked, PLAN)?.steps ?? [], 'proposed')).toBe('asked')
 
-    const crashed = [
-      ...timeline(),
-      at('2026-09-04T17:34:00Z', 'StepDidNotFinish', {
-        ...step('proposed', 'build'),
-        detail: 'the turn budget was spent',
-      }),
-    ]
+    const crashedAction: Action = {
+      plugin: 'agent',
+      name: 'build',
+      onSha: 'b1b8694',
+      evidence: 'the turn budget was spent',
+      yields: 'verdict',
+      result: { _tag: 'Interrupted', cause: 'out-of-turns' },
+    }
+    const crashed = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [crashedAction]))]
     expect(stateOf(foldProgress(crashed, PLAN)?.steps ?? [], 'proposed')).toBe('did-not-finish')
   })
 
-  /** A person is not a timeout, and pretending otherwise answers both wrongly. */
+  /**
+   * A person is not a timeout, and pretending otherwise answers both wrongly.
+   *
+   * `now.label` keeps `step:action` for a signoff — unlike a bare `StepStarted`,
+   * a `SignoffRequested` fact carries its own action name off `StepEnded`'s
+   * per-action breakdown, so there is a real action to name here.
+   */
   it('puts no denominator on a point that is waiting for a person', () => {
-    const held = [
-      ...timeline().slice(0, 7),
-      at('2026-09-04T17:21:00Z', 'ApprovalRequested', {
-        ...step('merge', 'read it'),
-        question: 'land this?',
-        artifacts: [],
-      }),
-    ]
+    const signoffAction: Action = {
+      plugin: 'human',
+      name: 'read it',
+      onSha: 'b1b8694',
+      evidence: '',
+      yields: 'signoff',
+      result: { _tag: 'Completed', requested: { question: 'land this?' } },
+    }
+    const held = [...timeline().slice(0, 6), at('2026-09-04T17:21:00Z', 'StepEnded', ended('merge', [signoffAction]))]
     const progress = foldProgress(held, PLAN)
 
     expect(progress?.now?.label).toBe('merge:read it')
@@ -224,7 +253,7 @@ describe('where a run has got to', () => {
   it('still says where a run is when no recipe could be read', () => {
     const progress = foldProgress(timeline())
 
-    expect(progress?.now?.label).toBe('proposed:build')
+    expect(progress?.now?.label).toBe('proposed')
     expect(progress?.now?.budgetMs).toBeNull()
     // The plan the log recorded is still the plan.
     expect(stateOf(progress?.steps ?? [], 'prepared')).toBe('passed')
@@ -233,70 +262,49 @@ describe('where a run has got to', () => {
 
 /**
  * What a held item's budget line reads off (`#415`): the highest round a
- * bought fix spent, against the ceiling the log itself named.
+ * bought fix spent. `FixRequested`/`FixApplied`/`FixDeclined` are gone
+ * (`#502`) — a round is bought by `PassRouted{decision: Selected{candidate:
+ * 'fix-lines'}}`, read through `boardFactOf`'s own `RoundOpened` fact.
+ *
+ * **The ceiling (`of`) is gone from this fold too** (0110-adjacent, `#502`):
+ * `RouteOffer` never stored `policy.rounds`, only what it decided from it, so
+ * there is nothing on the event for `roundsOf` to read — it stays `null`,
+ * same as a caller with no recipe to fall back on.
  */
 describe('rounds spent against the ceiling', () => {
-  it('reads the round a FixRequested named, and its ceiling', () => {
+  const roundOpened = (step: 'proposed' | 'merge', output: string) => {
+    const proposal: Proposal = { _tag: 'CheckRefused', from: step, output }
+    const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
+    const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines, not the approach' }
+    return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
+  }
+
+  it('reads the round a PassRouted FixRound named, with no ceiling on the event', () => {
     const withRound = [
       ...timeline(),
-      at('2026-09-04T17:34:00Z', 'StepFailed', {
-        ...step('proposed', 'build'),
-        evidence: '2 tests failed',
-        findings: [],
-      }),
-      at('2026-09-04T17:34:01Z', 'FixRequested', {
-        runId: 'pass-59',
-        round: 1,
-        of: 3,
-        action: 'build',
-        onSha: 'b1b8694',
-        findings: [],
-      }),
+      at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
+      at('2026-09-04T17:34:01Z', 'PassRouted', roundOpened('proposed', '2 tests failed')),
     ]
 
-    expect(foldProgress(withRound, PLAN)?.rounds).toEqual({ spent: 1, of: 3 })
+    expect(foldProgress(withRound, PLAN)?.rounds).toEqual({ spent: 1, of: null })
   })
 
-  /** `FixDeclined.round` is "rounds already spent when this was decided" — read the same way. */
-  it('reads FixDeclined as rounds already spent, when no later round bought a ceiling', () => {
+  it('stays at the round already spent when a later escalation buys no further round', () => {
+    const escalated: Proposal = { _tag: 'FixerDisagrees', said: 'two agents disagreed' }
+    const offer = offerFor(escalated, { rounds: 3, restarts: 1 }, { rounds: 1, restarts: 0 })
     const declined = [
       ...timeline(),
-      at('2026-09-04T17:34:00Z', 'StepFailed', {
-        ...step('proposed', 'build'),
-        evidence: '2 tests failed',
-        findings: [],
-      }),
-      at('2026-09-04T17:34:01Z', 'FixRequested', {
+      at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
+      at('2026-09-04T17:34:01Z', 'PassRouted', roundOpened('proposed', '2 tests failed')),
+      at('2026-09-04T17:48:02Z', 'PassRouted', {
         runId: 'pass-59',
-        round: 1,
-        of: 3,
-        action: 'build',
-        onSha: 'b1b8694',
-        findings: [],
-      }),
-      at('2026-09-04T17:48:00Z', 'FixApplied', {
-        runId: 'pass-59',
-        round: 1,
-        headSha: null,
-        turns: 9,
-        costUsd: 0.91,
-        failure: null,
-      }),
-      at('2026-09-04T17:48:01Z', 'StepFailed', {
-        ...step('proposed', 'build'),
-        evidence: 'still 2 tests failed',
-        findings: [],
-      }),
-      at('2026-09-04T17:48:02Z', 'FixDeclined', {
-        runId: 'pass-59',
-        round: 1,
-        action: 'build',
-        why: 'two agents disagreed',
-        findings: [],
+        offer,
+        reply: { _tag: 'NotAsked' },
+        decision: decideRoute(offer, { _tag: 'NotAsked' }),
       }),
     ]
 
-    expect(foldProgress(declined, PLAN)?.rounds).toEqual({ spent: 1, of: 3 })
+    expect(foldProgress(declined, PLAN)?.rounds).toEqual({ spent: 1, of: null })
   })
 
   it('is zero and names no ceiling on a run that never bought a round', () => {

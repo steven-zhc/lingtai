@@ -52,18 +52,20 @@ describe('the claims an item made', () => {
     expect(claims[1]?.released).toBeNull()
   })
 
-  it('names the attempt a repair bought, which no event says outright', () => {
-    // The claim consumes the pending repair, exactly as `work-item.ts` folds
-    // it. There is no second event: 0025 refuses a repair a vocabulary of its
-    // own, and this is the whole of how a run learns it is one.
+  /**
+   * **The repair field is always `false` now** (`#502`). `RepairRequested`
+   * is not a type this build's catalogue carries any more — nothing has
+   * bought a repair since `#143`, and the reset this ticket's merge runs
+   * leaves no pre-`#143` row for `claimsOf` to read one off.
+   */
+  it('reads no attempt as a repair, since nothing has bought one since #143', () => {
     const claims = claimsOf([
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
-      e('ticket-lingtai-89', 'RepairRequested', { runId: RUN_1, attempt: 1, reason: 'conflict' }),
-      e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'repair' }),
+      e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'conflict' }),
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_2 }),
     ])
 
-    expect(claims.map((c) => c.repair)).toEqual([false, true])
+    expect(claims.map((c) => c.repair)).toEqual([false, false])
   })
 
   it('counts a claim naming a run it already holds as the same attempt', () => {
@@ -99,16 +101,43 @@ describe('one attempt', () => {
   it("holds its own verdicts, so two attempts' gates are never one list", () => {
     const one = foldRun(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
-      e(RUN_1, 'StepFailed', {
-        step: 'proposed',
-        action: 'build',
-        onSha: 'b'.repeat(40),
-        evidence: 'error TS2741',
+      e(RUN_1, 'StepEnded', {
+        runId: RUN_1,
+        outcome: {
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'run',
+              name: 'build',
+              onSha: 'b'.repeat(40),
+              evidence: 'error TS2741',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+            },
+          ],
+        },
       }),
     ])
     const two = foldRun({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: 'c'.repeat(40) }),
-      e(RUN_2, 'StepPassed', { step: 'proposed', action: 'build', onSha: 'c'.repeat(40) }),
+      e(RUN_2, 'StepEnded', {
+        runId: RUN_2,
+        outcome: {
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'run',
+              name: 'build',
+              onSha: 'c'.repeat(40),
+              evidence: '',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+            },
+          ],
+        },
+      }),
     ])
 
     expect(one.steps.map((g) => [g.step, g.state])).toEqual([['proposed:build', 'failed']])
@@ -127,11 +156,22 @@ describe('one attempt', () => {
   it("shows a never-ran gate's words, which it files under a different name", () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
-      e(RUN_1, 'StepNeverRan', {
-        step: 'proposed',
-        action: 'review',
-        onSha: 'b'.repeat(40),
-        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
+      e(RUN_1, 'StepEnded', {
+        runId: RUN_1,
+        outcome: {
+          step: 'proposed',
+          round: 0,
+          actions: [
+            {
+              plugin: 'agent',
+              name: 'review',
+              onSha: 'b'.repeat(40),
+              evidence: "You've hit your session limit · resets 2pm (America/Chicago)",
+              yields: 'verdict',
+              result: { _tag: 'NeverStarted' },
+            },
+          ],
+        },
       }),
     ])
 

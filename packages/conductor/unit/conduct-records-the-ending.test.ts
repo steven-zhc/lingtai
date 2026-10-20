@@ -6,7 +6,7 @@
  *
  * Under the ten steps that rule is a claim about two files. `runPass` runs `end`
  * after the walk and before `conduct.ts` writes `TicketLanded` or
- * `WorkItemBlocked`, so the caller has to *hold* what the step resolved and
+ * `WaitStarted`, so the caller has to *hold* what the step resolved and
  * append it beside the ending — which is what `PassPorts.recordEnd` means by
  * *batching is the caller's because the ending is the caller's*. A port that
  * appended on the spot reversed the order instead, and the window it opened is
@@ -267,7 +267,7 @@ describe('the ending and its end actions', () => {
     expect(result).toMatchObject({ ok: 'held', step: 'merge' })
 
     const item = await store.read(`ticket-${PROJECT}-7`)
-    const at = item.findIndex((e) => e.type === 'WorkItemBlocked')
+    const at = item.findIndex((e) => e.type === 'WaitStarted')
     expect(at).toBeGreaterThanOrEqual(0)
     expect(item[at + 1]?.type).toBe('EndActionsResolved')
     expect(item[at + 1]!.data).toMatchObject({ outcome: 'blocked' })

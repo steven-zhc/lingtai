@@ -26,9 +26,7 @@ import {
   outstanding,
   parseReply,
   readingFor,
-  spendOf,
   turnsOf,
-  usageOf,
   type Answered,
   type DiscussionEvidence,
 } from '../src/discuss.ts'
@@ -266,8 +264,11 @@ describe('holding one question', () => {
     // only a killed one (the `crash` test below) records nothing (#496).
     expect(store.types()).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
     expect(held).toEqual({ costUsd: 0.42, answered: false, proposal: null })
+    // **The cost is `RunSpent`'s alone (#502, 0110 §9)** — `DiscussionAnswered`
+    // carries no dollar figure of its own any more.
+    const spent = store.appended.find((e) => e.type === 'RunSpent')!
+    expect((spent.data as { costUsd: number | null }).costUsd).toBe(0.42)
     const answer = answerOf(store.appended)
-    expect(answer.costUsd).toBe(0.42)
     expect(answer.failure).toContain('timeout')
     // Every round — and here, the only one — receives the `HoldOptions.call` it was handed.
     expect(calls).toEqual([CALL])
@@ -353,9 +354,10 @@ describe('holding one question', () => {
    * One `RunSpent` per process, not one per question (#496, 0110 §2). A
    * question that takes three processes — two reads, then an answer — leaves
    * three `RunSpent`s on the chat stream, each carrying its own round's
-   * figures, and `DiscussionAnswered` still sums them exactly as before.
+   * figures — the spend `held.costUsd` sums in memory, never a second time on
+   * `DiscussionAnswered` (#502, 0110 §9).
    */
-  it('appends one RunSpent per process, and still sums them onto DiscussionAnswered', async () => {
+  it('appends one RunSpent per process, and holdDiscussion sums the cost in memory', async () => {
     const store = fakeStore()
     const rounds: Answered[] = [
       {
@@ -421,16 +423,14 @@ describe('holding one question', () => {
     const answer = answerOf(store.appended)
     expect(answer.turns).toBe(6)
     expect(answer.durationMs).toBe(60)
-    expect(answer.costUsd).toBeCloseTo(0.4)
   })
 
   /**
-   * `usage`, accumulated across rounds the same way `turns` and `durationMs`
-   * already were — through `addUsage`, never a hand-written `+`. Two rounds,
-   * same model: the second round's tokens add to the first's rather than
-   * replacing them.
+   * **Each round's own `RunSpent` carries its own usage, never accumulated**
+   * (#502, 0110 §9/§13): `usage` is gone from `DiscussionAnswered`, and spend
+   * — tokens included — has one source, `RunSpent`, one row per process.
    */
-  it('accumulates usage across rounds onto the one DiscussionAnswered event', async () => {
+  it("carries each round's own usage on its own RunSpent, not summed onto DiscussionAnswered", async () => {
     const store = fakeStore()
     let round = 0
 
@@ -469,8 +469,12 @@ describe('holding one question', () => {
       },
     )
 
-    const answer = answerOf(store.appended)
-    expect(answer.usage).toEqual([{ model: 'claude-sonnet-5', tokens: { fresh: 15, output: 3 } }])
+    const spents = store.appended.filter((e) => e.type === 'RunSpent').map((e) => e.data as { usage: unknown })
+    expect(spents.map((s) => s.usage)).toEqual([
+      [{ model: 'claude-sonnet-5', tokens: { fresh: 10, output: 2 } }],
+      [{ model: 'claude-sonnet-5', tokens: { fresh: 5, output: 1 } }],
+    ])
+    expect(answerOf(store.appended)).not.toHaveProperty('usage')
   })
 
   it('leaves usage off the event when nothing reported any', async () => {
@@ -531,10 +535,13 @@ describe('holding one question', () => {
 })
 
 describe('the conversation, read back', () => {
-  it('pairs each ask with the answer that followed it and totals the spend', () => {
+  // **`spendOf`/`usageOf` are gone (#502, 0110 §9/§13)**: `DiscussionAnswered`
+  // carries no dollar figure or usage of its own any more — the `spend`
+  // projection folds `RunSpent` alone, and this fold is `turnsOf`'s claim only.
+  it('pairs each ask with the answer that followed it', () => {
     const events = [
       envelope('DiscussionAsked', { question: 'why?', by: 'human:steven', reading: [] }),
-      envelope('DiscussionAnswered', { text: 'because', costUsd: 0.5 }),
+      envelope('DiscussionAnswered', { text: 'because' }),
       envelope('DiscussionAsked', { question: 'and then?', by: 'human:steven', reading: [] }),
     ]
 
@@ -542,32 +549,6 @@ describe('the conversation, read back', () => {
       { question: 'why?', by: 'human:steven', answer: 'because' },
       { question: 'and then?', by: 'human:steven', answer: null },
     ])
-    expect(spendOf(events)).toBe(0.5)
-  })
-
-  /** Null and zero are different answers. A turn that reported no cost was not free. */
-  it('reports no spend rather than zero when nothing said what it cost', () => {
-    expect(spendOf([envelope('DiscussionAnswered', { text: 'x', costUsd: null })])).toBeNull()
-  })
-
-  it('totals usage across every answer on the conversation', () => {
-    const events = [
-      envelope('DiscussionAnswered', {
-        text: 'because',
-        costUsd: 0.5,
-        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 10 } }],
-      }),
-      envelope('DiscussionAnswered', {
-        text: 'and because of that',
-        costUsd: 0.2,
-        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 5, output: 1 } }],
-      }),
-    ]
-    expect(usageOf(events)).toEqual([{ model: 'claude-sonnet-5', tokens: { fresh: 15, output: 1 } }])
-  })
-
-  it('is undefined rather than [] when no answer carried usage', () => {
-    expect(usageOf([envelope('DiscussionAnswered', { text: 'x', costUsd: null })])).toBeUndefined()
   })
 })
 

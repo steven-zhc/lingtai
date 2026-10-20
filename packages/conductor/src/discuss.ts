@@ -59,16 +59,14 @@
  * budget of [0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)
  * — because nothing repository-specific decides them yet, and a knob with no
  * measurement behind it is a knob nobody can set.
+ *
+ * **What it cost is `RunSpent`'s alone, since #502 (0110 §9/§13).** Every
+ * ending still appends one `RunSpent` per process that returned an outcome
+ * (`#496`), which the `spend` projection folds; `DiscussionAnswered` carries
+ * no dollar figure of its own any more, and `held.costUsd` below is the
+ * caller's own in-memory receipt, not a second write of the same fact.
  */
-import {
-  addUsage,
-  chatStream,
-  parsePayload,
-  Usage,
-  type Envelope,
-  type RuntimeId,
-  type ToAppend,
-} from '@lingtai/domain'
+import { chatStream, parsePayload, type Envelope, type RuntimeId, type ToAppend, type Usage } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
 import { editHash } from './attempts.ts'
@@ -519,14 +517,16 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
   const served: { at: string; text: string | null }[] = []
   let turns = 0
   let durationMs = 0
+  // **Not on `DiscussionAnswered` or `DiscussionHeld` any more** (#502, 0110
+  // §9/§13): spend is `RunSpent`'s alone, read by the `spend` projection —
+  // `cost` here is kept only for `HeldTurn.costUsd`, the caller's own
+  // in-memory receipt, never persisted a second time.
   let cost: number | null = null
-  let usage: Usage | undefined
 
   const spend = (outcome: Answered) => {
     turns += outcome.turns
     durationMs += outcome.durationMs
     if (outcome.costUsd !== null) cost = (cost ?? 0) + outcome.costUsd
-    if (outcome.usage !== undefined) usage = addUsage(usage ?? [], outcome.usage)
   }
 
   const answer = (data: {
@@ -542,9 +542,7 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
       proposal: data.proposal,
       turns,
       durationMs,
-      costUsd: cost,
       failure: data.failure,
-      ...(usage === undefined ? {} : { usage }),
     })
 
   for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
@@ -637,40 +635,6 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
 // -------------------------------------------------------------- conclude ----
 
 /**
- * What a whole conversation cost, from its own stream.
- *
- * Null when nothing reported a figure — which is not the same as free, and is
- * why this is nullable rather than zero. `RunFinished.costUsd` is nullable for
- * the same reason and the board reads it the same way.
- */
-export function spendOf(events: readonly Envelope[]): number | null {
-  let total: number | null = null
-  for (const e of events) {
-    if (e.type !== 'DiscussionAnswered') continue
-    const cost = (e.data as { costUsd?: unknown } | null)?.costUsd
-    if (typeof cost === 'number') total = (total ?? 0) + cost
-  }
-  return total
-}
-
-/**
- * What a whole conversation billed, from its own stream.
- *
- * `undefined` where no turn reported any — not the same as an empty bill, and
- * why this is optional rather than `[]`. `DiscussionHeld.usage` is optional for
- * the same reason `RunFinished.usage` is.
- */
-export function usageOf(events: readonly Envelope[]): Usage | undefined {
-  let total: Usage | undefined
-  for (const e of events) {
-    if (e.type !== 'DiscussionAnswered') continue
-    const parsed = Usage.safeParse((e.data as { usage?: unknown } | null)?.usage)
-    if (parsed.success) total = addUsage(total ?? [], parsed.data)
-  }
-  return total
-}
-
-/**
  * The heading a discussion's addition to a ticket sits under.
  *
  * Named rather than anonymous so a second addition is legible as a second
@@ -706,9 +670,9 @@ export interface ConcludeOptions {
  * nothing written down — is the commonest ending of all.
  *
  * `DiscussionHeld` is appended **last and always**, including when the artefact
- * did not land. It is the money's only record on the work item, and a spend
- * that vanished because a GitHub write failed would be exactly the meter 0033
- * §4 says a person is supposed to be able to see.
+ * did not land — the one line on the work item that says a discussion
+ * happened and how it ended. What it cost is `RunSpent`'s, through the
+ * `spend` projection (#502, 0110 §9/§13), not this event's own field any more.
  */
 export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok: boolean; detail: string }> {
   const { store, ticketId, chatId, by } = options
@@ -758,9 +722,6 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
     detail = ok ? 'the ticket carries it' : 'GitHub refused the edit; the log says why'
   }
 
-  const chatEvents = await store.read(chatStream(chatId))
-  const spend = spendOf(chatEvents)
-  const usage = usageOf(chatEvents)
   const at = (await store.read(ticketId)).length
   await store.append(ticketId, at, [
     {
@@ -768,10 +729,8 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
       actor: by,
       data: parsePayload('DiscussionHeld', {
         chatId,
-        costUsd: spend,
         outcome: options.outcome,
         by,
-        ...(usage === undefined ? {} : { usage }),
       }),
     },
   ])

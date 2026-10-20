@@ -66,9 +66,10 @@ describe('the approval a refusal reaches a person with', () => {
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
 
-    const ended = run.find((e) => e.type === 'StepEnded')!
+    const ended = run.find(
+      (e) => e.type === 'StepEnded' && (e.data as PayloadOf<'StepEnded'>).outcome.step === 'proposed',
+    )!
     const outcome = (ended.data as PayloadOf<'StepEnded'>).outcome
-    expect(outcome.step).toBe('proposed')
     const review = outcome.actions.find((a: Action) => a.name === 'review')!
     expect(review.result._tag).toBe('Completed')
     expect((review.result as { assessment: { verdict: string } }).assessment.verdict).toBe('refused')
@@ -86,10 +87,12 @@ describe('the approval a refusal reaches a person with', () => {
     // **One event, on the ticket's own stream, named for the reason itself**
     // — there is no second, run-level request for it to collide with.
     const started = item.find((e) => e.type === 'WaitStarted')!
-    const reason = (started.data as PayloadOf<'WaitStarted'>).reason as Extract<WaitReason, { _tag: 'CheckRefused' }>
-    expect(reason._tag).toBe('CheckRefused')
-    expect(reason.step).toBe('proposed')
-    expect(reason.action).toBe('review')
+    const reason = (started.data as PayloadOf<'WaitStarted'>).reason as Extract<
+      WaitReason,
+      { _tag: 'ProposedEscalated' }
+    >
+    expect(reason._tag).toBe('ProposedEscalated')
+    expect(reason.proposal).toMatchObject({ _tag: 'CheckRefused', from: 'proposed' })
 
     // The card's own sentence still names the refusal, and this is a diff two
     // agents disagreed about rather than a green run — so no move is

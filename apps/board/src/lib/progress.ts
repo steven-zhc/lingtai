@@ -249,16 +249,6 @@ export function elapsed(ms: number): string {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
-/** `point:action`, the key both the log and `task_view` use for a verdict. */
-function keyOf(data: Record<string, unknown>): string {
-  return `${String(data['step'])}:${String(data['action'])}`
-}
-
-function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null {
-  const step = plan.get(String(data['step']) as Step)
-  return step?.find((a) => a.name === String(data['action']))?.budgetMs ?? null
-}
-
 /** `StepEnded.ending` → the `StepState` it closes a point on. */
 const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['ending'], StepState> = {
   Passed: 'passed',
@@ -438,10 +428,18 @@ export function foldProgress(
         break
       }
 
+      // **No action to key the verdict by, or the budget by** (0120's own
+      // Consequences: the board loses which action of a step is running).
+      // `StepStarted` carries only `{step, round}` now, so `now` names the
+      // step alone — `stepOf` already reads a label's head rather than
+      // assuming `point:action` — and the running mark goes on `${step}:`,
+      // an empty action name `mine`'s own `k.startsWith('${step}:')` still
+      // matches, so the step-level state still reads `running` until its
+      // `StepEnded` closes an actual `step:action` key over it.
       case 'StepStarted': {
-        const key = keyOf(data)
-        verdicts.set(key, 'running')
-        now = { label: key, since: event.at.toISOString(), budgetMs: budgetOf(plan, data) }
+        const stepName = String(data['step'])
+        verdicts.set(`${stepName}:`, 'running')
+        now = { label: stepName, since: event.at.toISOString(), budgetMs: null }
         break
       }
 
@@ -459,6 +457,18 @@ export function foldProgress(
             // is one more `StepEnded` outcome, not a fact of its own.
             case 'StepEnded':
               close(`${fact.step}:${fact.action}`, STEP_ENDING_STATE[fact.ending])
+              // The placeholder `StepStarted` set on `${step}:` (no action) —
+              // deleted rather than left behind, or `mine`'s own prefix match
+              // would keep reading `running` out of it for ever: `stateOf`
+              // checks `seen.includes('running')` ahead of every settled
+              // verdict, so a step that has actually ended would never read
+              // as anything else.
+              verdicts.delete(`${fact.step}:`)
+              // `now.label` is the bare step since `StepStarted` carries no
+              // action (0120's own Consequences) — so the running phase this
+              // `StepEnded` closes is matched by the step alone, not by this
+              // one action's own key.
+              if (now?.label === fact.step) now = null
               // The round's own agent just reported — clear a `fixing` phase
               // this `StepEnded` is the answer to, same guard `RunFinished`'s
               // `clearAgentPhase` uses, for the ordinary path where the next

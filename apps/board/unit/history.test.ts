@@ -1,5 +1,5 @@
-import { EVENTS } from '@lingtai/domain'
-import type { Action, Envelope, Finding } from '@lingtai/domain'
+import { decideRoute, EVENTS, offerFor } from '@lingtai/domain'
+import type { Action, Envelope, Finding, JudgeReply, Proposal } from '@lingtai/domain'
 import { anOutcome, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 /**
@@ -67,33 +67,40 @@ describe('a line of history', () => {
   })
 
   /**
-   * **A route that went where it wanted and one that did not read differently**
-   * (`#271`).
-   *
-   * The event exists because a route used to be written to the run log, which is
-   * deleted on the ending where the change landed — so *why did that pass buy a
-   * round* was on the log nowhere. The row has to carry the distinction the
-   * fields were separated for: `to: waiting` is *a person is next* either way,
-   * and only `chose` says whether the decision asked for that or was refused it.
+   * **Where a route landed on a person, since `#502` changed what the event
+   * stores.** `PassRouted` carries `{offer, reply, decision}` now, not the
+   * five derived fields this row used to print — a route that bought a round
+   * or spent a restart is read through `boardFactOf`'s own `RoundOpened`/
+   * `Restarted` facts, so `history.ts`'s own `FORMAT.PassRouted` entry is
+   * only ever reached for the remaining case, `routeNext` answering
+   * `WaitOnPerson`. Two ways there: no judge declared (`NotAsked`), and a
+   * judge choosing a candidate a spent ceiling had already excluded.
    */
-  it('says where a route went, and what it wanted where those differ', () => {
-    const row = (data: Record<string, unknown>) =>
-      summarise(e('PassRouted', { from: 'build', why: 'the lines, not the approach', ...data }))
+  it('says where a route went, when it lands on a person', () => {
+    const buildRed: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
+    const notAsked = offerFor(buildRed, { rounds: 0, restarts: 0 }, { rounds: 0, restarts: 0 })
+    const said = summarise(
+      e('PassRouted', {
+        runId: 'pass-1',
+        offer: notAsked,
+        reply: { _tag: 'NotAsked' },
+        decision: decideRoute(notAsked, { _tag: 'NotAsked' }),
+      }),
+    )
+    expect(said).toContain('build → waiting')
+    expect(said).toContain('tsc failed')
 
-    // Nothing intervened: one sentence, and no parenthesis to read past.
-    expect(row({ chose: 'implement', to: 'implement', ceiling: null })).toBe(
-      'build → implement — the lines, not the approach',
+    const reviewFindings: Proposal = {
+      _tag: 'ReviewFindings',
+      findings: [{ file: 'x.ts', line: 1, claim: 'no', failureScenario: 'it breaks', severity: 'blocker' }],
+    }
+    const spent = offerFor(reviewFindings, { rounds: 1, restarts: 1 }, { rounds: 1, restarts: 1 })
+    const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'start over' }
+    const said2 = summarise(
+      e('PassRouted', { runId: 'pass-1', offer: spent, reply, decision: decideRoute(spent, reply) }),
     )
-    // The rounds were spent, so the round the decision wanted is on the row
-    // beside the person who got it instead.
-    expect(row({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })).toBe(
-      'build → waiting (wanted implement, rounds spent) — the lines, not the approach',
-    )
-    // And a choice no ceiling refused says what was wanted without naming a limit
-    // a person would raise for nothing.
-    expect(row({ chose: 'implement', to: 'waiting', ceiling: null })).toBe(
-      'build → waiting (wanted implement) — the lines, not the approach',
-    )
+    expect(said2).toContain('review → waiting')
+    expect(said2).toContain('restarts` is spent')
   })
 
   /** A copy with no checkout records `sha: null`, which the schema allows. */

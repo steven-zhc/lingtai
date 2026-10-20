@@ -27,8 +27,8 @@
  * Pure, and its own module for that reason: `task.ts` reaches the database and
  * GitHub, and what a row *says* is testable without either.
  */
-import type { BoardFact, Envelope, EventType } from '@lingtai/domain'
-import { boardFactOf, PASS_STREAM_PREFIX } from '@lingtai/domain'
+import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
+import { boardFactOf, fromOf, legacyColumns, PASS_STREAM_PREFIX, routeNext } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -261,24 +261,31 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
 
   // ---------------------------------------------------------------- route --
   /**
-   * **Where the router sent a pass, and what it wanted instead** (`#271`).
+   * **Where the router sent a pass, when it bought nothing** (`#271`, `#502`).
    *
-   * `to` alone cannot tell *the decision sent this to a person* from *the
-   * decision wanted another round and there was none*, and those are the two
-   * sentences somebody deciding what to do about the card is choosing between.
-   * So `chose` is on the row where it differs, with the ceiling that is the
-   * difference — and silent where they agree, which is most routes.
-   *
-   * `chose` is read defensively rather than with `need`: a route that went where
-   * it wanted still says so without it, and a row rendering as the raw payload
-   * over a field that adds nothing to it would be rule 2 spent for nothing.
+   * `PassRouted` stores `{offer, reply, decision}` since the switch, not the
+   * five derived fields this row used to print — `boardFactOf` reads the
+   * common case off the same triple (`RoundOpened` for a bought round,
+   * `Restarted` for a fresh pass), so this entry is only ever reached for the
+   * remaining case, a route that landed on a person (`routeNext`'s
+   * `WaitOnPerson`): `candidate.next._tag === 'HandToPerson'`, an escalated
+   * decision, or a reply a judge never gave one for. The `WaitStarted` row
+   * right after this one carries the same `WaitReason` in full; this one
+   * only has to say which step asked and why, through `legacyColumns` —
+   * never `routedVisit`'s own `chose`/`ceiling` split, which is
+   * `packages/conductor`'s own reading of the offer and not this package's
+   * to duplicate.
    */
   PassRouted: (d) => {
-    const to = need(d, 'to')
-    const chose = d['chose'] === undefined || d['chose'] === to ? null : String(d['chose'])
-    const ceiling = typeof d['ceiling'] === 'string' ? d['ceiling'] : null
-    const wanted = chose === null ? '' : ` (wanted ${chose}${ceiling === null ? '' : `, ${ceiling} spent`})`
-    return `${need(d, 'from')} → ${to}${wanted} — ${clip(d['why'])}`
+    const data = d as unknown as PayloadOf<'PassRouted'>
+    const from = fromOf(data.offer.proposal)
+    const next = routeNext(data.offer, data.reply, data.decision, { runId: data.runId })
+    if (next._tag !== 'WaitOnPerson') {
+      // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
+      // reaching here with one is that mapping disagreeing with this one.
+      throw new Error(`PassRouted formatted as a wait, but routeNext answered ${next._tag}`)
+    }
+    return `${from} → waiting — ${clip(legacyColumns(next.reason).question)}`
   },
 
   // -------------------------------------------------------------- control --

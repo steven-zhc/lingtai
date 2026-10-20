@@ -60,6 +60,7 @@ import { AgentHostFailed, type Runtime } from '@lingtai/agent'
 import type { Envelope, PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
+  legacyColumns,
   reduceIntegration,
   releaseCauseOf,
   routesOf,
@@ -426,10 +427,13 @@ runtime:
     ])
     const item = await theItem(store)
     expect(theHold(item)).toBeNull()
-    const restarted = item.find((e) => e.type === 'PassRestarted')!
-    expect(restarted.data).toMatchObject({ restart: 1, of: 1 })
+    // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}` is
+    // the one event now** — the abandoned branch, its head and the findings
+    // still live are on the previous run's own stream, which `attempts.ts`'s
+    // `lastRun` already reads.
     const released = item.find((e) => e.type === 'TicketReleased')!
     expect(released.data).toMatchObject({
+      cause: { _tag: 'Restart', restart: 1 },
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
@@ -442,11 +446,11 @@ runtime:
 
     const runId = theRun(store)![0]!.streamId
     const all = await allEvents(store)
-    // `from` is `'proposed'`, the same reason as row 2's own comment.
+    // `from` is `'review'`, the same reason as row 2's own comment.
     expect(routesOf(all)).toEqual([
       {
         runId,
-        from: 'proposed',
+        from: 'review',
         decision: { _tag: 'Selected', candidate: 'restart' },
         next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
       },
@@ -567,21 +571,27 @@ runtime:
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('`restarts` is spent')
+    console.log('HOLD_DUMP[5. restarts spent: the second arrival holds, not requeues]', JSON.stringify(hold))
+    // **`Routed{when: 'findings'}` is gone (#502): the judge chose `restart`,
+    // which `offerFor` had already excluded, so this is the ordinary
+    // `ProposedEscalated{CandidateUnavailable}` any ceiling escalation is.**
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      because: {
+        _tag: 'CandidateUnavailable',
+        excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+      },
+    })
+    expect(legacyColumns(hold!).question).toContain('`restarts` is spent')
 
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
-    // `PassRouted.ceiling` is `'restarts'` even though the file header's own
-    // `WaitReason` reading folds the sentence into `why` rather than a new
-    // tag (0118 §1 gains none for this) — the judge chose `restart`, which
-    // `offerFor` had already excluded, so `routesOf` reads it as the
-    // ordinary ceiling escalation `CandidateUnavailable` always is.
     const runId2 = runs[1]![0]!.streamId
+    // `from` is `'review'`, the same reason as row 2's own comment.
     expect(routesOf(all).filter((r) => r.runId === runId2)).toEqual([
       {
         runId: runId2,
-        from: 'proposed',
+        from: 'review',
         decision: {
           _tag: 'Escalated',
           because: {
@@ -589,7 +599,29 @@ runtime:
             excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
           },
         },
-        next: { _tag: 'HandToPerson' },
+        next: {
+          _tag: 'WaitOnPerson',
+          reason: {
+            _tag: 'ProposedEscalated',
+            run: { runId: runId2 },
+            proposal: {
+              _tag: 'ReviewFindings',
+              findings: [
+                {
+                  file: 'src/fix.ts',
+                  line: 12,
+                  claim: 'the approach cannot work',
+                  failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
+                  severity: 'blocker',
+                },
+              ],
+            },
+            because: {
+              _tag: 'CandidateUnavailable',
+              excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+            },
+          },
+        },
       },
     ])
   })
@@ -650,7 +682,10 @@ runtime:
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'the agent produced no commits' })
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'NothingProduced', said: 'the agent produced no commits' },
+    })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -727,8 +762,11 @@ runtime:
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Declined', step: 'implement' })
-    expect((hold as { said: string | null }).said).toContain('the approach cannot work')
+    expect(hold).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'FixerDisagrees' } })
+    expect((hold as Extract<WaitReason, { _tag: 'ProposedEscalated' }>).proposal).toMatchObject({
+      _tag: 'FixerDisagrees',
+      said: expect.stringContaining('the approach cannot work'),
+    })
 
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
@@ -743,7 +781,7 @@ runtime:
     expect(implementRound1?.actions[0]?.result).toEqual({ _tag: 'Completed', head: null, question: null })
     const routes = routesOf(all)
     expect(routes).toHaveLength(2)
-    expect(routes[0]).toMatchObject({ from: 'proposed', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
+    expect(routes[0]).toMatchObject({ from: 'review', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
     expect(routes[1]).toMatchObject({ from: 'implement', decision: { _tag: 'Escalated' } })
     // **#493**: a fix round that declines still returned a `RunOutcome`, so it
     // still gets a `RunSpent` — at the round `FixApplied` itself carries. And
@@ -841,8 +879,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'CheckRed', step: 'merge' })
-    expect((hold as { why: string }).why).toContain('blocker src/fix.ts:12')
+    expect(hold).toMatchObject({ _tag: 'ProposedEscalated', proposal: { _tag: 'CheckRefused', from: 'merge' } })
+    expect((hold as Extract<WaitReason, { _tag: 'ProposedEscalated' }>).proposal).toMatchObject({
+      output: expect.stringContaining('blocker src/fix.ts:12'),
+    })
     const all9 = await allEvents(store)
     theWaitFoldsToTheStoredHold(all9, hold!)
     // The `check` that refuses at `merge` and `conduct.ts:4038`'s own
@@ -918,7 +958,16 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'conflict', raw: 'both sides touched src/fix.ts' })
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: {
+        _tag: 'MergeConflict',
+        output: 'both sides touched src/fix.ts',
+        paths: null,
+        baseSha: null,
+        headSha: null,
+      },
+    })
     const all10a = await allEvents(store)
     theWaitFoldsToTheStoredHold(all10a, hold!)
     expect(stepOutcomesOf(all10a).every(wellFormed)).toBe(true)
@@ -1014,12 +1063,14 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
+    // **`paths`/`baseSha`/`headSha` are gone (#502)**: `IntegrationRefused`
+    // no longer carries them, and `MergeRefused`'s proposal is built off the
+    // lane's own `reason`/`output` alone — this fake's own extra fields on the
+    // appended `IntegrationRefused` row are stripped on parse and never reach
+    // the wait.
     expect(hold).toMatchObject({
-      _tag: 'MergeRefused',
-      reason: 'dirty-base',
-      paths: ['src/fix.ts'],
-      baseSha: 'b'.repeat(40),
-      headSha: 'c'.repeat(40),
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'MergeRefused', reason: 'dirty-base', output: 'main moved under it' },
     })
     const all10b = await allEvents(store)
     theWaitFoldsToTheStoredHold(all10b, hold!)
@@ -1108,7 +1159,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Asked', step: 'design', question: asked })
+    expect(hold).toMatchObject({ _tag: 'AgentQuestion', step: 'design', question: asked })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -1181,9 +1232,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     ])
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({
-      _tag: 'Human',
+      _tag: 'SignoffRequired',
       step: 'proposed',
-      source: 'declared',
+      action: 'approval',
       question: "Merge this? It is Lingtai's own code.",
     })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
@@ -1255,20 +1306,15 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('was not readable as one of the steps')
-    // The judge's own sentence (`conduct.ts:2293`) lives only in this
-    // `PassRouted`'s own `why` — `routesOf`'s `waiting` branch answers
-    // `because: NotAsked` for any escalation with `ceiling: null`, judge's
-    // own unreadable answer included, so `holdOf`'s rebuild has no way back
-    // to that text and falls to `ReviewEmpty`'s own fallback, the review's
-    // raw findings. `_tag`/`when` still agree (0120's own 13 collapse to the
-    // one shape `Routed{when: 'findings'}` already is).
-    theWaitFoldsToTheStoredHold(
-      await allEvents(store),
-      hold!,
-      'the judge-unreadable sentence lives on PassRouted.why, which routesOf does not read back into `because`',
-    )
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'ReviewFindings' },
+      because: { _tag: 'UnreadableReply' },
+    })
+    expect(legacyColumns(hold!).question).toContain('was not readable as one of the steps')
+    // The judge's own sentence is on `because.raw` directly (#502) — there is
+    // no translation left to drop it on the way to the wait.
+    theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
   /**
@@ -1279,10 +1325,9 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * the other six fall-shorts, and `review` always ends `passed` (`endingOf`),
    * so `routeProposal`'s `reported` is `null` and it builds the routing visit
    * itself (`#462`) without ever calling `proposed`'s own body. A recipe that
-   * declared a gate at `proposed:` would **not** have it run here; the hold —
-   * the same `Routed{when: 'findings'}` an unrouted `review` refusal always
-   * got, with the *could not be read at all* sentence ahead of the raw answer
-   * — comes from `holdOf`'s `answerUnreadableHold` builder instead.
+   * declared a gate at `proposed:` would **not** have it run here; the wait —
+   * `ProposedEscalated{proposal: AnswerUnreadable}` — carries the *could not
+   * be read at all* sentence ahead of the raw answer through `legacyColumns`.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()
@@ -1311,10 +1356,12 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
-    expect(typesOf(theRun(store))).toContain('ApprovalRequested')
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Routed', when: 'findings' })
-    expect((hold as { why: string }).why).toContain('could not be read at all')
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'AnswerUnreadable', from: 'review' },
+    })
+    expect(legacyColumns(hold!).question).toContain('could not be read at all')
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -1366,7 +1413,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement' })
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'BudgetExhausted', from: 'implement', kind: 'out-of-turns', turns: null, costUsd: null },
+    })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -1417,7 +1467,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
     expect(result).toMatchObject({ ok: 'held', step: 'review' })
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'review' })
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'BudgetExhausted', from: 'review', kind: 'out-of-turns', turns: null, costUsd: null },
+    })
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
     // #478: this row's own wire sentence (`agent-action.ts:580`) names the
@@ -1429,13 +1482,13 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
   })
 
   /**
-   * `out-of-turns` with turns spent is the one failure kind that sets
-   * `ceilingHit` (with `out-of-usd`, `conduct.ts:2774`), so it is the one
-   * `Ceiling` in this file. **Since `#472`** `BudgetExhausted` is one of the
-   * seven, so the run gains a `PassRouted`, and `holdFor`'s ceiling branch
-   * takes the step from `pass.waitOn.proposal.from` rather than
-   * `pass.stoppedAt!` — the hold itself, with `turns`/`costUsd` patched in
-   * from `ceilingHit`, is unchanged.
+   * `out-of-turns` with turns spent is the one failure kind this file calls
+   * `Ceiling` in its own title, though since `#502` the wait is the ordinary
+   * `ProposedEscalated{proposal: BudgetExhausted}` every ceiling escalation
+   * is — `turns`/`costUsd` are `null` rather than patched in from what the
+   * runtime actually reported (0118 §3's rule for an absent receipt, now the
+   * rule for every one: nothing fills them from `RunFinished`/`RunFailed` any
+   * more, 0110 §9).
    */
   it('14a. the turn ceiling is hit mid-run (`Ceiling`)', async () => {
     const store = memoryStore()
@@ -1496,7 +1549,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'Ceiling', kind: 'out-of-turns', turns: 10, costUsd: 1.1 })
+    expect(hold).toMatchObject({
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'BudgetExhausted', from: 'implement', kind: 'out-of-turns', turns: null, costUsd: null },
+    })
     const all14a = await allEvents(store)
     theWaitFoldsToTheStoredHold(all14a, hold!)
     const implementOutcome = stepOutcomesOf(all14a).find((o) => o.step === 'implement')
@@ -1577,7 +1633,12 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'DidNotFinish', step: 'implement', why: 'timeout: exceeded wall 2m' })
+    expect(hold).toMatchObject({
+      _tag: 'AgentCrashed',
+      step: 'implement',
+      cause: 'timeout',
+      detail: 'timeout: exceeded wall 2m',
+    })
     const all14b = await allEvents(store)
     theWaitFoldsToTheStoredHold(all14b, hold!)
     const implementOutcome = stepOutcomesOf(all14b).find((o) => o.step === 'implement')
@@ -1892,12 +1953,19 @@ runtime:
     }
 
     const item = await theItem(store)
-    const restarted = item.find((e) => e.type === 'PassRestarted')!
+    // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}` is
+    // the one event now** — the arm, its head and the findings still live are
+    // on the previous run's own stream (`attempts.ts`'s `lastRun` reads it),
+    // not repeated on the release.
+    const released = item.find((e) => e.type === 'TicketReleased')!
+    expect(released.data).toMatchObject({ cause: { _tag: 'Restart', restart: 1 } })
+    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'Restart', restart: 1 }])
     // **The restart is bound to the commit `review` judged, never the WIP.**
     // This is the ceiling actually being spent — the bug this test is against
-    // left `PassRestarted` unappended on this exact ending.
-    expect(restarted.data).toMatchObject({ restart: 1, of: 2, headSha: fixture.FIX_SHA })
-    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'Restart', restart: 1 }])
+    // left the fix round's own head unrecorded on this exact ending.
+    const all16 = await allEvents(store)
+    const implementRound1 = stepOutcomesOf(all16).find((o) => o.step === 'implement' && o.round === 1)
+    expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.FIX_SHA })
 
     // The same pass, run again on the same store with fresh ports:
     // `folded.restarts` already carries the first, and a second WIP on a
@@ -1921,9 +1989,9 @@ runtime:
     expect(result2).toMatchObject({ ok: false, stage: 'restart' })
 
     const item2 = await theItem(store)
-    const restarts = item2.filter((e) => e.type === 'PassRestarted')
-    expect(restarts).toHaveLength(2)
-    expect(restarts[1]!.data).toMatchObject({ restart: 2, of: 2 })
+    const releases = item2.filter((e) => e.type === 'TicketReleased')
+    expect(releases).toHaveLength(2)
+    expect(releases[1]!.data).toMatchObject({ cause: { _tag: 'Restart', restart: 2 } })
     expect(releaseCauseOf(await allEvents(store))).toEqual([
       { _tag: 'Restart', restart: 1 },
       { _tag: 'Restart', restart: 2 },

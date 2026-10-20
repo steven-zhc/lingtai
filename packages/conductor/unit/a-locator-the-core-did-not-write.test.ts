@@ -142,12 +142,14 @@
  * delegated to the value second — and each turns the seventh `it` and only it.
  * Neither is in the tree.
  *
- * *reaches no event* stayed green through all three of the first, and should:
- * it is a claim about what the core writes to the log, not about what it does
- * with the string in memory. Seven `it`s: three claims about the pass, the
- * board's, two about the port under it — what it does with a locator, and that
- * `conduct.ts` wires that value and no other — and one about the literal the
- * others are asked with.
+ * *reaches the log unparsed* stayed green through all three of the first, and
+ * should: it is a claim about whether the core reads the string, never about
+ * whether the string ends up stored — `#502` put the whole `StepOutcome` on
+ * `StepEnded`, so the locator rides the log now by construction, and that is
+ * §11, not an erosion this `it` would have caught. Seven `it`s: three claims
+ * about the pass, the board's, two about the port under it — what it does
+ * with a locator, and that `conduct.ts` wires that value and no other — and
+ * one about the literal the others are asked with.
  *
  * ## What is not checked here, and where it goes instead
  *
@@ -318,23 +320,22 @@ describe('a locator the core did not write', () => {
   })
 
   /**
-   * **And the core wrote it nowhere a replay pays for** (0066 §3, 0069 §6).
-   *
-   * `WroteTheDesign` is the visit's ending, held in memory; what reaches the log
-   * is `evidence`. So the board — `task_view`, a fold over these events — never
-   * sees a locator at all, and cannot have parsed one.
-   *
-   * The fixture's `evidence` names no locator, which is the one place it differs
-   * from `file:` on purpose: the real plugin's card says *wrote a 2.4 kB design
-   * to `doc/design/x.md`*, because a person reads the card for the location.
-   * With the plugin's own sentence carrying none, a locator found in an emitted
-   * payload can only have been put there by the core.
+   * **Since `#502` the locator does reach the log, and that is 0105's own
+   * §11, not a regression this file watches for.** `StepEnded` stores the
+   * whole `StepOutcome` — every action's typed result, `Design{document,
+   * locator}` among them — so a `design` visit's own ending carries the
+   * locator on the wire exactly as it carries the document (the same point
+   * `unit/file-action.test.ts`'s own *the document is on the log anyway*
+   * makes for the sibling field). What this file still guards is §9: that
+   * nothing **reading** that payload parses, matches or classifies the
+   * string — the other six `it`s, which run a real `join`/`URL` against the
+   * fixture and would catch a core that had started to.
    */
-  it('reaches no event, so nothing the board folds has parsed it', async () => {
+  it('reaches the log as the destination wrote it, with nothing that reads it parsing it', async () => {
     const carried = await carry(A_URL)
 
     expect(carried.events.length).toBeGreaterThan(0)
-    for (const event of carried.events) expect(event.payload).not.toContain(A_URL)
+    expect(carried.events.some((event) => event.payload.includes(A_URL))).toBe(true)
   })
 
   /**

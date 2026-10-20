@@ -86,12 +86,23 @@ async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T
  * `asked` is the newest of the four and belongs here for the reason the other
  * three do rather than for a new one (`#296`): *there is a question about this
  * diff and nobody answered it* is not a judgement of it.
+ *
+ * **Excludes the signoff this approval is itself answering** (#502). Since
+ * `StepEnded` carries every action's own result, a `signoff` still asking for
+ * approval folds onto `run.steps` as `verdict: 'asked'` too (`stepStateOf`'s
+ * `signoff` case, `run.ts`) — the same tag a design agent's own clarifying
+ * question gets, because neither is a judgement of the diff. But the point
+ * this function exists to answer is *what else* is unjudged, and the signoff
+ * `run.lifecycle.step` names is the thing being approved, not a second
+ * refusal to waive: every approval would otherwise demand a reason for
+ * answering its own question.
  */
 const UNPASSED = new Set(['failed', 'never-ran', 'did-not-finish', 'asked'])
 
 export function refusingOn(run: RunState, onSha: string): string[] {
+  const awaiting = run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.step : null
   return Object.values(run.steps)
-    .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict))
+    .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict) && g.step !== awaiting)
     .map((g) => g.step)
 }
 

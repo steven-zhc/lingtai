@@ -171,7 +171,20 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
   it('refuses when the run is not awaiting approval', async () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 111)
-    await seed(store, ticketId, aClaim(makeStream(ticketId), 'pass-111'))
+    const item = makeStream(ticketId)
+    // The item has to be `blocked` to get past `not-blocked`, and the run
+    // itself has to carry no signoff request and no head, so `onSha` falls
+    // through both branches to `not-awaiting-approval`.
+    await seed(store, ticketId, [
+      ...aClaim(item, 'pass-111'),
+      ...aWait(item, {
+        _tag: 'SignoffRequired',
+        run: aRunRef('pass-111'),
+        step: 'proposed',
+        action: 'unfixed',
+        question: 'approve this merge?',
+      }),
+    ])
 
     const result = await approveHolding(
       { project: PROJECT, issue: 111, base: 'main', by: 'human:steven', client: fakeClient(SHA), store },
