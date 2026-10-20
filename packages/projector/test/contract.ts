@@ -509,7 +509,6 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(card.closedAt).toBeNull()
         expect(card.waiting).toBe(false)
         expect(card.awaitingApproval).toBe(false)
-        expect(card.repairCostUsd).toBeNull()
 
         expect(await f.store.taskProjects({ retentionDays: 3650 })).toContain(f.project)
       } finally {

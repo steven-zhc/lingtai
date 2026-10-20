@@ -54,6 +54,14 @@ function billFor(usd: number | null): Bill {
   return { reportedCents: Math.round(usd * 100), reportedRuns: 1, estimates: [], unknown: 0 }
 }
 
+/**
+ * `task()`'s own fixture money, now that `TaskCard` carries neither figure
+ * (`#506`): the board reads both off `spend`, so this fixture hands `card()`
+ * the same two bills directly rather than threading them through the card.
+ */
+const COST_USD = 5.92
+const REPAIR_COST_USD = 4.88
+
 const CSS = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
 
 // --- the log ---------------------------------------------------------------
@@ -359,7 +367,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     tier: 'guarded',
     runId: 'pass-170',
     turns: 48,
-    costUsd: 5.92,
     passed: 1,
     failed: 0,
     waived: 0,
@@ -384,7 +391,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     asked: false,
     answer: null,
     repairPending: false,
-    repairCostUsd: 4.88,
     ...over,
   }
 }
@@ -403,8 +409,8 @@ const card = (
     foldProgress(events, plan, over),
     null,
     limits,
-    billFor(merged.costUsd),
-    billFor(merged.repairCostUsd),
+    billFor(COST_USD),
+    billFor(REPAIR_COST_USD),
   )
 }
 

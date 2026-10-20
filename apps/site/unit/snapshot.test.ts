@@ -40,7 +40,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     tier: 'guarded',
     runId: null,
     turns: 7,
-    costUsd: 1.5,
     passed: 0,
     failed: 0,
     waived: 0,
@@ -65,7 +64,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     asked: false,
     answer: null,
     repairPending: false,
-    repairCostUsd: null,
     ...over,
   }
 }

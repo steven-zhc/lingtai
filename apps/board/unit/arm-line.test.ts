@@ -27,7 +27,6 @@ function requeued(): TaskCard {
     tier: 'guarded',
     runId: null,
     turns: null,
-    costUsd: null,
     passed: 0,
     failed: 0,
     waived: 0,
@@ -52,7 +51,6 @@ function requeued(): TaskCard {
     asked: false,
     answer: null,
     repairPending: false,
-    repairCostUsd: null,
   }
 }
 

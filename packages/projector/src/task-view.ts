@@ -87,7 +87,6 @@ export const taskViewProjection: Projection = {
 
         run_id       text,
         turns        int,
-        cost_usd     double precision,
 
         base_sha     text,
         head_sha     text,
@@ -180,30 +179,11 @@ export const taskViewProjection: Projection = {
         -- A repair bought and not yet claimed, and which run was one. Written
         -- only by the retired RepairRequested (#143), so nothing sets either on
         -- a new ticket — and both stay, because a log that holds the event is
-        -- replayed by every rebuild. Without them an old repair's spend moves
-        -- into cost_usd on rebuild and the card stops agreeing with the task
-        -- page, and an item released for a repair just before a deploy loses
-        -- the backoff exemption its repair was bought with.
+        -- replayed by every rebuild. Without them an item released for a repair
+        -- just before a deploy loses the backoff exemption its repair was
+        -- bought with.
         repair_pending boolean not null default false,
         repair_run_id  text,
-        -- { "pass-abc#fix1#write the change": 0.42 }. A map for the reason the
-        -- verdicts column is one: assignment replays to the same number and +=
-        -- does not.
-        --
-        -- **Wider than its name since 0039 §3.** It began as what a *repair*
-        -- cost — an agent the merge lane bought for the next run — and holds
-        -- every round a pass buys to answer a refusal, keyed run#fixN#action
-        -- since #502's per-action RunSpent replaced FixApplied's one payment
-        -- per round: a round re-runs more than one action (implement, then
-        -- build/review again), each with its own RunSpent, and the action
-        -- has to be in the key or the second one overwrites the first under
-        -- the same run#round. Nothing buys a repair since #143, so on a new
-        -- ticket repair_costs is exactly what the rounds' own actions cost;
-        -- an old ticket's repair run is still keyed by its run alone. The
-        -- name is kept because renaming a column is a rebuild of every row
-        -- to change nothing anybody reads; the board says "answering", which
-        -- is what a person actually sees.
-        repair_costs   jsonb not null default '{}'::jsonb,
 
         -- Retention and ordering. From the event's own clock, never now().
         updated_at   timestamptz not null,
@@ -481,12 +461,10 @@ export const taskViewProjection: Projection = {
 
         /**
          * Turns only. `RunFinished.costUsd` is gone (#502, 0110 §9) — spend
-         * has one source, `RunSpent`, and `cost_usd`/`repair_costs` no longer
-         * have a writer here: `spend.ts`'s own projection, read at display
-         * time, is where a total now comes from (0110's *tokens on the
-         * event, money at display*). An old ticket's `repair_costs` entries,
-         * written before this change by the retired `RepairRequested`/
-         * `FixApplied`, are untouched rows and still read as they were.
+         * has one source, `RunSpent`, and `task_view` has no column for it at
+         * all since `#506`: `spend.ts`'s own projection, read at display time,
+         * is where a total now comes from (0110's *tokens on the event, money
+         * at display*).
          */
         case 'RunFinished': {
           const d = event.data as PayloadOf<'RunFinished'>
@@ -568,14 +546,10 @@ export const taskViewProjection: Projection = {
               }
 
               /**
-               * A fix is bought, so it is folded.
-               *
-               * It goes to `repair_costs` rather than to `cost_usd`, for `#84`'s
-               * argument unchanged: *a repair was default-on and spent an agent
-               * without being asked again*, so its money was kept apart from the
-               * work's. A fix is default-on and spends an agent without being
-               * asked again. Same bucket, keyed by the run it was spent inside —
-               * and since `#143` it is the only thing in it.
+               * A fix is bought, so it is noted — never priced here. Since
+               * `#506` a round's own cost is read off `spend` at display time
+               * (0110's *tokens on the event, money at display*), and
+               * `task_view` has no column to fold `RoundSpent` into.
                */
               case 'RoundOpened': {
                 // `of` is gone with `FixRequested` (#502): the round is named
@@ -585,28 +559,6 @@ export const taskViewProjection: Projection = {
                     ? `fixing round ${fact.round}: ${fact.findings} finding(s)`
                     : `fixing round ${fact.round}`
                 await viaRun(ctx, event.streamId, seq, at, { state: 'running', note })
-                break
-              }
-
-              case 'RoundSpent': {
-                await viaRunQuery(
-                  ctx,
-                  event.streamId,
-                  // `$1` is the task id, `$2` the seq, `$3` the timestamp, and
-                  // the caller's own start at `$4` — see `viaRunQuery`.
-                  `update task_view
-                   set repair_costs = repair_costs || jsonb_build_object($4::text, $5::double precision),
-                       updated_at = $3,
-                       updated_seq = $2::bigint
-                 where task_id = $1 and updated_seq <= $2::bigint`,
-                  // Keyed by run, round and action: a second round inside one
-                  // run is a second purchase, keying by run alone would lose
-                  // the first, and a round that re-runs more than one action
-                  // (`implement`, then `build`/`review` again) would have
-                  // every one of those actions' own `RunSpent` overwrite the
-                  // last under the same run#round key without the action too.
-                  [seq, at, `${fact.runId}#fix${fact.round}#${fact.action}`, fact.costUsd],
-                )
                 break
               }
 
@@ -822,31 +774,6 @@ async function viaRun(
 }
 
 /**
- * The same lookup, for a write `set` cannot express.
- *
- * Two cases need it. `FixApplied` merges a key into `repair_costs`, and
- * `RunFinished` chooses between that column and `cost_usd` by the row's own
- * `repair_run_id`. Both are expressions over the row's current values rather
- * than assignments, and reading them back first would be two statements over a
- * value that decides money — the second could see a different row than the
- * first.
- *
- * `$1` is the task id, `$2` the seq and `$3` the timestamp; the caller's own
- * parameters start at `$4`.
- */
-async function viaRunQuery(
-  ctx: ProjectionContext,
-  runId: string,
-  sql: string,
-  values: readonly unknown[],
-): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
-  const taskId = rows[0]?.task_id
-  if (!taskId) return
-  await ctx.query(sql, [taskId, ...values])
-}
-
-/**
  * Assignment into a keyed map, so replaying is idempotent without a guard.
  *
  * The run is part of the key, not just the lookup: the cell a verdict lands in
@@ -888,7 +815,6 @@ export interface TaskCard {
   tier: string
   runId: string | null
   turns: number | null
-  costUsd: number | null
   /**
    * Verdicts from the run this card names, and no other. Four counts rather
    * than two, because a person's word is not a gate's: `waived` is an
@@ -988,12 +914,6 @@ export interface TaskCard {
    * is owed the exemption its repair was bought with.
    */
   repairPending: boolean
-  /**
-   * What diagnosis has cost, apart from the work — every round a pass bought to
-   * answer a refusal. Null when nothing has been spent on one, which is most
-   * cards, and has to read as absence rather than as zero.
-   */
-  repairCostUsd: number | null
 }
 
 /**

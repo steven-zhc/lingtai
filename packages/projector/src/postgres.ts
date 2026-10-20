@@ -73,14 +73,6 @@ function toCard(row: pg.QueryResultRow): TaskCard {
         .map(([, verdict]) => verdict)
     : []
   const count = (v: string) => verdicts.filter((x) => x === v).length
-  // Summed on read, for the reason the map exists: one pass may buy more
-  // than one round, and an operator asking what diagnosis cost means all of
-  // it. Null rather than 0 when nothing was spent — nothing bought and
-  // something bought for free are different facts, and only one of them has
-  // ever happened.
-  const spent = Object.values((row.repair_costs ?? {}) as Record<string, number | null>).filter(
-    (v): v is number => typeof v === 'number',
-  )
   return {
     taskId: row.task_id,
     project: row.project,
@@ -91,7 +83,6 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     tier: row.tier,
     runId: row.run_id,
     turns: row.turns,
-    costUsd: row.cost_usd,
     passed: count('passed'),
     failed: count('failed'),
     waived: count('waived'),
@@ -121,7 +112,6 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     awaitingSha: row.awaiting_sha,
     awaitingApproval: row.awaiting_sha !== null,
     repairPending: row.repair_pending === true,
-    repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
   }
 }
 

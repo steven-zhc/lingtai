@@ -518,9 +518,9 @@ async function seed(): Promise<void> {
       // `PassRouted`'s stored offer/reply/decision now, and its cost is an
       // `Action`-shaped `RunSpent`.
       ...aRoute(run13, { offer: fixRoundOffer(1), reply: fixLinesReply, decision: fixLinesDecision }).map(toAppend),
-      // What the round cost, which is the only thing `repair_costs` holds since
-      // `#143`: a run is never a repair, so a run's money is always the work's
-      // and what answering a refusal cost is keyed by the round that bought it.
+      // What the round cost. `task_view` has no column for it since `#506` —
+      // a round's own cost is read off `spend` at display time, same as the
+      // work's — but the event is still on the log as `conduct.ts` appends it.
       run13.event('RunSpent', {
         for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 },
         runtime: 'claude-code',
@@ -702,9 +702,6 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       const two = card(tasks, 2)!
       expect(two.turns).toBe(63)
-      // `costUsd` has no writer here any more (#502) — spend is read at
-      // display time off `RunSpent`, never folded into this column.
-      expect(two.costUsd).toBeNull()
       // No tier on the card any more: it is the recipe's (ADR 0016 §7), and the
       // board does not read recipes.
 
@@ -1010,31 +1007,6 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // An answer is still an answer: a question asked before any run outranks
       // both, because there is no diff for a review to be about.
       expect(describeWait({ ...stopped, asked: true })).toBe('waiting for your answer')
-    })
-
-    /**
-     * What diagnosis costs, apart from the work.
-     *
-     * Answering a refusal is on by default and spends an agent without being
-     * asked again, so folding its cost into the number beside it would make it an
-     * invisible bill (#84).
-     *
-     * **It is a round's cost and nothing else since `#143`.** The bill used to be
-     * a whole *run* the merge lane bought, told which column to land in by the
-     * row's own `repair_run_id`; nothing buys a run now, so a run's money is
-     * always the work's and this figure is exactly the rounds a pass spent.
-     */
-    it("counts what answering a refusal cost separately from the work's", async () => {
-      const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 })
-      const thirteen = card(tasks, 13)!
-
-      // `costUsd` has no writer any more (#502) — see row 2's own case above.
-      expect(thirteen.costUsd).toBeNull()
-      expect(thirteen.repairCostUsd).toBe(0.75)
-
-      // And a card that never bought a round says nothing rather than zero:
-      // nothing bought and something bought for free are different facts.
-      expect(card(tasks, 2)!.repairCostUsd).toBeNull()
     })
 
     /**
