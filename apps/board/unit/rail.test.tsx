@@ -578,7 +578,7 @@ describe('a running card', () => {
    * two numbers still distinct inside it.
    */
   it('says which round as one object and still says both numbers', () => {
-    const html = render({}, running())
+    const html = render({}, running(), PLAN, false, { rounds: 3, restarts: 1 })
     const pills = [...html.matchAll(/<li class="pill sig"[^>]*>([^<]*)</g)].map((m) => m[1])
 
     expect(pills).toContain('attempt 2 · restart 1 of 1')
@@ -896,7 +896,10 @@ describe("a held item's budget", () => {
 
     const queuedHtml = renderToStaticMarkup(
       <Card
-        card={toCard(task({ state: 'queued', restarts: 1, restartsOf: 1 }))}
+        card={toCard(task({ state: 'queued', restarts: 1, restartsOf: 1 }), null, null, null, {
+          rounds: 3,
+          restarts: 1,
+        })}
         showProject={false}
         issue={null}
         paused={false}

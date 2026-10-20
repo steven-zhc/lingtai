@@ -148,8 +148,9 @@ export interface BoardCard {
    *
    * **The sentence and not the numbers**, because `lingtai status` shows the
    * same fact and the two must not word it differently (#100). It is
-   * `describeArm`'s, beside the columns it reads, and the board does not get to
-   * have its own version of it — the same rule `runnableAt` and `describeHold`
+   * `describeArm`'s, fed the row's `restarts` and the recipe's own
+   * `limits.restarts` as the ceiling, and the board does not get to have its
+   * own version of it — the same rule `runnableAt` and `describeHold`
    * already follow.
    *
    * It is not `attempts`. That counts claims, so a claim after a crash, after a

@@ -63,6 +63,15 @@ export function offerFailedLine(source: string, err: Error): string {
 }
 
 /**
+ * The arm line, in `describeArm`'s own words (#100, #504) — pulled out so a
+ * unit test can render it beside the board's `toCard` without going through
+ * `status()`, which `unit/status.test.ts` says is unreachable from here.
+ */
+export function armLine(row: { restarts?: number }, restartsOf: number | null): string | null {
+  return describeArm({ restarts: row.restarts ?? 0 }, restartsOf)
+}
+
+/**
  * How a project's client and recipe are found — defaulted, and injectable.
  *
  * The seam exists for one promise. The onboarding wizard's last screen tells an
@@ -157,6 +166,11 @@ export async function status(
     // was offered either, so there is nothing for a window to apply to. It is
     // not a fallback for the recipe's value (0028) — there is no such thing.
     const backoffMs = filter.ok ? filter.backoffMs : 0
+    // The ceiling `describeArm` says `of` against — the recipe's own
+    // `limits.restarts`, the same field `board.ts:709` reads, and null where
+    // the recipe would not resolve (`#504`). `restarts_of` has had no writer
+    // since `#502`, so this is the only place the ceiling can come from.
+    const restartsOf = filter.ok ? filter.limits.restarts : null
     const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs })
     const known = await readTasks({ project: name })
     // **The arm comes from the row, because the offer cannot carry it.**
@@ -172,7 +186,6 @@ export async function status(
       ...r,
       state: 'queued' as const,
       restarts: rowOf.get(r.taskId)?.restarts ?? 0,
-      restartsOf: rowOf.get(r.taskId)?.restartsOf ?? 0,
     }))
 
     // **Where the rest went**, in the same breath as the number. A reader who
@@ -237,9 +250,8 @@ export async function status(
       /** Asked before any run, and the sha a review is about. Absent on a GitHub offer. */
       asked?: boolean
       awaitingSha?: string | null
-      /** Approaches abandoned, and the ceiling. Absent on a GitHub offer. */
+      /** Approaches abandoned. Absent on a GitHub offer. */
       restarts?: number
-      restartsOf?: number
       /** The hold, as `describeHold` reads it. Absent on a GitHub offer. */
       needs?: TaskCard['needs']
       diagnosis?: TaskCard['diagnosis']
@@ -309,12 +321,15 @@ export async function status(
       // claim.
       //
       // The sentence is `describeArm`'s and not this file's, so the card and
-      // this command say it in the same words (#100). The depth half of the
-      // pair — `fixing round 2 of 3` — is the row's `note`, which this listing
-      // prints only where a person is holding a question (below); on the board
-      // it is on every card. So this line is the whole of what a terminal says
-      // about a running arm, which is why it is not inside that `if`.
-      const arm = describeArm({ restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 })
+      // this command say it in the same words (#100) — fed the same ceiling
+      // the board reads, `filter.limits.restarts` above, rather than the
+      // row's own `restarts_of` (`#504`, no writer since `#502`). The depth
+      // half of the pair — `fixing round 2 of 3` — is the row's `note`, which
+      // this listing prints only where a person is holding a question
+      // (below); on the board it is on every card. So this line is the whole
+      // of what a terminal says about a running arm, which is why it is not
+      // inside that `if`.
+      const arm = armLine(t, restartsOf)
       if (arm) log(`             ${paint.muted(arm)}`)
 
       // **The same thing the card says.** This line used to stop at `[waiting]`:
