@@ -103,9 +103,12 @@ import {
   offerFor,
   routeNext,
   STEPS,
+  type JudgeReply,
   type PassNext,
   type PayloadOf,
   type Proposal,
+  type RouteDecision,
+  type RouteOffer,
   type Step,
   type StepOutcome,
 } from '@lingtai/domain'
@@ -923,6 +926,17 @@ export interface RouteTaken {
    * own grounds. `ceilingFor` is the reading, off `Offer`'s two sets.
    */
   readonly ceiling: Ceiling | null
+  /**
+   * The triple `PassRouted` actually stores (0120 §3, §5; `events.ts`'s own
+   * doc on `PassRouted`) — `offer`, `reply` and `decision` are not a pure
+   * function of one another, so the event keeps all three rather than the
+   * five derived fields above, which stay on `RouteTaken` because
+   * `conduct.ts` reads `from`/`to`/`why`/`ceiling` directly for its own
+   * run-log line, `restartReason` and `nextPrompt`'s brief.
+   */
+  readonly offer: RouteOffer
+  readonly reply: JudgeReply
+  readonly decision: RouteDecision
 }
 
 /** The two limits that take a destination off the offer. */
@@ -1189,6 +1203,9 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       to: routed.to,
       why: routed.why,
       ceiling: ceilingOf(chose, offer),
+      offer,
+      reply,
+      decision,
     })
 
     const next = routeNext(offer, reply, decision, { runId: options.context.runId })

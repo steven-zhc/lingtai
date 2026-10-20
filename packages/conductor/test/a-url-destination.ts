@@ -1,4 +1,4 @@
-import type { Action, ActionContext, ActionEvent, ActionResult, TheDesign } from '@lingtai/actions'
+import type { Action, ActionContext, ActionResult, TheDesign } from '@lingtai/actions'
 /**
  * **A second destination, whose locator is a URL** — the scaffolding, and no
  * test in it (`#303`).
@@ -73,7 +73,15 @@ import type { Action, ActionContext, ActionEvent, ActionResult, TheDesign } from
 import { STEPS, type Step } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 
-import { outcomeOf, runPass, type PassOptions, type StepBodies, type StepEnding, type StepWork } from '../src/pass.ts'
+import {
+  outcomeOf,
+  runPass,
+  type PassEvent,
+  type PassOptions,
+  type StepBodies,
+  type StepEnding,
+  type StepWork,
+} from '../src/pass.ts'
 
 /** The document the destination keeps, and the thing a locator locates. */
 export const DOCUMENT = '## The shape\n\nSix bodies, and the fifth is the one that asks.\n'
@@ -273,7 +281,7 @@ export interface Visit {
 
 /** One emitted event, flattened to what a fold off the log would see. */
 export interface Emitted {
-  readonly type: ActionEvent['type']
+  readonly type: PassEvent['type']
   readonly payload: string
 }
 
