@@ -10,7 +10,7 @@
  * It reads the projector's view and decides — which is why it is here and not
  * there. A projection folds; it does not choose what to run next.
  */
-import { workItemStream } from '@lingtai/domain'
+import { ticketStream } from '@lingtai/domain'
 import { readTasks } from '@lingtai/projector'
 
 /** What a caller needs to run one: enough to nominate it, and nothing more. */
@@ -97,7 +97,7 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
       if (row.state !== 'queued') return false
       return heldUntil(row, backoff, now) === null
     })
-    .map((o) => ({ taskId: workItemStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
+    .map((o) => ({ taskId: ticketStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
     .sort((a, b) => {
       const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind)
       if (byKind !== 0) return byKind

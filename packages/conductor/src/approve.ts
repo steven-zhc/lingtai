@@ -1,4 +1,4 @@
-import { reduceRun, reduceWorkItem, stepOutcomesOf, waitsOf, type WaitId, workItemStream } from '@lingtai/domain'
+import { reduceRun, reduceWorkItem, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -91,7 +91,7 @@ export type ApproveResult =
   | { ok: false; ticketId: string; reason: string; detail: string }
 
 export async function approve(options: ApproveOptions): Promise<ApproveResult> {
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = ticketStream(options.project, options.issue)
   // Held through the append that grants it, so a requeue cannot put the item
   // back in the queue while this is deciding it. See `deciding`.
   return deciding<ApproveResult>(
@@ -328,7 +328,7 @@ export async function requeue(options: {
   store?: EventStore
 }): Promise<{ ok: boolean; ticketId: string; detail: string }> {
   const store = options.store ?? eventStore
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = ticketStream(options.project, options.issue)
 
   // **Never while an approval is acting on the item** (#150). Requeue sits
   // beside Approve now, and an approval that has appended and is still merging

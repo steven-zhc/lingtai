@@ -13,7 +13,7 @@ import {
   reduceRun,
   reduceWorkItem,
   waitsOf,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -62,7 +62,7 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
 describe('resolveWait', () => {
   it('refuses a stale waitId — the item is blocked on a different wait', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 1)
+    const ticketId = ticketStream(PROJECT, 1)
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-1'),
@@ -71,7 +71,7 @@ describe('resolveWait', () => {
 
     const result = await resolveWaitHolding(
       {
-        ticketId: workItemStream(PROJECT, 1),
+        ticketId: ticketStream(PROJECT, 1),
         issue: 1,
         waitId: aWaitId(),
         resolution: { _tag: 'Requeue' },
@@ -86,10 +86,10 @@ describe('resolveWait', () => {
 
   it('refuses an item nothing is blocking', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 2)
+    const ticketId = ticketStream(PROJECT, 2)
     const result = await resolveWaitHolding(
       {
-        ticketId: workItemStream(PROJECT, 2),
+        ticketId: ticketStream(PROJECT, 2),
         issue: 2,
         waitId: aWaitId(),
         resolution: { _tag: 'Requeue' },
@@ -104,7 +104,7 @@ describe('resolveWait', () => {
   describe('refuses a disallowed resolution by name', () => {
     it('AnswerQuestion is not offered for AgentQuestion', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 3)
+      const ticketId = ticketStream(PROJECT, 3)
       const item = makeStream(ticketId)
       const waitId = aWaitId()
       await seed(store, ticketId, [
@@ -118,7 +118,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 3),
+          ticketId: ticketStream(PROJECT, 3),
           issue: 3,
           waitId,
           resolution: { _tag: 'AnswerQuestion', choice: 'the first' },
@@ -137,7 +137,7 @@ describe('resolveWait', () => {
 
     it('Approve is not offered for ProposedEscalated{BuildRed}', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 4)
+      const ticketId = ticketStream(PROJECT, 4)
       const item = makeStream(ticketId)
       const waitId = aWaitId()
       await seed(store, ticketId, [
@@ -156,7 +156,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 4),
+          ticketId: ticketStream(PROJECT, 4),
           issue: 4,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -174,7 +174,7 @@ describe('resolveWait', () => {
 
     it('Approve is not offered for an unpushed run', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 5)
+      const ticketId = ticketStream(PROJECT, 5)
       const item = makeStream(ticketId)
       const waitId = aWaitId()
       await seed(store, ticketId, [
@@ -194,7 +194,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 5),
+          ticketId: ticketStream(PROJECT, 5),
           issue: 5,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -210,7 +210,7 @@ describe('resolveWait', () => {
   describe('Approve', () => {
     it('refuses when the run is not awaiting approval and has no head', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 6)
+      const ticketId = ticketStream(PROJECT, 6)
       const item = makeStream(ticketId)
       const waitId = aWaitId()
       await seed(store, ticketId, [
@@ -230,7 +230,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 6),
+          ticketId: ticketStream(PROJECT, 6),
           issue: 6,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -244,7 +244,7 @@ describe('resolveWait', () => {
 
     it('refuses an Approve missing the client or the issue — the branch check cannot be skipped', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 31)
+      const ticketId = ticketStream(PROJECT, 31)
       const item = makeStream(ticketId)
       const run = aRun('pass-31')
       const waitId = aWaitId()
@@ -266,7 +266,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 31),
+          ticketId: ticketStream(PROJECT, 31),
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
           by: 'human:steven',
@@ -280,7 +280,7 @@ describe('resolveWait', () => {
 
     it('refuses an onSha that has moved on from what the run is now asking about — appends nothing', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 7)
+      const ticketId = ticketStream(PROJECT, 7)
       const item = makeStream(ticketId)
       const run = aRun('pass-7')
       const waitId = aWaitId()
@@ -302,7 +302,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 7),
+          ticketId: ticketStream(PROJECT, 7),
           issue: 7,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA2 },
@@ -318,7 +318,7 @@ describe('resolveWait', () => {
 
     it("refuses when the branch moved on origin since the approval's sha — appends nothing", async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 8)
+      const ticketId = ticketStream(PROJECT, 8)
       const item = makeStream(ticketId)
       const run = aRun('pass-8')
       const waitId = aWaitId()
@@ -340,7 +340,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 8),
+          ticketId: ticketStream(PROJECT, 8),
           issue: 8,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -356,7 +356,7 @@ describe('resolveWait', () => {
 
     it('appends WaitResolved{Approve} once every check passes, and moves the lifecycle to approved', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 9)
+      const ticketId = ticketStream(PROJECT, 9)
       const item = makeStream(ticketId)
       const run = aRun('pass-9')
       const waitId = aWaitId()
@@ -378,7 +378,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 9),
+          ticketId: ticketStream(PROJECT, 9),
           issue: 9,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -413,7 +413,7 @@ describe('resolveWait', () => {
      */
     it('retries the control-stream append on a lost race, and still reports the approval granted', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 32)
+      const ticketId = ticketStream(PROJECT, 32)
       const item = makeStream(ticketId)
       const run = aRun('pass-32')
       const waitId = aWaitId()
@@ -462,7 +462,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 32),
+          ticketId: ticketStream(PROJECT, 32),
           issue: 32,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -490,7 +490,7 @@ describe('resolveWait', () => {
      */
     it('reports the approval granted, with `unscheduled` set, when the control-stream append never lands at all', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 33)
+      const ticketId = ticketStream(PROJECT, 33)
       const item = makeStream(ticketId)
       const run = aRun('pass-33')
       const waitId = aWaitId()
@@ -520,7 +520,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 33),
+          ticketId: ticketStream(PROJECT, 33),
           issue: 33,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -548,7 +548,7 @@ describe('resolveWait', () => {
      */
     it('retries the control-stream read too, not only the append, on a dropped connection', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 34)
+      const ticketId = ticketStream(PROJECT, 34)
       const item = makeStream(ticketId)
       const run = aRun('pass-34')
       const waitId = aWaitId()
@@ -582,7 +582,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 34),
+          ticketId: ticketStream(PROJECT, 34),
           issue: 34,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -603,7 +603,7 @@ describe('resolveWait', () => {
      */
     it('retries the control-stream append on any error, not only a ConcurrencyError', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 35)
+      const ticketId = ticketStream(PROJECT, 35)
       const item = makeStream(ticketId)
       const run = aRun('pass-35')
       const waitId = aWaitId()
@@ -637,7 +637,7 @@ describe('resolveWait', () => {
 
       const result = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 35),
+          ticketId: ticketStream(PROJECT, 35),
           issue: 35,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -663,7 +663,7 @@ describe('resolveWait', () => {
      */
     it('reschedules a lost continuation on a second Approve of the same wait and sha, writing no second WaitResolved', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 36)
+      const ticketId = ticketStream(PROJECT, 36)
       const item = makeStream(ticketId)
       const run = aRun('pass-36')
       const waitId = aWaitId()
@@ -693,7 +693,7 @@ describe('resolveWait', () => {
 
       const first = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 36),
+          ticketId: ticketStream(PROJECT, 36),
           issue: 36,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -708,7 +708,7 @@ describe('resolveWait', () => {
 
       const second = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 36),
+          ticketId: ticketStream(PROJECT, 36),
           issue: 36,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -730,7 +730,7 @@ describe('resolveWait', () => {
 
     it('requires a note when a refusal still stands on the sha, and refuses without one', async () => {
       const store = createMemoryEventStore()
-      const ticketId = workItemStream(PROJECT, 10)
+      const ticketId = ticketStream(PROJECT, 10)
       const item = makeStream(ticketId)
       const run = aRun('pass-10')
       const waitId = aWaitId()
@@ -755,7 +755,7 @@ describe('resolveWait', () => {
 
       const withoutNote = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 10),
+          ticketId: ticketStream(PROJECT, 10),
           issue: 10,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -770,7 +770,7 @@ describe('resolveWait', () => {
 
       const withNote = await resolveWaitHolding(
         {
-          ticketId: workItemStream(PROJECT, 10),
+          ticketId: ticketStream(PROJECT, 10),
           issue: 10,
           waitId,
           resolution: { _tag: 'Approve', onSha: SHA },
@@ -787,7 +787,7 @@ describe('resolveWait', () => {
 
   it('refuses on a version conflict — something else moved the item between the read and the append', async () => {
     const store = createMemoryEventStore()
-    const ticketId = workItemStream(PROJECT, 11)
+    const ticketId = ticketStream(PROJECT, 11)
     const item = makeStream(ticketId)
     const waitId = aWaitId()
     await seed(store, ticketId, [
@@ -806,7 +806,7 @@ describe('resolveWait', () => {
 
     const result = await resolveWaitHolding(
       {
-        ticketId: workItemStream(PROJECT, 11),
+        ticketId: ticketStream(PROJECT, 11),
         issue: 11,
         waitId,
         resolution: { _tag: 'EditBodyAndRequeue' },

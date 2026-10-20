@@ -43,7 +43,7 @@ import {
   routesOf,
   stepOutcomesOf,
   waitsOf,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { continuationOf, waivedActionsAt, type RunRef, type WaitReason } from '@lingtai/domain/wait'
@@ -867,7 +867,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       .map((id) => ({ id, missing: missingForTier(runtimeNamed(id as RuntimeId).capabilities, tier) }))
       .find((each) => each.missing.length > 0)
     const missing = refusedBy?.missing ?? []
-    const ticketId = workItemStream(project, options.issue)
+    const ticketId = ticketStream(project, options.issue)
 
     if (missing.length > 0) {
       // Never silently downgrade. The refusal is an event on the work item so the

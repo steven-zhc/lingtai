@@ -44,7 +44,7 @@ import {
   SEVERITIES,
   type Severity,
   parsePayload,
-  workItemStream,
+  ticketStream,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import { type BacklogEntry, readBacklog } from '@lingtai/projector'
@@ -324,7 +324,7 @@ async function open(
   }
   return {
     ok: true,
-    detail: `${ref.created ? 'opened' : 'recorded'} ${ref.url ?? ref.externalRef} for ${options.key} (${workItemStream(entry.project, entry.issue)})`,
+    detail: `${ref.created ? 'opened' : 'recorded'} ${ref.url ?? ref.externalRef} for ${options.key} (${ticketStream(entry.project, entry.issue)})`,
     externalRef: ref.externalRef,
     url: ref.url,
   }

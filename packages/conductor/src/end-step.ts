@@ -38,7 +38,7 @@
  * A project that configures no `end` at all still writes nothing. There the
  * skip is the user's decision, and `StepsResolved` already records it.
  */
-import { type Envelope, parsePayload, parseWorkItemStream, type PayloadOf, type ToAppend } from '@lingtai/domain'
+import { type Envelope, parsePayload, parseTicketStream, type PayloadOf, type ToAppend } from '@lingtai/domain'
 import type { LogQueries } from '@lingtai/event-store/log'
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
@@ -196,15 +196,15 @@ export interface UnresolvedEnd {
  * `ticket-lingtai-52` → the project and the issue.
  *
  * The last hyphen, which is what keeps a project name containing one intact.
- * Safe because the same code writes the id — `workItemStream` in `discover.ts`.
+ * Safe because the same code writes the id — `ticketStream` in `discover.ts`.
  *
  * Exported rather than local because `endedWithoutEndActions` below is the one
  * caller and this is a fact about an id, not about `end`; not re-exported from
  * the barrel, because a caller outside the conductor has a `ProjectState` and
  * does not need it.
  */
-export function splitWorkItem(streamId: string): { project: string; issue: number } | null {
-  const split = parseWorkItemStream(streamId)
+export function splitTicket(streamId: string): { project: string; issue: number } | null {
+  const split = parseTicketStream(streamId)
   if (split === null) return null
   const issue = Number(split.issue)
   if (!Number.isInteger(issue)) return null
@@ -240,11 +240,11 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
 export async function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
   // The comparison is the store's since #221 — an anti-join that returns only
   // the offending items — and the naming is still this file's: `ticket-lingtai-52`
-  // becomes a project and an issue here, where `splitWorkItem` is.
+  // becomes a project and an issue here, where `splitTicket` is.
   const ask = queries ?? (await import('@lingtai/event-store')).log.queries
   const found = await ask.endedWithoutEndActions()
   return found.flatMap((row) => {
-    const split = splitWorkItem(row.streamId)
+    const split = splitTicket(row.streamId)
     return split === null ? [] : [{ ticketId: row.streamId, outcome: row.outcome, ...split }]
   })
 }

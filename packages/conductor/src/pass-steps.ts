@@ -162,7 +162,7 @@ export interface Ticket {
  * reads it back through `PassPorts.item` (`#269`).
  */
 export interface Claimed {
-  /** `ticket-<project>-<issue>` — `workItemStream`, and where `end` appends. */
+  /** `ticket-<project>-<issue>` — `ticketStream`, and where `end` appends. */
   readonly ticketId: string
   readonly ticket: Ticket
   /** Which kind the recipe matched it as, which is what ordered the queue. */

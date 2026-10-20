@@ -21,7 +21,7 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceWorkItem, waitsOf, type WaitId, workItemStream } from '@lingtai/domain'
+import { parsePayload, reduceWorkItem, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -50,7 +50,7 @@ export async function ask(options: {
   store?: EventStore
 }): Promise<AskOutcome> {
   const store = options.store ?? eventStore
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = ticketStream(options.project, options.issue)
 
   if (!options.question.trim()) {
     return { ok: false, ticketId, detail: 'a question needs a question' }
@@ -129,7 +129,7 @@ export async function answer(options: {
   store?: EventStore
 }): Promise<AskOutcome> {
   const store = options.store ?? eventStore
-  const ticketId = workItemStream(options.project, options.issue)
+  const ticketId = ticketStream(options.project, options.issue)
 
   if (!options.answer.trim()) {
     return { ok: false, ticketId, detail: 'an answer needs an answer' }

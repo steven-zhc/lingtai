@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
  * 24)` — and this is the case that would catch it if `gitRefChannel` ever
  * answered a narrower or wider match than GitHub's.
  */
-import { workItemStream } from '@lingtai/domain'
+import { ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -89,7 +89,7 @@ describe('sweepRefs, over a gitRefChannel', () => {
   it("sweeps 24's own arm and leaves 240's, even though matchingRefs('heads/agent/24') answers both", async () => {
     const store = createMemoryEventStore()
     const channel = gitRefChannel({ remote })
-    const ticketId = workItemStream('esctest', 24)
+    const ticketId = ticketStream('esctest', 24)
 
     await sweepRefs({ store, github: channel, ticketId, andTheBranch: false })
 

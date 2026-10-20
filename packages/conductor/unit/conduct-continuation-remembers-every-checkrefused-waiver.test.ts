@@ -25,7 +25,7 @@
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`,
  * the same harness `conduct-continuation-remembers-every-waiver.test.ts` uses.
  */
-import { waitsOf, workItemStream } from '@lingtai/domain'
+import { waitsOf, ticketStream } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -52,7 +52,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 describe('a continuation never forgets a ProposedEscalated{CheckRefused} waiver an earlier approval already granted', () => {
   it('clears both checks once both have been approved, rather than alternating between them forever', async () => {
     const store = memoryStore()
-    const ticketId = workItemStream(PROJECT, 7)
+    const ticketId = ticketStream(PROJECT, 7)
 
     // Lap 1: a fresh pass. `checkA` refuses first, so `checkB` is never
     // reached this lap, and with no judge declared the router escalates by
