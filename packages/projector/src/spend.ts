@@ -45,7 +45,7 @@
  * in reaction to its own `DiscussionRequested`.
  */
 import type { PayloadOf, Usage } from '@lingtai/domain'
-import { chatStream, isPassStream, isWorkItemStream, parseWorkItemStream } from '@lingtai/domain'
+import { chatStream, isPassStream, isTicketStream, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, SpendQuery } from './store.ts'
@@ -137,7 +137,7 @@ export const spendProjection: Projection = {
           const d = event.data as PayloadOf<'RunSpent'>
 
           let ticket: string | null
-          if (isWorkItemStream(event.streamId)) {
+          if (isTicketStream(event.streamId)) {
             ticket = event.streamId
           } else {
             const [link] = await ctx.query<{ ticket: string }>('select ticket from spend_stream where stream_id = $1', [
@@ -145,7 +145,7 @@ export const spendProjection: Projection = {
             ])
             ticket = link ? link.ticket : null
           }
-          const project = ticket === null ? null : (parseWorkItemStream(ticket)?.project ?? null)
+          const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
           const pass = isPassStream(event.streamId) ? event.streamId : null
           const step = d.for._tag === 'Action' ? d.for.step : null
           const action = d.for._tag === 'Action' ? d.for.name : null

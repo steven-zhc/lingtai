@@ -25,7 +25,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { parsePayload, workItemStream } from '@lingtai/domain'
+import { parsePayload, ticketStream } from '@lingtai/domain'
 import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 
@@ -74,7 +74,7 @@ describe('a projection on a machine with no Postgres', () => {
       // of its life and the one in which the old code was silently deaf.
       expect((await runner.lag()).lag).toBe(0n)
 
-      const item = workItemStream(project, 1)
+      const item = ticketStream(project, 1)
       await log.store.append(item, 0, [
         {
           type: 'TicketDiscovered',
