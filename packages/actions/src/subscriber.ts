@@ -53,7 +53,7 @@
  * wants. **Rejecting is not waiting**: that boundary voids the promise, and no
  * pass, action or queue pass is behind it.
  */
-import { type Envelope, workItemStream } from '@lingtai/domain'
+import { type Envelope, ticketStream } from '@lingtai/domain'
 import { parseDuration, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
 
 import { startCommand } from './command.ts'
@@ -211,5 +211,5 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
 
 /** `ticket-{project}-{n}` and its two halves, from the halves. */
 export function subjectOf(project: string, issue: string): EventSubject {
-  return { id: workItemStream(project, issue), project, issue }
+  return { id: ticketStream(project, issue), project, issue }
 }
