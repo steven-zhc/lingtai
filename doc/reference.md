@@ -588,14 +588,17 @@ lets the log, the recipe and the board say where a pass is. What is left of
 `proposed` was called `diff` until
 [0018](decisions-archive/0018-the-proposed-point.md); stored events are upcast on read.
 
-## retired name — 4 words, and an allowlist that reached empty
+## retired name — 4 words and a pair, and an allowlist of 32
 
 **This is the one section that describes code the repository has moved away
-from.** Everything else here says what is true; this says what is no longer, and
-its allowlist is empty — `#247` closed it on 2026-09-27. The pipeline epic
-([the-pipeline](design/the-pipeline.md)) renames the vocabulary over several
-tickets, and a rename spread over several tickets ends as two vocabularies for
-one thing unless something counts — which is
+from.** Everything else here says what is true; this says what is no longer. The
+four words' allowlist is empty — `#247` closed it on 2026-09-27 — and the
+section stayed closed until `#450`'s epic named its own retired pair, *work* +
+*item*, and `#516` added the rule that catches it: the table below carries that
+debt now, 32 occurrences in 21 files, none of it the four words coming back. The
+pipeline epic ([the-pipeline](design/the-pipeline.md)) renames the vocabulary
+over several tickets, and a rename spread over several tickets ends as two
+vocabularies for one thing unless something counts — which is
 [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §Context's own
 defect. `packages/domain/unit/retired-names.test.ts` reads the tables below out
 of this file and holds the code to them.
@@ -676,8 +679,10 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 226 occurrences in
-47 files**, counted 2026-10-18 — down from 661 in 62 because `#247` had to
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 296 occurrences in
+67 files**, counted 2026-10-20 — up from 226 in 47 because `#516`'s pair rule
+below is the same rule for this purpose and is counted here with it, and down
+from 661 in 62 the four words carried alone because `#247` had to
 carry the halves as far as compiling and asserting against a `src/` whose event
 types, payload fields and refusal reason had all moved, and no further. They are
 out because a name that survives only in a test is one no
@@ -799,13 +804,60 @@ local is a red `build` gate the day somebody renames it, on a diff that
 introduces no retired name. What is asserted of all four, live or not, is that
 the rule does not flag them.
 
+### the pair
+
+**`item` alone is ordinary vocabulary — `items`, `lineItem` — and never meant a
+ticket on its own**, so a row retiring it would be the substring ban the four
+words already refuse, with a different word behind it. What is retired is the
+pair: `work` immediately followed by `item` or `items`, nowhere else.
+
+| retired | current | decided by |
+|---|---|---|
+| `work item` | `ticket` | `#450`, 2026-10-18 |
+| `work items` | `tickets` | `#450`, 2026-10-18 |
+
+**Matched inside one entry, never across the join that flattens them for the
+four words.** `words()` already splits `WorkItem`, `workItem`, `work_item` and
+`WORK_ITEM` into adjacent words, so a pair inside one token is caught the way
+`GatePlan` already is. What a token cannot see is `work item`, `Work items` and
+a stylesheet's or a string's `work-item` — two runs the identifier regex splits
+apart — so those are caught across two runs in the *same* entry, glued by
+nothing but whitespace or a dash. **Never over the flattened token stream the
+four words read**, because that stream has already lost which entry a token
+came from: `work.item`, or `const work = 1; item`, would sit next to each other
+in it with nothing to tell them apart from `"work item"`. A template's two
+halves either side of a hole and two statements either side of a `;` stay apart
+for the same reason a hole already keeps `` `review${n}gates` `` from reading as
+one — each is its own entry, and the pair rule reads inside one entry and
+nowhere wider.
+
+**The key is the token for a hit inside one, and the lowercased pair for a hit
+across two** — `WorkItemLink`, `work_item`, but `work-item` and `work-items` for
+`work item`, `Work items` and a hyphenated `work-item` alike, because none of
+those three has one spelling to point at.
+
+**The stored value is a row here, not an exemption.** `ReleaseCause`'s
+`NeverStarted.scope` is written `'work-item'`
+(`packages/domain/src/events.ts:226`) into every `TicketReleased.cause` that
+carries it, mirrored in `action.ts` and `pass-next.ts` and written at
+`conductor/src/pass.ts`. An exemption is a `continue` that excuses a spelling
+everywhere at once and grows nothing — the door the four words' exemptions are
+bolted against — and a stored name is a log change, which
+[#450](https://github.com/steven-zhc/lingtai/issues/450) and
+[#489](https://github.com/steven-zhc/lingtai/issues/489) both say rides a reset
+rather than landing alone. So it stays a counted row until a reset carries the
+rename, the same way `gate` sat in `events.ts` until `#247`'s reset spent it.
+
 ### the allowlist
 
-**0 occurrences in 0 files, counted 2026-09-27** — and that sentence is counted
-by the test rather than remembered, so it is the size of the table below and not
-a number somebody forgot to lower when the table shrank.
+**32 occurrences in 21 files, counted 2026-10-20** — and that sentence is
+counted by the test rather than remembered, so it is the size of the table
+below and not a number somebody forgot to raise when the table grew.
 
-**It is empty, and `#247` is what emptied it.** It came down 739 → 233 → 0.
+**The four words came down to empty, and `#516`'s pair rule reopened the table
+without either word coming back.** The four words' half came down 739 → 233 →
+0, and `#247` is what emptied it.
+
 `#250` substituted the four words everywhere they meant a step — the conductor,
 the board, the recipe, the CLI, the stylesheet and the copy a person reads — and
 stopped where the name was a fact about bytes that were already written down.
@@ -881,9 +933,9 @@ ledger of *distinct* names cannot see a second `gate` arrive in a file that
 already says `gate`. **The table is not a subset of the debt, it is exactly what
 the rule reads**: the test computes the same counts from `src/` and asserts they
 are these, so **a count too high is as red as a count too low**. That is what
-makes the empty table below a claim rather than an omission — an allowlist
-nobody parses is how *align the terms* becomes a sentence everybody agrees with
-and the last ticket discovers is untrue.
+makes the table below a claim rather than an omission, whatever its size — an
+allowlist nobody parses is how *align the terms* becomes a sentence everybody
+agrees with and the last ticket discovers is untrue.
 
 **So a retired name cannot arrive quietly, and what stops it is that there is
 nowhere quiet to put it.** One added to `src/` — a new name, or one more use of
@@ -894,24 +946,49 @@ that number true; a review is what makes it go down.** That division is the
 honest one: no test can tell a retired name that had to arrive from one that did
 not, and a test that claimed to would be refusing the diff that fixes something.
 
-**`0 occurrences in 0 files` passes, and today it is what the table says.** That
-is `#233`'s acceptance, reached by `#246` and `#247` between them, and a test
-with a lower bound under it would have redded the `build` gate on the diff that
-finished the job. Nothing guards against this table being read as empty by
-mistake, because nothing has to: while any debt was left in `src/` an empty parse
-failed the equality above, and now that none is left an empty table is the truth.
-**`is empty, which is the acceptance and not a count that got small`** is the
-case in `packages/domain/unit/retired-names.test.ts` that says so in its own
-right, so the day a row comes back it is a named failure rather than a number
-nobody was watching.
+**`0 occurrences in 0 files` passed once, and `#233`'s acceptance was always
+about the four words, not about the table reading empty forever.** `#246` and
+`#247` reached it between them, and a test with a lower bound under it would
+have redded the `build` gate on the diff that finished that job — which is why
+`is empty, which is the acceptance and not a count that got small`,
+in `packages/domain/unit/retired-names.test.ts`, was narrowed by `#516` rather
+than kept as an equality against `{ occurrences: 0, files: 0 }`: it now asks
+whether the four words or a glued token are in the table, not whether the table
+has rows at all. A pair row is not that regression, and the case says so by
+name — so the day one of the four words comes back it is still a named
+failure, not a number nobody was watching.
 
 | file | retired names in it |
 |---|---|
+| `apps/board/src/app/actions.ts` | `work-item` ×3 |
+| `apps/board/src/app/task/[id]/page.tsx` | `work-item` ×1 |
+| `apps/board/src/lib/prompt.ts` | `work-item` ×1 |
+| `apps/cli/src/attach.ts` | `work-item` ×1 |
+| `apps/cli/src/doctor.ts` | `work-item` ×2 |
+| `apps/cli/src/lingtai.ts` | `work-item` ×1 |
+| `apps/cli/src/source.ts` | `work-items` ×2 |
+| `apps/site/src/app/snapshot-board.tsx` | `work-items` ×1 |
+| `packages/conductor/src/discuss.ts` | `work-item` ×2 |
+| `packages/conductor/src/pass.ts` | `work-item` ×1 |
+| `packages/conductor/src/ticket-store.ts` | `work-items` ×1 |
+| `packages/domain/src/action.ts` | `work-item` ×1 |
+| `packages/domain/src/envelope.ts` | `work-item` ×1 |
+| `packages/domain/src/events.ts` | `work-item` ×1 |
+| `packages/domain/src/pass-next.ts` | `work-item` ×2 |
+| `packages/domain/src/ticket.ts` | `WorkItemLink` ×2 |
+| `packages/event-store/src/queries.ts` | `work_item` ×2 |
+| `packages/event-store/src/sqlite.ts` | `work_item` ×2 |
+| `packages/extension/src/index.ts` | `NotifiedWorkItem` ×2 |
+| `packages/github/src/app.ts` | `work-items` ×1 |
+| `packages/recipe/src/recipe.ts` | `work-item` ×2 |
 
 ### ordinary English
 
-**0 of those 0 occurrences are the English word** — the table that stood here
-is gone, and that is what `#250` spent ten reworded sentences on. It listed nine
+**0 of those 32 occurrences are the English word** — the 32 is the pair rule's,
+read above, and none of it is the English *point at* residue this table once
+carried: every occurrence the pair rule counts is the retired concept, a ticket,
+not the verb. The table that stood here for the four words is gone, and that is
+what `#250` spent ten reworded sentences on. It listed nine
 (the tenth, `Point ${PREFIX}TEST_DATABASE_URL …` in `packages/env/src/index.ts`,
 it had missed), each one word in copy that was correct as it stood, and each the
 reason `0 occurrences in 0 files` could not be reached by renaming alone. They

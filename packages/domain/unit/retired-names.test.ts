@@ -123,7 +123,14 @@ const READ_AS_TEXT: ReadonlySet<ts.SyntaxKind> = new Set([
   ts.SyntaxKind.JsxText,
 ])
 
-function scannable(src: string, name: string): string {
+/**
+ * Every entry the rule reads out of one `.ts`/`.tsx` file, in order — one
+ * identifier, or one string, template chunk or piece of JSX copy. Kept apart
+ * rather than joined, because the pair rule below reads inside one entry and
+ * must not see across one: a template's holes are two entries, and so are two
+ * statements either side of a `;`.
+ */
+function readEntries(src: string, name: string): string[] {
   // **The script kind follows the extension, and it is not a formality.** Under
   // `TSX` a `<T>(x: T) => x` in a `.ts` file is read as an element and the code
   // after it as JSX children, which turns the comments below it into text the
@@ -138,8 +145,12 @@ function scannable(src: string, name: string): string {
     node.forEachChild(visit)
   }
   parsed.forEachChild(visit)
+  return read
+}
+
+function scannable(src: string, name: string): string {
   // One token per line, so that `` `review${n}gates` `` never reads as one.
-  return read.join('\n')
+  return readEntries(src, name).join('\n')
 }
 
 /**
@@ -164,6 +175,52 @@ function classes(src: string): string[] {
 function tokens(src: string, name: string): string[] {
   if (name.endsWith('.css')) return classes(src)
   return scannable(src, name).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []
+}
+
+/** Every entry the rule reads out of one file, unjoined — a stylesheet's selectors are already one entry each. */
+function entries(src: string, name: string): string[] {
+  if (name.endsWith('.css')) return classes(src)
+  return readEntries(src, name)
+}
+
+/**
+ * **A pair, matched inside one entry and never across one.** `words()` already
+ * splits `WorkItem`, `work_item` and `WORK_ITEM` into adjacent words, so those
+ * are caught by looking inside one token's own `words()`. What a token cannot
+ * see is `work item`, `Work items` and `work-item` — two tokens the identifier
+ * regex in `tokens()` splits apart — so those are caught the other way: two
+ * runs in the *same* entry, with nothing but whitespace or a dash between them.
+ *
+ * **Keyed as the document's allowlist reads a key**, which is `\S+`: a hit
+ * inside one token is keyed by that token (`WorkItemLink`, `work_item`); a hit
+ * across two is keyed by the lowercased pair joined with a dash (`work-item`,
+ * `work-items`), which is what `work item`, `Work items` and `work-item` all
+ * become.
+ *
+ * A template's holes and two statements either side of a `;` are two entries,
+ * not one — `readEntries` keeps them apart — so neither glues to its neighbour
+ * here, the same way `scannable`'s join never let them fuse into one token.
+ */
+function pairHits(entry: string, pairs: ReadonlySet<string>): string[] {
+  const runs = [...entry.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)].map((m) => ({
+    text: m[0],
+    start: m.index,
+    end: m.index + m[0].length,
+  }))
+  const hits: string[] = []
+  for (const run of runs) {
+    const w = words(run.text)
+    for (let i = 0; i < w.length - 1; i++) {
+      if (pairs.has(`${w[i]} ${w[i + 1]}`)) hits.push(run.text)
+    }
+  }
+  for (let i = 0; i < runs.length - 1; i++) {
+    if (!/^[\s-]+$/.test(entry.slice(runs[i]!.end, runs[i + 1]!.start))) continue
+    const last = words(runs[i]!.text).at(-1)
+    const first = words(runs[i + 1]!.text)[0]
+    if (last !== undefined && first !== undefined && pairs.has(`${last} ${first}`)) hits.push(`${last}-${first}`)
+  }
+  return hits
 }
 
 /**
@@ -305,6 +362,15 @@ function parse(doc: string) {
     outside: { occurrences: Number(outside![1]), files: Number(outside![2]) },
     /** The four lowercase words, matched inside any token. */
     retired: glossaryRows.filter((r) => /^[a-z]+$/.test(r[0]!)).map((r) => r[0]!),
+    /**
+     * Two-word pairs — `work item`, `work items` — matched across an entry
+     * rather than inside a token, because neither word retires on its own.
+     */
+    pairs: rows('the pair').map((r) => {
+      const said = r[0]!.split(/\s+/)
+      expect(said, `doc/reference.md's pair table has "${r[0]}", which is not two words`).toHaveLength(2)
+      return said as [string, string]
+    }),
     /** `GatePoint` → `Step` and `GateAction` → `StepAction`: a replacement the word rules do not give. */
     named: glossaryRows.filter((r) => !/^[a-z]+$/.test(r[0]!)).map((r) => [r[0]!, r[1]!] as const),
     /**
@@ -389,12 +455,17 @@ async function count(files: readonly string[], g: ReturnType<typeof parse>): Pro
   const retired = new Set(g.retired)
   const glued = new Set(g.glued)
   const exempt = new Set(g.exempt.map(([token, file]) => `${file} · ${token}`))
+  const pairs = new Set(g.pairs.map(([a, b]) => `${a} ${b}`))
   const found = new Map<string, Map<string, number>>()
   for (const file of files) {
+    const src = await readFile(`${root}${file}`, 'utf8')
     const hit = new Map<string, number>()
-    for (const token of tokens(await readFile(`${root}${file}`, 'utf8'), file)) {
+    for (const token of tokens(src, file)) {
       if (exempt.has(`${file} · ${token}`)) continue
       if (glued.has(token) || words(token).some((w) => retired.has(w))) hit.set(token, (hit.get(token) ?? 0) + 1)
+    }
+    for (const entry of entries(src, file)) {
+      for (const key of pairHits(entry, pairs)) hit.set(key, (hit.get(key) ?? 0) + 1)
     }
     if (hit.size > 0) found.set(file, new Map([...hit].sort(([a], [b]) => (a < b ? -1 : 1))))
   }
@@ -444,6 +515,22 @@ describe('the retired names in doc/reference.md', () => {
     // `Plugin` for the plugin *definition* — a key, its fields and its schema —
     // and a `GateAction` is one written use of one, so only the retired word moves.
     expect(Object.fromEntries(g.named)).toEqual({ GatePoint: 'Step', GateAction: 'StepAction', Gate: 'Action' })
+  })
+
+  /**
+   * **The pair, pinned as the four words are.** `item` alone is ordinary
+   * vocabulary — `items`, `lineItem` — and never meant a ticket on its own, so
+   * retiring it would be the substring ban this file already refuses, with a
+   * different word. `work` immediately before `item` or `items` is the retired
+   * concept, and only that pair is caught (`#450`, 2026-10-18).
+   */
+  it('names the pair work + item, and it is pinned here', async () => {
+    const g = await glossary()
+
+    expect(g.pairs).toEqual([
+      ['work', 'item'],
+      ['work', 'items'],
+    ])
   })
 
   /**
@@ -921,6 +1008,54 @@ describe('the scanner', () => {
     expect(read.filter((t) => t === 'gate')).toHaveLength(1)
     expect(read).toContain('landedWithoutSteps')
   })
+
+  describe('the pair', () => {
+    const PAIRS = new Set(['work item', 'work items'])
+    const hitsOf = (src: string, name: string): string[] => entries(src, name).flatMap((e) => pairHits(e, PAIRS))
+
+    /**
+     * **Inside one token**, which is `words()` already splitting the camel,
+     * snake and shout case apart — the same split that lets the four words
+     * reach `GatePlan`. And a stylesheet's selector, which `classes()` keeps
+     * its dash in, falls into this case too: `words("work-item")` is
+     * `["work", "item"]`, the same as `words("workItem")`.
+     */
+    it('matches a pair glued inside one token', () => {
+      expect(hitsOf('const workItem = 1;\n', 'f.ts')).toContain('workItem')
+      expect(hitsOf('const WORK_ITEM = 1;\n', 'f.ts')).toContain('WORK_ITEM')
+      expect(hitsOf('const work_item = 1;\n', 'f.ts')).toContain('work_item')
+      expect(hitsOf('.work-item { color: red; }\n', 'globals.css')).toContain('work-item')
+    })
+
+    /**
+     * **Across two, inside the same entry, glued by nothing but whitespace or
+     * a dash.** This is the half a token cannot see: `"work item"` is two
+     * regex matches, not one, because the space is not an identifier
+     * character — the same reason `tokens()` never joins them either.
+     */
+    it('matches a pair across two tokens separated by a space or a dash, in one entry', () => {
+      expect(hitsOf('const s = "work item";\n', 'f.ts')).toContain('work-item')
+      expect(hitsOf('const s = "Work items";\n', 'f.ts')).toContain('work-items')
+      expect(hitsOf("type X = 'work-item';\n", 'f.ts')).toContain('work-item')
+      expect(hitsOf('const F = () => <p>a work item</p>;\n', 'f.tsx')).toContain('work-item')
+    })
+
+    /**
+     * **`item` alone is never a hit**, whatever shape it comes in — that is
+     * the property the whole-word rule above already has, and the pair rule
+     * does not widen it. Nor is a pair split by anything but whitespace or a
+     * dash, or by a boundary this scanner already keeps apart: a template's
+     * hole, and two statements either side of a `;`.
+     */
+    it('does not match item alone, or a pair split by anything but a space or a dash', () => {
+      expect(hitsOf('const items = [];\n', 'f.ts')).toEqual([])
+      expect(hitsOf('const lineItem = 1;\n', 'f.ts')).toEqual([])
+      expect(hitsOf('const itemWork = 1;\n', 'f.ts')).toEqual([])
+      expect(hitsOf('const s = `work${n}item`;\n', 'f.ts')).toEqual([])
+      expect(hitsOf('const work = 1;\nconst item = 2;\n', 'f.ts')).toEqual([])
+      expect(hitsOf('const s = "work.item";\n', 'f.ts')).toEqual([])
+    })
+  })
 })
 
 /**
@@ -971,6 +1106,11 @@ describe('the ledger', () => {
         '### not the retired name',
         '',
         '| token | where | what it is |',
+        '|---|---|---|',
+        '',
+        '### the pair',
+        '',
+        '| retired | current | decided by |',
         '|---|---|---|',
         '',
         '### the allowlist',
@@ -1292,21 +1432,35 @@ describe('the allowlist', () => {
    *
    * **It is deliberately not a lower bound and never was.** A test that refused
    * an empty table would have redded the `build` gate on the diff that finished
-   * the job, which is why the section above says `0 occurrences in 0 files`
-   * passes. What this adds is the other direction: a row added back has to be
+   * the job, which is why the section above said `0 occurrences in 0 files`
+   * passed. What this adds is the other direction: a row added back has to be
    * argued for in a review rather than absorbed by a count nobody was watching.
+   *
+   * **Narrowed by `#516` to the four words and the glued tokens.** The
+   * allowlist stopped being empty the day the pair rule arrived with 32
+   * occurrences already in `src/` — a stored value that cannot be renamed
+   * without a reset, and copy nobody has reworded yet — so the acceptance this
+   * case states is no longer *the table is empty*, it is *the table carries
+   * nothing the four words or a glued token would flag*. Pair rows are the
+   * only debt the allowlist may carry, and the equality in the case above
+   * still catches every one of them if it drifts from `src/`.
    */
   it('is empty, which is the acceptance and not a count that got small', async () => {
     const g = await glossary()
     const found = await violations(g)
+    const retired = new Set(g.retired)
+    const glued = new Set(g.glued)
+    const fourWordOrGlued = (token: string) => glued.has(token) || words(token).some((w) => retired.has(w))
 
-    expect(size(g.allowlist), "doc/reference.md's allowlist is no longer empty").toEqual({
-      occurrences: 0,
-      files: 0,
-    })
     expect(
-      [...found].flatMap(([file, hit]) => [...hit].map(([token, n]) => `${file} · ${token} ×${n}`)),
-      'src/ carries a retired name again',
+      [...found].flatMap(([file, hit]) => [...hit.keys()].filter(fourWordOrGlued).map((token) => `${file} · ${token}`)),
+      'src/ carries one of the four words or a glued token again',
+    ).toEqual([])
+    expect(
+      [...g.allowlist].flatMap(([file, ours]) =>
+        [...ours.keys()].filter(fourWordOrGlued).map((token) => `${file} · ${token}`),
+      ),
+      "doc/reference.md's allowlist carries one of the four words or a glued token again",
     ).toEqual([])
   })
 
