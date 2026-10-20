@@ -29,6 +29,7 @@ import {
   attemptBrief,
   attemptOutcome,
   clamp,
+  diffBaseShaOf,
   priorAttempts,
   promptVersionFor,
   type PromptBudget,
@@ -200,6 +201,47 @@ describe('armFor', () => {
   it('throws rather than silently falling back when the continuing run has no claim on this stream', () => {
     const before: Envelope[] = []
     expect(() => armFor(before, 'agent/465', 'pass-1', 2)).toThrow('pass-1')
+  })
+})
+
+/**
+ * **The base a continuation diffs against must not depend on `firstDispatch`
+ * ever having run** (#465). `RunStarted.baseSha` is written nowhere else, so
+ * a recipe whose `implement:` is a bare `run:` action — no agent dispatch —
+ * leaves it `null` for the run's whole life, and the `!` this replaced
+ * asserted a field only `firstDispatch` fills. `admit`'s own `StepEnded`
+ * carries the same sha regardless, because `firstDispatch` copies it from
+ * there in the first place.
+ */
+describe('diffBaseShaOf', () => {
+  it("reads admit's own worktree cut, with no RunStarted on the stream at all", () => {
+    const e = stream('pass-465')
+    const runEvents = [
+      e('StepStarted', { runId: 'pass-465', step: 'admit', round: 0 }),
+      e('StepEnded', {
+        runId: 'pass-465',
+        outcome: {
+          step: 'admit',
+          round: 0,
+          actions: [
+            {
+              plugin: 'worktree',
+              name: 'cut the branch',
+              onSha: 'a'.repeat(40),
+              evidence: '',
+              yields: 'worktree',
+              result: { _tag: 'Completed', head: 'a'.repeat(40) },
+            },
+          ],
+        },
+      }),
+    ]
+
+    expect(diffBaseShaOf(runEvents)).toBe('a'.repeat(40))
+  })
+
+  it('answers null, rather than throwing, when admit itself is missing from the slice', () => {
+    expect(diffBaseShaOf([])).toBeNull()
   })
 })
 

@@ -171,6 +171,62 @@ export function Decide({
 }
 
 /**
+ * The one control an `approved` item offers (#465's board-recovery finding).
+ *
+ * `WaitResolved{Approve}` already landed — the question is answered, and
+ * `standing.state` is `approved`, not `blocked` — so `Decide` has nothing to
+ * ask for here. What can still be missing is the *continuation*: the retried
+ * `ContinueRequested` append `resolveWaitHolding` makes can exhaust its
+ * retries, and when it does, `approveCard`'s own detail says so
+ * ("approve again to schedule it") on a card whose Approve button is
+ * already gone, because `card.waiting`/`standing.state === 'blocked'` is
+ * what every other control here is gated on.
+ *
+ * **Safe to click whenever it is shown, not only when it is needed.**
+ * `approveHolding`'s own `approved` branch reschedules without writing a
+ * second `WaitResolved` (`packages/conductor/src/resolve-wait.ts`'s own "way
+ * out"), so most clicks land on a continuation already under way and change
+ * nothing; the one click that matters is the one made after the retries
+ * were actually lost, and there is no way from this page to tell those two
+ * moments apart — nor does it need to, since asking again costs nothing.
+ */
+export function ScheduleContinuation({ project, issue }: { project: string; issue: number }) {
+  const [pending, setPending] = useState(false)
+  const [done, setDone] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  if (done !== null) return <p className="decided">{done}</p>
+
+  return (
+    <div className="decide">
+      <div className="btnrow">
+        <button
+          className="btn"
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setRefusal(null)
+            startTransition(async () => {
+              const result = await approveCard({ project, issue, note: '' })
+              setPending(false)
+              if (result.ok) {
+                setDone(result.detail)
+                return
+              }
+              setRefusal(result.detail)
+            })
+          }}
+        >
+          {pending ? 'asking…' : 'Schedule it'}
+        </button>
+      </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/**
  * The move that ends a wait with a new run — on every blocked card (#150).
  *
  * A card in "Waiting on you" whose run is not actually asking anything —

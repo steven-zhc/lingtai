@@ -79,7 +79,15 @@ async function project(name: string) {
 export async function approveCard(input: {
   project: string
   issue: number
-  onSha: string
+  /**
+   * The sha the card was offering. Omitted by the one caller with nothing to
+   * offer — `ScheduleContinuation` (`decide.tsx`), asking again for an
+   * `approved` item's own continuation rather than approving anything new
+   * (#465's board-recovery finding) — in which case `approve()` skips the
+   * staleness check this exists for and reschedules against whatever sha
+   * the lifecycle itself already carries.
+   */
+  onSha?: string
   note?: string
   /** The wait the card rendered — `StandingView.waitId` — so a stale card refuses rather than resolving one it never showed (#465). */
   waitId?: WaitId

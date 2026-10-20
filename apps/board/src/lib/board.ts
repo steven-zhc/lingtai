@@ -120,7 +120,7 @@ export interface BoardCard {
    * than trusted from `task_view`, which carries none (#465) — so Approve,
    * Requeue and Close resolve the wait this card showed rather than
    * whatever is open by the time the click lands. Null off every lane but
-   * Waiting, and off a Waiting card past `laneWaitIds`'s own bound.
+   * Waiting — `laneWaitIds` reads every Waiting card, with no cut.
    */
   waitId: WaitId | null
   /**
@@ -527,7 +527,7 @@ export function toCard(
    */
   costUsd: Bill = emptyBill(),
   repairCostUsd: Bill = emptyBill(),
-  /** Read off the item's own stream by `laneWaitIds`, bounded the same way `progress` is. Null off every lane but Waiting. */
+  /** Read off the item's own stream by `laneWaitIds`, for every Waiting card — unlike `progress`, never cut. Null off every lane but Waiting. */
   waitId: WaitId | null = null,
 ): BoardCard {
   return {
@@ -851,13 +851,18 @@ async function laneProgress(
  * `Approve`/`Requeue`/`Close` send back so a stale card resolves the wait it
  * rendered rather than whatever is open by the time the click lands (#465).
  *
- * **Bounded the way `laneProgress` is, and for the same reason.** `task_view`
- * carries no `wait_id` column by design — the task page's own `standingOf`
- * folds the item's live events for exactly this, because it already reads
- * them for the detail view — so the home board's list has no cheap column to
- * read it from either. The Waiting lane alone is a handful of cards, the same
- * `WAITING_RAILS` cut `railCandidates` uses, so this costs the render one
- * more stream per card already paying for one.
+ * **Never bounded, unlike `laneProgress`** — a card past some cut that
+ * rendered `waitId={null}` was reachable on every Waiting lane bigger than
+ * the cut (one CLAUDE.md note for this very project records "45 items and
+ * growing"), and a null `waitId` is not "no rail drawn", it is "resolve
+ * whatever is open now": `Decide`/`Requeue`/`Close` drop the key entirely
+ * when it is null, and the server falls back to `item.lifecycle.waitId` —
+ * the live wait, read fresh — which is the exact tautology #465 exists to
+ * close. A progress rail is decoration a bound may cut; a wait id is what
+ * the click resolves, and cutting it reopens the bug for every card the cut
+ * drops. The cost is one stream read per waiting card rather than per the
+ * first `WAITING_RAILS` of them, same as `laneProgress` already pays for a
+ * Running lane that can be just as large.
  *
  * `OwnQuestion` is included on purpose: it is the one `WaitReason` with no
  * run, so it is also the one `railCandidates`' own `runId !== null` filter
@@ -865,7 +870,7 @@ async function laneProgress(
  * that list is what keeps it in.
  */
 async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, WaitId>> {
-  const waiting = tasks.filter((t) => COLUMN_OF[t.state] === 'waiting').slice(0, WAITING_RAILS)
+  const waiting = tasks.filter((t) => COLUMN_OF[t.state] === 'waiting')
   const folded = await Promise.all(
     waiting.map(async (t) => {
       try {

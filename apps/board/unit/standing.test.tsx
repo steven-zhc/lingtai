@@ -1232,6 +1232,24 @@ describe('the moves the column ends in', () => {
   })
 
   /**
+   * **The board-recovery finding** (#465): an `approved` item that is owed a
+   * continuation `resolveWaitHolding` could not schedule has no button at
+   * all before this — `Decide` is gated on `blocked`, which this is not,
+   * and `whoWaits` only ever told the operator to "approve again", with no
+   * Approve anywhere on the page to click. `ScheduleContinuation` is the
+   * one move an `approved` row offers, and the ordinary case it is also
+   * offered.
+   */
+  it('offers Schedule it, and nothing else, on an approved item', () => {
+    const html = render({ ...HELD, state: 'approved', onYou: false }, OUTGOING)
+
+    expect(html).toContain('Schedule it')
+    expect(html).not.toContain('Send attempt')
+    expect(html).not.toContain('Leave blocked')
+    expect(html).not.toContain('Approve')
+  })
+
+  /**
    * #111 §3. The viewport is 1440 and the column was a single stack: DOM order
    * is reading order is tab order, so the prompt is first in the markup and the
    * CSS reorders nothing.

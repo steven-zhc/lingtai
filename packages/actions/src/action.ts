@@ -672,15 +672,26 @@ export interface PipelineOptions {
    */
   emit: (event: ActionEvent) => Promise<void> | void
   /**
-   * An approval that waived one of this step's declared actions, by name
-   * (#465, 0120 §6) — **the first action with that name, and that one alone**:
-   * a second entry declared under the same name still runs.
+   * Every approval that has waived one of this step's declared actions, by
+   * name (#465, 0120 §6) — **the first action with each name, and that one
+   * alone**: a second entry declared under the same name still runs, and a
+   * name this list does not carry runs too.
    *
-   * The waived action is never called. Its result is `Waived{waitId}`, which
-   * `cleared()` (`@lingtai/domain`) counts as passing for every `yields`, and
-   * every action after it in the step's list runs as it would have.
+   * **A list, not one entry, since this file's own blocker finding**: a step
+   * whose actions each stop the pass on their own cannot be got past one
+   * approval at a time — the first approval waives one and the second
+   * action stops the pass again, and the continuation that answers *that*
+   * wait remembers only the second, so the first runs again unwaived and
+   * refuses again. `PassOptions.from`'s own caller (`pass.ts`) is what
+   * accumulates every waiver this item's approvals have ever granted at this
+   * step, not only the latest.
+   *
+   * Each waived action is never called. Its result is `Waived{waitId}`,
+   * which `cleared()` (`@lingtai/domain`) counts as passing for every
+   * `yields`, and every action after it in the step's list runs as it would
+   * have.
    */
-  waived?: { name: string; waitId: WaitId }
+  waived?: readonly { readonly name: string; readonly waitId: WaitId }[]
 }
 
 /**
@@ -713,20 +724,22 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
    * read instead of `designOn`'s answer.
    */
   let context = options.context
-  // Consumed by at most the first action it names — a later entry declared
-  // under the same name is not the one an approval waived (`PipelineOptions.waived`).
-  let waiverSpent = false
+  // Each name is consumed by at most the first action it matches — a later
+  // entry declared under the same name is not the one an approval waived
+  // (`PipelineOptions.waived`'s own doc).
+  const waiversSpent = new Set<string>()
 
   for (const [index, action] of actions.entries()) {
-    if (options.waived !== undefined && !waiverSpent && action.name === options.waived.name) {
-      waiverSpent = true
+    const waiver = options.waived?.find((w) => w.name === action.name && !waiversSpent.has(w.name))
+    if (waiver !== undefined) {
+      waiversSpent.add(waiver.name)
       context.log?.note(`${step}:${action.name}`, 'waived — a person approved past it')
       results.push({
         action: action.name,
         verdict: 'waived',
         evidence: '',
         findings: [],
-        waitId: options.waived.waitId,
+        waitId: waiver.waitId,
       })
       continue
     }

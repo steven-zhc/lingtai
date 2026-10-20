@@ -38,7 +38,7 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
-import { attemptFactOf, cardFactOf } from '@lingtai/domain'
+import { attemptFactOf, cardFactOf, headOf, stepOutcomesOf } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -231,6 +231,33 @@ export function armFor(
     throw new Error(`armFor: ${continuingRunId} is continuing but has no claim on ${branch}'s own item stream`)
   }
   return armBranch(branch, held.n)
+}
+
+/**
+ * The base a continuation's "what changed" reads have to diff against —
+ * never `RunStarted.baseSha` alone (#465).
+ *
+ * `RunStarted.baseSha` is written in exactly one place, inside
+ * `firstDispatch` (`conduct.ts`), which runs only when `implement`'s own
+ * list holds a dispatching work action. A recipe whose `implement:` is a
+ * bare `run:` action — a script that commits directly, with no agent
+ * dispatch at all — never reaches `firstDispatch`, so `RunStarted` is never
+ * appended and `reduceRun(runEvents).baseSha` stays `null` for the whole of
+ * the run, including once it reaches a wait that offers `Approve`.
+ *
+ * `admit`'s own `StepEnded` carries the same value under a different name:
+ * `headOf` on a `worktree`-kind action's `Completed` result is the cut's own
+ * head, the same sha `firstDispatch` would have copied into `RunStarted`
+ * (both come from the one `provisionWorktree` call `admit` makes). `admit`
+ * always runs, and always succeeds, before any step downstream of it can
+ * reach a wait that offers `Approve` — so this is never missing where a
+ * caller has already confirmed `continuationOf` says this wait offers one.
+ * `null` only where `admit` itself is missing from `runEvents`, which a
+ * caller should not reach.
+ */
+export function diffBaseShaOf(runEvents: readonly Envelope[]): string | null {
+  const admitOutcome = stepOutcomesOf(runEvents).find((o) => o.step === 'admit')
+  return admitOutcome === undefined ? null : headOf(admitOutcome)
 }
 
 /**

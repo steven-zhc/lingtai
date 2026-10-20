@@ -1,7 +1,12 @@
 /**
  * `PipelineOptions.waived` (#465, 0120 §6): the first action in the step's
- * list carrying the waived name is never called, its result is
+ * list carrying each waived name is never called, its result is
  * `Waived{waitId}`, and everything else in the step runs as it would have.
+ *
+ * **A list, since this file's own blocker finding**: two actions that each
+ * stop the pass on their own have to clear together, once each has its own
+ * approval, or a continuation that remembers only the latest loops between
+ * them forever.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -32,7 +37,7 @@ describe('runActionPipeline with a waiver', () => {
       actions: [recordingAction('human:land', calls, FAILED)],
       context,
       emit: () => {},
-      waived: { name: 'human:land', waitId: 'wait-1' as never },
+      waived: [{ name: 'human:land', waitId: 'wait-1' as never }],
     })
     expect(calls).toEqual([])
     expect(result.ok).toBe(true)
@@ -52,7 +57,7 @@ describe('runActionPipeline with a waiver', () => {
       ],
       context,
       emit: () => {},
-      waived: { name: 'human:land', waitId: 'wait-1' as never },
+      waived: [{ name: 'human:land', waitId: 'wait-1' as never }],
     })
     expect(calls).toEqual(['run:pnpm-test', 'merge:lane'])
     expect(result.ok).toBe(true)
@@ -70,7 +75,7 @@ describe('runActionPipeline with a waiver', () => {
       actions: [recordingAction('watch:ci', calls, PASSED), recordingAction('watch:ci', calls, PASSED)],
       context,
       emit: () => {},
-      waived: { name: 'watch:ci', waitId: 'wait-1' as never },
+      waived: [{ name: 'watch:ci', waitId: 'wait-1' as never }],
     })
     expect(calls).toEqual(['watch:ci'])
     expect(result.results.map((r) => r.verdict)).toEqual(['waived', 'passed'])
@@ -83,9 +88,34 @@ describe('runActionPipeline with a waiver', () => {
       actions: [recordingAction('run:pnpm-test', calls, PASSED)],
       context,
       emit: () => {},
-      waived: { name: 'human:land', waitId: 'wait-1' as never },
+      waived: [{ name: 'human:land', waitId: 'wait-1' as never }],
     })
     expect(calls).toEqual(['run:pnpm-test'])
     expect(result.results[0]?.verdict).toBe('passed')
+  })
+
+  /**
+   * **The blocker finding itself, at the pipeline's own layer**: two actions
+   * that each stop the pass, each with its own approval, clear together in
+   * one visit rather than one at a time.
+   */
+  it('waives two actions at once, each by its own waiver — the step clears in one visit', async () => {
+    const calls: string[] = []
+    const result = await runActionPipeline({
+      step: 'proposed',
+      actions: [recordingAction('tamper', calls, FAILED), recordingAction('approval', calls, FAILED)],
+      context,
+      emit: () => {},
+      waived: [
+        { name: 'tamper', waitId: 'wait-1' as never },
+        { name: 'approval', waitId: 'wait-2' as never },
+      ],
+    })
+    expect(calls).toEqual([])
+    expect(result.ok).toBe(true)
+    expect(result.results).toEqual([
+      { action: 'tamper', verdict: 'waived', evidence: '', findings: [], waitId: 'wait-1' },
+      { action: 'approval', verdict: 'waived', evidence: '', findings: [], waitId: 'wait-2' },
+    ])
   })
 })

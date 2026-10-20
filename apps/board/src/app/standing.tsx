@@ -11,7 +11,7 @@ import { holding, place, type QueuedView } from '@/lib/queued'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 
-import { Close, Decide, Requeue, RunNow, Send } from './decide.tsx'
+import { Close, Decide, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
 import { Discussion } from './discussion.tsx'
 import { Outgoing } from './outgoing.tsx'
 import { Plan } from './plan.tsx'
@@ -472,6 +472,19 @@ export function Standing({
               things a person can say about it — *sooner* and *never* — and
               until `#151` the page offered only the first. */}
           <Close project={project} issue={issue} />
+        </div>
+      ) : null}
+
+      {/* The one control an `approved` item offers (#465's board-recovery
+          finding). `WaitResolved{Approve}` already landed, so there is
+          nothing left to decide — the only thing that can still be missing
+          is the continuation itself, and this is the only way to ask again
+          without shell access to the conducting machine. See
+          `ScheduleContinuation`'s own comment for why clicking it is always
+          safe. */}
+      {acting && standing.state === 'approved' ? (
+        <div className="btnrow smoves" data-rank="moves">
+          <ScheduleContinuation project={project} issue={issue} />
         </div>
       ) : null}
 

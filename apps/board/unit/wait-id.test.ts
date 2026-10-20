@@ -1,8 +1,9 @@
 /**
  * The home board's own `BoardCard.waitId` (#465). `task_view` carries no
  * `wait_id` column, so `toCard` takes it as an argument — `laneWaitIds`'s own
- * read of the item stream, bounded the way `laneProgress` is — rather than
- * reading it off the `TaskCard` the way every other field here does.
+ * read of the item stream, never cut the way `laneProgress`'s rails are —
+ * rather than reading it off the `TaskCard` the way every other field here
+ * does.
  */
 import { aWaitId } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'
@@ -58,7 +59,7 @@ describe("a card's own wait id", () => {
     expect(card.waitId).toBe(waitId)
   })
 
-  it('is null when the caller gave none — a queued or landed card, or a waiting one past `laneWaitIds`’ own bound', () => {
+  it('is null when the caller gave none — a queued or landed card, or a waiting one `laneWaitIds` could not read', () => {
     const t = blocked()
 
     expect(toCard(t).waitId).toBeNull()

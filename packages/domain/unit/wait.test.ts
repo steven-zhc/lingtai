@@ -6,12 +6,14 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { StepOutcome } from '../src/action.ts'
+import type { StepOutcome, WaitId } from '../src/action.ts'
 import type { Proposal } from '../src/proposal.ts'
 import {
   allowedResolutions,
   continuationOf,
   recommendedResolution,
+  waivedActionsAt,
+  type Resolution,
   type RunRef,
   type TriageResult,
   type TriageStatus,
@@ -446,5 +448,78 @@ describe('continuationOf', () => {
       const offersApprove = allowedResolutions(reason).includes('Approve')
       expect(continuationOf(reason, []) !== null).toBe(offersApprove)
     }
+  })
+})
+
+describe('waivedActionsAt', () => {
+  /**
+   * **The blocker finding this function exists to close**: two approvals,
+   * each against a different wait at the same step, each naming a
+   * different action — both have to come back, not only the one the
+   * lifecycle's own `waitId` currently names.
+   */
+  it('accumulates every approval at the step, not only the most recent', () => {
+    const tamperWait = parseReason({
+      _tag: 'CheckRefused',
+      run,
+      step: 'proposed',
+      action: 'tamper',
+      evidence: 'package.json changed',
+      findings: [],
+    })
+    const approvalWait = parseReason({
+      _tag: 'SignoffRequired',
+      run,
+      step: 'proposed',
+      action: 'approval',
+      question: 'merge this?',
+    })
+    const waits = [
+      { waitId: 'wait-1' as WaitId, reason: tamperWait, resolution: { _tag: 'Approve', onSha: 'sha-1' } as Resolution },
+      {
+        waitId: 'wait-2' as WaitId,
+        reason: approvalWait,
+        resolution: { _tag: 'Approve', onSha: 'sha-1' } as Resolution,
+      },
+    ]
+    expect(waivedActionsAt(waits, [], 'pass-1', 'proposed')).toEqual([
+      { name: 'tamper', waitId: 'wait-1' },
+      { name: 'approval', waitId: 'wait-2' },
+    ])
+  })
+
+  it('excludes a wait on a different run', () => {
+    const reason = parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: '?' })
+    const waits = [
+      {
+        waitId: 'wait-1' as WaitId,
+        reason,
+        resolution: { _tag: 'Approve', onSha: 'sha-1' } as Resolution,
+      },
+    ]
+    expect(waivedActionsAt(waits, [], 'pass-other', 'merge')).toEqual([])
+  })
+
+  it('excludes a wait resolved some other way than Approve', () => {
+    const reason = parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: '?' })
+    const waits = [{ waitId: 'wait-1' as WaitId, reason, resolution: { _tag: 'Requeue' } as Resolution }]
+    expect(waivedActionsAt(waits, [], 'pass-1', 'merge')).toEqual([])
+  })
+
+  it('excludes an approved wait whose own continuation lands on a different step', () => {
+    const reason = parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: '?' })
+    const waits = [
+      { waitId: 'wait-1' as WaitId, reason, resolution: { _tag: 'Approve', onSha: 'sha-1' } as Resolution },
+    ]
+    expect(waivedActionsAt(waits, [], 'pass-1', 'proposed')).toEqual([])
+  })
+
+  it('keeps only the first approval naming a given action, when two name the same one', () => {
+    const reason = parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: '?' })
+    const waits = [
+      { waitId: 'wait-1' as WaitId, reason, resolution: { _tag: 'Approve', onSha: 'sha-1' } as Resolution },
+      { waitId: 'wait-2' as WaitId, reason, resolution: { _tag: 'Approve', onSha: 'sha-2' } as Resolution },
+    ]
+    expect(waivedActionsAt(waits, [], 'pass-1', 'merge')).toEqual([{ name: 'human:land', waitId: 'wait-1' }])
   })
 })

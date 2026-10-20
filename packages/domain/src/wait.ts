@@ -22,7 +22,7 @@
  */
 import { z } from 'zod'
 
-import { decidingAction, type StepOutcome } from './action.ts'
+import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
 import {
@@ -333,6 +333,51 @@ export function continuationOf(
     case 'AnswerUnreadable':
       return null
   }
+}
+
+/**
+ * Every action a run's own approvals have already waived at `step` —
+ * accumulated over every `Approve` this item has ever recorded for `runId`,
+ * never only the most recent.
+ *
+ * **The blocker this closes**: a step whose list holds two actions that
+ * each stop the pass can never be got past one approval at a time. Each
+ * approval resolves one wait and, read alone through {@link continuationOf},
+ * names only the one action *that* wait was about — so a continuation that
+ * waived only the wait it was answering let the other action run again
+ * unwaived, and it refused again the same way, forever. Folding over every
+ * wait this item has ever recorded for the run being continued, rather than
+ * the single wait named by the lifecycle's own `waitId`, is what remembers
+ * both.
+ *
+ * `waits` is `waitsOf(events)` — every `WaitStarted` this item ever
+ * recorded, resolved or not. A wait with no resolution, or one resolved some
+ * way other than `Approve`, contributes nothing. One whose own
+ * `continuationOf` lands at a different step — a different run, or an
+ * earlier wait on the same run answered before a fix round moved it on —
+ * contributes nothing either. The first approval to name a given action
+ * wins; a later approval re-waiving the same name is the same fact recorded
+ * twice, not a second waiver.
+ */
+export function waivedActionsAt(
+  waits: readonly { readonly waitId: WaitId; readonly reason: WaitReason; readonly resolution: Resolution | null }[],
+  runOutcomes: readonly (StepOutcome & { readonly runId: string })[],
+  runId: string,
+  step: Step,
+): { readonly name: string; readonly waitId: WaitId }[] {
+  const seen = new Set<string>()
+  const out: { name: string; waitId: WaitId }[] = []
+  for (const w of waits) {
+    if (w.resolution?._tag !== 'Approve') continue
+    const onRun = 'run' in w.reason ? w.reason.run.runId : null
+    if (onRun !== runId) continue
+    const continuation = continuationOf(w.reason, runOutcomes)
+    if (continuation === null || continuation.step !== step || continuation.waive === null) continue
+    if (seen.has(continuation.waive)) continue
+    seen.add(continuation.waive)
+    out.push({ name: continuation.waive, waitId: w.waitId })
+  }
+  return out
 }
 
 /** The name of the action that refused, off the run's last visit to `step` — `null` where none did. */

@@ -903,14 +903,21 @@ export interface PassOptions {
     /** The step the wait arose at — `design` through `review` are skipped to reach it, and `proposed` too when this is `merge`. */
     readonly step: Step
     /**
-     * The action waived there, and the wait that waived it — `null` for a
-     * continuation with nothing to waive (`FixerDisagrees`, `MergeRefused`,
-     * and their `ProposedEscalated` kin: the lane or the router runs again,
-     * unwaived). Applied only to **this step's first visit** in the walk: a
-     * fix round that sends it back through `step` on a new head is not the
-     * head the approval was about.
+     * Every action this item's approvals have waived at `step`, and the wait
+     * each one answers — empty for a continuation with nothing to waive
+     * (`FixerDisagrees`, `MergeRefused`, and their `ProposedEscalated` kin:
+     * the lane or the router runs again, unwaived). Applied only to **this
+     * step's first visit** in the walk: a fix round that sends it back
+     * through `step` on a new head is not the head the approvals were about.
+     *
+     * **A list, not one entry** — the caller (`conduct.ts`) accumulates
+     * every `Approve` this item has recorded for the step, not only the
+     * latest: a step whose list holds two actions that each stop the pass
+     * can never be got past one waiver at a time, because each continuation
+     * that remembered only the wait it was itself answering let the other
+     * run again unwaived.
      */
-    readonly waive: { readonly name: string; readonly waitId: WaitId } | null
+    readonly waive: readonly { readonly name: string; readonly waitId: WaitId }[]
     /**
      * What the held run had already spent, so a continuation does not start
      * the round budget over — `ceilings.rounds` bounds the pass's total, not
@@ -1666,9 +1673,7 @@ async function runStep(
        * sending the pass back through it is not the visit the approval named.
        */
       const waived =
-        options.from?.step === spec.step &&
-        options.from.waive !== null &&
-        !reached.some((visit) => visit.step === spec.step)
+        options.from?.step === spec.step && !reached.some((visit) => visit.step === spec.step)
           ? options.from.waive
           : undefined
       const result = await runActionPipeline({

@@ -1846,7 +1846,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
       emit,
       bodies,
       actionsAt,
-      from: { step: 'merge', waive: null },
+      from: { step: 'merge', waive: [] },
     })
 
     expect(seen.map((s) => s.step)).toEqual(['admit', 'prepared', 'merge', 'end'])
@@ -1869,7 +1869,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
       emit,
       bodies,
       actionsAt,
-      from: { step: 'merge', waive: { name: 'human:land', waitId: 'wait-1' as never } },
+      from: { step: 'merge', waive: [{ name: 'human:land', waitId: 'wait-1' as never }] },
     })
 
     expect(calls).toEqual([]) // the signoff action was never called
@@ -1917,7 +1917,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
       bodies,
       actionsAt,
       ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
-      from: { step: 'merge', waive: { name: 'watch:ci', waitId: 'wait-1' as never } },
+      from: { step: 'merge', waive: [{ name: 'watch:ci', waitId: 'wait-1' as never }] },
       // `check-refused` has no built-in (`BUILT_IN_FOR`, `judge.ts`) — a
       // declared judge is what sends it to `implement` here, same as a
       // recipe's own `judge:` would.
@@ -1931,6 +1931,48 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     expect(result.steps.filter((s) => s.step === 'merge')[0]?.outcome?.actions[0]?.result._tag).toBe('Waived')
     expect(result.steps.filter((s) => s.step === 'merge')[1]?.outcome?.actions[0]?.result._tag).not.toBe('Waived')
     expect(result.end._tag).toBe('WaitOnPerson')
+  })
+
+  /**
+   * **The blocker finding itself**: a step whose list holds two actions
+   * that each stop the pass clears in one visit once each has its own
+   * waiver — `from.waive` carries both, not only the one the latest
+   * approval named. Before the fix this was unreachable: `from.waive` held
+   * one entry, so only one of the two actions below could ever be skipped
+   * on a given lap.
+   */
+  it('waives two actions at once, each by its own wait — the step that held on both now clears', async () => {
+    const calls: string[] = []
+    const recipe = recipeWith({})
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      proposed: [asksIfRun('tamper', calls), asksIfRun('approval', calls)],
+      merge: [lands('land it')],
+    })
+    const { emit } = events()
+
+    const result = await runPass({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: {
+        step: 'proposed',
+        waive: [
+          { name: 'tamper', waitId: 'wait-1' as never },
+          { name: 'approval', waitId: 'wait-2' as never },
+        ],
+      },
+    })
+
+    expect(calls).toEqual([]) // neither signoff action ran
+    const proposed = result.steps.find((s) => s.step === 'proposed')
+    expect(proposed?.outcome?.actions.map((a) => ({ name: a.name, tag: a.result._tag }))).toEqual([
+      { name: 'tamper', tag: 'Waived' },
+      { name: 'approval', tag: 'Waived' },
+    ])
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
   })
 })
 

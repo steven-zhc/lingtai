@@ -39,7 +39,6 @@ import {
   passIdOf,
   passStream,
   reduceControl,
-  reduceRun,
   reduceWorkItem,
   routesOf,
   stepOutcomesOf,
@@ -47,7 +46,7 @@ import {
   workItemStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
-import { continuationOf, type RunRef, type WaitReason } from '@lingtai/domain/wait'
+import { continuationOf, waivedActionsAt, type RunRef, type WaitReason } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
@@ -185,7 +184,7 @@ import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
-import { armFor, priorAttempts } from './attempts.ts'
+import { armFor, diffBaseShaOf, priorAttempts } from './attempts.ts'
 import { agentBranch } from './branches.ts'
 import { claimWorkItem, continueWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
@@ -960,25 +959,38 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         .at(-1)
       return {
         step: next.step,
-        waive: next.waive === null ? null : { name: next.waive, waitId: approvedWaitId },
+        /**
+         * **Every waiver this item's approvals have granted at this step,
+         * not only the one `approvedWaitId` is about** (#465's blocker
+         * finding). A step whose list holds two actions that each stop the
+         * pass — a `watch:` and a `human:`, say — can never be got past one
+         * approval at a time: the first approval waives one action and the
+         * other stops the pass again, and a continuation that remembered
+         * only the wait it was itself answering let the first run again
+         * unwaived on this very visit, which refused again the same way,
+         * forever. `waivedActionsAt` (`@lingtai/domain/wait`) folds over
+         * every `Approve` this item has ever recorded for this run, so both
+         * come back together.
+         */
+        waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
         roundsSpent: lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
         /**
          * **The base every "what changed" read has to diff against — never
-         * `onSha` above** (#465). `onSha` is where this re-cut's worktree is
-         * checked out, which is the run's own prior head; diffing against it
-         * reads as no change at all until a new commit lands, so a `watch:`
-         * or a cold reviewer's `diff` reached for the first time after the
-         * approval sees an empty file list and clears a diff it never read.
+         * `onSha` above, and never `RunStarted.baseSha` alone** (#465).
+         * `onSha` is where this re-cut's worktree is checked out, which is
+         * the run's own prior head; diffing against it reads as no change at
+         * all until a new commit lands, so a `watch:` or a cold reviewer's
+         * `diff` reached for the first time after the approval sees an empty
+         * file list and clears a diff it never read.
          *
-         * `RunStarted.baseSha` is this run's own first cut — written once,
-         * by `firstDispatch`, before this run could ever reach a wait that
-         * offers `Approve` (every such wait arises at `proposed` or later,
-         * all of them downstream of `implement`) — so it is on `runEvents`
-         * and it is never null by the time `continuationOf` above has
-         * already said this wait offers one.
+         * `diffBaseShaOf` (`./attempts.ts`) reads this off `admit`'s own
+         * `StepEnded` rather than `RunStarted.baseSha`, which only
+         * `firstDispatch` writes — a recipe whose `implement:` is a bare
+         * `run:` action with no agent dispatch never reaches it, and the `!`
+         * this replaced asserted a field only that dispatch fills.
          */
-        diffBaseSha: reduceRun(runEvents).baseSha!,
+        diffBaseSha: diffBaseShaOf(runEvents),
       }
     })
 

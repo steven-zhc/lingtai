@@ -90,6 +90,7 @@ export {
   armFor,
   attemptBrief,
   attemptOutcome,
+  diffBaseShaOf,
   editHash,
   priorAttempts,
   promptVersionFor,
