@@ -6,9 +6,11 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import type { StepOutcome } from '../src/action.ts'
 import type { Proposal } from '../src/proposal.ts'
 import {
   allowedResolutions,
+  continuationOf,
   recommendedResolution,
   type RunRef,
   type TriageResult,
@@ -326,5 +328,123 @@ describe('TriageResult refuses what 0118 §1 rules out', () => {
       why: 'nope',
     }
     void value
+  })
+})
+
+describe('continuationOf', () => {
+  it('SignoffRequired: continues at its own step, waiving its own action', () => {
+    const reason = parseReason({
+      _tag: 'SignoffRequired',
+      run,
+      step: 'merge',
+      action: 'human:land',
+      question: 'land it?',
+    })
+    expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: 'human:land' })
+  })
+
+  it('CheckRefused: continues at its own step, waiving its own action', () => {
+    const reason = parseReason({
+      _tag: 'CheckRefused',
+      run,
+      step: 'proposed',
+      action: 'watch:ci',
+      evidence: 'the check failed',
+      findings: [],
+    })
+    expect(continuationOf(reason, [])).toEqual({ step: 'proposed', waive: 'watch:ci' })
+  })
+
+  it('FixerDisagrees: continues at proposed, nothing waived', () => {
+    const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
+    expect(continuationOf(reason, [])).toEqual({ step: 'proposed', waive: null })
+  })
+
+  it('MergeRefused: continues at merge, nothing waived — the lane runs again', () => {
+    const reason = parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused: dirty base' })
+    expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
+  })
+
+  it('ProposedEscalated{ReviewFindings}: continues at proposed, nothing waived', () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'ReviewFindings', findings: [] },
+      because: { _tag: 'NotAsked' },
+    })
+    expect(continuationOf(reason, [])).toEqual({ step: 'proposed', waive: null })
+  })
+
+  it('ProposedEscalated{MergeRefused}: continues at merge, nothing waived', () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'MergeRefused', reason: 'dirty-base', output: 'refused' },
+      because: { _tag: 'NotAsked' },
+    })
+    expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
+  })
+
+  it("ProposedEscalated{CheckRefused}: continues at the proposal's own step, waiving the name read off the run", () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'refused' },
+      because: { _tag: 'NotAsked' },
+    })
+    const runOutcomes: (StepOutcome & { runId: string })[] = [
+      {
+        runId: 'pass-1',
+        step: 'merge',
+        round: 0,
+        actions: [
+          {
+            plugin: 'watch',
+            name: 'watch:ci',
+            onSha: 'sha-1',
+            evidence: 'refused',
+            yields: 'verdict',
+            result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+          },
+        ],
+      },
+    ]
+    expect(continuationOf(reason, runOutcomes)).toEqual({ step: 'merge', waive: 'watch:ci' })
+  })
+
+  it("ProposedEscalated{CheckRefused}: null action name when the run's own outcomes say nothing", () => {
+    const reason = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'CheckRefused', from: 'merge', output: 'refused' },
+      because: { _tag: 'NotAsked' },
+    })
+    expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
+  })
+
+  it('null exactly where allowedResolutions does not offer Approve', () => {
+    const samples: WaitReason[] = [
+      parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
+      parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' }),
+      parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: 'land it?' }),
+      parseReason({ _tag: 'FixerDisagrees', run, said: null }),
+      parseReason({ _tag: 'NothingProduced', run, said: null }),
+      parseReason({
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'BuildRed', output: 'FAIL' },
+        because: { _tag: 'NotAsked' },
+      }),
+      parseReason({ _tag: 'CheckRefused', run, step: 'proposed', action: 'watch:ci', evidence: 'no', findings: [] }),
+      parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused' }),
+      parseReason({ _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: 'ran out' }),
+      parseReason({ _tag: 'AgentCrashed', run, step: 'implement', cause: 'crash', detail: 'crashed' }),
+      parseReason({ _tag: 'SetupRefused', run, step: 'prepared', action: 'run:pnpm install', why: 'no network' }),
+      parseReason({ _tag: 'AnswerUnreadable', run, step: 'review', action: 'agent:review', raw: 'garbled' }),
+    ]
+    for (const reason of samples) {
+      const offersApprove = allowedResolutions(reason).includes('Approve')
+      expect(continuationOf(reason, []) !== null).toBe(offersApprove)
+    }
   })
 })

@@ -22,7 +22,8 @@
  */
 import { z } from 'zod'
 
-import { Proposal } from './proposal.ts'
+import { decidingAction, type StepOutcome } from './action.ts'
+import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
 import {
   Hunk,
@@ -266,6 +267,84 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
   return unpushed ? table.filter((tag) => tag !== 'Approve') : table
+}
+
+/** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */
+export interface Continuation {
+  readonly step: Step
+  readonly waive: string | null
+}
+
+/**
+ * Where `Approve` continues the run, and what it waives there (#465, 0118 §1's
+ * table by the proposal's **kind**, 2026-10-14's edit). `null` exactly where
+ * {@link allowedResolutions} does not offer `Approve` — there is nothing to
+ * continue, so there is nowhere to name.
+ *
+ * `runOutcomes` is only read for `ProposedEscalated{CheckRefused}` — that
+ * `Proposal` carries `from` and `output` and no action name (`proposal.ts`),
+ * so the name is read off the run's own last `StepEnded` at that step, the
+ * same read `refusingOn` (`approve.ts`) makes: the first action there that did
+ * not clear. Every other variant names its own step and (where one is waived)
+ * its own action directly, and reads nothing off a run.
+ */
+export function continuationOf(
+  reason: WaitReason,
+  runOutcomes: readonly (StepOutcome & { readonly runId: string })[],
+): Continuation | null {
+  switch (reason._tag) {
+    case 'SignoffRequired':
+    case 'CheckRefused':
+      return { step: reason.step, waive: reason.action }
+    case 'FixerDisagrees':
+      return { step: 'proposed', waive: null }
+    case 'MergeRefused':
+      return { step: 'merge', waive: null }
+    case 'ProposedEscalated': {
+      const proposal = reason.proposal
+      switch (proposal._tag) {
+        case 'ReviewFindings':
+        case 'ReviewEmpty':
+        case 'FixerDisagrees':
+          return { step: 'proposed', waive: null }
+        case 'MergeRefused':
+          return { step: 'merge', waive: null }
+        case 'CheckRefused': {
+          const step = fromOf(proposal)
+          return { step, waive: lastRefusedActionName(runOutcomes, reason.run.runId, step) }
+        }
+        case 'BuildRed':
+        case 'InputNeeded':
+        case 'MergeConflict':
+        case 'VerifyRed':
+        case 'SetupRefused':
+        case 'AnswerUnreadable':
+        case 'NothingProduced':
+        case 'BudgetExhausted':
+          return null
+      }
+    }
+    case 'OwnQuestion':
+    case 'AgentQuestion':
+    case 'NothingProduced':
+    case 'BudgetExhausted':
+    case 'AgentCrashed':
+    case 'SetupRefused':
+    case 'AnswerUnreadable':
+      return null
+  }
+}
+
+/** The name of the action that refused, off the run's last visit to `step` — `null` where none did. */
+function lastRefusedActionName(
+  runOutcomes: readonly (StepOutcome & { readonly runId: string })[],
+  runId: string,
+  step: Step,
+): string | null {
+  const visits = runOutcomes.filter((o) => o.runId === runId && o.step === step)
+  const last = visits.at(-1)
+  if (last === undefined) return null
+  return decidingAction(last)?.name ?? null
 }
 
 /**

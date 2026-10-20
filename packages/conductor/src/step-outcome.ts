@@ -122,6 +122,8 @@ function notReachedOf(action: Action, onSha: string): DomainAction {
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
   switch (outcome.verdict) {
+    case 'waived':
+      return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
       return { _tag: 'Completed', assessment: { verdict: 'accepted', findings: outcome.findings } }
     case 'failed':
@@ -151,6 +153,8 @@ function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function signoffResultOf(outcome: ActionOutcomeEntry): ResultOf<'signoff'> {
   switch (outcome.verdict) {
+    case 'waived':
+      return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
       return { _tag: 'Completed', requested: null }
     case 'needs-approval':
@@ -179,6 +183,8 @@ function signoffResultOf(outcome: ActionOutcomeEntry): ResultOf<'signoff'> {
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
   switch (outcome.verdict) {
+    case 'waived':
+      return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
       return { _tag: 'Completed', head: outcome.head ?? null, question: null }
     case 'never-ran':
@@ -214,6 +220,8 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function designResultOf(outcome: ActionOutcomeEntry): ResultOf<'design'> {
   switch (outcome.verdict) {
+    case 'waived':
+      return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
       return {
         _tag: 'Drafted',
@@ -251,6 +259,7 @@ function designResultOf(outcome: ActionOutcomeEntry): ResultOf<'design'> {
 
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function worktreeResultOf(outcome: ActionOutcomeEntry): ResultOf<'worktree'> {
+  if (outcome.verdict === 'waived') return { _tag: 'Waived', waitId: outcome.waitId! }
   if (outcome.verdict === 'passed' && outcome.head !== undefined) {
     return { _tag: 'Completed', head: outcome.head }
   }
@@ -263,6 +272,7 @@ function worktreeResultOf(outcome: ActionOutcomeEntry): ResultOf<'worktree'> {
 
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function mergeResultOf(outcome: ActionOutcomeEntry): ResultOf<'merge'> {
+  if (outcome.verdict === 'waived') return { _tag: 'Waived', waitId: outcome.waitId! }
   if (outcome.verdict === 'passed') {
     return { _tag: 'Completed', integration: { _tag: 'Integrated', mergeSha: outcome.merged ?? '' } }
   }
@@ -286,6 +296,7 @@ function mergeResultOf(outcome: ActionOutcomeEntry): ResultOf<'merge'> {
 
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function nothingResultOf(outcome: ActionOutcomeEntry): ResultOf<'nothing'> {
+  if (outcome.verdict === 'waived') return { _tag: 'Waived', waitId: outcome.waitId! }
   return outcome.verdict === 'passed' ? { _tag: 'Completed' } : { _tag: 'NotDone' }
 }
 
