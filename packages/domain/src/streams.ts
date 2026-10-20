@@ -47,6 +47,18 @@ export function isWorkItemStream(id: string): boolean {
   return id.startsWith(WORK_ITEM_STREAM_PREFIX)
 }
 
+/**
+ * `agent/<issue>` — the branch a ticket's passes own.
+ *
+ * Duplicated from `agentBranch` in `packages/conductor/src/branches.ts`
+ * rather than imported, for that module's own reason: a reader here must not
+ * pull in `@lingtai/conductor` any more than `apps/board` may, and the two
+ * cannot drift apart since both are this one-line formula.
+ */
+export function agentBranchOf(issue: string): string {
+  return `agent/${issue}`
+}
+
 /** `pass-{uuid}` — a pass's own stream. The uuid is a caller's to make. */
 export function passStream(id: string): string {
   return `${PASS_STREAM_PREFIX}${id}`

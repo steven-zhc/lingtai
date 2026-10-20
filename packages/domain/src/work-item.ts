@@ -23,6 +23,7 @@ import type { WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockDiagnosis, PayloadOf, Tier } from './events.ts'
 import { legacyColumns } from './legacy-columns.ts'
+import { agentBranchOf } from './streams.ts'
 import type { WaitReason } from './wait.ts'
 
 export type WorkItemLifecycle =
@@ -318,7 +319,15 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const legacy = legacyColumns(d.reason)
+      // `state.externalRef` rather than re-parsing the stream id (`#502`'s
+      // `read-model.ts` has no aggregate to read it off and does that
+      // instead): null only for a question asked before `TicketDiscovered`
+      // (`lingtai ask`), where there is no branch yet either.
+      const legacy = legacyColumns(d.reason, {
+        branch: state.externalRef === null ? '' : agentBranchOf(state.externalRef),
+        base: '',
+        findings: [],
+      })
       return {
         ...state,
         ...at,

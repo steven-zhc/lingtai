@@ -532,7 +532,7 @@ export function toCard(
     note: t.note,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
-    arm: describeArm(t),
+    arm: describeArm(t, limits?.restarts ?? null),
     held:
       progress === null
         ? null

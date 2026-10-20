@@ -465,8 +465,12 @@ export interface StandingView {
    *
    * The same two numbers `TaskCard.restarts`/`.restartsOf` carry, so the
    * page's own `held` line and the board's cannot word one ticket's budget
-   * two ways. `restartsOf` is zero exactly when `restarts` is: there is no
-   * record to read a ceiling off.
+   * two ways. **`restartsOf` is zero regardless of `restarts`, since `#502`**
+   * — `TicketReleased{cause: Restart}` carries `{after, restart}` alone, so
+   * there is no ceiling left on any event for this fold to read, however
+   * many times the ticket has restarted. `board.ts`'s `describeArm` and
+   * `describeHeld` both fall back to the recipe's own `limits.restarts` for
+   * the denominator wherever this reads zero.
    */
   restarts: number
   restartsOf: number

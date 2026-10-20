@@ -18,8 +18,20 @@ import { legacyColumns, type LegacyColumns } from './legacy-columns.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
+import { agentBranchOf, parseWorkItemStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import type { Resolution, TriageResult, WaitReason } from './wait.ts'
+
+/**
+ * The branch a `WaitStarted`'s own ticket owns, deterministic from the
+ * stream it is always appended to — `event.streamId` is the ticket id for
+ * this type, never a run's. `''` where the id does not parse, the same
+ * default `legacyColumns`'s own `pass` argument carries.
+ */
+function branchOf(event: Envelope): string {
+  const parsed = parseWorkItemStream(event.streamId)
+  return parsed === null ? '' : agentBranchOf(parsed.issue)
+}
 
 // ---------------------------------------------------------- stepOutcomesOf ----
 
@@ -231,7 +243,13 @@ function approvalEffectOf(action: Action): ApprovalEffect {
 export type CardFact =
   | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: string; readonly approval: ApprovalEffect }
   | { readonly _tag: 'RoundOpened'; readonly round: number; readonly findings: number; readonly action: string }
-  | { readonly _tag: 'RoundSpent'; readonly runId: string; readonly round: number; readonly costUsd: number }
+  | {
+      readonly _tag: 'RoundSpent'
+      readonly runId: string
+      readonly round: number
+      readonly action: string
+      readonly costUsd: number
+    }
   | {
       readonly _tag: 'WaitStarted'
       readonly reason: WaitReason
@@ -282,12 +300,16 @@ export function cardFactOf(event: Envelope): CardFact[] {
       // action's round-0 spend under one run-keyed cell, each overwriting
       // the last.
       if (d.for._tag !== 'Action' || d.costUsd === null || d.for.round <= 0) return []
-      return [{ _tag: 'RoundSpent', runId: event.streamId, round: d.for.round, costUsd: d.costUsd }]
+      // `action` too, and not just `round`: a bought round re-runs more than
+      // one action (`implement`, then `build`/`review` again), and each of
+      // those writes its own `RunSpent` at the same round — `d.for.name` is
+      // unique within a step for exactly this reason (`SpentFor`'s own doc).
+      return [{ _tag: 'RoundSpent', runId: event.streamId, round: d.for.round, action: d.for.name, costUsd: d.costUsd }]
     }
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const cols = legacyColumns(d.reason)
+      const cols = legacyColumns(d.reason, { branch: branchOf(event), base: '', findings: [] })
       return [
         {
           _tag: 'WaitStarted',
@@ -507,7 +529,7 @@ export function boardFactOf(event: Envelope): BoardFact[] {
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const cols = legacyColumns(d.reason)
+      const cols = legacyColumns(d.reason, { branch: branchOf(event), base: '', findings: [] })
       return [
         {
           _tag: 'WaitStarted',

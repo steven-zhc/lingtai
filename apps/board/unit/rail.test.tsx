@@ -175,45 +175,56 @@ const refused = (): Envelope[] => [
 ]
 
 /**
- * The same refusal, with the round the pipeline ordinarily buys to answer it.
+ * The same refusal, with the round the pipeline ordinarily buys to answer it
+ * — mid-round: the fixer is running and nothing about the pass has concluded
+ * yet.
  *
  * `rounds: 3` in this repository's own recipe, so this is the common path and
- * not an edge: one `PassRouted{decision: Selected{candidate: 'fix-lines'}}`,
- * the one event this replaces `FixRequested`/`FixApplied`/`PassRestarted`
- * with (#502) — the agent then patches the diff for minutes, with no
- * `RunStarted` between (a round is a step inside a run), and `task_view`
- * keeps the card `running` throughout (`task-view.ts:554`).
+ * not an edge: `StepStarted{implement, round: 1}`, no `RunStarted` between (a
+ * round is a step inside a run), and `task_view` keeps the card `running`
+ * throughout (`task-view.ts:554`).
+ *
+ * **No `PassRouted` here** (`#502`'s own gap, closed here): `conduct.ts`
+ * appends every `PassRouted` in one batch after the whole pass's walk
+ * returns, strictly after this `StepStarted` and after whatever the round
+ * goes on to do — so while the round is actually running, as this fixture
+ * is, the log has not written one yet. `fixSpent` below is where it belongs.
  */
-const fixRound = (): Envelope[] => {
+const fixRound = (): Envelope[] => [...refused(), at('2026-09-15T17:34:01Z', 'StepStarted', started('implement', 1))]
+
+/**
+ * That round back, having committed nothing: the refusal stands, and only
+ * now — the whole pass over — does `PassRouted` land, last on the stream,
+ * for the same reason `fixRound` above has none.
+ */
+const fixSpent = (): Envelope[] => {
   const proposal: Proposal = { _tag: 'BuildRed', output: '2 tests failed' }
   const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
   const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'same-worktree judge' }
   const decision = decideRoute(offer, reply)
-  return [...refused(), at('2026-09-15T17:34:01Z', 'PassRouted', { runId: 'pass-170', offer, reply, decision })]
-}
-
-/** That round back, having committed nothing: the refusal stands. */
-const fixSpent = (): Envelope[] => [
-  ...fixRound(),
-  at(
-    '2026-09-15T17:48:00Z',
-    'StepEnded',
-    ended(
-      'implement',
-      [
-        {
-          plugin: 'agent',
-          name: 'write the change',
-          onSha: 'b1b8694',
-          evidence: '',
-          yields: 'commit',
-          result: { _tag: 'Completed', head: null, question: null },
-        },
-      ],
-      1,
+  return [
+    ...fixRound(),
+    at(
+      '2026-09-15T17:48:00Z',
+      'StepEnded',
+      ended(
+        'implement',
+        [
+          {
+            plugin: 'agent',
+            name: 'write the change',
+            onSha: 'b1b8694',
+            evidence: '',
+            yields: 'commit',
+            result: { _tag: 'Completed', head: null, question: null },
+          },
+        ],
+        1,
+      ),
     ),
-  ),
-]
+    at('2026-09-15T17:48:01Z', 'PassRouted', { runId: 'pass-170', offer, reply, decision }),
+  ]
+}
 
 /**
  * A pass every gate passed, and the merge lane refused.
@@ -788,11 +799,19 @@ describe('a card answering a refusal', () => {
     expect(cellsAt(html, 'proposed')).toEqual(['t-fail', 't-pending'])
   })
 
-  /** The name of a phase that is not a point, printed whole and not sliced. */
-  it('highlights no step for a phase that is not one', () => {
+  /**
+   * **`implement` is highlighted, since `#502`'s own `StepStarted{step,
+   * round}` is a real running placeholder and not just the phase's name
+   * sliced.** `now.label` is the whole sentence `fixing round 1`, which
+   * `stepOf` cannot read a step out of — but `implement`'s own verdict is
+   * genuinely `running` for the span this fixture is a snapshot of, the same
+   * placeholder any other step in flight carries, and `labelTone` highlights
+   * a running step on that alone.
+   */
+  it("highlights `implement`, the step the round's own agent is running", () => {
     const html = render({}, fixRound())
 
-    expect(labels(html).filter(([tone]) => tone === 'l-at')).toEqual([])
+    expect(labels(html).filter(([tone]) => tone === 'l-at')).toEqual([['l-at', 'implement']])
     // And the refused segment stays red: the round is answering that verdict,
     // not replacing it.
     expect(cellsAt(html, 'proposed')).toEqual(['t-fail', 't-pending'])

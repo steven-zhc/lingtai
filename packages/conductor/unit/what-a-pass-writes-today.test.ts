@@ -568,6 +568,7 @@ runtime:
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
+      'StepEnded',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -876,6 +877,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'PassRouted',
       'RunRefsPublished',
+      'StepEnded',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -955,6 +957,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'PassRouted',
       'RunRefsPublished',
+      'StepEnded',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -1060,6 +1063,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'PassRouted',
       'RunRefsPublished',
+      'StepEnded',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
@@ -1303,6 +1307,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
+      'StepEnded',
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))

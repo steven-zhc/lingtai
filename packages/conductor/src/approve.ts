@@ -208,14 +208,14 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
 
   /**
    * **The sha an approval is about.** `run.lifecycle.onSha` for a declared
-   * `human:`/`--no-merge` signoff — still a `signoff` action, so it still
-   * reaches `awaiting-approval` through `StepEnded` (`run.ts`). The "merge it
-   * anyway" offer `conduct.ts` makes after an unrelated refusal is not one of
-   * those: it never runs a pipeline action, so nothing sets `run.lifecycle`
-   * for it now that `ApprovalRequested` is gone (#502) — a reader `#474`–`#476`
-   * missed. Falls back to `run.headSha`, gated on the ticket's own wait still
-   * allowing `Approve` (0118 §1's `allowedResolutions`), which an `unpushed`
-   * run or a wait that never offered it both already refuse.
+   * `human:`/`--no-merge` signoff, and since the merge-anyway offer's own gap
+   * was closed, for that offer too (`conduct.ts` appends a `signoff`-yield
+   * `StepEnded` naming `judge`/`unfixed` alongside `WaitStarted`) — both
+   * reach `awaiting-approval` through the same `StepEnded` fold (`run.ts`).
+   * `run.headSha` is the fallback for a log written before that append
+   * existed, gated on the ticket's own wait still allowing `Approve` (0118
+   * §1's `allowedResolutions`), which an `unpushed` run or a wait that never
+   * offered it both already refuse.
    */
   let onSha: string
   if (run.lifecycle.status === 'awaiting-approval') {

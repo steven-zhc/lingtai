@@ -2847,7 +2847,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'judgement: into is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary: 'judgement: agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'IssueUpdated',
@@ -2972,8 +2972,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary:
-            'review \u2192 waiting \u2014 into is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary: 'review \u2192 waiting \u2014 is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'RunRefsPublished',
@@ -5615,7 +5614,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'judgement: into is waiting on you. both sides touched src/fix.ts \u2014 recommends requeue',
+          summary: 'judgement: agent/7 is waiting on you. both sides touched src/fix.ts \u2014 recommends requeue',
         },
         {
           type: 'IssueUpdated',
@@ -5748,7 +5747,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'merge \u2192 waiting \u2014 into is waiting on you. both sides touched src/fix.ts',
+          summary: 'merge \u2192 waiting \u2014 is waiting on you. both sides touched src/fix.ts',
         },
         {
           type: 'RunRefsPublished',
@@ -7985,7 +7984,7 @@ it('13. a judge answer is unreadable', () => {
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'judgement: into is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offere\u2026',
+            'judgement: agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off\u2026',
         },
         {
           type: 'IssueUpdated',
@@ -8111,7 +8110,7 @@ it('13. a judge answer is unreadable', () => {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'review \u2192 waiting \u2014 into is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offere\u2026',
+            'review \u2192 waiting \u2014 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was offered (cl\u2026',
         },
         {
           type: 'RunRefsPublished',
@@ -8673,7 +8672,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            "judgement: into is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
+            "judgement: agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         },
         {
           type: 'IssueUpdated',
@@ -8793,7 +8792,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            "review \u2192 waiting \u2014 into is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
+            "review \u2192 waiting \u2014 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         },
         {
           type: 'RunRefsPublished',

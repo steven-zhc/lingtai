@@ -449,8 +449,27 @@ export function foldProgress(
       // `StepEnded` closes an actual `step:action` key over it.
       case 'StepStarted': {
         const stepName = String(data['step'])
+        const round = Number(data['round'] ?? 0)
         verdicts.set(`${stepName}:`, 'running')
-        now = { label: stepName, since: event.at.toISOString(), budgetMs: null }
+        // **A bought round announces itself here now, not off `PassRouted`**
+        // (`#502` moved what used to be `RoundOpened`'s own timing). `PassRouted`
+        // is appended in one batch after the whole pass's walk returns
+        // (`conduct.ts`'s own header on that append), so by the time this fold
+        // sees it the round it names has already run and ended — on a pass
+        // that went on to land, `PassRouted` is the stream's *last* event, after
+        // every step including `merge`'s own. Setting `now`/`fixing` from it
+        // left the card reading `fixing round 1` for ever on a ticket that had
+        // already merged. `round > 0` at `implement` is the live signal instead:
+        // it is true for exactly the span the round's own agent is running,
+        // the same span `RoundOpened` used to describe, and the `StepEnded` that
+        // closes this `StepStarted` already clears `fixing` the ordinary way
+        // (`clearRunningPlaceholder`, the `StepEnded` case below).
+        if (stepName === 'implement' && round > 0) {
+          fixing = `${FIXING} round ${String(round)}`
+          now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
+        } else {
+          now = { label: stepName, since: event.at.toISOString(), budgetMs: null }
+        }
         break
       }
 
@@ -517,18 +536,16 @@ export function foldProgress(
             }
 
             /**
-             * **A bought round is an agent running inside the pass**, and it is the
-             * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
-             *
-             * It opens a round, runs a fixing agent against the findings, and
-             * ends that round when that agent is done (`conduct.ts`'s fix
-             * round). No `RunStarted` between them, because a
-             * round is a step inside a run and not a run of its own — so without
-             * this the fold had nothing in flight for the whole of that agent's
-             * run, and a card spending money to answer a refusal said the
-             * refusal was what the pass came to and that a person was being
-             * waited on. `task_view` has said `running` on this event since the
-             * day it was added (`task-view.ts:554`).
+             * **The count only, since `#502` moved the `now`/`fixing` reading
+             * to `StepStarted` above.** `PassRouted` — the one event this
+             * fact comes off — is appended in a single batch after the
+             * pass's whole walk returns (`conduct.ts`), strictly after every
+             * `StepStarted`/`StepEnded` the round itself wrote: on a pass
+             * that bought a round and then landed, it is the stream's last
+             * event. Setting `now` from it said a merged ticket was still
+             * `fixing round 1`, with nothing after it in the stream to ever
+             * clear that. `roundsSpent` is not time-sensitive the same way —
+             * learning about a round late is still learning the true count.
              *
              * **The ceiling (`roundsOf`) is not on the event any more** (#502):
              * `RouteOffer` never stored `policy.rounds`, only what it decided
@@ -536,8 +553,6 @@ export function foldProgress(
              * `roundsOf` stays null from this fold.
              */
             case 'RoundOpened': {
-              fixing = `${FIXING} round ${String(fact.round)}`
-              now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
               roundsSpent = Math.max(roundsSpent, fact.round)
               break
             }

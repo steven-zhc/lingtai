@@ -48,6 +48,21 @@ function stepLine(step: string, word: string, text: string): string {
 }
 
 /**
+ * `${branch} into ${base}`, or just `${branch}` where `base` is not known.
+ *
+ * `cardFactOf`/`boardFactOf`/`work-item.ts` each call `legacyColumns` off one
+ * event (or, for `work-item.ts`, off an aggregate with no run stream to
+ * read), and none of the three has a projection of the recipe's own `base` —
+ * only `conduct.ts`, composing the GitHub comment, does. `branch` they can
+ * still supply (the ticket id's issue number makes it, deterministically);
+ * dropping `base` rather than printing it blank is the difference between
+ * "agent/473 is waiting on you" and "agent/473 into  is waiting on you".
+ */
+function subjectOf(pass: { branch: string; base: string }): string {
+  return pass.base === '' ? pass.branch : `${pass.branch} into ${pass.base}`
+}
+
+/**
  * `hold-of.ts`'s own `said`, carried over: whitespace-normalise, trim, and
  * clip to `n` characters with an ellipsis, so a `why` a card renders as one
  * sentence never carries a raw multi-line agent or command answer verbatim.
@@ -201,8 +216,8 @@ function escalatedColumns(
   const reasonText = reasonTextOf(because)
   const why = (detail: string) =>
     detail === ''
-      ? `${pass.branch} into ${pass.base} is waiting on you.`
-      : `${pass.branch} into ${pass.base} is waiting on you. ${said(detail, 400)}`
+      ? `${subjectOf(pass)} is waiting on you.`
+      : `${subjectOf(pass)} is waiting on you. ${said(detail, 400)}`
 
   switch (proposal._tag) {
     case 'BuildRed': {
@@ -249,7 +264,7 @@ function escalatedColumns(
           proposal.from === 'review'
             ? "`review`'s findings could not be read at all: "
             : "the `proposed` step's own judge answer could not be read at all: "
-        const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + proposal.raw, 400)}`
+        const question = `${subjectOf(pass)} is waiting on you. ${said(prefix + proposal.raw, 400)}`
         return judgement(question, run, proposal.raw)
       }
       if (proposal.from === 'merge')
@@ -344,7 +359,7 @@ export function legacyColumns(
           reason.step === 'review'
             ? "`review`'s findings could not be read at all: "
             : "the `proposed` step's own judge answer could not be read at all: "
-        const question = `${pass.branch} into ${pass.base} is waiting on you. ${said(prefix + reason.raw, 400)}`
+        const question = `${subjectOf(pass)} is waiting on you. ${said(prefix + reason.raw, 400)}`
         return judgement(question, reason.run, reason.raw)
       }
       if (reason.step === 'merge')

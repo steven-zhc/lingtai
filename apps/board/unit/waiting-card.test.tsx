@@ -178,17 +178,19 @@ add(
 )
 
 /**
- * **`agent/473 into main` is blank on every `ProposedEscalated`/
- * `AnswerUnreadable` card since `#502`, and this file pins that fact rather
- * than inventing the fix.** `legacyColumns(reason, pass)` composes `"${branch}
- * into ${base} is waiting on you"` from a `pass` argument — `WaitReason`
- * itself carries neither, on purpose (0118 §1: "branch/base live on the pass,
- * not the wait") — but `cardFactOf`/`boardFactOf` (`read-model.ts`), the only
- * callers between the stored event and this card, call `legacyColumns(d.reason)`
- * with none, so `task_view.note` is written with both blank. `branch` is
- * recoverable (`agentBranch(issue)` is deterministic), `base` is not tracked
- * by any projection today. Fixing it is a `packages/projector`/`read-model.ts`
- * change, not a literal to edit here.
+ * **`branch` is back; `base` still is not.** `legacyColumns(reason, pass)`
+ * composes `"${branch} into ${base} is waiting on you"` from a `pass`
+ * argument — `WaitReason` itself carries neither, on purpose (0118 §1:
+ * "branch/base live on the pass, not the wait") — and `cardFactOf`/
+ * `boardFactOf` (`read-model.ts`), the only callers between the stored event
+ * and this card, now supply `branch` off the ticket id's own issue number
+ * (`agentBranchOf`, deterministic — `streams.ts`). `base` is still not
+ * tracked by any projection, so `legacyColumns`'s own `subjectOf` drops the
+ * `into ${base}` clause rather than opening the sentence on a blank: this
+ * fixture's `name` after the last `-` stands in for the issue number
+ * (`ticket-pin-proposedescalated-buildred` → `agent/buildred`, never
+ * `agent/473` — that literal is only ever the `question` string fed to
+ * `approvalRequested`, a separate input this fold never reads).
  */
 add(
   'ProposedEscalated',
@@ -217,7 +219,7 @@ add(
     }),
   ],
   'waiting for your review',
-  ' into  is waiting on you. tsc failed',
+  'agent/buildred is waiting on you. tsc failed',
   ['Approve', 'Back to the queue', 'Close'],
 )
 
@@ -240,7 +242,7 @@ add(
     }),
   ],
   'waiting for your review',
-  ' into  is waiting on you. verify red output',
+  'agent/verifyred is waiting on you. verify red output',
   ['Approve', 'Back to the queue', 'Close'],
 )
 
@@ -269,7 +271,7 @@ add(
     }),
   ],
   'waiting for your review',
-  ' into  is waiting on you. conflict output',
+  'agent/mergeconflict is waiting on you. conflict output',
   ['Approve', 'Back to the queue', 'Close'],
 )
 
@@ -297,7 +299,7 @@ add(
     }),
   ],
   'waiting for your review',
-  ' into  is waiting on you. bug',
+  'agent/reviewfindings is waiting on you. bug',
   ['Approve', 'Back to the queue', 'Close'],
 )
 
@@ -322,7 +324,7 @@ add(
     }),
   ],
   null,
-  ' into  is waiting on you. tsc failed',
+  'agent/unpushed is waiting on you. tsc failed',
   ['Back to the queue', 'Close'],
 )
 
@@ -464,7 +466,7 @@ add(
     }),
   ],
   'waiting for your review',
-  ' into  is waiting on you. `review`&#x27;s findings could not be read at all: not json',
+  'agent/answerunreadable is waiting on you. `review`&#x27;s findings could not be read at all: not json',
   ['Approve', 'Back to the queue', 'Close'],
 )
 

@@ -186,17 +186,23 @@ export const taskViewProjection: Projection = {
         -- the backoff exemption its repair was bought with.
         repair_pending boolean not null default false,
         repair_run_id  text,
-        -- { "pass-abc#fix1": 1.42 }. A map for the reason the verdicts column
-        -- is one: assignment replays to the same number and += does not.
+        -- { "pass-abc#fix1#write the change": 0.42 }. A map for the reason the
+        -- verdicts column is one: assignment replays to the same number and +=
+        -- does not.
         --
         -- **Wider than its name since 0039 §3.** It began as what a *repair*
         -- cost — an agent the merge lane bought for the next run — and holds
-        -- every round a pass buys to answer a refusal, keyed run#fixN. Nothing
-        -- buys a repair since #143, so on a new ticket repair_costs is exactly
-        -- *the rounds*; an old ticket's repair run is still keyed by its run.
-        -- The name is kept because renaming a column is a rebuild of every row
-        -- to change nothing anybody reads; the board says "answering", which is
-        -- what a person actually sees.
+        -- every round a pass buys to answer a refusal, keyed run#fixN#action
+        -- since #502's per-action RunSpent replaced FixApplied's one payment
+        -- per round: a round re-runs more than one action (implement, then
+        -- build/review again), each with its own RunSpent, and the action
+        -- has to be in the key or the second one overwrites the first under
+        -- the same run#round. Nothing buys a repair since #143, so on a new
+        -- ticket repair_costs is exactly what the rounds' own actions cost;
+        -- an old ticket's repair run is still keyed by its run alone. The
+        -- name is kept because renaming a column is a rebuild of every row
+        -- to change nothing anybody reads; the board says "answering", which
+        -- is what a person actually sees.
         repair_costs   jsonb not null default '{}'::jsonb,
 
         -- Retention and ordering. From the event's own clock, never now().
@@ -593,9 +599,13 @@ export const taskViewProjection: Projection = {
                        updated_at = $3,
                        updated_seq = $2::bigint
                  where task_id = $1 and updated_seq <= $2::bigint`,
-                  // Keyed by run and round: a second round inside one run is a
-                  // second purchase, and keying by run alone would lose the first.
-                  [seq, at, `${fact.runId}#fix${fact.round}`, fact.costUsd],
+                  // Keyed by run, round and action: a second round inside one
+                  // run is a second purchase, keying by run alone would lose
+                  // the first, and a round that re-runs more than one action
+                  // (`implement`, then `build`/`review` again) would have
+                  // every one of those actions' own `RunSpent` overwrite the
+                  // last under the same run#round key without the action too.
+                  [seq, at, `${fact.runId}#fix${fact.round}#${fact.action}`, fact.costUsd],
                 )
                 break
               }
@@ -1093,13 +1103,21 @@ export function describeWait(
  * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
  * what 0040 §3 asks a card to be able to say.
  */
-export function describeArm(card: Pick<TaskCard, 'restarts' | 'restartsOf'>): string | null {
+export function describeArm(
+  card: Pick<TaskCard, 'restarts' | 'restartsOf'>,
+  restartsOf: number | null = null,
+): string | null {
   if (card.restarts === 0) return null
-  // `restartsOf` is zero only on a row whose `PassRestarted` predates the
-  // field, which cannot exist — the two were written in the same commit. It is
-  // still read defensively rather than asserted, because a projection has to
-  // fold whatever the log holds.
-  return card.restartsOf > 0 ? `restart ${card.restarts} of ${card.restartsOf}` : `restart ${card.restarts}`
+  // `restartsOf` is zero on every row now, not just one whose `PassRestarted`
+  // predates the field: `#502` dropped the ceiling from the event
+  // (`TicketReleased{cause: Restart}` is `{after, restart}` alone — the
+  // policy it was spent against lives in the recipe, never on the event), so
+  // nothing writes this column a nonzero value any more. `restartsOf` is the
+  // caller's fallback for exactly that, the recipe's own ceiling
+  // (`board.ts`'s `limits?.restarts`, the same source `describeHeld` falls
+  // back to) — read only where the column itself has nothing, same as before.
+  const of = card.restartsOf > 0 ? card.restartsOf : restartsOf
+  return of !== null && of > 0 ? `restart ${card.restarts} of ${of}` : `restart ${card.restarts}`
 }
 
 export interface ReadTasksOptions {

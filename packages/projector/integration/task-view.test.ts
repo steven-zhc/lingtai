@@ -751,6 +751,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(over.restarts).toBe(1)
       expect(over.restartsOf).toBe(0)
       expect(describeArm(over)).toBe('restart 1')
+      // And the caller's own fallback — `board.ts`'s `limits?.restarts`, the
+      // same recipe ceiling `describeHeld` reads — restores the denominator
+      // this column can no longer carry.
+      expect(describeArm(over, 2)).toBe('restart 1 of 2')
       // **Released, not waiting.** A question for a person sits in the waiting
       // lane; a restarted ticket is back in the queue for an ordinary claim.
       expect(over.state).toBe('queued')

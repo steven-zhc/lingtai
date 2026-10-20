@@ -3884,22 +3884,67 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         const judged = stopped === null || stopped.ending.ending === 'refused'
         /**
-         * **`ApprovalRequested` is gone (#502), and so is the run-level
-         * signal it carried** — `approve.ts`'s own fallback (`run.headSha`,
-         * gated on `allowedResolutions`) is what still lets this through.
-         * What survives is the richer sentence, which never needed an event
-         * of its own: a person reading the ticket's own question is told the
-         * commit is still on origin and could be merged as it stands, named
-         * for itself rather than for the action that refused (naming it
-         * after that action would be the pointer a person reads, not the
-         * question) — `whatRefused` still supplies which runtime, where one
-         * answers.
+         * **`ApprovalRequested` is gone (#502), and so is the event it used to
+         * compose this from** — a person reading the ticket's own question is
+         * told the commit is still on origin and could be merged as it
+         * stands, named for itself rather than for the action that refused
+         * (naming it after that action would be the pointer a person reads,
+         * not the question) — `whatRefused` still supplies which runtime,
+         * where one answers. The signoff that turns the control on is
+         * appended separately, below.
          */
         const question =
           !held && judged && onOrigin !== null
             ? `Merge ${branch} into ${base} anyway? ${said_.question}` +
               (whatRefused(stopped) === null ? '' : ` (\`${whatRefused(stopped)}\`)`)
             : said_.question
+        /**
+         * **The offer needs its own `signoff`, now that `ApprovalRequested` is
+         * gone (#502).** The comment above only covers `approve.ts`'s own
+         * fallback (`run.headSha`) — which lets the click through once a
+         * person has already found the control — but nothing upstream of
+         * that ever turns the control on: `task_view.awaiting_sha` and
+         * `StandingView.awaitingSha` are written off `cardFactOf`'s
+         * `Verdict.approval`/`boardFactOf`'s `SignoffRequested`, both of
+         * which need a `signoff`-yield action with a live `requested` on
+         * some `StepEnded`, and the router sending a pass here is not one —
+         * it runs no action at all. So this appends one itself, on the run's
+         * own stream, naming the point the merge-anyway question is standing
+         * in for: `judge` off the spine (`ProposedEscalated`/
+         * `AnswerUnreadable`/a `review` that passed carrying findings), the
+         * same name `ApprovalRequested{step:'proposed'}` used, or `unfixed`
+         * where the merge lane itself refused, the name
+         * `ApprovalRequested{step:'merge'}` used. `onSha` is `headSha` —
+         * `approve.ts`'s own fallback and this offer's subject are the same
+         * commit, or a correct approval reads as stale.
+         */
+        if (!held && judged && onOrigin !== null) {
+          yield* Effect.promise(() =>
+            appendNow(runId, [
+              {
+                type: 'StepEnded',
+                actor: 'conductor',
+                data: parsePayload('StepEnded', {
+                  runId,
+                  outcome: {
+                    step: stopped?.step ?? 'proposed',
+                    round: roundsSpent,
+                    actions: [
+                      {
+                        plugin: 'conductor',
+                        name: stopped?.step === 'merge' ? 'unfixed' : 'judge',
+                        onSha: headSha,
+                        evidence: question,
+                        yields: 'signoff',
+                        result: { _tag: 'Completed', requested: { question } },
+                      },
+                    ],
+                  },
+                }),
+              },
+            ]),
+          )
+        }
         yield* Effect.promise(() =>
           appendNow(ticketId, [
             {
