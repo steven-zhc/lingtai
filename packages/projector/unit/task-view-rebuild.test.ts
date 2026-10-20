@@ -471,10 +471,18 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
 
   it('carries the sha a sign-off is about only while one is open', async () => {
     const requested = await fold(afterApprovalRequested)
-    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA })
+    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA, waiting: 1 })
 
     const granted = await fold(afterApprovalGranted)
-    expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: null })
+    // `#465`: the row leaves the waiting lane, rather than keeping
+    // `waiting: true` with no sha for Approve to work against — `state:
+    // 'queued'` is the lane an approved item sits in now that a
+    // continuation, not this card, is what moves it on.
+    expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
+      awaiting_sha: null,
+      waiting: 0,
+      state: 'queued',
+    })
   })
 
   it("leaves a granted sign-off's own verdict `pending`, since nothing re-records the action until the run that owns it continues (0120 §6, #465)", async () => {

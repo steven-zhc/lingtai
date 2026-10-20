@@ -594,12 +594,32 @@ export const taskViewProjection: Projection = {
 
               case 'WaitResolved':
                 if (fact.resolution._tag === 'Approve') {
-                  // The same narrow clear `ApprovalGranted` used to make, and
-                  // nothing else: 0118's own work-item fold leaves the
-                  // lifecycle alone on an Approve (`work-item.ts`), because
-                  // what actually moves the ticket on is the integration that
-                  // follows, synchronously, inside `approve.ts`.
-                  await set(ctx, event.streamId, seq, at, { awaiting_sha: null })
+                  // **Clears the hold rather than narrowly clearing `awaiting_sha`**
+                  // (#465). 0118's own work-item fold used to leave the
+                  // lifecycle alone on an Approve because what actually moved
+                  // the ticket on was the integration that followed,
+                  // synchronously, inside `approve.ts` — that integration is
+                  // gone, and the fold now moves the lifecycle to `approved`
+                  // (`work-item.ts`), so a row left `waiting` here would
+                  // disagree with it: the home board would keep rendering
+                  // Decide/Requeue over a question that is answered, and
+                  // `page.tsx`'s own `card.waiting` is what decides that.
+                  //
+                  // `state: 'queued'` rather than a new `TaskState` — the
+                  // item is in Lingtai's own court, not a person's, which is
+                  // the same lane an item nothing is asking about sits in;
+                  // `selectRunnable` is never reached for it because the
+                  // continuation claims onto the approved run directly
+                  // (`continueWorkItem`), never through the queue.
+                  await set(ctx, event.streamId, seq, at, {
+                    state: 'queued',
+                    note: 'approved — continues once a conductor is free',
+                    awaiting_sha: null,
+                    waiting: false,
+                    asked: false,
+                    needs: null,
+                    diagnosis: null,
+                  })
                   break
                 }
                 // The answer, beside the question it answered — which is the

@@ -43,8 +43,19 @@ async function approvedTicket(issue: number, runId: string) {
     ),
   ])
   await store.append(runId, 0, run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+  // `client`/`issue`, so the branch-staleness check `resolveWaitHolding` now
+  // requires for every `Approve` actually runs — omitting them used to skip
+  // it silently (`resolve-wait.test.ts`'s own `no-client` refusal).
   const resolved = await resolveWaitHolding(
-    { ticketId, waitId, resolution: { _tag: 'Approve', onSha: SHA }, by: 'human:steven', store },
+    {
+      ticketId,
+      issue,
+      waitId,
+      resolution: { _tag: 'Approve', onSha: SHA },
+      by: 'human:steven',
+      client: { refSha: async () => SHA },
+      store,
+    },
     ticketId,
   )
   if (!resolved.ok) throw new Error(`fixture setup failed: ${resolved.detail}`)

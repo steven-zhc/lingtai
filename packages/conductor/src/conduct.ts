@@ -40,10 +40,13 @@ import {
   passStream,
   reduceControl,
   reduceWorkItem,
+  routesOf,
+  stepOutcomesOf,
+  waitsOf,
   workItemStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
-import type { RunRef, WaitReason } from '@lingtai/domain/wait'
+import { continuationOf, type RunRef, type WaitReason } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
@@ -183,7 +186,7 @@ import { Effect, Either } from 'effect'
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'
 import { agentBranch, armBranch } from './branches.ts'
-import { claimWorkItem, releaseWorkItem } from './claim.ts'
+import { claimWorkItem, continueWorkItem, releaseWorkItem } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
@@ -428,6 +431,19 @@ export interface RunOnceOptions {
    * rather than skipping the ending below.
    */
   onPass?: (pass: PassOver) => void
+  /**
+   * **Resume a held run from its own wait, rather than start a fresh one**
+   * (#465, 0120 §6) — set only by `conductWork`'s own continuation branch
+   * (`apps/cli/src/conduct.ts`), never by a hand-picked `lingtai now` or an
+   * ordinary queue pass.
+   *
+   * Carries only the run id: everything else — which step it continues at,
+   * what it waives there, the sha to re-cut from, and the rounds already
+   * spent — is read off the ticket's own `approved` lifecycle and the run's
+   * own stream at the moment `take` reclaims it (below), never trusted from
+   * a caller's copy that may be stale by the time this runs.
+   */
+  continuing?: { runId: string }
 }
 
 export type RunOnceResult =
@@ -904,7 +920,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
     }
 
-    const runId = passStream(crypto.randomUUID())
+    // **The same run, continued, never a fresh one** (#465, 0120 §6, `take`
+    // below): a continuation re-claims the id its approval already named.
+    const runId = options.continuing?.runId ?? passStream(crypto.randomUUID())
     const branch = agentBranch(options.issue)
     /**
      * **Where the pass works, known before it starts.**
@@ -928,9 +946,47 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      */
     const before = yield* Effect.promise(() => store.read(ticketId))
     const folded = reduceWorkItem(before)
+
+    /**
+     * **Resuming a held run, read fresh off the log rather than trusted from
+     * the caller** (#465, 0120 §6). `options.continuing` names only a
+     * `runId`; everything else is computed here, at the moment this claim
+     * is about to be made — a request that raced a requeue, a second
+     * approval, or a close finds the lifecycle no longer `approved` (or
+     * naming a different run) and this is simply `null`, which `take`
+     * below reports as an ordinary `notClaimed` rather than acting on a
+     * stale copy.
+     */
+    const continuation = yield* Effect.promise(async () => {
+      if (options.continuing === undefined) return null
+      if (folded.lifecycle.status !== 'approved' || folded.lifecycle.runId !== options.continuing.runId) return null
+      const { waitId: approvedWaitId, onSha: approvedOnSha } = folded.lifecycle
+      const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
+      if (reason === undefined) return null
+      const runEvents = await store.read(options.continuing.runId)
+      const next = continuationOf(reason, stepOutcomesOf(runEvents))
+      if (next === null) return null
+      const lastFixRound = routesOf(runEvents)
+        .filter((r) => r.next._tag === 'FixRound')
+        .at(-1)
+      return {
+        step: next.step,
+        waive: next.waive === null ? null : { name: next.waive, waitId: approvedWaitId },
+        onSha: approvedOnSha,
+        roundsSpent: lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+      }
+    })
+
     const edit = folded.pendingPrompt
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
-    const previous = priorAttempts(before).at(-1)
+    // **Not a new attempt** (#465) — a continuation's own `TicketClaimed` is
+    // already on `before`, blocked by the very wait it is continuing from,
+    // so `priorAttempts` would otherwise count this run as the one before
+    // itself and hand it `attempt: 2`'s arm, which nothing ever pushed to.
+    // `previous: undefined` here is what a continuation's first and only
+    // claim already computed, so `arm` below lands on the same branch the
+    // held run's own dispatch used.
+    const previous = options.continuing !== undefined ? undefined : priorAttempts(before).at(-1)
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
@@ -1962,14 +2018,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const issue = await tickets.getIssue(options.issue)
         let claim
         try {
-          // The claim carries what the task is, because it is now the only place a
-          // title enters the log at all.
-          claim = await claimWorkItem(ticketId, {
-            runId,
-            store,
-            title: runnable.title,
-            kind: runnable.kind,
-          })
+          // **A continuation reclaims the same run, never a fresh one**
+          // (#465, 0120 §6) — `continueWorkItem` is `claimWorkItem`'s
+          // sibling for the one state the latter refuses, `approved`, and
+          // `continuation` (above) is what makes this branch `null` rather
+          // than acted on wrongly when the request has gone stale.
+          claim =
+            options.continuing !== undefined && continuation !== null
+              ? await continueWorkItem(ticketId, runId, { store })
+              : // The claim carries what the task is, because it is now the
+                // only place a title enters the log at all.
+                await claimWorkItem(ticketId, {
+                  runId,
+                  store,
+                  title: runnable.title,
+                  kind: runnable.kind,
+                })
         } catch (error) {
           // The one decline that leaves a stream behind, and `end` resolves
           // against it: the append may have committed, so the item may be held by
@@ -2082,6 +2146,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               home,
               remote: options.remote,
               gitEnv: options.gitEnv,
+              // **A continuation re-cuts at the sha the approval was about,
+              // never the base** (#465) — the worktree a held pass left is
+              // gone once its scope closed, and `provisionWorktree`'s own
+              // `at` check refuses rather than silently taking a branch that
+              // has moved since.
+              ...(continuation !== null ? { at: continuation.onSha } : {}),
             }),
           ),
         )
@@ -2695,7 +2765,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const alsoHeldAtMerge = (): Action[] => {
         const held: Action[] = []
-        if (options.merge === false) {
+        // **Never re-asked on a continuation** (#465, 0120 §6's *Watch out*)
+        // — `options.merge` belonged to the call that was asked, and the
+        // approval this run is continuing from already answered the one
+        // question `--no-merge` exists to hold.
+        if (continuation === null && options.merge === false) {
           held.push(
             createHumanAction({
               name: 'no-merge',
@@ -3516,7 +3590,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       const pass = yield* Effect.promise(() =>
-        runPass({ recipe, context: passContext, emit, actionsAt, bodies: passBodies, ceilings, judge }),
+        runPass({
+          recipe,
+          context: passContext,
+          emit,
+          actionsAt,
+          bodies: passBodies,
+          ceilings,
+          judge,
+          // **Where this walk jumps to, once `admit` and `prepared` have
+          // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
+          // every ordinary pass, which starts at `admit` and walks the
+          // whole spine as it always has.
+          ...(continuation !== null
+            ? { from: { step: continuation.step, waive: continuation.waive, roundsSpent: continuation.roundsSpent } }
+            : {}),
+        }),
       )
       // An observer's own bug must not cost the ending: `runLog` is a trace,
       // not a record (its own header), so a throw here is noted and the

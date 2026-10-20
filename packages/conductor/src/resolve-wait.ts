@@ -23,7 +23,16 @@
  * built by this file; `continuationOf` (`@lingtai/domain/wait`) is what tells
  * it where to continue and what to waive once it does.
  */
-import { parsePayload, reduceRun, reduceWorkItem, type RunState, type ToAppend, type WaitId } from '@lingtai/domain'
+import {
+  CONTROL_STREAM,
+  parsePayload,
+  parseWorkItemStream,
+  reduceRun,
+  reduceWorkItem,
+  type RunState,
+  type ToAppend,
+  type WaitId,
+} from '@lingtai/domain'
 import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
@@ -200,6 +209,32 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
+  // **What tells the next pass which issue to look at, not what wakes it**
+  // (`ContinueRequested`'s own header, #465) — `WaitResolved` above is
+  // already in `WAIT_EVENTS`, which wakes the work loop on its own. A
+  // separate append, on the control stream rather than the ticket's, so a
+  // store that refuses it costs this approval nothing: `conductWork` re-reads
+  // the ticket stream before acting on a row here and refuses the stale ones
+  // on its own (`continueWorkItem`), so a request this append loses is simply
+  // never offered rather than acted on wrongly.
+  if (options.resolution._tag === 'Approve') {
+    const parsed = parseWorkItemStream(ticketId)
+    if (parsed !== null) {
+      await store.append(CONTROL_STREAM, (await store.read(CONTROL_STREAM)).length, [
+        {
+          type: 'ContinueRequested',
+          actor: options.by,
+          data: parsePayload('ContinueRequested', {
+            project: parsed.project,
+            issue: parsed.issue,
+            runId: block.runId!,
+            by: options.by,
+          }),
+        },
+      ])
+    }
+  }
+
   return { ok: true, ticketId }
 }
 
@@ -274,18 +309,33 @@ async function checkApprove(
   // The branch may have moved since the approval was recorded — including
   // the agent, on a re-run. Continuing then would run past something nobody
   // looked at, which is exactly what the old label-based approval did.
-  if (options.client && options.issue !== undefined) {
-    const branch = agentBranch(options.issue)
-    const remoteHead = await options.client.refSha(`heads/${branch}`).catch(() => null)
-    if (remoteHead !== onSha) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'stale',
-        detail:
-          `the approval is for ${onSha.slice(0, 7)} and ${branch} is now ` +
-          `${remoteHead?.slice(0, 7) ?? 'gone'}. Nothing was resolved.`,
-      }
+  //
+  // **Required, not skipped.** `options.client` and `options.issue` are both
+  // optional on `ResolveWaitOptions` because `AnswerQuestion`/`Requeue`/`Close`
+  // never need either — but every legitimate `Approve` caller has both:
+  // `ApproveOptions.client` and `.issue` are themselves required fields, so a
+  // caller that reaches here with an `Approve` and either one missing is a
+  // defect, not a project with nothing to check. Skipping the check silently
+  // is what let it pass unverified; refusing by name is what makes the gap
+  // loud instead.
+  if (options.client === undefined || options.issue === undefined) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-client',
+      detail: `an approval needs a GitHub client and the issue number to check the branch — nothing was resolved.`,
+    }
+  }
+  const branch = agentBranch(options.issue)
+  const remoteHead = await options.client.refSha(`heads/${branch}`).catch(() => null)
+  if (remoteHead !== onSha) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail:
+        `the approval is for ${onSha.slice(0, 7)} and ${branch} is now ` +
+        `${remoteHead?.slice(0, 7) ?? 'gone'}. Nothing was resolved.`,
     }
   }
 

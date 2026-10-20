@@ -216,6 +216,34 @@ export function conductWork(
       }
     }
 
+    // **An approval owed a continuation jumps the queue too, and before a
+    // hand-picked issue does** (#465, 0120 §6). `continueWorkItem` is the
+    // authority on whether this is still good — `not-approved`, `wrong-run`
+    // and `lost-race` are all read off the store at the moment of the claim,
+    // inside `runOnce` — so this is a dispatch rather than a second check:
+    // a stale row (the item was closed, requeued or already continued by
+    // another pass) is simply a `runOnce` that claims nothing, logged and
+    // moved past like any other `notClaimed`.
+    const continuing = options.control.continuing.find((c) => c.project === name)
+    if (continuing) {
+      options.log(`${name}: continuing #${continuing.issue} — asked for by ${continuing.by}`)
+      const result: RunOnceResult = await Effect.runPromise(
+        world
+          .runOnce({
+            ...common,
+            merge: undefined,
+            issue: Number(continuing.issue),
+            continuing: { runId: continuing.runId },
+          })
+          .pipe(Effect.provide(PortsLive)),
+      )
+      options.outcome.ran += 1
+      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+      else if (result.ok === 'held') options.log(`held at ${result.step}`)
+      else options.log(`stopped at ${result.stage}: ${result.detail}`)
+      return 'looked'
+    }
+
     // A hand-picked issue jumps the queue.
     //
     // `lingtai now` used to append `RunRequested` and only *wake* the loop, which

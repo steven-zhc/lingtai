@@ -233,6 +233,42 @@ describe('resolveWait', () => {
       expect(result).toMatchObject({ ok: false, reason: 'not-awaiting-approval' })
     })
 
+    it('refuses an Approve missing the client or the issue — the branch check cannot be skipped', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 31)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-31')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-31'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-31'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-31', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 31),
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          store,
+        },
+        ticketId,
+      )
+      expect(result).toMatchObject({ ok: false, reason: 'no-client' })
+      expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
+    })
+
     it('refuses an onSha that has moved on from what the run is now asking about — appends nothing', async () => {
       const store = createMemoryEventStore()
       const ticketId = workItemStream(PROJECT, 7)

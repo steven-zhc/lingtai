@@ -219,9 +219,17 @@ function labelState(status: WorkItemStatus): LabelState {
       return 'running'
     case 'blocked':
       return 'waiting'
+    // **An approval is not finished with** (#465) — a continuation is owed,
+    // and the `default` arm below would strip the label entirely, making an
+    // approved issue indistinguishable from a landed or untouched one.
+    // `running` is read here for the same reason `claimed` is: Lingtai, not
+    // a person, holds the next move.
+    case 'approved':
+      return 'running'
     default:
-      // `backlog` and `landed` both want no Lingtai label — a queued item has
-      // not been touched, and a landed one is finished with.
+      // `backlog`, `landed` and `closed` all want no Lingtai label — a
+      // queued item has not been touched, and a landed or closed one is
+      // finished with.
       return 'landed'
   }
 }
