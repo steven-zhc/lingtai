@@ -1,4 +1,4 @@
-import { parsePayload, reduceWorkItem, type ReleaseCause } from '@lingtai/domain'
+import { parsePayload, reduceTicket, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -92,7 +92,7 @@ export async function claimWorkItem(ticketId: string, options: ClaimOptions): Pr
   const worker = options.worker ?? conductorWorker()
 
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
 
   if (state.lifecycle.status === 'claimed') {
     // Held is held. There is no expiry to fall through to, so the only way past
@@ -147,7 +147,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  *
  * **The same `TicketClaimed`, naming the same `runId` the approval was
  * about.** The fold already de-duplicates a run already in `runs`
- * (`work-item.ts`'s own `TicketClaimed` case), so this is not a second kind
+ * (`ticket.ts`'s own `TicketClaimed` case), so this is not a second kind
  * of claim on the log — it is the ordinary one, appended again, onto a run
  * that has already spent its first claim. A close or a second decision
  * landing between the approval and this call is a `ConcurrencyError` the
@@ -164,7 +164,7 @@ export async function continueWorkItem(
   const worker = options.worker ?? conductorWorker()
 
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
 
   if (state.lifecycle.status !== 'approved') {
     return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } }
@@ -204,7 +204,7 @@ export async function releaseWorkItem(
   cause: ReleaseCause | null = null,
 ): Promise<void> {
   const events = await store.read(ticketId)
-  const state = reduceWorkItem(events)
+  const state = reduceTicket(events)
   await store.append(ticketId, state.version, [
     {
       type: 'TicketReleased',

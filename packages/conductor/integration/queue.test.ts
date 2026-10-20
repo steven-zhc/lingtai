@@ -1,4 +1,4 @@
-import { reduceWorkItem } from '@lingtai/domain'
+import { reduceTicket } from '@lingtai/domain'
 /**
  * The subtraction: what GitHub offers, minus what the log says is claimed.
  *
@@ -119,7 +119,7 @@ describe('selectRunnable', () => {
     // And Send's requeue refuses the question rather than withdrawing it.
     const sent = await requeue({ project, issue: 51, by: 'human:steven', note: 'sent', onQuestion: 'refuse', store })
     expect(sent.ok).toBe(false)
-    expect(reduceWorkItem(await store.read(`ticket-${project}-51`)).lifecycle.status).toBe('blocked')
+    expect(reduceTicket(await store.read(`ticket-${project}-51`)).lifecycle.status).toBe('blocked')
 
     const answered = await answer({
       project,

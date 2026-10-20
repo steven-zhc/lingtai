@@ -9,7 +9,7 @@ import {
   type WaitId,
   isPending,
   isRegistered,
-  reduceWorkItem,
+  reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
@@ -907,14 +907,14 @@ async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, { wa
       // The same bound `resolve-wait.ts`'s own retried append uses.
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          const item = reduceWorkItem(await eventStore.read(ticketStream(t.project, Number(t.issue))))
+          const item = reduceTicket(await eventStore.read(ticketStream(t.project, Number(t.issue))))
           if (item.lifecycle.status !== 'blocked') return null
           // **`note` read off the same fold as `waitId`, never off `t.note`**
           // (#465). `t` is `task_view`'s own row — a projection, built by a
           // second process from the same log on its own schedule — and
           // `item.lifecycle.question` is folded fresh, by `legacyColumns`,
-          // in the same `reduceWorkItem` call that produced `waitId`
-          // (`work-item.ts`'s `WaitStarted` case). Where the projection has
+          // in the same `reduceTicket` call that produced `waitId`
+          // (`ticket.ts`'s `WaitStarted` case). Where the projection has
           // not yet caught up to the wait this read already sees, `t.note`
           // is still the *previous* wait's question — a card that paired it
           // with this fresh `waitId` would send a technically-live id that

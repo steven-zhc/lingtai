@@ -14,7 +14,7 @@ import { requeue } from '@lingtai/conductor'
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, type ToAppend, ticketStream } from '@lingtai/domain'
+import { projectStream, reduceTicket, type ToAppend, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
@@ -106,7 +106,7 @@ describe('lingtai requeue', () => {
     const last = events[events.length - 1]!
     expect(last.type).toBe('WaitResolved')
     expect(last.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: NOTE })
-    expect(reduceWorkItem(events).lifecycle.status).toBe('backlog')
+    expect(reduceTicket(events).lifecycle.status).toBe('backlog')
   })
 
   /**

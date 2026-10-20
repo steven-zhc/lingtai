@@ -172,7 +172,7 @@ export type LabelState = (typeof LABEL_STATES)[number]
  * `chat-…` and `ext-subscribers` are the genuine none — they belong to the
  * installation and to no repository.
  */
-export function workItemOf(event: { streamId: string; data?: unknown }): {
+export function ticketOf(event: { streamId: string; data?: unknown }): {
   project: string
   issue: string
 } | null {

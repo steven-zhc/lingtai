@@ -10,7 +10,7 @@ import { userInfo } from 'node:os'
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, ticketStream } from '@lingtai/domain'
+import { projectStream, reduceTicket, ticketStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -79,7 +79,7 @@ describe('lingtai ask / answer', () => {
       waitId: expect.any(String),
       reason: { _tag: 'OwnQuestion', question: QUESTION, by: ACTOR },
     })
-    expect(reduceWorkItem(events).lifecycle.status).toBe('blocked')
+    expect(reduceTicket(events).lifecycle.status).toBe('blocked')
 
     await fold()
     const listed: string[] = []
@@ -128,7 +128,7 @@ describe('lingtai ask / answer', () => {
       resolution: { _tag: 'Requeue' },
       note: 'asked by mistake, ignore',
     })
-    const item = reduceWorkItem(events)
+    const item = reduceTicket(events)
     expect(item.lifecycle.status).toBe('backlog')
     expect(item.answers).toEqual([])
 
@@ -150,7 +150,7 @@ describe('lingtai ask / answer', () => {
       note: CHOICE,
     })
 
-    const item = reduceWorkItem(events)
+    const item = reduceTicket(events)
     expect(item.lifecycle.status).toBe('backlog')
     expect(item.answers).toEqual([{ question: QUESTION, runId: null, answer: CHOICE, by: ACTOR }])
   })

@@ -1598,7 +1598,7 @@ export const DiscussionHeld = z.object({
  * `onSha` and a force-push voids it by arithmetic, while an edit is about *what
  * to do* and not about which diff to merge.
  *
- * It applies to the next run only, whoever starts it — `reduceWorkItem` holds
+ * It applies to the next run only, whoever starts it — `reduceTicket` holds
  * it as `pendingPrompt` and the next `TicketClaimed` consumes it. Something
  * meant to last belongs in the GitHub ticket, where everybody can see it and it
  * versions as `ticket@NNNN`; a durable override living only inside Lingtai
@@ -1619,7 +1619,7 @@ export const PromptEdited = z.object({
   /**
    * The text the next run's prompt carries, whole.
    *
-   * **Empty is the removal.** `reduceWorkItem` clears `pendingPrompt` on a blank
+   * **Empty is the removal.** `reduceTicket` clears `pendingPrompt` on a blank
    * one, so *Remove the edit* is an append like every other decision here and
    * who withdrew it is on the log rather than only its absence being.
    */

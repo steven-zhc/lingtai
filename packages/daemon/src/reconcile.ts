@@ -73,7 +73,7 @@ import { promisify } from 'node:util'
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { reduceWorkItem, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
+import { reduceTicket, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { projectionLag } from '@lingtai/projector'
@@ -265,7 +265,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
         continue
       }
 
-      const task = reduceWorkItem(await store.read(taskId).catch(() => []))
+      const task = reduceTicket(await store.read(taskId).catch(() => []))
       const life = task.lifecycle
       const live = life.status === 'claimed' && life.runId === runId && !abandoned.has(taskId)
 
@@ -373,7 +373,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
         continue
       }
 
-      const task = reduceWorkItem(await store.read(taskId).catch(() => []))
+      const task = reduceTicket(await store.read(taskId).catch(() => []))
       // Landed and nothing else. `blocked` is a question somebody has to
       // answer, and the log is half of what they answer it with.
       if (task.lifecycle.status !== 'landed') continue
@@ -465,7 +465,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
 
   const findings: Finding[] = []
   for (const ticketId of streams) {
-    const item = reduceWorkItem(await store.read(ticketId).catch(() => []))
+    const item = reduceTicket(await store.read(ticketId).catch(() => []))
     const life = item.lifecycle
     if (life.status !== 'claimed') continue
     if (life.worker === worker) continue
@@ -642,7 +642,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         // claim is a far worse outcome than leaving a dead one — the same rule
         // the worktree check follows for the same reason.
         const events = await store.read(f.stream)
-        const life = reduceWorkItem(events).lifecycle
+        const life = reduceTicket(events).lifecycle
         const mine = options.worker ?? conductorWorker()
         if (life.status !== 'claimed' || life.worker === mine) {
           f.action = 'reported'

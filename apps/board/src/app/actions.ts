@@ -49,7 +49,7 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
-  reduceWorkItem,
+  reduceTicket,
   waitsOf,
   type WaitId,
   ticketStream,
@@ -532,7 +532,7 @@ export async function concludeChat(input: {
  * do*, not about which diff to merge, so it outlives the diff (0032 §5). Which
  * is also why there is no `onSha` in this input: nothing is being agreed to.
  *
- * **It applies to the next run only**, whoever starts it. `reduceWorkItem`
+ * **It applies to the next run only**, whoever starts it. `reduceTicket`
  * holds it as `pendingPrompt` and the next `TicketClaimed` consumes it —
  * anything meant to last belongs in the GitHub ticket, where it versions as
  * `ticket@NNNN` and everybody can see it (§6).
@@ -636,7 +636,7 @@ export async function sendAttempt(input: {
     // Mirrors `answer()`'s own read (`ask.ts`): only an `OwnQuestion` offers
     // `AnswerQuestion`, and only a wait with no run is one.
     const events = await eventStore.read(input.taskId)
-    const life = reduceWorkItem(events).lifecycle
+    const life = reduceTicket(events).lifecycle
     const wait = waitsOf(events).at(-1)
     if (life.status === 'blocked' && wait !== undefined && allowedResolutions(wait.reason).includes('AnswerQuestion')) {
       return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` }

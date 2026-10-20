@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { applyWorkItem, reduceWorkItem, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
+import { applyTicket, reduceTicket, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
 import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -41,7 +41,7 @@ const closed = event(2, 'TicketClosed', { by: 'human:steven', reason: 'over-buil
 
 describe('a closed work item', () => {
   it('is a terminal that carries who and why', () => {
-    const state = reduceWorkItem([
+    const state = reduceTicket([
       event(1, 'WorkItemBlocked', {
         hold: {
           _tag: 'Human',
@@ -68,7 +68,7 @@ describe('a closed work item', () => {
    * to the queue at all.
    */
   it('is not backlog, which is what the queue subtracts on', () => {
-    const state = reduceWorkItem([closed])
+    const state = reduceTicket([closed])
 
     expect(state.lifecycle.status).not.toBe('backlog')
     expect(state.lifecycle.status).toBe('closed')
@@ -83,8 +83,8 @@ describe('a closed work item', () => {
    * longer the intent.
    */
   it('is not lifted by an unblock arriving after it', () => {
-    const state = applyWorkItem(
-      reduceWorkItem([closed]),
+    const state = applyTicket(
+      reduceTicket([closed]),
       event(3, 'WorkItemUnblocked', { by: 'human:steven', note: 'changed my mind' }),
     )
 
@@ -93,10 +93,7 @@ describe('a closed work item', () => {
 
   /** And a claim after it does not either: the ticket is over, not free. */
   it('is not lifted by a claim arriving after it', () => {
-    const state = applyWorkItem(
-      reduceWorkItem([closed]),
-      event(4, 'TicketClaimed', { runId: 'pass-2', worker: 'daemon' }),
-    )
+    const state = applyTicket(reduceTicket([closed]), event(4, 'TicketClaimed', { runId: 'pass-2', worker: 'daemon' }))
 
     expect(state.lifecycle.status).toBe('closed')
   })
@@ -267,7 +264,7 @@ describe('closing a blocked item', () => {
     expect(events.map((e) => e.type)).toEqual(['TicketClaimed', 'WaitStarted', 'WaitResolved', 'TicketClosed'])
     const wait = waitsOf(events).at(-1)
     expect(wait?.resolution).toEqual({ _tag: 'Close' })
-    expect(reduceWorkItem(events).lifecycle).toMatchObject({ status: 'closed', by: 'human:steven' })
+    expect(reduceTicket(events).lifecycle).toMatchObject({ status: 'closed', by: 'human:steven' })
   })
 })
 

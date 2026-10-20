@@ -173,7 +173,7 @@ export const taskViewProjection: Projection = {
         -- what with. WaitResolved.note, which no column held before #147:
         -- a rebuild could say what was asked and never what was decided.
         -- Assignment, not a list, so a replay lands on the same value; the
-        -- whole history is the fold's (WorkItemState.answers). Kept across a
+        -- whole history is the fold's (TicketState.answers). Kept across a
         -- claim and a landing, because a decision outlives the attempt at it.
         answer       jsonb,
 
@@ -363,7 +363,7 @@ export const taskViewProjection: Projection = {
           // true this leaves state, note and every hold column exactly as
           // they were. Writing `state: 'queued'` and clearing the hold here
           // regardless put `task_view` and the domain fold
-          // (`packages/domain/src/work-item.ts`, still `blocked`) in
+          // (`packages/domain/src/ticket.ts`, still `blocked`) in
           // disagreement forever, and destroyed the question before any
           // `WaitResolved` had answered it.
           //
@@ -600,7 +600,7 @@ export const taskViewProjection: Projection = {
                   // the ticket on was the integration that followed,
                   // synchronously, inside `approve.ts` — that integration is
                   // gone, and the fold now moves the lifecycle to `approved`
-                  // (`work-item.ts`), so a row left `waiting` here would
+                  // (`ticket.ts`), so a row left `waiting` here would
                   // disagree with it: the home board would keep rendering
                   // Decide/Requeue over a question that is answered, and
                   // `page.tsx`'s own `card.waiting` is what decides that.

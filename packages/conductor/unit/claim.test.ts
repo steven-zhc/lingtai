@@ -3,7 +3,7 @@
  * state it refuses — `approved` — and the claim a continuation makes onto
  * the same run the approval was about.
  */
-import { type Action, reduceWorkItem, ticketStream } from '@lingtai/domain'
+import { type Action, reduceTicket, ticketStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
@@ -86,9 +86,9 @@ describe('continueWorkItem', () => {
     const result = await continueWorkItem(ticketId, 'pass-3', { worker: 'daemon:1', store })
 
     expect(result).toMatchObject({ ok: true, claim: { ticketId, runId: 'pass-3', worker: 'daemon:1' } })
-    const state = reduceWorkItem(await store.read(ticketId))
+    const state = reduceTicket(await store.read(ticketId))
     expect(state.lifecycle).toEqual({ status: 'claimed', runId: 'pass-3', worker: 'daemon:1' })
-    // The fold's own de-duplication (`work-item.ts`'s `TicketClaimed` case) —
+    // The fold's own de-duplication (`ticket.ts`'s `TicketClaimed` case) —
     // this is the run's second claim, not a second run.
     expect(state.runs).toEqual(['pass-3'])
   })

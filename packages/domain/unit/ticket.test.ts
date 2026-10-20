@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyWorkItem, reduceWorkItem, WaitStarted, type WaitId } from '../src/index.ts'
+import { emptyTicket, reduceTicket, WaitStarted, type WaitId } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const discovered = {
@@ -12,17 +12,17 @@ const discovered = {
   labels: ['agent:ready'],
 }
 
-describe('reduceWorkItem', () => {
+describe('reduceTicket', () => {
   it('is backlog with nothing known before its first event', () => {
-    const s = reduceWorkItem([])
-    expect(s).toEqual(emptyWorkItem)
+    const s = reduceTicket([])
+    expect(s).toEqual(emptyTicket)
     expect(s.lifecycle.status).toBe('backlog')
     expect(s.version).toBe(0)
   })
 
   it('records what discovery knew', () => {
     const e = makeStream('ticket-nextloom-ai-admin-117')
-    const s = reduceWorkItem([e('TicketDiscovered', discovered)])
+    const s = reduceTicket([e('TicketDiscovered', discovered)])
 
     expect(s.project).toBe('nextloom-ai-admin')
     expect(s.externalRef).toBe('117')
@@ -33,7 +33,7 @@ describe('reduceWorkItem', () => {
 
   it('walks discovered → claimed → landed', () => {
     const e = makeStream('ticket-nextloom-ai-admin-117')
-    const s = reduceWorkItem([
+    const s = reduceTicket([
       e('TicketDiscovered', discovered),
       e('TicketClaimed', { runId: 'pass-01JX', worker: 'conductor@host', title: null, kind: null }),
       e('TicketLanded', { mergeCommit: 'abc1234', base: 'develop' }),
@@ -46,7 +46,7 @@ describe('reduceWorkItem', () => {
 
   it('returns to the backlog when released, and the lease goes with it', () => {
     const e = makeStream('ticket-p-1')
-    const s = reduceWorkItem([
+    const s = reduceTicket([
       e('TicketDiscovered', discovered),
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
       e('TicketReleased', { runId: 'pass-a', reason: 'lease expired', cause: null }),
@@ -68,7 +68,7 @@ describe('reduceWorkItem', () => {
     }
     const events = [e('TicketDiscovered', discovered), e('WaitStarted', { waitId: 'wait-1' as WaitId, reason })]
 
-    const blocked = reduceWorkItem(events)
+    const blocked = reduceTicket(events)
     expect(blocked.lifecycle).toEqual({
       status: 'blocked',
       waitId: 'wait-1' as WaitId,
@@ -88,7 +88,7 @@ describe('reduceWorkItem', () => {
       },
     })
 
-    const unblocked = reduceWorkItem([
+    const unblocked = reduceTicket([
       ...events,
       e('WaitResolved', {
         waitId: 'wait-1' as WaitId,
@@ -134,7 +134,7 @@ describe('reduceWorkItem', () => {
       }),
     ]
 
-    const approved = reduceWorkItem(events)
+    const approved = reduceTicket(events)
     expect(approved.lifecycle).toEqual({
       status: 'approved',
       runId: 'pass-b',
@@ -143,7 +143,7 @@ describe('reduceWorkItem', () => {
     })
 
     // A continuation claims onto the same run, the same way any claim does.
-    const claimed = reduceWorkItem([
+    const claimed = reduceTicket([
       ...events,
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
@@ -168,7 +168,7 @@ describe('reduceWorkItem', () => {
     }
     const asked = [e('WaitStarted', { waitId: 'wait-1' as WaitId, reason })]
 
-    const waiting = reduceWorkItem(asked)
+    const waiting = reduceTicket(asked)
     expect(waiting.lifecycle).toEqual({
       status: 'blocked',
       waitId: 'wait-1' as WaitId,
@@ -182,7 +182,7 @@ describe('reduceWorkItem', () => {
     })
     expect(waiting.runs).toEqual([])
 
-    const answered = reduceWorkItem([
+    const answered = reduceTicket([
       ...asked,
       e('WaitResolved', {
         waitId: 'wait-1' as WaitId,
@@ -204,7 +204,7 @@ describe('reduceWorkItem', () => {
     ])
 
     // Withdrawn rather than answered: back in the backlog, and nothing kept.
-    const withdrawn = reduceWorkItem([
+    const withdrawn = reduceTicket([
       ...asked,
       e('WaitResolved', { waitId: 'wait-1' as WaitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: '' }),
     ])
@@ -223,7 +223,7 @@ describe('reduceWorkItem', () => {
    */
   it('tells a judgement apart from a failure needing acknowledgement', () => {
     const e = makeStream('ticket-nextloom-ai-admin-112')
-    const judgement = reduceWorkItem([
+    const judgement = reduceTicket([
       e('WaitStarted', {
         waitId: 'wait-1' as WaitId,
         reason: {
@@ -235,7 +235,7 @@ describe('reduceWorkItem', () => {
         },
       }),
     ])
-    const failure = reduceWorkItem([
+    const failure = reduceTicket([
       e('WaitStarted', {
         waitId: 'wait-2' as WaitId,
         reason: {
@@ -276,7 +276,7 @@ describe('reduceWorkItem', () => {
    */
   it('cannot be blocked and claimed at the same time', () => {
     const e = makeStream('ticket-nextloom-ai-admin-35')
-    const s = reduceWorkItem([
+    const s = reduceTicket([
       e('TicketDiscovered', discovered),
       e('WaitStarted', {
         waitId: 'wait-1' as WaitId,
@@ -293,7 +293,7 @@ describe('reduceWorkItem', () => {
   it('links a filed bug to the merge that caused it, without duplicating', () => {
     const e = makeStream('ticket-nextloom-ai-admin-134')
     const link = { relation: 'caused-by' as const, otherRef: '58' }
-    const s = reduceWorkItem([
+    const s = reduceTicket([
       e('TicketDiscovered', { ...discovered, externalRef: '134' }),
       e('TicketLinked', link),
       e('TicketLinked', link),
@@ -304,7 +304,7 @@ describe('reduceWorkItem', () => {
 
   it('keeps every refused dispatch rather than counting them', () => {
     const e = makeStream('ticket-p-1')
-    const s = reduceWorkItem([
+    const s = reduceTicket([
       e('TicketDiscovered', discovered),
       e('DispatchRefused', {
         requiredTier: 'sandboxed' as const,
@@ -331,7 +331,7 @@ describe('reduceWorkItem', () => {
    */
   it('counts the approaches a ticket abandoned, from the release that follows each one', () => {
     const e = makeStream('ticket-p-1')
-    const after = reduceWorkItem([
+    const after = reduceTicket([
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
       e('TicketReleased', { runId: 'pass-a', reason: '…restart 1 of 2', cause: { _tag: 'Restart', restart: 1 } }),
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
@@ -342,7 +342,7 @@ describe('reduceWorkItem', () => {
     // And it is claimed, not blocked — a restart is not a state an item is in.
     expect(after.lifecycle.status).toBe('claimed')
 
-    const twice = reduceWorkItem([
+    const twice = reduceTicket([
       e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'Restart', restart: 1 } }),
       e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'Restart', restart: 2 } }),
     ])
@@ -352,7 +352,7 @@ describe('reduceWorkItem', () => {
   it('ignores an event type it has never heard of, but still advances', () => {
     const e = makeStream('ticket-p-1')
     const first = e('TicketDiscovered', discovered)
-    const s = reduceWorkItem([first, unknownEvent('ticket-p-1', 2)])
+    const s = reduceTicket([first, unknownEvent('ticket-p-1', 2)])
 
     expect(s.title).toBe('Migration hold')
     expect(s.lifecycle.status).toBe('backlog')
@@ -368,7 +368,7 @@ describe('reduceWorkItem', () => {
    */
   it('holds a prompt edit until the next claim, and no longer', () => {
     const e = makeStream('ticket-p-1')
-    const edited = reduceWorkItem([
+    const edited = reduceTicket([
       e('TicketDiscovered', discovered),
       e('PromptEdited', {
         text: 'pass --max-turns',
@@ -381,7 +381,7 @@ describe('reduceWorkItem', () => {
     expect(edited.pendingPrompt).toEqual({ text: 'pass --max-turns', by: 'human:steven' })
 
     const f = makeStream('ticket-p-2')
-    const consumed = reduceWorkItem([
+    const consumed = reduceTicket([
       f('TicketDiscovered', discovered),
       f('PromptEdited', {
         text: 'pass --max-turns',
@@ -398,7 +398,7 @@ describe('reduceWorkItem', () => {
   /** A second edit replaces the first: two sentences nobody re-read is a prompt nobody approved. */
   it('keeps the last edit rather than stacking them', () => {
     const e = makeStream('ticket-p-3')
-    const state = reduceWorkItem([
+    const state = reduceTicket([
       e('TicketDiscovered', discovered),
       e('PromptEdited', { text: 'first', hash: 'f1', by: 'human:steven', basedOn: null, chatId: null }),
       e('PromptEdited', { text: 'second', hash: 'f2', by: 'human:steven', basedOn: null, chatId: null }),
@@ -414,7 +414,7 @@ describe('reduceWorkItem', () => {
    */
   it('takes the edit back off when the text is blank', () => {
     const e = makeStream('ticket-p-4')
-    const state = reduceWorkItem([
+    const state = reduceTicket([
       e('TicketDiscovered', discovered),
       e('PromptEdited', { text: 'pass --max-turns', hash: 'a91f2e', by: 'human:steven', basedOn: null, chatId: null }),
       e('PromptEdited', { text: '  \n ', hash: null, by: 'human:steven', basedOn: null, chatId: null }),

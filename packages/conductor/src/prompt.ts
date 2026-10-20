@@ -23,7 +23,7 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceWorkItem, type Envelope } from '@lingtai/domain'
+import { reduceTicket, type Envelope } from '@lingtai/domain'
 import type { StepAction } from '@lingtai/recipe'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -44,7 +44,7 @@ import {
  */
 export { editHash } from './attempts.ts'
 
-/** A sentence a person added for one attempt. `WorkItemState.pendingPrompt`. */
+/** A sentence a person added for one attempt. `TicketState.pendingPrompt`. */
 export interface PromptEdit {
   text: string
   by: string
@@ -110,7 +110,7 @@ export function nextPrompt(input: {
   arms?: ArmsOnOrigin | null
 }): NextPrompt {
   const attempts = priorAttempts(input.item)
-  const state = reduceWorkItem(input.item)
+  const state = reduceTicket(input.item)
   const edit = state.pendingPrompt
 
   const previous = attempts[attempts.length - 1]

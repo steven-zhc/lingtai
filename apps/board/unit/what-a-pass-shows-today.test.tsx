@@ -80,7 +80,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * for this run — either would pin a page view this ending never produces.
  *
  * **Rows 4 and 16 pin no strip either, for the same reason.** Both items end
- * on `TicketReleased`, which `work-item.ts:329` folds to `lifecycle.status:
+ * on `TicketReleased`, which `ticket.ts:329` folds to `lifecycle.status:
  * 'backlog'` and `standingOf` reports as `'queued'` (`task.ts:692`).
  * `loadTask` calls `planFor` only for `'running'` or `'blocked'`
  * (`task.ts:1525-1527`), so `plan` stays `undefined`; `landed` is `false`

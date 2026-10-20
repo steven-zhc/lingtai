@@ -570,7 +570,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
      * an item, and only a person's answer may replace it. A build that let
      * `DispatchRefused` write `state: 'queued'` and clear `waiting`, `asked`,
      * `needs` and `diagnosis` here put `task_view` and the domain fold
-     * (`packages/domain/src/work-item.ts`, which `WorkItemBlocked` alone
+     * (`packages/domain/src/ticket.ts`, which `WorkItemBlocked` alone
      * moves to `blocked` and only `WorkItemUnblocked` moves off it) in
      * disagreement forever — `selectRunnable` would admit the row, the claim
      * would then refuse it as not-claimable, and a later real

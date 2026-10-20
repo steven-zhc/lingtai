@@ -101,7 +101,7 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
       return { ...state, ...at, refused: null }
 
     default:
-      // See the note in work-item.ts: ignored, not rejected.
+      // See the note in ticket.ts: ignored, not rejected.
       return { ...state, ...at }
   }
 }

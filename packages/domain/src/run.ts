@@ -409,7 +409,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
     }
 
     default:
-      // See the note in work-item.ts: ignored, not rejected.
+      // See the note in ticket.ts: ignored, not rejected.
       return { ...state, ...at }
   }
 }

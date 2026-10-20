@@ -77,7 +77,7 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { type Envelope, SUBSCRIBER_STREAM, WAIT_EVENTS, parsePayload, workItemOf } from '@lingtai/domain'
+import { type Envelope, SUBSCRIBER_STREAM, WAIT_EVENTS, parsePayload, ticketOf } from '@lingtai/domain'
 import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
 
 import { withDaemonStore } from './choose.ts'
@@ -372,7 +372,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     // event names *exactly* — its `ticket-` stream or its `ticketId` — and null
     // rather than a guess: `parseTicketStream` cuts any id at its last dash,
     // so `pass-3f2a…-0123` would be recorded as project `pass-3f2a…`.
-    const project = owner ?? workItemOf(event)?.project ?? null
+    const project = owner ?? ticketOf(event)?.project ?? null
     const data = { name, eventType: event.type, project, reason }
     recording = recording
       .then(async () => {

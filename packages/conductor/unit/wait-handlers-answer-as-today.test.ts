@@ -20,10 +20,10 @@
  * for every caller, in `resolveWaitHolding`".
  *
  * Builders from `@lingtai/domain/test/events` only, and assertions through
- * `waitsOf`, `reduceWorkItem(...).answers` and `cardFactOf(...).card` — never
+ * `waitsOf`, `reduceTicket(...).answers` and `cardFactOf(...).card` — never
  * through a type name, so `#464`'s event-shape change leaves this file alone.
  */
-import { type Action, type Envelope, reduceWorkItem, waitsOf, ticketStream } from '@lingtai/domain'
+import { type Action, type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { allowedResolutions } from '@lingtai/domain/wait'
@@ -102,7 +102,7 @@ describe('ask', () => {
     const events = await store.read(ticketId)
     const wait = waitsOf(events).at(-1)
     expect(wait?.reason).toEqual({ _tag: 'OwnQuestion', question: 'which design?', by: 'human:steven' })
-    expect(reduceWorkItem(events).lifecycle).toMatchObject({
+    expect(reduceTicket(events).lifecycle).toMatchObject({
       status: 'blocked',
       question: 'which design?',
       runId: null,
@@ -170,7 +170,7 @@ describe('answer', () => {
     const events = await store.read(ticketId)
     const wait = waitsOf(events).at(-1)
     expect(wait?.resolution).toEqual({ _tag: 'AnswerQuestion', choice: 'the first' })
-    expect(reduceWorkItem(events).answers).toEqual([
+    expect(reduceTicket(events).answers).toEqual([
       { question: 'which design?', runId: null, answer: 'the first', by: 'human:steven' },
     ])
   })
@@ -207,7 +207,7 @@ describe('requeue', () => {
     const events = await store.read(ticketId)
     const wait = waitsOf(events).at(-1)
     expect(wait?.resolution).toEqual({ _tag: 'Requeue' })
-    const item = reduceWorkItem(events)
+    const item = reduceTicket(events)
     expect(item.answers).toEqual([])
     expect(item.lifecycle.status).toBe('backlog')
   })
@@ -225,7 +225,7 @@ describe('requeue', () => {
     expect(result.ok).toBe(true)
     expect(result.detail).not.toContain('withdrawn')
 
-    const answers = reduceWorkItem(await store.read(ticketId)).answers
+    const answers = reduceTicket(await store.read(ticketId)).answers
     expect(answers).toEqual([
       {
         question: 'the `implement` step asked: which helper?',
@@ -247,7 +247,7 @@ describe('requeue', () => {
 
     await requeueHolding({ by: 'human:steven', note: '   ' }, store, ticketId)
 
-    const answers = reduceWorkItem(await store.read(ticketId)).answers
+    const answers = reduceTicket(await store.read(ticketId)).answers
     expect(answers).toEqual([
       { question: 'the `implement` step asked: which helper?', runId: 'pass-13', answer: '', by: 'human:steven' },
     ])
@@ -295,7 +295,7 @@ describe('requeue', () => {
     expect(stale).toMatchObject({ ok: false })
     expect(stale.detail).toContain('not waiting on')
 
-    const after = reduceWorkItem(await store.read(ticketId))
+    const after = reduceTicket(await store.read(ticketId))
     expect(after.lifecycle).toMatchObject({ status: 'blocked', waitId: waitB })
     expect(waitsOf(await store.read(ticketId)).find((w) => w.waitId === waitB)?.resolution).toBeNull()
   })
@@ -512,7 +512,7 @@ describe('approve', () => {
     expect(stale.detail).toContain(waitA)
     expect(stale.detail).toContain(waitB)
 
-    const after = reduceWorkItem(await store.read(ticketId))
+    const after = reduceTicket(await store.read(ticketId))
     expect(after.lifecycle).toMatchObject({ status: 'blocked', waitId: waitB })
     expect(waitsOf(await store.read(ticketId)).find((w) => w.waitId === waitB)?.resolution).toBeNull()
   })

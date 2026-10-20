@@ -233,7 +233,7 @@ describe("the next attempt's prompt", () => {
   })
 
   /**
-   * The removal. `reduceWorkItem` clears `pendingPrompt` on a blank edit, so
+   * The removal. `reduceTicket` clears `pendingPrompt` on a blank edit, so
    * the version falls back to today's form rather than carrying a `human@…` for
    * a block the agent was never shown.
    */

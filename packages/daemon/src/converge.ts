@@ -70,13 +70,13 @@ import { passClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticke
 import {
   parseTicketStream,
   parsePayload,
-  reduceWorkItem,
+  reduceTicket,
   WAIT_EVENTS,
   TICKET_STREAM_PREFIX,
   type LabelState,
   type PayloadOf,
   type ProjectState,
-  type WorkItemStatus,
+  type TicketStatus,
 } from '@lingtai/domain'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
@@ -208,12 +208,12 @@ function oneLine(message: string): string {
 /**
  * The lifecycle a work item is in, in the vocabulary `labelsFor` speaks.
  *
- * The projection's `TaskState` and the reducer's `WorkItemStatus` are two names
+ * The projection's `TaskState` and the reducer's `TicketStatus` are two names
  * for one idea and this is the one place they meet. Read from the *reducer*
  * rather than from `task_view`, because reconciliation has to work when a
  * projection is the thing that is broken.
  */
-function labelState(status: WorkItemStatus): LabelState {
+function labelState(status: TicketStatus): LabelState {
   switch (status) {
     case 'claimed':
       return 'running'
@@ -335,7 +335,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
 
     const events = await store.read(ticketId).catch(() => [])
     if (events.length === 0) continue
-    const item = reduceWorkItem(events)
+    const item = reduceTicket(events)
     const wanted = labelsFor(labelState(item.lifecycle.status))
 
     // What the log last said it managed, per change. A failure with no later
