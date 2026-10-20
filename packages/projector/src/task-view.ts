@@ -1090,7 +1090,13 @@ export function describeWait(
  * **Beside `describeHold` and for its reason** (#83, #100): the board and
  * `lingtai status` both show it, and two places that word the same fact
  * differently is the failure this repository keeps finding. So the sentence is
- * decided once, here, beside the fields it is read from.
+ * decided once, here — but the ceiling is the recipe's, never the row's, and
+ * every caller has to hand it in. `#502` dropped the ceiling from the event
+ * (`TicketReleased{cause: Restart}` is `{after, restart}` alone — the policy
+ * it was spent against lives in the recipe, never on the event), so
+ * `restartsOf` stays at its DDL default of 0 on every row now; a caller that
+ * wants `of N` reads the recipe's `limits?.restarts` and passes it, the same
+ * source `describeHeld` falls back to.
  *
  * Null rather than `restart 0 of 2`, because a ticket on its first approach is
  * not *on* an arm — there is nothing to tell apart yet, and a card that said so
@@ -1103,21 +1109,11 @@ export function describeWait(
  * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
  * what 0040 §3 asks a card to be able to say.
  */
-export function describeArm(
-  card: Pick<TaskCard, 'restarts' | 'restartsOf'>,
-  restartsOf: number | null = null,
-): string | null {
+export function describeArm(card: Pick<TaskCard, 'restarts'>, restartsOf: number | null): string | null {
   if (card.restarts === 0) return null
-  // `restartsOf` is zero on every row now, not just one whose `PassRestarted`
-  // predates the field: `#502` dropped the ceiling from the event
-  // (`TicketReleased{cause: Restart}` is `{after, restart}` alone — the
-  // policy it was spent against lives in the recipe, never on the event), so
-  // nothing writes this column a nonzero value any more. `restartsOf` is the
-  // caller's fallback for exactly that, the recipe's own ceiling
-  // (`board.ts`'s `limits?.restarts`, the same source `describeHeld` falls
-  // back to) — read only where the column itself has nothing, same as before.
-  const of = card.restartsOf > 0 ? card.restartsOf : restartsOf
-  return of !== null && of > 0 ? `restart ${card.restarts} of ${of}` : `restart ${card.restarts}`
+  return restartsOf !== null && restartsOf > 0
+    ? `restart ${card.restarts} of ${restartsOf}`
+    : `restart ${card.restarts}`
 }
 
 export interface ReadTasksOptions {

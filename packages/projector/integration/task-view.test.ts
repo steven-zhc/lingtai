@@ -750,7 +750,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const over = card(tasks, 14)!
       expect(over.restarts).toBe(1)
       expect(over.restartsOf).toBe(0)
-      expect(describeArm(over)).toBe('restart 1')
+      expect(describeArm(over, null)).toBe('restart 1')
       // And the caller's own fallback — `board.ts`'s `limits?.restarts`, the
       // same recipe ceiling `describeHeld` reads — restores the denominator
       // this column can no longer carry.
@@ -764,7 +764,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // Nothing on a ticket that has only ever had one approach, so a card on a
       // project that buys no restart reads exactly as it did.
       expect(card(tasks, 2)!.restarts).toBe(0)
-      expect(describeArm(card(tasks, 2)!)).toBeNull()
+      expect(describeArm(card(tasks, 2)!, null)).toBeNull()
     })
 
     it('says why a task is waiting, in one line', async () => {

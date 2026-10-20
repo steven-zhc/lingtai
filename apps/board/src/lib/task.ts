@@ -468,9 +468,10 @@ export interface StandingView {
    * two ways. **`restartsOf` is zero regardless of `restarts`, since `#502`**
    * — `TicketReleased{cause: Restart}` carries `{after, restart}` alone, so
    * there is no ceiling left on any event for this fold to read, however
-   * many times the ticket has restarted. `board.ts`'s `describeArm` and
-   * `describeHeld` both fall back to the recipe's own `limits.restarts` for
-   * the denominator wherever this reads zero.
+   * many times the ticket has restarted. `describeArm` (#504) no longer
+   * reads this column at all — every caller passes the recipe's own
+   * `limits.restarts` as the ceiling directly — and `describeHeld` falls
+   * back to that same `limits.restarts` wherever this reads zero.
    */
   restarts: number
   restartsOf: number
