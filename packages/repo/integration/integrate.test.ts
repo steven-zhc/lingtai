@@ -187,12 +187,10 @@ describe('integrate', () => {
     if (result.ok) return
     expect(result.reason).toBe('conflict')
     expect(result.detail).toContain('README.md')
+    expect(result.conflict).toEqual({ paths: ['README.md'], baseSha: developSha, headSha: agent2Sha })
 
     const refusal = (await lane()).slice(before).find((e) => e.type === 'IntegrationRefused')
     expect(refusal?.data['reason']).toBe('conflict')
-    expect(refusal?.data['paths']).toEqual(['README.md'])
-    expect(refusal?.data['baseSha']).toBe(developSha)
-    expect(refusal?.data['headSha']).toBe(agent2Sha)
   })
 
   it('refuses a branch with nothing to merge', async () => {
