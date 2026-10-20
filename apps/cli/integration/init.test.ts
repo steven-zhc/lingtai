@@ -159,6 +159,11 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         // default, same as those, since nothing here is about which labels
         // are work.
         if (/which labels are work/.test(question)) return ''
+        // #433's first recipe question, answered with its own default so
+        // `acceptingDefaults` wraps the world and every later recipe question
+        // takes its default without reaching this `ask` — this suite is about
+        // the database question alone.
+        if (/use every default/.test(question)) return ''
         // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)
