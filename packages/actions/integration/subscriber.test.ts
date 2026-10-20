@@ -112,7 +112,7 @@ describe('what starts a process and what does not', () => {
 
     const payload = await delivered()
     expect(payload.event.type).toBe('ApprovalRequested')
-    expect(payload.workItem).toEqual({ id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' })
+    expect(payload.ticket).toEqual({ id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' })
   })
 
   /** An event that belongs to no repository — `ctl-conductor`, `chat-…` — reaches nobody. */

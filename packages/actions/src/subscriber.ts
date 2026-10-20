@@ -110,7 +110,7 @@ export interface SubscriberPayload {
     data: unknown
   }
   /** The work item it is about — never null, because an event without one is never delivered. */
-  workItem: EventSubject
+  ticket: EventSubject
   /** Where the board is, so a subscriber can link without knowing the deployment. */
   board: string
 }
@@ -169,8 +169,8 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
 
     async deliver(event) {
       if (!on.has(event.type)) return
-      const workItem = await options.subject(event)
-      if (workItem === null || workItem.project !== options.project) return
+      const ticket = await options.subject(event)
+      if (ticket === null || ticket.project !== options.project) return
 
       const payload: SubscriberPayload = {
         event: {
@@ -184,7 +184,7 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
           at: event.at.toISOString(),
           data: event.data,
         },
-        workItem,
+        ticket,
         board: options.board,
       }
       const env = typeof options.env === 'function' ? await options.env() : options.env

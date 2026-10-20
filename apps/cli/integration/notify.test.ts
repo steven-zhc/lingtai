@@ -10,7 +10,7 @@
  * `PluginFailed` (0037 §7). The old `send` discarded `osascript`'s exit code,
  * which was harmless while nothing above it read one and is not now.
  *
- * **A card is named from `workItem`, not from the stream id.** `#123`'s other
+ * **A card is named from `ticket`, not from the stream id.** `#123`'s other
  * half: `ApprovalRequested` is appended to a *run* stream, so the version that
  * read the stream id rendered the two events that most needed a link with an
  * empty `#` and none.
@@ -33,7 +33,7 @@ import { macNotifier, notifyCommand, type Exec } from '../src/notify.ts'
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
-  workItem: { id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' },
+  ticket: { id: 'ticket-lingtai-123', project: 'lingtai', issue: '123' },
   board: 'http://localhost:3200',
 })
 
@@ -175,7 +175,7 @@ describe('what the exit code says', () => {
     })
 
     expect(code).toBe(1)
-    expect(said.join('\n')).toContain('workItem')
+    expect(said.join('\n')).toContain('ticket')
   })
 })
 
@@ -188,7 +188,7 @@ describe('parsePayload', () => {
     const parsed = parsePayload(
       JSON.stringify({
         event: { type: 'WaitStarted', data: {} },
-        workItem: { id: 'ticket-a-1', project: 'a', issue: '1' },
+        ticket: { id: 'ticket-a-1', project: 'a', issue: '1' },
       }),
     )
 
