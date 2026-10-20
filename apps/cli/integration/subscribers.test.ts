@@ -1,15 +1,15 @@
-import { integrationStream, workItemStream } from '@lingtai/domain'
+import { integrationStream, type ToAppend, workItemStream } from '@lingtai/domain'
 /**
  * Which project an event is about, against the real log.
  *
  * This is the file that answers the refusal that ended attempt 3 of `#123`. The
  * old subscription was `{ project: "*" }` and short-circuited before it ever
  * looked at a stream; a per-recipe one cannot, and **three of the four types
- * this repository declares are appended to no work item stream**:
+ * this repository declares are appended to no work item stream** (#502):
  *
- *   `WorkItemBlocked`      `ticket-{project}-{n}`    the stream says it
+ *   `WaitStarted`          `ticket-{project}-{n}`    the stream says it
  *   `IntegrationRefused`   `int-{project}-{base}` `data.ticketId` says it
- *   `ApprovalRequested`    `pass-<uuid>`          only the run's `RunStarted`
+ *   `StepEnded`            `pass-<uuid>`          only the run's `RunStarted`
  *   `RunAwaitingInput`     `pass-<uuid>`          the same
  *
  * So all four are appended here exactly as `conduct.ts`, `hook-socket.ts` and
@@ -17,6 +17,8 @@ import { integrationStream, workItemStream } from '@lingtai/domain'
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
  */
+import { aRun, anOutcome, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -61,21 +63,28 @@ beforeAll(async () => {
       },
     },
   ])
-  await store.append(runId, 1, [
-    {
-      type: 'ApprovalRequested',
-      actor: 'conductor',
-      data: {
-        step: 'merge',
-        action: 'approve',
-        runId,
-        onSha: 'c'.repeat(40),
-        question: 'Merge into main?',
-        artifacts: [],
-      },
-    },
-  ])
-  await store.append(runId, 2, [{ type: 'RunAwaitingInput', actor: `agent:${runId}`, data: { prompt: 'which base?' } }])
+  const toAppend = (events: readonly { type: string; actor: string; data: unknown }[]): ToAppend[] =>
+    events.map((e) => ({ type: e.type, actor: e.actor, data: e.data }))
+
+  await store.append(
+    runId,
+    1,
+    toAppend(
+      aRun(runId).aStepEnded(
+        anOutcome('merge', 0, [
+          {
+            plugin: 'human',
+            name: 'approve',
+            onSha: 'c'.repeat(40),
+            evidence: 'Merge into main?',
+            yields: 'signoff',
+            result: { _tag: 'Completed', requested: { question: 'Merge into main?' } },
+          },
+        ]),
+      ),
+    ),
+  )
+  await store.append(runId, 3, [{ type: 'RunAwaitingInput', actor: `agent:${runId}`, data: { prompt: 'which base?' } }])
   await store.append(lane, 0, [
     {
       type: 'IntegrationRefused',
@@ -83,15 +92,11 @@ beforeAll(async () => {
       data: { ticketId: wi, branch: 'agent/7', reason: 'conflict', detail: 'does not merge' },
     },
   ])
-  await store.append(wi, 0, [
-    {
-      type: 'WorkItemBlocked',
-      actor: 'conductor',
-      data: {
-        hold: { _tag: 'Asked', run: { runId }, step: 'design', question: 'which base?' },
-      },
-    },
-  ])
+  await store.append(
+    wi,
+    0,
+    toAppend(aWait(makeStream(wi), { _tag: 'AgentQuestion', run: { runId }, step: 'design', question: 'which base?' })),
+  )
   // A run refused before it started: no `RunStarted`, so nothing names a card.
   await store.append(startless, 0, [
     { type: 'RunAwaitingInput', actor: `agent:${startless}`, data: { prompt: 'anybody there?' } },
@@ -117,7 +122,7 @@ describe('createSubjectResolver', () => {
    */
   it("reads it off the run's RunStarted for an approval", async () => {
     const events = await store.read(runId)
-    const approval = events.find((e) => e.type === 'ApprovalRequested')
+    const approval = events.find((e) => e.type === 'StepEnded')
     expect(approval).toBeDefined()
     expect(await subject(approval!)).toEqual(card)
   })
@@ -140,7 +145,7 @@ describe('createSubjectResolver', () => {
    * `PluginFailed` — it has to reject, so `deliver` rejects and it is recorded.
    */
   it("rejects, rather than answering null, when the run's stream cannot be read", async () => {
-    const approval = (await store.read(runId)).find((e) => e.type === 'ApprovalRequested')!
+    const approval = (await store.read(runId)).find((e) => e.type === 'StepEnded')!
     const broken: EventStore = {
       ...store,
       read: async () => {
