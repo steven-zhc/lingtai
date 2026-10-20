@@ -176,10 +176,8 @@ async function failures(): Promise<{ name: string; eventType: string; reason: st
 }
 
 describe('the telegram subscriber this repository declares', () => {
-  it('names the five events the ticket lists, and no LINGTAI_ variable', () => {
-    expect(new Set(shipped.on)).toEqual(
-      new Set(['TicketLanded', 'WorkItemBlocked', 'RunFailed', 'ApprovalRequested', 'RunAwaitingInput']),
-    )
+  it('names the four events the recipe declares, and no LINGTAI_ variable', () => {
+    expect(new Set(shipped.on)).toEqual(new Set(['TicketLanded', 'WaitStarted', 'RunFailed', 'RunAwaitingInput']))
     expect(shipped.env.filter((n) => n.startsWith('LINGTAI_'))).toEqual([])
   })
 

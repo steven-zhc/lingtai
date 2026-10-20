@@ -213,7 +213,7 @@ describe("what a project's recipe says today", () => {
     // exhaustive block under it, which carries `env.required` too.
     const html = render(view)
     expect(html).toContain(
-      'claim 0 · admit 0 · prepared 1 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0',
+      'claim 0 · admit 0 · prepared 1 · design 0 · implement 0 · build 1 · review 0 · proposed 0 · merge 0 · end 0',
     )
     expect(html).toContain('← preset pnpm-workspace')
     expect(sourceIn(view, 'excludes')).not.toContain(file)
