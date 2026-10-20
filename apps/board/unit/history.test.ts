@@ -1,6 +1,6 @@
 import { EVENTS } from '@lingtai/domain'
-import type { Envelope } from '@lingtai/domain'
-import { aLegacyHold, anAnswer, aWait } from '@lingtai/domain/test/events'
+import type { Action, Envelope, Finding } from '@lingtai/domain'
+import { anOutcome, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 /**
  * Every event type renders something, and the ones the ticket named render the
@@ -57,10 +57,12 @@ describe('a line of history', () => {
    */
   it('renders a note-free unblock as just who, with no trailing colon', () => {
     const itemStream = makeStream('ticket-lingtai-59')
-    const said = summarise(anAnswer(itemStream, 'human:steven', '')[0]!)
+    const said = summarise(aResolution(itemStream, aWaitId(), { _tag: 'Requeue' }, 'human:steven', '')[0]!)
     expect(said).toBe('human:steven')
 
-    const withNote = summarise(anAnswer(itemStream, 'human:steven', 'main has moved')[0]!)
+    const withNote = summarise(
+      aResolution(itemStream, aWaitId(), { _tag: 'Requeue' }, 'human:steven', 'main has moved')[0]!,
+    )
     expect(withNote).toBe('human:steven: main has moved')
   })
 
@@ -243,20 +245,15 @@ describe('a line of history', () => {
    */
   it('says which kind of block it was, and what it recommends', () => {
     const itemStream = makeStream('ticket-lingtai-59')
-    const [blocked] = aLegacyHold(itemStream, {
+    const [blocked] = aWait(itemStream, {
       _tag: 'MergeRefused',
       run: { runId: 'pass-1' },
-      reason: 'conflict',
-      why: 'agent/112 does not merge into develop.',
-      raw: 'CONFLICT (content): …',
-      paths: null,
-      baseSha: null,
-      headSha: null,
-      afterApproval: false,
+      reason: 'no-commits',
+      raw: 'agent/112 holds nothing main does not.',
     })
     const said = summarise(blocked!)
     expect(said).toContain('acknowledgement:')
-    expect(said).toContain('conflict: CONFLICT (content): …')
+    expect(said).toContain('no-commits: agent/112 holds nothing main does not.')
     expect(said).toContain('recommends requeue')
   })
 
@@ -295,14 +292,22 @@ describe('a line of history', () => {
    */
   it('says the answer could not be read, where a zero would have said nothing', () => {
     const event = makeStream('pass-1')
-    const step = { step: 'review' as const, action: 'cold reviewer', runId: 'pass-1', onSha: 'a'.repeat(40) }
-    const dropped = summarise(event('StepFailed', { ...step, evidence: '…', findings: [], unreadable: true }))
+    const ended = (
+      evidence: string,
+      result: { _tag: 'AnswerUnreadable'; raw: string } | { _tag: 'Completed'; assessment: { verdict: 'refused'; findings: Finding[] } },
+    ): Envelope => {
+      const action: Action = { plugin: 'agent', name: 'cold reviewer', onSha: 'a'.repeat(40), evidence, yields: 'verdict', result }
+      return event('StepEnded', { runId: 'pass-1', outcome: anOutcome('review', 0, [action]) })
+    }
+
+    const dropped = summarise(ended('…', { _tag: 'AnswerUnreadable', raw: '…' }))
 
     expect(dropped).toBe('review · cold reviewer — the answer could not be read')
     // The row it was, and still is for every failure whose answer was read: a
     // refusal with no findings is silent and a refusal with them counts them.
-    expect(summarise(event('StepFailed', { ...step, evidence: 'exit 1', findings: [] }))).toBe('review · cold reviewer')
-    expect(dropped).not.toBe(summarise(event('StepFailed', { ...step, evidence: 'exit 1', findings: [] })))
+    const refused = { _tag: 'Completed' as const, assessment: { verdict: 'refused' as const, findings: [] } }
+    expect(summarise(ended('exit 1', refused))).toBe('review · cold reviewer')
+    expect(dropped).not.toBe(summarise(ended('exit 1', refused)))
   })
 
   it('renders the plan StepsResolved carries, including the empty points', () => {
