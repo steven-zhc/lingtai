@@ -5,10 +5,19 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { type Action, type Envelope, reduceRun, reduceWorkItem, waitsOf, workItemStream } from '@lingtai/domain'
+import {
+  CONTROL_STREAM,
+  type Action,
+  type Envelope,
+  parsePayload,
+  reduceRun,
+  reduceWorkItem,
+  waitsOf,
+  workItemStream,
+} from '@lingtai/domain'
 import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import type { EventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
@@ -392,6 +401,139 @@ describe('resolveWait', () => {
         waitId,
         onSha: SHA,
       })
+    })
+
+    /**
+     * **A lost race on the `ContinueRequested` append must never read back as
+     * the approval failing** (#465) — `WaitResolved{Approve}` has already
+     * committed by the time this second append runs, so a caller told
+     * `ok: false` here would be told something false: a webhook route or the
+     * reconcile sweep appending to `CONTROL_STREAM` at the same moment is
+     * exactly the kind of race this retries past.
+     */
+    it('retries the control-stream append on a lost race, and still reports the approval granted', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 32)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-32')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-32'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-32'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-32', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      // A racing writer — a webhook, the reconcile sweep, another approval
+      // on a different ticket — appends to the control stream once, between
+      // this call's read and its first attempt.
+      let racedOnce = false
+      const flaky: EventStore = {
+        ...store,
+        append: async (streamId, expectedVersion, events) => {
+          if (streamId === CONTROL_STREAM && !racedOnce) {
+            racedOnce = true
+            await store.append(streamId, expectedVersion, [
+              {
+                type: 'ContinueRequested',
+                actor: 'human:someone-else',
+                data: parsePayload('ContinueRequested', {
+                  project: PROJECT,
+                  issue: '999',
+                  runId: 'pass-999',
+                  by: 'human:someone-else',
+                }),
+              },
+            ])
+            throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+          }
+          return store.append(streamId, expectedVersion, events)
+        },
+      }
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 32),
+          issue: 32,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store: flaky,
+        },
+        ticketId,
+      )
+      expect(result).toEqual({ ok: true, ticketId })
+      expect(racedOnce).toBe(true)
+
+      const control = await store.read(CONTROL_STREAM)
+      expect(control.map((e) => e.type)).toEqual(['ContinueRequested', 'ContinueRequested'])
+      expect(control.at(-1)?.data).toMatchObject({ issue: '32', runId: 'pass-32' })
+    })
+
+    /**
+     * Even once every retry is spent — or the store refuses for a reason
+     * that is never going to clear — the approval already on the ticket
+     * stream is still reported as granted. The gap left behind (no
+     * `ContinueRequested` on the log) is a different problem's to notice,
+     * never this call's to misreport.
+     */
+    it('reports the approval granted even when the control-stream append never lands at all', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = workItemStream(PROJECT, 33)
+      const item = makeStream(ticketId)
+      const run = aRun('pass-33')
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-33'),
+        ...aWait(
+          item,
+          {
+            _tag: 'SignoffRequired',
+            run: aRunRef('pass-33'),
+            step: 'merge',
+            action: 'human:land',
+            question: 'land it?',
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, 'pass-33', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
+
+      const alwaysLosesTheRace: EventStore = {
+        ...store,
+        append: async (streamId, expectedVersion, events) => {
+          if (streamId === CONTROL_STREAM) throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+          return store.append(streamId, expectedVersion, events)
+        },
+      }
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId: workItemStream(PROJECT, 33),
+          issue: 33,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store: alwaysLosesTheRace,
+        },
+        ticketId,
+      )
+      expect(result).toEqual({ ok: true, ticketId })
+
+      const events = await store.read(ticketId)
+      expect(reduceWorkItem(events).lifecycle).toMatchObject({ status: 'approved' })
+      expect((await store.read(CONTROL_STREAM)).some((e) => e.type === 'ContinueRequested')).toBe(false)
     })
 
     it('requires a note when a refusal still stands on the sha, and refuses without one', async () => {

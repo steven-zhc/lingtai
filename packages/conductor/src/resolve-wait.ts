@@ -217,21 +217,42 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // the ticket stream before acting on a row here and refuses the stale ones
   // on its own (`continueWorkItem`), so a request this append loses is simply
   // never offered rather than acted on wrongly.
+  //
+  // **For that to be true, this must never throw.** `WaitResolved` above has
+  // already committed — this is a second, separate append, and a caller that
+  // reported the approval failed because *this* one lost a race would be
+  // reporting something false. Retried on a `ConcurrencyError` up to five
+  // times, the same bound `recordStart`/`requestShutdownUnlessStanding`
+  // (`@lingtai/daemon`'s own `CONTROL_STREAM` writers) use — a webhook route
+  // or the reconcile sweep appending to the same stream is exactly the race
+  // those retry — and, unlike those two, where the append *is* the whole
+  // operation, never rethrown even once the retries run out: a continuation
+  // this call could not schedule is a gap for something else to notice, not a
+  // reason to say the approval itself did not happen.
   if (options.resolution._tag === 'Approve') {
     const parsed = parseWorkItemStream(ticketId)
     if (parsed !== null) {
-      await store.append(CONTROL_STREAM, (await store.read(CONTROL_STREAM)).length, [
-        {
-          type: 'ContinueRequested',
-          actor: options.by,
-          data: parsePayload('ContinueRequested', {
-            project: parsed.project,
-            issue: parsed.issue,
-            runId: block.runId!,
-            by: options.by,
-          }),
-        },
-      ])
+      for (let attempt = 0; ; attempt++) {
+        const at = (await store.read(CONTROL_STREAM)).length
+        try {
+          await store.append(CONTROL_STREAM, at, [
+            {
+              type: 'ContinueRequested',
+              actor: options.by,
+              data: parsePayload('ContinueRequested', {
+                project: parsed.project,
+                issue: parsed.issue,
+                runId: block.runId!,
+                by: options.by,
+              }),
+            },
+          ])
+          break
+        } catch (err) {
+          if (err instanceof ConcurrencyError && attempt < 4) continue
+          break
+        }
+      }
     }
   }
 

@@ -34,7 +34,15 @@ import {
   type Tickets,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
-import { type ControlState, type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
+import {
+  type ControlState,
+  type ProjectState,
+  passTransition,
+  projectStream,
+  reduceProject,
+  reduceWorkItem,
+  workItemStream,
+} from '@lingtai/domain'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -118,6 +126,12 @@ export interface ConductWorkOptions {
   merge?: boolean
   paused?: () => Promise<string | null>
   log: (line: string) => void
+  /**
+   * Read fresh to settle whether a `control.continuing` row is still live
+   * (`#465`, below) — never to decide what to run with, which `common`
+   * already carries. Injectable so a test does not need a real store.
+   */
+  store?: EventStore
 }
 
 /** What a run hands `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
@@ -150,6 +164,7 @@ export function conductWork(
   options: ConductWorkOptions,
   world: ConductWorld = liveConductWorld(),
 ): (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'> {
+  const store = options.store ?? eventStore
   return async (project, where) => {
     const name = project.project!
 
@@ -224,14 +239,34 @@ export function conductWork(
     // a stale row (the item was closed, requeued or already continued by
     // another pass) is simply a `runOnce` that claims nothing, logged and
     // moved past like any other `notClaimed`.
-    const continuing = options.control.continuing.find((c) => c.project === name)
+    //
+    // **The row never expires on its own** — `ContinueRequested` has no
+    // "consumed" counterpart, the same choice `RunRequested` makes, so
+    // `control.continuing` only ever grows and a row an earlier pass already
+    // continued stays on the stream forever. `requested` goes stale
+    // harmlessly because it is filtered on `queued.has(r.issue)`, below; this
+    // is that filter's own analogue — the first row for this project whose
+    // ticket is **still** `approved` on the same run, read fresh rather than
+    // trusted from the fold. A row whose ticket landed, moved to a new wait,
+    // or was requeued back to the backlog is skipped rather than matched: the
+    // alternative is the first approval ever made for a project shadowing
+    // every one after it, and a project with nothing left but stale rows
+    // never falling through to its own queue.
+    let continuing: ControlState['continuing'][number] | undefined
+    for (const c of options.control.continuing) {
+      if (c.project !== name) continue
+      const ticket = reduceWorkItem(await store.read(workItemStream(name, Number(c.issue))))
+      if (ticket.lifecycle.status === 'approved' && ticket.lifecycle.runId === c.runId) {
+        continuing = c
+        break
+      }
+    }
     if (continuing) {
       options.log(`${name}: continuing #${continuing.issue} — asked for by ${continuing.by}`)
       const result: RunOnceResult = await Effect.runPromise(
         world
           .runOnce({
             ...common,
-            merge: undefined,
             issue: Number(continuing.issue),
             continuing: { runId: continuing.runId },
           })

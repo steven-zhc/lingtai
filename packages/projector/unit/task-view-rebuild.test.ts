@@ -476,12 +476,13 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     const granted = await fold(afterApprovalGranted)
     // `#465`: the row leaves the waiting lane, rather than keeping
     // `waiting: true` with no sha for Approve to work against — `state:
-    // 'queued'` is the lane an approved item sits in now that a
-    // continuation, not this card, is what moves it on.
+    // 'running'`, never `'queued'`, since `selectRunnable` reads `'queued'`
+    // as *the queue may claim this* and an approved item is only
+    // `continueWorkItem`'s to move.
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
       awaiting_sha: null,
       waiting: 0,
-      state: 'queued',
+      state: 'running',
     })
   })
 

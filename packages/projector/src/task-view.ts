@@ -605,14 +605,18 @@ export const taskViewProjection: Projection = {
                   // Decide/Requeue over a question that is answered, and
                   // `page.tsx`'s own `card.waiting` is what decides that.
                   //
-                  // `state: 'queued'` rather than a new `TaskState` — the
-                  // item is in Lingtai's own court, not a person's, which is
-                  // the same lane an item nothing is asking about sits in;
-                  // `selectRunnable` is never reached for it because the
-                  // continuation claims onto the approved run directly
-                  // (`continueWorkItem`), never through the queue.
+                  // `state: 'running'`, not `'queued'` — `selectRunnable`
+                  // reads `state === 'queued'` as *the queue may claim this*
+                  // (`queue.ts`), and an approved item is not the queue's to
+                  // claim: `claimWorkItem` refuses it by name
+                  // (`not-claimable, status: approved`), and the only way it
+                  // moves is `continueWorkItem`, straight off the ticket
+                  // stream. `'running'` is the same reading
+                  // `labelState`'s own `approved` row gives the GitHub label
+                  // (`@lingtai/daemon`'s `converge.ts`): Lingtai, not a
+                  // person, holds the next move.
                   await set(ctx, event.streamId, seq, at, {
-                    state: 'queued',
+                    state: 'running',
                     note: 'approved — continues once a conductor is free',
                     awaiting_sha: null,
                     waiting: false,

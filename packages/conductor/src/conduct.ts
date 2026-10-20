@@ -920,19 +920,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
     }
 
-    // **The same run, continued, never a fresh one** (#465, 0120 §6, `take`
-    // below): a continuation re-claims the id its approval already named.
-    const runId = options.continuing?.runId ?? passStream(crypto.randomUUID())
     const branch = agentBranch(options.issue)
-    /**
-     * **Where the pass works, known before it starts.**
-     *
-     * `provisionWorktree` cuts at exactly this path, so `context.cwd` is the
-     * caller's for the whole pass — see this file's opening. Nothing reads it
-     * before `admit` has cut there: `claim` and `admit` have no cell open, so
-     * there is no plugin to run in a directory that does not exist yet.
-     */
-    const cwd = worktreePath(home, project, runId)
 
     /**
      * The item's stream as it was before this claim, read once.
@@ -977,16 +965,40 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
     })
 
+    // **The same run, continued, never a fresh one — but only once
+    // `continuation` says the request is still good** (#465, 0120 §6, `take`
+    // below). A stale request — the item left `approved` before this pass
+    // reached it — is an ordinary fresh claim and must get an ordinary fresh
+    // id: adopting `options.continuing.runId` unconditionally here claimed a
+    // brand-new pass onto the *approved* run's own stream, under `--no-merge`
+    // or not depending on nothing this pass decided.
+    const runId =
+      options.continuing !== undefined && continuation !== null
+        ? options.continuing.runId
+        : passStream(crypto.randomUUID())
+    /**
+     * **Where the pass works, known before it starts.**
+     *
+     * `provisionWorktree` cuts at exactly this path, so `context.cwd` is the
+     * caller's for the whole pass — see this file's opening. Nothing reads it
+     * before `admit` has cut there: `claim` and `admit` have no cell open, so
+     * there is no plugin to run in a directory that does not exist yet.
+     */
+    const cwd = worktreePath(home, project, runId)
+
     const edit = folded.pendingPrompt
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
-    // **Not a new attempt** (#465) — a continuation's own `TicketClaimed` is
-    // already on `before`, blocked by the very wait it is continuing from,
-    // so `priorAttempts` would otherwise count this run as the one before
-    // itself and hand it `attempt: 2`'s arm, which nothing ever pushed to.
-    // `previous: undefined` here is what a continuation's first and only
-    // claim already computed, so `arm` below lands on the same branch the
-    // held run's own dispatch used.
-    const previous = options.continuing !== undefined ? undefined : priorAttempts(before).at(-1)
+    // **Not a new attempt — but only for a genuine continuation** (#465). A
+    // continuation's own `TicketClaimed` is already on `before`, blocked by
+    // the very wait it is continuing from, so `priorAttempts` would otherwise
+    // count this run as the one before itself and hand it `attempt: 2`'s arm,
+    // which nothing ever pushed to. `previous: undefined` here is what a
+    // continuation's first and only claim already computed, so `arm` below
+    // lands on the same branch the held run's own dispatch used. Guarded on
+    // `continuation !== null`, not `options.continuing !== undefined`: a
+    // stale request is an ordinary fresh claim, with its own prior attempts
+    // to carry into the prompt like any other.
+    const previous = continuation !== null ? undefined : priorAttempts(before).at(-1)
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
