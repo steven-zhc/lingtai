@@ -363,7 +363,7 @@ export async function withdrawShutdown(
  *
  * A claim folds as `running`, and an approval folds as `approved` (#510) —
  * so this list only ever names a pass a conductor is actually holding, never
- * an approved item still waiting for `continueWorkItem` to claim it.
+ * an approved item still waiting for `continueTicket` to claim it.
  *
  * `verifying` counts as in flight and that is the boundary 0030 §1 draws: the
  * agent exiting is not the end of a pass, and an item whose steps are running

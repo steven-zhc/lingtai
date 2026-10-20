@@ -228,7 +228,7 @@ describe('what wakes the loop', () => {
     // `routed to implement` stays asleep — `PassRouted` and `FixRequested`
     // wake nothing. `restarted at claim` already wakes today: `conduct.ts`'s
     // restart branch (`release(reason)` at `conduct.ts:3951`) calls
-    // `releaseWorkItem` (`claim.ts:143`), which appends `TicketReleased` on
+    // `releaseTicket` (`claim.ts:143`), which appends `TicketReleased` on
     // the item's own stream right after `PassRestarted` — so the row carries
     // both, the same as a plain release. #464's appendix gives that release a
     // `cause: Restart`; it does not decide whether this row wakes, only what
