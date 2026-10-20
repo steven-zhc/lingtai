@@ -102,9 +102,14 @@ export async function close(options: {
   /**
    * The wait the caller was shown, when closing a blocked item — checked
    * against the one currently open rather than trusted from the fold
-   * (#465). Omitted by the CLI; the board always sends it.
+   * (#465). Omitted (`undefined`) by the CLI, which keeps the old fallback
+   * to whatever is open. `null` is the board's own value for a card that
+   * rendered no wait at all — a queued card's Close (#508) — and refuses a
+   * close that turns out to be blocked rather than silently resolving
+   * whatever wait is open now, the same guard `approve.ts`'s own `waitId`
+   * closes for `Approve`.
    */
-  waitId?: WaitId
+  waitId?: WaitId | null
   store?: EventStore
 }): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
@@ -159,6 +164,19 @@ export async function close(options: {
   // ordinary case — appends `TicketClosed` and `ended` directly, as it
   // always has: there is no wait here for anything to resolve.
   if (item.lifecycle.status === 'blocked') {
+    // The card that rendered this close showed no wait at all — a queued
+    // card's Close (#508) — and the item turns out to be blocked after all.
+    // Refusing by name is the same guard `approve.ts` closes for `Approve`:
+    // resolving whatever is open now would close a wait nobody was shown.
+    if (options.waitId === null) {
+      return {
+        ok: false,
+        ticketId,
+        detail:
+          `this card showed no wait and ${ticketId} is now waiting on ${item.lifecycle.waitId} — ` +
+          `nothing was closed. Reload and read it again.`,
+      }
+    }
     const resolved = await resolveWaitHolding(
       {
         ticketId,

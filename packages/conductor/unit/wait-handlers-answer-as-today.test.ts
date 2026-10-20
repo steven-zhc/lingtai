@@ -306,7 +306,7 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = workItemStream(PROJECT, 20)
     const result = await approveHolding(
-      { project: PROJECT, issue: 20, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 20, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
@@ -331,7 +331,7 @@ describe('approve', () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 21, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 21, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-awaiting-approval' })
@@ -345,7 +345,7 @@ describe('approve', () => {
     await seed(store, 'pass-22', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 22, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 22, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
@@ -369,7 +369,7 @@ describe('approve', () => {
     await seed(store, 'pass-23', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 23, by: 'human:steven', onSha: SHA2, client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 23, by: 'human:steven', onSha: SHA2, waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'stale' })
@@ -396,7 +396,7 @@ describe('approve', () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 24, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 24, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'reason-required' })
@@ -420,7 +420,7 @@ describe('approve', () => {
     await seed(store, 'pass-25', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 25, by: 'human:steven', client: fakeClient(SHA2), store },
+      { project: PROJECT, issue: 25, by: 'human:steven', waitId: 'open', client: fakeClient(SHA2), store },
       ticketId,
     )
     expect(result).toMatchObject({ ok: false, reason: 'stale' })
@@ -442,15 +442,79 @@ describe('approve', () => {
       }),
     ])
     await seed(store, 'pass-26', run.aStepEnded({ step: 'merge', round: 0, actions: [approvalRequested(SHA)] }))
+    const waitId = waitsOf(await store.read(ticketId)).at(-1)!.waitId
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 26, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 26, by: 'human:steven', waitId, client: fakeClient(SHA), store },
       ticketId,
     )
     expect(result).toEqual({ ok: true, ticketId, runId: 'pass-26', continuesAt: 'merge' })
 
     const resolved = waitsOf(await store.read(ticketId)).at(-1)
     expect(resolved?.resolution).toEqual({ _tag: 'Approve', onSha: SHA })
+  })
+
+  /**
+   * **#508's own finding, closed at the type.** The approved card's own
+   * continuation control used to send neither `onSha` nor `waitId`, so a
+   * click made after the continuation had already stopped at a *new* wait
+   * resolved that wait's diff instead of rescheduling the approval the card
+   * had actually shown. `ApproveOptions.waitId` being required — `WaitId |
+   * 'open'`, never omitted — is what makes a caller holding a stale wait id
+   * refuse by name rather than falling back to "whatever is blocked now".
+   */
+  it('refuses an approve naming a wait the item has since moved past to a new one, leaving the live wait untouched', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = workItemStream(PROJECT, 27)
+    const item = makeStream(ticketId)
+    const run = aRun('pass-27')
+    await seed(store, ticketId, [
+      ...aClaim(item, 'pass-27'),
+      ...aWait(item, {
+        _tag: 'SignoffRequired',
+        run: aRunRef('pass-27'),
+        step: 'merge',
+        action: 'unfixed',
+        question: 'land it?',
+      }),
+    ])
+    await seed(store, 'pass-27', run.aStepEnded({ step: 'merge', round: 0, actions: [approvalRequested(SHA)] }))
+    const waitA = waitsOf(await store.read(ticketId)).at(-1)!.waitId
+
+    // The card's own approval, then a continuation that stops at a *new*
+    // wait — the item moves from `approved` straight back to `blocked`
+    // (`WaitStarted`'s own fold), on a different wait and a different sha.
+    const first = await approveHolding(
+      { project: PROJECT, issue: 27, by: 'human:steven', waitId: waitA, client: fakeClient(SHA), store },
+      ticketId,
+    )
+    expect(first.ok).toBe(true)
+    await seed(store, ticketId, [
+      ...aWait(item, {
+        _tag: 'SignoffRequired',
+        run: aRunRef('pass-27'),
+        step: 'proposed',
+        action: 'unfixed',
+        question: 'approve this merge too?',
+      }),
+    ])
+    const events = await store.read(ticketId)
+    const waitB = waitsOf(events).at(-1)!.waitId
+    expect(waitB).not.toEqual(waitA)
+
+    // The approved card's stale click, naming the wait it was actually shown.
+    const stale = await approveHolding(
+      { project: PROJECT, issue: 27, by: 'human:steven', waitId: waitA, onSha: SHA, client: fakeClient(SHA), store },
+      ticketId,
+    )
+    expect(stale).toMatchObject({ ok: false, reason: 'stale' })
+    if (stale.ok) throw new Error('unreachable')
+    expect(stale.detail).toContain(waitA)
+    expect(stale.detail).toContain(waitB)
+
+    const after = reduceWorkItem(await store.read(ticketId))
+    expect(after.lifecycle).toMatchObject({ status: 'blocked', waitId: waitB })
+    expect(waitsOf(await store.read(ticketId)).find((w) => w.waitId === waitB)?.resolution).toBeNull()
   })
 
   /**
@@ -490,6 +554,7 @@ describe('approve', () => {
         issue: 30,
         by: 'human:steven',
         note: 'waiving the build failure',
+        waitId: 'open',
         client: fakeClient(SHA),
         store,
       },

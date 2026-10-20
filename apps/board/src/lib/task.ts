@@ -480,12 +480,24 @@ export interface StandingView {
   /**
    * The wait a card renders, so `Approve`/`Requeue`/`AnswerQuestion`/`Close`
    * can send back **the wait it was shown**, not whatever the ticket is
-   * blocked on by the time the click lands (#465). Null off the render path
-   * entirely: a command run under `deciding` reads and resolves inside one
-   * lock hold, so there sending nothing and letting `resolveWaitHolding` read
-   * fresh is correct, not a gap this field has to close.
+   * blocked on by the time the click lands (#465). Set while `blocked` *and*
+   * while `approved` (#508) — an `approved` item still names the wait
+   * `WaitResolved{Approve}` resolved, which is exactly what
+   * `ScheduleContinuation` has to send back so a click made after the item
+   * has since moved to a *new* wait is refused by name rather than resolving
+   * whatever is open now. Null only off the render path entirely (a command
+   * run under `deciding` reads and resolves inside one lock hold, so sending
+   * nothing there is correct) or on a card with neither status.
    */
   waitId: WaitId | null
+  /**
+   * The sha `WaitResolved{Approve}` recorded, while `approved` — what
+   * `ScheduleContinuation` sends back as `onSha` (#508), so a click made
+   * after the item has moved to a new wait at a new sha is refused rather
+   * than rescheduling a continuation nobody looked at. Null off every other
+   * state: there is no approval on record for them to have a sha.
+   */
+  approvedSha: string | null
 }
 
 /**
@@ -704,6 +716,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   // its last attempt produced; neither event carries a run id.
   const run = named ?? runs.at(-1) ?? null
   const blocked = life.status === 'blocked'
+  const approved = life.status === 'approved'
   const raw = blocked ? (life.diagnosis?.raw ?? null) : null
 
   return {
@@ -738,7 +751,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     // `restartsOf > 0 ? … : limits?.restarts` already falls back to the
     // recipe for it.
     restartsOf: 0,
-    waitId: blocked ? life.waitId : null,
+    waitId: life.status === 'blocked' || life.status === 'approved' ? life.waitId : null,
+    approvedSha: approved ? life.onSha : null,
   }
 }
 

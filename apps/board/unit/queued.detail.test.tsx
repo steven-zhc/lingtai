@@ -389,6 +389,7 @@ const NEVER_RUN: StandingView = {
   restarts: 0,
   restartsOf: 0,
   waitId: null,
+  approvedSha: null,
 }
 
 // The block and the bar's coordinates, which is where *never run* and *offered

@@ -144,7 +144,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     const ticketId = workItemStream(PROJECT, 110)
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 110, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 110, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -170,7 +170,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 111, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 111, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -213,7 +213,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     await seed(store, ticketId, aResolution(item, waitId, { _tag: 'Requeue' }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 114, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 114, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -259,7 +259,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     ])
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 112, by: 'human:steven', client: fakeClient(SHA), store },
+      { project: PROJECT, issue: 112, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },
       ticketId,
     )
 
@@ -294,7 +294,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     await seed(store, 'pass-115', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
     const result = await approveHolding(
-      { project: PROJECT, issue: 115, by: 'human:steven', client: fakeClient(SHA2), store },
+      { project: PROJECT, issue: 115, by: 'human:steven', waitId: 'open', client: fakeClient(SHA2), store },
       ticketId,
     )
 

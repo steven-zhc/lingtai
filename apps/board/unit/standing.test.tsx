@@ -581,6 +581,7 @@ const HELD: StandingView = {
   restarts: 0,
   restartsOf: 0,
   waitId: aWaitId(),
+  approvedSha: null,
 }
 
 describe('the block, rendered', () => {
@@ -1241,7 +1242,7 @@ describe('the moves the column ends in', () => {
    * offered.
    */
   it('offers Schedule it, and nothing else, on an approved item', () => {
-    const html = render({ ...HELD, state: 'approved', onYou: false }, OUTGOING)
+    const html = render({ ...HELD, state: 'approved', onYou: false, approvedSha: SHA }, OUTGOING)
 
     expect(html).toContain('Schedule it')
     expect(html).not.toContain('Send attempt')
