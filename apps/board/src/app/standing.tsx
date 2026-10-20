@@ -407,57 +407,70 @@ export function Standing({
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
       {acting && standing.state === 'blocked' ? (
-        <div className="btnrow smoves" data-rank="moves">
-          {standing.awaitingSha !== null ? (
-            <Decide
-              project={project}
-              issue={issue}
-              onSha={standing.awaitingSha}
-              waitId={standing.waitId}
-              refusing={standing.failed.length > 0}
-              recommended={standing.diagnosis?.recommendation?.action ?? null}
-            />
-          ) : null}
+        standing.waitId === null ? (
+          // Defensive, not reachable in the ordinary case: `standingOf` sets
+          // `waitId` from the same fold as `state`, so a `blocked` standing
+          // carries one by construction. Kept rather than asserted past,
+          // because a button `Decide`/`Requeue` cannot send a wait id to is
+          // exactly the `#84` complaint this file's own header states as a
+          // rule — a card must never offer a control bound to refuse (#508).
+          <div className="btnrow smoves" data-rank="moves">
+            <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+            <Close project={project} issue={issue} waitId={null} />
+          </div>
+        ) : (
+          <div className="btnrow smoves" data-rank="moves">
+            {standing.awaitingSha !== null ? (
+              <Decide
+                project={project}
+                issue={issue}
+                onSha={standing.awaitingSha}
+                waitId={standing.waitId}
+                refusing={standing.failed.length > 0}
+                recommended={standing.diagnosis?.recommendation?.action ?? null}
+              />
+            ) : null}
 
-          {sendable !== null ? (
-            <Send
-              taskId={taskId}
-              attempt={sendable}
-              // Amber once per screen. Send carries it where there is no
-              // Approve beside it — sending is then the only move that moves
-              // anything, whatever a diagnosis written before #83 recommends —
-              // and otherwise only when the recommendation points here.
-              primary={
-                standing.awaitingSha === null ||
-                standing.diagnosis?.recommendation?.action === 'requeue' ||
-                standing.diagnosis?.recommendation?.action === 'reject'
-              }
-            />
-          ) : null}
+            {sendable !== null ? (
+              <Send
+                taskId={taskId}
+                attempt={sendable}
+                // Amber once per screen. Send carries it where there is no
+                // Approve beside it — sending is then the only move that moves
+                // anything, whatever a diagnosis written before #83 recommends —
+                // and otherwise only when the recommendation points here.
+                primary={
+                  standing.awaitingSha === null ||
+                  standing.diagnosis?.recommendation?.action === 'requeue' ||
+                  standing.diagnosis?.recommendation?.action === 'reject'
+                }
+              />
+            ) : null}
 
-          {/* Wherever there is no prompt to send, whether or not an approval is
-              open (#150): Send is this move with a document, and without one a
-              card asking for approval still needs *run it again* beside
-              Approve. It keeps asking why — the reason Send does not is that
-              Send's reason is the document, and this has none. */}
-          {sendable === null ? (
-            <Requeue
-              project={project}
-              issue={issue}
-              waitId={standing.waitId}
-              asked={standing.asked}
-              question={standing.askedQuestion}
-              recommended={standing.diagnosis?.recommendation?.action ?? null}
-            />
-          ) : null}
+            {/* Wherever there is no prompt to send, whether or not an approval is
+                open (#150): Send is this move with a document, and without one a
+                card asking for approval still needs *run it again* beside
+                Approve. It keeps asking why — the reason Send does not is that
+                Send's reason is the document, and this has none. */}
+            {sendable === null ? (
+              <Requeue
+                project={project}
+                issue={issue}
+                waitId={standing.waitId}
+                asked={standing.asked}
+                question={standing.askedQuestion}
+                recommended={standing.diagnosis?.recommendation?.action ?? null}
+              />
+            ) : null}
 
-          {/* The third move, beside whichever two are here (`#151`). Approve
-              and Send take what the run produced, Requeue asks for another, and
-              all three assume the ticket is still wanted. This is the one that
-              says it is not — and it is offered on every acting row, because
-              the moment you decide a ticket is over is whenever you read it. */}
-          <Close project={project} issue={issue} waitId={standing.waitId} />
-        </div>
+            {/* The third move, beside whichever two are here (`#151`). Approve
+                and Send take what the run produced, Requeue asks for another, and
+                all three assume the ticket is still wanted. This is the one that
+                says it is not — and it is offered on every acting row, because
+                the moment you decide a ticket is over is whenever you read it. */}
+            <Close project={project} issue={issue} waitId={standing.waitId} />
+          </div>
+        )
       ) : null}
 
       {/* The queued item's own row, and it has exactly one move. `lingtai now`
@@ -471,7 +484,7 @@ export function Standing({
           {/* Beside it, the opposite move. A queued item has exactly two
               things a person can say about it — *sooner* and *never* — and
               until `#151` the page offered only the first. */}
-          <Close project={project} issue={issue} />
+          <Close project={project} issue={issue} waitId={null} />
         </div>
       ) : null}
 
@@ -480,11 +493,11 @@ export function Standing({
           nothing left to decide — the only thing that can still be missing
           is the continuation itself, and this is the only way to ask again
           without shell access to the conducting machine. See
-          `ScheduleContinuation`'s own comment for why clicking it is always
-          safe. */}
-      {acting && standing.state === 'approved' ? (
+          `ScheduleContinuation`'s own comment for what the click now sends
+          and why that is what makes it safe (#508). */}
+      {acting && standing.state === 'approved' && standing.waitId !== null && standing.approvedSha !== null ? (
         <div className="btnrow smoves" data-rank="moves">
-          <ScheduleContinuation project={project} issue={issue} />
+          <ScheduleContinuation project={project} issue={issue} onSha={standing.approvedSha} waitId={standing.waitId} />
         </div>
       ) : null}
 

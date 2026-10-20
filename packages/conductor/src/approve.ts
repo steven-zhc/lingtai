@@ -60,13 +60,21 @@ export interface ApproveOptions {
   note?: string
   /**
    * The wait the caller was shown, and is resolving — checked against the
-   * one currently open rather than trusted from the fold (#465). Omitted by
-   * the CLI, which reads and resolves inside one `deciding` hold, so "the
-   * wait it was shown" and "the wait now" are the same read; the board
-   * always sends the id its card rendered (`StandingView.waitId`), so two
+   * one currently open rather than trusted from the fold (#465, #508).
+   *
+   * **Required, and `'open'` is not the same as omitting it.** A board card
+   * always sends the concrete id it rendered (`StandingView.waitId`), so two
    * open cards for the same item cannot resolve the wait neither was shown.
+   * `'open'` is `lingtai approve`'s own value: the CLI reads and resolves
+   * inside one `deciding` hold, so "the wait it was shown" and "the wait
+   * now" are the same read, and there is no card for it to name. Making the
+   * field optional let a board caller leave it out by accident — exactly the
+   * omission `ScheduleContinuation` made (#508) — and `tsc` cannot refuse an
+   * omission of an optional field. Typing `'open'` as the only other value
+   * means a board caller that forgot a wait id now fails to compile instead
+   * of silently resolving whatever is open.
    */
-  waitId?: WaitId
+  waitId: WaitId | 'open'
   store?: EventStore
   log?: (line: string) => void
 }
@@ -121,6 +129,21 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   // refusal and appends `ContinueRequested` alone, writing no second
   // `WaitResolved` — `resolveWait` stays the only writer of that event.
   if (item.lifecycle.status === 'approved') {
+    // **The wait check, before the sha check** (#508). Naming the wait first
+    // means a click from a stale `approved` card is refused by the wait it
+    // named rather than by whatever sha happens to differ — the sentence a
+    // person reading the refusal needs is "that is not the question you were
+    // shown", not an sha mismatch that reads like a branch race.
+    if (options.waitId !== 'open' && options.waitId !== item.lifecycle.waitId) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail:
+          `the card showed wait ${options.waitId} and ${ticketId} is now approved at wait ` +
+          `${item.lifecycle.waitId} — nothing was resolved. Reload and read it again.`,
+      }
+    }
     if (options.onSha && options.onSha !== item.lifecycle.onSha) {
       return {
         ok: false,
@@ -135,7 +158,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
       {
         ticketId,
         issue: options.issue,
-        waitId: options.waitId ?? item.lifecycle.waitId,
+        waitId: options.waitId === 'open' ? item.lifecycle.waitId : options.waitId,
         resolution: { _tag: 'Approve', onSha: item.lifecycle.onSha },
         by: options.by,
         note: options.note,
@@ -167,6 +190,21 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     }
   }
   const block = item.lifecycle
+  // **The wait check, before the sha check — same reason as the `approved`
+  // branch above** (#508). A continuation that stops at a *new* wait moves
+  // the lifecycle straight back to `blocked` (`WaitStarted`'s own fold), so a
+  // stale `approved` card's click lands here, not in the branch above — this
+  // is the check the finding is actually about.
+  if (options.waitId !== 'open' && options.waitId !== block.waitId) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail:
+        `the card showed wait ${options.waitId} and ${ticketId} is now waiting on wait ` +
+        `${block.waitId} — nothing was resolved. Reload and read it again.`,
+    }
+  }
   const runId = block.runId
   if (runId === null) {
     // `allowedResolutions` never offers `Approve` for an `OwnQuestion`, the
@@ -224,7 +262,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     {
       ticketId,
       issue: options.issue,
-      waitId: options.waitId ?? block.waitId,
+      waitId: options.waitId === 'open' ? block.waitId : options.waitId,
       resolution: { _tag: 'Approve', onSha },
       by: options.by,
       note: options.note,

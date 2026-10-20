@@ -64,6 +64,11 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
       // is a true one, and it is what a single-machine deployment has (0007).
       by,
       note: options.note,
+      // `'open'`: `approveRun` takes the `deciding` lock and reads the item
+      // inside it (`approve.ts`'s own `deciding`), so "the wait it reads" and
+      // "the wait it resolves" are the same read — there is no card, read
+      // before the lock, for a stale one to disagree with (#508).
+      waitId: 'open',
       log,
     })
 

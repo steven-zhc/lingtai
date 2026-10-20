@@ -24,7 +24,7 @@
  * unedited.
  */
 import type { Envelope, Step } from '@lingtai/domain'
-import { aClaim, aWait } from '@lingtai/domain/test/events'
+import { aClaim, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { WaitReason } from '@lingtai/domain/wait'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
@@ -494,7 +494,10 @@ async function foldOne(fx: Fixture): Promise<string> {
     const rows = await store.tasks({ retentionDays: 2 })
     const row = rows.find((r) => r.taskId === fx.taskId)
     if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
-    const card = toCard(row)
+    // A wait id, not read off `laneWaitIds` here — this fixture is about the
+    // button set per `WaitReason`, not about the staleness guard, and `Card`
+    // only ever checks this for `=== null` (#508).
+    const card = toCard(row, null, null, null, null, undefined, undefined, aWaitId())
     return renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
   } finally {
     db.close()

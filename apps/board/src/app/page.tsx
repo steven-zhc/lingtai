@@ -377,32 +377,45 @@ export function Card({
           refused `review`. `failed` only decides whether to ask why
           before the click. */}
       {card.waiting ? (
-        <div className="btnrow">
-          {card.awaitingSha ? (
-            <Decide
+        card.waitId === null ? (
+          // `laneWaitIds`' own read failed five times, or the fold had moved
+          // off `blocked` by the time it ran — not "no rail drawn" (#508):
+          // `Decide`/`Requeue` need a wait id to send back, and a button
+          // bound to resolve "whatever is open now" is the `#84` complaint
+          // this file already states as a rule. Close still works — see its
+          // own doc for why `null` is a value it accepts on purpose.
+          <div className="btnrow">
+            <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+            <Close project={card.project} issue={Number(card.ref)} waitId={null} />
+          </div>
+        ) : (
+          <div className="btnrow">
+            {card.awaitingSha ? (
+              <Decide
+                project={card.project}
+                issue={Number(card.ref)}
+                onSha={card.awaitingSha}
+                waitId={card.waitId}
+                refusing={card.failed > 0}
+                recommended={card.diagnosis?.recommendation?.action ?? null}
+              />
+            ) : null}
+            <Requeue
               project={card.project}
               issue={Number(card.ref)}
-              onSha={card.awaitingSha}
               waitId={card.waitId}
-              refusing={card.failed > 0}
+              asked={card.asked}
+              question={card.note}
               recommended={card.diagnosis?.recommendation?.action ?? null}
             />
-          ) : null}
-          <Requeue
-            project={card.project}
-            issue={Number(card.ref)}
-            waitId={card.waitId}
-            asked={card.asked}
-            question={card.note}
-            recommended={card.diagnosis?.recommendation?.action ?? null}
-          />
-          {/* The third of the three, and the only one that ends the ticket
-              rather than the wait (`#151`). Approve takes the diff, Requeue
-              throws it away and asks for another, and both assume the work is
-              still wanted. Without this, a card you have decided against could
-              only be argued with. */}
-          <Close project={card.project} issue={Number(card.ref)} waitId={card.waitId} />
-        </div>
+            {/* The third of the three, and the only one that ends the ticket
+                rather than the wait (`#151`). Approve takes the diff, Requeue
+                throws it away and asks for another, and both assume the work is
+                still wanted. Without this, a card you have decided against could
+                only be argued with. */}
+            <Close project={card.project} issue={Number(card.ref)} waitId={card.waitId} />
+          </div>
+        )
       ) : null}
 
       {/* And on a queued card, where it is the only move there is. The state
@@ -411,7 +424,7 @@ export function Card({
           appends nothing and the fold went on calling them `backlog`. */}
       {card.column === 'queued' ? (
         <div className="btnrow">
-          <Close project={card.project} issue={Number(card.ref)} />
+          <Close project={card.project} issue={Number(card.ref)} waitId={null} />
         </div>
       ) : null}
     </article>

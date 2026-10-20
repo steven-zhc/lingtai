@@ -27,7 +27,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 
 describe('Close', () => {
   it('rests as one button and asks for nothing until it is clicked', () => {
-    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />)
+    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} waitId={null} />)
 
     expect(html).toContain('>Close<')
     // The reason box is the second click. A close that could be made in one is
@@ -36,7 +36,7 @@ describe('Close', () => {
   })
 
   it('is never amber', () => {
-    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />)
+    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} waitId={null} />)
 
     // Brass on this board means *a person is being waited on* and nothing else
     // (0035 §3). Closing is a person deciding, not being asked, so the resting

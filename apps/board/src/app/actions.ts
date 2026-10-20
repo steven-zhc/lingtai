@@ -80,19 +80,32 @@ export async function approveCard(input: {
   project: string
   issue: number
   /**
-   * The sha the card was offering. Omitted by the one caller with nothing to
-   * offer — `ScheduleContinuation` (`decide.tsx`), asking again for an
-   * `approved` item's own continuation rather than approving anything new
-   * (#465's board-recovery finding) — in which case `approve()` skips the
-   * staleness check this exists for and reschedules against whatever sha
-   * the lifecycle itself already carries.
+   * The sha the card was offering — `StandingView.awaitingSha`, or
+   * `StandingView.approvedSha` from `ScheduleContinuation` (#508: it used to
+   * omit this, which is exactly the finding this field closes).
    */
-  onSha?: string
+  onSha: string
   note?: string
-  /** The wait the card rendered — `StandingView.waitId` — so a stale card refuses rather than resolving one it never showed (#465). */
-  waitId?: WaitId
+  /**
+   * The wait the card rendered — `StandingView.waitId` — so a stale card
+   * refuses rather than resolving one it never showed (#465).
+   *
+   * **Required** (#508). A server action's input is whatever JSON the
+   * client posts, so a type alone does not stop a stale build from omitting
+   * it — the runtime check below does. `approve()`'s own `waitId` is typed
+   * `WaitId | 'open'`, and this board boundary is the one caller that may
+   * never send `'open'`: only `lingtai approve`, reading and resolving
+   * inside one lock hold, may say "whatever is open".
+   */
+  waitId: WaitId
 }): Promise<ActionResult> {
   try {
+    if (!input.waitId) {
+      return {
+        ok: false,
+        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
+      }
+    }
     const state = await loadProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
 
@@ -157,10 +170,16 @@ export async function answerCard(input: {
   answer: string
   /** The question the page showed, whole — `answer()` refuses if it has changed. */
   question: string
-  /** The wait the card rendered — `StandingView.waitId` (#465). */
-  waitId?: WaitId
+  /** The wait the card rendered — `StandingView.waitId` (#465). Required — see `approveCard`'s own comment (#508). */
+  waitId: WaitId
 }): Promise<ActionResult> {
   try {
+    if (!input.waitId) {
+      return {
+        ok: false,
+        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
+      }
+    }
     const result = await answer({
       project: input.project,
       issue: input.issue,
@@ -194,10 +213,16 @@ export async function requeueCard(input: {
   project: string
   issue: number
   note: string
-  /** The wait the card rendered — `StandingView.waitId` (#465). */
-  waitId?: WaitId
+  /** The wait the card rendered — `StandingView.waitId` (#465). Required — see `approveCard`'s own comment (#508). */
+  waitId: WaitId
 }): Promise<ActionResult> {
   try {
+    if (!input.waitId) {
+      return {
+        ok: false,
+        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
+      }
+    }
     const result = await requeue({
       project: input.project,
       issue: input.issue,
@@ -237,8 +262,14 @@ export async function closeCard(input: {
   project: string
   issue: number
   reason: string
-  /** The wait the card rendered — `StandingView.waitId`, when closing a blocked item (#465). */
-  waitId?: WaitId
+  /**
+   * The wait the card rendered — `StandingView.waitId`, when closing a
+   * blocked item (#465). The key is required, not the value: `null` is the
+   * card's own way of saying it rendered no wait (a queued card's Close) —
+   * see `close()`'s own comment for how that differs from omitting it
+   * (#508).
+   */
+  waitId: WaitId | null
 }): Promise<ActionResult> {
   try {
     if (!input.reason.trim()) return { ok: false, detail: 'a close needs a reason' }

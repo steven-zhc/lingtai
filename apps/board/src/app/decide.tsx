@@ -58,7 +58,7 @@ export function Decide({
   project,
   issue,
   onSha,
-  waitId = null,
+  waitId,
   refusing,
   recommended,
 }: {
@@ -73,12 +73,15 @@ export function Decide({
   /**
    * The wait this card is rendering — `StandingView.waitId` — so a second
    * card open on an item whose wait has since moved resolves the one it was
-   * shown rather than whatever is open now (#465). Null where the caller has
-   * no wait id to offer (the home board's own cards, off `task_view`, which
-   * gains no `wait_id` column for this) — the server then falls back to
-   * resolving whatever is open, as it always did.
+   * shown rather than whatever is open now (#465).
+   *
+   * **Required, not optional** (#508). It used to default to `null` and the
+   * server read that as "whatever is open now" — the same tautology a
+   * missing `waitId` always was. A caller with no wait id to offer renders
+   * no `Decide` at all (`standing.tsx`, `page.tsx`) rather than one that
+   * sends nothing and gets approved anyway.
    */
-  waitId?: WaitId | null
+  waitId: WaitId
   /**
    * Whether the card knows of a gate that refused, so the reason is asked for
    * before the click rather than after a refusal. A hint, and only that: the
@@ -109,7 +112,7 @@ export function Decide({
         issue,
         onSha,
         note: withNote,
-        ...(waitId === null ? {} : { waitId }),
+        waitId,
       })
       setPending(false)
       if (result.ok) {
@@ -182,15 +185,30 @@ export function Decide({
  * already gone, because `card.waiting`/`standing.state === 'blocked'` is
  * what every other control here is gated on.
  *
- * **Safe to click whenever it is shown, not only when it is needed.**
- * `approveHolding`'s own `approved` branch reschedules without writing a
- * second `WaitResolved` (`packages/conductor/src/resolve-wait.ts`'s own "way
- * out"), so most clicks land on a continuation already under way and change
- * nothing; the one click that matters is the one made after the retries
- * were actually lost, and there is no way from this page to tell those two
- * moments apart — nor does it need to, since asking again costs nothing.
+ * **Safe to click only because the click now names the approval it was
+ * shown** (#508). Before this it sent neither `onSha` nor `waitId`, so a
+ * click made after the continuation had already stopped at a *new* wait
+ * resolved that wait's diff — one nobody on this render had seen —
+ * rather than rescheduling the approval the card actually displayed.
+ * `approveHolding`'s `waitId` check (`packages/conductor/src/approve.ts`)
+ * now refuses that by name: this click can still land on a continuation
+ * already under way and change nothing, which is still safe and still
+ * costs nothing to ask again, but it can no longer land on a different
+ * approval than the one the card rendered.
  */
-export function ScheduleContinuation({ project, issue }: { project: string; issue: number }) {
+export function ScheduleContinuation({
+  project,
+  issue,
+  onSha,
+  waitId,
+}: {
+  project: string
+  issue: number
+  /** The sha `WaitResolved{Approve}` recorded — `StandingView.approvedSha`. */
+  onSha: string
+  /** The wait that approval resolved — `StandingView.waitId`. */
+  waitId: WaitId
+}) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -208,7 +226,7 @@ export function ScheduleContinuation({ project, issue }: { project: string; issu
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = await approveCard({ project, issue, note: '' })
+              const result = await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -256,15 +274,15 @@ export function ScheduleContinuation({ project, issue }: { project: string; issu
 export function Requeue({
   project,
   issue,
-  waitId = null,
+  waitId,
   recommended,
   asked = false,
   question = null,
 }: {
   project: string
   issue: number
-  /** The wait this card is rendering — see `Decide`'s own comment. */
-  waitId?: WaitId | null
+  /** The wait this card is rendering — see `Decide`'s own comment, and required for the same reason (#508). */
+  waitId: WaitId
   /**
    * Whether the block is a question asked before any run (#147). Then the move
    * is an *answer* — the same event, through `answer()`, which refuses anything
@@ -355,9 +373,9 @@ export function Requeue({
                       issue,
                       answer: note,
                       question: question ?? '',
-                      ...(waitId === null ? {} : { waitId }),
+                      waitId,
                     })
-                  : await requeueCard({ project, issue, note, ...(waitId === null ? {} : { waitId }) })
+                  : await requeueCard({ project, issue, note, waitId })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -403,7 +421,7 @@ export function Requeue({
 export function Close({
   project,
   issue,
-  waitId = null,
+  waitId,
   prefill,
 }: {
   project: string
@@ -411,8 +429,11 @@ export function Close({
   /**
    * The wait this card is rendering, when there is one — see `Decide`'s own
    * comment. Null on a queued card, which closes nothing it is waiting on.
+   * **Still required, unlike `Decide`'s and `Requeue`'s (#508)**: Close is
+   * offered on every card, including ones with no wait to show, so `null`
+   * is a value this control sends on purpose rather than an omission.
    */
-  waitId?: WaitId | null
+  waitId: WaitId | null
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
 }) {
@@ -457,7 +478,7 @@ export function Close({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = await closeCard({ project, issue, reason, ...(waitId === null ? {} : { waitId }) })
+              const result = await closeCard({ project, issue, reason, waitId })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
