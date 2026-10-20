@@ -147,7 +147,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  *
  * **The same `TicketClaimed`, naming the same `runId` the approval was
  * about.** The fold already de-duplicates a run already in `runs`
- * (`work-item.ts`'s own `TicketClaimed` case), so this is not a second kind
+ * (`ticket.ts`'s own `TicketClaimed` case), so this is not a second kind
  * of claim on the log — it is the ordinary one, appended again, onto a run
  * that has already spent its first claim. A close or a second decision
  * landing between the approval and this call is a `ConcurrencyError` the

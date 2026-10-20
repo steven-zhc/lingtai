@@ -309,7 +309,7 @@ export async function requeue(options: {
   by: string
   /**
    * Why, on the record — optional (#424). A requeue of a run's block folds into
-   * an `AnswerRecord` only when `runId` is set (`work-item.ts`), and
+   * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
    * `answersBrief` keeps only the ones with `runId === null`
    * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
    * the fold keeps no answer for. So an optional note here never reaches a

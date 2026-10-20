@@ -88,7 +88,7 @@ describe('continueWorkItem', () => {
     expect(result).toMatchObject({ ok: true, claim: { ticketId, runId: 'pass-3', worker: 'daemon:1' } })
     const state = reduceTicket(await store.read(ticketId))
     expect(state.lifecycle).toEqual({ status: 'claimed', runId: 'pass-3', worker: 'daemon:1' })
-    // The fold's own de-duplication (`work-item.ts`'s `TicketClaimed` case) —
+    // The fold's own de-duplication (`ticket.ts`'s `TicketClaimed` case) —
     // this is the run's second claim, not a second run.
     expect(state.runs).toEqual(['pass-3'])
   })

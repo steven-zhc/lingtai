@@ -3974,7 +3974,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // is the one event now** — what it also carried (the arm, its head,
         // the findings still live) is on the previous run's own stream,
         // which the next prompt already reads (`attempts.ts`'s `lastRun`,
-        // `work-item.ts`'s own header on `RestartRecord`).
+        // `ticket.ts`'s own header on `RestartRecord`).
         log(`starting over — restart ${restart} of ${ceiling.restarts}`)
         runLog.note('restart', reason)
         yield* release(reason, { _tag: 'Restart', restart })
