@@ -171,7 +171,7 @@ describe('convergeIssues', () => {
     await seed(stream, [
       { type: 'TicketClaimed', data: { runId: `pass-${PROJECT}-5`, worker: 'w', title: 't', kind: 'bug' } },
       { type: 'IssueUpdated', data: { project: PROJECT, issue: '5', change: 'labels', detail: 'lingtai:working' } },
-      { type: 'TicketReleased', data: { runId: `pass-${PROJECT}-5`, reason: 'killed' } },
+      { type: 'TicketReleased', data: { runId: `pass-${PROJECT}-5`, reason: 'killed', cause: null } },
     ])
 
     const { github, world, writes } = fakeGitHub({ labels: ['bug', 'lingtai:working'] })
