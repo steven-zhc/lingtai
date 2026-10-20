@@ -92,9 +92,19 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
-    // Held by the machine's watch, which the repository's copy does not have.
-    const asked = (await store.read(result.runId)).filter((e) => e.type === 'ApprovalRequested')
-    expect(asked.map((e) => e.data)).toMatchObject([{ step: 'proposed', action: 'tamper' }])
+    // Held by the machine's watch, which the repository's copy does not have:
+    // a `tamper` action on the `proposed` StepEnded, asking rather than passing.
+    const ended = (await store.read(result.runId)).filter((e) => e.type === 'StepEnded')
+    const proposed = ended.find((e) => (e.data as { outcome: { step: string } }).outcome.step === 'proposed')
+    const tamper = (
+      proposed?.data as { outcome: { actions: { name: string; yields: string; result: unknown }[] } } | undefined
+    )?.outcome.actions.find((a) => a.name === 'tamper')
+    expect(tamper).toMatchObject({ yields: 'signoff', result: { _tag: 'Completed' } })
+    expect(tamper).toBeDefined()
+    expect((tamper!.result as { requested: unknown }).requested).not.toBeNull()
+
+    const waiting = (await store.read(result.ticketId)).filter((e) => e.type === 'WaitStarted')
+    expect(waiting).toHaveLength(1)
     expect(did).not.toContain('integrate')
   })
 })
