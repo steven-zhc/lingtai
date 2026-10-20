@@ -1,0 +1,296 @@
+/**
+ * Ending a wait — the single entry point 0118 §11 asks for (#465).
+ *
+ * **The only writer of `WaitResolved`.** Before this there were three:
+ * `approve.ts` wrote it twice (granting an approval, and absorbing a
+ * requeue) and `ask.ts` wrote it once (answering a question asked before any
+ * run). All three now call `resolveWait`, which does the one thing every one
+ * of them did separately and inconsistently — check the wait is current,
+ * check the resolution is offered, and for `Approve` only, check the sha is
+ * not stale — before the append.
+ *
+ * **`allowedResolutions` is enforced here for every caller at once**, which
+ * is `#443`'s first half: before this, `approve.ts`'s own `approveHolding`
+ * never consulted `wait.ts`'s table at all (`wait-handlers-answer-as-today
+ * .test.ts`'s own pinned disagreement, now resolved in the table's favour).
+ * `#443`'s other half — dropping `blocked`/`asked`/`needs`/`diagnosis` off a
+ * resolved wait — is a different rebuild and stays untouched here.
+ *
+ * **Not the continuation itself.** An `Approve` here only appends
+ * `WaitResolved{Approve}` — 0118 §11, §6's own reading of 0120: whichever
+ * process holds the conductor lock takes the continuation up from there
+ * (`WAIT_EVENTS`, `@lingtai/daemon`'s completion events). That caller is not
+ * built by this file; `continuationOf` (`@lingtai/domain/wait`) is what tells
+ * it where to continue and what to waive once it does.
+ */
+import {
+  parsePayload,
+  reduceRun,
+  reduceWorkItem,
+  type RunState,
+  type ToAppend,
+  type WaitId,
+  workItemStream,
+} from '@lingtai/domain'
+import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import { createFileLocker } from '@lingtai/env/lock'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+
+import { agentBranch } from './branches.ts'
+
+/**
+ * The gates still refusing the sha an approval is about, by `point:action`.
+ *
+ * **Read off the run, never named by a caller** (#150). The Waive button took
+ * a gate from the card, and the home board's card sent the literal `"build"`
+ * — so a waived `review` went on the log as a waived `build`. Nothing a
+ * person clicks names a gate any more; the run says which ones refused.
+ *
+ * `failed`, `never-ran`, `did-not-finish` and `asked` alike: a gate whose
+ * agent never started, started and produced no receipt, or stopped to ask
+ * something, did not pass either, and resolving over one is resolving past a
+ * point nobody judged. A verdict on any other sha is not about this diff and
+ * is left out, as `stepsOn` does.
+ *
+ * `asked` is the newest of the four and belongs here for the reason the
+ * other three do rather than for a new one (`#296`): *there is a question
+ * about this diff and nobody answered it* is not a judgement of it.
+ *
+ * **Excludes the signoff this approval is itself answering** (#502). Since
+ * `StepEnded` carries every action's own result, a `signoff` still asking for
+ * approval folds onto `run.steps` as `verdict: 'asked'` too (`stepStateOf`'s
+ * `signoff` case, `run.ts`) — the same tag a design agent's own clarifying
+ * question gets, because neither is a judgement of the diff. But the point
+ * this function exists to answer is *what else* is unjudged, and the signoff
+ * `run.lifecycle.step` names is the thing being approved, not a second
+ * refusal to waive: every approval would otherwise demand a reason for
+ * answering its own question.
+ */
+const UNPASSED = new Set(['failed', 'never-ran', 'did-not-finish', 'asked'])
+
+export function refusingOn(run: RunState, onSha: string): string[] {
+  const awaiting = run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.step : null
+  return Object.values(run.steps)
+    .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict) && g.step !== awaiting)
+    .map((g) => g.step)
+}
+
+/**
+ * One decision about a work item at a time (#150) — moved here from
+ * `approve.ts`, which took this for as long as it acted; `resolveWait` is now
+ * the only thing that acts.
+ *
+ * **The log cannot serialise this on its own.** Two resolutions landing on
+ * the same wait in the gap between a read and an append is exactly what the
+ * store's version check already refuses — but a requeue and an approval are
+ * not one append each; the file lock is what keeps a second decision from
+ * starting while the first is still being checked and written.
+ */
+async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
+  const got = await createFileLocker().tryLock(`decide:${ticketId}`, 'lingtai-decide')
+  if (!got.ok) return busy()
+  try {
+    return await act()
+  } finally {
+    await got.lock.release()
+  }
+}
+
+function describeReason(reason: WaitReason): string {
+  return reason._tag === 'ProposedEscalated' ? `ProposedEscalated{${reason.proposal._tag}}` : reason._tag
+}
+
+export interface ResolveWaitOptions {
+  project: string
+  issue: number
+  waitId: WaitId
+  resolution: Resolution
+  /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
+  by: string
+  /** Why. Required only where `Approve` is waiving a refusal still standing on the sha — see `refusingOn`. */
+  note?: string
+  /**
+   * Events appended after `WaitResolved`, in the same append — `close()`'s
+   * `TicketClosed` and its `end` plan, kept in one transaction with the wait
+   * it resolves (`close.ts`'s own rule, carried over rather than relaxed).
+   */
+  with?: readonly ToAppend[]
+  /**
+   * Only read for `Approve` — the branch's current head on origin, checked
+   * against the sha the approval names. Omitted by a caller with no GitHub
+   * to reach; the sha-vs-run check below still runs either way.
+   */
+  client?: { refSha(ref: string): Promise<string | null> }
+  store?: EventStore
+}
+
+export type ResolveWaitResult =
+  | { ok: true; ticketId: string }
+  | { ok: false; ticketId: string; reason: string; detail: string }
+
+export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveWaitResult> {
+  const ticketId = workItemStream(options.project, options.issue)
+  return deciding<ResolveWaitResult>(
+    ticketId,
+    () => ({
+      ok: false,
+      ticketId,
+      reason: 'busy',
+      detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
+    }),
+    () => resolveWaitHolding(options, ticketId),
+  )
+}
+
+/**
+ * **Exported for the unit half alone**, the same reason `approveHolding` was
+ * (`#487`): `resolveWait()` above takes `createFileLocker()`, which is the
+ * filesystem, so by 0060 §1 the whole of `resolveWait()` cannot be
+ * unit-tested — this function underneath it can.
+ */
+export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: string): Promise<ResolveWaitResult> {
+  const store = options.store ?? eventStore
+  const note = options.note?.trim() ?? ''
+
+  const item = reduceWorkItem(await store.read(ticketId))
+  if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-blocked',
+      detail: `${ticketId} is not waiting on ${options.waitId} — nothing was resolved. Reload and read it again.`,
+    }
+  }
+  const block = item.lifecycle
+  const reason = block.reason
+
+  const allowed = allowedResolutions(reason)
+  if (!allowed.includes(options.resolution._tag)) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-offered',
+      detail: `${options.resolution._tag} is not offered for ${describeReason(reason)} — nothing was resolved.`,
+    }
+  }
+
+  if (options.resolution._tag === 'Approve') {
+    const refused = await checkApprove(options, store, ticketId, block.runId, options.resolution.onSha, note)
+    if (refused !== null) return refused
+  }
+
+  try {
+    await store.append(ticketId, item.version, [
+      {
+        type: 'WaitResolved',
+        actor: options.by,
+        data: parsePayload('WaitResolved', {
+          waitId: options.waitId,
+          by: options.by,
+          resolution: options.resolution,
+          note,
+        }),
+      },
+      ...(options.with ?? []),
+    ])
+  } catch (err) {
+    if (!(err instanceof ConcurrencyError)) throw err
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail: `${ticketId} moved while this was being resolved. Nothing was resolved — reload and read it again.`,
+    }
+  }
+
+  return { ok: true, ticketId }
+}
+
+/**
+ * `Approve`'s own three checks, carried over from `approve.ts`'s
+ * `approveHolding` (#150, #92) with nothing changed about what refuses or
+ * what it says — only where they run from.
+ *
+ * `runId` is never null here: `allowedResolutions` never offers `Approve` for
+ * an `OwnQuestion`, the one `WaitReason` with no `run` (`wait.ts`'s own
+ * table), so a block offering `Approve` always names one.
+ */
+async function checkApprove(
+  options: ResolveWaitOptions,
+  store: EventStore,
+  ticketId: string,
+  runId: string | null,
+  onSha: string,
+  note: string,
+): Promise<ResolveWaitResult | null> {
+  if (runId === null) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-run',
+      detail: `${ticketId} has no run to approve — nothing was resolved.`,
+    }
+  }
+  const run = reduceRun(await store.read(runId))
+
+  const current =
+    run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : run.headSha !== null ? run.headSha : null
+  if (current === null) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-awaiting-approval',
+      detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
+    }
+  }
+
+  // The check that makes the approval mean anything: between the hold and
+  // now, the run may have moved on — a second request on a new head — and
+  // `onSha` is what this approval is about, not whatever the run is asking
+  // about right now.
+  if (onSha !== current) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail:
+        `the approval is for ${onSha.slice(0, 7)} and the run is now asking about ` +
+        `${current.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
+    }
+  }
+
+  // **Approve absorbs the waiver** (#150). A refusal still standing on this
+  // sha is waived by this same resolution, and there is no way past it
+  // without saying why.
+  const refusing = refusingOn(run, onSha)
+  if (refusing.length > 0 && !note) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'reason-required',
+      detail:
+        `${refusing.join(', ')} still ${refusing.length === 1 ? 'refuses' : 'refuse'} ${onSha.slice(0, 7)}, ` +
+        `so approving waives ${refusing.length === 1 ? 'it' : 'them'} — say why. Nothing was resolved.`,
+    }
+  }
+
+  // The branch may have moved since the approval was recorded — including
+  // the agent, on a re-run. Continuing then would run past something nobody
+  // looked at, which is exactly what the old label-based approval did.
+  if (options.client) {
+    const branch = agentBranch(options.issue)
+    const remoteHead = await options.client.refSha(`heads/${branch}`).catch(() => null)
+    if (remoteHead !== onSha) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail:
+          `the approval is for ${onSha.slice(0, 7)} and ${branch} is now ` +
+          `${remoteHead?.slice(0, 7) ?? 'gone'}. Nothing was resolved.`,
+      }
+    }
+  }
+
+  return null
+}

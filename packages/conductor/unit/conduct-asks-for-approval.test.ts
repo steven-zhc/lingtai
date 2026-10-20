@@ -29,7 +29,7 @@ import { legacyColumns, reduceRun, type Action, type PayloadOf } from '@lingtai/
 import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
-import { refusingOn } from '../src/approve.ts'
+import { refusingOn } from '../src/resolve-wait.ts'
 import {
   PROJECT,
   fakeGitHub,
