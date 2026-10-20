@@ -34,6 +34,13 @@ export interface ProvisionOptions {
   token?: TokenSource
   /** Overrides the clone source. Tests point it at a local repository. */
   remote?: string
+  /**
+   * Checkout at this sha instead of the base branch's current head — a
+   * continuation's own worktree, cut at the sha an approval was about
+   * (#465). Refused, naming both shas, when `branch` has moved past it on
+   * origin since.
+   */
+  at?: string
   home?: string
   /**
    * The environment every `git` child gets.
@@ -133,12 +140,23 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   await mkdir(dirname(path), { recursive: true })
 
   // From the base branch as the mirror has it, which is `origin/<base>` — never
-  // from anything local, and never from the agent's previous branch.
-  const baseSha = await git(['rev-parse', options.base], { ...run, cwd: mirror })
+  // from anything local, and never from the agent's previous branch. A
+  // continuation names its own sha instead (`options.at`, #465): the tree a
+  // held pass left is gone once its scope closes, and this is where it is
+  // re-cut from — the branch, not the base, because what is being continued
+  // is the diff an approval was about, not a fresh one.
+  const baseSha = options.at ?? (await git(['rev-parse', options.base], { ...run, cwd: mirror }))
   const remoteHead = await git(['rev-parse', '--verify', `refs/heads/${options.branch}`], {
     ...run,
     cwd: mirror,
   }).catch(() => null)
+  // The one check `options.at` adds: between the approval and this cut,
+  // somebody may have pushed to `branch` — the agent, on a re-run, or a
+  // second decision. Re-cutting from a moved branch would continue a diff
+  // nobody approved, so this refuses rather than silently taking it.
+  if (options.at !== undefined && remoteHead !== options.at) {
+    throw new Error(`${options.branch} is now ${remoteHead ?? 'gone'}, not ${options.at} — the approval is stale`)
+  }
   /**
    * **Detached, and that is what lets the worktree outlive the merge lane**
    * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §1).

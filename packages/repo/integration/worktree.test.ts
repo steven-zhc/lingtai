@@ -247,4 +247,73 @@ describe('provisionWorktree', () => {
     await expect(stat(join(second.path, 'scratch.txt'))).rejects.toThrow()
     await removeWorktree({ project: base.project, runId: 'pass-4', home })
   })
+
+  /**
+   * **`at` is a continuation's own re-cut** (#465) — `admit` runs again once
+   * a wait is approved, because the worktree a held pass left is gone
+   * once its scope closes, and this is where the tree comes back from: the
+   * branch's own head at the moment it was approved, never the base.
+   */
+  it('cuts at `at` rather than the base, when the branch has it', async () => {
+    const setup = join(root, 'pass-5-setup')
+    await exec('git', ['clone', '-q', originPath, setup])
+    await git(['checkout', '-qb', 'agent/5'], setup)
+    await writeFile(join(setup, 'CHANGELOG.md'), "the agent's change\n")
+    await git(['add', '-A'], setup)
+    await git(['commit', '-qm', "the agent's change"], setup)
+    await exec('git', ['push', '-q', originPath, 'HEAD:refs/heads/agent/5'], { cwd: setup })
+    const approvedSha = (await exec('git', ['rev-parse', 'HEAD'], { cwd: setup })).stdout.trim()
+
+    const wt = await provisionWorktree({
+      ...base,
+      branch: 'agent/5',
+      runId: 'pass-5',
+      submodules: false,
+      remote: originPath,
+      at: approvedSha,
+      home,
+    })
+
+    expect(wt.baseSha).toBe(approvedSha)
+    const at = await exec('git', ['rev-parse', 'HEAD'], { cwd: wt.path })
+    expect(at.stdout.trim()).toBe(approvedSha)
+    await expect(stat(join(wt.path, 'CHANGELOG.md'))).resolves.toBeDefined()
+
+    await removeWorktree({ project: base.project, runId: 'pass-5', home })
+  })
+
+  /**
+   * **The check `at` exists to make.** Between the approval and this cut,
+   * something may have pushed to `branch` again — the agent, on a re-run,
+   * or a second decision — and re-cutting from that moved head would
+   * continue a diff nobody approved.
+   */
+  it('refuses to cut when the branch has moved past `at`', async () => {
+    const setup = join(root, 'pass-6-setup')
+    await exec('git', ['clone', '-q', originPath, setup])
+    await git(['checkout', '-qb', 'agent/6'], setup)
+    await writeFile(join(setup, 'CHANGELOG.md'), 'first\n')
+    await git(['add', '-A'], setup)
+    await git(['commit', '-qm', 'first'], setup)
+    await exec('git', ['push', '-q', originPath, 'HEAD:refs/heads/agent/6'], { cwd: setup })
+    const approvedSha = (await exec('git', ['rev-parse', 'HEAD'], { cwd: setup })).stdout.trim()
+
+    // The branch moves again after the approval was recorded.
+    await writeFile(join(setup, 'CHANGELOG.md'), 'second\n')
+    await git(['add', '-A'], setup)
+    await git(['commit', '-qm', 'second'], setup)
+    await exec('git', ['push', '-q', originPath, 'HEAD:refs/heads/agent/6'], { cwd: setup })
+
+    await expect(
+      provisionWorktree({
+        ...base,
+        branch: 'agent/6',
+        runId: 'pass-6',
+        submodules: false,
+        remote: originPath,
+        at: approvedSha,
+        home,
+      }),
+    ).rejects.toThrow('the approval is stale')
+  })
 })
