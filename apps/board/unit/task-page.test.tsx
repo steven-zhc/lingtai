@@ -55,6 +55,18 @@ const ITEM = 'ticket-lingtai-147'
 const RUN = 'pass-52feebd1-0000-0000-0000-000000000000'
 const BASE = 'b'.repeat(40)
 const HEAD = 'a4e9df9'.padEnd(40, '0')
+
+/** A `verdict`-yield action, the shape a gate's own check or review declares (#502). */
+function verdictAction(name: string, evidence: string, verdict: 'accepted' | 'refused', onSha = HEAD) {
+  return {
+    plugin: 'run',
+    name,
+    onSha,
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict, findings: [] } },
+  }
+}
 const claim: Claim = { runId: RUN, at: '2026-09-14T04:00:00.000Z', repair: false, released: null }
 
 const TICKET: TicketView = {
@@ -92,24 +104,29 @@ function blocked(): TaskDetail {
   const run = foldRun(claim, 1, [
     e(RUN, 'RunStarted', { baseSha: BASE }),
     e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
-    e(RUN, 'StepFailed', { step: 'proposed', action: 'review', onSha: HEAD, evidence: CRASH }),
-    e(RUN, 'RunFinished', { turns: 30, durationMs: 900_000, costUsd: 2.5, exitCode: 0 }),
+    e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
+    e(RUN, 'StepEnded', {
+      outcome: { step: 'proposed', round: 0, actions: [verdictAction('review', CRASH, 'refused')] },
+    }),
+    e(RUN, 'RunFinished', { turns: 30, durationMs: 900_000, exitCode: 0 }),
   ])
   const own = [
     e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
     e(
       ITEM,
-      'WorkItemBlocked',
+      'WaitStarted',
       {
         // `done`'s round-count narrative and `recommendation`'s custom reading
-        // are not on a `Hold` (0118 §1 did not carry them) — an accepted loss
-        // `legacy-columns.ts`'s own header documents.
-        hold: {
-          _tag: 'CheckRed',
+        // are not on a `WaitReason` (0118 §1 did not carry them) — an accepted
+        // loss `legacy-columns.ts`'s own header documents.
+        waitId: 'wait-147',
+        reason: {
+          _tag: 'CheckRefused',
           run: { runId: RUN },
           step: 'proposed',
-          why: 'review still refuses agent/147',
-          raw: CRASH,
+          action: 'review',
+          evidence: CRASH,
+          findings: [],
         },
       },
       '2026-09-14T04:27:00Z',
@@ -322,9 +339,15 @@ describe('the rail on the task page', () => {
       [
         e(RUN, 'RunStarted', { baseSha: BASE }, '2026-09-14T08:40:00Z'),
         resolved,
-        e(RUN, 'StepPassed', { step: 'prepared', action: 'install' }, '2026-09-14T08:41:00Z'),
-        e(RUN, 'RunFinished', { turns: 9, durationMs: 600_000, costUsd: 1, exitCode: 0 }, '2026-09-14T08:50:00Z'),
-        e(RUN, 'StepStarted', { step: 'proposed', action: 'build' }, '2026-09-14T08:57:26Z'),
+        e(RUN, 'StepStarted', { step: 'prepared', round: 0 }, '2026-09-14T08:40:30Z'),
+        e(
+          RUN,
+          'StepEnded',
+          { outcome: { step: 'prepared', round: 0, actions: [verdictAction('install', 'ok', 'accepted')] } },
+          '2026-09-14T08:41:00Z',
+        ),
+        e(RUN, 'RunFinished', { turns: 9, durationMs: 600_000, exitCode: 0 }, '2026-09-14T08:50:00Z'),
+        e(RUN, 'StepStarted', { step: 'proposed', round: 0 }, '2026-09-14T08:57:26Z'),
       ],
       { plan },
     )
@@ -334,13 +357,21 @@ describe('the rail on the task page', () => {
   const why = (html: string) => html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
   const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
 
-  it('says which point, the action, the elapsed and the bound at rank 2, with nothing expanded', () => {
+  /**
+   * **Since `#502`, `StepStarted` carries `{step, round}` alone** — 0120's own
+   * Consequences: the board loses which action of a step is running, and with
+   * it the per-action budget this test used to read while a point was still
+   * in flight. There is no `build` to name any more and no `/ 20m` to draw —
+   * the point itself (`proposed`) and the elapsed time are all that survive.
+   */
+  it('says which point and the elapsed at rank 2, with no per-action name or bound', () => {
     const html = page(building(PLAN))
     const rank = why(html)
     // The rail is the card's own: the same classes, drawn by the same `Rail`.
     expect(rank).toContain('class="seq"')
     expect(rank).toMatch(/class="slab l-at">proposed</)
-    expect(rank).toMatch(/class="snow"[^>]*>build 2m34s \/ 20m</)
+    expect(rank).toMatch(/class="snow"[^>]*>\s*2m34s</)
+    expect(rank).not.toContain(' / ')
     // At rank 2 and not inside a disclosure: nothing before it on the page is
     // a closed `<details>` it could be hiding in.
     const before = html.slice(0, html.indexOf('class="seq"'))
@@ -349,16 +380,26 @@ describe('the rail on the task page', () => {
 
   it('draws no denominator where nothing bounds the phase, and never a zero', () => {
     const rank = why(page(building()))
-    expect(rank).toMatch(/class="snow"[^>]*>build 2m34s</)
+    expect(rank).toMatch(/class="snow"[^>]*>\s*2m34s</)
     expect(rank).not.toContain(' / ')
   })
 
-  it("draws proposed's build and review as two cells, half done", () => {
+  /**
+   * **Since `#502` neither named action reads as specifically running** —
+   * there is no action-level `StepStarted` any more, so `foldProgress`
+   * cannot say which of `build`/`review` is the one in flight; both read
+   * `pending`. A third cell appears after them: the placeholder `StepStarted`
+   * sets `verdicts['proposed:']` (empty action name) to `running`, and
+   * `foldProgress` draws that as an "extra" action the plan did not name.
+   */
+  it("draws proposed's build and review as two pending cells, plus the running placeholder", () => {
     const rank = why(page(building(PLAN)))
     const proposed = rank.match(
       /<li class="seg s-running"[^>]*><span class="sbar">((?:<span class="scell[^"]*"><\/span>)+)<\/span>/,
     )
-    expect(proposed?.[1]).toBe('<span class="scell t-run"></span><span class="scell t-pending"></span>')
+    expect(proposed?.[1]).toBe(
+      '<span class="scell t-pending"></span><span class="scell t-pending"></span><span class="scell t-run"></span>',
+    )
   })
 
   it("is the board's own Rail, imported by both routes and defined in neither", () => {
@@ -404,8 +445,11 @@ describe('the rail on the task page', () => {
     const events = [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       resolved,
-      e(RUN, 'StepPassed', { step: 'prepared', action: 'install' }),
-      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+      e(RUN, 'StepStarted', { step: 'prepared', round: 0 }),
+      e(RUN, 'StepEnded', {
+        outcome: { step: 'prepared', round: 0, actions: [verdictAction('install', 'ok', 'accepted')] },
+      }),
+      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, exitCode: 0 }),
     ]
     const own = [
       e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
@@ -420,8 +464,11 @@ describe('the rail on the task page', () => {
     const events = [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       resolved,
-      e(RUN, 'StepPassed', { step: 'prepared', action: 'install' }),
-      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+      e(RUN, 'StepStarted', { step: 'prepared', round: 0 }),
+      e(RUN, 'StepEnded', {
+        outcome: { step: 'prepared', round: 0, actions: [verdictAction('install', 'ok', 'accepted')] },
+      }),
+      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, exitCode: 0 }),
     ]
     const own = [
       e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
@@ -449,8 +496,11 @@ describe('the record', () => {
     const run = foldRun(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
-      e(RUN, 'StepPassed', { step: 'proposed', action: 'review', onSha: HEAD }),
-      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, costUsd: 1.5, exitCode: 0 }),
+      e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
+      e(RUN, 'StepEnded', {
+        outcome: { step: 'proposed', round: 0, actions: [verdictAction('review', 'ok', 'accepted')] },
+      }),
+      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, exitCode: 0 }),
     ])
     const landed = task(
       [

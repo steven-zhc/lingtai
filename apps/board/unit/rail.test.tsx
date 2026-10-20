@@ -28,7 +28,17 @@
 import { readFileSync } from 'node:fs'
 
 import type { StepPlan } from '@lingtai/conductor/filter'
-import { STEPS, type Envelope, type Step } from '@lingtai/domain'
+import {
+  decideRoute,
+  offerFor,
+  STEPS,
+  type Action,
+  type Envelope,
+  type Finding,
+  type JudgeReply,
+  type Proposal,
+  type Step,
+} from '@lingtai/domain'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -65,12 +75,43 @@ function at(time: string, type: string, data: unknown): Envelope {
   }
 }
 
-const step = (step: Step, action: string) => ({
-  step: step,
-  action,
-  runId: 'pass-170',
-  onSha: 'b1b8694',
-})
+/**
+ * `StepStarted{runId, step, round}` and `StepEnded{runId, outcome}` — the
+ * two events a real step visit writes since #502, replacing the per-action
+ * `StepRequested`/`StepStarted(step,action)`/`StepPassed`/`StepFailed` this
+ * file used to build directly.
+ */
+const started = (step: Step, round = 0) => ({ runId: 'pass-170', step, round })
+const ended = (step: Step, actions: Action[], round = 0) => ({ runId: 'pass-170', outcome: { step, round, actions } })
+
+/** A `verdict`-yield action, the shape a `run:`/`agent:` check or review declares. */
+function verdictAction(
+  name: string,
+  evidence: string,
+  verdict: 'accepted' | 'refused' = 'accepted',
+  findings: Finding[] = [],
+): Action {
+  return {
+    plugin: 'run',
+    name,
+    onSha: 'b1b8694',
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict, findings } },
+  }
+}
+
+/** A `signoff`-yield action with a live, unanswered request — `ApprovalRequested`'s replacement (#502). */
+function signoffAction(name: string, question: string): Action {
+  return {
+    plugin: 'human',
+    name,
+    onSha: 'b1b8694',
+    evidence: '',
+    yields: 'signoff',
+    result: { _tag: 'Completed', requested: { question } },
+  }
+}
 
 /**
  * A recipe with a point holding two actions, which the repository's own does:
@@ -106,13 +147,8 @@ const resolved = (plan: StepPlan) =>
 function running(): Envelope[] {
   seq = 0n
   return [
-    at('2026-09-15T17:12:20Z', 'StepRequested', step('prepared', 'install')),
-    at('2026-09-15T17:12:20Z', 'StepStarted', step('prepared', 'install')),
-    at('2026-09-15T17:12:26Z', 'StepPassed', {
-      ...step('prepared', 'install'),
-      evidence: 'ok',
-      findings: [],
-    }),
+    at('2026-09-15T17:12:20Z', 'StepStarted', started('prepared')),
+    at('2026-09-15T17:12:26Z', 'StepEnded', ended('prepared', [verdictAction('install', 'ok')])),
     at('2026-09-15T17:12:30Z', 'RunStarted', {
       ticketId: 'ticket-lingtai-170',
       invocation: {
@@ -127,55 +163,56 @@ function running(): Envelope[] {
       exitCode: 0,
       turns: 48,
       durationMs: 492_000,
-      costUsd: 5.92,
     }),
-    at('2026-09-15T17:20:43Z', 'StepRequested', step('proposed', 'build')),
-    at('2026-09-15T17:20:43Z', 'StepStarted', step('proposed', 'build')),
+    at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),
   ]
 }
 
 /** The same run, refused at the build. */
 const refused = (): Envelope[] => [
   ...running(),
-  at('2026-09-15T17:34:00Z', 'StepFailed', {
-    ...step('proposed', 'build'),
-    evidence: '2 tests failed',
-    findings: [],
-  }),
+  at('2026-09-15T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', '2 tests failed', 'refused')])),
 ]
 
 /**
  * The same refusal, with the round the pipeline ordinarily buys to answer it.
  *
  * `rounds: 3` in this repository's own recipe, so this is the common path and
- * not an edge: `FixRequested`, then an agent patching the diff for minutes,
- * then `FixApplied` (`conduct.ts`'s fix round). No `RunStarted` between
- * them — a round is a step inside a run — and `task_view` keeps the card
- * `running` throughout (`task-view.ts:554`).
+ * not an edge: one `PassRouted{decision: Selected{candidate: 'fix-lines'}}`,
+ * the one event this replaces `FixRequested`/`FixApplied`/`PassRestarted`
+ * with (#502) — the agent then patches the diff for minutes, with no
+ * `RunStarted` between (a round is a step inside a run), and `task_view`
+ * keeps the card `running` throughout (`task-view.ts:554`).
  */
-const fixRound = (): Envelope[] => [
-  ...refused(),
-  at('2026-09-15T17:34:01Z', 'FixRequested', {
-    runId: 'pass-170',
-    round: 1,
-    of: 3,
-    action: 'build',
-    onSha: 'b1b8694',
-    findings: [],
-  }),
-]
+const fixRound = (): Envelope[] => {
+  const proposal: Proposal = { _tag: 'BuildRed', output: '2 tests failed' }
+  const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
+  const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'same-worktree judge' }
+  const decision = decideRoute(offer, reply)
+  return [...refused(), at('2026-09-15T17:34:01Z', 'PassRouted', { runId: 'pass-170', offer, reply, decision })]
+}
 
 /** That round back, having committed nothing: the refusal stands. */
 const fixSpent = (): Envelope[] => [
   ...fixRound(),
-  at('2026-09-15T17:48:00Z', 'FixApplied', {
-    runId: 'pass-170',
-    round: 1,
-    headSha: null,
-    turns: 9,
-    costUsd: 0.91,
-    failure: null,
-  }),
+  at(
+    '2026-09-15T17:48:00Z',
+    'StepEnded',
+    ended(
+      'implement',
+      [
+        {
+          plugin: 'agent',
+          name: 'write the change',
+          onSha: 'b1b8694',
+          evidence: '',
+          yields: 'commit',
+          result: { _tag: 'Completed', head: null, question: null },
+        },
+      ],
+      1,
+    ),
+  ),
 ]
 
 /**
@@ -188,23 +225,18 @@ const fixSpent = (): Envelope[] => [
  * as the note (`task-view.ts:637`).
  */
 function refusedByTheLane(): Envelope[] {
-  const upToTheAgent = running().slice(0, 6)
+  // Up through `RunFinished`, before `proposed` ever starts — `running()` is
+  // now six events long and the last of them is `proposed`'s own
+  // `StepStarted`, which this fixture writes itself below.
+  const upToTheAgent = running().slice(0, 5)
   return [
     ...upToTheAgent,
-    at('2026-09-15T17:20:43Z', 'StepRequested', step('proposed', 'build')),
-    at('2026-09-15T17:20:43Z', 'StepStarted', step('proposed', 'build')),
-    at('2026-09-15T17:21:10Z', 'StepPassed', {
-      ...step('proposed', 'build'),
-      evidence: 'ok',
-      findings: [],
-    }),
-    at('2026-09-15T17:21:11Z', 'StepRequested', step('proposed', 'review')),
-    at('2026-09-15T17:21:11Z', 'StepStarted', step('proposed', 'review')),
-    at('2026-09-15T17:22:00Z', 'StepPassed', {
-      ...step('proposed', 'review'),
-      evidence: 'no findings',
-      findings: [],
-    }),
+    at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),
+    at(
+      '2026-09-15T17:22:00Z',
+      'StepEnded',
+      ended('proposed', [verdictAction('build', 'ok'), verdictAction('review', 'no findings')]),
+    ),
   ]
 }
 
@@ -220,14 +252,13 @@ function refusedByTheLane(): Envelope[] {
 function refusedAtPrepared(): Envelope[] {
   seq = 0n
   return [
-    at('2026-09-15T17:12:20Z', 'StepRequested', step('prepared', 'install')),
-    at('2026-09-15T17:12:20Z', 'StepStarted', step('prepared', 'install')),
+    at('2026-09-15T17:12:20Z', 'StepStarted', started('prepared')),
     resolved(PLAN),
-    at('2026-09-15T17:12:26Z', 'StepFailed', {
-      ...step('prepared', 'install'),
-      evidence: 'the lockfile is out of date',
-      findings: [],
-    }),
+    at(
+      '2026-09-15T17:12:26Z',
+      'StepEnded',
+      ended('prepared', [verdictAction('install', 'the lockfile is out of date', 'refused')]),
+    ),
   ]
 }
 
@@ -277,13 +308,8 @@ const MERGE_PLAN: StepPlan = new Map([...PLAN, ['merge', [{ name: 'approve', bud
 function landedPastMerge(): Envelope[] {
   seq = 0n
   return [
-    at('2026-09-15T17:12:20Z', 'StepRequested', step('prepared', 'install')),
-    at('2026-09-15T17:12:20Z', 'StepStarted', step('prepared', 'install')),
-    at('2026-09-15T17:12:26Z', 'StepPassed', {
-      ...step('prepared', 'install'),
-      evidence: 'ok',
-      findings: [],
-    }),
+    at('2026-09-15T17:12:20Z', 'StepStarted', started('prepared')),
+    at('2026-09-15T17:12:26Z', 'StepEnded', ended('prepared', [verdictAction('install', 'ok')])),
     at('2026-09-15T17:12:30Z', 'RunStarted', {
       ticketId: 'ticket-lingtai-55',
       invocation: {
@@ -298,22 +324,13 @@ function landedPastMerge(): Envelope[] {
       exitCode: 0,
       turns: 25,
       durationMs: 492_000,
-      costUsd: 1.46,
     }),
-    at('2026-09-15T17:20:43Z', 'StepRequested', step('proposed', 'build')),
-    at('2026-09-15T17:20:43Z', 'StepStarted', step('proposed', 'build')),
-    at('2026-09-15T17:21:10Z', 'StepPassed', {
-      ...step('proposed', 'build'),
-      evidence: 'ok',
-      findings: [],
-    }),
-    at('2026-09-15T17:21:11Z', 'StepRequested', step('proposed', 'review')),
-    at('2026-09-15T17:21:11Z', 'StepStarted', step('proposed', 'review')),
-    at('2026-09-15T17:22:00Z', 'StepPassed', {
-      ...step('proposed', 'review'),
-      evidence: 'no findings',
-      findings: [],
-    }),
+    at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),
+    at(
+      '2026-09-15T17:22:00Z',
+      'StepEnded',
+      ended('proposed', [verdictAction('build', 'ok'), verdictAction('review', 'no findings')]),
+    ),
     // And nothing at all at `merge`. That is the whole of the finding.
   ]
 }
@@ -470,20 +487,31 @@ describe('a running card', () => {
 
   /**
    * It read `proposed:build 42s / 20m`. The highlighted label already says
-   * `proposed`, so the sentence is the action and its bound and nothing else —
-   * one fact said once.
+   * `proposed`, so the sentence used to be the action and its bound and
+   * nothing else — one fact said once.
+   *
+   * **Since #502, a running step carries no action at all** (`StepStarted`
+   * is `{step, round}`, with no action — `progress.ts`'s own header on
+   * `StepStarted`) — so there is no second name left to say, and the
+   * sentence is bare elapsed time.
    */
-  it("says the step's name in the label and not again in the sentence", () => {
+  it("says the step's name in the label and names no action, since a running step carries none any more", () => {
     const html = render({}, running())
 
     expect(labels(html)).toContainEqual(['l-at', 'proposed'])
-    expect(sentence(html)).toMatch(/^build \d/)
+    // `elapsed()`'s own three shapes — `41s`, `2m34s`, `1h07m` — and nothing else.
+    expect(sentence(html)).toMatch(/^\d+s$|^\d+m\d+s$|^\d+h\d+m$/)
     expect(sentence(html)).not.toContain('proposed')
   })
 
-  /** The action's own bound, which is what separates slow from about to be killed. */
-  it('keeps the denominator the phase is measured against', () => {
-    expect(sentence(render({}, running()))).toMatch(/\/ 20m$/)
+  /**
+   * **No denominator while a step is running, since #502** — the per-action
+   * budget `StepStarted{step,action}` used to carry went with the per-action
+   * event itself; `StepStarted{step,round}` sets `budgetMs: null`
+   * (`progress.ts`).
+   */
+  it('carries no denominator while a step is running', () => {
+    expect(sentence(render({}, running()))).not.toContain('/')
   })
 
   /**
@@ -508,7 +536,8 @@ describe('a running card', () => {
   })
 
   it('says so when the agent has finished and no step has started', () => {
-    const between = running().slice(0, 6)
+    // `running()` is six events; the sixth is `proposed`'s own `StepStarted`.
+    const between = running().slice(0, 5)
     expect(sentence(render({}, between))).toBe('between steps')
   })
 
@@ -549,14 +578,23 @@ describe('a running card', () => {
    * granularities. The counter goes and the rail keeps it, per point and in
    * order — and a point holding two actions draws a cell each, which is the
    * granularity the counter had and the flat row did not.
+   *
+   * **A third, running cell since #502.** A step in flight carries no action
+   * of its own any more — `StepStarted{step,round}` marks the running flag on
+   * the bare step key `${step}:`, which the fold reads back as one more
+   * unnamed action beside the two the plan actually names
+   * (`progress.ts`'s own header: *the board loses which action of a step is
+   * running*). Neither `build` nor `review` can be told apart from the other
+   * while the step is still open; both read `pending` until a real
+   * `StepEnded` names one of them.
    */
   it('drops the step counters the rail already says, per action', () => {
     const html = render({}, running())
 
     expect(html).not.toContain('1 passed')
-    // `proposed` is `build` and `review`: the build is running and the review
-    // has not been reached. One fill over the pair could not say that.
-    expect(cellsAt(html, 'proposed')).toEqual(['t-run', 't-pending'])
+    // `proposed` is `build` and `review`, plus the running step's own
+    // unnamed placeholder cell — neither action is reached yet.
+    expect(cellsAt(html, 'proposed')).toEqual(['t-pending', 't-pending', 't-run'])
     expect(cellsAt(html, 'prepared')).toEqual(['t-pass'])
   })
 
@@ -667,7 +705,7 @@ describe('a card stopped on a person', () => {
 
   /** And a run with nothing refused keeps the neutral sentence it had. */
   it('leaves the in-between sentence to a run that is in between', () => {
-    expect(sentence(render({}, running().slice(0, 6)))).toBe('between steps')
+    expect(sentence(render({}, running().slice(0, 5)))).toBe('between steps')
   })
 
   /**
@@ -715,7 +753,9 @@ describe('a card answering a refusal', () => {
   it('names the round it is spending rather than calling the pass refused', () => {
     const html = render({}, fixRound())
 
-    expect(sentence(html)).toMatch(/^fixing round 1 of 3 \d/)
+    // No "of 3": `RouteOffer` never stores the recipe's own ceiling (#502),
+    // so `foldProgress` has no denominator to read off the event itself.
+    expect(sentence(html)).toMatch(/^fixing round 1 \d/)
     expect(html).not.toContain('build refused')
     expect(html).not.toContain('between steps')
     expect(html).not.toContain('the pipeline stops at the first refusal and waits for a person')
@@ -764,7 +804,16 @@ describe('a card answering a refusal', () => {
    * what it says is what refused it.
    */
   it('goes back to the refusal when the round is spent', () => {
-    const html = render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent())
+    // The ceiling is the recipe's to hand in now (#502: the event carries no
+    // `of` of its own), the same fallback `describeHeld` always had for a
+    // run that never bought one.
+    const html = render(
+      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) },
+      fixSpent(),
+      PLAN,
+      false,
+      { rounds: 3, restarts: 1 },
+    )
 
     // The round `fixSpent()` bought is now on the budget line too.
     expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 0 restarts left')
@@ -780,9 +829,14 @@ describe('a card answering a refusal', () => {
  */
 describe("a held item's budget", () => {
   it('reads the rounds a bought round named, and the restarts the card itself carries', () => {
+    // The rounds ceiling is the recipe's to hand in since #502 — see the
+    // sibling test above.
     const html = render(
       { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
       fixSpent(),
+      PLAN,
+      false,
+      { rounds: 3, restarts: 2 },
     )
 
     expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 1 restart left')
@@ -834,23 +888,30 @@ describe("a held item's budget", () => {
 
   /**
    * **An open approval is a hold too, and it is the common one** (`#415`). A
-   * waiting card whose run stream ends with `ApprovalRequested` and no
-   * `ApprovalGranted` has a phase still in `now` — nothing clears it while
-   * nobody has answered (`progress.ts`'s `ApprovalRequested` case) — so `Rail`
-   * takes its first branch rather than `refused`'s. That branch carries the
-   * budget line too, because the card is not `live`: an open approval is a
-   * person being waited on, not work in flight.
+   * waiting card whose `proposed` visit declared a `signoff` action that is
+   * still open (`Completed{requested: {question}}`, with nothing resolving
+   * it) has a phase still in `now` — nothing clears it while nobody has
+   * answered (`progress.ts`'s own `SignoffRequested` case, fed by
+   * `boardFactOf`'s special-cased `StepEnded`; `ApprovalRequested` is gone,
+   * #502) — so `Rail` takes its first branch rather than `refused`'s. That
+   * branch carries the budget line too, because the card is not `live`: an
+   * open approval is a person being waited on, not work in flight.
    */
   it('carries the budget line on an open approval, not just a refusal', () => {
     const html = render(
       { state: 'waiting', waiting: true, restarts: 1, restartsOf: 1 },
       [
-        ...refusedByTheLane(),
-        at('2026-09-15T17:23:00Z', 'ApprovalRequested', {
-          ...step('proposed', 'human'),
-          question: 'does this change belong?',
-          artifacts: [],
-        }),
+        ...running().slice(0, 5),
+        at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),
+        at(
+          '2026-09-15T17:23:00Z',
+          'StepEnded',
+          ended('proposed', [
+            verdictAction('build', 'ok'),
+            verdictAction('review', 'no findings'),
+            signoffAction('human', 'does this change belong?'),
+          ]),
+        ),
       ],
       PLAN,
       false,

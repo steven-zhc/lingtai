@@ -1,4 +1,4 @@
-import type { Envelope } from '@lingtai/domain'
+import type { Action, Envelope, Finding, Step } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The page says why a task is not moving, and says it first.
@@ -45,6 +45,66 @@ const SHA = 'a'.repeat(40)
 
 const claim = (runId: string, at: string): Claim => ({ runId, at, repair: false, released: null })
 
+/** A `verdict`-yield action, the shape a gate's own check or review declares. */
+function verdictAction(
+  name: string,
+  evidence: string,
+  verdict: 'accepted' | 'refused' = 'refused',
+  onSha = SHA,
+  findings: Finding[] = [],
+): Action {
+  return {
+    plugin: 'run',
+    name,
+    onSha,
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict, findings } },
+  }
+}
+
+/** A point reached and its agent never started — `#133`. */
+function neverRanAction(name: string, evidence: string, onSha = SHA): Action {
+  return {
+    plugin: 'agent',
+    name,
+    onSha,
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'NeverStarted', scope: 'work-item' },
+  }
+}
+
+/** A `signoff`-yield action with a live `requested`, the shape a `human:`/`watch:` asks a person through. */
+function signoffAction(name: string, question: string, onSha = SHA): Action {
+  return {
+    plugin: 'human',
+    name,
+    onSha,
+    evidence: '',
+    yields: 'signoff',
+    result: { _tag: 'Completed', requested: { question } },
+  }
+}
+
+/** A point reached, its agent started, and it ended with no receipt (0057 §1). */
+function didNotFinishAction(
+  name: string,
+  evidence: string,
+  onSha = SHA,
+  cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd' = 'crash',
+): Action {
+  return { plugin: 'agent', name, onSha, evidence, yields: 'verdict', result: { _tag: 'Interrupted', cause } }
+}
+
+/** `StepStarted{round}` then `StepEnded{outcome}` — the pair a real `runStep` writes for one visit. */
+function stepEnded(runId: string, step: Step, round: number, actions: Action[], at?: string): Envelope[] {
+  return [
+    e(runId, 'StepStarted', { runId, step, round }, at),
+    e(runId, 'StepEnded', { runId, outcome: { step, round, actions } }, at),
+  ]
+}
+
 /** The failure as a gate hands it over: a tail, not a line. */
 const TAIL = [
   'packages/actions typecheck: test/agent-step.test.ts(36,5): error TS2741:',
@@ -62,18 +122,15 @@ describe('the state, and how long it has held', () => {
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }, '2026-09-08T03:00:00Z'),
         e(
           ITEM,
-          'WorkItemBlocked',
+          'WaitStarted',
           {
-            hold: {
-              _tag: 'Routed',
+            waitId: 'wait-1',
+            reason: {
+              _tag: 'SignoffRequired',
               run: { runId: RUN_1 },
-              when: 'findings',
-              why: 'approve the diff for #89?',
-              raw: null,
-              findings: [],
-              paths: null,
-              baseSha: null,
-              headSha: null,
+              step: 'proposed',
+              action: 'human',
+              question: 'approve the diff for #89?',
             },
           },
           '2026-09-08T04:12:15Z',
@@ -87,7 +144,7 @@ describe('the state, and how long it has held', () => {
     expect(standing.since).toBe('2026-09-08T04:12:15.000Z')
     expect(standing.onYou).toBe(true)
     expect(standing.who).toBe('waiting on you')
-    expect(standing.question).toBe('approve the diff for #89?')
+    expect(standing.question).toBe('the `proposed` step held: approve the diff for #89?')
   })
 
   /**
@@ -158,19 +215,21 @@ describe('the evidence', () => {
   it('carries one line and names the attempt that holds the whole of it', () => {
     const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_1, 'StepFailed', { step: 'proposed', action: 'build', onSha: SHA, evidence: TAIL }),
-      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+      ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
+      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'CheckRed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'CheckRefused',
             run: { runId: RUN_1 },
             step: 'proposed',
-            why: 'the build refused it',
-            raw: null,
+            action: 'build',
+            evidence: 'the build refused it',
+            findings: [],
           },
         }),
       ],
@@ -200,25 +259,22 @@ describe('the evidence', () => {
   it("names a step that never ran, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_1, 'StepFailed', { step: 'proposed', action: 'build', onSha: SHA, evidence: TAIL }),
-      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+      ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
+      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
     const two = foldRun(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_2, 'StepPassed', { step: 'proposed', action: 'build', onSha: SHA, evidence: 'ok' }),
-      e(RUN_2, 'StepNeverRan', {
-        step: 'proposed',
-        action: 'review',
-        onSha: SHA,
-        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
-      }),
-      e(RUN_2, 'RunFinished', { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+      ...stepEnded(RUN_2, 'proposed', 0, [
+        verdictAction('build', 'ok', 'accepted'),
+        neverRanAction('review', "You've hit your session limit · resets 2pm (America/Chicago)"),
+      ]),
+      e(RUN_2, 'RunFinished', { turns: 3, durationMs: 60_000, exitCode: 0 }),
     ])
 
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it', cause: null }),
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
       ],
       [one, two],
@@ -247,25 +303,22 @@ describe('the evidence', () => {
   it("names a step that did not finish, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_1, 'StepFailed', { step: 'proposed', action: 'build', onSha: SHA, evidence: TAIL }),
-      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+      ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
+      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
     const two = foldRun(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_2, 'StepPassed', { step: 'proposed', action: 'build', onSha: SHA, evidence: 'ok' }),
-      e(RUN_2, 'StepDidNotFinish', {
-        step: 'proposed',
-        action: 'review',
-        onSha: SHA,
-        detail: 'the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.',
-      }),
-      e(RUN_2, 'RunFinished', { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+      ...stepEnded(RUN_2, 'proposed', 0, [
+        verdictAction('build', 'ok', 'accepted'),
+        didNotFinishAction('review', 'the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.'),
+      ]),
+      e(RUN_2, 'RunFinished', { turns: 3, durationMs: 60_000, exitCode: 0 }),
     ])
 
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it' }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'the proposed:build step refused it', cause: null }),
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
       ],
       [one, two],
@@ -295,16 +348,15 @@ describe('the evidence', () => {
     const FIXED = 'c'.repeat(40)
     const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_1, 'StepPassed', { step: 'proposed', action: 'review', onSha: SHA, evidence: 'ok' }),
-      e(RUN_1, 'StepFailed', { step: 'proposed', action: 'test', onSha: SHA, evidence: TAIL }),
+      ...stepEnded(RUN_1, 'proposed', 0, [
+        verdictAction('review', 'ok', 'accepted'),
+        verdictAction('test', TAIL, 'refused'),
+      ]),
       e(RUN_1, 'RunProposedCompletion', { headSha: FIXED }),
-      e(RUN_1, 'StepNeverRan', {
-        step: 'proposed',
-        action: 'review',
-        onSha: FIXED,
-        detail: "You've hit your session limit · resets 2pm (America/Chicago)",
-      }),
-      e(RUN_1, 'RunFinished', { turns: 3, durationMs: 60_000, costUsd: 0.42, exitCode: 0 }),
+      ...stepEnded(RUN_1, 'proposed', 1, [
+        neverRanAction('review', "You've hit your session limit · resets 2pm (America/Chicago)", FIXED),
+      ]),
+      e(RUN_1, 'RunFinished', { turns: 3, durationMs: 60_000, exitCode: 0 }),
     ])
 
     const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
@@ -350,37 +402,30 @@ describe('the evidence', () => {
   it('walks back to the attempt that refused when the named one refused nothing', () => {
     const first = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
-      e(RUN_1, 'StepFailed', { step: 'proposed', action: 'build', onSha: SHA, evidence: TAIL }),
-      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
+      ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
+      e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
     // The repair, from a log written before `#143` retired the purchase: it
     // finished, cleanly, and produced nothing.
     const repair = foldRun({ runId: RUN_2, at: '2026-09-08T06:00:00.000Z', repair: true, released: null }, 2, [
       e(RUN_2, 'RunStarted', { baseSha: SHA }),
-      e(RUN_2, 'RunFinished', { turns: 5, durationMs: 60_000, costUsd: 5.23, exitCode: 0 }),
+      e(RUN_2, 'RunFinished', { turns: 5, durationMs: 60_000, exitCode: 0 }),
     ])
 
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        // Retired, and still read: this is an old ticket's stream, and the
-        // walk below has to work on one (`#143`).
-        e(ITEM, 'RepairRequested', {
-          runId: RUN_1,
-          reason: 'verify-failed',
-          detail: TAIL,
-          fingerprint: 'x',
-          attempt: 1,
-        }),
-        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'repair' }),
+        e(ITEM, 'TicketReleased', { runId: RUN_1, reason: 'repair', cause: null }),
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'CheckRed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'CheckRefused',
             run: { runId: RUN_2 },
             step: 'proposed',
-            why: 'the repair could not fix it',
-            raw: null,
+            action: 'build',
+            evidence: 'the repair could not fix it',
+            findings: [],
           },
         }),
       ],
@@ -415,17 +460,15 @@ describe('the question', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'Routed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'CheckRefused',
             run: { runId: RUN_1 },
-            when: 'findings',
-            why: LOG,
-            raw: null,
+            step: 'proposed',
+            action: 'build',
+            evidence: LOG,
             findings: [],
-            paths: null,
-            baseSha: null,
-            headSha: null,
           },
         }),
       ],
@@ -433,7 +476,7 @@ describe('the question', () => {
     )
 
     expect(standing.question).toBe(
-      'the repair could not fix it — verify-failed: build: pnpm typecheck && pnpm test exited 2',
+      'the `proposed` step refused: the repair could not fix it — verify-failed: build: pnpm typecheck && pnpm test exited 2',
     )
     expect(standing.question).not.toContain('Scope: 15 of 16')
     expect(standing.question).not.toContain('tsc --noEmit')
@@ -443,17 +486,15 @@ describe('the question', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'Routed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'CheckRefused',
             run: { runId: RUN_1 },
-            when: 'findings',
-            why: `x${'y'.repeat(400)}`,
-            raw: null,
+            step: 'proposed',
+            action: 'build',
+            evidence: `x${'y'.repeat(400)}`,
             findings: [],
-            paths: null,
-            baseSha: null,
-            headSha: null,
           },
         }),
       ],
@@ -467,12 +508,13 @@ describe('the question', () => {
 
 describe('the move the block ends in', () => {
   const blocked = (runId: string) =>
-    e(ITEM, 'WorkItemBlocked', {
-      hold: {
-        _tag: 'Human',
+    e(ITEM, 'WaitStarted', {
+      waitId: 'wait-1',
+      reason: {
+        _tag: 'SignoffRequired',
         run: { runId },
         step: 'merge',
-        source: 'injected',
+        action: 'no-merge',
         question: 'approve?',
       },
     })
@@ -481,7 +523,7 @@ describe('the move the block ends in', () => {
     // #92: they differ the moment a branch is repaired and approval re-requested
     // on a new head, and sending the wrong one refuses what the CLI accepts.
     const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
-      e(RUN_1, 'ApprovalRequested', { step: 'proposed', action: 'human', onSha: 'b'.repeat(40) }),
+      ...stepEnded(RUN_1, 'proposed', 0, [signoffAction('human', 'approve?', 'b'.repeat(40))]),
       e(RUN_1, 'RunProducedDiff', { headSha: SHA, branch: 'agent/89', files: 2, insertions: 9, deletions: 1 }),
     ])
     const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 }), blocked(RUN_1)], [run])
@@ -633,24 +675,20 @@ describe('the block, rendered', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
             _tag: 'MergeRefused',
             run: { runId: RUN_2 },
             reason: 'conflict',
-            why: 'the branch does not merge into develop',
             raw: 'CONFLICT (content): Merge conflict in apps/web/page.tsx',
-            paths: null,
-            baseSha: null,
-            headSha: null,
-            afterApproval: false,
           },
         }),
       ],
       [
         foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
-          e(RUN_2, 'StepFailed', { step: 'proposed', action: 'build', evidence: TAIL }),
+          ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
         ]),
       ],
     )
@@ -678,20 +716,22 @@ describe('the block, rendered', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'CheckRed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'CheckRefused',
             run: { runId: RUN_2 },
             step: 'proposed',
-            why: 'build refused',
-            raw: TAIL,
+            action: 'build',
+            evidence: TAIL,
+            findings: [],
           },
         }),
       ],
       [
         foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
-          e(RUN_2, 'StepFailed', { step: 'proposed', action: 'build', evidence: TAIL }),
+          ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
         ]),
       ],
     )
@@ -705,7 +745,7 @@ describe('the block, rendered', () => {
    * no quote and the gate has to be recognised by its findings.
    */
   it('names the reviewer whose findings a disagreement quotes', () => {
-    const finding = {
+    const finding: Finding = {
       severity: 'major',
       file: 'src/x.ts',
       line: 4,
@@ -715,31 +755,26 @@ describe('the block, rendered', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'Routed',
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: {
+            _tag: 'ProposedEscalated',
             run: { runId: RUN_2 },
-            when: 'findings',
-            why: 'Two agents disagreed.',
-            // `quoteFindings([finding])`, verbatim.
-            raw: '[major] src/x.ts:4 — claim\n\nscenario',
-            findings: [finding],
-            paths: null,
-            baseSha: null,
-            headSha: null,
+            proposal: { _tag: 'ReviewFindings', findings: [finding] },
+            // `quoteFindings([finding])`, carried verbatim through `because`'s
+            // own `why` so `diagnosis.raw` ends up the bracketed text `quotes`
+            // (`task.ts`) matches against, the way `Routed`'s own `raw` did.
+            because: { _tag: 'JudgeHandedOver', why: '[major] src/x.ts:4 — claim\n\nscenario' },
           },
         }),
       ],
       [
         foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
-          e(RUN_2, 'StepFailed', {
-            step: 'proposed',
-            action: 'review',
+          ...stepEnded(RUN_2, 'proposed', 0, [
             // `agent-gate.ts`'s `summarise` and its turns line.
-            evidence: 'major src/x.ts:4 — claim\n\n(12 turns · $0.40)',
-            findings: [finding],
-          }),
+            verdictAction('review', 'major src/x.ts:4 — claim\n\n(12 turns · $0.40)', 'refused', SHA, [finding]),
+          ]),
         ]),
       ],
     )
@@ -770,20 +805,20 @@ describe('the block, rendered', () => {
     const standing = standingOf(
       [
         e(ITEM, 'TicketClaimed', { runId: RUN_2 }),
-        e(ITEM, 'WorkItemBlocked', {
-          hold: {
-            _tag: 'CheckRed',
-            run: { runId: RUN_2 },
-            step: 'proposed',
-            why: 'test still refuses agent/112 into develop after 2 fix round(s)',
-            raw: null,
-          },
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          // `CheckRefused.evidence` is a required string, with no room for the
+          // `raw: null` `diagnoseUnfixed` used to write for "printed nothing and
+          // stayed red" — `FixerDisagrees.said` is nullable, so this reaches
+          // `Evidence`'s own `raw === null` branch the same way. `standing.deciding`
+          // (below, off `run.steps` directly) is what still names `proposed / test`.
+          reason: { _tag: 'FixerDisagrees', run: { runId: RUN_2 }, said: null },
         }),
       ],
       [
         foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
-          e(RUN_2, 'StepFailed', { step: 'proposed', action: 'test', evidence: '' }),
+          ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('test', '', 'refused')]),
         ]),
       ],
     )
