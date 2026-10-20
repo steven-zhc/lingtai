@@ -24,12 +24,6 @@ import { decideRestart, restartReason } from '../src/restart.ts'
 const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
   after: 'pass-1',
   restart: 1,
-  of: 2,
-  action: 'review',
-  rounds: 3,
-  branch: 'agent/144',
-  headSha: '8634c5d0000000000000000000000000000000000',
-  findings: [],
   ...over,
 })
 

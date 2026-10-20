@@ -3597,12 +3597,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               pass.routes.map((route) => ({
                 type: 'PassRouted' as const,
                 actor: 'conductor',
+                // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
+                // own doc on `PassRouted`) — the five derived fields
+                // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
+                // for this file's own reading (the run-log line above,
+                // `restartReason`, `nextPrompt`'s brief) but are not stored a
+                // second time; a reader of the event replays `routeNext`.
                 data: parsePayload('PassRouted', {
-                  from: route.from,
-                  chose: route.chose,
-                  to: route.to,
-                  why: route.why,
-                  ceiling: route.ceiling,
+                  runId,
+                  offer: route.offer,
+                  reply: route.reply,
+                  decision: route.decision,
                 }),
               })),
             )

@@ -32,47 +32,9 @@ import type { EventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
-import { eventOf } from '../src/adapters.ts'
 import { runOnce } from '../src/conduct.ts'
-import type { PassOver } from '../src/pass.ts'
 import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
-
-/**
- * The eight `ActionEvent` types `runActionPipeline` can append, by name —
- * `@lingtai/actions`' own `ActionEvent` union has no runtime list of its
- * tags, and this is the one place that needs one.
- */
-const ACTION_EVENT_TYPES = new Set([
-  'StepRequested',
-  'StepStarted',
-  'StepPassed',
-  'StepFailed',
-  'StepNeverRan',
-  'StepDidNotFinish',
-  'StepAsked',
-  'ApprovalRequested',
-])
-
-/** `{type, step, action, onSha}` — what `once()` checks `eventOf` against, and nothing finer (`#466`). */
-function actionEventFields(type: string, data: { step?: unknown; action?: unknown; onSha?: unknown }) {
-  return { type, step: data.step, action: data.action, onSha: data.onSha }
-}
-
-/**
- * **Not the pipeline's** (`#466`). `conduct.ts`'s own held ending appends one
- * more `ApprovalRequested` directly to the run stream when the branch reached
- * origin and nothing already asked — the `--no-merge`/`merge: false` request,
- * named `judge` or `unfixed` for itself rather than for any action
- * (`conduct.ts:3480`, and its own comment on why: naming it after the action
- * that refused would overwrite that action's own verdict in `task_view`). No
- * `StepOutcome` produces it, because it is not one action's verdict — so it is
- * excluded here rather than chased into `eventOf`.
- */
-function isTheHeldEndingsOwnRequest(type: string, data: { action?: unknown }): boolean {
-  return type === 'ApprovalRequested' && (data.action === 'judge' || data.action === 'unfixed')
-}
 
 /**
  * The two tags, from the plain shape.
@@ -86,51 +48,25 @@ export const withPorts = (ports: RunPorts) =>
   Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent))
 
 /**
- * **The proof against #461's fixture, run on every call rather than once**
- * (`#466`). `onPass` hands this the `PassOver` the moment `runOnce` has it,
- * and after the call returns, the one `pass-*` stream this attempt opened is
- * checked against `eventOf` of the very same `pass.steps` — so a mismatch is
- * `adapters.ts` disagreeing with the pipeline it is adapting, caught here
- * rather than copied into every fixture row by hand (the file header of
- * `unit/what-a-pass-writes-today.test.ts` explains why a copy would not do).
+ * A thin wrapper over `runOnce`, with the recipe resolved through the fake
+ * GitHub's `fileAt` so each test keeps the recipe it wrote.
  *
- * Checks `{type, step, action, onSha}` alone: `evidence` and `findings`
- * carry prose and data this adapter is not asked to reproduce byte for byte,
- * and the ticket's own claim is about which events landed, not their text.
+ * **The write-your-own-adapter check `#461`'s fixture used to run here is
+ * gone (#502).** `StepEnded{outcome}` is `pass.ts`'s own `StepOutcome`
+ * written straight to the log now — there is no second, independently-built
+ * copy of the per-action events for a mismatch to show up between, so the
+ * cross-check this function used to run against `eventOf` would only ever
+ * compare an object to itself.
  */
 export const once = async (options: Parameters<typeof runOnce>[0] & { client: GitHubClient }, ports: RunPorts) => {
-  const before = options.store === undefined ? new Set<string>() : new Set(streams(options.store).keys())
-  const captured: { pass: PassOver | null } = { pass: null }
-
-  const result = await Effect.runPromise(
+  return Effect.runPromise(
     runOnce({
       // The recipe through the fake GitHub's `fileAt`, so each test keeps the
       // recipe it wrote. Where a real run reads it from is `local.test.ts`'s.
       recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? 'main'),
       ...options,
-      onPass: (pass) => {
-        captured.pass = pass
-        options.onPass?.(pass)
-      },
     }).pipe(Effect.provide(withPorts(ports))),
   )
-
-  if (options.store !== undefined && captured.pass !== null) {
-    const pass = captured.pass
-    const newRunId = [...streams(options.store).keys()].find((id) => id.startsWith('pass-') && !before.has(id))
-    if (newRunId !== undefined) {
-      const written = streams(options.store).get(newRunId) ?? []
-      const actual = written
-        .filter((e) => ACTION_EVENT_TYPES.has(e.type) && !isTheHeldEndingsOwnRequest(e.type, e.data as object))
-        .map((e) => actionEventFields(e.type, e.data as { step?: unknown; action?: unknown; onSha?: unknown }))
-      const expected = pass.steps
-        .flatMap((s) => (s.outcome === undefined ? [] : eventOf(s.outcome, newRunId)))
-        .map((e) => actionEventFields(e.type, e.data))
-      expect(actual).toEqual(expected)
-    }
-  }
-
-  return result
 }
 
 export const PROJECT = 'purecheck'
