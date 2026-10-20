@@ -130,6 +130,64 @@ export async function claimWorkItem(ticketId: string, options: ClaimOptions): Pr
   }
 }
 
+export type ContinueRefusal =
+  /** Not `approved` — a requeue, a second approval, a close, all land between the approval and this claim. */
+  | { reason: 'not-approved'; status: string }
+  /** Approved onto a different run than the one this call means to continue. */
+  | { reason: 'wrong-run'; runId: string }
+  /** Another claimant won the append — the daemon and a CLI/board call raced for the same continuation. */
+  | { reason: 'lost-race' }
+
+export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: ContinueRefusal }
+
+/**
+ * Takes a run back up for its continuation (#465, 0118 §11) — `claimWorkItem`'s
+ * sibling, for the one state `claimWorkItem` itself refuses: `approved`,
+ * never `backlog`.
+ *
+ * **The same `TicketClaimed`, naming the same `runId` the approval was
+ * about.** The fold already de-duplicates a run already in `runs`
+ * (`work-item.ts`'s own `TicketClaimed` case), so this is not a second kind
+ * of claim on the log — it is the ordinary one, appended again, onto a run
+ * that has already spent its first claim. A close or a second decision
+ * landing between the approval and this call is a `ConcurrencyError` the
+ * version check catches on its own; `wrong-run` and `not-approved` are read
+ * off the state this call itself fetched, for a caller that wants to say
+ * *why* before it ever reaches the store.
+ */
+export async function continueWorkItem(
+  ticketId: string,
+  runId: string,
+  options: { worker?: string; store?: EventStore } = {},
+): Promise<ContinueResult> {
+  const store = options.store ?? eventStore
+  const worker = options.worker ?? conductorWorker()
+
+  const events = await store.read(ticketId)
+  const state = reduceWorkItem(events)
+
+  if (state.lifecycle.status !== 'approved') {
+    return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } }
+  }
+  if (state.lifecycle.runId !== runId) {
+    return { ok: false, refusal: { reason: 'wrong-run', runId: state.lifecycle.runId } }
+  }
+
+  try {
+    const [written] = await store.append(ticketId, state.version, [
+      {
+        type: 'TicketClaimed',
+        actor: 'conductor',
+        data: parsePayload('TicketClaimed', { runId, worker, title: null, kind: null }),
+      },
+    ])
+    return { ok: true, claim: { ticketId, runId, worker, version: written!.version } }
+  } catch (err) {
+    if (err instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } }
+    throw err
+  }
+}
+
 /**
  * Hands the item back. The only way back: there is no expiry (0027).
  *
