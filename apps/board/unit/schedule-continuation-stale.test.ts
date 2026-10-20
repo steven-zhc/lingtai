@@ -76,7 +76,7 @@ describe("the approved card's continue button", () => {
 
     // The continuation stops at a *new* wait before the click lands —
     // `WaitStarted`'s own fold moves the lifecycle straight back to
-    // `blocked` (`work-item.ts`), on a different wait.
+    // `blocked` (`ticket.ts`), on a different wait.
     await seed(store, ticketId, [
       ...aWait(item, {
         _tag: 'SignoffRequired',

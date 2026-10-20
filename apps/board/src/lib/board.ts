@@ -914,7 +914,7 @@ async function laneWaitIds(tasks: readonly TaskCard[]): Promise<Map<string, { wa
           // second process from the same log on its own schedule — and
           // `item.lifecycle.question` is folded fresh, by `legacyColumns`,
           // in the same `reduceTicket` call that produced `waitId`
-          // (`work-item.ts`'s `WaitStarted` case). Where the projection has
+          // (`ticket.ts`'s `WaitStarted` case). Where the projection has
           // not yet caught up to the wait this read already sees, `t.note`
           // is still the *previous* wait's question — a card that paired it
           // with this fresh `waitId` would send a technically-live id that

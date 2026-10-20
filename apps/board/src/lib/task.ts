@@ -239,7 +239,7 @@ export interface RunView {
    *
    * **Never true of an attempt started after `#143`**, and still read for ever.
    * A refusal buys no run now, so nothing appends one any more, and
-   * `work-item.ts` has dropped the fold this mirrored; `task-view.ts` keeps its
+   * `ticket.ts` has dropped the fold this mirrored; `task-view.ts` keeps its
    * own for the same reason this one stays: a log that holds the event holds a
    * second attempt that *was* a repair, and reading it as ordinary work would
    * move real money into the wrong figure.
@@ -996,10 +996,10 @@ const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['endin
 /**
  * Every claim this item made, oldest first.
  *
- * Deduplicated by `runId` the way `work-item.ts` deduplicates `runs`: a second
+ * Deduplicated by `runId` the way `ticket.ts` deduplicates `runs`: a second
  * claim naming a run already claimed is the same attempt, not a fourth one.
  *
- * The repair walk mirrored a fold in `work-item.ts` — a bought repair left a
+ * The repair walk mirrored a fold in `ticket.ts` — a bought repair left a
  * repair pending and the next claim consumed it — and was written here rather
  * than borrowed because this needs it for *every* run, where the aggregate kept
  * only the current one. The aggregate's half is gone with the purchase (`#143`)
