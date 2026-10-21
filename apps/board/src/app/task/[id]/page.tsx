@@ -778,7 +778,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           select that tab — see `openTo` here, and `panelOf` there. */}
       <Reveal />
 
-      <div className="detail-body">
+      <div className={`detail-body${task.standing.state === 'blocked' ? ' detail-body--waiting' : ''}`}>
         <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
         <Standing
