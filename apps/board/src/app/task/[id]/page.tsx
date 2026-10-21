@@ -755,7 +755,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
   const spendCurrency = spendChip(task.spendCurrency)
 
   return (
-    <main className="detail">
+    <main className={`detail${task.standing.state === 'blocked' ? ' detail--waiting' : ''}`}>
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai

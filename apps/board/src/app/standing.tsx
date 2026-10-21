@@ -62,19 +62,22 @@ export function TriageBand({
     case 'Queued':
       return (
         <section className="triage-band" data-rank="triage">
-          triage is waiting to run
+          <span className="triage-label">Triage</span>
+          <p>triage is waiting to run</p>
         </section>
       )
     case 'Running':
       return (
         <section className="triage-band" data-rank="triage">
-          triage is running
+          <span className="triage-label">Triage</span>
+          <p>triage is running</p>
         </section>
       )
     case 'Interrupted':
       return (
         <section className="triage-band" data-rank="triage">
-          the daemon stopped during triage; it will be tried again on the next start
+          <span className="triage-label">Triage</span>
+          <p>the daemon stopped during triage; it will be tried again on the next start</p>
         </section>
       )
     case 'Done': {
@@ -82,6 +85,7 @@ export function TriageBand({
       if (result._tag === 'TriageFailed')
         return (
           <section className="triage-band triage-band--failed" data-rank="triage">
+            <span className="triage-label">Triage · failed</span>
             {headLine ? <p>{headLine}</p> : null}
             <p>triage failed: “{result.why}”</p>
           </section>
@@ -145,23 +149,27 @@ export function TriageBand({
       const readings = disagreement(reason, result)
       const triageReading = (
         <>
-          <p>{cause._tag}</p>
-          <p>{result.summary}</p>
-          <p>Recommends {result.resolution}</p>
-          {parts}
+          <p className="triage-cause">{cause._tag}</p>
+          <p className="triage-summary">{result.summary}</p>
+          <p className="triage-recommendation">Recommends {result.resolution}</p>
+          {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
       )
       return (
-        <section className="triage-band triage-band--advised" data-rank="triage">
+        <section
+          className={`triage-band triage-band--advised${cause._tag === 'ConflictingHunks' ? ' triage-band--conflict' : ''}`}
+          data-rank="triage"
+        >
+          <span className="triage-label">Triage</span>
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
             triageReading
           ) : (
             <>
-              <p>Which reading is right?</p>
+              <p className="triage-disagreement">Which reading is right?</p>
               <div className="triage-readings">
                 <div>
-                  <p>Judge</p>
+                  <p className="triage-reading-label">Judge</p>
                   <p>Chose {readings.judge.chose}</p>
                   {readings.judge.why !== null ? <p>{readings.judge.why}</p> : null}
                   {raw !== null && raw !== undefined && raw.trim() !== '' ? (
@@ -169,7 +177,7 @@ export function TriageBand({
                   ) : null}
                 </div>
                 <div>
-                  <p>Triage</p>
+                  <p className="triage-reading-label">Triage</p>
                   {triageReading}
                 </div>
               </div>
