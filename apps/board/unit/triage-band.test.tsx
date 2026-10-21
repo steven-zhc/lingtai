@@ -56,8 +56,39 @@ describe('current wait triage band', () => {
   it('draws a conflict count and the new-base recommendation past 20', () => {
     const html = draw(advised({ _tag: 'ConflictingHunks', total: 21, hunks: [] }))
     expect(html).toContain('21 conflicting hunks')
-    expect(html).toContain('hunk list is not drawn yet')
+    expect(html).not.toContain('<details')
     expect(html).toContain('start over from the new base')
+  })
+
+  it('lists every hunk, opening only divergent ones with their questions', () => {
+    const html = draw(
+      advised({
+        _tag: 'ConflictingHunks',
+        total: 2,
+        hunks: [
+          { _tag: 'Mechanical', path: 'src/a.ts', line: 4 },
+          {
+            _tag: 'Divergent',
+            path: 'src/b.ts',
+            line: 9,
+            question: {
+              id: 'q',
+              text: '<which behavior?>',
+              answers: [
+                { id: 'a', text: 'keep A' },
+                { id: 'b', text: 'keep B' },
+              ],
+              recommended: 'b',
+            },
+          },
+        ],
+      }),
+    )
+    expect(html).toContain('<details><summary>src/a.ts:4 — Mechanical</summary></details>')
+    expect(html).toContain('<details open=""><summary>src/b.ts:9 — Divergent</summary>')
+    expect(html).toContain('&lt;which behavior?&gt;')
+    expect(html).toContain('keep A')
+    expect(html).toContain('keep B (recommended)')
   })
 
   it.each(['WrongApproach', 'TicketTooBig', 'SetupBroken'] as const)('%s has its summary alone', (_tag) => {

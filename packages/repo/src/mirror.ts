@@ -44,6 +44,22 @@ export async function refSha(options: MirrorOptions & { ref: string }): Promise<
   }).catch(() => null)
 }
 
+/** Read a branch without treating a missing ref as a failed mirror read. */
+export async function mirrorBranchSha(
+  options: MirrorOptions & { ref: string },
+): Promise<{ at: string } | { missing: true } | { unreadable: string }> {
+  const cwd = mirrorPathFor(options.project, options.home)
+  try {
+    if ((await git(['rev-parse', '--is-bare-repository'], { cwd })) !== 'true') {
+      return { unreadable: `${cwd} is not a bare git mirror` }
+    }
+    const sha = await git(['for-each-ref', '--format=%(objectname)', options.ref], { cwd })
+    return sha === '' ? { missing: true } : { at: sha }
+  } catch (error) {
+    return { unreadable: (error as Error).message }
+  }
+}
+
 /**
  * One file at one ref, or null.
  *

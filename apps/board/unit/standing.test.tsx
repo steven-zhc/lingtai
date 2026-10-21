@@ -1238,6 +1238,7 @@ it('ignores triage facts for a wait that is no longer current', () => {
         want: null,
       },
     },
+    triageHeadSha: 'old-head',
   }
   const status = currentTriageStatus(HELD, card, { declared: true, daemonStartedAt: null })
   expect(status).toBeNull()

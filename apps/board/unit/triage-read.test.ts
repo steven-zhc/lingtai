@@ -63,7 +63,8 @@ it('reports a failed daemon-status read for an unfinished triage attempt', async
     ReturnType<typeof readStatus>
   >)
   await expect(loadCurrentTriageStatus('ticket-lingtai-112', 'lingtai', current)).resolves.toEqual({
-    _tag: 'Interrupted',
+    status: { _tag: 'Interrupted' },
+    headSha: null,
   })
 
   vi.mocked(readStatus).mockRejectedValue(new Error('daemon status unavailable'))
