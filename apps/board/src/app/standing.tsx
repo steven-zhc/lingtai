@@ -16,6 +16,7 @@ import {
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
 import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
+import { Children, type ReactNode } from 'react'
 
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -33,6 +34,12 @@ import { FollowedLog } from './run-log.tsx'
 import { TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const TICKET_OPENING_LINES = 8
+
+/** Reorder keyed siblings so visual, reading, and tab order agree without remounting the editor. */
+function ResolutionOrder({ children, editFirst }: { children: ReactNode; editFirst: boolean }) {
+  const controls = Children.toArray(children)
+  return editFirst ? controls.reverse() : controls
+}
 
 /** Agent-written fields stay React text; there is no markdown path in this band. */
 export function TriageBand({
@@ -641,7 +648,8 @@ export function Standing({
 
           {/* ---- rank 4: the moves ---------------------------------------------- */}
 
-          {/* Above both boxes rather than under them (#152). Under them, a
+          <ResolutionOrder editFirst={recommended === 'EditBodyAndRequeue'}>
+            {/* Above both boxes rather than under them (#152). Under them, a
           discussion that grew pushed the button you were deciding with off the
           screen; above them, nothing that grows is before it.
 
@@ -653,127 +661,128 @@ export function Standing({
           the one that had no button at all (#111). Reject and Waive are gone
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
-          {acting && standing.state === 'blocked' ? (
-            standing.waitId === null || standing.reason === null ? (
-              // Defensive, not reachable in the ordinary case: `standingOf` sets
-              // `waitId` and `reason` from the same fold as `state`, so a
-              // `blocked` standing carries both by construction. Kept rather than
-              // asserted past, because a button `Decide`/`Requeue`/`Close` cannot
-              // send a wait id to is exactly the `#84` complaint this file's own
-              // header states as a rule — a card must never offer a control bound
-              // to refuse (#508), so none is offered here.
-              <div className="btnrow smoves" data-rank="moves">
-                <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-              </div>
-            ) : (
-              <div className="btnrow smoves" data-rank="moves">
-                {/* Every move drawn below comes off `moves` (`movesOf`,
+            {acting && standing.state === 'blocked' ? (
+              standing.waitId === null || standing.reason === null ? (
+                // Defensive, not reachable in the ordinary case: `standingOf` sets
+                // `waitId` and `reason` from the same fold as `state`, so a
+                // `blocked` standing carries both by construction. Kept rather than
+                // asserted past, because a button `Decide`/`Requeue`/`Close` cannot
+                // send a wait id to is exactly the `#84` complaint this file's own
+                // header states as a rule — a card must never offer a control bound
+                // to refuse (#508), so none is offered here.
+                <div className="btnrow smoves" data-rank="moves">
+                  <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+                </div>
+              ) : (
+                <div className="btnrow smoves" data-rank="moves">
+                  {/* Every move drawn below comes off `moves` (`movesOf`,
                 `allowedResolutions(standing.reason)`) and nothing else — no
                 `awaitingSha`, `asked` or `state === 'blocked'` condition
                 decides which control exists any more (#442). `awaitingSha`
                 still decides what `Decide` sends, and `sendable` still decides
                 whether Requeue sends a document or asks for one, but neither
                 decides whether a control is on the row. */}
-                {orderedMoves.map((move) => {
-                  const waitId = standing.waitId
-                  if (waitId === null) return null
-                  switch (move) {
-                    case 'approve':
-                      return standing.awaitingSha !== null ? (
-                        <Decide
-                          key={move}
-                          project={project}
-                          issue={issue}
-                          onSha={standing.awaitingSha}
-                          waitId={waitId}
-                          refusing={standing.failed.length > 0}
-                          recommended={recommended === 'Approve' ? 'approve' : null}
-                        />
-                      ) : null
+                  {orderedMoves.map((move) => {
+                    const waitId = standing.waitId
+                    if (waitId === null) return null
+                    switch (move) {
+                      case 'approve':
+                        return standing.awaitingSha !== null ? (
+                          <Decide
+                            key={move}
+                            project={project}
+                            issue={issue}
+                            onSha={standing.awaitingSha}
+                            waitId={waitId}
+                            refusing={standing.failed.length > 0}
+                            recommended={recommended === 'Approve' ? 'approve' : null}
+                          />
+                        ) : null
 
-                    case 'approve-unavailable':
-                      return (
-                        <p key={move} className="refusal">
-                          nothing to approve — this run recorded no sha to continue from
-                        </p>
-                      )
+                      case 'approve-unavailable':
+                        return (
+                          <p key={move} className="refusal">
+                            nothing to approve — this run recorded no sha to continue from
+                          </p>
+                        )
 
-                    case 'send':
-                      return sendable !== null ? (
-                        <Send
-                          key={move}
-                          taskId={taskId}
-                          attempt={sendable}
-                          // Amber follows the current wait's recommendation.
-                          primary={recommended === 'Requeue'}
-                        />
-                      ) : null
+                      case 'send':
+                        return sendable !== null ? (
+                          <Send
+                            key={move}
+                            taskId={taskId}
+                            attempt={sendable}
+                            // Amber follows the current wait's recommendation.
+                            primary={recommended === 'Requeue'}
+                          />
+                        ) : null
 
-                    case 'requeue':
-                      return (
-                        <Requeue
-                          key={move}
-                          project={project}
-                          issue={issue}
-                          waitId={waitId}
-                          asked={false}
-                          question={standing.askedQuestion}
-                          recommended={recommended === 'Requeue' ? 'requeue' : null}
-                        />
-                      )
+                      case 'requeue':
+                        return (
+                          <Requeue
+                            key={move}
+                            project={project}
+                            issue={issue}
+                            waitId={waitId}
+                            asked={false}
+                            question={standing.askedQuestion}
+                            recommended={recommended === 'Requeue' ? 'requeue' : null}
+                          />
+                        )
 
-                    case 'answer':
-                      return (
-                        <Requeue
-                          key={move}
-                          project={project}
-                          issue={issue}
-                          waitId={waitId}
-                          asked={true}
-                          question={standing.askedQuestion}
-                          recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
-                        />
-                      )
+                      case 'answer':
+                        return (
+                          <Requeue
+                            key={move}
+                            project={project}
+                            issue={issue}
+                            waitId={waitId}
+                            asked={true}
+                            question={standing.askedQuestion}
+                            recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
+                          />
+                        )
 
-                    case 'edit-body':
-                      return null
+                      case 'edit-body':
+                        return null
 
-                    case 'close': {
-                      const prefill =
-                        recommended === 'Close' &&
-                        standing.triageStatus?._tag === 'Done' &&
-                        standing.triageStatus.result._tag === 'TriageAdvised'
-                          ? standing.triageStatus.result.summary
-                          : null
-                      return (
-                        <Close
-                          key={`${move}:${prefill ?? ''}`}
-                          project={project}
-                          issue={issue}
-                          waitId={standing.waitId}
-                          primary={recommended === 'Close'}
-                          prefill={prefill}
-                        />
-                      )
+                      case 'close': {
+                        const prefill =
+                          recommended === 'Close' &&
+                          standing.triageStatus?._tag === 'Done' &&
+                          standing.triageStatus.result._tag === 'TriageAdvised'
+                            ? standing.triageStatus.result.summary
+                            : null
+                        return (
+                          <Close
+                            key={`${move}:${prefill ?? ''}`}
+                            project={project}
+                            issue={issue}
+                            waitId={standing.waitId}
+                            primary={recommended === 'Close'}
+                            prefill={prefill}
+                          />
+                        )
+                      }
                     }
-                  }
-                })}
-              </div>
-            )
-          ) : null}
+                  })}
+                </div>
+              )
+            ) : null}
 
-          {/* Keep the editor mounted across a Follow refresh: a body write can
+            {/* Keep the editor mounted across a Follow refresh: a body write can
           succeed just before another decision moves this wait out of blocked. */}
-          {acting ? (
-            <div className={recommended === 'EditBodyAndRequeue' ? 'sedit recommended' : 'sedit'}>
-              <EditBodyAndRequeue
-                project={project}
-                issue={issue}
-                waitId={standing.state === 'blocked' && moves.includes('edit-body') ? standing.waitId : null}
-                reason={standing.reason}
-              />
-            </div>
-          ) : null}
+            {acting ? (
+              <div key="edit" className="sedit">
+                <EditBodyAndRequeue
+                  project={project}
+                  issue={issue}
+                  waitId={standing.state === 'blocked' && moves.includes('edit-body') ? standing.waitId : null}
+                  reason={standing.reason}
+                />
+              </div>
+            ) : null}
+          </ResolutionOrder>
 
           {/* The queued item's own row, and it has exactly one move. `lingtai now`
           was the only control this state ever had and it lived in a terminal;

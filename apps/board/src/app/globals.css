@@ -940,7 +940,6 @@ details[open] > summary::before { content: "▾"; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.sresolutions > .sedit.recommended { order: -1; }
 .swant { margin: 0; max-width: 62rem; color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
 .topening { max-width: 62rem; font-size: 0.85rem; color: var(--ink-2); }
 .topening > a { display: inline-block; margin-top: 0.5rem; color: var(--accent-ink); }

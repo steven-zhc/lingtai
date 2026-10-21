@@ -295,6 +295,27 @@ describe('a blocked task', () => {
     expect(html.slice(positions[4])).toContain(`<pre class="sraw">${CRASH}</pre>`)
   })
 
+  it('puts a recommended body edit before the other resolutions in reading order', () => {
+    const t = blocked()
+    const standing: TaskDetail['standing'] = {
+      ...t.standing,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: 'EditBodyAndRequeue',
+          summary: 'Add the missing context',
+          want: 'Get the reviewer running',
+        },
+      },
+    }
+    const html = page({ ...t, standing })
+    const resolutions = html.slice(html.indexOf('data-rank="resolutions"'), html.indexOf('data-rank="pair"'))
+    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('data-rank="moves"'))
+    expect(resolutions.indexOf('data-rank="moves"')).toBeLessThan(resolutions.indexOf('Send attempt 2'))
+  })
+
   it('keeps the raw refusal in Attempts, after the decision', () => {
     const html = page(blocked())
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
