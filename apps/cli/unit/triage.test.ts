@@ -24,6 +24,26 @@ function reasonOn(runId: string): WaitReason {
   return { _tag: 'SignoffRequired', run: aRunRef(runId), step: 'merge', action: 'human:land', question: 'land it?' }
 }
 
+function conflictReason(baseSha: string | null, headSha: string | null): WaitReason {
+  return {
+    _tag: 'ProposedEscalated',
+    run: aRunRef('run-conflict'),
+    proposal: { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha, headSha },
+    because: { _tag: 'NotAsked' },
+  }
+}
+
+const CONFLICT_PATH = {
+  path: 'a.ts',
+  baseOid: 'a'.repeat(40),
+  oursOid: 'b'.repeat(40),
+  theirsOid: 'c'.repeat(40),
+  base: 'before',
+  ours: 'ours',
+  theirs: 'theirs',
+  hunks: 1,
+}
+
 function requestOn(ticketId: string, waitId: WaitId, overrides: Partial<WaitTriageRequest> = {}): WaitTriageRequest {
   return { ticketId, waitId, reason: OWN_QUESTION, triage: TRIAGE, ...overrides }
 }
@@ -82,6 +102,7 @@ function fakeMirror(overrides: Partial<TriagePorts['mirror']> = {}): TriagePorts
     listAt: async () => ({ paths: [], truncated: false }),
     readAt: async () => null,
     diffStatAt: async () => null,
+    conflictedPathsAt: async () => [],
     ...overrides,
   }
 }
@@ -223,6 +244,82 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
 }
 
 describe('waitTriage', () => {
+  it('answers over twenty hunks mechanically without creating a runtime or recording spend', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 414)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 21 }] }),
+    })
+    const result = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: conflictReason('a', 'b') }))
+    expect(result.result).toMatchObject({
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'ConflictingHunks', hunks: [], total: 21 },
+      resolution: 'Requeue',
+      want: null,
+    })
+    expect(deps.runtime).not.toHaveBeenCalled()
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+    expect((events[0]!.data as { by: unknown }).by).toEqual({ _tag: 'Mechanical' })
+    expect((events[1]!.data as { by: unknown; headSha: string }).by).toEqual({ _tag: 'Mechanical' })
+    expect((events[1]!.data as { headSha: string }).headSha).toBe('b')
+  })
+
+  it('puts all three conflict sides into the agent brief at twenty or fewer hunks', async () => {
+    const store = createMemoryEventStore()
+    let prompt = ''
+    const { runtime } = stubRuntime((request) => {
+      prompt = request.prompt
+      return ADVISED
+    })
+    const mirrorCall = vi.fn(async () => [CONFLICT_PATH])
+    const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: mirrorCall }) })
+    await waitTriage(deps, requestOn(ticketStream('lingtai', 415), aWaitId(), { reason: conflictReason('a', 'b') }))
+    expect(mirrorCall).toHaveBeenCalledWith({ project: 'lingtai', baseSha: 'a', headSha: 'b' })
+    expect(prompt).toContain('"base": "before"')
+    expect(prompt).toContain('"ours": "ours"')
+    expect(prompt).toContain('"theirs": "theirs"')
+    expect(prompt).toContain('Give each Divergent hunk its own question')
+  })
+
+  it.each([
+    [null, 'b'],
+    ['a', null],
+  ])('leaves a missing conflict SHA on the ordinary agent path', async (baseSha, headSha) => {
+    const store = createMemoryEventStore()
+    const { runtime } = stubRuntime(() => ADVISED)
+    const mirrorCall = vi.fn(async () => [CONFLICT_PATH])
+    const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: mirrorCall }) })
+    await waitTriage(
+      deps,
+      requestOn(ticketStream('lingtai', 416), aWaitId(), { reason: conflictReason(baseSha, headSha) }),
+    )
+    expect(mirrorCall).not.toHaveBeenCalled()
+    expect(deps.runtime).toHaveBeenCalledOnce()
+  })
+
+  it('records a helper refusal as one mechanical failure without an agent', async () => {
+    const store = createMemoryEventStore()
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({
+        conflictedPathsAt: async () => {
+          throw new Error('git 2.38 is required')
+        },
+      }),
+    })
+    const result = await waitTriage(
+      deps,
+      requestOn(ticketStream('lingtai', 417), aWaitId(), { reason: conflictReason('a', 'b') }),
+    )
+    expect(result.result).toEqual({ _tag: 'TriageFailed', why: 'git 2.38 is required' })
+    expect(deps.runtime).not.toHaveBeenCalled()
+    const events = await store.read(ticketStream('lingtai', 417))
+    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+    expect((events[0]!.data as { by: unknown }).by).toEqual({ _tag: 'Mechanical' })
+    expect((events[1]!.data as { by: unknown }).by).toEqual({ _tag: 'Mechanical' })
+  })
   it('appends TriageStarted, one RunSpent per call, then one WaitTriaged — advised on a good reply', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 1)

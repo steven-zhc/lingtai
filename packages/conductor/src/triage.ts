@@ -67,6 +67,19 @@ export interface TriageEvidence {
   /** What is readable and what is not, in Lingtai's words — the same shape `discuss.ts`'s `reading` is. */
   reading: readonly string[]
   refs: readonly ReadableRef[]
+  /** Analysed merge stages, when the conflict's commit SHAs were available. */
+  conflicts?:
+    | readonly {
+        path: string
+        baseOid: string | null
+        oursOid: string | null
+        theirsOid: string | null
+        base: string | null
+        ours: string | null
+        theirs: string | null
+        hunks: number
+      }[]
+    | null
 }
 
 // ----------------------------------------------------------------- brief ----
@@ -236,6 +249,10 @@ ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decis
 
   const index = renderIndex(evidence.refs)
   const files = renderServed(input.served)
+  const conflicts =
+    evidence.conflicts === null || evidence.conflicts === undefined
+      ? ''
+      : `\n## Merge conflict from the mirror\n\n${JSON.stringify(evidence.conflicts, null, 2)}\n\nList every counted hunk as Mechanical or Divergent. Give each Divergent hunk its own question. Propose a resolution; apply nothing.\n`
 
   const budget =
     input.roundsLeft > 0
@@ -260,6 +277,7 @@ ${reasonBlock}${routedBlock}
 ${publishedLine}
 
 ${diffLine}
+${conflicts}
 
 ## What is readable
 

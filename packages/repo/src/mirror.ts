@@ -11,7 +11,7 @@ import { join } from 'node:path'
  * shell so it could read for itself would not extend that shape, it would make
  * it the run agent under a different name.
  *
- * Nothing here writes, fetches or checks anything out. The mirror is Lingtai's
+ * Nothing here fetches or checks anything out. The mirror is Lingtai's
  * own copy and the conductor is what keeps it current; a reader that fetched
  * would be changing the thing it was asked to describe.
  *
@@ -123,4 +123,79 @@ export async function listAt(
   if (out === null) return { paths: [], truncated: false }
   const paths = out.split('\n').filter((p) => p !== '')
   return { paths: paths.slice(0, limit), truncated: paths.length > limit }
+}
+
+export interface ConflictedPath {
+  path: string
+  /** Stage 1, 2 and 3 blob identities; absent stages stay null. */
+  baseOid: string | null
+  oursOid: string | null
+  theirsOid: string | null
+  base: string | null
+  ours: string | null
+  theirs: string | null
+  hunks: number
+}
+
+/**
+ * Inspect a merge by commit SHA in the bare mirror. `merge-tree --write-tree`
+ * creates loose tree and blob objects there, but never moves or creates a ref.
+ * Each side is bounded because the caller puts it in a triage prompt.
+ */
+export async function conflictedPathsAt(
+  options: MirrorOptions & { baseSha: string; headSha: string; limitBytes?: number },
+): Promise<ConflictedPath[]> {
+  const cwd = mirrorPathFor(options.project, options.home)
+  const version = await git(['--version'], { cwd })
+  const match = /git version (\d+)\.(\d+)/.exec(version)
+  if (!match || Number(match[1]) < 2 || (Number(match[1]) === 2 && Number(match[2]) < 38)) {
+    throw new Error(`git merge-tree --write-tree requires git 2.38 or later; found ${version}`)
+  }
+
+  let output: string
+  try {
+    output = await git(['merge-tree', '--write-tree', '-z', options.baseSha, options.headSha], { cwd })
+  } catch (err) {
+    const failure = err as Error & { code?: number; stdout?: string }
+    if (failure.code !== 1 || typeof failure.stdout !== 'string') throw err
+    output = failure.stdout
+  }
+  const records = output.split('\0')
+  const tree = records[0]?.trim()
+  if (!tree || !/^[0-9a-f]{40,64}$/.test(tree)) throw new Error('git merge-tree returned no written tree')
+
+  const stages = new Map<string, [string | null, string | null, string | null]>()
+  for (const record of records.slice(1)) {
+    const stage = /^(?:\d{6}) ([0-9a-f]{40,64}) ([123])\t([\s\S]+)$/.exec(record)
+    if (!stage) continue
+    const path = stage[3]!
+    const sides: [string | null, string | null, string | null] = stages.get(path) ?? [null, null, null]
+    sides[Number(stage[2]) - 1] = stage[1]!
+    stages.set(path, sides)
+  }
+
+  const limit = options.limitBytes ?? 64_000
+  const readBlob = async (oid: string | null): Promise<string | null> => {
+    if (oid === null) return null
+    const content = await git(['cat-file', '-p', oid], { cwd })
+    return content.length > limit
+      ? `${content.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${content.length}]`
+      : content
+  }
+  const paths: ConflictedPath[] = []
+  for (const [path, [baseOid, oursOid, theirsOid]] of stages) {
+    const merged = await git(['show', `${tree}:${path}`], { cwd }).catch(() => null)
+    const hunks = Math.max(1, merged?.split('\n').filter((line) => line.startsWith('<<<<<<< ')).length ?? 0)
+    paths.push({
+      path,
+      baseOid,
+      oursOid,
+      theirsOid,
+      base: await readBlob(baseOid),
+      ours: await readBlob(oursOid),
+      theirs: await readBlob(theirsOid),
+      hunks,
+    })
+  }
+  return paths
 }
