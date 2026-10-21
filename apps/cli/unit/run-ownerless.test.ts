@@ -66,6 +66,7 @@ env:
   plantAt: .env.local
 runtime:
   agent: claude-code
+triage: {}
 steps:
   implement:
     - name: write it
@@ -132,6 +133,7 @@ describe('run, for a project with no owner', () => {
     // The ticket verbs are the fake db tickets' — not a `GitHubClient`'s.
     expect(handed[0]?.client.listOpenIssues).toBe(FAKE_DB_TICKETS.listOpenIssues)
     expect(handed[0]?.client.getIssue).toBe(FAKE_DB_TICKETS.getIssue)
+    expect(lines).toContain('triage: is declared; waits from this run are triaged when a daemon next starts')
   })
 })
 
