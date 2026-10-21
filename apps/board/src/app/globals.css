@@ -1180,6 +1180,48 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .detail--waiting .triage-band--conflict .triage-cause { background: var(--held); }
 
+/* Each allowed outcome has its own reading and action surface. The first card
+   gets extra room, while auto-fit lets the remaining cards wrap inside the
+   Waiting page's bounded measure. */
+.sresolutiongrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 0.85rem;
+  min-width: 0;
+}
+.sresolution {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: clamp(1rem, 2vw, 1.35rem);
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.sresolution[hidden] { display: none; }
+.sresolution[data-resolution='EditBodyAndRequeue']:has(.sresolutionaction:empty) { display: none; }
+.sresolution--recommended { grid-column: span 2; border: 2px solid var(--accent); }
+.sresolutionhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
+.sresolutionhead h3 { margin: 0; font-size: 1.05rem; line-height: 1.35; }
+.sresolutionbadge {
+  padding: 0.2rem 0.5rem;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.sresolutionconsequence { margin: 0; color: var(--ink-2); font-size: 0.86rem; line-height: 1.5; }
+.sresolutioninput { margin: 0; color: var(--accent-ink); font-size: 0.76rem; line-height: 1.4; }
+.sresolutionaction { margin-top: auto; min-width: 0; }
+.sresolutionaction .decide,
+.sresolutionaction .reason { min-width: 0; }
+.sresolutionaction .reason input,
+.sresolutionaction .reason textarea { max-width: 100%; }
+.sresolutionaction .btn { max-width: 100%; white-space: normal; }
+
 @media (max-width: 48rem) {
   .detail--waiting .swhere .segs {
     grid-template-columns: repeat(10, minmax(3.5rem, 1fr));
@@ -1187,6 +1229,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
     padding-bottom: 0.35rem;
   }
   .detail--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 40rem) {
+  .sresolution--recommended { grid-column: auto; }
 }
 
 /* Verbatim stopping evidence in Attempts and in a disagreement comparison.

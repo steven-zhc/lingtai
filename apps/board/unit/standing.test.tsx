@@ -1185,8 +1185,8 @@ const OUTGOING: OutgoingView = {
   problem: null,
 }
 
-/** Just the row of moves: the Ask button inside the discussion is amber too. */
-const moves = (html: string) => html.slice(html.indexOf('class="btnrow smoves"'), html.indexOf('class="spair"'))
+/** Just the resolutions: the Ask button inside the discussion is amber too. */
+const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
 
 /**
  * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
@@ -1261,15 +1261,20 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
       outgoing: OUTGOING,
       queued: null,
     })
-    const find = (node: ReactNode, path: string): { path: string; key: string | null; waitId: unknown } | null => {
+    const find = (
+      node: ReactNode,
+      path: string,
+      hidden = false,
+    ): { path: string; waitId: unknown; hidden: boolean } | null => {
       let found: ReturnType<typeof find> = null
       Children.forEach(node, (child, index) => {
         if (found !== null || !isValidElement(child)) return
-        const here = `${path}/${index}`
+        const here = `${path}/${child.key ?? index}`
+        const isHidden = hidden || (child.props as { hidden?: boolean }).hidden === true
         if (child.type === EditBodyAndRequeue) {
-          found = { path: here, key: child.key, waitId: (child.props as { waitId: unknown }).waitId }
+          found = { path: here, waitId: (child.props as { waitId: unknown }).waitId, hidden: isHidden }
         } else {
-          found = find((child.props as { children?: ReactNode }).children, here)
+          found = find((child.props as { children?: ReactNode }).children, here, isHidden)
         }
       })
       return found
@@ -1282,7 +1287,8 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
   expect(offered?.waitId).toBe(HELD.waitId)
   expect(moved?.waitId).toBeNull()
   expect(moved?.path).toBe(offered?.path)
-  expect(moved?.key).toBe(offered?.key)
+  expect(offered?.hidden).toBe(false)
+  expect(moved?.hidden).toBe(false)
 })
 
 it('ignores triage facts for a wait that is no longer current', () => {
@@ -1563,7 +1569,7 @@ describe('the moves the column ends in', () => {
 
     expect(html).toContain('class="spair"')
     expect(html.indexOf('will be sent')).toBeLessThan(html.indexOf('discussion'))
-    expect(html.indexOf('class="btnrow smoves"')).toBeLessThan(html.indexOf('class="spair"'))
+    expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('class="spair"'))
   })
 })
 

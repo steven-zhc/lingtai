@@ -312,8 +312,11 @@ describe('a blocked task', () => {
     }
     const html = page({ ...t, standing })
     const resolutions = html.slice(html.indexOf('data-rank="resolutions"'), html.indexOf('data-rank="pair"'))
-    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('data-rank="moves"'))
-    expect(resolutions.indexOf('data-rank="moves"')).toBeLessThan(resolutions.indexOf('Send attempt 2'))
+    expect(resolutions.indexOf('data-resolution="EditBodyAndRequeue"')).toBeLessThan(
+      resolutions.indexOf('data-resolution="Requeue"'),
+    )
+    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('Send attempt 2'))
+    expect(resolutions).toContain('Triage recommended')
   })
 
   it('keeps the raw refusal in Attempts, after the decision', () => {

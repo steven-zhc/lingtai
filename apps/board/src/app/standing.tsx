@@ -16,7 +16,6 @@ import {
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
 import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
-import { Children, type ReactNode } from 'react'
 
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -35,10 +34,27 @@ import { TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const TICKET_OPENING_LINES = 8
 
-/** Reorder keyed siblings so visual, reading, and tab order agree without remounting the editor. */
-function ResolutionOrder({ children, editFirst }: { children: ReactNode; editFirst: boolean }) {
-  const controls = Children.toArray(children)
-  return editFirst ? controls.reverse() : controls
+const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
+  Approve: {
+    title: 'Approve and continue',
+    consequence: 'Continue this run from its recorded commit. Any refusal at this hold is waived.',
+  },
+  AnswerQuestion: {
+    title: 'Answer the question',
+    consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
+  },
+  Requeue: {
+    title: 'Start another pass',
+    consequence: 'Return the ticket to the queue for a new pass from main. The current branch is not continued.',
+  },
+  EditBodyAndRequeue: {
+    title: 'Add to the ticket and start over',
+    consequence: 'Append your text to the ticket body, then queue a new pass from main with that text.',
+  },
+  Close: {
+    title: 'Close the ticket',
+    consequence: 'End this ticket without another pass. A reason is required.',
+  },
 }
 
 /** Agent-written fields stay React text; there is no markdown path in this band. */
@@ -393,34 +409,26 @@ export function Standing({
   const sendable =
     outgoing !== null && outgoing.problem === null && !allowed.includes('AnswerQuestion') ? outgoing.attempt : null
 
-  // The moves row's own list, and the only thing it draws from (#442). See
-  // `movesOf`.
-  const moves = movesOf(allowed, standing.awaitingSha, sendable)
   const recommended =
     standing.reason !== null && standing.triageStatus !== null
       ? recommendedResolution(standing.reason, standing.triageStatus)
       : null
-  const moveFor = (move: (typeof moves)[number]): Resolution['_tag'] | null => {
-    switch (move) {
-      case 'approve':
-        return 'Approve'
-      case 'send':
-      case 'requeue':
-        return 'Requeue'
-      case 'edit-body':
-        return 'EditBodyAndRequeue'
-      case 'answer':
-        return 'AnswerQuestion'
-      case 'close':
-        return 'Close'
-      case 'approve-unavailable':
-        return null
-    }
-  }
-  const orderedMoves =
-    recommended === null
-      ? moves
-      : [...moves].sort((a, b) => Number(moveFor(b) === recommended) - Number(moveFor(a) === recommended))
+  const triageRecommended =
+    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised' ? recommended : null
+  const closePrefill =
+    triageRecommended === 'Close' &&
+    standing.triageStatus?._tag === 'Done' &&
+    standing.triageStatus.result._tag === 'TriageAdvised'
+      ? standing.triageStatus.result.summary
+      : null
+  const orderedResolutions =
+    recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
+  // Keep the keyed editor mounted even when Follow moves the wait out of blocked.
+  const resolutionCards: Resolution['_tag'][] = acting
+    ? orderedResolutions.includes('EditBodyAndRequeue')
+      ? orderedResolutions
+      : [...orderedResolutions, 'EditBodyAndRequeue']
+    : []
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -656,141 +664,107 @@ export function Standing({
 
           {/* ---- rank 4: the moves ---------------------------------------------- */}
 
-          <ResolutionOrder editFirst={recommended === 'EditBodyAndRequeue'}>
-            {/* Above both boxes rather than under them (#152). Under them, a
-          discussion that grew pushed the button you were deciding with off the
-          screen; above them, nothing that grows is before it.
-
-          Every move that can work, and no move that cannot. The card's reading
-          (#84, #92): a question is open exactly when there is a sha it is about,
-          so Approve is offered there and nowhere — an item whose approved
-          merge hit a conflict has none. Send is offered wherever there is a
-          composed prompt to send, which is the case the column exists for and
-          the one that had no button at all (#111). Reject and Waive are gone
-          (#150): neither moved the card, and a waiver is what Approve records
-          when a gate still refuses. */}
-            {acting && standing.state === 'blocked' ? (
-              standing.waitId === null || standing.reason === null ? (
-                // Defensive, not reachable in the ordinary case: `standingOf` sets
-                // `waitId` and `reason` from the same fold as `state`, so a
-                // `blocked` standing carries both by construction. Kept rather than
-                // asserted past, because a button `Decide`/`Requeue`/`Close` cannot
-                // send a wait id to is exactly the `#84` complaint this file's own
-                // header states as a rule — a card must never offer a control bound
-                // to refuse (#508), so none is offered here.
-                <div className="btnrow smoves" data-rank="moves">
-                  <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-                </div>
-              ) : (
-                <div className="btnrow smoves" data-rank="moves">
-                  {/* Every move drawn below comes off `moves` (`movesOf`,
-                `allowedResolutions(standing.reason)`) and nothing else — no
-                `awaitingSha`, `asked` or `state === 'blocked'` condition
-                decides which control exists any more (#442). `awaitingSha`
-                still decides what `Decide` sends, and `sendable` still decides
-                whether Requeue sends a document or asks for one, but neither
-                decides whether a control is on the row. */}
-                  {orderedMoves.map((move) => {
-                    const waitId = standing.waitId
-                    if (waitId === null) return null
-                    switch (move) {
-                      case 'approve':
-                        return standing.awaitingSha !== null ? (
-                          <Decide
-                            key={move}
-                            project={project}
-                            issue={issue}
-                            onSha={standing.awaitingSha}
-                            waitId={waitId}
-                            refusing={standing.failed.length > 0}
-                            recommended={recommended === 'Approve' ? 'approve' : null}
-                          />
-                        ) : null
-
-                      case 'approve-unavailable':
-                        return (
-                          <p key={move} className="refusal">
-                            nothing to approve — this run recorded no sha to continue from
+          {acting && standing.state === 'blocked' && (standing.waitId === null || standing.reason === null) ? (
+            <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+          ) : null}
+          {acting ? (
+            <div className="sresolutiongrid" data-rank="moves">
+              {resolutionCards.map((tag) => {
+                const visible = standing.state === 'blocked' && allowed.includes(tag)
+                const waitId = standing.waitId
+                const copy = RESOLUTION_COPY[tag]
+                const consequence =
+                  tag === 'Requeue' && sendable !== null
+                    ? `Send the composed prompt for attempt ${sendable} and return this ticket to the queue.`
+                    : copy.consequence
+                return (
+                  <article
+                    key={tag}
+                    className={`sresolution${triageRecommended === tag ? ' sresolution--recommended' : ''}`}
+                    data-resolution={tag}
+                    hidden={!visible && tag !== 'EditBodyAndRequeue'}
+                  >
+                    {visible ? (
+                      <>
+                        <div className="sresolutionhead">
+                          <h3>{copy.title}</h3>
+                          {triageRecommended === tag ? (
+                            <span className="sresolutionbadge">Triage recommended</span>
+                          ) : null}
+                        </div>
+                        <p className="sresolutionconsequence">{consequence}</p>
+                        {tag === 'AnswerQuestion' || tag === 'EditBodyAndRequeue' || tag === 'Close' ? (
+                          <p className="sresolutioninput">
+                            {tag === 'AnswerQuestion'
+                              ? 'An answer is required to continue; withdrawing needs no answer.'
+                              : tag === 'Close'
+                                ? 'A closing reason is required.'
+                                : 'Enter the text to add before this can run.'}
                           </p>
-                        )
-
-                      case 'send':
-                        return sendable !== null ? (
-                          <Send
-                            key={move}
-                            taskId={taskId}
-                            attempt={sendable}
-                            // Amber follows the current wait's recommendation.
-                            primary={recommended === 'Requeue'}
-                          />
-                        ) : null
-
-                      case 'requeue':
-                        return (
-                          <Requeue
-                            key={move}
-                            project={project}
-                            issue={issue}
-                            waitId={waitId}
-                            asked={false}
-                            question={standing.askedQuestion}
-                            recommended={recommended === 'Requeue' ? 'requeue' : null}
-                          />
-                        )
-
-                      case 'answer':
-                        return (
-                          <Requeue
-                            key={move}
-                            project={project}
-                            issue={issue}
-                            waitId={waitId}
-                            asked={true}
-                            question={standing.askedQuestion}
-                            recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
-                          />
-                        )
-
-                      case 'edit-body':
-                        return null
-
-                      case 'close': {
-                        const prefill =
-                          recommended === 'Close' &&
-                          standing.triageStatus?._tag === 'Done' &&
-                          standing.triageStatus.result._tag === 'TriageAdvised'
-                            ? standing.triageStatus.result.summary
-                            : null
-                        return (
-                          <Close
-                            key={`${move}:${prefill ?? ''}`}
-                            project={project}
-                            issue={issue}
-                            waitId={standing.waitId}
-                            primary={recommended === 'Close'}
-                            prefill={prefill}
-                          />
-                        )
-                      }
-                    }
-                  })}
-                </div>
-              )
-            ) : null}
-
-            {/* Keep the editor mounted across a Follow refresh: a body write can
-          succeed just before another decision moves this wait out of blocked. */}
-            {acting ? (
-              <div key="edit" className="sedit">
-                <EditBodyAndRequeue
-                  project={project}
-                  issue={issue}
-                  waitId={standing.state === 'blocked' && moves.includes('edit-body') ? standing.waitId : null}
-                  reason={standing.reason}
-                />
-              </div>
-            ) : null}
-          </ResolutionOrder>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <div className="sresolutionaction">
+                      {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
+                        <Decide
+                          project={project}
+                          issue={issue}
+                          onSha={standing.awaitingSha}
+                          waitId={waitId}
+                          refusing={standing.failed.length > 0}
+                          recommended={recommended === 'Approve' ? 'approve' : null}
+                        />
+                      ) : null}
+                      {visible && tag === 'Approve' && standing.awaitingSha === null ? (
+                        <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
+                      ) : null}
+                      {visible && tag === 'AnswerQuestion' && waitId !== null ? (
+                        <Requeue
+                          project={project}
+                          issue={issue}
+                          waitId={waitId}
+                          asked={true}
+                          question={standing.askedQuestion}
+                          recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
+                        />
+                      ) : null}
+                      {visible && tag === 'Requeue' && sendable !== null && waitId !== null ? (
+                        <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
+                      ) : null}
+                      {visible && tag === 'Requeue' && sendable === null && waitId !== null ? (
+                        <Requeue
+                          project={project}
+                          issue={issue}
+                          waitId={waitId}
+                          asked={false}
+                          question={standing.askedQuestion}
+                          recommended={recommended === 'Requeue' ? 'requeue' : null}
+                        />
+                      ) : null}
+                      {tag === 'EditBodyAndRequeue' ? (
+                        <EditBodyAndRequeue
+                          project={project}
+                          issue={issue}
+                          waitId={visible ? waitId : null}
+                          reason={standing.reason}
+                        />
+                      ) : null}
+                      {visible && tag === 'Close' && waitId !== null ? (
+                        <Close
+                          key={closePrefill ?? ''}
+                          project={project}
+                          issue={issue}
+                          waitId={waitId}
+                          primary={recommended === 'Close'}
+                          prefill={closePrefill}
+                        />
+                      ) : null}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : null}
 
           {/* The queued item's own row, and it has exactly one move. `lingtai now`
           was the only control this state ever had and it lived in a terminal;
@@ -873,38 +847,6 @@ export function Standing({
       </section>
     </TriagePicks>
   )
-}
-
-/**
- * The moves row, as a list of what to draw — and the one thing #442 asks for:
- * every entry comes off `allowed` (`allowedResolutions(standing.reason)`),
- * never off `awaitingSha`, `asked` or `state === 'blocked'`.
- *
- * `awaitingSha` and `sendable` still decide a control's *form*, not whether it
- * exists: `Approve` allowed with a sha to send is `'approve'`, allowed with
- * none is `'approve-unavailable'` (a sentence, never a button bound to a null
- * sha, #84); `Requeue` allowed and not answering is `'send'` where there is a
- * document to send and `'requeue'` where there is not. `AnswerQuestion`
- * allowed draws `'answer'` — `Requeue`'s own answer mode, Answer and the
- * Withdraw beside it — and when it is allowed `Requeue`'s plain mode adds
- * nothing more, so `'send'`/`'requeue'` and `'answer'` never both appear.
- * `EditBodyAndRequeue` draws its own text box on the page (#520).
- */
-export function movesOf(
-  allowed: readonly Resolution['_tag'][],
-  awaitingSha: string | null,
-  sendable: number | null,
-): Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> {
-  const moves: Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> = []
-  if (allowed.includes('Approve')) moves.push(awaitingSha !== null ? 'approve' : 'approve-unavailable')
-  if (allowed.includes('AnswerQuestion')) {
-    moves.push('answer')
-  } else if (allowed.includes('Requeue')) {
-    moves.push(sendable !== null ? 'send' : 'requeue')
-  }
-  if (allowed.includes('EditBodyAndRequeue')) moves.push('edit-body')
-  if (allowed.includes('Close')) moves.push('close')
-  return moves
 }
 
 /**

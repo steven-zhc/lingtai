@@ -16,7 +16,7 @@ import { WaitReason, allowedResolutions } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { Standing, movesOf as allowedMoves } from '../src/app/standing.tsx'
+import { Standing } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { foldRun, standingOf, type Claim } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
@@ -75,7 +75,16 @@ const render = (fx: WaitFixture, outgoing: OutgoingView | null) =>
   )
 
 /** Just the row of moves. */
-const movesOf = (html: string) => html.slice(html.indexOf('class="btnrow smoves"'), html.indexOf('class="spair"'))
+const movesOf = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
+const cardsOf = (html: string) =>
+  [...html.matchAll(/<article([^>]*)>(.*?)<\/article>/gs)]
+    .map((match) => ({ attrs: match[1] ?? '', body: match[2] ?? '' }))
+    .filter(
+      ({ attrs, body }) =>
+        !attrs.includes('hidden=""') &&
+        !(attrs.includes('data-resolution="EditBodyAndRequeue"') && body.includes('class="sresolutionaction"></div>')),
+    )
+    .map(({ attrs }) => attrs.match(/data-resolution="([^"]+)"/)?.[1])
 
 /** Every `<button>`'s own text, in document order. */
 const buttonsOf = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')
@@ -94,7 +103,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
     ] as const) {
       const fixture = WAIT_FIXTURES.find((f) => f.name === name)!
       const reason = standingFor(fixture).reason!
-      expect(allowedMoves(allowedResolutions(reason), null, null).includes('edit-body')).toBe(offered)
+      expect(allowedResolutions(reason).includes('EditBodyAndRequeue')).toBe(offered)
     }
   })
 
@@ -112,11 +121,12 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const html = render(fx, null)
       const row = movesOf(html)
       const buttons = buttonsOf(row)
+      expect(cardsOf(row)).toEqual(allowed)
 
       const approveBtn = allowed.includes('Approve') && standing.awaitingSha !== null
       const approveSentence = allowed.includes('Approve') && standing.awaitingSha === null
       const answering = allowed.includes('AnswerQuestion')
-      const requeuing = !answering && allowed.includes('Requeue')
+      const requeuing = allowed.includes('Requeue')
       const closing = allowed.includes('Close')
       const editingBody = allowed.includes('EditBodyAndRequeue')
       const stepQuestion =
