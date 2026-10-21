@@ -332,6 +332,40 @@ describe('waitTriage', () => {
     expect(typesOf(events)).toEqual(['WaitResolved', 'TriageStarted', 'RunSpent', 'WaitTriaged'])
   })
 
+  it('does not start or bill triage when the wait resolves between the final read and TriageStarted', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 22)
+    const waitId = aWaitId()
+    await store.append(ticketId, 0, [
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: OWN_QUESTION } },
+    ])
+    let resolved = false
+    const racingStore: EventStore = {
+      ...store,
+      append: async (streamId, version, events) => {
+        if (events[0]?.type === 'TriageStarted' && !resolved) {
+          resolved = true
+          await store.append(streamId, version, [
+            {
+              type: 'WaitResolved',
+              actor: 'human:steven',
+              data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+            },
+          ])
+          throw new ConcurrencyError(streamId, version, [version + 1])
+        }
+        return store.append(streamId, version, events)
+      },
+    }
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+
+    const result = await waitTriage(fakeDeps(racingStore, runtime), requestOn(ticketId, waitId))
+
+    expect(result.result).toEqual({ _tag: 'TriageFailed', why: 'wait no longer current' })
+    expect(typesOf(await store.read(ticketId))).toEqual(['WaitStarted', 'WaitResolved'])
+    expect(requests).toEqual([])
+  })
+
   it('still reports the lost race, and appends nothing of its own, when the TriageStarted conflict is a genuine second attempt on the same wait', async () => {
     const waitId = aWaitId()
     const store = racedBySameWaitTriageStarted(createMemoryEventStore(), waitId, 1)

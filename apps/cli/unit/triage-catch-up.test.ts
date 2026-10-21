@@ -179,7 +179,7 @@ describe('triage catch-up', () => {
           finish = resolve
         }),
     )
-    await catchUpTriage('lingtai', triage, f.deps)
+    const scan = catchUpTriage('lingtai', triage, f.deps)
     await drained()
     const live: TriageTriggerPorts = {
       store: f.deps.store,
@@ -190,7 +190,7 @@ describe('triage catch-up', () => {
     await onWaitStarted(wait.wait, live)
     expect(f.deps.run).toHaveBeenCalledOnce()
     finish()
-    await drained()
+    await scan
   })
 
   it('scans when the triage section changes and leaves a result alone on later passes', async () => {
@@ -222,6 +222,41 @@ describe('triage catch-up', () => {
     await catchUpChangedTriage('lingtai', Triage.parse({ prompt: 'changed' }), hashes, f.deps)
     await drained()
     expect(f.run).toHaveBeenCalledOnce()
+  })
+
+  it('retries a second interrupted attempt after its queued finalization fails', async () => {
+    const f = fixture()
+    const wait = f.add(10)
+    for (const attempt of [1, 2]) {
+      wait.push(
+        wait.event(
+          'TriageStarted',
+          { waitId: wait.waitId, attempt, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+          { at: old },
+        ),
+      )
+    }
+    const append = f.deps.store.append
+    let fail = true
+    f.deps.store.append = async (stream, version, entries) => {
+      if (fail) {
+        fail = false
+        throw new Error('temporary append failure')
+      }
+      return append(stream, version, entries)
+    }
+    const hashes = new Map<string, string>()
+    const log = vi.fn()
+    f.deps.log = log
+
+    await expect(catchUpChangedTriage('lingtai', triage, hashes, f.deps)).rejects.toThrow('temporary append failure')
+    expect(hashes.has('lingtai')).toBe(false)
+    expect(wait.events().at(-1)?.type).toBe('TriageStarted')
+
+    await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
+    expect(wait.events().at(-1)?.type).toBe('WaitTriaged')
+    expect(hashes.get('lingtai')).toBe(JSON.stringify(triage))
+    expect(log).toHaveBeenCalledWith(`triage ${wait.waitId}: temporary append failure`)
   })
 
   it('skips a project whose recipe does not resolve while scanning other projects', async () => {

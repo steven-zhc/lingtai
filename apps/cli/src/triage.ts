@@ -44,27 +44,38 @@ import { diffStatAt, listAt, readAt, refSha } from '@lingtai/repo'
 import { headOf, prepare } from './discuss.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
-const queued = new Set<string>()
+const queued = new Map<string, Promise<unknown>>()
 let tail: Promise<void> = Promise.resolve()
+
+function queueTriage(
+  key: { ticketId: string; waitId: WaitId },
+  run: () => Promise<unknown>,
+  log: (line: string) => void,
+): { added: boolean; done: Promise<unknown> } {
+  const id = JSON.stringify([key.ticketId, key.waitId])
+  const existing = queued.get(id)
+  if (existing) return { added: false, done: existing }
+  const done = tail.then(run)
+  queued.set(id, done)
+  tail = done
+    .then(
+      () => {},
+      (err) => {
+        log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
+      },
+    )
+    .finally(() => {
+      queued.delete(id)
+    })
+  return { added: true, done }
+}
 
 export function enqueueTriage(
   key: { ticketId: string; waitId: WaitId },
   run: () => Promise<unknown>,
   log: (line: string) => void = console.error,
 ): boolean {
-  const id = JSON.stringify([key.ticketId, key.waitId])
-  if (queued.has(id)) return false
-  queued.add(id)
-  tail = tail.then(async () => {
-    try {
-      await run()
-    } catch (err) {
-      log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      queued.delete(id)
-    }
-  })
-  return true
+  return queueTriage(key, run, log).added
 }
 
 export interface TriageTriggerPorts {
@@ -105,7 +116,7 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
     daemonStartedAt: deps.daemonStartedAt,
   })
   if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
-  enqueueTriage(
+  await queueTriage(
     { ticketId, waitId },
     async () => {
       // A person or the live subscriber may have answered this while it waited in the queue.
@@ -120,8 +131,8 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
         await finishInterrupted(ticketId, waitId, deps)
       }
     },
-    deps.log,
-  )
+    deps.log ?? console.error,
+  ).done
 }
 
 /** Finish the second interrupted attempt only while it is still the latest unfinished attempt. */
@@ -435,6 +446,12 @@ export async function waitTriage(
       result: { _tag: 'TriageFailed', why: clip(`could not read the ticket: ${(err as Error).message}`) },
     }
   }
+  const waitIsCurrent = (events: readonly Envelope[]): boolean =>
+    !events.some((e) => e.type === 'WaitStarted' && (e.data as PayloadOf<'WaitStarted'>).waitId === request.waitId) ||
+    currentWait(events, request.waitId)
+  if (!waitIsCurrent(before)) {
+    return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+  }
   const priorAttempts = before
     .filter((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
     .map((e) => (e.data as { attempt: number }).attempt)
@@ -442,14 +459,8 @@ export async function waitTriage(
 
   const by = { _tag: 'Agent' as const, runtime: request.triage.agent, model: request.triage.model ?? '' }
 
-  // A `ConcurrencyError` here says only that *something* appended to the
-  // ticket stream between the read above and this append — not that it was
-  // another triage attempt. `resolveWait` appending `WaitResolved` to the same
-  // stream, or any other appender, conflicts the same way a second triage
-  // attempt would. So re-read and check: only when the new events actually
-  // carry a `TriageStarted` for this same `waitId` is a second attempt really
-  // starting; anything else is unrelated, and the append is retried at the
-  // fresh version rather than abandoning the triage with a false reason.
+  // A version conflict can be a person's WaitResolved or another triage.
+  // Re-read the lifecycle before retrying the paid attempt's append.
   let started = false
   let startedErr: unknown = null
   for (let i = 0; i < 5 && !started; i += 1) {
@@ -466,6 +477,9 @@ export async function waitTriage(
       if (err instanceof ConcurrencyError) {
         const since = before.length
         before = await deps.store.read(stream)
+        if (!waitIsCurrent(before)) {
+          return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+        }
         const racedByOther = before
           .slice(since)
           .some((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
