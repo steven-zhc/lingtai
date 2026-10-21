@@ -389,12 +389,14 @@ describe('waitWords', () => {
   })
 
   it('AnswerUnreadable, at merge', () => {
-    expectSameAsLegacy({
+    const reason: WaitReason = {
       _tag: 'AnswerUnreadable',
       run: { runId: 'pass-1' },
       step: 'merge',
       action: 'no-merge',
       raw: 'not json',
-    })
+    }
+    expect(waitWords(reason, pass).line).toBe('the `merge` step refused: not json')
+    expectSameAsLegacy(reason)
   })
 })
