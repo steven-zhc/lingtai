@@ -1200,7 +1200,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   overflow-wrap: anywhere;
 }
 .sresolution[hidden] { display: none; }
-.sresolution--recommended { border: 2px solid var(--accent); }
+.sresolution--recommended { grid-column: span 2; border: 2px solid var(--accent); }
 .sresolutionhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
 .sresolutionhead h3 { margin: 0; font-size: 1.05rem; line-height: 1.35; }
 .sresolutionbadge {
@@ -1228,6 +1228,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
     padding-bottom: 0.35rem;
   }
   .detail--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 40rem) {
+  .sresolution--recommended { grid-column: auto; }
 }
 
 /* Verbatim stopping evidence in Attempts and in a disagreement comparison.
