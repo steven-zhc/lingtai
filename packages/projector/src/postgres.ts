@@ -21,6 +21,7 @@ import type { BacklogEntry } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
 import { columnOf } from './store.ts'
 import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, SpendQuery, TaskQuery } from './store.ts'
+import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
 
 /**
@@ -103,6 +104,7 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     // created before the rename has no `waiting` key, and reading it off the
     // row directly would count that drift as a card with nothing to answer.
     waiting: columnOf(row, 'task_view', 'waiting') === true,
+    wait: waitOf(row.task_id, row.state as TaskState, row.wait_id, row.wait_reason),
     needs: row.needs ?? null,
     // Written from a parsed payload and read back as it was written, so the
     // shape is the event's rather than this reader's guess about it.

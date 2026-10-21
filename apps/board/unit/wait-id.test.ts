@@ -41,6 +41,16 @@ function blocked(): TaskCard {
     awaitingSha: 'b'.repeat(40),
     awaitingApproval: true,
     waiting: true,
+    wait: {
+      waitId: aWaitId(),
+      reason: {
+        _tag: 'SignoffRequired',
+        run: { runId: 'pass-465' },
+        step: 'proposed',
+        action: 'human',
+        question: 'the `proposed` step held: land it?',
+      },
+    },
     needs: 'judgement',
     diagnosis: null,
     asked: false,

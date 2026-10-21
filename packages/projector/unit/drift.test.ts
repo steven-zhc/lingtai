@@ -144,11 +144,25 @@ async function storeWithWaitingColumn(column: 'waiting' | 'blocked'): Promise<Pr
     if (column === 'blocked') {
       await ctx.query('alter table task_view rename column waiting to blocked')
     }
+    // wait_id/wait_reason too, not just the renamed column: a waiting row
+    // with neither is #440's own refusal, and this fixture is about the
+    // #477 rename, not that one.
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      ['ticket-drift-2', 'drift', '2', 'waiting', RUN, true, new Date().toISOString(), 1],
+         (task_id, project, issue, state, run_id, ${column}, wait_id, wait_reason, updated_at, updated_seq)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)`,
+      [
+        'ticket-drift-2',
+        'drift',
+        '2',
+        'waiting',
+        RUN,
+        true,
+        'wait-drift-2',
+        JSON.stringify({ _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' }),
+        new Date().toISOString(),
+        1,
+      ],
     )
   })
   return store

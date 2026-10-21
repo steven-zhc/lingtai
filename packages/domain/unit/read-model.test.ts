@@ -147,10 +147,11 @@ describe('cardFactOf', () => {
 
   it('answers WaitStarted with the card line legacyColumns composes', () => {
     const item = makeStream('ticket-1')
+    const waitId = aWaitId()
     const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }
-    const facts = aWait(item, reason).flatMap(cardFactOf)
+    const facts = aWait(item, reason, waitId).flatMap(cardFactOf)
     expect(facts).toEqual([
-      { _tag: 'WaitStarted', reason, card: { question: 'which base?', needs: 'judgement', diagnosis: null } },
+      { _tag: 'WaitStarted', waitId, reason, card: { question: 'which base?', needs: 'judgement', diagnosis: null } },
     ])
   })
 })
