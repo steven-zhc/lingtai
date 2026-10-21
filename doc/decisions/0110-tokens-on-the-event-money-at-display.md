@@ -215,10 +215,12 @@ about something else are the three whose spend is not recorded.
 
 13. **Until the log's reset, the old fields are written beside `RunSpent`, and
     every reader reads exactly one of the two.** `RunFinished`, `FixApplied`,
-    `DiscussionAnswered`, `DiscussionHeld` and `TriageAgent` keep their `turns`,
-    `costUsd` and `usage` until the reset that changes the stored events
+    `DiscussionAnswered` and `DiscussionHeld` keep their `turns`, `costUsd`
+    and `usage` until the reset that changes the stored events
     ([0120](0120-a-reason-is-a-type.md)'s phase 2) removes them, with
-    `task_view`'s `cost_usd` and `repair_costs`. The `spend` fold reads
+    `task_view`'s `cost_usd` and `repair_costs`. `TriageAgent` carries neither
+    field: a triage agent's cost is a `RunSpent` and nothing else, from the
+    start ([0118](0118-a-hold-explains-itself.md) §3). The `spend` fold reads
     `RunSpent` and no other event; `task_view` reads the old fields and not
     `RunSpent`; the card, `/spend` and the task page move to `spend` together.
     No reader adds the two, so a dollar is never counted twice. What the old
