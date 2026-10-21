@@ -17,10 +17,18 @@ import type { DiscussionView, StandingView } from '@/lib/task'
 
 import { Close, Decide, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
 import { Discussion } from './discussion.tsx'
+import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
 import { Plan } from './plan.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
+
+const TICKET_OPENING_LINES = 8
+
+export function ticketOpening(body: string): { text: string; longer: boolean } {
+  const lines = body.split('\n')
+  return { text: lines.slice(0, TICKET_OPENING_LINES).join('\n'), longer: lines.length > TICKET_OPENING_LINES }
+}
 
 /**
  * Why this task is not moving, above everything else.
@@ -112,6 +120,8 @@ import { FollowedLog } from './run-log.tsx'
 export function Standing({
   standing,
   subject,
+  body = null,
+  want = null,
   project,
   issue,
   taskId,
@@ -145,6 +155,8 @@ export function Standing({
    * Null when the id is not a work item: there is no ticket to name.
    */
   subject: { ref: string; title: string | null; url: string | null; askedGitHub: boolean } | null
+  body?: string | null
+  want?: string | null
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
   project: string | null
   issue: number | null
@@ -193,6 +205,7 @@ export function Standing({
   held?: string | null
 }) {
   const held = describeHold(standing)
+  const opening = body === null ? null : ticketOpening(body)
   const acting = project !== null && issue !== null
   // What is stopping it and where it is in line — two facts, and the second is
   // not an annotation on the first. `holding` is null for the item that is
@@ -270,6 +283,35 @@ export function Standing({
 
   return (
     <section className={`standing${mark}`}>
+      {subject !== null ? (
+        <div className="sticket">
+          <p className="ssubject" data-rank="subject">
+            {subject.url !== null ? (
+              <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
+                #{subject.ref} ↗
+              </a>
+            ) : (
+              <span className="sref">#{subject.ref}</span>
+            )}
+            <span className="stitle">
+              {subject.title ??
+                (subject.askedGitHub
+                  ? 'GitHub did not answer, so the title is not on this page'
+                  : 'the title is not on this page')}
+            </span>
+          </p>
+          {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
+          {opening !== null && opening.text !== '' ? (
+            <div className="topening">
+              <details>
+                <summary>Opening of the ticket</summary>
+                <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
+              </details>
+              {opening.longer ? <a href="#record-ticket">The whole ticket ↓</a> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
@@ -302,24 +344,6 @@ export function Standing({
             because only the first may say GitHub did not answer. The number
             still stands on its own either way, because *which ticket this is*
             is a fact the log holds and does not need GitHub to answer. */}
-        {subject !== null ? (
-          <p className="ssubject" data-rank="subject">
-            {subject.url !== null ? (
-              <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
-                #{subject.ref} ↗
-              </a>
-            ) : (
-              <span className="sref">#{subject.ref}</span>
-            )}
-            <span className="stitle">
-              {subject.title ??
-                (subject.askedGitHub
-                  ? 'GitHub did not answer, so the title is not on this page'
-                  : 'the title is not on this page')}
-            </span>
-          </p>
-        ) : null}
-
         {/* ---- rank 2: why it stopped, or what it is doing ------------------ */}
         <div className="swhy" data-rank="why">
           {/* Above the log, because it is the answer the log is the detail of:

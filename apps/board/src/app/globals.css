@@ -911,6 +911,11 @@ details[open] > summary::before { content: "▾"; }
 }
 .standing.onyou .sread .sstate { color: var(--signal); }
 
+.sticket { display: grid; gap: 0.35rem; margin-bottom: 1rem; }
+.swant { margin: 0; max-width: 62rem; color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.topening { max-width: 62rem; font-size: 0.85rem; color: var(--ink-2); }
+.topening > a { display: inline-block; margin-top: 0.5rem; color: var(--accent-ink); }
+
 /* Rank 8: every identifier the page has, once, as one muted line in the bar
    (#152). It was the block's own last line, and the attempt row printed the
    same run id again as a full uuid. The bar's own size and grey; the dots are

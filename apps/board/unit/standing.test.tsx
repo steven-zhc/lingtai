@@ -18,9 +18,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Coords, Standing, soWhat } from '../src/app/standing.tsx'
+import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { foldRun, standingOf, type Claim, type StandingView } from '../src/lib/task.ts'
+import { currentWaitWant, foldRun, standingOf, type Claim, type StandingView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -1418,6 +1418,80 @@ describe('what the refusal means for the decision', () => {
  * somewhere in the markup — which was already true and was not the point.
  */
 describe('the subject, at the top', () => {
+  it('shows a plain triage reading and a sanitized, line-boundary opening before the state', () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: 'https://github.com/example/issues/159', askedGitHub: true }}
+        body={'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n<script>alert(1)</script>'}
+        want={'**bold** <b>literal</b>'}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('Triage’s reading:'))
+    expect(html.indexOf('Triage’s reading:')).toBeLessThan(html.indexOf('data-rank="state"'))
+    expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
+    expect(html).toContain('<details><summary>Opening of the ticket</summary>')
+    expect(html).toContain('href="#record-ticket"')
+    expect(html).not.toContain('alert(1)')
+    expect(ticketOpening('one\ntwo')).toEqual({ text: 'one\ntwo', longer: false })
+  })
+
+  it('reads a want only from the current blocked wait’s completed advice', () => {
+    const current = HELD.waitId!
+    const older = aWaitId()
+    const advised = (want: string | null) => ({
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'WrongApproach' },
+      resolution: { _tag: 'Requeue' },
+      summary: 'Try again',
+      want,
+    })
+    const events = [
+      e(ITEM, 'TriageStarted', { waitId: older, attempt: 1 }),
+      e(ITEM, 'WaitTriaged', { waitId: older, attempt: 1, result: advised('old') }),
+      e(ITEM, 'TriageStarted', { waitId: current, attempt: 1 }),
+      e(ITEM, 'WaitTriaged', { waitId: current, attempt: 1, result: advised('current') }),
+    ]
+    expect(currentWaitWant(events, HELD)).toBe('current')
+    expect(currentWaitWant(events.slice(0, 2), HELD)).toBeNull()
+    expect(currentWaitWant(events, { ...HELD, state: 'landed' })).toBeNull()
+    expect(currentWaitWant(events.slice(0, 3), HELD)).toBeNull()
+    expect(
+      currentWaitWant(
+        events.slice(0, 3).concat(
+          e(ITEM, 'WaitTriaged', {
+            waitId: current,
+            attempt: 1,
+            result: { _tag: 'TriageFailed', why: 'unreadable' },
+          }),
+        ),
+        HELD,
+      ),
+    ).toBeNull()
+    expect(
+      currentWaitWant(
+        [
+          ...events.slice(0, 3),
+          e(ITEM, 'WaitTriaged', {
+            waitId: current,
+            attempt: 1,
+            result: advised(null),
+          }),
+        ],
+        HELD,
+      ),
+    ).toBeNull()
+    expect(
+      currentWaitWant(events, { ...HELD, reason: { _tag: 'OwnQuestion', question: 'why?', by: 'user' } }),
+    ).toBeNull()
+  })
+
   it('names the ticket and links out to it, above the reason it stopped', () => {
     const html = renderToStaticMarkup(
       <Standing

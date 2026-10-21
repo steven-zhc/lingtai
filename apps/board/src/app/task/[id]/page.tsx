@@ -741,6 +741,8 @@ export function TaskBody({ task }: { task: TaskDetail }) {
                 }
               : null
           }
+          body={task.ticket?.body}
+          want={task.want}
           taskId={task.taskId}
           discussions={task.discussions}
           discussionBill={task.totals.byPurpose.Discussion}
