@@ -1054,10 +1054,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .triage-readings > div { min-width: 0; }
 
-/* What refused, in its own words, at the second rank and open on load.
-   A `<details>` so a reader who has read it can put it away — and open,
-   because a person who opened this page to find out why a task stopped should
-   not have to find the answer as well (#132). */
+/* Verbatim stopping evidence in Attempts and in a disagreement comparison.
+   It opens inside that destination and can be closed after reading. */
 .sreason {
   margin: 0.15rem 0 0;
   padding-left: 0.5rem;

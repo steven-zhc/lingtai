@@ -991,7 +991,7 @@ const HELD_CLASS: Record<HoldLine['part'], string> = {
 }
 
 /**
- * The second rank: what refused, in its own words.
+ * The holder's words when there is no raw stopping output on the first screen.
  *
  * **A gate's name is not a reason** (#132). *the review gate refused it* is
  * every word true and a reader takes the wrong thing from it — that a reviewer
@@ -1000,11 +1000,9 @@ const HELD_CLASS: Record<HoldLine['part'], string> = {
  * That evidence was on this page the whole time: three ranks down, at 0.72rem,
  * behind a disclosure, inside the right attempt's gate points.
  *
- * **It opens in place.** The disclosure is open on load and closing it is the
- * reader's own move — the whole judgement behind this ticket is that what the
- * page already has must appear at the moment it is needed rather than waiting
- * to be found. Following the coordinate at rank 4 is still how you get to the
- * findings and the diff that sit beside the verdict.
+ * 0118 puts a blocked wait's raw output in Attempts; `Standing` omits this
+ * component for that case. The same raw disclosure is also shown beside the
+ * judge's reading when triage disagrees.
  *
  * **A diagnosis answers this rank, or nothing does.** `raw` is written by the
  * conductor beside `what` and is about *this* hold — but null there does not
