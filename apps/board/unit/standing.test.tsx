@@ -20,7 +20,14 @@ import { describe, expect, it } from 'vitest'
 
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { currentWaitWant, foldRun, standingOf, type Claim, type StandingView } from '../src/lib/task.ts'
+import {
+  currentTriageStatus,
+  currentWaitWant,
+  foldRun,
+  standingOf,
+  type Claim,
+  type StandingView,
+} from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -562,6 +569,7 @@ describe('the move the block ends in', () => {
 
 const HELD: StandingView = {
   state: 'blocked',
+  triageStatus: null,
   since: '2026-09-08T04:12:15.000Z',
   onYou: true,
   who: 'waiting on you',
@@ -1186,6 +1194,26 @@ const render = (standing: StandingView, outgoing: OutgoingView | null) =>
     />,
   )
 
+it('ignores triage facts for a wait that is no longer current', () => {
+  const oldWait = aWaitId()
+  const card = {
+    wait: { waitId: oldWait, reason: HELD.reason! },
+    triage: {
+      started: null,
+      result: {
+        _tag: 'TriageAdvised' as const,
+        cause: { _tag: 'WrongApproach' as const },
+        resolution: 'Close' as const,
+        summary: 'old advice',
+        want: null,
+      },
+    },
+  }
+  const status = currentTriageStatus(HELD, card, { declared: true, daemonStartedAt: null })
+  expect(status).toBeNull()
+  expect(render({ ...HELD, triageStatus: status }, OUTGOING)).not.toContain('old advice')
+})
+
 describe('the moves the column ends in', () => {
   it('offers Send, numbered the way the box above it is, and Leave blocked beside it', () => {
     const html = render(HELD, OUTGOING)
@@ -1223,7 +1251,7 @@ describe('the moves the column ends in', () => {
    */
   it('offers Back to the queue beside Approve on a card asking for approval', () => {
     const html = render(
-      { ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON },
+      { ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON, triageStatus: { _tag: 'NotNeeded' } },
       { ...OUTGOING, problem: 'lingtai is not a registered project' },
     )
 
@@ -1233,18 +1261,65 @@ describe('the moves the column ends in', () => {
   })
 
   /**
-   * **Amber appears once per screen** (layout notes), and the row of moves is
-   * one of the two places on this page that spends it — the other is the rule at
-   * the left. Approve wears it where there is a diff to merge, Send where there
-   * is not, and a row carrying both dilutes the one thing amber means.
+   * A status with no recommended resolution leaves every control secondary;
+   * SignoffRequired still recommends Approve by the wait's own default.
    */
-  it("spends the row's amber on one button", () => {
-    expect(moves(render(HELD, OUTGOING)).match(/btn pri/g)).toHaveLength(1)
+  it('marks only a recommended control primary', () => {
+    expect(moves(render(HELD, OUTGOING)).match(/btn pri/g)).toBeNull()
 
-    const approving = moves(render({ ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON }, OUTGOING))
+    const approving = moves(
+      render({ ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON, triageStatus: { _tag: 'NotNeeded' } }, OUTGOING),
+    )
     expect(approving.match(/btn pri/g)).toHaveLength(1)
     // Approve's, because that is the move a diff asks for.
     expect(approving).toContain('class="btn pri">Approve')
+  })
+
+  it('draws an advised Close first and primary', () => {
+    const html = moves(
+      render(
+        {
+          ...HELD,
+          triageStatus: {
+            _tag: 'Done',
+            result: {
+              _tag: 'TriageAdvised',
+              cause: { _tag: 'WrongApproach' },
+              resolution: 'Close',
+              summary: 'stop this approach',
+              want: null,
+            },
+          },
+        },
+        OUTGOING,
+      ),
+    )
+    expect(html.indexOf('>Close</button>')).toBeLessThan(html.indexOf('>Send attempt'))
+    expect(html).toContain('class="btn pri">Close')
+    expect(html).not.toContain('class="btn pri">Send')
+  })
+
+  it('leaves the existing order and no primary for disallowed advice', () => {
+    const html = moves(
+      render(
+        {
+          ...HELD,
+          triageStatus: {
+            _tag: 'Done',
+            result: {
+              _tag: 'TriageAdvised',
+              cause: { _tag: 'WrongApproach' },
+              resolution: 'Approve',
+              summary: 'no approval offered',
+              want: null,
+            },
+          },
+        },
+        OUTGOING,
+      ),
+    )
+    expect(html).toContain('Send attempt')
+    expect(html).not.toContain('class="btn pri"')
   })
 
   it('keeps Back to the queue for the item whose prompt could not be composed', () => {
@@ -1276,9 +1351,9 @@ describe('the moves the column ends in', () => {
     )
 
     expect(html).not.toContain('Send attempt')
-    expect(moves(html)).toContain('class="btn pri">Answer')
+    expect(moves(html)).toContain('class="btn">Answer')
     expect(moves(html)).toContain('Withdraw')
-    expect(moves(html).match(/btn pri/g)).toHaveLength(1)
+    expect(moves(html).match(/btn pri/g)).toBeNull()
   })
 
   it('offers no move at all on an item nobody is being asked about', () => {
