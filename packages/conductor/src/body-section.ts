@@ -1,10 +1,11 @@
 /**
  * `upsertSection` — one section per key, found by a marker
  * ([0118](../../../doc/decisions/0118-a-hold-explains-itself.md) §6), and the
- * other building block #422's move onto it needs. Pure: no event store, no
- * clock, no GitHub, so this file is safe to call from anywhere a body is
- * composed. `#422` is what makes an answer go in here rather than through
- * `discuss.ts`'s `appendToBody`, which stays as it is until that move.
+ * other building block `edit-body.ts`'s `writeSection` (#422) needs. Pure: no
+ * event store, no clock, no GitHub, so this file is safe to call from
+ * anywhere a body is composed. `#422` is what moved an answer onto this —
+ * both a wait's own answer and a discussion's `ticket` outcome, which used to
+ * go through `discuss.ts`'s own `appendToBody`.
  */
 
 /** The marker a section's text sits between, invisible when rendered. */

@@ -16,11 +16,12 @@ import type { Envelope, ToAppend } from '@lingtai/domain'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { describe, expect, it } from 'vitest'
 
+import { answerOpenMarker } from '../src/body-section.ts'
 import { dbTickets } from '../src/db-tickets.ts'
 import {
-  appendToBody,
   buildBrief,
   concludeDiscussion,
+  discussionSection,
   holdDiscussion,
   MAX_READ_ROUNDS,
   outstanding,
@@ -31,6 +32,7 @@ import {
   type DiscussionEvidence,
 } from '../src/discuss.ts'
 import { passClientOf } from '../src/ticket-store.ts'
+import { memoryTickets } from '../test/memory-tickets.ts'
 import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-pass.ts'
 
 const EVIDENCE: DiscussionEvidence = {
@@ -163,16 +165,10 @@ describe('the reply', () => {
 })
 
 describe('the ticket, appended to', () => {
-  it('adds a dated, attributed block and keeps what was there', () => {
-    const body = appendToBody(
-      'The original ticket.',
-      'Pass --max-turns.',
-      'human:steven',
-      new Date('2026-09-09T10:00:00Z'),
-    )
-    expect(body).toContain('The original ticket.')
-    expect(body).toContain('## Added from a discussion, 2026-09-09, by human:steven')
-    expect(body).toContain('Pass --max-turns.')
+  it('is a dated, attributed heading over the text', () => {
+    const section = discussionSection('Pass --max-turns.', 'human:steven', new Date('2026-09-09T10:00:00Z'))
+    expect(section).toContain('## Added from a discussion, 2026-09-09, by human:steven')
+    expect(section).toContain('Pass --max-turns.')
   })
 })
 
@@ -214,6 +210,40 @@ describe('concludeDiscussion', () => {
     const after = await tickets.getIssue(opened.number)
     expect(after.body).toContain('the original ticket.')
     expect(after.body).toContain('Pass --max-turns.')
+    // `#422`: the addition sits between `chat-<chatId>` markers, not just appended.
+    expect(after.body).toContain(answerOpenMarker('chat-chat-1'))
+    expect(after.body).toContain('## Added from a discussion,')
+  })
+
+  /**
+   * `upsertSection` refuses before any request reaches GitHub, so the
+   * failure's own message — the only thing that names the actual remedy,
+   * repairing the markers — must be the detail outright, not a parenthetical
+   * under a claim that GitHub refused something it was never asked to do.
+   */
+  it('reports the refusal itself, not a claim that GitHub refused, when the body carries an unclosed marker', async () => {
+    const tickets = memoryTickets()
+    const body = `the original ticket.\n\n${answerOpenMarker('chat-c1')}`
+    const opened = await tickets.createIssue({ title: 't', body, labels: [] })
+    const store = memoryStore()
+    const ticketId = `ticket-lingtai-${opened.number}`
+
+    const result = await concludeDiscussion({
+      store,
+      ticketId,
+      chatId: 'c1',
+      by: 'human:steven',
+      outcome: 'ticket',
+      text: 'Pass --max-turns.',
+      ticket: { github: tickets, body },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.detail).toBe('upsertSection: the open marker for "chat-c1" has no matching close marker')
+    expect(result.detail).not.toContain('GitHub refused')
+
+    const events = await store.read(ticketId)
+    expect(events.map((e) => e.type)).toEqual(['DiscussionHeld'])
   })
 })
 

@@ -39,7 +39,7 @@ function fakeGitHub(opts: { labels?: string[]; fail?: boolean } = {}) {
   const channel: IssueChannel = {
     async getIssue() {
       calls.push('getIssue')
-      return { labels: (opts.labels ?? []).map((name) => ({ name, color: null })) }
+      return { labels: (opts.labels ?? []).map((name) => ({ name, color: null })), body: '' }
     },
     async comment(_issue, body) {
       calls.push(`comment:${body.slice(0, 12)}`)

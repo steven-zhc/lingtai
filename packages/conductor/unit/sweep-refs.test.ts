@@ -230,7 +230,7 @@ describe("the order the end point's effects are carried out in", () => {
   function fakeChannels(refs: readonly string[]) {
     const calls: string[] = []
     const issue: IssueChannel = {
-      getIssue: async () => ({ labels: [] }),
+      getIssue: async () => ({ labels: [], body: '' }),
       comment: async () => {
         calls.push('comment')
         return { id: 1 }
