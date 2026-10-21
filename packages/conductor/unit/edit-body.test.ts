@@ -77,6 +77,19 @@ function conflictOnFirstWrite(tickets: MemoryTickets, conflict: (body: string) =
   }
 }
 
+/** `getIssue` succeeds on the initial read and throws on the read-back right after — the write itself still lands. */
+function readBackThrowsAfterLanding(tickets: MemoryTickets, message: string): IssueChannel {
+  let calls = 0
+  return {
+    ...tickets,
+    async getIssue(number) {
+      calls++
+      if (calls === 2) throw new Error(message)
+      return tickets.getIssue(number)
+    },
+  }
+}
+
 /** A second decision — a `Requeue` on the same wait — lands while this caller is still writing the section. */
 function requeuedDuringTheWrite(
   tickets: MemoryTickets,
@@ -325,5 +338,40 @@ describe('writeSection', () => {
     const issue = await tickets.getIssue(ISSUE)
     expect(issue.body).toBe('the ticket.')
     expect((await store.read(ticketId)).length).toBe(0)
+  })
+
+  it('trusts a write recorded as IssueUpdated even when the read-back that follows it throws', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, ISSUE)
+    const tickets = memoryTickets()
+    await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
+    const github = readBackThrowsAfterLanding(tickets, 'ETIMEDOUT')
+
+    const result = await writeSection({ store, github, ticketId, key: 'w-1@review', text: 'the answer' })
+
+    expect(result).toEqual({ written: true })
+    const events = await store.read(ticketId)
+    expect(events.map((e) => e.type)).toEqual(['IssueUpdated'])
+    const issue = await tickets.getIssue(ISSUE)
+    expect(issue.body).toContain('the answer')
+  })
+
+  it('matches a CRLF text against its own CRLF-folded reflection on the read-back', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, ISSUE)
+    const tickets = memoryTickets()
+    await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
+
+    const result = await writeSection({
+      store,
+      github: tickets,
+      ticketId,
+      key: 'w-1@review',
+      text: 'line one\r\nline two',
+    })
+
+    expect(result).toEqual({ written: true })
+    // One write, not a retry that mistook its own text for a miss.
+    expect((await store.read(ticketId)).map((e) => e.type)).toEqual(['IssueUpdated'])
   })
 })

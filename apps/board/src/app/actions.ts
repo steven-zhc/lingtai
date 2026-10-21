@@ -481,9 +481,10 @@ export async function askDiscussion(input: {
  * attempt reads it. `none` is the ordinary ending: a question answered that
  * needed nothing written down.
  *
- * The ticket's body is read here, immediately before it is written, because
- * GitHub offers a replace and not an append — the same read-modify-write
- * `setLabels` has to do, and for the same reason.
+ * The ticket's body is read here only to satisfy `ConcludeOptions.ticket`'s
+ * `body` field — `concludeDiscussion` no longer reads it, because the write
+ * itself is `writeSection` (`edit-body.ts`, #422), which reads the body
+ * itself and composes its replacement.
  */
 export async function concludeChat(input: {
   taskId: string

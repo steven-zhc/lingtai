@@ -722,7 +722,11 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
       text: section,
     })
     ok = written.written
-    detail = written.written ? 'the ticket carries it' : `GitHub refused the edit; the log says why (${written.detail})`
+    // `written.detail` already says what went wrong — including the cases
+    // `upsertSection` refuses before any request reaches GitHub, such as an
+    // unclosed marker in the body — so it is the detail, not a parenthetical
+    // under a claim that assumes every refusal is GitHub's.
+    detail = written.written ? 'the ticket carries it' : written.detail
   }
 
   const at = (await store.read(ticketId)).length

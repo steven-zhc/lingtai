@@ -29,9 +29,15 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/** The exact text `upsertSection` puts between the markers for `key`, trimmed — what `writeSection` looks for on the read-back. */
+/**
+ * The exact text `upsertSection` puts between the markers for `key`, trimmed
+ * — what `writeSection` looks for on the read-back. Built from `text` with
+ * `\r\n` already folded to `\n`, because the read-back body is folded the
+ * same way before the search: a `text` that itself carries CRLF must still
+ * match its own normalized reflection.
+ */
 function sectionTextFor(key: string, text: string): string {
-  return upsertSection('', key, text).trim()
+  return upsertSection('', key, text.replace(/\r\n/g, '\n')).trim()
 }
 
 /**
@@ -90,9 +96,12 @@ export async function writeSection(options: {
     try {
       after = (await github.getIssue(issue)).body
     } catch (err) {
-      // The write's own outcome is already on the log either way; what is
-      // unknown is only whether it landed, and a retry without knowing that
-      // could duplicate the section. Stop rather than guess.
+      // When the write itself recorded `IssueUpdated`, the PATCH is known to
+      // have landed — the read-back failing after that tells us nothing new.
+      // Only a failed or unattempted write leaves it genuinely unknown
+      // whether a retry would duplicate the section, which is when to stop
+      // rather than guess.
+      if (told.recorded === 'IssueUpdated') return { written: true }
       return {
         written: false,
         detail: `the write's outcome is on the log, but the read-back failed: ${errorMessage(err)}`,
