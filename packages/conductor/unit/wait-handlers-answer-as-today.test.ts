@@ -136,7 +136,7 @@ describe('answer', () => {
     const result = await answer({ project: PROJECT, issue: 6, answer: 'yes', by: 'human:steven', store })
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('pass-6')
-    expect(result.detail).toContain('lingtai approve or lingtai requeue')
+    expect(result.detail).toContain('lingtai requeue <project> --issue <n> --into-body <text>')
   })
 
   it('refuses when the question has moved on', async () => {

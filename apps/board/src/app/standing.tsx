@@ -736,6 +736,7 @@ export function Standing({
           project={project}
           issue={issue}
           waitId={standing.state === 'blocked' && moves.includes('edit-body') ? standing.waitId : null}
+          reason={standing.reason}
         />
       ) : null}
 
