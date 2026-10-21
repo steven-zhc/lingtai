@@ -253,6 +253,60 @@ export function ScheduleContinuation({
   )
 }
 
+/** Write text into the ticket body and requeue only when the current wait allows it. */
+export function EditBodyAndRequeue({
+  project,
+  issue,
+  waitId,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId | null
+}) {
+  const [text, setText] = useState('')
+  const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
+  const [, startTransition] = useTransition()
+
+  if (waitId === null && text === '' && !pending && detail === null) return null
+
+  return (
+    <div className="decide">
+      <label className="reason">
+        <span>Text to add to the ticket body</span>
+        <textarea
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value)
+            setDraftWaitId(waitId)
+            if (draftWaitId !== waitId) setDetail(null)
+          }}
+        />
+      </label>
+      <button
+        className="btn"
+        disabled={pending || doneWaitId === waitId || !text.trim() || waitId === null || draftWaitId !== waitId}
+        onClick={() => {
+          if (waitId === null || draftWaitId !== waitId) return
+          setPending(true)
+          setDetail(null)
+          startTransition(async () => {
+            const result = await editBodyAndRequeueCard({ project, issue, waitId, text })
+            setPending(false)
+            setDoneWaitId(result.ok ? waitId : null)
+            setDetail(result.detail)
+          })
+        }}
+      >
+        {pending ? '…' : 'Write it into the body & requeue'}
+      </button>
+      {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}
+    </div>
+  )
+}
+
 /**
  * The move that ends a wait with a new run — on every blocked card (#150).
  *
@@ -280,58 +334,6 @@ export function ScheduleContinuation({
  * *is there an approval open*, so it was missing exactly where a person reading
  * a disagreement agrees with the reviewer and wants the ticket run again.
  */
-export function EditBodyAndRequeue({
-  project,
-  issue,
-  waitId,
-}: {
-  project: string
-  issue: number
-  waitId: WaitId | null
-}) {
-  const [text, setText] = useState('')
-  const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
-  const [pending, setPending] = useState(false)
-  const [detail, setDetail] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
-  const [, startTransition] = useTransition()
-
-  if (waitId === null && text === '' && !pending && detail === null) return null
-
-  return (
-    <div className="decide">
-      <label className="reason">
-        <span>Text to add to the ticket body</span>
-        <textarea
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value)
-            setDraftWaitId(waitId)
-          }}
-        />
-      </label>
-      <button
-        className="btn"
-        disabled={pending || done || !text.trim() || waitId === null || draftWaitId !== waitId}
-        onClick={() => {
-          if (waitId === null || draftWaitId !== waitId) return
-          setPending(true)
-          setDetail(null)
-          startTransition(async () => {
-            const result = await editBodyAndRequeueCard({ project, issue, waitId, text })
-            setPending(false)
-            setDone(result.ok)
-            setDetail(result.detail)
-          })
-        }}
-      >
-        {pending ? '…' : 'Write it into the body & requeue'}
-      </button>
-      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
-    </div>
-  )
-}
-
 export function Requeue({
   project,
   issue,
