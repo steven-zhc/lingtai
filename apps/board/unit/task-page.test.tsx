@@ -278,7 +278,7 @@ describe('a blocked task', () => {
         result: {
           _tag: 'TriageAdvised',
           cause: { _tag: 'WrongApproach' },
-          resolution: { _tag: 'Requeue' },
+          resolution: 'Requeue',
           summary: 'Start again from the current base',
           want: 'Get the reviewer running',
         },
