@@ -284,7 +284,7 @@ export function Standing({
   return (
     <section className={`standing${mark}`}>
       {subject !== null ? (
-        <div className="sticket" data-rank="ticket">
+        <div className="sticket">
           <p className="ssubject" data-rank="subject">
             {subject.url !== null ? (
               <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
@@ -302,11 +302,13 @@ export function Standing({
           </p>
           {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
           {opening !== null && opening.text !== '' ? (
-            <details className="topening">
-              <summary>Opening of the ticket</summary>
-              <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
+            <div className="topening">
+              <details>
+                <summary>Opening of the ticket</summary>
+                <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
+              </details>
               {opening.longer ? <a href="#record-ticket">The whole ticket ↓</a> : null}
-            </details>
+            </div>
           ) : null}
         </div>
       ) : null}

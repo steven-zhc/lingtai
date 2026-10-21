@@ -1436,7 +1436,7 @@ describe('the subject, at the top', () => {
     expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('Triage’s reading:'))
     expect(html.indexOf('Triage’s reading:')).toBeLessThan(html.indexOf('data-rank="state"'))
     expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
-    expect(html).toContain('<details class="topening">')
+    expect(html).toContain('<details><summary>Opening of the ticket</summary>')
     expect(html).toContain('href="#record-ticket"')
     expect(html).not.toContain('alert(1)')
     expect(ticketOpening('one\ntwo')).toEqual({ text: 'one\ntwo', longer: false })
@@ -1462,6 +1462,34 @@ describe('the subject, at the top', () => {
     expect(currentWaitWant(events.slice(0, 2), HELD)).toBeNull()
     expect(currentWaitWant(events, { ...HELD, state: 'landed' })).toBeNull()
     expect(currentWaitWant(events.slice(0, 3), HELD)).toBeNull()
+    expect(
+      currentWaitWant(
+        events.slice(0, 3).concat(
+          e(ITEM, 'WaitTriaged', {
+            waitId: current,
+            attempt: 1,
+            result: { _tag: 'TriageFailed', why: 'unreadable' },
+          }),
+        ),
+        HELD,
+      ),
+    ).toBeNull()
+    expect(
+      currentWaitWant(
+        [
+          ...events.slice(0, 3),
+          e(ITEM, 'WaitTriaged', {
+            waitId: current,
+            attempt: 1,
+            result: advised(null),
+          }),
+        ],
+        HELD,
+      ),
+    ).toBeNull()
+    expect(
+      currentWaitWant(events, { ...HELD, reason: { _tag: 'OwnQuestion', question: 'why?', by: 'user' } }),
+    ).toBeNull()
   })
 
   it('names the ticket and links out to it, above the reason it stopped', () => {
