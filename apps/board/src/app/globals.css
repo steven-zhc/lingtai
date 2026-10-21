@@ -1022,6 +1022,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    would be a second say. It was `.needs`, `.did` and `.rec` in a row. */
 .sowhat { margin: 0.2rem 0 0; max-width: 62rem; font-size: 0.85rem; line-height: 1.5; color: var(--ink); }
 
+.triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+.triage-readings > div { min-width: 0; }
+
 /* What refused, in its own words, at the second rank and open on load.
    A `<details>` so a reader who has read it can put it away — and open,
    because a person who opened this page to find out why a task stopped should

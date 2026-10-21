@@ -24,7 +24,7 @@ import { z } from 'zod'
 
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
-import { RouteEscalation } from './route.ts'
+import { RouteEscalation, type CandidateId } from './route.ts'
 import {
   Hunk,
   MERGE_HUNKS_ONE_BY_ONE,
@@ -584,6 +584,44 @@ const TriageAdvised = z.strictObject({
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
 export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])
 export type TriageResult = z.infer<typeof TriageResult>
+
+/** The judge's choice is recorded on a wait only when its route escalated. */
+export function judgeReadingOf(reason: WaitReason): { chose: CandidateId; why: string | null } | null {
+  if (reason._tag !== 'ProposedEscalated') return null
+  switch (reason.because._tag) {
+    case 'JudgeHandedOver':
+      return { chose: 'hand-to-person', why: reason.because.why }
+    case 'CandidateUnavailable':
+      return { chose: reason.because.excluded.id, why: null }
+    case 'NotAsked':
+    case 'UnreadableReply':
+    case 'UnknownCandidate':
+      return null
+  }
+}
+
+/** Both readings of this wait when triage disagrees with the judge (0118 §5). */
+export function disagreement(
+  reason: WaitReason,
+  result: TriageResult,
+): {
+  judge: NonNullable<ReturnType<typeof judgeReadingOf>>
+  triage: Extract<TriageResult, { _tag: 'TriageAdvised' }>
+} | null {
+  const judge = judgeReadingOf(reason)
+  if (judge === null || result._tag === 'TriageFailed') return null
+  switch (result.cause._tag) {
+    case 'FixableLines':
+      return judge.chose === 'fix-lines' ? null : { judge, triage: result }
+    case 'WrongApproach':
+      return judge.chose === 'state-assumption' || judge.chose === 'restart' ? null : { judge, triage: result }
+    case 'UndecidedQuestion':
+    case 'ConflictingHunks':
+    case 'TicketTooBig':
+    case 'SetupBroken':
+      return judge.chose === 'hand-to-person' ? null : { judge, triage: result }
+  }
+}
 
 /**
  * Derived on read and never stored (0118 §1, §10): four of these six —
