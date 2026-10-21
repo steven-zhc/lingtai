@@ -75,7 +75,15 @@ which kind a wait was got inferred again in each place that needed it, from
    on them exhaustively.
 
    ```ts
-   type RunRef = { runId: string; unpushed?: { branch: string; said: string } }
+   type RunRef = {
+     runId: string
+     unpushed?: {
+       branch: string
+       said: string
+       // where the work is now (#421): kept in the mirror, or on origin as the arm
+       keptAt?: { _tag: 'Mirror'; ref: string; sha: string; arm: string } | { _tag: 'Arm'; ref: string; sha: string }
+     }
+   }
 
    type WaitReason =
      // someone is asking
@@ -175,7 +183,8 @@ which kind a wait was got inferred again in each place that needed it, from
        | { _tag: 'SetupBroken' }
      type TriageResult =
        | { _tag: 'TriageFailed'; why: string }
-       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: Resolution; summary: string; want: string | null }
+       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: TriageAdvice; summary: string; want: string | null }
+     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' // a Resolution's tag, never AnswerQuestion
      type TriageStatus =
        // derived on read, never stored
        | { _tag: 'NotNeeded' }
@@ -186,7 +195,10 @@ which kind a wait was got inferred again in each place that needed it, from
        | { _tag: 'Done'; result: TriageResult }
      ```
 
-     `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
+     Triage advises a resolution by its kind alone: it never supplies an
+     `onSha`, because an approval names the sha the person was shown, and it
+     never advises `AnswerQuestion`, which belongs to `OwnQuestion`, a wait it
+     does not read. `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
      page and `recommendedResolution` match on, and what the daemon starts
      triage on: it starts one for `Queued`, and on its own start retries an
      `Interrupted` one (§3). It is derived from the wait
