@@ -1,4 +1,5 @@
 import type { BlockDiagnosis } from '@lingtai/domain'
+import type { TriageResult } from '@lingtai/domain/wait'
 import { postgresUrl } from '@lingtai/env'
 /**
  * The projections in Postgres — the implementation that was already here.
@@ -74,6 +75,12 @@ function toCard(row: pg.QueryResultRow): TaskCard {
         .map(([, verdict]) => verdict)
     : []
   const count = (v: string) => verdicts.filter((x) => x === v).length
+  const wait = waitOf(
+    row.task_id,
+    row.state as TaskState,
+    columnOf(row, 'task_view', 'wait_id'),
+    columnOf(row, 'task_view', 'wait_reason'),
+  )
   return {
     taskId: row.task_id,
     project: row.project,
@@ -108,12 +115,21 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     // table that predates these two columns has neither key at all, and
     // reading them off the row directly would read as a wait with no
     // reason rather than as the drift it is.
-    wait: waitOf(
-      row.task_id,
-      row.state as TaskState,
-      columnOf(row, 'task_view', 'wait_id'),
-      columnOf(row, 'task_view', 'wait_reason'),
-    ),
+    wait,
+    triage:
+      wait === null
+        ? { started: null, result: null }
+        : {
+            started:
+              columnOf(row, 'task_view', 'triage_attempt') === null
+                ? null
+                : {
+                    attempt: columnOf(row, 'task_view', 'triage_attempt') as number,
+                    at: columnOf(row, 'task_view', 'triage_started_at') as Date,
+                  },
+            result: columnOf(row, 'task_view', 'triage_result') as TriageResult | null,
+          },
+    triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
     needs: row.needs ?? null,
     // Written from a parsed payload and read back as it was written, so the
     // shape is the event's rather than this reader's guess about it.

@@ -397,6 +397,8 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     diagnosis: null,
     asked: false,
     answer: null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
     repairPending: false,
     ...over,
   }

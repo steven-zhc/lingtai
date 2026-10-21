@@ -36,6 +36,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 
 import type { BlockDiagnosis } from '@lingtai/domain'
+import type { TriageResult } from '@lingtai/domain/wait'
 
 import type { BacklogEntry } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
@@ -271,6 +272,12 @@ function toCard(row: ProjectionRow): TaskCard {
   const count = (v: string) => verdicts.filter((x) => x === v).length
   const issue = row.issue as string
   const awaitingSha = (row.awaiting_sha as string | null) ?? null
+  const wait = waitOf(
+    row.task_id as string,
+    row.state as TaskState,
+    columnOf(row, 'task_view', 'wait_id'),
+    parseJson(columnOf(row, 'task_view', 'wait_reason')),
+  )
   return {
     taskId: row.task_id as string,
     project: row.project as string,
@@ -305,12 +312,21 @@ function toCard(row: ProjectionRow): TaskCard {
     // table that predates these two columns has neither key at all, and
     // reading them off the row directly would read as a wait with no
     // reason rather than as the drift it is.
-    wait: waitOf(
-      row.task_id as string,
-      row.state as TaskState,
-      columnOf(row, 'task_view', 'wait_id'),
-      parseJson(columnOf(row, 'task_view', 'wait_reason')),
-    ),
+    wait,
+    triage:
+      wait === null
+        ? { started: null, result: null }
+        : {
+            started:
+              columnOf(row, 'task_view', 'triage_attempt') === null
+                ? null
+                : {
+                    attempt: Number(columnOf(row, 'task_view', 'triage_attempt')),
+                    at: parseAt(columnOf(row, 'task_view', 'triage_started_at')) as Date,
+                  },
+            result: parseJson(columnOf(row, 'task_view', 'triage_result')) as TriageResult | null,
+          },
+    triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
     needs: (row.needs as TaskCard['needs']) ?? null,
     diagnosis: (parseJson(row.diagnosis) as BlockDiagnosis | null) ?? null,
     asked: parseBool(row.asked),

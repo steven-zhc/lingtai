@@ -65,6 +65,8 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
       over.state === 'waiting'
         ? waitOf('ticket-1', 'waiting', 'wait-1', { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' })
         : null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
     needs: null,
     diagnosis: null,
     asked: false,

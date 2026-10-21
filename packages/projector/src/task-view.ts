@@ -49,7 +49,7 @@
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
 import { cardFactOf, parseTicketStream, WaitId } from '@lingtai/domain'
-import { WaitReason } from '@lingtai/domain/wait'
+import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
@@ -169,6 +169,10 @@ export const taskViewProjection: Projection = {
         -- waitOf leans on that to refuse a waiting row with neither.
         wait_id      text,
         wait_reason  jsonb,
+        triage_attempt int,
+        triage_started_at timestamptz,
+        triage_result jsonb,
+        triage_head_sha text,
 
         -- Whether that question was asked **before any run** — a
         -- WaitStarted{reason: OwnQuestion}, with runId null, which only
@@ -308,6 +312,10 @@ export const taskViewProjection: Projection = {
             waiting: false,
             wait_id: null,
             wait_reason: null,
+            triage_attempt: null,
+            triage_started_at: null,
+            triage_result: null,
+            triage_head_sha: null,
             asked: false,
             needs: null,
             diagnosis: null,
@@ -333,6 +341,10 @@ export const taskViewProjection: Projection = {
             waiting: false,
             wait_id: null,
             wait_reason: null,
+            triage_attempt: null,
+            triage_started_at: null,
+            triage_result: null,
+            triage_head_sha: null,
             asked: false,
             // Closing answers whatever was being held, for `landed`'s reason: a
             // diagnosis that outlived the decision reports a failure on work
@@ -353,6 +365,10 @@ export const taskViewProjection: Projection = {
             waiting: false,
             wait_id: null,
             wait_reason: null,
+            triage_attempt: null,
+            triage_started_at: null,
+            triage_result: null,
+            triage_head_sha: null,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -400,6 +416,10 @@ export const taskViewProjection: Projection = {
                    diagnosis = case when task_view.waiting then task_view.diagnosis else null end,
                    wait_id = case when task_view.waiting then task_view.wait_id else null end,
                    wait_reason = case when task_view.waiting then task_view.wait_reason else null end,
+                   triage_attempt = case when task_view.waiting then task_view.triage_attempt else null end,
+                   triage_started_at = case when task_view.waiting then task_view.triage_started_at else null end,
+                   triage_result = case when task_view.waiting then task_view.triage_result else null end,
+                   triage_head_sha = case when task_view.waiting then task_view.triage_head_sha else null end,
                    updated_at = excluded.updated_at,
                    updated_seq = excluded.updated_seq
              where task_view.updated_seq < excluded.updated_seq`,
@@ -517,6 +537,10 @@ export const taskViewProjection: Projection = {
             waiting: false,
             wait_id: null,
             wait_reason: null,
+            triage_attempt: null,
+            triage_started_at: null,
+            triage_result: null,
+            triage_head_sha: null,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -605,12 +629,40 @@ export const taskViewProjection: Projection = {
                   waiting: true,
                   wait_id: fact.waitId,
                   wait_reason: JSON.stringify(fact.reason),
+                  triage_attempt: null,
+                  triage_started_at: null,
+                  triage_result: null,
+                  triage_head_sha: null,
                   asked: fact.reason._tag === 'OwnQuestion',
                   needs: fact.card.needs,
                   diagnosis: fact.card.diagnosis === null ? null : JSON.stringify(fact.card.diagnosis),
                 })
                 break
               }
+
+              case 'TriageStarted':
+                await ctx.query(
+                  `update task_view
+                   set triage_attempt = $4::int, triage_started_at = $3,
+                       triage_result = null, triage_head_sha = null,
+                       updated_at = $3, updated_seq = $2::bigint
+                   where task_id = $1 and state = 'waiting' and wait_id = $5
+                     and (triage_attempt is null or triage_attempt < $4::int)
+                     and updated_seq <= $2::bigint`,
+                  [event.streamId, seq, at, fact.attempt, fact.waitId],
+                )
+                break
+
+              case 'WaitTriaged':
+                await ctx.query(
+                  `update task_view
+                   set triage_result = $4::jsonb, triage_head_sha = $5,
+                       updated_at = $3, updated_seq = $2::bigint
+                   where task_id = $1 and state = 'waiting' and wait_id = $6
+                     and triage_attempt = $7::int and updated_seq <= $2::bigint`,
+                  [event.streamId, seq, at, JSON.stringify(fact.result), fact.headSha, fact.waitId, fact.attempt],
+                )
+                break
 
               case 'WaitResolved':
                 if (fact.resolution._tag === 'Approve') {
@@ -649,6 +701,10 @@ export const taskViewProjection: Projection = {
                     waiting: false,
                     wait_id: null,
                     wait_reason: null,
+                    triage_attempt: null,
+                    triage_started_at: null,
+                    triage_result: null,
+                    triage_head_sha: null,
                     asked: false,
                     needs: null,
                     diagnosis: null,
@@ -676,6 +732,10 @@ export const taskViewProjection: Projection = {
                      waiting = false,
                      wait_id = null,
                      wait_reason = null,
+                     triage_attempt = null,
+                     triage_started_at = null,
+                     triage_result = null,
+                     triage_head_sha = null,
                      asked = false,
                      -- The hold is answered, so the diagnosis of it goes with
                      -- the question. Leaving it would put last week's
@@ -785,6 +845,10 @@ async function upsert(
            waiting = case when $10::int > 0 then false else task_view.waiting end,
            wait_id = case when $10::int > 0 then null else task_view.wait_id end,
            wait_reason = case when $10::int > 0 then null else task_view.wait_reason end,
+           triage_attempt = case when $10::int > 0 then null else task_view.triage_attempt end,
+           triage_started_at = case when $10::int > 0 then null else task_view.triage_started_at end,
+           triage_result = case when $10::int > 0 then null else task_view.triage_result end,
+           triage_head_sha = case when $10::int > 0 then null else task_view.triage_head_sha end,
            asked = case when $10::int > 0 then false else task_view.asked end,
            -- And nobody's failure yet either. The diagnosis belongs to the block
            -- it explained; carrying it into the next attempt would put the last
@@ -940,6 +1004,8 @@ export interface TaskCard {
    * both store twins call so they cannot disagree about the refusal below.
    */
   wait: { waitId: WaitId; reason: WaitReason } | null
+  triage: TriageFacts
+  triageHeadSha: string | null
   /**
    * Which kind of hold it is: a person's `judgement`, or a failure that needs
    * `acknowledgement`. Null on a block that did not say, which is every one
