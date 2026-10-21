@@ -133,31 +133,25 @@ describe('the board, reading a task_view built before the rename', () => {
 
 /**
  * A store whose `task_view` is the real one, optionally aged back to the shape
- * it had before #477 renamed the boolean column `blocked` to `waiting` — the
- * lane's own id, and not GitHub's `blocked` label or `blocked-by` count, which
- * this rename leaves untouched.
+ * it had before the current reason column existed.
  */
-async function storeWithWaitingColumn(column: 'waiting' | 'blocked'): Promise<ProjectionStore> {
+async function storeWithReasonColumn(column: 'wait_reason' | 'old_reason'): Promise<ProjectionStore> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   await store.transact(async (ctx) => {
     await taskViewProjection.create(ctx)
-    if (column === 'blocked') {
-      await ctx.query('alter table task_view rename column waiting to blocked')
+    if (column === 'old_reason') {
+      await ctx.query('alter table task_view rename column wait_reason to old_reason')
     }
-    // wait_id/wait_reason too, not just the renamed column: a waiting row
-    // with neither is #440's own refusal, and this fixture is about the
-    // #477 rename, not that one.
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, ${column}, wait_id, wait_reason, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)`,
+         (task_id, project, issue, state, run_id, wait_id, ${column}, updated_at, updated_seq)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
       [
         'ticket-drift-2',
         'drift',
         '2',
         'waiting',
         RUN,
-        true,
         'wait-drift-2',
         JSON.stringify({ _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' }),
         new Date().toISOString(),
@@ -168,9 +162,9 @@ async function storeWithWaitingColumn(column: 'waiting' | 'blocked'): Promise<Pr
   return store
 }
 
-describe('the board, reading a task_view built before #477 renamed blocked to waiting', () => {
+describe('the board, reading a task_view without wait_reason', () => {
   it('refuses the read rather than reporting every waiting card as answered', async () => {
-    const store = await storeWithWaitingColumn('blocked')
+    const store = await storeWithReasonColumn('old_reason')
     try {
       await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(ProjectionShapeError)
       await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(/lingtai projection rebuild task_view/)
@@ -182,10 +176,10 @@ describe('the board, reading a task_view built before #477 renamed blocked to wa
   it('reads the hold once the column is the declared one', async () => {
     // The control, for the reason given above: without it the refusal above
     // would pass on a store that refuses every read.
-    const store = await storeWithWaitingColumn('waiting')
+    const store = await storeWithReasonColumn('wait_reason')
     try {
       const [card] = await store.tasks({ retentionDays: 2 })
-      expect(card!.waiting).toBe(true)
+      expect(card!.wait?.reason._tag).toBe('OwnQuestion')
     } finally {
       await store.close()
     }

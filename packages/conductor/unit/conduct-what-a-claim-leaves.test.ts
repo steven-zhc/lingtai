@@ -193,7 +193,6 @@ describe('when the agent meets the wall', () => {
     const blocked = item.find((e) => e.type === 'WaitStarted')
     expect(blocked).toBeDefined()
     const cols = waitWords((blocked!.data as { reason: WaitReason }).reason)
-    expect(cols.needsFrom).toBe('human')
     expect(cols.needs).toBe('acknowledgement')
     expect(cols.line).toContain('out-of-turns')
     // The recommendation is *narrow or split the ticket*, which is the whole of

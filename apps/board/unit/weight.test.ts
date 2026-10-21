@@ -48,16 +48,12 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
-    waiting: false,
     // A real wait when the caller asks for `state: 'waiting'` — `wait: null`
     // there is the combination `toCard`/`waitOf` can never produce.
     wait:
       over.state === 'waiting'
         ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
         : null,
-    needs: null,
-    diagnosis: null,
-    asked: false,
     answer: null,
     triage: { started: null, result: null },
     triageHeadSha: null,
