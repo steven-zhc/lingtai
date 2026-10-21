@@ -155,7 +155,14 @@ async function gatherEvidence(
       routed,
       published,
       diffStat,
-      reading: readingFor({ base, baseSha, attempt: runAttempt, head: headSha }),
+      // `head`, the log's own claim (`headOf`, `RunProducedDiff.headSha`) —
+      // never `headSha`, the mirror's resolution of it. A mirror that cannot
+      // resolve a head the attempt did produce (a pruned worktree, a re-cloned
+      // mirror) must not read as "the attempt committed nothing": the log is
+      // what settles whether the attempt produced a commit, the mirror only
+      // whether a file can be served for it. `discuss.ts:226`'s own
+      // `gatherEvidence` follows the same rule.
+      reading: readingFor({ base, baseSha, attempt: runAttempt, head }),
       refs,
     },
     baseSha,
@@ -198,21 +205,48 @@ export async function waitTriage(
 
   const by = { _tag: 'Agent' as const, runtime: request.triage.agent, model: request.triage.model ?? '' }
 
-  try {
-    await deps.store.append(stream, before.length, [
-      {
-        type: 'TriageStarted',
-        actor: 'conductor',
-        data: parsePayload('TriageStarted', { waitId: request.waitId, attempt, by }),
-      },
-    ])
-  } catch (err) {
-    if (err instanceof ConcurrencyError) {
-      log(`triage ${request.waitId}: lost the race to start attempt ${attempt} — nothing dispatched`)
-      return { attempt, result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') } }
+  // A `ConcurrencyError` here says only that *something* appended to the
+  // ticket stream between the read above and this append — not that it was
+  // another triage attempt. `resolveWait` appending `WaitResolved` to the same
+  // stream, or any other appender, conflicts the same way a second triage
+  // attempt would. So re-read and check: only when the new events actually
+  // carry a `TriageStarted` for this same `waitId` is a second attempt really
+  // starting; anything else is unrelated, and the append is retried at the
+  // fresh version rather than abandoning the triage with a false reason.
+  let started = false
+  let startedErr: unknown = null
+  for (let i = 0; i < 5 && !started; i += 1) {
+    try {
+      await deps.store.append(stream, before.length, [
+        {
+          type: 'TriageStarted',
+          actor: 'conductor',
+          data: parsePayload('TriageStarted', { waitId: request.waitId, attempt, by }),
+        },
+      ])
+      started = true
+    } catch (err) {
+      if (err instanceof ConcurrencyError) {
+        const since = before.length
+        before = await deps.store.read(stream)
+        const racedByOther = before
+          .slice(since)
+          .some((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
+        if (racedByOther) {
+          log(`triage ${request.waitId}: lost the race to start attempt ${attempt} — nothing dispatched`)
+          return { attempt, result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') } }
+        }
+        startedErr = err
+        continue
+      }
+      log(`triage ${request.waitId}: TriageStarted append failed — ${(err as Error).message}`)
+      return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) } }
     }
-    log(`triage ${request.waitId}: TriageStarted append failed — ${(err as Error).message}`)
-    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) } }
+  }
+  if (!started) {
+    const message = startedErr instanceof Error ? startedErr.message : String(startedErr)
+    log(`triage ${request.waitId}: TriageStarted append failed — ${message}`)
+    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) } }
   }
 
   let baseSha: string | null = null
@@ -255,11 +289,17 @@ export async function waitTriage(
     // or the other; otherwise the last error's message, which ends the
     // triage rather than leaving a paid call unrecorded.
     const spend = async (outcome: RunOutcome): Promise<string | null> => {
-      const since = (await deps.store.read(stream)).length
+      // `since` is captured from the first read that succeeds, not a read taken
+      // before the loop — a transient failure on that very first read (the
+      // scenario this retry exists for) must not propagate past this function
+      // uncaught, discarding both the ledger row and the advice the call
+      // already produced.
+      let since: number | null = null
       let lastError: unknown = null
       for (let i = 0; i < 5; i += 1) {
         try {
           const current = await deps.store.read(stream)
+          if (since === null) since = current.length
           const alreadyLanded = current.slice(since).some((e) => {
             if (e.type !== 'RunSpent') return false
             const data = e.data as PayloadOf<'RunSpent'>

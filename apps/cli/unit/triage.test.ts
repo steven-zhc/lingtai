@@ -145,6 +145,83 @@ function appendsThenRejects(store: EventStore, type: string, failTimes: number):
   }
 }
 
+/**
+ * `store`, whose `append` of the first `TriageStarted` lands a competing
+ * `TriageStarted` for the same `waitId` and `attempt` first — standing in for
+ * a genuine second attempt winning the race — and then throws
+ * `ConcurrencyError`, once.
+ */
+function racedBySameWaitTriageStarted(store: EventStore, waitId: WaitId, attempt: number): EventStore {
+  let seen = false
+  return {
+    ...store,
+    append: async (streamId, expectedVersion, events) => {
+      if (events[0]?.type === 'TriageStarted' && !seen) {
+        seen = true
+        await store.append(streamId, expectedVersion, [
+          {
+            type: 'TriageStarted',
+            actor: 'conductor',
+            data: { waitId, attempt, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+          },
+        ])
+        throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+      }
+      return store.append(streamId, expectedVersion, events)
+    },
+  }
+}
+
+/**
+ * `store`, whose `append` of the first `TriageStarted` lands an unrelated
+ * event first — standing in for a concurrent writer unrelated to this wait,
+ * such as `resolveWait`'s `WaitResolved` on a different wait on the same
+ * ticket — and then throws `ConcurrencyError`, once.
+ */
+function racedByUnrelatedAppend(store: EventStore): EventStore {
+  let seen = false
+  return {
+    ...store,
+    append: async (streamId, expectedVersion, events) => {
+      if (events[0]?.type === 'TriageStarted' && !seen) {
+        seen = true
+        await store.append(streamId, expectedVersion, [
+          {
+            type: 'WaitResolved',
+            actor: 'human:steven',
+            data: {
+              waitId: aWaitId(),
+              by: 'human:steven',
+              resolution: { _tag: 'Requeue' },
+              note: 'resolved a different wait on this ticket',
+            },
+          },
+        ])
+        throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+      }
+      return store.append(streamId, expectedVersion, events)
+    },
+  }
+}
+
+/**
+ * `store`, whose `read` of `streamId` rejects on its `failAtCall`th call
+ * (0-based, across the whole store) — standing in for a dropped connection
+ * on the read `spend()` takes between a billed call returning and the
+ * `RunSpent` meant to record it (#428's own blocker scenario).
+ */
+function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
+  let call = -1
+  return {
+    ...store,
+    read: async (streamId) => {
+      call += 1
+      if (call === failAtCall) throw new Error('connection dropped')
+      return store.read(streamId)
+    },
+  }
+}
+
 describe('waitTriage', () => {
   it('appends TriageStarted, one RunSpent per call, then one WaitTriaged — advised on a good reply', async () => {
     const store = createMemoryEventStore()
@@ -237,6 +314,52 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageFailed')
     expect(await store.read(ticketId)).toEqual([])
+  })
+
+  it('retries the TriageStarted append past a concurrent writer unrelated to this wait, rather than reporting a race that did not happen', async () => {
+    const store = racedByUnrelatedAppend(createMemoryEventStore())
+    const ticketId = ticketStream('lingtai', 21)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    // The unrelated `WaitResolved` landed first, and the retried `TriageStarted`
+    // still landed after it — never the false "another attempt was already
+    // starting" a version conflict from an unrelated appender used to produce.
+    expect(typesOf(events)).toEqual(['WaitResolved', 'TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  it('still reports the lost race, and appends nothing of its own, when the TriageStarted conflict is a genuine second attempt on the same wait', async () => {
+    const waitId = aWaitId()
+    const store = racedBySameWaitTriageStarted(createMemoryEventStore(), waitId, 1)
+    const ticketId = ticketStream('lingtai', 23)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, waitId))
+
+    expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'another attempt was already starting' })
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted'])
+  })
+
+  it('retries the read RunSpent takes before checking whether its call already landed, rather than losing the ledger row to a transient read failure', async () => {
+    // Store reads in order: (0) waitTriage's own initial read, (1) RunSpent's
+    // first read for this call, (2) the final WaitTriaged append's version
+    // read. Failing call 1 is this ticket's own blocker scenario.
+    const store = flakyReadAtCall(createMemoryEventStore(), 1)
+    const ticketId = ticketStream('lingtai', 24)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('never throws when prepare() rejects after TriageStarted has landed, and still answers it with one WaitTriaged', async () => {
