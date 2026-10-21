@@ -488,12 +488,24 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  */
 export function recommendedResolution(reason: WaitReason, status: TriageStatus): Resolution['_tag'] | null {
   const allowed = allowedResolutions(reason)
-  if (status._tag === 'Done' && status.result._tag === 'TriageAdvised') {
-    const advised = status.result.resolution
-    return allowed.includes(advised) ? advised : null
+  const toDefault = () => {
+    const fallback = defaultResolution(reason)
+    return fallback !== null && allowed.includes(fallback) ? fallback : null
   }
-  const fallback = defaultResolution(reason)
-  return fallback !== null && allowed.includes(fallback) ? fallback : null
+  switch (status._tag) {
+    case 'Done':
+      if (status.result._tag === 'TriageAdvised') {
+        const advised = status.result.resolution
+        return allowed.includes(advised) ? advised : null
+      }
+      return toDefault()
+    case 'NotNeeded':
+    case 'NotDeclared':
+    case 'Queued':
+    case 'Running':
+    case 'Interrupted':
+      return toDefault()
+  }
 }
 
 /**
@@ -587,3 +599,59 @@ export type TriageStatus =
   | { _tag: 'Running' }
   | { _tag: 'Interrupted' }
   | { _tag: 'Done'; result: TriageResult }
+
+/**
+ * What the log says about one wait's triage attempts, read off `WaitStarted`'s
+ * `waitId` alone — `triageFactsOf` (`read-model.ts`, which reads event
+ * payloads; this file does not) builds it.
+ */
+export type TriageFacts = {
+  /** The latest `TriageStarted` for this wait, by `attempt`, or `null` when none has been appended. */
+  readonly started: { readonly attempt: number; readonly at: Date } | null
+  /** The `WaitTriaged` finishing that same attempt, whole, or `null`. An earlier attempt's result is never read. */
+  readonly result: TriageResult | null
+}
+
+/** `facts` and `context` read against 0118 §1's steps 2-4, once `triageStatus` has ruled out `NotNeeded`. */
+function statusOfFacts(facts: TriageFacts, context: { declared: boolean; daemonStartedAt: Date | null }): TriageStatus {
+  if (facts.result !== null) return { _tag: 'Done', result: facts.result }
+  if (facts.started !== null) {
+    const interrupted =
+      context.daemonStartedAt !== null && facts.started.at.getTime() < context.daemonStartedAt.getTime()
+    return { _tag: interrupted ? 'Interrupted' : 'Running' }
+  }
+  return context.declared ? { _tag: 'Queued' } : { _tag: 'NotDeclared' }
+}
+
+/**
+ * A wait's `TriageStatus` — 0118 §1's order. `NotNeeded` first, for
+ * `OwnQuestion` and `SignoffRequired`, whatever `facts` or `context` say;
+ * every other tag reads `facts` and `context` through {@link statusOfFacts}.
+ * No `default`, for {@link tableResolutions}'s own reason: a thirteenth
+ * `WaitReason` tag must say whether triage reads it, not fall through by
+ * omission (0118 §3). Reads no clock and no recipe itself — `declared` and
+ * `daemonStartedAt` are the caller's own answers to those, so the board, the
+ * daemon and a test agree given the same three arguments.
+ */
+export function triageStatus(
+  reason: WaitReason,
+  facts: TriageFacts,
+  context: { declared: boolean; daemonStartedAt: Date | null },
+): TriageStatus {
+  switch (reason._tag) {
+    case 'OwnQuestion':
+    case 'SignoffRequired':
+      return { _tag: 'NotNeeded' }
+    case 'AgentQuestion':
+    case 'FixerDisagrees':
+    case 'NothingProduced':
+    case 'ProposedEscalated':
+    case 'CheckRefused':
+    case 'MergeRefused':
+    case 'BudgetExhausted':
+    case 'AgentCrashed':
+    case 'SetupRefused':
+    case 'AnswerUnreadable':
+      return statusOfFacts(facts, context)
+  }
+}

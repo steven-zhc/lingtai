@@ -17,7 +17,7 @@ import type {
 } from '../src/index.ts'
 import { routeNext, STEPS, type RouteOffer, type JudgeReply, type RouteDecision } from '../src/index.ts'
 import type { RunRef } from '../src/wait.ts'
-import type { Resolution, WaitReason } from '../src/wait.ts'
+import type { Resolution, TriageResult, WaitReason } from '../src/wait.ts'
 import { makeStream } from './support.ts'
 
 let nextWaitId = 1
@@ -82,6 +82,27 @@ export function aResolution(
 /** A withdrawn wait — a person taking back an `OwnQuestion` asked before any run claimed the item, by requeuing with no note. */
 export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, waitId: WaitId): Envelope[] {
   return [itemStream('WaitResolved', { waitId, by: 'steven', resolution: { _tag: 'Requeue' }, note: '' })]
+}
+
+/** `TriageStarted{waitId, attempt, by}` — appended before the triage agent is dispatched. */
+export function aTriageStart(
+  itemStream: ReturnType<typeof makeStream>,
+  waitId: WaitId,
+  attempt: number,
+  at?: Date,
+): Envelope[] {
+  return [itemStream('TriageStarted', { waitId, attempt, by: { _tag: 'Mechanical' } }, at === undefined ? {} : { at })]
+}
+
+/** `WaitTriaged{waitId, attempt, headSha, result, by}` — the event that finishes a `TriageStarted` attempt. */
+export function aTriaged(
+  itemStream: ReturnType<typeof makeStream>,
+  waitId: WaitId,
+  attempt: number,
+  result: TriageResult,
+  headSha = 'sha-1',
+): Envelope[] {
+  return [itemStream('WaitTriaged', { waitId, attempt, headSha, result, by: { _tag: 'Mechanical' } })]
 }
 
 /**

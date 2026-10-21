@@ -20,7 +20,7 @@ import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
-import type { Resolution, TriageResult, WaitReason } from './wait.ts'
+import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
 
 /**
  * The branch a `WaitStarted`'s own ticket owns, deterministic from the
@@ -94,6 +94,41 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
       const resolution = resolved === undefined ? null : (resolved.data as PayloadOf<'WaitResolved'>).resolution
       return { waitId: data.waitId, reason: data.reason, resolution }
     })
+}
+
+// ----------------------------------------------------------- triageFactsOf ----
+
+/**
+ * One wait's triage facts off the ticket's stream — the latest `TriageStarted`
+ * for `waitId`, by `attempt` rather than position, and the `WaitTriaged`
+ * finishing that same attempt, if one has landed. `events.ts`: *"`attempt`
+ * matches the `TriageStarted` it finishes; a reader takes only the latest
+ * attempt's result"* — so a `WaitTriaged` for an earlier attempt, or for a
+ * `waitId` with no `TriageStarted` at all, is never read.
+ */
+export function triageFactsOf(events: readonly Envelope[], waitId: WaitId): TriageFacts {
+  const starts = events.filter(
+    (e) => e.type === 'TriageStarted' && (e.data as PayloadOf<'TriageStarted'>).waitId === waitId,
+  )
+  const latestStart = starts.reduce<Envelope | null>((latest, e) => {
+    const attempt = (e.data as PayloadOf<'TriageStarted'>).attempt
+    const latestAttempt = latest === null ? -1 : (latest.data as PayloadOf<'TriageStarted'>).attempt
+    return attempt > latestAttempt ? e : latest
+  }, null)
+  const started =
+    latestStart === null
+      ? null
+      : { attempt: (latestStart.data as PayloadOf<'TriageStarted'>).attempt, at: latestStart.at }
+  const triaged =
+    started === null
+      ? undefined
+      : events.find(
+          (e) =>
+            e.type === 'WaitTriaged' &&
+            (e.data as PayloadOf<'WaitTriaged'>).waitId === waitId &&
+            (e.data as PayloadOf<'WaitTriaged'>).attempt === started.attempt,
+        )
+  return { started, result: triaged === undefined ? null : (triaged.data as PayloadOf<'WaitTriaged'>).result }
 }
 
 // --------------------------------------------------------- releaseCauseOf ----

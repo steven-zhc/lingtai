@@ -16,9 +16,11 @@ import {
   releaseCauseOf,
   routesOf,
   stepOutcomesOf,
+  triageFactsOf,
   waitsOf,
 } from '../src/index.ts'
-import { aClaim, aRelease, aResolution, aRoute, aRun, aWait, aWaitId } from '../test/events.ts'
+import { triageStatus, type TriageResult } from '../src/wait.ts'
+import { aClaim, aRelease, aResolution, aRoute, aRun, aTriageStart, aTriaged, aWait, aWaitId } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
 function verdict(name: string, onSha: string, accepted: boolean, findings: readonly unknown[] = []): Action {
@@ -109,6 +111,47 @@ describe('waitsOf', () => {
     const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }
     expect(waitsOf(aWait(item, reason))[0]!.resolution).toBeNull()
   })
+})
+
+describe('triageFactsOf', () => {
+  it('no triage events gives { started: null, result: null }', () => {
+    const item = makeStream('ticket-1')
+    const waitId = aWaitId()
+    expect(
+      triageFactsOf(aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, waitId), waitId),
+    ).toEqual({ started: null, result: null })
+  })
+
+  it('a WaitTriaged for a different waitId is ignored', () => {
+    const item = makeStream('ticket-1')
+    const waitId = aWaitId()
+    const otherWaitId = aWaitId()
+    const failed: TriageResult = { _tag: 'TriageFailed', why: 'could not parse an answer' }
+    const events = [...aTriageStart(item, otherWaitId, 1), ...aTriaged(item, otherWaitId, 1, failed)]
+    expect(triageFactsOf(events, waitId)).toEqual({ started: null, result: null })
+  })
+
+  it(
+    'two attempts with a result only for the first gives the second as started and result: null, ' +
+      'reading as Running/Interrupted through triageStatus rather than Done',
+    () => {
+      const item = makeStream('ticket-1')
+      const waitId = aWaitId()
+      const failed: TriageResult = { _tag: 'TriageFailed', why: 'could not parse an answer' }
+      const secondStartedAt = new Date('2026-09-02T00:00:00.000Z')
+      const events = [
+        ...aTriageStart(item, waitId, 1, new Date('2026-09-01T00:00:00.000Z')),
+        ...aTriaged(item, waitId, 1, failed),
+        ...aTriageStart(item, waitId, 2, secondStartedAt),
+      ]
+
+      const facts = triageFactsOf(events, waitId)
+      expect(facts).toEqual({ started: { attempt: 2, at: secondStartedAt }, result: null })
+
+      const reason = { _tag: 'FixerDisagrees' as const, run: { runId: 'pass-1' }, said: null }
+      expect(triageStatus(reason, facts, { declared: true, daemonStartedAt: null })).toEqual({ _tag: 'Running' })
+    },
+  )
 })
 
 describe('releaseCauseOf', () => {
