@@ -26,7 +26,7 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
-import { legacyColumns, routesOf, type PayloadOf } from '@lingtai/domain'
+import { waitWords, routesOf, type PayloadOf } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -618,11 +618,11 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(types).toContain('WaitStarted')
     expect(types).not.toContain('TicketReleased')
 
-    const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as PayloadOf<'WaitStarted'>).reason)
+    const blocked = waitWords((item.find((e) => e.type === 'WaitStarted')!.data as PayloadOf<'WaitStarted'>).reason)
     // Nothing is being asked of anybody's judgement about the diff: the
     // machinery broke and the log is asking for it to be acknowledged.
     expect(blocked.needs).toBe('acknowledgement')
-    expect(blocked.question).toContain('did-not-finish')
+    expect(blocked.line).toContain('did-not-finish')
     // The reviewer's own ending, verbatim, rather than a sentence about the diff.
     expect(blocked.diagnosis?.raw).toContain('the reviewer did not finish (crash)')
     expect(blocked.diagnosis?.raw).toContain('already in use')

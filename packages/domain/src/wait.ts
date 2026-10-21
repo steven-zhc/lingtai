@@ -53,7 +53,7 @@ export type KeptAt = z.infer<typeof KeptAt>
 
 /**
  * A run a wait belongs to, 0118 §1's own — not `hold.ts`'s `RunRef`, which
- * also carries `repairOf` for `legacyColumns`' pre-#143 repair machinery, a
+ * also carries `repairOf` for `waitWords`' pre-#143 repair machinery, a
  * field this model has no place for. `unpushed` sits here, rather than on
  * `WaitReason` itself, so it can sit beside any wait with a run and cannot
  * sit beside an `OwnQuestion`.

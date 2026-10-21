@@ -1,7 +1,7 @@
 /**
  * `task_view` carries the current wait's `waitId` and `WaitReason` on the row
  * (#440) — `wait_id`/`wait_reason`, set by `WaitStarted` and cleared
- * everywhere `waiting` is, and read back through `waitOf` as `TaskCard.wait`.
+ * when the wait is resolved, and read back through `waitOf` as `TaskCard.wait`.
  *
  * Separate from `task-view-rebuild.test.ts`, which is a pin against today's
  * rows and must not grow new behaviour (that file's own header). Runs on the
@@ -35,12 +35,23 @@ async function withFold<T>(events: Envelope[], use: (store: ProjectionStore) => 
 async function rowOf(
   store: ProjectionStore,
   taskId: string,
-): Promise<{ task_id: string; wait_id: string | null; wait_reason: string | null; waiting: number; state: string }> {
+): Promise<{
+  task_id: string
+  wait_id: string | null
+  wait_reason: string | null
+  note: string | null
+  answer: string | null
+  state: string
+}> {
   const rows = await store.transact((ctx) =>
-    ctx.query<{ task_id: string; wait_id: string | null; wait_reason: string | null; waiting: number; state: string }>(
-      'select * from task_view where task_id = $1',
-      [taskId],
-    ),
+    ctx.query<{
+      task_id: string
+      wait_id: string | null
+      wait_reason: string | null
+      note: string | null
+      answer: string | null
+      state: string
+    }>('select * from task_view where task_id = $1', [taskId]),
   )
   const row = rows[0]
   if (row === undefined) throw new Error(`no task_view row for ${taskId}`)
@@ -226,7 +237,7 @@ describe('every way `waiting` is cleared clears wait_id and wait_reason with it'
   })
 })
 
-it('a DispatchRefused on a standing wait leaves wait_id and wait_reason exactly as they were', async () => {
+it('a DispatchRefused on a standing wait leaves wait_reason and note exactly as they were', async () => {
   const stream = makeStream('ticket-wait-440-refused')
   const waitId = aWaitId()
   const events = [
@@ -241,6 +252,24 @@ it('a DispatchRefused on a standing wait leaves wait_id and wait_reason exactly 
       question: 'which registry?',
       by: 'steven',
     })
+    expect(row.note).toBe('which registry?')
+    expect(row.state).toBe('waiting')
+  })
+})
+
+it('Requeue of an OwnQuestion preserves the previous answer', async () => {
+  const stream = makeStream('ticket-wait-522-answer')
+  const answeredId = aWaitId()
+  const withdrawnId = aWaitId()
+  const events = [
+    ...aWait(stream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, answeredId),
+    ...aResolution(stream, answeredId, { _tag: 'AnswerQuestion', choice: 'main' }),
+    ...aWait(stream, { _tag: 'OwnQuestion', question: 'still needed?', by: 'steven' }, withdrawnId),
+    ...aResolution(stream, withdrawnId, { _tag: 'Requeue' }),
+  ]
+  await withFold(events, async (store) => {
+    const row = await rowOf(store, 'ticket-wait-522-answer')
+    expect(JSON.parse(row.answer as string)).toMatchObject({ question: 'which base?', answer: 'main' })
   })
 })
 

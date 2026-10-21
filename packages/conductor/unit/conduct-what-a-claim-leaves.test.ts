@@ -27,7 +27,7 @@
  * no socket, no network.
  */
 import type { Runtime } from '@lingtai/agent'
-import { legacyColumns, type Envelope } from '@lingtai/domain'
+import { waitWords, type Envelope } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
@@ -192,10 +192,10 @@ describe('when the agent meets the wall', () => {
 
     const blocked = item.find((e) => e.type === 'WaitStarted')
     expect(blocked).toBeDefined()
-    const cols = legacyColumns((blocked!.data as { reason: WaitReason }).reason)
+    const cols = waitWords((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.needsFrom).toBe('human')
     expect(cols.needs).toBe('acknowledgement')
-    expect(cols.question).toContain('out-of-turns')
+    expect(cols.line).toContain('out-of-turns')
     // The recommendation is *narrow or split the ticket*, which is the whole of
     // why the turn limit keeps a diagnosis of its own.
     expect(cols.diagnosis?.what).toContain('scope alarm')
@@ -287,7 +287,7 @@ describe('when the agent meets the wall', () => {
         `nothing judged this diff, so there is nothing to approve (committed: ${committed})`,
       ).toBe(false)
       // Still a person's, and still with the move that is actually left on it.
-      const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
+      const blocked = waitWords((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
       expect(blocked.needs).toBe('acknowledgement')
       expect(blocked.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
     }
@@ -364,9 +364,9 @@ describe('when the agent meets the wall', () => {
     // from knowing whether the commits reached origin.
     const blocked = item.find((e) => e.type === 'WaitStarted')
     expect(blocked).toBeDefined()
-    // `was not pushed` is composed by `legacyColumns`, onto `diagnosis.what`
+    // `was not pushed` is composed by `waitWords`, onto `diagnosis.what`
     // — the event itself carries git's bare words on `reason.run.unpushed.said`.
-    const cols = legacyColumns((blocked!.data as { reason: WaitReason }).reason)
+    const cols = waitWords((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.diagnosis?.what).toContain('was not pushed')
   })
 

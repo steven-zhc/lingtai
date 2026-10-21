@@ -422,7 +422,7 @@ async function seed(): Promise<void> {
   ])
   await append(wi(10), [
     // A `Human` hold, injected by `--no-merge` or a repair — the question
-    // is all it carries itself, and `legacyColumns` composes the rest.
+    // is all it carries itself, and `waitWords` composes the rest.
     toAppend(
       aWait(makeStream(wi(10)), {
         _tag: 'SignoffRequired',
@@ -920,7 +920,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
     /**
      * A `Human` hold carries nothing of its own but the question — the
-     * `--no-merge`/repair case — and `legacyColumns` composes the rest from
+     * `--no-merge`/repair case — and `waitWords` composes the rest from
      * the step alone, including the merge recommendation (#445).
      */
     it('renders a Human hold from its question, with the merge recommendation', async () => {

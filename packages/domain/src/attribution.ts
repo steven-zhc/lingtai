@@ -37,7 +37,7 @@
  * out of, living inside an `if` in a 1,000-line file, is a rule nobody can
  * check.
  *
- * **Moved here from `@lingtai/conductor` by #445**, so `legacy-columns.ts`
+ * **Moved here from `@lingtai/conductor` by #445**, so `wait-words.ts`
  * can reach `whoseFailure` and `REFUSAL_READING`'s own move without a second
  * copy of either — `@lingtai/conductor`'s index re-exports everything below
  * under the same names, so no importer of that package changes. `Failure` is

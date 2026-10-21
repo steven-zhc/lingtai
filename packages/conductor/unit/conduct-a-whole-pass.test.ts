@@ -22,7 +22,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { Action, Envelope, JudgeReply, RouteDecision, RouteOffer, RunSpent, ToAppend } from '@lingtai/domain'
-import { cleared, legacyColumns, STEPS } from '@lingtai/domain'
+import { cleared, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, resolveSource, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -113,9 +113,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      * the last before `end`, so the sentence is arithmetic here. The wait's
      * reason is `SignoffRequired` straight off `WaitStarted` — one of 0118's
      * tags that never arrives wrapped in a `ProposedEscalated` (#502) — so
-     * `legacyColumns` reads it directly rather than through `Hold`.
+     * `waitWords` reads it directly rather than through `Hold`.
      */
-    const asked = legacyColumns((events.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
+    const asked = waitWords((events.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
     expect(asked.needs).toBe('judgement')
     expect(asked.diagnosis?.recommendation?.action).toBe('approve')
     expect(asked.diagnosis?.recommendation?.why).toContain('every step passed')
@@ -1355,9 +1355,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const waitStarted = (await store.read(`ticket-${PROJECT}-7`)).find((e) => e.type === 'WaitStarted')!.data as {
       reason: WaitReason
     }
-    const blocked = legacyColumns(waitStarted.reason)
+    const blocked = waitWords(waitStarted.reason)
     expect(blocked.diagnosis?.raw).toBe(asked)
-    expect(blocked.question).toContain(asked)
+    expect(blocked.line).toContain(asked)
     // **And what it needs is a judgement, not an acknowledgement** (the fix
     // round). `describeHold` renders this field as the hold's first line, and
     // *a failure needs acknowledging* is the wrong sentence over a step that did
@@ -1425,7 +1425,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const blockedHold2 = (await store.read(`ticket-${PROJECT}-7`)).find((e) => e.type === 'WaitStarted')!.data as {
       reason: WaitReason
     }
-    const blocked = legacyColumns(blockedHold2.reason)
+    const blocked = waitWords(blockedHold2.reason)
     expect(blocked.needs).toBe('acknowledgement')
     expect(blocked.diagnosis?.raw).toContain('produced no commits')
     // The claim that would have been false: nothing proposes the drafting agent's

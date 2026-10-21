@@ -3,7 +3,7 @@
  * 0118's `WaitReason` existed — rebuilt from the `WaitReason` directly now
  * that `Hold` is gone (#502, 0120 phase 2).
  *
- * This file used to go `Hold -> LegacyColumns`, with `@lingtai/conductor`'s
+ * This translation once went through `Hold`, with `@lingtai/conductor`'s
  * `adapters.ts` (`holdOf`/`escalatedHold`) doing the other half,
  * `WaitReason -> Hold`, as a temporary translation layer. The switch deletes
  * `Hold` itself, so this is now the one function that goes straight from a
@@ -24,20 +24,9 @@ import type { Proposal } from './proposal.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
 import type { EscalationBecause, RunRef, WaitReason } from './wait.ts'
 
-export interface LegacyColumns {
-  question: string
-  runId: string | null
-  asked: boolean
-  needs: 'judgement' | 'acknowledgement'
-  needsFrom: 'human' | 'external'
-  diagnosis: BlockDiagnosis | null
-}
-
 /**
- * The sentence a wait prints, and the two facts beside it that do not reduce
- * to `runId`/`asked`/`needsFrom` — #443: one function owns every per-variant
- * sentence, and the event-side readers call it instead of `legacyColumns`'
- * copy of the same text.
+ * The sentence a wait prints and the facts needed to describe the hold.
+ * One function owns every per-variant sentence (#443).
  */
 export interface WaitWords {
   line: string
@@ -62,8 +51,8 @@ function stepLine(step: string, word: string, text: string): string {
 /**
  * `${branch} into ${base}`, or just `${branch}` where `base` is not known.
  *
- * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `waitWords` (`ticket.ts`
- * through `legacyColumns`) off one event (or, for `ticket.ts`, off an
+ * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `waitWords` off one event
+ * (or, for `ticket.ts`, off an
  * aggregate with no run stream to read), and none of the three has a
  * projection of the recipe's own `base` —
  * only `conduct.ts`, composing the GitHub comment, does. `branch` they can
@@ -357,28 +346,5 @@ export function waitWords(
         return acknowledgement(stepLine('merge', 'refused', reason.raw), reason.run, reason.raw)
       return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.raw), reason.run, reason.raw)
     }
-  }
-}
-
-/**
- * `waitWords`' three sentence fields, plus `runId`/`asked`/`needsFrom` —
- * none of which is a sentence, and each of which is computed from `reason`
- * alone rather than carried through every per-variant branch above (#443).
- * `runId` is `reason.run.runId` for every tag but `OwnQuestion`, which has no
- * run; `asked` is true only for `OwnQuestion`; `needsFrom` is `'human'` in
- * every branch — there is no `'external'` wait yet.
- */
-export function legacyColumns(
-  reason: WaitReason,
-  pass: { branch: string; base: string; findings: readonly Finding[] } = { branch: '', base: '', findings: [] },
-): LegacyColumns {
-  const w = waitWords(reason, pass)
-  return {
-    question: w.line,
-    needs: w.needs,
-    diagnosis: w.diagnosis,
-    runId: 'run' in reason ? reason.run.runId : null,
-    asked: reason._tag === 'OwnQuestion',
-    needsFrom: 'human',
   }
 }

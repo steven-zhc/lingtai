@@ -18,7 +18,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no disk. The fixtures are `test/one-pass.ts`.
  */
-import { legacyColumns, type PayloadOf } from '@lingtai/domain'
+import { waitWords, type PayloadOf } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -594,8 +594,8 @@ describe('a failure acquiring what a step needs is answered at that step', () =>
     expect(types).toContain('WaitStarted')
     expect(types).not.toContain('TicketReleased')
 
-    const blocked = legacyColumns((item.find((e) => e.type === 'WaitStarted')!.data as PayloadOf<'WaitStarted'>).reason)
-    expect(blocked.question).toContain('the cold reviewer had no settings')
+    const blocked = waitWords((item.find((e) => e.type === 'WaitStarted')!.data as PayloadOf<'WaitStarted'>).reason)
+    expect(blocked.line).toContain('the cold reviewer had no settings')
     expect(blocked.diagnosis?.raw).toContain('ENOSPC')
     // Nothing was cut, so there is nothing on origin and nothing to approve.
     const run = [...streams(store)].find(([id]) => id.startsWith('pass-'))

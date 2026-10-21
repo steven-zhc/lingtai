@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyTicket, reduceTicket, WaitStarted, type WaitId } from '../src/index.ts'
+import { emptyTicket, reduceTicket, waitWords, WaitStarted, type WaitId } from '../src/index.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const discovered = {
@@ -73,7 +73,7 @@ describe('reduceTicket', () => {
       status: 'blocked',
       waitId: 'wait-1' as WaitId,
       reason,
-      // The step prefix is composed by `legacyColumns`, rebuilding the card
+      // The step prefix is composed by `waitWords`, rebuilding the card
       // line a fold wrote before 0118 — the bare question is on
       // `reason.question` itself.
       question: 'the `proposed` step held: Which base branch should this target?',
@@ -247,23 +247,27 @@ describe('reduceTicket', () => {
       }),
     ])
 
-    expect(judgement.lifecycle).toMatchObject({ status: 'blocked', needs: 'judgement' })
-    expect(failure.lifecycle).toMatchObject({ status: 'blocked', needs: 'acknowledgement' })
+    expect(judgement.lifecycle.status === 'blocked' && waitWords(judgement.lifecycle.reason).needs).toBe('judgement')
+    expect(failure.lifecycle.status === 'blocked' && waitWords(failure.lifecycle.reason).needs).toBe('acknowledgement')
     // And the recommendation is a value, not a sentence to parse: `approve` is a
     // legitimate one, which is what makes the board's default action possible.
-    expect(judgement.lifecycle.status === 'blocked' && judgement.lifecycle.diagnosis?.recommendation).toEqual({
+    expect(
+      judgement.lifecycle.status === 'blocked' && waitWords(judgement.lifecycle.reason).diagnosis?.recommendation,
+    ).toEqual({
       action: 'approve',
       why: 'every step passed on this diff; approving merges what this run produced',
     })
     // A conflict recommends a requeue — the next attempt is cut from a base
     // that has moved — which is `REFUSAL_READING.conflict.move` in `attribution.ts`.
-    expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.recommendation).toEqual({
+    expect(
+      failure.lifecycle.status === 'blocked' && waitWords(failure.lifecycle.reason).diagnosis?.recommendation,
+    ).toEqual({
       action: 'requeue',
       why: 'the lane was busy rather than wrong — the next pass merges it',
     })
     // The raw failure survives the summary. A sentence that hides the git
     // output would be worse than the git output.
-    expect(failure.lifecycle.status === 'blocked' && failure.lifecycle.diagnosis?.raw).toContain(
+    expect(failure.lifecycle.status === 'blocked' && waitWords(failure.lifecycle.reason).diagnosis?.raw).toContain(
       'another integration held the merge lane',
     )
   })

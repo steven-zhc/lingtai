@@ -60,7 +60,7 @@ import { AgentHostFailed, type Runtime } from '@lingtai/agent'
 import type { Envelope, PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
-  legacyColumns,
+  waitWords,
   reduceIntegration,
   releaseCauseOf,
   routesOf,
@@ -583,7 +583,7 @@ runtime:
         excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
       },
     })
-    expect(legacyColumns(hold!).question).toContain('`restarts` is spent')
+    expect(waitWords(hold!).line).toContain('`restarts` is spent')
 
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
@@ -1316,7 +1316,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       proposal: { _tag: 'ReviewFindings' },
       because: { _tag: 'UnreadableReply' },
     })
-    expect(legacyColumns(hold!).question).toContain('was not readable as one of the steps')
+    expect(waitWords(hold!).line).toContain('was not readable as one of the steps')
     // The judge's own sentence is on `because.raw` directly (#502) — there is
     // no translation left to drop it on the way to the wait.
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
@@ -1332,7 +1332,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * itself (`#462`) without ever calling `proposed`'s own body. A recipe that
    * declared a gate at `proposed:` would **not** have it run here; the wait —
    * `ProposedEscalated{proposal: AnswerUnreadable}` — carries the *could not
-   * be read at all* sentence ahead of the raw answer through `legacyColumns`.
+   * be read at all* sentence ahead of the raw answer through `waitWords`.
    */
   it("13b. the cold reviewer's own answer is unreadable", async () => {
     const store = memoryStore()
@@ -1366,7 +1366,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       _tag: 'ProposedEscalated',
       proposal: { _tag: 'AnswerUnreadable', from: 'review' },
     })
-    expect(legacyColumns(hold!).question).toContain('could not be read at all')
+    expect(waitWords(hold!).line).toContain('could not be read at all')
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 

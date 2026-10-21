@@ -1,4 +1,3 @@
-import type { BlockDiagnosis } from '@lingtai/domain'
 import type { TriageResult } from '@lingtai/domain/wait'
 import { postgresUrl } from '@lingtai/env'
 /**
@@ -107,11 +106,7 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     lastAttemptAt: row.last_attempt_at,
     restarts: row.restarts ?? 0,
     restartsOf: row.restarts_of ?? 0,
-    // Through `columnOf`, for `verdicts`'s reason above: a row from a table
-    // created before the rename has no `waiting` key, and reading it off the
-    // row directly would count that drift as a card with nothing to answer.
-    waiting: columnOf(row, 'task_view', 'waiting') === true,
-    // Through `columnOf`, for the same reason as `waiting`: a row from a
+    // Through `columnOf`: a row from a
     // table that predates these two columns has neither key at all, and
     // reading them off the row directly would read as a wait with no
     // reason rather than as the drift it is.
@@ -130,11 +125,6 @@ function toCard(row: pg.QueryResultRow): TaskCard {
             result: columnOf(row, 'task_view', 'triage_result') as TriageResult | null,
           },
     triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
-    needs: row.needs ?? null,
-    // Written from a parsed payload and read back as it was written, so the
-    // shape is the event's rather than this reader's guess about it.
-    diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
-    asked: row.asked === true,
     answer: (row.answer as TaskCard['answer']) ?? null,
     awaitingSha: row.awaiting_sha,
     awaitingApproval: row.awaiting_sha !== null,
