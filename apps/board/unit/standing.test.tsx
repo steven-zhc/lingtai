@@ -1242,7 +1242,7 @@ it('ignores triage facts for a wait that is no longer current', () => {
   }
   const status = currentTriageStatus(HELD, card, { declared: true, daemonStartedAt: null })
   expect(status).toBeNull()
-  expect(render({ ...HELD, triageStatus: status }, OUTGOING)).not.toContain('old advice')
+  expect(render({ ...HELD, triageStatus: status?.status ?? null }, OUTGOING)).not.toContain('old advice')
 })
 
 it('shows both readings only when judge and triage disagree, without changing the resolutions', () => {

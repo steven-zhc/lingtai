@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
 
-function draw(status: TriageStatus): string {
+function draw(status: TriageStatus, headLine?: string): string {
   const reason: WaitReason = { _tag: 'OwnQuestion', question: 'why?', by: 'person' }
-  return renderToStaticMarkup(<TriageBand reason={reason} status={status} />)
+  return renderToStaticMarkup(<TriageBand reason={reason} status={status} headLine={headLine} />)
 }
 
 function advised(cause: RootCause): TriageStatus {
@@ -89,6 +89,13 @@ describe('current wait triage band', () => {
     expect(html).toContain('&lt;which behavior?&gt;')
     expect(html).toContain('keep A')
     expect(html).toContain('keep B (recommended)')
+  })
+
+  it('keeps triage visible with a mirror-head line', () => {
+    const html = draw(advised({ _tag: 'WrongApproach' }), 'mirror head, as of its last fetch: 9876543')
+    expect(html).toContain('mirror head, as of its last fetch: 9876543')
+    expect(html).toContain('WrongApproach')
+    expect(html.match(/mirror head, as of its last fetch/g)).toHaveLength(1)
   })
 
   it.each(['WrongApproach', 'TicketTooBig', 'SetupBroken'] as const)('%s has its summary alone', (_tag) => {
