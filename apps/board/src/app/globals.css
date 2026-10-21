@@ -1181,8 +1181,11 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .triage-band--conflict .triage-cause { background: var(--held); }
 
 @media (max-width: 48rem) {
-  .detail--waiting .swhere .segs { overflow-x: auto; padding-bottom: 0.35rem; }
-  .detail--waiting .swhere .seg { min-width: 3.5rem; }
+  .detail--waiting .swhere .segs {
+    grid-template-columns: repeat(10, minmax(3.5rem, 1fr));
+    overflow-x: auto;
+    padding-bottom: 0.35rem;
+  }
   .detail--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
 }
 
