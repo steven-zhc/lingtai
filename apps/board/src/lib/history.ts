@@ -504,7 +504,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   WaitTriaged: (f) => {
     const result = f.result
     if (result._tag === 'TriageFailed') return `attempt ${f.attempt} · failed: ${clip(result.why)}`
-    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.resolution._tag}: ${clip(result.summary)}`
+    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.resolution}: ${clip(result.summary)}`
   },
 
   RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,

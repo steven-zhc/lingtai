@@ -201,6 +201,24 @@ export const Resolution = z.discriminatedUnion('_tag', [Approve, Requeue, EditBo
 export type Resolution = z.infer<typeof Resolution>
 
 /**
+ * The resolutions triage may advise — `Resolution`'s tags less
+ * `AnswerQuestion`: that choice is a person's own, on an `OwnQuestion` only,
+ * and triage cannot make it for them. A bare tag, not a `Resolution`: the
+ * only field one ever carries beyond its tag is `Approve`'s `onSha`, which is
+ * the head at the moment a person approves, not something triage knows ahead
+ * of them (0118 §1).
+ */
+export const TriageAdvice = z.enum(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+export type TriageAdvice = z.infer<typeof TriageAdvice>
+
+type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
+// a Resolution tag added later must be added here or excluded here on purpose
+const _triageAdviceCoversResolution: AssertEqual<
+  TriageAdvice,
+  Exclude<Resolution['_tag'], 'AnswerQuestion'>
+> = true as const
+
+/**
  * The resolutions a wait allows, from the wait alone — 0118 §1's table,
  * column order. No `default`: a tenth… thirteenth `WaitReason` tag makes this
  * non-exhaustive and `pnpm typecheck` goes red.
@@ -448,15 +466,15 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  * (`status` is `Done` with `TriageAdvised`) is recommended exactly when
  * `allowedResolutions` offers it — a disallowed advice returns `null`, not
  * the default, because there was advice and it is simply not drawn. With no
- * advice (`NotDeclared`, `Queued`, `Running`, `Interrupted`, or `Done` with
- * `TriageFailed`) the wait's own default stands, itself run back through
- * `allowedResolutions` so a default an `unpushed` run disallows is `null`
- * too.
+ * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
+ * `Done` with `TriageFailed`) the wait's own default stands, itself run back
+ * through `allowedResolutions` so a default an `unpushed` run disallows is
+ * `null` too.
  */
 export function recommendedResolution(reason: WaitReason, status: TriageStatus): Resolution['_tag'] | null {
   const allowed = allowedResolutions(reason)
   if (status._tag === 'Done' && status.result._tag === 'TriageAdvised') {
-    const advised = status.result.resolution._tag
+    const advised = status.result.resolution
     return allowed.includes(advised) ? advised : null
   }
   const fallback = defaultResolution(reason)
@@ -523,12 +541,17 @@ export type RootCause = z.infer<typeof RootCause>
 /** Triage ran and found nothing to advise. */
 const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.string().max(TRIAGE_TEXT_MAX) })
 
-/** Triage's advice: the cause, the recommended resolution, and one sentence for the card. */
+/**
+ * Triage's advice: the cause, the recommended resolution, one sentence for
+ * the card, and one more of what the ticket wants — `null` where the body
+ * does not say (0118 §1).
+ */
 const TriageAdvised = z.strictObject({
   _tag: z.literal('TriageAdvised'),
   cause: RootCause,
-  resolution: Resolution,
+  resolution: TriageAdvice,
   summary: z.string().max(TRIAGE_SENTENCE_MAX),
+  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
 })
 
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
@@ -536,12 +559,13 @@ export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAd
 export type TriageResult = z.infer<typeof TriageResult>
 
 /**
- * Derived on read and never stored (0118 §1, §10): two of these five depend
+ * Derived on read and never stored (0118 §1, §10): two of these six depend
  * on the recipe and the running daemon, which a fold never reads. Plain
  * TypeScript rather than zod, for `triage.ts:157-163`'s own reason: nothing
  * should ever parse a `TriageStatus` off the log.
  */
 export type TriageStatus =
+  | { _tag: 'NotNeeded' }
   | { _tag: 'NotDeclared' }
   | { _tag: 'Queued' }
   | { _tag: 'Running' }
