@@ -1,4 +1,4 @@
-import { integrationStream } from '@lingtai/domain'
+import { agentBranchOf, integrationStream, waitWords } from '@lingtai/domain'
 /**
  * `task_view`, against the real store.
  *
@@ -32,6 +32,22 @@ import {
   readTasks,
   taskViewProjection,
 } from '../src/index.ts'
+import type { TaskCard } from '../src/task-view.ts'
+
+function hold(card: TaskCard) {
+  return card.wait === null
+    ? { needs: null, diagnosis: null }
+    : waitWords(card.wait.reason, { branch: agentBranchOf(card.issue), base: '', findings: [] })
+}
+
+function waitDescription(card: TaskCard) {
+  return describeWait({
+    waiting: card.wait !== null,
+    asked: card.wait?.reason._tag === 'OwnQuestion',
+    awaitingSha: card.awaitingSha,
+    needs: hold(card).needs,
+  })
+}
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -422,7 +438,7 @@ async function seed(): Promise<void> {
   ])
   await append(wi(10), [
     // A `Human` hold, injected by `--no-merge` or a repair — the question
-    // is all it carries itself, and `legacyColumns` composes the rest.
+    // is all it carries itself, and `waitWords` composes the rest.
     toAppend(
       aWait(makeStream(wi(10)), {
         _tag: 'SignoffRequired',
@@ -755,7 +771,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // **Released, not waiting.** A question for a person sits in the waiting
       // lane; a restarted ticket is back in the queue for an ordinary claim.
       expect(over.state).toBe('queued')
-      expect(over.waiting).toBe(false)
+      expect(over.wait !== null).toBe(false)
       expect(over.note).toContain('restart 1 of 2')
 
       // Nothing on a ticket that has only ever had one approach, so a card on a
@@ -848,16 +864,16 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(nine.awaitingApproval).toBe(false)
       // Somebody's question, with the reason on it.
       expect(nine.state).toBe('waiting')
-      expect(nine.waiting).toBe(true)
-      expect(nine.needs).toBe('acknowledgement')
-      expect(nine.diagnosis?.done).toContain('No agent was bought')
-      expect(nine.diagnosis?.recommendation?.action).toBe('requeue')
+      expect(nine.wait !== null).toBe(true)
+      expect(hold(nine).needs).toBe('acknowledgement')
+      expect(hold(nine).diagnosis?.done).toContain('No agent was bought')
+      expect(hold(nine).diagnosis?.recommendation?.action).toBe('requeue')
 
       // The lane holds more than questions: a refused dispatch with no block
       // after it leaves `state` alone — #406 — so card 4 is whatever
       // `TicketDiscovered` wrote, with the refusal as its note.
       expect(card(tasks, 4)!.state).toBe('queued')
-      expect(card(tasks, 4)!.waiting).toBe(false)
+      expect(card(tasks, 4)!.wait !== null).toBe(false)
     })
 
     /**
@@ -878,7 +894,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // And a question is open exactly when there is a sha it is about, so the
       // card cannot offer Approve without the value Approve needs.
       expect(ten.awaitingApproval).toBe(true)
-      expect(ten.waiting).toBe(true)
+      expect(ten.wait !== null).toBe(true)
 
       // Granted spends it: #84's row is asking nothing and carries nothing.
       expect(card(tasks, 9)!.awaitingSha).toBeNull()
@@ -898,39 +914,39 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     it("surfaces a block's diagnosis and its recommended action", async () => {
       const eleven = card(await readTasks({ project: PROJECT }), 11)!
 
-      expect(eleven.waiting).toBe(true)
+      expect(eleven.wait !== null).toBe(true)
       // `needs` is `judgement` now, not `acknowledgement` (#502): a conflict
       // always escalates through `proposed` to a person, the same as a
       // review's findings do, rather than landing as a standalone
       // acknowledgement-only `Hold.MergeRefused` — that split lived on
       // `Hold` alone and has no `WaitReason` left to carry it.
-      expect(eleven.needs).toBe('judgement')
-      expect(eleven.diagnosis?.what).toContain('is waiting on you')
-      expect(eleven.diagnosis?.done).toContain('No agent was bought')
+      expect(hold(eleven).needs).toBe('judgement')
+      expect(hold(eleven).diagnosis?.what).toContain('is waiting on you')
+      expect(hold(eleven).diagnosis?.done).toContain('No agent was bought')
       // The raw failure is still reachable: a summary that hides the git output is
       // worse than the git output.
-      expect(eleven.diagnosis?.raw).toContain('CONFLICT (content)')
-      expect(eleven.diagnosis?.recommendation?.action).toBe('requeue')
+      expect(hold(eleven).diagnosis?.raw).toContain('CONFLICT (content)')
+      expect(hold(eleven).diagnosis?.recommendation?.action).toBe('requeue')
       // And the note carries git's own words, inside the router's own sentence.
       expect(eleven.note).toContain('is waiting on you')
       expect(eleven.note).toContain('CONFLICT (content)')
       // The same four facts, as the sentences the card and `status` share.
-      expect(describeHold(eleven).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
+      expect(describeHold(hold(eleven)).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
     })
 
     /**
      * A `Human` hold carries nothing of its own but the question — the
-     * `--no-merge`/repair case — and `legacyColumns` composes the rest from
+     * `--no-merge`/repair case — and `waitWords` composes the rest from
      * the step alone, including the merge recommendation (#445).
      */
     it('renders a Human hold from its question, with the merge recommendation', async () => {
       const ten = card(await readTasks({ project: PROJECT }), 10)!
 
-      expect(ten.waiting).toBe(true)
+      expect(ten.wait !== null).toBe(true)
       expect(ten.note).toBe('the `merge` step held: a repair is waiting on you')
-      expect(ten.needs).toBe('judgement')
-      expect(ten.diagnosis?.recommendation?.action).toBe('approve')
-      expect(describeHold(ten).map((l) => l.part)).toEqual(['needs', 'what', 'rec'])
+      expect(hold(ten).needs).toBe('judgement')
+      expect(hold(ten).diagnosis?.recommendation?.action).toBe('approve')
+      expect(describeHold(hold(ten)).map((l) => l.part)).toEqual(['needs', 'what', 'rec'])
     })
 
     /** And the diagnosis goes when the hold is answered, not one lap later. */
@@ -938,9 +954,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const twelve = card(await readTasks({ project: PROJECT }), 12)!
 
       expect(twelve.state).toBe('queued')
-      expect(twelve.waiting).toBe(false)
-      expect(twelve.needs).toBeNull()
-      expect(twelve.diagnosis).toBeNull()
+      expect(twelve.wait !== null).toBe(false)
+      expect(hold(twelve).needs).toBeNull()
+      expect(hold(twelve).diagnosis).toBeNull()
     })
 
     /**
@@ -955,14 +971,14 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       const seventeen = card(tasks, 17)!
       expect(seventeen.state).toBe('waiting')
-      expect(seventeen.waiting).toBe(true)
-      expect(seventeen.asked).toBe(true)
+      expect(seventeen.wait !== null).toBe(true)
+      expect(seventeen.wait?.reason._tag === 'OwnQuestion').toBe(true)
       expect(seventeen.note).toBe('Which of the three designs should the tripwire use?')
-      expect(describeWait(seventeen)).toBe('waiting for your answer')
+      expect(waitDescription(seventeen)).toBe('waiting for your answer')
 
       const eighteen = card(tasks, 18)!
       expect(eighteen.state).toBe('running')
-      expect(eighteen.asked).toBe(false)
+      expect(eighteen.wait?.reason._tag === 'OwnQuestion').toBe(false)
       expect(eighteen.answer).toEqual({
         question: 'Refuse at the hook, or at the claim?',
         answer: 'at the hook',
@@ -970,9 +986,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       })
 
       // And a review is not an answer: 10 is a run holding a sha.
-      expect(describeWait(card(tasks, 10)!)).toBe('waiting for your review')
+      expect(waitDescription(card(tasks, 10)!)).toBe('waiting for your review')
       // A failure needing acknowledgement is neither, and stays `describeHold`'s.
-      expect(describeWait(card(tasks, 11)!)).toBeNull()
+      expect(waitDescription(card(tasks, 11)!)).toBeNull()
     })
 
     /**

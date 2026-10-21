@@ -58,7 +58,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     restartsOf: 0,
     awaitingSha: null,
     awaitingApproval: false,
-    waiting: false,
     // A real wait when the caller asks for `state: 'waiting'` — `wait: null`
     // there is the combination `toCard`/`waitOf` can never produce.
     wait:
@@ -67,9 +66,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
         : null,
     triage: { started: null, result: null },
     triageHeadSha: null,
-    needs: null,
-    diagnosis: null,
-    asked: false,
     answer: null,
     repairPending: false,
     ...over,
@@ -156,7 +152,7 @@ describe('the four lanes', () => {
   it('renders all four even when three of them are empty', () => {
     // A board showing only the lanes with something in it is a board that
     // hides "Waiting on you" on exactly the days it matters.
-    const board = take([task({ state: 'waiting', waiting: true })])
+    const board = take([task({ state: 'waiting' })])
     expect(board.lanes.map((l) => l.id)).toEqual(['queued', 'running', 'waiting', 'landed'])
   })
 })

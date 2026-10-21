@@ -44,16 +44,12 @@ function task(state: TaskCard['state']): TaskCard {
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
-    waiting: false,
     // A real wait on the one state that has one — `state: 'waiting'` with
     // `wait: null` is the combination `toCard`/`waitOf` can never produce.
     wait:
       state === 'waiting'
         ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
         : null,
-    needs: null,
-    diagnosis: null,
-    asked: false,
     answer: null,
     triage: { started: null, result: null },
     triageHeadSha: null,

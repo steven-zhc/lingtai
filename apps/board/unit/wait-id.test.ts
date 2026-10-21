@@ -34,7 +34,6 @@ function blocked(): TaskCard {
     lastAttemptAt: null,
     awaitingSha: 'b'.repeat(40),
     awaitingApproval: true,
-    waiting: true,
     wait: {
       waitId: aWaitId(),
       reason: {
@@ -45,9 +44,6 @@ function blocked(): TaskCard {
         question: 'the `proposed` step held: land it?',
       },
     },
-    needs: 'judgement',
-    diagnosis: null,
-    asked: false,
     answer: null,
     triage: { started: null, result: null },
     triageHeadSha: null,

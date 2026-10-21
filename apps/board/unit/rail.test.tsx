@@ -386,16 +386,12 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
-    waiting: false,
     // A real wait when the caller asks for `state: 'waiting'` — `wait: null`
     // there is the combination `toCard`/`waitOf` can never produce.
     wait:
       over.state === 'waiting'
         ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
         : null,
-    needs: null,
-    diagnosis: null,
-    asked: false,
     answer: null,
     triage: { started: null, result: null },
     triageHeadSha: null,
@@ -658,7 +654,7 @@ describe('all ten steps, in every lane', () => {
   })
 
   it('draws ten segments on a blocked card', () => {
-    const html = render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
+    const html = render({ state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
 
     expect(segments(html)).toHaveLength(10)
     expect(segments(html)[STEPS.indexOf('proposed')]).toBe('failed')
@@ -685,7 +681,7 @@ describe('all ten steps, in every lane', () => {
  * segment above it.
  */
 describe('a card stopped on a person', () => {
-  const blocked = () => render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
+  const blocked = () => render({ state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
 
   it('shows no status pill and never claims the run is in flight', () => {
     const html = blocked()
@@ -840,13 +836,10 @@ describe('a card answering a refusal', () => {
     // The ceiling is the recipe's to hand in now (#502: the event carries no
     // `of` of its own), the same fallback `describeHeld` always had for a
     // run that never bought one.
-    const html = render(
-      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) },
-      fixSpent(),
-      PLAN,
-      false,
-      { rounds: 3, restarts: 1 },
-    )
+    const html = render({ state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent(), PLAN, false, {
+      rounds: 3,
+      restarts: 1,
+    })
 
     // The round `fixSpent()` bought is now on the budget line too.
     expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 0 restarts left')
@@ -865,7 +858,7 @@ describe("a held item's budget", () => {
     // The rounds ceiling is the recipe's to hand in since #502 — see the
     // sibling test above.
     const html = render(
-      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
       fixSpent(),
       PLAN,
       false,
@@ -883,7 +876,7 @@ describe("a held item's budget", () => {
    */
   it("falls back to the recipe's own ceiling when the run never bought one", () => {
     const html = render(
-      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
       refused(),
       PLAN,
       false,
@@ -901,7 +894,7 @@ describe("a held item's budget", () => {
    */
   it('drops the arm from the pill wherever the rail carries it, and keeps it on a queued card', () => {
     const waiting = render(
-      { state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
       refused(),
     )
     // Not the arm's own words — the held line beside it says "restarts left"
@@ -935,7 +928,7 @@ describe("a held item's budget", () => {
    */
   it('carries the budget line on an open approval, not just a refusal', () => {
     const html = render(
-      { state: 'waiting', waiting: true, restarts: 1, restartsOf: 1 },
+      { state: 'waiting', restarts: 1, restartsOf: 1 },
       [
         ...running().slice(0, 5),
         at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),

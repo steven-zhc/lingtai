@@ -25,7 +25,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import { legacyColumns, reduceRun, type Action, type PayloadOf } from '@lingtai/domain'
+import { waitWords, reduceRun, type Action, type PayloadOf } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
@@ -126,7 +126,7 @@ describe('the approval a refusal reaches a person with', () => {
     // The card's own sentence still names the refusal, and this is a diff two
     // agents disagreed about rather than a green run — so no move is
     // recommended over it.
-    const columns = legacyColumns(reason)
+    const columns = waitWords(reason)
     expect(columns.needs).toBe('acknowledgement')
     expect(columns.diagnosis?.recommendation).toBeNull()
   })

@@ -209,7 +209,7 @@ export function fixStopOf(failure: { kind: RunFailureKind; detail: string }): Fi
 
 /**
  * What the block this ending produces asks of a person —
- * `legacyColumns`'s `needs`, off a `WaitReason`.
+ * `waitWords`'s `needs`, off a `WaitReason`.
  *
  * **Beside the headlines, because it is the line printed directly above one**
  * (`#197`). `describeHold` emits the `needs` line first and the diagnosis's

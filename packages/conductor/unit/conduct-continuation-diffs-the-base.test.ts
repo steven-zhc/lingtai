@@ -13,7 +13,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import { legacyColumns, reduceRun, waitsOf, ticketStream } from '@lingtai/domain'
+import { waitWords, reduceRun, waitsOf, ticketStream } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -118,6 +118,6 @@ describe('a continuation never diffs against the sha it was approved at', () => 
     expect((await store.read(ticketId)).map((e) => e.type)).not.toContain('TicketLanded')
 
     const secondReason = waitsOf(await store.read(ticketId)).at(-1)!.reason
-    expect(legacyColumns(secondReason).question).toContain('tamper')
+    expect(waitWords(secondReason).line).toContain('tamper')
   })
 })

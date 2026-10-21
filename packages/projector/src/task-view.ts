@@ -48,7 +48,7 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { cardFactOf, parseTicketStream, WaitId } from '@lingtai/domain'
+import { cardFactOf, parseTicketStream, waitBranchOf, waitWords, WaitId } from '@lingtai/domain'
 import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 
 import { withProjectionStore } from './choose.ts'
@@ -135,51 +135,13 @@ export const taskViewProjection: Projection = {
         -- with.
         awaiting_sha text,
 
-        -- Which kind of hold this is: 'judgement' when the decision is
-        -- genuinely a person's, 'acknowledgement' when something failed and
-        -- nobody has decided what to do. Null on a block that did not say —
-        -- every block written before #83 — and the card renders one of those
-        -- exactly as it always did.
-        needs        text,
-
-        -- { what, done, raw, recommendation }, as legacyColumns's
-        -- diagnosis, off WaitStarted.reason.
-        -- One column rather than five, because it is written and cleared as one
-        -- thing: a block either carries a diagnosis or does not, and half a
-        -- diagnosis is not a state the card has to render.
-        --
-        -- Null is the common case and has to stay cheap to ask about: every
-        -- block on the log right now has only a question.
-        diagnosis    jsonb,
-
-        -- Whether a person is holding a *question*, as opposed to being in the
-        -- waiting lane for some other reason. The lane also holds a run that
-        -- asked something mid-flight, and that is not an item anybody can hand
-        -- back — offering a control that would refuse is the shape #58
-        -- records and #84 must not reintroduce. A refused dispatch moves an
-        -- item that was merely queued nowhere (#405: it was already queued,
-        -- because the refusal is the pass's rather than this item's), and
-        -- never this column: only WaitResolved may answer a question
-        -- already standing on an item, so a refusal found one leaves it be.
-        waiting      boolean not null default false,
-
-        -- The current wait, read back as TaskCard.wait (#440). Set in the
-        -- same statement as waiting and cleared everywhere waiting is, so
-        -- wait_reason is not null holds exactly when waiting is true —
-        -- waitOf leans on that to refuse a waiting row with neither.
+        -- The current wait, read back as TaskCard.wait (#440).
         wait_id      text,
         wait_reason  jsonb,
         triage_attempt int,
         triage_started_at timestamptz,
         triage_result jsonb,
         triage_head_sha text,
-
-        -- Whether that question was asked **before any run** — a
-        -- WaitStarted{reason: OwnQuestion}, with runId null, which only
-        -- lingtai ask writes (#147). It is what tells waiting-for-an-answer
-        -- apart from waiting-for-a-review: nothing has been produced, so there
-        -- is nothing to approve and the only move is to answer.
-        asked        boolean not null default false,
 
         -- { question, answer, by } — the last block a person answered, and
         -- what with. WaitResolved.note, which no column held before #147:
@@ -309,16 +271,12 @@ export const taskViewProjection: Projection = {
             state: 'queued',
             run_id: null,
             note: d.reason,
-            waiting: false,
             wait_id: null,
             wait_reason: null,
             triage_attempt: null,
             triage_started_at: null,
             triage_result: null,
             triage_head_sha: null,
-            asked: false,
-            needs: null,
-            diagnosis: null,
             // **The restart count's one writer** (0040, `#502`). `PassRouted`
             // only decides a restart; this is the event `conduct.ts`'s own
             // `armIsUp` guard withholds where the arm never reached origin, so
@@ -338,19 +296,12 @@ export const taskViewProjection: Projection = {
             note: d.reason,
             closed_at: at,
             awaiting_sha: null,
-            waiting: false,
             wait_id: null,
             wait_reason: null,
             triage_attempt: null,
             triage_started_at: null,
             triage_result: null,
             triage_head_sha: null,
-            asked: false,
-            // Closing answers whatever was being held, for `landed`'s reason: a
-            // diagnosis that outlived the decision reports a failure on work
-            // nobody is going to do.
-            needs: null,
-            diagnosis: null,
           })
           break
         }
@@ -362,18 +313,12 @@ export const taskViewProjection: Projection = {
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
-            waiting: false,
             wait_id: null,
             wait_reason: null,
             triage_attempt: null,
             triage_started_at: null,
             triage_result: null,
             triage_head_sha: null,
-            asked: false,
-            // Landed answers whatever was being held. A diagnosis that outlived
-            // the merge would be a failure reported on finished work.
-            needs: null,
-            diagnosis: null,
           })
           break
         }
@@ -386,11 +331,11 @@ export const taskViewProjection: Projection = {
           // what the queue should offer once the pause lifts.
           //
           // **Conditional on the standing hold.** Only `WaitResolved` may
-          // clear `waiting`, and only a person's answer may replace the
+          // clear the wait, and only a person's answer may replace the
           // question `note` holds — a dispatch refused on top of a block
           // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
-          // is not an event about *this item*, so where `waiting` is already
-          // true this leaves state, note and every hold column exactly as
+          // is not an event about *this item*, so where `wait_reason` is present
+          // this leaves state, note and every hold column exactly as
           // they were. Writing `state: 'queued'` and clearing the hold here
           // regardless put `task_view` and the domain fold
           // (`packages/domain/src/ticket.ts`, still `blocked`) in
@@ -408,18 +353,15 @@ export const taskViewProjection: Projection = {
              on conflict (task_id) do update
                set title = coalesce(excluded.title, task_view.title),
                    kind = coalesce(excluded.kind, task_view.kind),
-                   state = case when task_view.waiting then task_view.state else excluded.state end,
-                   note = case when task_view.waiting then task_view.note else excluded.note end,
-                   awaiting_sha = case when task_view.waiting then task_view.awaiting_sha else null end,
-                   asked = case when task_view.waiting then task_view.asked else false end,
-                   needs = case when task_view.waiting then task_view.needs else null end,
-                   diagnosis = case when task_view.waiting then task_view.diagnosis else null end,
-                   wait_id = case when task_view.waiting then task_view.wait_id else null end,
-                   wait_reason = case when task_view.waiting then task_view.wait_reason else null end,
-                   triage_attempt = case when task_view.waiting then task_view.triage_attempt else null end,
-                   triage_started_at = case when task_view.waiting then task_view.triage_started_at else null end,
-                   triage_result = case when task_view.waiting then task_view.triage_result else null end,
-                   triage_head_sha = case when task_view.waiting then task_view.triage_head_sha else null end,
+                   state = case when task_view.wait_reason is not null then task_view.state else excluded.state end,
+                   note = case when task_view.wait_reason is not null then task_view.note else excluded.note end,
+                   awaiting_sha = case when task_view.wait_reason is not null then task_view.awaiting_sha else null end,
+                   wait_id = case when task_view.wait_reason is not null then task_view.wait_id else null end,
+                   wait_reason = case when task_view.wait_reason is not null then task_view.wait_reason else null end,
+                   triage_attempt = case when task_view.wait_reason is not null then task_view.triage_attempt else null end,
+                   triage_started_at = case when task_view.wait_reason is not null then task_view.triage_started_at else null end,
+                   triage_result = case when task_view.wait_reason is not null then task_view.triage_result else null end,
+                   triage_head_sha = case when task_view.wait_reason is not null then task_view.triage_head_sha else null end,
                    updated_at = excluded.updated_at,
                    updated_seq = excluded.updated_seq
              where task_view.updated_seq < excluded.updated_seq`,
@@ -534,18 +476,12 @@ export const taskViewProjection: Projection = {
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
-            waiting: false,
             wait_id: null,
             wait_reason: null,
             triage_attempt: null,
             triage_started_at: null,
             triage_result: null,
             triage_head_sha: null,
-            asked: false,
-            // Landed answers whatever was being held. A diagnosis that outlived
-            // the merge would be a failure reported on finished work.
-            needs: null,
-            diagnosis: null,
           })
           break
         }
@@ -620,22 +556,16 @@ export const taskViewProjection: Projection = {
                   kind: null,
                   state: 'waiting',
                 })
-                // The question is still the card's line, unchanged — now
-                // rebuilt from the `Hold` the event carries rather than read
-                // off the payload directly (#445).
+                // The reason is the source of the card's line (#443).
                 await set(ctx, event.streamId, seq, at, {
                   state: 'waiting',
-                  note: fact.card.question,
-                  waiting: true,
+                  note: waitWords(fact.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line,
                   wait_id: fact.waitId,
                   wait_reason: JSON.stringify(fact.reason),
                   triage_attempt: null,
                   triage_started_at: null,
                   triage_result: null,
                   triage_head_sha: null,
-                  asked: fact.reason._tag === 'OwnQuestion',
-                  needs: fact.card.needs,
-                  diagnosis: fact.card.diagnosis === null ? null : JSON.stringify(fact.card.diagnosis),
                 })
                 break
               }
@@ -675,7 +605,7 @@ export const taskViewProjection: Projection = {
                   // (`ticket.ts`), so a row left `waiting` here would
                   // disagree with it: the home board would keep rendering
                   // Decide/Requeue over a question that is answered, and
-                  // `page.tsx`'s own `card.waiting` is what decides that.
+                  // `page.tsx` reads the current wait to decide that.
                   //
                   // `state: 'approved'`, not `'running'` and not `'queued'`
                   // (#510). `selectRunnable` reads `state === 'queued'` as
@@ -698,16 +628,12 @@ export const taskViewProjection: Projection = {
                     state: 'approved',
                     note: 'approved — continues once a conductor is free',
                     awaiting_sha: null,
-                    waiting: false,
                     wait_id: null,
                     wait_reason: null,
                     triage_attempt: null,
                     triage_started_at: null,
                     triage_result: null,
                     triage_head_sha: null,
-                    asked: false,
-                    needs: null,
-                    diagnosis: null,
                   })
                   break
                 }
@@ -715,37 +641,46 @@ export const taskViewProjection: Projection = {
                 // row's `note` right up until this statement clears it, so
                 // both are written in one statement over the row rather than
                 // read back first. A question withdrawn was never answered, so
-                // the last answer stands — `asked` is this row's own flag that
-                // the standing wait was an `OwnQuestion`, and a `Requeue` on
+                // the last answer stands — the standing reason says whether
+                // it was an `OwnQuestion`, and a `Requeue` on
                 // one of those is a person taking the question back rather
                 // than answering it (0118 §1); there is no `withdrawn` field
                 // on the event any more to read that off directly (#502).
+                const standing = await ctx.query<{ wait_reason: unknown }>(
+                  'select wait_reason from task_view where task_id = $1',
+                  [event.streamId],
+                )
+                const storedReason = standing[0]?.wait_reason
+                const ownQuestion =
+                  storedReason != null &&
+                  WaitReason.parse(typeof storedReason === 'string' ? JSON.parse(storedReason) : storedReason)._tag ===
+                    'OwnQuestion'
                 await ctx.query(
                   `update task_view
-                 set answer = case when asked and $6::text = 'Requeue' then answer else jsonb_build_object(
-                       'question', case when waiting then note end,
+                 set answer = case when $6 = 1 then answer else jsonb_build_object(
+                       'question', case when wait_reason is not null then note end,
                        'answer', $4::text,
                        'by', $5::text) end,
                      state = 'queued',
                      note = null,
                      awaiting_sha = null,
-                     waiting = false,
                      wait_id = null,
                      wait_reason = null,
                      triage_attempt = null,
                      triage_started_at = null,
                      triage_result = null,
                      triage_head_sha = null,
-                     asked = false,
-                     -- The hold is answered, so the diagnosis of it goes with
-                     -- the question. Leaving it would put last week's
-                     -- failure on a card nobody is being asked about.
-                     needs = null,
-                     diagnosis = null,
                      updated_at = $3,
                      updated_seq = $2::bigint
                  where task_id = $1 and updated_seq <= $2::bigint`,
-                  [event.streamId, seq, at, fact.note, fact.by, fact.resolution._tag],
+                  [
+                    event.streamId,
+                    seq,
+                    at,
+                    fact.note,
+                    fact.by,
+                    ownQuestion && fact.resolution._tag === 'Requeue' ? 1 : 0,
+                  ],
                 )
                 break
 
@@ -842,19 +777,12 @@ async function upsert(
            note = case when $10::int > 0 then null else task_view.note end,
            -- A fresh attempt is nobody's question yet.
            awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
-           waiting = case when $10::int > 0 then false else task_view.waiting end,
            wait_id = case when $10::int > 0 then null else task_view.wait_id end,
            wait_reason = case when $10::int > 0 then null else task_view.wait_reason end,
            triage_attempt = case when $10::int > 0 then null else task_view.triage_attempt end,
            triage_started_at = case when $10::int > 0 then null else task_view.triage_started_at end,
            triage_result = case when $10::int > 0 then null else task_view.triage_result end,
            triage_head_sha = case when $10::int > 0 then null else task_view.triage_head_sha end,
-           asked = case when $10::int > 0 then false else task_view.asked end,
-           -- And nobody's failure yet either. The diagnosis belongs to the block
-           -- it explained; carrying it into the next attempt would put the last
-           -- run's conflict on a card that is running.
-           needs = case when $10::int > 0 then null else task_view.needs end,
-           diagnosis = case when $10::int > 0 then null else task_view.diagnosis end,
            -- The claim is what consumes a pending repair: this run *is* the
            -- repair, and naming it here is what lets its spend be counted apart
            -- from the work's. Only a retired RepairRequested sets one (#143), so
@@ -992,11 +920,6 @@ export interface TaskCard {
   restarts: number
   restartsOf: number
   /**
-   * Whether a person is holding a question. `state` says which lane the card
-   * is in; this says whether there is anything on it to answer.
-   */
-  waiting: boolean
-  /**
    * The current wait, non-null exactly when `state` is `'waiting'` (#440).
    * `waitId` names the `WaitStarted` that opened it, and `reason` is the
    * whole of what it recorded — `allowedResolutions(wait.reason)` is what a
@@ -1006,26 +929,6 @@ export interface TaskCard {
   wait: { waitId: WaitId; reason: WaitReason } | null
   triage: TriageFacts
   triageHeadSha: string | null
-  /**
-   * Which kind of hold it is: a person's `judgement`, or a failure that needs
-   * `acknowledgement`. Null on a block that did not say, which is every one
-   * written before #83 — and a card with a null here reads as it always did.
-   */
-  needs: 'judgement' | 'acknowledgement' | null
-  /**
-   * What happened, what was done about it, and what is recommended.
-   *
-   * Null when nobody has diagnosed it. The card and `lingtai status` read this
-   * one value, which is what stops the two of them describing the same block
-   * differently — the failure this repository keeps finding.
-   */
-  diagnosis: BlockDiagnosis | null
-  /**
-   * Whether the question was asked before any run (`lingtai ask`, #147). Read
-   * through `describeWait`, which is what keeps the board and `lingtai status`
-   * calling it the same thing.
-   */
-  asked: boolean
   /**
    * The last block a person answered, and what they answered it with — null on
    * a task nobody has answered. `question` is null only for an answer the log

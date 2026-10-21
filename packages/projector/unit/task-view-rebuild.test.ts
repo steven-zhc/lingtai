@@ -5,9 +5,9 @@
  *
  * **Generated from today's code, and never regenerated after the `src`
  * change.** The snapshot this file commits alongside it was captured against
- * `task-view.ts` before #480's rewrite; `vitest -u` after the rewrite would
- * turn this file into a tautology rather than a pin. If this test goes red,
- * the fold changed — fix `task-view.ts`/`read-model.ts`, never the snapshot.
+ * `task-view.ts` before #480's rewrite. #522 removed only the four redundant
+ * columns from it. If this test goes red, the fold changed — inspect the
+ * changed values rather than regenerating the pin.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
  * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
@@ -516,11 +516,10 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
 
   it('carries the sha a sign-off is about only while one is open', async () => {
     const requested = await fold(afterApprovalRequested)
-    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA, waiting: 1 })
+    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA })
 
     const granted = await fold(afterApprovalGranted)
-    // `#465`: the row leaves the waiting lane, rather than keeping
-    // `waiting: true` with no sha for Approve to work against. `state:
+    // `#465`: the row leaves the waiting lane with no sha. `state:
     // 'approved'` (#510), never `'running'` and never `'queued'`: not
     // `'queued'` since `selectRunnable` reads `'queued'` as *the queue may
     // claim this* and an approved item is only `continueTicket`'s to move;
@@ -528,7 +527,6 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     // reads `'running'` as a conductor actually holding the item.
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
       awaiting_sha: null,
-      waiting: 0,
       state: 'approved',
     })
   })

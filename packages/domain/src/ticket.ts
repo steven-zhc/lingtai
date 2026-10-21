@@ -21,9 +21,9 @@
  */
 import type { WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
-import type { BlockDiagnosis, PayloadOf, Tier } from './events.ts'
-import { legacyColumns } from './legacy-columns.ts'
+import type { PayloadOf, Tier } from './events.ts'
 import { agentBranchOf } from './streams.ts'
+import { waitWords } from './wait-words.ts'
 import type { WaitReason } from './wait.ts'
 
 export type TicketLifecycle =
@@ -42,10 +42,6 @@ export type TicketLifecycle =
       waitId: WaitId
       /** The `WaitReason` this block is, since #502 — what the event actually carries. */
       reason: WaitReason
-      /** The question, not just the fact. `agent:blocked` carried no question. */
-      question: string
-      /** `schema` was here and never written; see `legacyColumns`. */
-      needsFrom: 'human' | 'external'
       /**
        * The run that asked, or null for a question asked before any run
        * (`lingtai ask`, #147) — which spends no claim and no worktree, and is
@@ -57,9 +53,6 @@ export type TicketLifecycle =
        * acknowledging. Two opposite kinds of hold that were one event with a
        * string on it (#83). Null on a block written before the field existed.
        */
-      needs: 'judgement' | 'acknowledgement' | null
-      /** What happened, what was done, what is recommended. Null when undiagnosed. */
-      diagnosis: BlockDiagnosis | null
     }
   | { status: 'landed'; mergeCommit: string; base: string }
   /**
@@ -332,11 +325,6 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       // `read-model.ts` has no aggregate to read it off and does that
       // instead): null only for a question asked before `TicketDiscovered`
       // (`lingtai ask`), where there is no branch yet either.
-      const legacy = legacyColumns(d.reason, {
-        branch: state.externalRef === null ? '' : agentBranchOf(state.externalRef),
-        base: '',
-        findings: [],
-      })
       return {
         ...state,
         ...at,
@@ -344,11 +332,7 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
           status: 'blocked',
           waitId: d.waitId,
           reason: d.reason,
-          question: legacy.question,
-          needsFrom: legacy.needsFrom,
-          runId: legacy.runId,
-          needs: legacy.needs,
-          diagnosis: legacy.diagnosis,
+          runId: 'run' in d.reason ? d.reason.run.runId : null,
         },
       }
     }
@@ -394,7 +378,14 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
         answers: [
           ...state.answers,
           {
-            question: block?.question ?? null,
+            question:
+              block === null
+                ? null
+                : waitWords(block.reason, {
+                    branch: state.externalRef === null ? '' : agentBranchOf(state.externalRef),
+                    base: '',
+                    findings: [],
+                  }).line,
             runId: block?.runId ?? null,
             answer: d.note,
             by: d.by,

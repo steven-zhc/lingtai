@@ -104,14 +104,14 @@ add('NothingProduced', 'nothingproduced', (item) => [
 ])
 
 /**
- * **`branch` is back; `base` still is not.** `legacyColumns(reason, pass)`
+ * **`branch` is back; `base` still is not.** `waitWords(reason, pass)`
  * composes `"${branch} into ${base} is waiting on you"` from a `pass`
  * argument — `WaitReason` itself carries neither, on purpose (0118 §1:
  * "branch/base live on the pass, not the wait") — and `cardFactOf`/
  * `boardFactOf` (`read-model.ts`), the only callers between the stored event
  * and this card, now supply `branch` off the ticket id's own issue number
  * (`agentBranchOf`, deterministic — `streams.ts`). `base` is still not
- * tracked by any projection, so `legacyColumns`'s own `subjectOf` drops the
+ * tracked by any projection, so `waitWords`'s own `subjectOf` drops the
  * `into ${base}` clause rather than opening the sentence on a blank: this
  * fixture's `name` after the last `-` stands in for the issue number
  * (`ticket-pin-proposedescalated-buildred` → `agent/buildred`, never
@@ -219,7 +219,7 @@ add('ProposedEscalated', 'proposedescalated-unpushed', (item) => [
 
 add('CheckRefused', 'checkrefused', (item) => [
   ...aClaim(item, 'pass-pin-checkrefused'),
-  // `CheckRed`'s hold reads `needs: 'acknowledgement'` (`legacy-columns.ts`),
+  // `CheckRed`'s hold reads `needs: 'acknowledgement'` (`wait-words.ts`),
   // so `describeWait` still answers null for the pill — but `conduct.ts`'s
   // `judged` is true for a `stopped.ending.ending === 'refused'` hold same as
   // this one, and `onOrigin !== null` (the diff reached origin before

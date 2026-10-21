@@ -120,7 +120,7 @@ function blocked(): TaskDetail {
       {
         // `done`'s round-count narrative and `recommendation`'s custom reading
         // are not on a `WaitReason` (0118 §1 did not carry them) — an accepted
-        // loss `legacy-columns.ts`'s own header documents.
+        // loss `wait-words.ts`'s own header documents.
         waitId: 'wait-147',
         reason: {
           _tag: 'CheckRefused',

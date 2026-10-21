@@ -1,4 +1,4 @@
-import type { Envelope, Finding, PayloadOf, ToAppend } from '@lingtai/domain'
+import { waitWords, type Envelope, type Finding, type PayloadOf, type ToAppend } from '@lingtai/domain'
 import { aRun, aRunFailure, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
@@ -491,7 +491,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         expect(card.failed).toBe(0)
         expect(card.updatedAt).toBeInstanceOf(Date)
         expect(card.closedAt).toBeNull()
-        expect(card.waiting).toBe(false)
+        expect(card.wait).toBeNull()
         expect(card.awaitingApproval).toBe(false)
 
         expect(await f.store.taskProjects({ retentionDays: 3650 })).toContain(f.project)
@@ -501,8 +501,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
     })
 
     it('hands the board what a person is being asked, and what was diagnosed', async () => {
-      // The other half of a card's shape: the flags and the payload column. A
-      // store that lost either would render a hold as an ordinary wait.
+      // The reason supplies the wording and diagnosis on the card.
       const f = await make()
       const task = f.stream('wi', '42')
       try {
@@ -512,11 +511,11 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.note).toBe('the `implement` step asked: which base branch?')
-        expect(card.waiting).toBe(true)
-        expect(card.asked).toBe(false)
-        expect(card.needs).toBe('judgement')
-        expect(card.diagnosis?.what).toBe('the `implement` step asked: which base branch?')
-        expect(card.diagnosis?.done).toBeNull()
+        expect(card.wait).not.toBeNull()
+        const words = waitWords(card.wait!.reason)
+        expect(words.needs).toBe('judgement')
+        expect(words.diagnosis?.what).toBe('the `implement` step asked: which base branch?')
+        expect(words.diagnosis?.done).toBeNull()
       } finally {
         await f.close()
       }
@@ -591,10 +590,10 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
         expect(card.note).toBe('the `implement` step asked: which base branch?')
-        expect(card.waiting).toBe(true)
-        expect(card.asked).toBe(false)
-        expect(card.needs).toBe('judgement')
-        expect(card.diagnosis).not.toBeNull()
+        expect(card.wait).not.toBeNull()
+        const words = waitWords(card.wait!.reason)
+        expect(words.needs).toBe('judgement')
+        expect(words.diagnosis).not.toBeNull()
       } finally {
         await f.close()
       }
@@ -621,7 +620,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('running')
         expect(card.note).toBe('which base branch?')
-        expect(card.waiting).toBe(false)
+        expect(card.wait).toBeNull()
       } finally {
         await f.close()
       }
@@ -649,7 +648,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('running')
         expect(card.note).toBe('crash: out of memory')
-        expect(card.waiting).toBe(false)
+        expect(card.wait).toBeNull()
       } finally {
         await f.close()
       }
@@ -669,7 +668,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
         const card = (await f.store.tasks({ project: f.project, retentionDays: 3650 }))[0]!
         expect(card.state).toBe('waiting')
-        expect(card.waiting).toBe(true)
+        expect(card.wait).not.toBeNull()
         expect(card.note).toBe('the `implement` step asked: why did this crash?')
       } finally {
         await f.close()

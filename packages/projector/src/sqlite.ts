@@ -35,7 +35,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 
-import type { BlockDiagnosis } from '@lingtai/domain'
 import type { TriageResult } from '@lingtai/domain/wait'
 
 import type { BacklogEntry } from './backlog.ts'
@@ -304,14 +303,8 @@ function toCard(row: ProjectionRow): TaskCard {
     lastAttemptAt: parseAt(row.last_attempt_at),
     restarts: Number(row.restarts ?? 0),
     restartsOf: Number(row.restarts_of ?? 0),
-    // Through `columnOf`, for `postgres.ts`'s reason: a row from a table
-    // created before the rename has no `waiting` key, and reading it off the
-    // row directly would count that drift as a card with nothing to answer.
-    waiting: parseBool(columnOf(row, 'task_view', 'waiting')),
-    // Through `columnOf`, for the same reason as `waiting`: a row from a
-    // table that predates these two columns has neither key at all, and
-    // reading them off the row directly would read as a wait with no
-    // reason rather than as the drift it is.
+    // `waitOf` reads both columns through `columnOf`, so a stale table
+    // reports shape drift instead of drawing a card without its wait.
     wait,
     triage:
       wait === null
@@ -327,9 +320,6 @@ function toCard(row: ProjectionRow): TaskCard {
             result: parseJson(columnOf(row, 'task_view', 'triage_result')) as TriageResult | null,
           },
     triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
-    needs: (row.needs as TaskCard['needs']) ?? null,
-    diagnosis: (parseJson(row.diagnosis) as BlockDiagnosis | null) ?? null,
-    asked: parseBool(row.asked),
     answer: (parseJson(row.answer) as TaskCard['answer']) ?? null,
     awaitingSha,
     awaitingApproval: awaitingSha !== null,

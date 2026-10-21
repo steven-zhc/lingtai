@@ -14,12 +14,12 @@
 import type { Action, StepOutcome, WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
-import { waitWords, type WaitWords } from './legacy-columns.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
+import { waitWords } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
 
 /**
@@ -29,8 +29,7 @@ import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.t
  * default `waitWords`' own `pass` argument carries.
  *
  * Exported for `attempts.ts` (`@lingtai/conductor`), the one other reader
- * that needs a `WaitStarted`'s branch rather than the card fact `cardFactOf`
- * already carries it in (#443).
+ * that needs a `WaitStarted`'s branch (#443).
  */
 export function waitBranchOf(event: Envelope): string {
   const parsed = parseTicketStream(event.streamId)
@@ -286,7 +285,6 @@ export type CardFact =
       readonly _tag: 'WaitStarted'
       readonly waitId: WaitId
       readonly reason: WaitReason
-      readonly card: { readonly question: string } & Pick<WaitWords, 'needs' | 'diagnosis'>
     }
   | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly resolution: Resolution }
   | { readonly _tag: 'TriageStarted'; readonly waitId: WaitId; readonly attempt: number }
@@ -334,13 +332,11 @@ export function cardFactOf(event: Envelope): CardFact[] {
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const w = waitWords(d.reason, { branch: waitBranchOf(event), base: '', findings: [] })
       return [
         {
           _tag: 'WaitStarted',
           waitId: d.waitId,
           reason: d.reason,
-          card: { question: w.line, needs: w.needs, diagnosis: w.diagnosis },
         },
       ]
     }
