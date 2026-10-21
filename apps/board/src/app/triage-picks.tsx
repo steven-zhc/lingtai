@@ -1,7 +1,6 @@
 'use client'
 
-import type { WaitId } from '@lingtai/domain'
-import type { TriageQuestion } from '@lingtai/domain/triage'
+import type { TriageQuestion, WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
 type Picks = { waitId: WaitId | null; answers: Record<number, string> }

@@ -77,6 +77,66 @@ describe('what was readable, said by Lingtai', () => {
 })
 
 describe('the brief', () => {
+  it('keeps the existing brief byte for byte when there is no current triage', () => {
+    expect(
+      buildBrief({ evidence: EVIDENCE, history: [], question: 'why?', served: [], roundsLeft: 0 }),
+    ).toMatchSnapshot()
+  })
+
+  it('quotes triage questions and recommended answers as data', () => {
+    const brief = buildBrief({
+      evidence: {
+        ...EVIDENCE,
+        triage: {
+          _tag: 'TriageAdvised',
+          cause: {
+            _tag: 'UndecidedQuestion',
+            questions: [
+              {
+                id: 'q',
+                text: 'Which path?',
+                answers: [
+                  { id: 'a', text: 'Use A' },
+                  { id: 'b', text: 'Use B' },
+                ],
+                recommended: 'b',
+              },
+            ],
+          },
+          summary: 'The route is unclear',
+          resolution: 'EditBodyAndRequeue',
+          want: null,
+        },
+      },
+      history: [],
+      question: 'why?',
+      served: [],
+      roundsLeft: 0,
+    })
+    expect(brief).toContain('## What triage found\n\n> Cause: UndecidedQuestion\n> Summary: The route is unclear')
+    expect(brief).toContain('> Question: Which path?\n> Recommended answer: Use B')
+    expect(brief).not.toContain('> Recommended answer: Use A')
+  })
+
+  it('quotes triage fixes with their locations', () => {
+    const brief = buildBrief({
+      evidence: {
+        ...EVIDENCE,
+        triage: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 9, what: 'Change this' }] },
+          summary: 'One line is wrong',
+          resolution: 'EditBodyAndRequeue',
+          want: null,
+        },
+      },
+      history: [],
+      question: 'why?',
+      served: [],
+      roundsLeft: 0,
+    })
+    expect(brief).toContain('> Cause: FixableLines\n> Summary: One line is wrong\n> Fix (src/a.ts:9): Change this')
+  })
   it('carries the reading sentences, so the assistant cannot be given the blind spot', () => {
     const brief = buildBrief({
       evidence: {

@@ -50,7 +50,7 @@ describe('current wait triage band', () => {
     expect(html).toContain('triage failed: “&lt;failed&gt;”')
   })
 
-  it('draws questions and their recommended answer as text', () => {
+  it('draws questions as answer choices with the recommendation selected', () => {
     const html = draw(
       advised({
         _tag: 'UndecidedQuestion',
@@ -59,6 +59,8 @@ describe('current wait triage band', () => {
     )
     expect(html).toContain('&lt;question&gt;')
     expect(html).toContain('&lt;answer&gt; (recommended)')
+    expect(html).toContain('type="radio"')
+    expect(html).toContain('checked=""')
     expect(html).toContain('&lt;plain summary&gt;')
   })
 
@@ -104,6 +106,7 @@ describe('current wait triage band', () => {
     expect(html).toContain('&lt;which behavior?&gt;')
     expect(html).toContain('keep A')
     expect(html).toContain('keep B (recommended)')
+    expect(html).toContain('value="b" checked=""')
   })
 
   it('keeps triage visible with a mirror-head line', () => {
