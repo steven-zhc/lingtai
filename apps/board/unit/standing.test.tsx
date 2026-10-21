@@ -581,6 +581,15 @@ const HELD: StandingView = {
   restarts: 0,
   restartsOf: 0,
   waitId: aWaitId(),
+  // A merge conflict: `allowedResolutions` offers no `Approve` for it
+  // (`wait.ts`'s `MergeConflict` row), which is what keeps `awaitingSha: null`
+  // above from ever being asked to back a button (#442).
+  reason: {
+    _tag: 'ProposedEscalated',
+    run: { runId: RUN_2 },
+    proposal: { _tag: 'MergeConflict', output: 'apps/web/page.tsx', paths: null, baseSha: null, headSha: null },
+    because: { _tag: 'NotAsked' },
+  },
   approvedSha: null,
 }
 
@@ -1144,6 +1153,24 @@ const OUTGOING: OutgoingView = {
 /** Just the row of moves: the Ask button inside the discussion is amber too. */
 const moves = (html: string) => html.slice(html.indexOf('class="btnrow smoves"'), html.indexOf('class="spair"'))
 
+/**
+ * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
+ * 'EditBodyAndRequeue', 'Close']` (`wait.ts`'s `SignoffRequired` row) — so
+ * tests below that want Approve on the row swap `HELD`'s own `MergeConflict`
+ * reason (which never offers it) for this one, alongside `awaitingSha` (#442:
+ * the two now have to agree, where before only `awaitingSha` was read).
+ */
+const SIGNOFF_REASON = {
+  _tag: 'SignoffRequired' as const,
+  run: { runId: RUN_2 },
+  step: 'merge' as const,
+  action: 'human',
+  question: 'merge this?',
+}
+
+/** `allowedResolutions` offers `['AnswerQuestion', 'Requeue', 'Close']` — no `Approve`, and `Requeue` draws as Answer/Withdraw. */
+const OWN_QUESTION_REASON = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
+
 const render = (standing: StandingView, outgoing: OutgoingView | null) =>
   renderToStaticMarkup(
     <Standing
@@ -1179,7 +1206,7 @@ describe('the moves the column ends in', () => {
    * including on a card whose refusal is exactly what a waiver was for.
    */
   it('offers Approve beside Send, and no Reject or Waive, wherever there is an approval open', () => {
-    const html = render({ ...HELD, awaitingSha: SHA, failed: ['proposed:review'] }, OUTGOING)
+    const html = render({ ...HELD, awaitingSha: SHA, failed: ['proposed:review'], reason: SIGNOFF_REASON }, OUTGOING)
 
     expect(html).toContain('Send attempt 3')
     expect(html).toContain('Approve')
@@ -1195,7 +1222,10 @@ describe('the moves the column ends in', () => {
    * and the amber is still spent once.
    */
   it('offers Back to the queue beside Approve on a card asking for approval', () => {
-    const html = render({ ...HELD, awaitingSha: SHA }, { ...OUTGOING, problem: 'lingtai is not a registered project' })
+    const html = render(
+      { ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON },
+      { ...OUTGOING, problem: 'lingtai is not a registered project' },
+    )
 
     expect(html).toContain('Approve')
     expect(html).toContain('Back to the queue')
@@ -1211,7 +1241,7 @@ describe('the moves the column ends in', () => {
   it("spends the row's amber on one button", () => {
     expect(moves(render(HELD, OUTGOING)).match(/btn pri/g)).toHaveLength(1)
 
-    const approving = moves(render({ ...HELD, awaitingSha: SHA }, OUTGOING))
+    const approving = moves(render({ ...HELD, awaitingSha: SHA, reason: SIGNOFF_REASON }, OUTGOING))
     expect(approving.match(/btn pri/g)).toHaveLength(1)
     // Approve's, because that is the move a diff asks for.
     expect(approving).toContain('class="btn pri">Approve')
@@ -1240,6 +1270,7 @@ describe('the moves the column ends in', () => {
         attempts: 0,
         runId: null,
         deciding: null,
+        reason: OWN_QUESTION_REASON,
       },
       { ...OUTGOING, attempt: 1 },
     )

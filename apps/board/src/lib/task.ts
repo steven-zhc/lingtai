@@ -16,6 +16,7 @@ import {
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 /**
  * One task, folded from its streams on demand.
  *
@@ -491,6 +492,16 @@ export interface StandingView {
    */
   waitId: WaitId | null
   /**
+   * The current wait's own `WaitReason`, for `allowedResolutions` (0118 §1,
+   * `#442`) — which controls the moves row may draw, and nothing else. Set
+   * exactly where `waitId` is: a blocked lifecycle carries a reason by
+   * construction (`ticket.ts`'s `WaitStarted` case), so the two are null
+   * together and non-null together. `approved` carries no reason — the
+   * question is already answered — so this is null there even though
+   * `waitId` is not.
+   */
+  reason: WaitReason | null
+  /**
    * The sha `WaitResolved{Approve}` recorded, while `approved` — what
    * `ScheduleContinuation` sends back as `onSha` (#508), so a click made
    * after the item has moved to a new wait at a new sha is refused rather
@@ -752,6 +763,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     // recipe for it.
     restartsOf: 0,
     waitId: life.status === 'blocked' || life.status === 'approved' ? life.waitId : null,
+    reason: blocked ? life.reason : null,
     approvedSha: approved ? life.onSha : null,
   }
 }
