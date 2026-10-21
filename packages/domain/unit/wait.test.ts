@@ -13,10 +13,12 @@ import {
   allowedResolutions,
   continuationOf,
   recommendedResolution,
+  triageStatus,
   waivedActionsAt,
   TriageResult as TriageResultSchema,
   type Resolution,
   type RunRef,
+  type TriageFacts,
   type TriageResult,
   type TriageStatus,
   type WaitReason,
@@ -347,6 +349,119 @@ describe('recommendedResolution', () => {
       question: 'ship it?',
     })
     expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe(recommendedResolution(reason, notDeclared))
+  })
+})
+
+describe('triageStatus', () => {
+  const declaredTrue = { declared: true, daemonStartedAt: null }
+  const declaredFalse = { declared: false, daemonStartedAt: null }
+  const noFacts: TriageFacts = { started: null, result: null }
+  const advised: TriageResult = {
+    _tag: 'TriageAdvised',
+    cause: { _tag: 'WrongApproach' },
+    resolution: 'Requeue',
+    summary: 'patching will not converge',
+    want: null,
+  }
+
+  it("NotNeeded for OwnQuestion and SignoffRequired, whatever the facts or declared say — a WaitTriaged doesn't make it Done", () => {
+    const reasons = [
+      parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
+      parseReason({ _tag: 'SignoffRequired', run, step: 'proposed', action: 'human:ship', question: 'ship it?' }),
+    ]
+    const factsVariants: TriageFacts[] = [
+      noFacts,
+      { started: { attempt: 1, at: new Date('2026-09-01T00:00:00.000Z') }, result: null },
+      { started: { attempt: 1, at: new Date('2026-09-01T00:00:00.000Z') }, result: advised },
+    ]
+    for (const reason of reasons) {
+      for (const facts of factsVariants) {
+        for (const declared of [true, false]) {
+          for (const daemonStartedAt of [null, new Date('2026-09-02T00:00:00.000Z')]) {
+            expect(triageStatus(reason, facts, { declared, daemonStartedAt })).toEqual({ _tag: 'NotNeeded' })
+          }
+        }
+      }
+    }
+  })
+
+  describe('every other WaitReason tag reads the facts', () => {
+    const otherTags = new Set<string>()
+    function parseOther(input: unknown): WaitReason {
+      const reason = parseReason(input)
+      otherTags.add(reason._tag)
+      return reason
+    }
+
+    const reasons = [
+      parseOther({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' }),
+      parseOther({ _tag: 'FixerDisagrees', run, said: null }),
+      parseOther({ _tag: 'NothingProduced', run, said: null }),
+      parseOther({
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'BuildRed', output: 'FAIL' },
+        because: { _tag: 'NotAsked' },
+      }),
+      parseOther({ _tag: 'CheckRefused', run, step: 'proposed', action: 'watch:ci', evidence: 'no', findings: [] }),
+      parseOther({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused' }),
+      parseOther({ _tag: 'BudgetExhausted', run, cause: 'out-of-turns', detail: 'ran out' }),
+      parseOther({ _tag: 'AgentCrashed', run, step: 'implement', cause: 'crash', detail: 'crashed' }),
+      parseOther({ _tag: 'SetupRefused', run, step: 'prepared', action: 'run:pnpm install', why: 'no network' }),
+      parseOther({ _tag: 'AnswerUnreadable', run, step: 'review', action: 'agent:review', raw: 'garbled' }),
+    ]
+
+    it('no facts: Queued when declared, NotDeclared otherwise', () => {
+      for (const reason of reasons) {
+        expect(triageStatus(reason, noFacts, declaredTrue)).toEqual({ _tag: 'Queued' })
+        expect(triageStatus(reason, noFacts, declaredFalse)).toEqual({ _tag: 'NotDeclared' })
+      }
+    })
+
+    it('every WaitReason tag but the two NotNeeded ones is covered above', () => {
+      const allTags = WaitReasonSchema.options.map((option) => option.shape._tag.value)
+      const expected = new Set(allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired'))
+      expect(otherTags).toEqual(expected)
+    })
+  })
+
+  it('a result is Done whatever declared says now — a recipe that stops declaring triage does not hide a result already paid for', () => {
+    const reason = parseReason({ _tag: 'FixerDisagrees', run, said: null })
+    const facts: TriageFacts = { started: { attempt: 1, at: new Date('2026-09-01T00:00:00.000Z') }, result: advised }
+    expect(triageStatus(reason, facts, declaredFalse)).toEqual({ _tag: 'Done', result: advised })
+  })
+
+  it('a started attempt with no result is Running or Interrupted even when declared is false', () => {
+    const reason = parseReason({ _tag: 'FixerDisagrees', run, said: null })
+    const facts: TriageFacts = {
+      started: { attempt: 1, at: new Date('2026-09-01T00:00:00.000Z') },
+      result: null,
+    }
+    expect(triageStatus(reason, facts, { declared: false, daemonStartedAt: null })).toEqual({ _tag: 'Running' })
+    expect(
+      triageStatus(reason, facts, { declared: false, daemonStartedAt: new Date('2026-09-02T00:00:00.000Z') }),
+    ).toEqual({ _tag: 'Interrupted' })
+  })
+
+  it('started before daemonStartedAt is Interrupted, at or after it is Running, and a null daemonStartedAt is Running', () => {
+    const reason = parseReason({
+      _tag: 'CheckRefused',
+      run,
+      step: 'proposed',
+      action: 'watch:ci',
+      evidence: 'no',
+      findings: [],
+    })
+    const daemonStartedAt = new Date('2026-09-02T00:00:00.000Z')
+    const before: TriageFacts = { started: { attempt: 1, at: new Date('2026-09-01T00:00:00.000Z') }, result: null }
+    const atSameInstant: TriageFacts = {
+      started: { attempt: 1, at: new Date(daemonStartedAt.getTime()) },
+      result: null,
+    }
+
+    expect(triageStatus(reason, before, { declared: true, daemonStartedAt })).toEqual({ _tag: 'Interrupted' })
+    expect(triageStatus(reason, atSameInstant, { declared: true, daemonStartedAt })).toEqual({ _tag: 'Running' })
+    expect(triageStatus(reason, atSameInstant, { declared: true, daemonStartedAt: null })).toEqual({ _tag: 'Running' })
   })
 })
 
