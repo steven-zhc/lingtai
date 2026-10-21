@@ -373,9 +373,9 @@ describe('the rail on the task page', () => {
     expect(rank).toMatch(/class="slab l-at">proposed</)
     expect(rank).toMatch(/class="snow"[^>]*>\s*2m34s</)
     expect(rank).not.toContain(' / ')
-    // At rank 2 and not inside a disclosure: nothing before it on the page is
-    // a closed `<details>` it could be hiding in.
-    const before = html.slice(0, html.indexOf('class="seq"'))
+    // The rail itself is not inside a disclosure. The ticket opening above
+    // this rank is deliberately collapsed.
+    const before = rank.slice(0, rank.indexOf('class="seq"'))
     expect(before).not.toMatch(/<details(?![^>]*open)/)
   })
 
