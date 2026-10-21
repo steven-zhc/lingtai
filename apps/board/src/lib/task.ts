@@ -9,6 +9,7 @@ import {
   reduceControl,
   CONTROL_STREAM,
   parseTicketStream,
+  triageFactsOf,
   WAIT_EVENTS,
   type BlockDiagnosis,
   type BoardFact,
@@ -16,7 +17,7 @@ import {
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import { triageStatus, type WaitReason } from '@lingtai/domain/wait'
 /**
  * One task, folded from its streams on demand.
  *
@@ -800,6 +801,8 @@ export interface TaskDetail {
    * bottom of an 80-row history or nowhere.
    */
   standing: StandingView
+  /** Triage's reading of what the ticket wants, only for the current blocked wait. */
+  want: string | null
   /** Null only when the id is not `ticket-<project>-<n>`. */
   ticket: TicketView | null
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
@@ -1588,6 +1591,16 @@ async function recipesFor(project: string, runs: readonly RunView[]): Promise<Ma
  * A `ticket` of `null` — an id that is not `ticket-<project>-<n>` at all — is the
  * first row: there is no issue behind it to have an opinion about.
  */
+/** Only the wait the blocked lifecycle names can lend its paraphrase to the page. */
+export function currentWaitWant(own: readonly Envelope[], standing: StandingView): string | null {
+  if (standing.state !== 'blocked' || standing.waitId === null || standing.reason === null) return null
+  const status = triageStatus(standing.reason, triageFactsOf(own, standing.waitId), {
+    declared: false,
+    daemonStartedAt: null,
+  })
+  return status._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await eventStore.read(taskId)
 
@@ -1630,6 +1643,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
   const standing = standingOf(own, folded)
+  const want = currentWaitWant(own, standing)
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
   // and a page that waited for the sum would pay for both round trips end to
@@ -1700,6 +1714,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   return {
     taskId,
     standing,
+    want,
     ticket,
     runs,
     discussions,

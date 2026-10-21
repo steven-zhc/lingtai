@@ -87,6 +87,7 @@ const CRASH = 'the reviewer did not finish (crash): Error: Session ID 1d391e10 i
 const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
   taskId: ITEM,
   standing: standingOf(own, runs),
+  want: null,
   ticket: TICKET,
   runs,
   discussions: [],
