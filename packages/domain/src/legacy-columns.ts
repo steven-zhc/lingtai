@@ -33,6 +33,18 @@ export interface LegacyColumns {
   diagnosis: BlockDiagnosis | null
 }
 
+/**
+ * The sentence a wait prints, and the two facts beside it that do not reduce
+ * to `runId`/`asked`/`needsFrom` — #443: one function owns every per-variant
+ * sentence, and the event-side readers call it instead of `legacyColumns`'
+ * copy of the same text.
+ */
+export interface WaitWords {
+  line: string
+  needs: 'judgement' | 'acknowledgement'
+  diagnosis: BlockDiagnosis | null
+}
+
 const APPROVE_EVERY_STEP_PASSED: BlockRecommendation = {
   action: 'approve',
   why: 'every step passed on this diff; approving merges what this run produced',
@@ -50,9 +62,10 @@ function stepLine(step: string, word: string, text: string): string {
 /**
  * `${branch} into ${base}`, or just `${branch}` where `base` is not known.
  *
- * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `legacyColumns` off one
- * event (or, for `ticket.ts`, off an aggregate with no run stream to
- * read), and none of the three has a projection of the recipe's own `base` —
+ * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `waitWords` (`ticket.ts`
+ * through `legacyColumns`) off one event (or, for `ticket.ts`, off an
+ * aggregate with no run stream to read), and none of the three has a
+ * projection of the recipe's own `base` —
  * only `conduct.ts`, composing the GitHub comment, does. `branch` they can
  * still supply (the ticket id's issue number makes it, deterministically);
  * dropping `base` rather than printing it blank is the difference between
@@ -78,24 +91,18 @@ function judgement(
   run: RunRef,
   raw: string | null,
   recommendation: BlockRecommendation | null = null,
-): LegacyColumns {
+): WaitWords {
   return {
-    question,
-    runId: run.runId,
-    asked: false,
+    line: question,
     needs: 'judgement',
-    needsFrom: 'human',
     diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation },
   }
 }
 
-function acknowledgement(question: string, run: RunRef, raw: string | null): LegacyColumns {
+function acknowledgement(question: string, run: RunRef, raw: string | null): WaitWords {
   return {
-    question,
-    runId: run.runId,
-    asked: false,
+    line: question,
     needs: 'acknowledgement',
-    needsFrom: 'human',
     diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation: null },
   }
 }
@@ -105,15 +112,12 @@ function mergeRefusedColumns(
   reason: RefusalReason,
   raw: string,
   pass: { branch: string; base: string },
-): LegacyColumns {
+): WaitWords {
   const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
   const question = `${reason}: ${raw}`.slice(0, 400)
   return {
-    question,
-    runId: run.runId,
-    asked: false,
+    line: question,
     needs: 'acknowledgement',
-    needsFrom: 'human',
     diagnosis: {
       what: reading.what + unpushedSuffix(run),
       done: reading.done,
@@ -123,7 +127,7 @@ function mergeRefusedColumns(
   }
 }
 
-function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): LegacyColumns {
+function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): WaitWords {
   const question = `${cause}: ${detail}`
   const what =
     cause === 'out-of-usd'
@@ -132,11 +136,8 @@ function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd
       : `the run reached the recipe's turn limit and was stopped: ${detail}. The limit is a scope ` +
         'alarm — the ticket asks for more than one run should do.'
   return {
-    question,
-    runId: run.runId,
-    asked: false,
+    line: question,
     needs: 'acknowledgement',
-    needsFrom: 'human',
     diagnosis: {
       what: what + unpushedSuffix(run),
       done: null,
@@ -186,14 +187,11 @@ function routedRefusalColumns(
   run: RunRef,
   pass: { branch: string; base: string },
   question: string,
-): LegacyColumns {
+): WaitWords {
   const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
   return {
-    question,
-    runId: run.runId,
-    asked: false,
+    line: question,
     needs: 'judgement',
-    needsFrom: 'human',
     diagnosis: {
       what: question + unpushedSuffix(run),
       done: reading.done,
@@ -208,7 +206,7 @@ function escalatedColumns(
   proposal: Proposal,
   because: EscalationBecause,
   pass: { branch: string; base: string; findings: readonly Finding[] },
-): LegacyColumns {
+): WaitWords {
   if (proposal._tag === 'InputNeeded') {
     return judgement(stepLine(proposal.from, 'asked', proposal.question), run, proposal.question)
   }
@@ -291,26 +289,19 @@ function escalatedColumns(
 }
 
 /**
- * The `question`/`needs`/`diagnosis`/etc. a fold wrote before 0118, read off
+ * The sentence, `needs` and `diagnosis` a fold wrote before 0118, read off
  * the `WaitReason` a `WaitStarted` carries. `pass` is the three facts that
  * live on the pass rather than on the wait — `branch`/`base` open a
  * `ProposedEscalated`'s own composed sentence, and `findings` rides on every
  * `SignoffRequired` the same way it used to ride on `Hold.Human`.
  */
-export function legacyColumns(
+export function waitWords(
   reason: WaitReason,
   pass: { branch: string; base: string; findings: readonly Finding[] } = { branch: '', base: '', findings: [] },
-): LegacyColumns {
+): WaitWords {
   switch (reason._tag) {
     case 'OwnQuestion':
-      return {
-        question: reason.question,
-        runId: null,
-        asked: true,
-        needs: 'judgement',
-        needsFrom: 'human',
-        diagnosis: null,
-      }
+      return { line: reason.question, needs: 'judgement', diagnosis: null }
 
     case 'AgentQuestion':
       return judgement(stepLine(reason.step, 'asked', reason.question), reason.run, reason.question)
@@ -366,5 +357,28 @@ export function legacyColumns(
         return acknowledgement(stepLine('merge', 'refused', reason.raw), reason.run, reason.raw)
       return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.raw), reason.run, reason.raw)
     }
+  }
+}
+
+/**
+ * `waitWords`' three sentence fields, plus `runId`/`asked`/`needsFrom` —
+ * none of which is a sentence, and each of which is computed from `reason`
+ * alone rather than carried through every per-variant branch above (#443).
+ * `runId` is `reason.run.runId` for every tag but `OwnQuestion`, which has no
+ * run; `asked` is true only for `OwnQuestion`; `needsFrom` is `'human'` in
+ * every branch — there is no `'external'` wait yet.
+ */
+export function legacyColumns(
+  reason: WaitReason,
+  pass: { branch: string; base: string; findings: readonly Finding[] } = { branch: '', base: '', findings: [] },
+): LegacyColumns {
+  const w = waitWords(reason, pass)
+  return {
+    question: w.line,
+    needs: w.needs,
+    diagnosis: w.diagnosis,
+    runId: 'run' in reason ? reason.run.runId : null,
+    asked: reason._tag === 'OwnQuestion',
+    needsFrom: 'human',
   }
 }
