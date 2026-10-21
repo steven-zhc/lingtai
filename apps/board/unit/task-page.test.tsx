@@ -269,11 +269,13 @@ describe('a blocked task', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
 
-  it('quotes the refusal at rank 2 and says what it means in one sentence at rank 3', () => {
+  it('keeps the raw refusal in Attempts, after the decision', () => {
     const html = page(blocked())
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
-    expect(why).toContain('Session ID 1d391e10 is already in use')
-    expect(why).toContain('<details class="sreason" open=""')
+    const attempts = html.slice(html.indexOf('id="record-attempts"'))
+    expect(why).not.toContain('<pre class="sraw"')
+    expect(attempts).toContain('<details class="sreason" open=""')
+    expect(attempts).toContain(CRASH)
   })
 
   it('prints each identifier once', () => {
