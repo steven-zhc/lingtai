@@ -17,7 +17,7 @@ import { DocumentBody } from '../../markdown.tsx'
 import { Segs } from '../../rail.tsx'
 import { RecordTabs, type RecordTab } from '../../record-tabs.tsx'
 import { RunLog } from '../../run-log.tsx'
-import { Coords, Standing } from '../../standing.tsx'
+import { Coords, RawEvidence, Standing } from '../../standing.tsx'
 
 /**
  * One task, in full.
@@ -666,6 +666,9 @@ export function Record({ task }: { task: TaskDetail }) {
       fact: totalsFact(task.totals),
       panel: (
         <>
+          {task.standing.diagnosis?.raw?.trim() ? (
+            <RawEvidence raw={task.standing.diagnosis.raw} said={task.standing.saidBy?.replace(':', ' / ') ?? null} />
+          ) : null}
           {beyond.map((line) => (
             <p key={line.part} className="rhow">
               {line.text}
