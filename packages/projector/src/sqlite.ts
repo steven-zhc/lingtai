@@ -49,6 +49,7 @@ import type {
   SpendQuery,
   TaskQuery,
 } from './store.ts'
+import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
 
 /**
@@ -300,6 +301,7 @@ function toCard(row: ProjectionRow): TaskCard {
     // created before the rename has no `waiting` key, and reading it off the
     // row directly would count that drift as a card with nothing to answer.
     waiting: parseBool(columnOf(row, 'task_view', 'waiting')),
+    wait: waitOf(row.task_id as string, row.state as TaskState, row.wait_id, parseJson(row.wait_reason)),
     needs: (row.needs as TaskCard['needs']) ?? null,
     diagnosis: (parseJson(row.diagnosis) as BlockDiagnosis | null) ?? null,
     asked: parseBool(row.asked),

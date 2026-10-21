@@ -245,6 +245,7 @@ export type CardFact =
   | { readonly _tag: 'RoundOpened'; readonly round: number; readonly findings: number; readonly action: string }
   | {
       readonly _tag: 'WaitStarted'
+      readonly waitId: WaitId
       readonly reason: WaitReason
       readonly card: Pick<LegacyColumns, 'question' | 'needs' | 'diagnosis'>
     }
@@ -290,6 +291,7 @@ export function cardFactOf(event: Envelope): CardFact[] {
       return [
         {
           _tag: 'WaitStarted',
+          waitId: d.waitId,
           reason: d.reason,
           card: { question: cols.question, needs: cols.needs, diagnosis: cols.diagnosis },
         },

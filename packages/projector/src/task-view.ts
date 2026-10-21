@@ -48,7 +48,8 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { cardFactOf, parseTicketStream } from '@lingtai/domain'
+import { cardFactOf, parseTicketStream, WaitId } from '@lingtai/domain'
+import { WaitReason } from '@lingtai/domain/wait'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
@@ -161,6 +162,13 @@ export const taskViewProjection: Projection = {
         -- never this column: only WaitResolved may answer a question
         -- already standing on an item, so a refusal found one leaves it be.
         waiting      boolean not null default false,
+
+        -- The current wait, read back as TaskCard.wait (#440). Set in the
+        -- same statement as waiting and cleared everywhere waiting is, so
+        -- wait_reason is not null holds exactly when waiting is true —
+        -- waitOf leans on that to refuse a waiting row with neither.
+        wait_id      text,
+        wait_reason  jsonb,
 
         -- Whether that question was asked **before any run** — a
         -- WaitStarted{reason: OwnQuestion}, with runId null, which only
@@ -298,6 +306,8 @@ export const taskViewProjection: Projection = {
             run_id: null,
             note: d.reason,
             waiting: false,
+            wait_id: null,
+            wait_reason: null,
             asked: false,
             needs: null,
             diagnosis: null,
@@ -321,6 +331,8 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             waiting: false,
+            wait_id: null,
+            wait_reason: null,
             asked: false,
             // Closing answers whatever was being held, for `landed`'s reason: a
             // diagnosis that outlived the decision reports a failure on work
@@ -339,6 +351,8 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             waiting: false,
+            wait_id: null,
+            wait_reason: null,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -384,6 +398,8 @@ export const taskViewProjection: Projection = {
                    asked = case when task_view.waiting then task_view.asked else false end,
                    needs = case when task_view.waiting then task_view.needs else null end,
                    diagnosis = case when task_view.waiting then task_view.diagnosis else null end,
+                   wait_id = case when task_view.waiting then task_view.wait_id else null end,
+                   wait_reason = case when task_view.waiting then task_view.wait_reason else null end,
                    updated_at = excluded.updated_at,
                    updated_seq = excluded.updated_seq
              where task_view.updated_seq < excluded.updated_seq`,
@@ -499,6 +515,8 @@ export const taskViewProjection: Projection = {
             closed_at: at,
             awaiting_sha: null,
             waiting: false,
+            wait_id: null,
+            wait_reason: null,
             asked: false,
             // Landed answers whatever was being held. A diagnosis that outlived
             // the merge would be a failure reported on finished work.
@@ -585,6 +603,8 @@ export const taskViewProjection: Projection = {
                   state: 'waiting',
                   note: fact.card.question,
                   waiting: true,
+                  wait_id: fact.waitId,
+                  wait_reason: JSON.stringify(fact.reason),
                   asked: fact.reason._tag === 'OwnQuestion',
                   needs: fact.card.needs,
                   diagnosis: fact.card.diagnosis === null ? null : JSON.stringify(fact.card.diagnosis),
@@ -627,6 +647,8 @@ export const taskViewProjection: Projection = {
                     note: 'approved — continues once a conductor is free',
                     awaiting_sha: null,
                     waiting: false,
+                    wait_id: null,
+                    wait_reason: null,
                     asked: false,
                     needs: null,
                     diagnosis: null,
@@ -652,6 +674,8 @@ export const taskViewProjection: Projection = {
                      note = null,
                      awaiting_sha = null,
                      waiting = false,
+                     wait_id = null,
+                     wait_reason = null,
                      asked = false,
                      -- The hold is answered, so the diagnosis of it goes with
                      -- the question. Leaving it would put last week's
@@ -759,6 +783,8 @@ async function upsert(
            -- A fresh attempt is nobody's question yet.
            awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
            waiting = case when $10::int > 0 then false else task_view.waiting end,
+           wait_id = case when $10::int > 0 then null else task_view.wait_id end,
+           wait_reason = case when $10::int > 0 then null else task_view.wait_reason end,
            asked = case when $10::int > 0 then false else task_view.asked end,
            -- And nobody's failure yet either. The diagnosis belongs to the block
            -- it explained; carrying it into the next attempt would put the last
@@ -907,6 +933,14 @@ export interface TaskCard {
    */
   waiting: boolean
   /**
+   * The current wait, non-null exactly when `state` is `'waiting'` (#440).
+   * `waitId` names the `WaitStarted` that opened it, and `reason` is the
+   * whole of what it recorded — `allowedResolutions(wait.reason)` is what a
+   * caller asks to know which controls apply. Read through `waitOf`, which
+   * both store twins call so they cannot disagree about the refusal below.
+   */
+  wait: { waitId: WaitId; reason: WaitReason } | null
+  /**
    * Which kind of hold it is: a person's `judgement`, or a failure that needs
    * `acknowledgement`. Null on a block that did not say, which is every one
    * written before #83 — and a card with a null here reads as it always did.
@@ -957,6 +991,37 @@ export interface TaskCard {
    * is owed the exemption its repair was bought with.
    */
   repairPending: boolean
+}
+
+/**
+ * The columns a store's own `toCard` reads into `TaskCard.wait` (#440).
+ *
+ * `reason` is already-parsed on Postgres and text on SQLite — each twin
+ * passes in whatever its own column type hands back, and this is the one
+ * place that turns it into `WaitReason` so the two cannot disagree about the
+ * refusal below.
+ *
+ * Returns `null` for every state but `'waiting'`, whatever the columns hold:
+ * `TicketDiscovered`, `RunStarted` and `RunProposedCompletion` move `state`
+ * off `'waiting'` without touching these columns (design note §1), so a row
+ * mid-run can carry a stale `wait_id`/`wait_reason` that this must not read.
+ *
+ * Throws, naming the task, on the one combination the fold can never write:
+ * `state === 'waiting'` with no reason. `state` is only ever set to
+ * `'waiting'` in the same statement that sets `wait_reason` (`WaitStarted`),
+ * so a row here either predates this column or has been tampered with — both
+ * are a bug to report loudly, not a card to draw with no wait.
+ */
+export function waitOf(taskId: string, state: TaskState, waitId: unknown, reason: unknown): TaskCard['wait'] {
+  if (state !== 'waiting') return null
+  if (reason === null || reason === undefined) {
+    throw new Error(`task ${taskId} is waiting with no wait_reason`)
+  }
+  try {
+    return { waitId: WaitId.parse(waitId), reason: WaitReason.parse(reason) }
+  } catch (err) {
+    throw new Error(`task ${taskId} has a wait that does not parse: ${String(err)}`)
+  }
 }
 
 /**
