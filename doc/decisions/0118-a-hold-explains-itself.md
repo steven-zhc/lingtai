@@ -63,8 +63,8 @@ person's answer may lift that. **Unpushed work** (the branch did
 not reach origin,
 `conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
 ends) can come on top of any wait that has a run. Today none of this is
-written down: `WorkItemBlocked` carries `needs`, `runId` and `diagnosis`, and
-which kind a wait is gets inferred again in each place that needs it, from
+written down: the wait's event carried `needs`, `runId` and `diagnosis`, and
+which kind a wait was got inferred again in each place that needed it, from
 `runId === null` in one and `needs` in another.
 
 ## Decision
@@ -129,10 +129,7 @@ which kind a wait is gets inferred again in each place that needs it, from
      events are `WaitStarted`, `WaitResolved` and `WaitTriaged`. _You_ stays on
      the page: a log or a CLI has no fixed reader. **_Hold_ means one thing,
      `agent:hold`**: a person keeping a queued ticket from being claimed, the
-     opposite direction. The code still says `Hold`, `HoldTriaged`, `Held`,
-     `Move`, `BodyAndRequeue` and `Answer`; #450 renames them, and the ones on
-     the log (`WorkItemBlocked`, `WorkItemUnblocked`, `HoldTriaged`, the
-     `blocked` column) change with 0120's phase 2 reset, never alone.
+     opposite direction.
    - **A wait is classified where the pass decides it**, never by which
      internal value happened to be set on the way. Two pure functions build a
      `WaitReason` from a run and nothing else does: `routeNext` for everything
@@ -161,8 +158,7 @@ which kind a wait is gets inferred again in each place that needs it, from
      `OwnQuestion`. It is shown first, above everything else, with what it
      takes to rescue it.
    - **The wait's event records the `WaitReason` and nothing beside it**, with
-     the `waitId` that names this wait: `WaitStarted { waitId, reason }` from
-     0120's phase 2, `WorkItemBlocked` until then. The words a person reads
+     the `waitId` that names this wait: `WaitStarted { waitId, reason }`. The words a person reads
      live inside the variant that owns them, so `needs`, `question` and
      `diagnosis` are gone: two representations of one wait can disagree.
      **There is no upcaster**: before 1.0 the log is reset across a change of
@@ -179,9 +175,10 @@ which kind a wait is gets inferred again in each place that needs it, from
        | { _tag: 'SetupBroken' }
      type TriageResult =
        | { _tag: 'TriageFailed'; why: string }
-       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: Resolution; summary: string }
+       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: Resolution; summary: string; want: string | null }
      type TriageStatus =
        // derived on read, never stored
+       | { _tag: 'NotNeeded' }
        | { _tag: 'NotDeclared' }
        | { _tag: 'Queued' }
        | { _tag: 'Running' }
@@ -190,8 +187,11 @@ which kind a wait is gets inferred again in each place that needs it, from
      ```
 
      `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
-     page and `recommendedResolution` match on, derived from the strongest fact
-     first: a result for the current wait's latest attempt is `Done`, whatever
+     page and `recommendedResolution` match on, and what the daemon starts
+     triage on: it starts one only for `Queued`. It is derived from the wait
+     first and then from the strongest fact: a wait triage does not read is
+     `NotNeeded` (§3), whatever the recipe or the log says; otherwise a result
+     for the current wait's latest attempt is `Done`, whatever
      the recipe says now; an attempt started with no result is `Running`, or
      `Interrupted` if it started before the running daemon did; a wait with
      neither is `Queued` while `triage:` is declared, and `NotDeclared`
@@ -275,8 +275,8 @@ which kind a wait is gets inferred again in each place that needs it, from
 3. **Triage is its own step, run by the daemon after a wait is recorded.**
    - **The decisions are pure and the effects are the shell's**, as
      [0120](0120-a-reason-is-a-type.md) sets out for every reason. Pure,
-     reading no store, clock, git or process: whether triage runs
-     (`triageRuns`), how its state reads (`triageStatus`), which resolution is drawn
+     reading no store, clock, git or process: whether triage runs and how its
+     state reads (one function, `triageStatus`), which resolution is drawn
      first (`recommendedResolution`), and what the body becomes with an answer in it
      (`upsertSection`, #446). The shell's: running the triage agent, writing
      the body to GitHub (`updateBody`), and appending `TriageStarted` and
@@ -289,29 +289,34 @@ which kind a wait is gets inferred again in each place that needs it, from
      Where it is not declared, nothing runs, and the page shows the ticket,
      where it is, and the stopping step's own words.
    - It runs for judgements and machine failures. It does not run for a
-     person's own question, because the person wrote the question. Which
-     variants it runs for is one pure function of the wait, `triageRuns`,
-     beside `allowedResolutions` and following the same table.
-   - **What it advised is one event, `WaitTriaged`, on the work item's stream.**
-     It names the wait it explains and the head it read, and who answered: `Agent`, with its runtime, model, reported `costUsd` and usage ([0110](0110-tokens-on-the-event-money-at-display.md)), or `Mechanical`, when Lingtai answered without calling an agent (§8). Only `Agent` carries spend: a mechanical answer cost nothing, and records no cost rather than a zero the runtime never stated. Its result is
+     person's own question (`OwnQuestion`), because the person wrote the
+     question, nor for a declared signoff (`SignoffRequired`), where every
+     step passed and nothing refused, so there is nothing to diagnose. Those
+     two are `TriageStatus.NotNeeded`, decided inside `triageStatus` by a
+     switch over `WaitReason` with no `default`, so a new variant cannot be
+     added without saying whether triage reads it. There is no separate
+     predicate beside it: whether triage runs and how its state reads are
+     one answer, and two functions could disagree.
+   - **What it advised is one event, `WaitTriaged`, on the ticket's stream.**
+     It names the wait it explains and the head it read, and who answered: `Agent`, with its runtime and model, or `Mechanical`, when Lingtai answered without calling an agent (§8). **It carries no spend.** What an agent's triage cost is one `RunSpent { for: Triage { waitId } }`, appended where the runtime reported it, as every paid call is ([0110](0110-tokens-on-the-event-money-at-display.md) §10); a mechanical answer called nothing and appends none. Its result is
      a `TriageResult`, `Failed` or `Advised`, the same type and not a copy of it,
      so an advised triage with a failure, or a failed one with advice, cannot
      be written. `Advised` carries the cause, the recommended resolution, one
-     sentence for the card, and one sentence of what the ticket wants (or
-     none, where the body does not say). **The parts belong to the cause**:
+     sentence for the card (`summary`), and one sentence of what the ticket
+     wants (`want`, `null` where the body does not say). **The parts belong to the cause**:
      the questions, with their answers and the recommended one, exist only in
      _a decision for you_, or inside the conflict hunk they are about; the
      fixes only in _lines to fix_; the conflict hunks only in _merge by hand_.
      None of them is repeated beside the cause.
      Where the body does not say what the ticket wants, that question is a
      decision for you. A triage that fails still appends it, with the
-     failure and the usage. **What the agent writes is bounded**, because it
+     failure; what it spent is its `RunSpent`, as for any other attempt. **What the agent writes is bounded**, because it
      is kept for good and drawn on the page: a few questions with a few
      answers each, a bounded number of fixes and hunks, and short text, with
      the numbers in the schema. An answer past them is refused, and that
      refusal is a failed triage.
    - **A triage is keyed by its wait, and its attempts are on the log.**
-     The key is the work item and the wait's position on its stream, and
+     The key is the ticket and the wait's `waitId`, and
      nothing else: the head is recorded for the audit, and a recipe edit does
      not re-triage every waiting card. Before the agent is dispatched,
      `TriageStarted` names the wait and the attempt; `WaitTriaged` carries
@@ -320,13 +325,14 @@ which kind a wait is gets inferred again in each place that needs it, from
      is needed beside it.
    - **A triage can be stopped, and a stopped one is recorded.** It runs
      under the recipe's `triage:` wall, which must be shorter than the
-     daemon's subscriber timeout; at the wall the agent is killed and a failed
-     `WaitTriaged` is appended with what was spent.
+     daemon's subscriber timeout; at the wall the agent is killed, a failed
+     `WaitTriaged` is appended, and what the runtime reported spending is its
+     `RunSpent`.
    - **On start, the daemon catches up only on waits still current.** A
      wait with no `TriageStarted` is triaged; one whose last attempt started
      before this daemon did and never finished was interrupted, and is tried
      again, at most twice in all. A second interruption appends a failed
-     `WaitTriaged` with no usage and is left to the person.
+     `WaitTriaged` and is left to the person.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
@@ -360,7 +366,7 @@ which kind a wait is gets inferred again in each place that needs it, from
    - _Write it into the body & requeue_ is one resolution. It writes a section to
      the ticket's body through the existing `ticket` outcome, then requeues.
    - **Each wait's answer is one section, found by a marker** naming the
-     work item and the wait. Writing it again replaces that section or
+     ticket and the wait's `waitId`. Writing it again replaces that section or
      leaves it, and never adds a second, so a retry is safe. When a write's
      outcome is unknown, the body is read back: the section as written means
      it landed. A tracker with a conditional write (Lingtai's own table)
@@ -379,7 +385,7 @@ which kind a wait is gets inferred again in each place that needs it, from
      are not asked for one.
    - **Which advice a resolution answered is derived, never written.** A
      resolution is one event, `WaitResolved { waitId, by, resolution, note }`
-     (`WorkItemUnblocked` until 0120's phase 2). A resolution answers the `WaitTriaged` of the wait that
+     A resolution answers the `WaitTriaged` of the wait that
      was current when it was made, and both are on the item's stream, so a query
      finds the pair for board and CLI alike. Whether the resolution matched the
      advice is decided in that query too, so a change to what counts as
@@ -432,7 +438,7 @@ which kind a wait is gets inferred again in each place that needs it, from
    and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
-10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from those facts by §1's order, through one pure function, `triageStatus`. Adding the columns is a rebuild:
+10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from the wait's `WaitReason` and those facts by §1's order, through one pure function, `triageStatus`, the same one the daemon starts triage by. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
 11. **A wait is resolved by its own id, and an approval continues the run.**
@@ -477,8 +483,8 @@ which kind a wait is gets inferred again in each place that needs it, from
 ## Consequences
 
 - **Every wait that is a judgement or a machine failure costs one triage
-  run**, whether or not anybody opens it. Its usage is on `WaitTriaged`, so it
-  shows in `/spend`, and a recipe that does not want it does not declare it.
+  run**, whether or not anybody opens it. Its cost is a `RunSpent { for: Triage }`,
+  so it shows in `/spend`, and a recipe that does not want it does not declare it.
 - **Triage is billed at least once, and at most twice, per wait.** The only
   second payment is a daemon that stopped during the call, whose attempt is
   tried again on the next start.
