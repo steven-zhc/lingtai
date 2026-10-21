@@ -64,6 +64,7 @@ import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
+import { mirrorBranchSha } from '@lingtai/repo'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
@@ -85,6 +86,7 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
+import { triageHeadLine } from './triage-head.ts'
 
 export interface Finding {
   file: string
@@ -380,6 +382,8 @@ export interface StandingView {
   state: StandingState
   /** Derived for this wait alone, after matching the projection row. */
   triageStatus: TriageStatus | null
+  /** A comparison with the local mirror, only for a completed current triage. */
+  triageHeadLine?: string | null
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -1609,12 +1613,13 @@ export function currentWaitWant(own: readonly Envelope[], standing: StandingView
 /** A projected triage belongs on the page only while it names the folded current wait. */
 export function currentTriageStatus(
   standing: StandingView,
-  card: Pick<TaskCard, 'wait' | 'triage'> | null,
+  card: Pick<TaskCard, 'wait' | 'triage' | 'triageHeadSha'> | null,
   context: { declared: boolean; daemonStartedAt: Date | null },
-): TriageStatus | null {
+): { status: TriageStatus; headSha: string | null } | null {
   if (standing.state !== 'blocked' || standing.waitId === null || standing.reason === null) return null
   if (card?.wait?.waitId !== standing.waitId) return null
-  return triageStatus(standing.reason, card.triage, context)
+  const status = triageStatus(standing.reason, card.triage, context)
+  return { status, headSha: status._tag === 'Done' ? card.triageHeadSha : null }
 }
 
 /** Read the inputs for this wait; a failed read must reach the page as an error. */
@@ -1622,7 +1627,7 @@ export async function loadCurrentTriageStatus(
   taskId: string,
   projectName: string,
   standing: StandingView,
-): Promise<TriageStatus | null> {
+): Promise<{ status: TriageStatus; headSha: string | null } | null> {
   const [cards, project, daemon] = await Promise.all([
     readTasks({ project: projectName }),
     loadProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
@@ -1677,16 +1682,24 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
   const foldedStanding = standingOf(own, folded)
-  let status: TriageStatus | null = null
+  let triage: Awaited<ReturnType<typeof loadCurrentTriageStatus>> = null
   if (
     foldedStanding.state === 'blocked' &&
     foldedStanding.waitId !== null &&
     foldedStanding.reason !== null &&
     ticket !== null
   ) {
-    status = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
+    triage = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
   }
-  const standing = { ...foldedStanding, triageStatus: status }
+  const status = triage?.status ?? null
+  const triageHeadLineText =
+    status?._tag === 'Done' && triage?.headSha !== null && triage?.headSha !== undefined && ticket !== null
+      ? triageHeadLine(
+          triage.headSha,
+          await mirrorBranchSha({ project: ticket.project, ref: `refs/heads/${agentBranchOf(ticket.ref)}` }),
+        )
+      : null
+  const standing = { ...foldedStanding, triageStatus: status, triageHeadLine: triageHeadLineText }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,

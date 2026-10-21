@@ -34,7 +34,15 @@ import { FollowedLog } from './run-log.tsx'
 const TICKET_OPENING_LINES = 8
 
 /** Agent-written fields stay React text; there is no markdown path in this band. */
-export function TriageBand({ reason, status }: { reason: WaitReason; status: TriageStatus }) {
+export function TriageBand({
+  reason,
+  status,
+  headLine,
+}: {
+  reason: WaitReason
+  status: TriageStatus
+  headLine?: string | null
+}) {
   switch (status._tag) {
     case 'NotNeeded':
     case 'NotDeclared':
@@ -52,7 +60,12 @@ export function TriageBand({ reason, status }: { reason: WaitReason; status: Tri
     case 'Done': {
       const result = status.result
       if (result._tag === 'TriageFailed')
-        return <section className="triage-band">triage failed: “{result.why}”</section>
+        return (
+          <section className="triage-band">
+            {headLine ? <p>{headLine}</p> : null}
+            triage failed: “{result.why}”
+          </section>
+        )
       const cause = result.cause
       let parts: React.ReactNode = null
       switch (cause._tag) {
@@ -81,7 +94,36 @@ export function TriageBand({ reason, status }: { reason: WaitReason; status: Tri
         case 'ConflictingHunks':
           parts = (
             <>
-              <p>{cause.total} conflicting hunks; the hunk list is not drawn yet.</p>
+              <p>{cause.total} conflicting hunks</p>
+              {cause.hunks.map((hunk, index) => {
+                switch (hunk._tag) {
+                  case 'Mechanical':
+                    return (
+                      <details key={index}>
+                        <summary>
+                          {hunk.path}:{hunk.line ?? '?'} — Mechanical
+                        </summary>
+                      </details>
+                    )
+                  case 'Divergent':
+                    return (
+                      <details key={index} open>
+                        <summary>
+                          {hunk.path}:{hunk.line ?? '?'} — Divergent
+                        </summary>
+                        <p>{hunk.question.text}</p>
+                        <ul>
+                          {hunk.question.answers.map((answer) => (
+                            <li key={answer.id}>
+                              {answer.text}
+                              {answer.id === hunk.question.recommended ? ' (recommended)' : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )
+                }
+              })}
               {cause.hunks.length === 0 && cause.total > MERGE_HUNKS_ONE_BY_ONE ? (
                 <p>The conflict is past one-by-one resolution; start over from the new base.</p>
               ) : null}
@@ -104,6 +146,7 @@ export function TriageBand({ reason, status }: { reason: WaitReason; status: Tri
       )
       return (
         <section className="triage-band">
+          {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
             triageReading
           ) : (
@@ -558,7 +601,7 @@ export function Standing({
       </div>
 
       {standing.state === 'blocked' && standing.reason !== null && standing.triageStatus !== null ? (
-        <TriageBand reason={standing.reason} status={standing.triageStatus} />
+        <TriageBand reason={standing.reason} status={standing.triageStatus} headLine={standing.triageHeadLine} />
       ) : null}
 
       {/* ---- rank 4: the moves ---------------------------------------------- */}

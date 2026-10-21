@@ -3,10 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
+import { triageHeadLine, type MirrorHead } from '../src/lib/triage-head.ts'
 
-function draw(status: TriageStatus): string {
+function draw(status: TriageStatus, headLine?: string): string {
   const reason: WaitReason = { _tag: 'OwnQuestion', question: 'why?', by: 'person' }
-  return renderToStaticMarkup(<TriageBand reason={reason} status={status} />)
+  return renderToStaticMarkup(<TriageBand reason={reason} status={status} headLine={headLine} />)
 }
 
 function advised(cause: RootCause): TriageStatus {
@@ -35,6 +36,20 @@ describe('current wait triage band', () => {
     expect(html).not.toContain('Recommends')
   })
 
+  it.each([
+    [{ at: '9876543210abcdef' }, 'Triage read abcdef1; mirror head, as of its last fetch: 9876543.'],
+    [{ missing: true }, 'The branch is no longer in the mirror.'],
+    [{ unreadable: 'git failed' }, 'Could not read the mirror: git failed'],
+  ] as const)('shows the mirror warning beside a failed triage: %j', (mirror, warning) => {
+    const html = draw(
+      { _tag: 'Done', result: { _tag: 'TriageFailed', why: '<failed>' } },
+      triageHeadLine('abcdef1234567890', mirror as MirrorHead) ?? undefined,
+    )
+    expect(html).toContain(warning)
+    expect(html.match(/<p>/g)).toHaveLength(1)
+    expect(html).toContain('triage failed: “&lt;failed&gt;”')
+  })
+
   it('draws questions and their recommended answer as text', () => {
     const html = draw(
       advised({
@@ -56,8 +71,46 @@ describe('current wait triage band', () => {
   it('draws a conflict count and the new-base recommendation past 20', () => {
     const html = draw(advised({ _tag: 'ConflictingHunks', total: 21, hunks: [] }))
     expect(html).toContain('21 conflicting hunks')
-    expect(html).toContain('hunk list is not drawn yet')
+    expect(html).not.toContain('<details')
     expect(html).toContain('start over from the new base')
+  })
+
+  it('lists every hunk, opening only divergent ones with their questions', () => {
+    const html = draw(
+      advised({
+        _tag: 'ConflictingHunks',
+        total: 2,
+        hunks: [
+          { _tag: 'Mechanical', path: 'src/a.ts', line: 4 },
+          {
+            _tag: 'Divergent',
+            path: 'src/b.ts',
+            line: 9,
+            question: {
+              id: 'q',
+              text: '<which behavior?>',
+              answers: [
+                { id: 'a', text: 'keep A' },
+                { id: 'b', text: 'keep B' },
+              ],
+              recommended: 'b',
+            },
+          },
+        ],
+      }),
+    )
+    expect(html).toContain('<details><summary>src/a.ts:4 — Mechanical</summary></details>')
+    expect(html).toContain('<details open=""><summary>src/b.ts:9 — Divergent</summary>')
+    expect(html).toContain('&lt;which behavior?&gt;')
+    expect(html).toContain('keep A')
+    expect(html).toContain('keep B (recommended)')
+  })
+
+  it('keeps triage visible with a mirror-head line', () => {
+    const html = draw(advised({ _tag: 'WrongApproach' }), 'mirror head, as of its last fetch: 9876543')
+    expect(html).toContain('mirror head, as of its last fetch: 9876543')
+    expect(html).toContain('WrongApproach')
+    expect(html.match(/mirror head, as of its last fetch/g)).toHaveLength(1)
   })
 
   it.each(['WrongApproach', 'TicketTooBig', 'SetupBroken'] as const)('%s has its summary alone', (_tag) => {

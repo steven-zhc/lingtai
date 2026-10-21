@@ -1238,10 +1238,32 @@ it('ignores triage facts for a wait that is no longer current', () => {
         want: null,
       },
     },
+    triageHeadSha: 'old-head',
   }
   const status = currentTriageStatus(HELD, card, { declared: true, daemonStartedAt: null })
   expect(status).toBeNull()
-  expect(render({ ...HELD, triageStatus: status }, OUTGOING)).not.toContain('old advice')
+  expect(render({ ...HELD, triageStatus: status?.status ?? null }, OUTGOING)).not.toContain('old advice')
+})
+
+it('keeps the completed current triage with the head its attempt read', () => {
+  const card = {
+    wait: { waitId: HELD.waitId!, reason: HELD.reason! },
+    triage: {
+      started: null,
+      result: {
+        _tag: 'TriageAdvised' as const,
+        cause: { _tag: 'WrongApproach' as const },
+        resolution: 'Close' as const,
+        summary: 'current advice',
+        want: null,
+      },
+    },
+    triageHeadSha: 'attempt-head',
+  }
+  expect(currentTriageStatus(HELD, card, { declared: true, daemonStartedAt: null })).toEqual({
+    status: { _tag: 'Done', result: card.triage.result },
+    headSha: 'attempt-head',
+  })
 })
 
 it('shows both readings only when judge and triage disagree, without changing the resolutions', () => {
