@@ -193,6 +193,38 @@ describe('triage catch-up', () => {
     await scan
   })
 
+  it('does not pin the recipe when a live worker cannot start the queued wait', async () => {
+    const f = fixture()
+    const wait = f.add(12)
+    const hashes = new Map<string, string>()
+    let finish!: (outcome: { started: boolean }) => void
+    f.deps.run = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+      .mockResolvedValueOnce({ started: true })
+    const live: TriageTriggerPorts = {
+      store: f.deps.store,
+      triageFor: async () => triage,
+      daemonStartedAt: startedAt,
+      run: f.deps.run,
+    }
+
+    await onWaitStarted(wait.wait, live)
+    await drained()
+    expect(f.deps.run).toHaveBeenCalledOnce()
+    const scan = catchUpChangedTriage('lingtai', triage, hashes, f.deps)
+    await drained()
+    finish({ started: false })
+
+    await expect(scan).rejects.toThrow(`could not start triage ${wait.waitId}`)
+    expect(hashes.has('lingtai')).toBe(false)
+    expect(wait.events().map((event) => event.type)).toEqual(['WaitStarted'])
+
+    await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
+    expect(f.deps.run).toHaveBeenCalledTimes(2)
+    expect(hashes.get('lingtai')).toBe(JSON.stringify(triage))
+  })
+
   it('scans when the triage section changes and leaves a result alone on later passes', async () => {
     const f = fixture()
     const wait = f.add(9)

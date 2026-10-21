@@ -82,7 +82,7 @@ export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
   triageFor(project: string): Promise<Triage | null>
   daemonStartedAt: Date | null
-  run(request: WaitTriageRequest): Promise<unknown>
+  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
 
@@ -233,7 +233,8 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
       const latest = await deps.store.read(event.streamId)
       if (!currentWait(latest, waitId)) return
       if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
-      await deps.run({ ticketId: event.streamId, waitId, reason, triage })
+      const outcome = await deps.run({ ticketId: event.streamId, waitId, reason, triage })
+      if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
     },
     deps.log,
   )
