@@ -28,6 +28,7 @@ import {
   runNow,
   sendAttempt,
 } from './actions.ts'
+import { useTriageDraft } from './triage-picks.tsx'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -271,7 +272,11 @@ export function EditBodyAndRequeue({
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
+  const [edited, setEdited] = useState(false)
   const [, startTransition] = useTransition()
+  const triage = useTriageDraft()
+  const composed = triage?.waitId === waitId ? triage.text : ''
+  const currentText = waitId === null ? text : draftWaitId === waitId && edited ? text : composed
   const question =
     reason?._tag === 'AgentQuestion'
       ? reason.question
@@ -287,24 +292,31 @@ export function EditBodyAndRequeue({
       <label className="reason">
         <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
         <textarea
-          value={text}
+          value={currentText}
           placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
           onChange={(event) => {
             setText(event.target.value)
             setDraftWaitId(waitId)
+            setEdited(true)
             if (draftWaitId !== waitId) setDetail(null)
           }}
         />
       </label>
       <button
         className="btn"
-        disabled={pending || doneWaitId === waitId || !text.trim() || waitId === null || draftWaitId !== waitId}
+        disabled={pending || doneWaitId === waitId || !currentText.trim() || waitId === null}
         onClick={() => {
-          if (waitId === null || draftWaitId !== waitId) return
+          if (waitId === null || !currentText.trim()) return
           setPending(true)
           setDetail(null)
           startTransition(async () => {
-            const result = await editBodyAndRequeueCard({ project, issue, waitId, text })
+            const result = await editBodyAndRequeueCard({
+              project,
+              issue,
+              waitId,
+              text: currentText,
+              ...(triage?.waitId === waitId && triage.note !== null ? { note: triage.note } : {}),
+            })
             setPending(false)
             setDoneWaitId(result.ok ? waitId : null)
             setDetail(result.detail)

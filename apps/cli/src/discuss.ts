@@ -59,6 +59,7 @@ import {
   parseTicketStream,
   reduceControl,
   reduceTicket,
+  triageFactsOf,
   CONTROL_STREAM,
   type DiscussionRequest,
   type Envelope,
@@ -173,6 +174,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   const project = parsed?.project ?? ''
   const own = await eventStore.read(request.ticketId)
   const item = reduceTicket(own)
+  const triage = currentWaitTriage(own)
 
   const runIds = [...item.runs]
   const streams = await Promise.all(runIds.map((id) => eventStore.read(id)))
@@ -220,12 +222,21 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
     attempt: request.attempt,
     ticket,
     ticketProblem,
+    triage,
     log: logLines([...own, ...streams.flat()].sort(bySeq), LOG_LINES),
     // The sentence about a branch that is not there, computed here and recorded
     // on `DiscussionAsked` — never left to the assistant to remember.
     reading: readingFor({ attempt: request.attempt, base, baseSha, head }),
     refs,
   }
+}
+
+/** A completed, advised triage belongs in a brief only while its wait is current. */
+export function currentWaitTriage(own: readonly Envelope[]): DiscussionEvidence['triage'] {
+  const lifecycle = reduceTicket(own).lifecycle
+  if (lifecycle.status !== 'blocked') return null
+  const result = triageFactsOf(own, lifecycle.waitId).result
+  return result?._tag === 'TriageAdvised' ? result : null
 }
 
 function bySeq(a: Envelope, b: Envelope): number {

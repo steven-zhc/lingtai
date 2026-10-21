@@ -48,6 +48,7 @@ function evidence(ticketId: string): DiscussionEvidence {
     attempt: 2,
     ticket: { ref: '89', title: 'the run does not stop at the turn limit', body: '…' },
     ticketProblem: null,
+    triage: null,
     log: [`1  2026-09-08 04:12:00  ${ticketId}  TicketClaimed  conductor  {}`],
     reading: readingFor({ attempt: 2, base: 'main', baseSha: 'abc1234ff', head: null }),
     refs: [{ ref: 'main', sha: 'abc1234ff', paths: ['packages/agent/src/claude-code.ts'], truncated: false }],

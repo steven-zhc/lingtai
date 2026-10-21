@@ -9,6 +9,7 @@ const harness = vi.hoisted(() => ({
   values: [] as unknown[],
   cursor: 0,
   submit: vi.fn(async () => ({ ok: true, detail: 'back in the queue' })),
+  triage: null as null | { waitId: WaitId; text: string; note: string },
 }))
 
 vi.mock('react', async (importOriginal) => {
@@ -20,6 +21,7 @@ vi.mock('react', async (importOriginal) => {
       if (!(index in harness.values)) harness.values[index] = initial
       return [harness.values[index], (value: unknown) => (harness.values[index] = value)]
     },
+    useContext: () => harness.triage,
     useTransition: () => [false, (work: () => void) => work()],
   }
 })
@@ -32,6 +34,7 @@ type ControlProps = {
   children?: ReactNode
   disabled?: boolean
   placeholder?: string
+  value?: string
   onClick?: () => void
   onChange?: (event: { target: { value: string } }) => void
 }
@@ -80,6 +83,39 @@ it('can submit a new answer after a successful wait while the editor stays mount
     waitId: next,
     text: 'Second answer',
   })
+})
+
+it('follows triage picks until a manual edit, then resets the draft on the next wait', async () => {
+  harness.values = []
+  harness.submit.mockClear()
+  const first = aWaitId()
+  const next = aWaitId()
+  harness.triage = { waitId: first, text: 'Which? — A', note: 'Triage answers:\nWhich? — A' }
+  const render = (waitId: WaitId) => {
+    harness.cursor = 0
+    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: null })
+  }
+
+  expect(control(render(first), 'textarea').props.value).toBe('Which? — A')
+  harness.triage = { waitId: first, text: 'Which? — B', note: 'Triage answers:\nWhich? — B' }
+  expect(control(render(first), 'textarea').props.value).toBe('Which? — B')
+  control(render(first), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
+  harness.triage = { waitId: first, text: 'Which? — A', note: 'Triage answers:\nWhich? — A' }
+  expect(control(render(first), 'textarea').props.value).toBe('My own answer')
+  control(render(first), 'button').props.onClick?.()
+  await vi.waitFor(() =>
+    expect(harness.submit).toHaveBeenCalledWith({
+      project: 'lingtai',
+      issue: 112,
+      waitId: first,
+      text: 'My own answer',
+      note: 'Triage answers:\nWhich? — A',
+    }),
+  )
+
+  harness.triage = { waitId: next, text: 'Where? — Here', note: 'Triage answers:\nWhere? — Here' }
+  expect(control(render(next), 'textarea').props.value).toBe('Where? — Here')
+  harness.triage = null
 })
 
 it.each([
