@@ -14,7 +14,7 @@
 import type { Action, StepOutcome, WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
-import { legacyColumns, type LegacyColumns } from './legacy-columns.ts'
+import { waitWords, type WaitWords } from './legacy-columns.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
@@ -26,9 +26,13 @@ import type { Resolution, TriageResult, WaitReason } from './wait.ts'
  * The branch a `WaitStarted`'s own ticket owns, deterministic from the
  * stream it is always appended to — `event.streamId` is the ticket id for
  * this type, never a run's. `''` where the id does not parse, the same
- * default `legacyColumns`'s own `pass` argument carries.
+ * default `waitWords`' own `pass` argument carries.
+ *
+ * Exported for `attempts.ts` (`@lingtai/conductor`), the one other reader
+ * that needs a `WaitStarted`'s branch rather than the card fact `cardFactOf`
+ * already carries it in (#443).
  */
-function branchOf(event: Envelope): string {
+export function waitBranchOf(event: Envelope): string {
   const parsed = parseTicketStream(event.streamId)
   return parsed === null ? '' : agentBranchOf(parsed.issue)
 }
@@ -247,7 +251,7 @@ export type CardFact =
       readonly _tag: 'WaitStarted'
       readonly waitId: WaitId
       readonly reason: WaitReason
-      readonly card: Pick<LegacyColumns, 'question' | 'needs' | 'diagnosis'>
+      readonly card: { readonly question: string } & Pick<WaitWords, 'needs' | 'diagnosis'>
     }
   | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly resolution: Resolution }
   | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
@@ -287,13 +291,13 @@ export function cardFactOf(event: Envelope): CardFact[] {
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const cols = legacyColumns(d.reason, { branch: branchOf(event), base: '', findings: [] })
+      const w = waitWords(d.reason, { branch: waitBranchOf(event), base: '', findings: [] })
       return [
         {
           _tag: 'WaitStarted',
           waitId: d.waitId,
           reason: d.reason,
-          card: { question: cols.question, needs: cols.needs, diagnosis: cols.diagnosis },
+          card: { question: w.line, needs: w.needs, diagnosis: w.diagnosis },
         },
       ]
     }
@@ -508,13 +512,13 @@ export function boardFactOf(event: Envelope): BoardFact[] {
 
     case 'WaitStarted': {
       const d = event.data as PayloadOf<'WaitStarted'>
-      const cols = legacyColumns(d.reason, { branch: branchOf(event), base: '', findings: [] })
+      const w = waitWords(d.reason, { branch: waitBranchOf(event), base: '', findings: [] })
       return [
         {
           _tag: 'WaitStarted',
-          question: cols.question,
-          needs: cols.needs,
-          recommendation: cols.diagnosis?.recommendation ?? null,
+          question: w.line,
+          needs: w.needs,
+          recommendation: w.diagnosis?.recommendation ?? null,
         },
       ]
     }

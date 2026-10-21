@@ -38,7 +38,7 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
-import { attemptFactOf, cardFactOf, headOf, stepOutcomesOf } from '@lingtai/domain'
+import { attemptFactOf, cardFactOf, headOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -164,8 +164,14 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
       const runId = 'run' in card.reason ? card.reason.run.runId : null
       const attempt = runId === null ? undefined : byRun.get(runId)
       // An attempt that ended by asking a person ended just as much as one
-      // that was released, and the question is the reason.
-      if (attempt) attempt.ended = `blocked, asking: ${card.card.question}`
+      // that was released, and the question is the reason. `waitWords` needs
+      // the branch the card's own `question` was composed with
+      // (`read-model.ts`'s `waitBranchOf`) — the default `pass` would open
+      // every `ProposedEscalated`/`AnswerUnreadable` sentence on no subject.
+      if (attempt) {
+        const line = waitWords(card.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line
+        attempt.ended = `blocked, asking: ${line}`
+      }
     }
 
     switch (event.type) {
