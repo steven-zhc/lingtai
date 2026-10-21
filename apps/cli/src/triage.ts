@@ -9,8 +9,8 @@
  *
  * **Every port, injected** — the store, the runtime, the mirror reads, the
  * issue fetch, the base branch, the containment and the clock — so the unit
- * test needs none of the real ones. `#413`/`#447` are the production callers
- * that hand this real ports; this file does not wire them.
+ * test needs none of the real ones. `daemonTriagePorts` wires the production
+ * ports for the daemon in this file.
  */
 import { createRuntime, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
@@ -57,7 +57,7 @@ export function enqueueTriage(
     try {
       await run()
     } catch (err) {
-      log(`triage ${key.waitId}: ${(err as Error).message}`)
+      log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       queued.delete(id)
     }
@@ -115,7 +115,7 @@ export function daemonTriagePorts(daemonStartedAt: Date | null, log: (line: stri
       waitTriage(
         {
           store: eventStore,
-          runtime: (agent) => createRuntime(agent),
+          runtime: createRuntime,
           mirror: { refSha, listAt, readAt, diffStatAt },
           issue: async (ticketId) => {
             const parsed = parseTicketStream(ticketId)

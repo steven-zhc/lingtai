@@ -164,6 +164,20 @@ describe('WaitStarted triage trigger', () => {
     expect(third).toHaveBeenCalledOnce()
   })
 
+  it.each([null, undefined])('continues after a worker rejects with %s', async (failure) => {
+    const key = { ticketId: 'ticket-nullish-1', waitId: 'wait-nullish' as WaitId }
+    const next = vi.fn(async () => {})
+    const log = vi.fn()
+    expect(enqueueTriage(key, async () => Promise.reject(failure), log)).toBe(true)
+    expect(enqueueTriage({ ticketId: 'ticket-nullish-2', waitId: 'wait-next' as WaitId }, next, log)).toBe(true)
+    await drained()
+    expect(log).toHaveBeenCalledWith(`triage wait-nullish: ${String(failure)}`)
+    expect(next).toHaveBeenCalledOnce()
+    expect(enqueueTriage(key, next, log)).toBe(true)
+    await drained()
+    expect(next).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps the recipe triage wall below the subscriber timeout', () => {
     expect(TRIAGE_WALL_MAX).toBeLessThan(SUBSCRIBER_TIMEOUT_MS)
   })
