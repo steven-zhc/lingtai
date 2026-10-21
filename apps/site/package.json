@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lingtai/domain": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "highlight.js": "^11.11.2",
     "next": "16.3.3",

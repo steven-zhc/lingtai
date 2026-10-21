@@ -11,6 +11,7 @@ import {
   CONTROL_STREAM,
   parseTicketStream,
   triageFactsOf,
+  waitWords,
   WAIT_EVENTS,
   type BlockDiagnosis,
   type BoardFact,
@@ -696,11 +697,10 @@ function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding |
 function whoWaits(life: TicketLifecycle): string {
   switch (life.status) {
     case 'blocked':
-      if (life.needsFrom === 'external') return 'waiting on something outside Lingtai'
       // The two a person can tell apart at a glance (#147): nothing has run, or
       // a run is holding something. `describeWait` words the card's chip the
       // same way; this page has the fold rather than the row, so it asks it.
-      if (life.runId === null) return 'waiting for your answer'
+      if (life.reason._tag === 'OwnQuestion') return 'waiting for your answer'
       return 'waiting on you'
     case 'claimed':
       return 'an agent is working'
@@ -732,14 +732,25 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
 
   const life = item.lifecycle
   const named =
-    life.status === 'blocked' || life.status === 'claimed' ? runs.find((r) => r.runId === life.runId) : undefined
+    life.status === 'blocked'
+      ? runs.find((r) => r.runId === ('run' in life.reason ? life.reason.run.runId : null))
+      : life.status === 'claimed'
+        ? runs.find((r) => r.runId === life.runId)
+        : undefined
   // The attempt the state names, or the last one there was. A released item is
   // queued *because of* what its last attempt did, and a landed one merged what
   // its last attempt produced; neither event carries a run id.
   const run = named ?? runs.at(-1) ?? null
   const blocked = life.status === 'blocked'
   const approved = life.status === 'approved'
-  const raw = blocked ? (life.diagnosis?.raw ?? null) : null
+  const words = blocked
+    ? waitWords(life.reason, {
+        branch: item.externalRef === null ? '' : agentBranchOf(item.externalRef),
+        base: '',
+        findings: [],
+      })
+    : null
+  const raw = words?.diagnosis?.raw ?? null
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
@@ -748,17 +759,17 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     onYou: blocked,
     who: whoWaits(life),
     // One line, and the same clip the evidence pointer gets. See `question`.
-    question: blocked ? oneLine(life.question) : null,
-    needs: blocked ? life.needs : null,
-    diagnosis: blocked ? life.diagnosis : null,
+    question: words === null ? null : oneLine(words.line),
+    needs: words?.needs ?? null,
+    diagnosis: words?.diagnosis ?? null,
     attempt: run?.attempt ?? null,
     attempts: runs.length,
     runId: run?.runId ?? null,
     // Only while a person is holding it. A run mid-flight may have an approval
     // open on its stream and no question anybody has been handed yet.
     awaitingSha: blocked ? (run?.awaitingSha ?? null) : null,
-    asked: blocked && life.runId === null,
-    askedQuestion: blocked && life.runId === null ? life.question : null,
+    asked: blocked && life.reason._tag === 'OwnQuestion',
+    askedQuestion: blocked && life.reason._tag === 'OwnQuestion' ? (words?.line ?? null) : null,
     headSha: run?.headSha ?? null,
     failed: run?.steps.filter((g) => g.state === 'failed').map((g) => g.step) ?? [],
     saidBy:

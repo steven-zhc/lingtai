@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { agentBranchOf, waitWords } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
 
@@ -334,12 +335,16 @@ function reduce(t: TaskCard, open: boolean, now: number, costUsd: MoneyBill): Sn
     // The kind is a label name — `bug`, `feature`, `tech-debt` — and names
     // nothing about the repository it came from, so it survives withholding.
     kind: t.kind,
-    note: open ? t.note : null,
+    note: open
+      ? t.wait === null
+        ? t.note
+        : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] }).line
+      : null,
     attempts: t.attempts,
     turns: t.turns,
     costUsd,
     hoursSinceUpdate: Number.isFinite(hours) ? Math.max(0, Math.round(hours * 10) / 10) : null,
-    waiting: t.waiting,
+    waiting: t.wait !== null,
   }
 }
 

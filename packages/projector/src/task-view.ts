@@ -1116,7 +1116,10 @@ export interface HoldLine {
  * cannot collapse it should link to the log instead of pasting a hundred lines
  * into a queue listing.
  */
-export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldLine[] {
+export function describeHold(card: {
+  needs: 'judgement' | 'acknowledgement' | null
+  diagnosis: BlockDiagnosis | null
+}): HoldLine[] {
   const lines: HoldLine[] = []
   if (card.needs !== null) {
     lines.push({
@@ -1166,9 +1169,12 @@ export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldL
  * Beside `describeHold` for its reason (#83, #100): the card and `lingtai
  * status` both say it, and must say it in the same words.
  */
-export function describeWait(
-  card: Pick<TaskCard, 'waiting' | 'asked' | 'awaitingSha' | 'needs'>,
-): 'waiting for your answer' | 'waiting for your review' | null {
+export function describeWait(card: {
+  waiting: boolean
+  asked: boolean
+  awaitingSha: string | null
+  needs: 'judgement' | 'acknowledgement' | null
+}): 'waiting for your answer' | 'waiting for your review' | null {
   if (!card.waiting) return null
   if (card.asked) return 'waiting for your answer'
   // Before the sha, because a block can now carry both and only one of them is

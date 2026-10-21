@@ -1,14 +1,4 @@
-/**
- * The home board's own `BoardCard.waitId` (#465). `task_view` carries
- * `wait_id` since #440, but `toCard` still takes `waitId` as its own
- * argument rather than reading `t.wait.waitId` off the row it is handed:
- * `laneWaitIds` reads the item's own stream fresh, never cut the way
- * `laneProgress`'s rails are, because `t` can lag a reclaim that already
- * produced a new wait (`board.ts:538`'s `freshNote` is the same reasoning
- * for the question beside it). Whether that staleness still justifies the
- * argument once #443 moves `laneWaitIds` onto the row is that ticket's call,
- * not a reason stated here.
- */
+/** The wait id and question on a board card come from one projected row (#465). */
 import { aWaitId } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
@@ -66,44 +56,32 @@ function blocked(): TaskCard {
 }
 
 describe("a card's own wait id", () => {
-  it('carries the waitId it was handed, for Decide/Requeue/Close to send back', () => {
+  it('carries the waitId on the row, for Decide/Requeue/Close to send back', () => {
     const t = blocked()
-    const waitId = aWaitId()
-
-    const card = toCard(t, null, null, null, null, undefined, undefined, waitId)
-
-    expect(card.waitId).toBe(waitId)
+    expect(toCard(t).waitId).toBe(t.wait?.waitId)
   })
 
-  it('is null when the caller gave none — a queued or landed card, or a waiting one `laneWaitIds` could not read', () => {
+  it('is null off the waiting lane', () => {
     const t = blocked()
-
-    expect(toCard(t).waitId).toBeNull()
+    expect(toCard({ ...t, state: 'landed', wait: null }).waitId).toBeNull()
   })
 })
 
 /**
  * **A card must not show one wait's question beside a different wait's id**
- * (#465, round 3's own finding). `laneWaitIds` reads `note` off the same
- * fold as `waitId` — never off `task_view`'s own row, which can lag behind
- * a reclaim that already produced a new wait. `toCard`'s `freshNote`
- * argument is where that pairing is kept: it overrides `t.note` whenever
- * the caller has a fresher one to give.
+ * (#465, round 3's own finding). Both come from the row's `wait`, even if
+ * its copied note is stale.
  */
 describe("a card's own question, paired with its wait id", () => {
-  it("uses the fresh note handed in alongside the wait id, not task_view's own, lagging one", () => {
+  it("uses the reason paired with the wait id, not task_view's copied note", () => {
     const t = blocked()
-    const waitId = aWaitId()
-
-    const card = toCard(t, null, null, null, null, undefined, undefined, waitId, 'which helper — a or b?')
-
-    expect(card.note).toBe('which helper — a or b?')
-    expect(card.note).not.toBe(t.note)
+    const card = toCard({ ...t, note: 'stale question' })
+    expect(card.note).toBe('the `proposed` step held: the `proposed` step held: land it?')
+    expect(card.note).not.toBe('stale question')
   })
 
-  it("falls back to task_view's own note when the caller has no fresher one", () => {
+  it("uses the row's note when there is no wait", () => {
     const t = blocked()
-
-    expect(toCard(t).note).toBe(t.note)
+    expect(toCard({ ...t, state: 'landed', wait: null }).note).toBe(t.note)
   })
 })
