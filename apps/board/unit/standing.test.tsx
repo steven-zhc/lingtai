@@ -1244,6 +1244,41 @@ it('ignores triage facts for a wait that is no longer current', () => {
   expect(render({ ...HELD, triageStatus: status }, OUTGOING)).not.toContain('old advice')
 })
 
+it('shows both readings only when judge and triage disagree, without changing the resolutions', () => {
+  const reason = {
+    ...HELD.reason!,
+    because: { _tag: 'JudgeHandedOver' as const, why: 'needs a person' },
+  }
+  const withCause = (cause: 'FixableLines' | 'TicketTooBig'): StandingView => ({
+    ...HELD,
+    reason,
+    triageStatus: {
+      _tag: 'Done',
+      result: {
+        _tag: 'TriageAdvised',
+        cause: cause === 'FixableLines' ? { _tag: 'FixableLines', fixes: [] } : { _tag: 'TicketTooBig' },
+        resolution: 'Close',
+        summary: 'triage advice',
+        want: null,
+      },
+    },
+  })
+  const disagreeing = render(withCause('FixableLines'), OUTGOING)
+  const agreeing = render(withCause('TicketTooBig'), OUTGOING)
+
+  expect(disagreeing).toContain('Which reading is right?')
+  expect(disagreeing).toContain('Chose hand-to-person')
+  expect(disagreeing).toContain('needs a person')
+  expect(disagreeing).toContain('FixableLines')
+  expect(disagreeing).toContain('triage advice')
+  expect(disagreeing.indexOf('Judge</p>')).toBeLessThan(disagreeing.indexOf('Triage</p>'))
+  expect(agreeing).not.toContain('Which reading is right?')
+  expect(agreeing).not.toContain('Chose hand-to-person')
+  expect(agreeing).toContain('TicketTooBig')
+  expect(agreeing).toContain('triage advice')
+  expect(moves(disagreeing)).toBe(moves(agreeing))
+})
+
 describe('the moves the column ends in', () => {
   it('offers Send, numbered the way the box above it is, and Leave blocked beside it', () => {
     const html = render(HELD, OUTGOING)

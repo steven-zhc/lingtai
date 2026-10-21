@@ -1,11 +1,12 @@
-import type { RootCause, TriageStatus } from '@lingtai/domain/wait'
+import type { RootCause, TriageStatus, WaitReason } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
 
 function draw(status: TriageStatus): string {
-  return renderToStaticMarkup(<TriageBand status={status} />)
+  const reason: WaitReason = { _tag: 'OwnQuestion', question: 'why?', by: 'person' }
+  return renderToStaticMarkup(<TriageBand reason={reason} status={status} />)
 }
 
 function advised(cause: RootCause): TriageStatus {

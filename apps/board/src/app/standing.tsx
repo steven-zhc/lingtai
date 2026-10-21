@@ -3,7 +3,14 @@ import { MERGE_HUNKS_ONE_BY_ONE } from '@lingtai/domain'
 // The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
 // off (#483) — so the page and the server action can never disagree about
 // which resolutions a wait allows.
-import { allowedResolutions, recommendedResolution, type Resolution, type TriageStatus } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  disagreement,
+  recommendedResolution,
+  type Resolution,
+  type TriageStatus,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
 // reads, so this block, the card and `lingtai status` say the same thing about
@@ -27,7 +34,7 @@ import { FollowedLog } from './run-log.tsx'
 const TICKET_OPENING_LINES = 8
 
 /** Agent-written fields stay React text; there is no markdown path in this band. */
-export function TriageBand({ status }: { status: TriageStatus }) {
+export function TriageBand({ reason, status }: { reason: WaitReason; status: TriageStatus }) {
   switch (status._tag) {
     case 'NotNeeded':
     case 'NotDeclared':
@@ -86,12 +93,35 @@ export function TriageBand({ status }: { status: TriageStatus }) {
         case 'SetupBroken':
           break
       }
-      return (
-        <section className="triage-band">
+      const readings = disagreement(reason, result)
+      const triageReading = (
+        <>
           <p>{cause._tag}</p>
           <p>{result.summary}</p>
           <p>Recommends {result.resolution}</p>
           {parts}
+        </>
+      )
+      return (
+        <section className="triage-band">
+          {readings === null ? (
+            triageReading
+          ) : (
+            <>
+              <p>Which reading is right?</p>
+              <div className="triage-readings">
+                <div>
+                  <p>Judge</p>
+                  <p>Chose {readings.judge.chose}</p>
+                  {readings.judge.why !== null ? <p>{readings.judge.why}</p> : null}
+                </div>
+                <div>
+                  <p>Triage</p>
+                  {triageReading}
+                </div>
+              </div>
+            </>
+          )}
         </section>
       )
     }
@@ -527,8 +557,8 @@ export function Standing({
         </p>
       </div>
 
-      {standing.state === 'blocked' && standing.triageStatus !== null ? (
-        <TriageBand status={standing.triageStatus} />
+      {standing.state === 'blocked' && standing.reason !== null && standing.triageStatus !== null ? (
+        <TriageBand reason={standing.reason} status={standing.triageStatus} />
       ) : null}
 
       {/* ---- rank 4: the moves ---------------------------------------------- */}
