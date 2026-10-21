@@ -27,7 +27,7 @@
  * no socket, no network.
  */
 import type { Runtime } from '@lingtai/agent'
-import { legacyColumns } from '@lingtai/domain'
+import { legacyColumns, type Envelope } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
@@ -132,6 +132,17 @@ describe('when the agent meets the wall', () => {
             })
           : inner(args, o)
     }
+    // Full args for `update-ref`/`for-each-ref` (`#421`) — the base fake only
+    // logs a verb (`one-pass.ts:755-759`), and these tests check the ref name
+    // and the sha it was written at.
+    const beforeKeptRefs = ports.repo.git
+    ports.repo.git = (args, o) =>
+      args[0] === 'update-ref' || args[0] === 'for-each-ref'
+        ? Effect.sync(() => {
+            did.push(`git ${args.join(' ')}`)
+            return ''
+          })
+        : beforeKeptRefs(args, o)
     const result = await once(
       {
         project,
@@ -1076,6 +1087,222 @@ describe('when the agent meets the wall', () => {
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
       expect(kept!.data).toMatchObject({ sha: WIP_SHA, stoppedBy: 'out-of-turns' })
     })
+  })
+
+  /**
+   * **A refused push's commits survive the worktree, in a ref of their own**
+   * (`#421`). `#250` lost two commits as unreachable objects because nothing
+   * pointed at them once the worktree was removed; this is the ref that
+   * points at them, written before that removal, and `keptAt` is the field
+   * that tells a person where.
+   */
+  describe('and a refused push keeps the head in the mirror', () => {
+    type Unpushed = { branch: string; said: string; keptAt?: { _tag: string; ref: string; sha: string; arm?: string } }
+
+    const unpushedOf = (item: readonly Envelope[]): Unpushed | undefined => {
+      const blocked = item.find((e) => e.type === 'WaitStarted')!
+      return (blocked.data as { reason: { run?: { unpushed?: Unpushed } } }).reason.run?.unpushed
+    }
+
+    it('writes the mirror ref before the worktree is removed, and the wait names it', async () => {
+      const rejected = '! [remote rejected] agent/7 -> agent/7 (stale info)'
+      const { did, runId, item } = await hitTheWall(true, { push: rejected })
+
+      const write = `git update-ref refs/lingtai/unpushed/7/${runId} ${'b'.repeat(40)}`
+      expect(did).toContain(write)
+      expect(did.indexOf(write)).toBeLessThan(did.indexOf(`remove ${runId}`))
+
+      const unpushed = unpushedOf(item)
+      expect(unpushed?.keptAt).toMatchObject({
+        _tag: 'Mirror',
+        ref: `refs/lingtai/unpushed/7/${runId}`,
+        sha: 'b'.repeat(40),
+        arm: 'refs/heads/agent/7-attempt-1',
+      })
+    })
+
+    /**
+     * **`arm-only` is not a refusal to keep anything from** — the commits
+     * are already on origin, as the arm, so a mirror ref would be a second
+     * place pointing at work that is not lost. `keptAt` says `Arm` instead,
+     * naming the ref that already carries it.
+     */
+    it('names the arm instead of the mirror when only the arm got through', async () => {
+      const stale = '! [remote rejected] agent/7 -> agent/7 (stale info)'
+      const { did, item } = await hitTheWall(true, { leasedBranch: stale })
+
+      expect(did.some((d) => d.startsWith('git update-ref') && !d.includes(' -d '))).toBe(false)
+
+      const unpushed = unpushedOf(item)
+      expect(unpushed?.keptAt).toMatchObject({
+        _tag: 'Arm',
+        ref: 'refs/heads/agent/7-attempt-1',
+        sha: 'b'.repeat(40),
+      })
+    })
+
+    /**
+     * **No head, nothing to keep.** `rev-parse HEAD` itself failing is the
+     * one `refused` ending with no sha to write anywhere — `unpushed` is
+     * still recorded, with no `keptAt` on it.
+     */
+    it('records unpushed with no keptAt when rev-parse HEAD itself fails', async () => {
+      const store = memoryStore()
+      const did: string[] = []
+      const ports = fakePorts(did, store)
+      const inner = ports.repo.git
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'status') {
+          return Effect.sync(() => {
+            did.push('git status')
+            return ''
+          })
+        }
+        if (args[0] === 'rev-parse') {
+          return Effect.sync(() => did.push('git rev-parse (failed)')).pipe(
+            Effect.andThen(repoFailedWith('git rev-parse', 'the index is locked')),
+          )
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([]),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+      const item = await store.read(`ticket-${PROJECT}-7`)
+
+      expect(did.some((d) => d.startsWith('git update-ref'))).toBe(false)
+      const unpushed = unpushedOf(item)
+      expect(unpushed).toBeDefined()
+      expect(unpushed?.keptAt).toBeUndefined()
+    })
+
+    /**
+     * **Once the commits reach origin, the mirror ref goes with them.**
+     * `publishWhatIsCommitted` runs twice on this ending — inline, where the
+     * push is refused and the ref is written, and again from the finalizer,
+     * where (the sibling claim that invalidated the lease now gone) the same
+     * push succeeds. The mirror never holds a ref for work the second call
+     * just put on origin.
+     */
+    it('deletes the mirror ref once the finalizer’s own retry publishes', async () => {
+      const rejected = '! [remote rejected] agent/7 -> agent/7 (stale info)'
+      const store = memoryStore()
+      const did: string[] = []
+      const said: string[] = []
+      const ports = fakePorts(did, store)
+      let pushAttempts = 0
+      const inner = ports.repo.git
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'push') {
+          pushAttempts += 1
+          if (pushAttempts <= 2) {
+            return Effect.sync(() => {
+              did.push(`git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`)
+            }).pipe(Effect.andThen(pushRefusedWith(rejected)))
+          }
+        }
+        if (args[0] === 'update-ref' || args[0] === 'for-each-ref') {
+          return Effect.sync(() => {
+            did.push(`git ${args.join(' ')}`)
+            return ''
+          })
+        }
+        return inner(args, o)
+      }
+
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: false,
+          home: '/tmp/fake-home',
+          store,
+        },
+        ports,
+      )
+      expect(result.ok, JSON.stringify(result)).toBe('held')
+      const [runId, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+
+      const rows = run.filter((e) => e.type === 'RunRefsPublished')
+      expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['refused', 'published'])
+
+      const ref = `refs/lingtai/unpushed/7/${runId}`
+      const write = `git update-ref ${ref} ${'b'.repeat(40)}`
+      const drop = `git update-ref -d ${ref}`
+      expect(did).toContain(write)
+      expect(did).toContain(drop)
+      expect(did.indexOf(write)).toBeLessThan(did.indexOf(drop))
+    })
+  })
+})
+
+/**
+ * **A landing is the one place a kept ref is ever cleaned up** (`#421`) —
+ * the worktree still exists when it runs (`repo.remove` is a finalizer, and
+ * the publish finalizer is skipped on this path), so this is the only
+ * opportunity, and it takes every ref under the ticket's own number rather
+ * than only this run's — an earlier run of the same ticket may have left one
+ * too.
+ */
+describe('when the ticket lands', () => {
+  it('deletes every kept ref for the ticket', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ports = fakePorts(did, store, true)
+    const inner = ports.repo.git
+    ports.repo.git = (args, o) => {
+      if (args[0] === 'for-each-ref') {
+        return Effect.sync(() => {
+          did.push(`git ${args.join(' ')}`)
+          return 'refs/lingtai/unpushed/7/run-aaa\nrefs/lingtai/unpushed/7/run-bbb\n'
+        })
+      }
+      if (args[0] === 'update-ref') {
+        return Effect.sync(() => {
+          did.push(`git ${args.join(' ')}`)
+          return ''
+        })
+      }
+      return inner(args, o)
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      ports,
+    )
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+
+    expect(did.filter((d) => d.startsWith('git for-each-ref'))).toHaveLength(1)
+    expect(did).toContain('git update-ref -d refs/lingtai/unpushed/7/run-aaa')
+    expect(did).toContain('git update-ref -d refs/lingtai/unpushed/7/run-bbb')
   })
 })
 

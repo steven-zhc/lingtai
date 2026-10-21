@@ -37,6 +37,21 @@ import {
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
+ * Where a refused push's commits are now (#421). `Mirror` is
+ * `refs/lingtai/unpushed/<n>/<runId>` in the mirror, at `sha` — `head`, not
+ * `branchHead`, so the ref reaches a kept WIP too — and carries `arm`, the
+ * ref the publish failed to write, because that is where a rescue pushes to.
+ * `Arm` is `arm-only`: the commits are already on origin as the arm, so there
+ * is nothing in the mirror to point at. Absent means nothing was kept — no
+ * head could be read, or the `update-ref` itself failed.
+ */
+export const KeptAt = z.discriminatedUnion('_tag', [
+  z.object({ _tag: z.literal('Mirror'), ref: z.string(), sha: z.string(), arm: z.string() }),
+  z.object({ _tag: z.literal('Arm'), ref: z.string(), sha: z.string() }),
+])
+export type KeptAt = z.infer<typeof KeptAt>
+
+/**
  * A run a wait belongs to, 0118 §1's own — not `hold.ts`'s `RunRef`, which
  * also carries `repairOf` for `legacyColumns`' pre-#143 repair machinery, a
  * field this model has no place for. `unpushed` sits here, rather than on
@@ -45,7 +60,7 @@ import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts
  */
 export const RunRef = z.object({
   runId: z.string(),
-  unpushed: z.object({ branch: z.string(), said: z.string() }).optional(),
+  unpushed: z.object({ branch: z.string(), said: z.string(), keptAt: KeptAt.optional() }).optional(),
 })
 export type RunRef = z.infer<typeof RunRef>
 
