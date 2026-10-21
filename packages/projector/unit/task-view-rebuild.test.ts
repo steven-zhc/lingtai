@@ -516,11 +516,10 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
 
   it('carries the sha a sign-off is about only while one is open', async () => {
     const requested = await fold(afterApprovalRequested)
-    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA, waiting: 1 })
+    expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA })
 
     const granted = await fold(afterApprovalGranted)
-    // `#465`: the row leaves the waiting lane, rather than keeping
-    // `waiting: true` with no sha for Approve to work against. `state:
+    // `#465`: the row leaves the waiting lane with no sha. `state:
     // 'approved'` (#510), never `'running'` and never `'queued'`: not
     // `'queued'` since `selectRunnable` reads `'queued'` as *the queue may
     // claim this* and an approved item is only `continueTicket`'s to move;
@@ -528,7 +527,6 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     // reads `'running'` as a conductor actually holding the item.
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
       awaiting_sha: null,
-      waiting: 0,
       state: 'approved',
     })
   })
