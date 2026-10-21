@@ -6,7 +6,7 @@ subject: #147 ↗ the reviewer crashes on a reused session id Opening of the tic
 state: blocked 4h 33m
 why: claim admit prepared design implement build review proposed merge end proposed:review refused the \`proposed\` step refused: the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use. proposed / review 1 line the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.
 so-what: a failure needs acknowledging
-moves: nothing to approve — this run recorded no sha to continue from Send attempt 2 Leave blocked Close
+moves: nothing to approve — this run recorded no sha to continue from Send attempt 2 Leave blocked Close Text to add to the ticket body Write it into the body &amp; requeue
 pair: will be sent attempt 2 only 74 bytes ticket@1924 #147 — the reviewer crashes on a reused session id The reviewer crashed. Edit discussion this conversation $0.12 · 2 messages · no limit human:steven did the reviewer run at all? assistant No — it crashed on start. read no files $0.12 human:steven so is requeue safe? assistant waiting for the daemon to answer Ask
 record: history · diff · findings · attempts · ticket"
 `;

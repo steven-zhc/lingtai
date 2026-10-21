@@ -171,7 +171,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --note <text>               recorded with the approval, and required when
                                 a step still refuses the head: approving then
                                 waives each refusing step, with this as why
-  lingtai requeue <project> --issue <n> [--note <why>]
+  lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval
                                 or not — and the next pass cuts a fresh branch
@@ -1297,13 +1297,22 @@ async function main(argv: string[]): Promise<number> {
       const { positional, flags } = parseFlags(rest)
       const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai requeue <project> --issue <n> [--note <why>]')
+        console.error('lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]')
+        return 2
+      }
+      if ('into-body' in flags && !flags['into-body']?.trim()) {
+        console.error('--into-body takes text')
         return 2
       }
       // `--note` left off and `--note` with nothing after it both parse as the
       // empty string, and both are recorded as `""` — not defaulted here or
       // there (#424).
-      return requeueCommand({ project: positional[0], issue, note: flags['note'] ?? '' })
+      return requeueCommand({
+        project: positional[0],
+        issue,
+        note: flags['note'] ?? '',
+        ...('into-body' in flags ? { intoBody: flags['into-body'] } : {}),
+      })
     }
     case 'ask':
     case 'answer': {

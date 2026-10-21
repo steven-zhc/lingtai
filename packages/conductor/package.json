@@ -28,6 +28,7 @@
     "./create-app": "./src/create-app.ts",
     "./ticket-store": "./src/ticket-store.ts",
     "./body-section": "./src/body-section.ts",
+    "./edit-body": "./src/edit-body.ts",
     "./ownerless": "./src/ownerless.ts",
     "./memory-tickets": "./test/memory-tickets.ts",
     "./db-tickets": "./src/db-tickets.ts",

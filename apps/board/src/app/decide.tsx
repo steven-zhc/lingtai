@@ -18,7 +18,15 @@ import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
 
-import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from './actions.ts'
+import {
+  answerCard,
+  approveCard,
+  closeCard,
+  editBodyAndRequeueCard,
+  requeueCard,
+  runNow,
+  sendAttempt,
+} from './actions.ts'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -241,6 +249,60 @@ export function ScheduleContinuation({
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/** Write text into the ticket body and requeue only when the current wait allows it. */
+export function EditBodyAndRequeue({
+  project,
+  issue,
+  waitId,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId | null
+}) {
+  const [text, setText] = useState('')
+  const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
+  const [, startTransition] = useTransition()
+
+  if (waitId === null && text === '' && !pending && detail === null) return null
+
+  return (
+    <div className="decide">
+      <label className="reason">
+        <span>Text to add to the ticket body</span>
+        <textarea
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value)
+            setDraftWaitId(waitId)
+            if (draftWaitId !== waitId) setDetail(null)
+          }}
+        />
+      </label>
+      <button
+        className="btn"
+        disabled={pending || doneWaitId === waitId || !text.trim() || waitId === null || draftWaitId !== waitId}
+        onClick={() => {
+          if (waitId === null || draftWaitId !== waitId) return
+          setPending(true)
+          setDetail(null)
+          startTransition(async () => {
+            const result = await editBodyAndRequeueCard({ project, issue, waitId, text })
+            setPending(false)
+            setDoneWaitId(result.ok ? waitId : null)
+            setDetail(result.detail)
+          })
+        }}
+      >
+        {pending ? '…' : 'Write it into the body & requeue'}
+      </button>
+      {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}
     </div>
   )
 }

@@ -16,7 +16,7 @@ import { WaitReason, allowedResolutions } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { Standing } from '../src/app/standing.tsx'
+import { Standing, movesOf as allowedMoves } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { foldRun, standingOf, type Claim } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
@@ -83,6 +83,21 @@ const buttonsOf = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/bu
 const SENTENCE = 'nothing to approve — this run recorded no sha to continue from'
 
 describe('the moves row draws exactly allowedResolutions (#442)', () => {
+  it('offers the body edit for the six named wait reasons exactly where allowed', () => {
+    for (const [name, offered] of [
+      ['agentquestion', true],
+      ['fixerdisagrees', true],
+      ['proposedescalated-buildred', true],
+      ['ownquestion', false],
+      ['mergerefused', false],
+      ['setuprefused', false],
+    ] as const) {
+      const fixture = WAIT_FIXTURES.find((f) => f.name === name)!
+      const reason = standingFor(fixture).reason!
+      expect(allowedMoves(allowedResolutions(reason), null, null).includes('edit-body')).toBe(offered)
+    }
+  })
+
   it('pins one fixture per WaitReason tag — a thirteenth variant fails here, not silently', () => {
     const pinned = new Set(WAIT_FIXTURES.map((f) => f.tag))
     const declared = new Set(WaitReason.options.map((o) => o.shape._tag.value))
@@ -103,6 +118,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const answering = allowed.includes('AnswerQuestion')
       const requeuing = !answering && allowed.includes('Requeue')
       const closing = allowed.includes('Close')
+      const editingBody = allowed.includes('EditBodyAndRequeue')
 
       expect(buttons.includes('Approve')).toBe(approveBtn)
       expect(row.includes(SENTENCE)).toBe(approveSentence)
@@ -110,9 +126,9 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       expect(buttons.includes('Withdraw')).toBe(answering)
       expect(buttons.includes('Back to the queue')).toBe(requeuing)
       expect(buttons.includes('Close')).toBe(closing)
-      // `EditBodyAndRequeue` has no control (#422/#520), and nothing else is on
-      // this row — every button drawn is accounted for above.
-      const expectedCount = (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (closing ? 1 : 0)
+      expect(buttons.includes('Write it into the body &amp; requeue')).toBe(editingBody)
+      const expectedCount =
+        (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (editingBody ? 1 : 0) + (closing ? 1 : 0)
       expect(buttons.length).toBe(expectedCount)
     })
   }
