@@ -91,7 +91,7 @@ export interface CatchUpTriagePorts {
   readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
   baseSha(project: string): Promise<string | null>
   daemonStartedAt: Date | null
-  run(request: WaitTriageRequest): Promise<unknown>
+  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
 
@@ -126,7 +126,8 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
       const facts = triageFactsOf(latest, waitId)
       const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: deps.daemonStartedAt })
       if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
-        await deps.run({ ticketId, waitId, reason: current.reason, triage })
+        const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
+        if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
       } else if (next._tag === 'Interrupted') {
         await finishInterrupted(ticketId, waitId, deps)
       }
@@ -430,7 +431,7 @@ async function gatherEvidence(
 export async function waitTriage(
   deps: TriagePorts,
   request: WaitTriageRequest,
-): Promise<{ attempt: number; result: TriageResult }> {
+): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
   const log = deps.log ?? (() => {})
   const stream = request.ticketId
 
@@ -444,13 +445,14 @@ export async function waitTriage(
       // attempt for this result to share a number with.
       attempt: 0,
       result: { _tag: 'TriageFailed', why: clip(`could not read the ticket: ${(err as Error).message}`) },
+      started: false,
     }
   }
   const waitIsCurrent = (events: readonly Envelope[]): boolean =>
     !events.some((e) => e.type === 'WaitStarted' && (e.data as PayloadOf<'WaitStarted'>).waitId === request.waitId) ||
     currentWait(events, request.waitId)
   if (!waitIsCurrent(before)) {
-    return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+    return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
   }
   const priorAttempts = before
     .filter((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
@@ -478,26 +480,34 @@ export async function waitTriage(
         const since = before.length
         before = await deps.store.read(stream)
         if (!waitIsCurrent(before)) {
-          return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+          return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
         }
         const racedByOther = before
           .slice(since)
           .some((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
         if (racedByOther) {
           log(`triage ${request.waitId}: lost the race to start attempt ${attempt} — nothing dispatched`)
-          return { attempt, result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') } }
+          return {
+            attempt,
+            result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') },
+            started: false,
+          }
         }
         startedErr = err
         continue
       }
       log(`triage ${request.waitId}: TriageStarted append failed — ${(err as Error).message}`)
-      return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) } }
+      return {
+        attempt,
+        result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) },
+        started: false,
+      }
     }
   }
   if (!started) {
     const message = startedErr instanceof Error ? startedErr.message : String(startedErr)
     log(`triage ${request.waitId}: TriageStarted append failed — ${message}`)
-    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) } }
+    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) }, started: false }
   }
 
   let baseSha: string | null = null

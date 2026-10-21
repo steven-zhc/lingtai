@@ -259,6 +259,23 @@ describe('triage catch-up', () => {
     expect(log).toHaveBeenCalledWith(`triage ${wait.waitId}: temporary append failure`)
   })
 
+  it('retries a queued wait when the runner could not append TriageStarted', async () => {
+    const f = fixture()
+    const wait = f.add(11)
+    const hashes = new Map<string, string>()
+    f.deps.run = vi.fn().mockResolvedValueOnce({ started: false }).mockResolvedValueOnce({ started: true })
+
+    await expect(catchUpChangedTriage('lingtai', triage, hashes, f.deps)).rejects.toThrow(
+      `could not start triage ${wait.waitId}`,
+    )
+    expect(hashes.has('lingtai')).toBe(false)
+    expect(wait.events().map((event) => event.type)).toEqual(['WaitStarted'])
+
+    await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
+    expect(f.deps.run).toHaveBeenCalledTimes(2)
+    expect(hashes.get('lingtai')).toBe(JSON.stringify(triage))
+  })
+
   it('skips a project whose recipe does not resolve while scanning other projects', async () => {
     const scan = vi.fn(async () => {})
     const log = vi.fn()

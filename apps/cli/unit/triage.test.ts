@@ -313,6 +313,7 @@ describe('waitTriage', () => {
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
     expect(held.result._tag).toBe('TriageFailed')
+    expect(held.started).toBe(false)
     expect(await store.read(ticketId)).toEqual([])
   })
 
