@@ -200,6 +200,33 @@ describe('allowedResolutions', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run: unpushedRun, said: null })
       expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
     })
+
+    /**
+     * `keptAt` says *where* the unpushed commits are (`#421`) — it never
+     * changes *whether* they are on origin. A mirror ref is not a sha
+     * `Approve{onSha}` could ever name, so the drop reads `reason.run.unpushed`
+     * alone, same as it did before `keptAt` existed.
+     */
+    it('SignoffRequired: Approve stays dropped with keptAt set, mirror or arm alike', () => {
+      for (const keptAt of [
+        {
+          _tag: 'Mirror' as const,
+          ref: 'refs/lingtai/unpushed/7/pass-1',
+          sha: 'b'.repeat(40),
+          arm: 'refs/heads/agent/7-attempt-1',
+        },
+        { _tag: 'Arm' as const, ref: 'refs/heads/agent/7-attempt-1', sha: 'b'.repeat(40) },
+      ]) {
+        const reason = parseReason({
+          _tag: 'SignoffRequired',
+          run: { runId: 'pass-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push', keptAt } },
+          step: 'proposed',
+          action: 'human:ship',
+          question: 'ship it?',
+        })
+        expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      }
+    })
   })
 })
 

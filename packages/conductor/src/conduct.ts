@@ -46,7 +46,7 @@ import {
   ticketStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
-import { continuationOf, waivedActionsAt, type RunRef, type WaitReason } from '@lingtai/domain/wait'
+import { continuationOf, waivedActionsAt, type KeptAt, type RunRef, type WaitReason } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
@@ -1580,6 +1580,38 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let armPublished: string | null = null
       /**
+       * **Where a refused push's commits are, while the worktree still has
+       * them** (`#421`). `null` until a `refused` ending keeps a head in the
+       * mirror, or an `arm-only` ending points at the arm instead — and back
+       * to `null` once the commits reach origin, so the mirror never holds a
+       * ref for work that is already there.
+       */
+      let kept: KeptAt | null = null
+      /** `refs/lingtai/unpushed/<n>/<runId>` — the mirror ref a refused push's head is kept at. */
+      const keptRef = `refs/lingtai/unpushed/${options.issue}/${runId}`
+      /**
+       * Writes `head` to `keptRef` in the mirror — `gitAsked` runs in the
+       * worktree, which shares the mirror's refs (`worktree.ts:187`) — and
+       * records it as `kept`. Never throws (`noteRefs`' own reason, below):
+       * the publish has to finish whether or not the ref lands.
+       */
+      const keepHead = async (head: string): Promise<void> => {
+        const wrote = await gitAsked(['update-ref', keptRef, head])
+        if (Either.isLeft(wrote)) {
+          runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.left.detail}`)
+          return
+        }
+        kept = { _tag: 'Mirror', ref: keptRef, sha: head, arm: `refs/heads/${arm}` }
+      }
+      /** Deletes `keptRef`, where the commits it pointed at reached origin another way. */
+      const dropKept = async (): Promise<void> => {
+        const dropped = await gitAsked(['update-ref', '-d', keptRef])
+        if (Either.isLeft(dropped)) {
+          runLog.note('push', `${keptRef} was not dropped — ${dropped.left.detail}`)
+        }
+        kept = null
+      }
+      /**
        * **The dirty tree a stopped agent left, kept as its own commit** (`#468`).
        *
        * Made at most once per claim, by `keepUncommittedWork` inside
@@ -1837,6 +1869,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const publishWhatIsCommitted = async (): Promise<string | null> => {
         if (worktree === null) return null
         const tree = worktree
+        // Hoisted out of the `try`, so the `catch` below can still name the
+        // head a defect struck after (`#421`) — `head` itself is a `const`
+        // the `try`'s own scope would otherwise keep from it.
+        let headRead: string | null = null
         try {
           await keepUncommittedWork()
           const at = await gitAsked(['rev-parse', 'HEAD'])
@@ -1850,6 +1886,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return at.left.detail
           }
           const head = at.right
+          headRead = head
           // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
           // `wipParent` is set the moment `git commit` succeeds there, before
           // its own `rev-parse HEAD` is attempted — so a flaky read on that one
@@ -1907,6 +1944,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * forced arm is the whole point of the second trip.
            */
           if (branchHead === published && head === armPublished) {
+            // The commits are on origin under one of the two refs this ending
+            // names, so the mirror keeps nothing for them (`#421`) — a no-op
+            // unless an earlier call on this claim wrote a `Mirror` ref.
+            await dropKept()
             // `headSha` is `head` (the arm's own) only where `branchCarries`
             // is `false` (`doc/design/468.md`) — a typed field, not a
             // sentence folded into `detail` for the reader to guess the same
@@ -1968,6 +2009,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // The arm is up even though the command exited non-zero, which is
               // the whole point of asking it separately.
               armPublished = head
+              // The commits are on origin as the arm, not the mirror (`#421`)
+              // — `dropKept` clears a `Mirror` ref an earlier call on this
+              // claim may have written, and `kept` is then set to `Arm`
+              // directly: there is nothing in the mirror to point at.
+              await dropKept()
+              kept = { _tag: 'Arm', ref: `refs/heads/${arm}`, sha: head }
               await noteRefs('arm-only', head, withWipFailure(pushed.left.detail))
               // Only where there is a real commit for the arm to carry —
               // `RunKeptUncommitted`, not this, is the account of a WIP — and
@@ -1978,6 +2025,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               if (wip !== null) await noteKept(wip)
               return pushed.left.detail
             }
+            // **Kept before the account is written, not after** (`#421`) —
+            // the worktree holding these commits is removed when the pass
+            // ends, so the ref has to exist before anything describes where
+            // the work went.
+            await keepHead(head)
             runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
             // `branchHead`, never `head`: once a WIP exists `head` is the WIP
             // sha, which was never pushed anywhere — neither push attempt
@@ -1993,6 +2045,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             published = branchHead
           }
           armPublished = head
+          // The commits just reached origin, so the mirror keeps nothing for
+          // them (`#421`) — a no-op unless an earlier call wrote a ref.
+          await dropKept()
           runLog.note(
             'push',
             branchHead === null
@@ -2019,6 +2074,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return null
         } catch (defect) {
           const why = whyOf(defect)
+          // **Only where `head` was read and never reached origin** (`#421`)
+          // — `headRead === armPublished` is the `armPublished` guard: a
+          // defect thrown *after* a successful push (inside `recordDiff`, say)
+          // must not write a `Mirror` ref for work that is already up.
+          if (headRead !== null && headRead !== tree.baseSha && headRead !== armPublished) {
+            await keepHead(headRead)
+          }
           runLog.note('push', `the publish itself failed — ${why}`)
           await noteRefs('refused', null, why)
           return why
@@ -3833,11 +3895,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * **The `run` every `WaitReason` carries, patched on here** — the one
        * fact only `conduct.ts` holds and `nextOf`/`routeNext` cannot:
-       * `unpushed`, known only after the pass, from `notPushed`.
+       * `unpushed`, known only after the pass, from `notPushed`, and
+       * `keptAt` from `kept` (`#421`) — what the inline `publishWhatIsCommitted`
+       * call above left behind, which may go stale if the finalizer's own
+       * second call then publishes (out of scope here, same as `unpushed`
+       * itself already is).
        */
       const runRef: RunRef = {
         runId,
-        ...(notPushed === null ? {} : { unpushed: { branch, said: said(notPushed, 120) } }),
+        ...(notPushed === null
+          ? {}
+          : { unpushed: { branch, said: said(notPushed, 120), ...(kept === null ? {} : { keptAt: kept }) } }),
       }
 
       /**
@@ -3904,6 +3972,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }),
         )
         log(`landed ${merged.slice(0, 7)} on ${base}`)
+        // **Every kept ref for this ticket, not only this run's own** (`#421`)
+        // — an earlier run of the same ticket may have left one too, and a
+        // landing is the one place either is ever cleaned up: the worktree
+        // still exists (`repo.remove` is a finalizer, above) and the publish
+        // finalizer is skipped on this path (`didLand` below), so nothing
+        // else reaches here afterwards.
+        yield* Effect.promise(async () => {
+          const refsHere = await gitAsked([
+            'for-each-ref',
+            '--format=%(refname)',
+            `refs/lingtai/unpushed/${options.issue}/`,
+          ])
+          if (Either.isLeft(refsHere)) {
+            runLog.note('push', `kept refs for #${options.issue} were not listed on landing — ${refsHere.left.detail}`)
+            return
+          }
+          for (const ref of refsHere.right.split('\n').filter(Boolean)) {
+            const dropped = await gitAsked(['update-ref', '-d', ref])
+            if (Either.isLeft(dropped))
+              runLog.note('push', `${ref} was not dropped on landing — ${dropped.left.detail}`)
+          }
+        })
         didLand = true
         return { ok: true, ticketId, runId, mergeCommit: merged } satisfies RunOnceResult
       }
