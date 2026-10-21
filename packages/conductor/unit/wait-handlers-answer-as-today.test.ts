@@ -104,7 +104,7 @@ describe('ask', () => {
     expect(wait?.reason).toEqual({ _tag: 'OwnQuestion', question: 'which design?', by: 'human:steven' })
     expect(reduceTicket(events).lifecycle).toMatchObject({
       status: 'blocked',
-      question: 'which design?',
+      reason: { _tag: 'OwnQuestion', question: 'which design?' },
       runId: null,
     })
   })

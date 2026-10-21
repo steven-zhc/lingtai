@@ -201,9 +201,9 @@ async function storeWithoutWaitColumns(): Promise<ProjectionStore> {
     await ctx.query('alter table task_view drop column wait_reason')
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, waiting, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      ['ticket-drift-3', 'drift', '3', 'waiting', RUN, true, new Date().toISOString(), 1],
+         (task_id, project, issue, state, run_id, updated_at, updated_seq)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      ['ticket-drift-3', 'drift', '3', 'waiting', RUN, new Date().toISOString(), 1],
     )
   })
   return store

@@ -650,8 +650,11 @@ export const taskViewProjection: Projection = {
                   'select wait_reason from task_view where task_id = $1',
                   [event.streamId],
                 )
+                const storedReason = standing[0]?.wait_reason
                 const ownQuestion =
-                  standing[0]?.wait_reason != null && WaitReason.parse(standing[0].wait_reason)._tag === 'OwnQuestion'
+                  storedReason != null &&
+                  WaitReason.parse(typeof storedReason === 'string' ? JSON.parse(storedReason) : storedReason)._tag ===
+                    'OwnQuestion'
                 await ctx.query(
                   `update task_view
                  set answer = case when $6 = 1 then answer else jsonb_build_object(

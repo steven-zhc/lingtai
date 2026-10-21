@@ -73,19 +73,7 @@ describe('reduceTicket', () => {
       status: 'blocked',
       waitId: 'wait-1' as WaitId,
       reason,
-      // The step prefix is composed by `waitWords`, rebuilding the card
-      // line a fold wrote before 0118 — the bare question is on
-      // `reason.question` itself.
-      question: 'the `proposed` step held: Which base branch should this target?',
-      needsFrom: 'human',
       runId: 'pass-a',
-      needs: 'judgement',
-      diagnosis: {
-        what: 'the `proposed` step held: Which base branch should this target?',
-        done: null,
-        raw: 'Which base branch should this target?',
-        recommendation: null,
-      },
     })
 
     const unblocked = reduceTicket([
@@ -173,12 +161,7 @@ describe('reduceTicket', () => {
       status: 'blocked',
       waitId: 'wait-1' as WaitId,
       reason,
-      question: 'Which of the three designs for the production-credential tripwire?',
-      needsFrom: 'human',
       runId: null,
-      needs: 'judgement',
-      // `lingtai ask`'s own question carries no diagnosis, same as before 0118.
-      diagnosis: null,
     })
     expect(waiting.runs).toEqual([])
 
