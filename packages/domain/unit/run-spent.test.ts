@@ -1,9 +1,11 @@
 /**
- * `RunSpent` and `SpentFor` — 0110 §1 and §9's shapes, read back as tests.
+ * `RunSpent` and `SpentFor` — 0110 §1 and §9's shapes, read back as tests —
+ * and `TriageBy`, which 0118 §3 points at `RunSpent` for a triage agent's
+ * cost rather than carrying one itself.
  */
 import { describe, expect, it } from 'vitest'
 
-import { RunSpent, SpentFor } from '../src/events.ts'
+import { RunSpent, SpentFor, TriageBy } from '../src/events.ts'
 
 const usage = [{ model: 'claude-opus-5', tokens: { fresh: 100, output: 20 } }]
 
@@ -74,5 +76,25 @@ describe('RunSpent', () => {
 
   it('refuses a payload with no usage', () => {
     expect(() => RunSpent.parse({ ...base, for: { _tag: 'Discussion' }, costUsd: null })).toThrow()
+  })
+})
+
+describe('TriageBy', () => {
+  it('parses an Agent with just runtime and model — its cost is a RunSpent, never its own field (0118 §3)', () => {
+    expect(TriageBy.parse({ _tag: 'Agent', runtime: 'claude-code', model: 'claude-opus-5' })).toEqual({
+      _tag: 'Agent',
+      runtime: 'claude-code',
+      model: 'claude-opus-5',
+    })
+  })
+
+  it('refuses an Agent carrying costUsd', () => {
+    expect(() =>
+      TriageBy.parse({ _tag: 'Agent', runtime: 'claude-code', model: 'claude-opus-5', costUsd: null }),
+    ).toThrow()
+  })
+
+  it('refuses an Agent carrying usage', () => {
+    expect(() => TriageBy.parse({ _tag: 'Agent', runtime: 'claude-code', model: 'claude-opus-5', usage })).toThrow()
   })
 })

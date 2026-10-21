@@ -1847,24 +1847,17 @@ export const TriageAgent = z.strictObject({
   _tag: z.literal('Agent'),
   runtime: z.string(),
   model: z.string(),
-  /** What the runtime reported was spent, and `null` where it said nothing — never a `0` it did not state. */
-  costUsd: z.number().nullable(),
-  usage: Usage.optional(),
 })
 export type TriageAgent = z.infer<typeof TriageAgent>
 
-/** Lingtai answered without an agent (#414), so there is no spend to record. */
+/** Lingtai answered without an agent (#414); no `RunSpent` follows. */
 export const TriageMechanical = z.strictObject({ _tag: z.literal('Mechanical') })
 export type TriageMechanical = z.infer<typeof TriageMechanical>
 
 export const TriageBy = z.discriminatedUnion('_tag', [TriageAgent, TriageMechanical])
 export type TriageBy = z.infer<typeof TriageBy>
 
-/**
- * Who was dispatched for a `TriageStarted`. Its own `Agent`, carrying no
- * spend: nothing has been spent yet when this is appended, so being strict
- * refuses a `costUsd` too.
- */
+/** Who was dispatched for a `TriageStarted`. Strict, like `TriageAgent`. */
 export const TriageStartedAgent = z.strictObject({ _tag: z.literal('Agent'), runtime: z.string(), model: z.string() })
 export type TriageStartedAgent = z.infer<typeof TriageStartedAgent>
 
@@ -1876,7 +1869,7 @@ export type TriageStartedBy = z.infer<typeof TriageStartedBy>
  * this triage is about (#502 — it named `blocked`, the position of a
  * `WorkItemBlocked`, before the switch). `attempt` is 1 for the first
  * attempt on that wait, then one more than the last `TriageStarted` for it.
- * The triage key is the work item and the wait; the head and the recipe are
+ * The triage key is the ticket and the wait; the head and the recipe are
  * not part of it (0118 §3).
  */
 export const TriageStarted = z.strictObject({
@@ -1886,7 +1879,7 @@ export const TriageStarted = z.strictObject({
 })
 
 /**
- * Triage's advice, or its failure, on the work item's stream (0118 §3,
+ * Triage's advice, or its failure, on the ticket's stream (0118 §3,
  * principle 5). `attempt` matches the `TriageStarted` it finishes; a reader
  * takes only the latest attempt's result. `headSha` is the head triage read.
  */

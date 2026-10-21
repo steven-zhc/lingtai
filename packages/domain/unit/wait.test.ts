@@ -8,11 +8,13 @@ import { describe, expect, it } from 'vitest'
 
 import type { StepOutcome, WaitId } from '../src/action.ts'
 import type { Proposal } from '../src/proposal.ts'
+import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
 import {
   allowedResolutions,
   continuationOf,
   recommendedResolution,
   waivedActionsAt,
+  TriageResult as TriageResultSchema,
   type Resolution,
   type RunRef,
   type TriageResult,
@@ -289,33 +291,33 @@ describe('recommendedResolution', () => {
     const advised: TriageResult = {
       _tag: 'TriageAdvised',
       cause: { _tag: 'WrongApproach' },
-      resolution: { _tag: 'Approve', onSha: 'sha-1' },
+      resolution: 'Approve',
       summary: 'the fixer and the reviewer disagree',
+      want: null,
     }
     expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).toBe('Approve')
   })
 
   /**
    * **The case that tells "null" apart from "fell through to the default".**
-   * `SignoffRequired`'s own default is `Approve`, so if a disallowed advice
-   * silently fell back to it, this would still read `Approve` and the two
-   * failures would look alike. `AnswerQuestion` is not in `SignoffRequired`'s
-   * allowed list (0118 §1's table), so `null` here can only mean the advice
-   * was read and rejected, never that there was no advice to read.
+   * `BudgetExhausted`'s own default is `Requeue`, not `Approve`, and `Approve`
+   * is not in its allowed list (0118 §1's table) either — so a bug that fell
+   * back to the default on a disallowed advice would read `Requeue` here,
+   * not `null`, and this test would catch it.
    */
   it('a disallowed advice is null, not the default', () => {
     const reason = parseReason({
-      _tag: 'SignoffRequired',
+      _tag: 'BudgetExhausted',
       run,
-      step: 'proposed',
-      action: 'human:ship',
-      question: 'ship it?',
+      cause: 'out-of-turns',
+      detail: 'ran out of turns',
     })
     const advised: TriageResult = {
       _tag: 'TriageAdvised',
-      cause: { _tag: 'UndecidedQuestion', questions: [] },
-      resolution: { _tag: 'AnswerQuestion', choice: 'yes' },
-      summary: 'this is a decision for you',
+      cause: { _tag: 'WrongApproach' },
+      resolution: 'Approve',
+      summary: 'this needs a sign-off, not a requeue',
+      want: null,
     }
     expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).toBeNull()
   })
@@ -329,6 +331,22 @@ describe('recommendedResolution', () => {
       question: 'ship it?',
     })
     expect(recommendedResolution(reason, notDeclared)).toBeNull()
+  })
+
+  it('NotNeeded falls to the default, same as NotDeclared — OwnQuestion has none, so null', () => {
+    const reason = parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' })
+    expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe(recommendedResolution(reason, notDeclared))
+  })
+
+  it('NotNeeded falls to the default, same as NotDeclared — SignoffRequired defaults to Approve', () => {
+    const reason = parseReason({
+      _tag: 'SignoffRequired',
+      run,
+      step: 'proposed',
+      action: 'human:ship',
+      question: 'ship it?',
+    })
+    expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe(recommendedResolution(reason, notDeclared))
   })
 })
 
@@ -347,12 +365,42 @@ describe('WaitReason refuses what 0118 §1 rules out', () => {
 })
 
 describe('TriageResult refuses what 0118 §1 rules out', () => {
+  const base = { cause: { _tag: 'WrongApproach' }, summary: 'the approach will not converge', want: null }
+
+  it("refuses AnswerQuestion as advice — that choice is the person's own", () => {
+    expect(TriageResultSchema.safeParse({ _tag: 'TriageAdvised', ...base, resolution: 'AnswerQuestion' }).success).toBe(
+      false,
+    )
+  })
+
+  it("refuses an Approve object as advice — onSha is the person's to supply, not triage's", () => {
+    expect(
+      TriageResultSchema.safeParse({
+        _tag: 'TriageAdvised',
+        ...base,
+        resolution: { _tag: 'Approve', onSha: 'sha-1' },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('refuses a want past TRIAGE_SENTENCE_MAX', () => {
+    expect(
+      TriageResultSchema.safeParse({
+        _tag: 'TriageAdvised',
+        ...base,
+        resolution: 'Requeue',
+        want: 'x'.repeat(TRIAGE_SENTENCE_MAX + 1),
+      }).success,
+    ).toBe(false)
+  })
+
   it('refuses a why on TriageAdvised — that field belongs to TriageFailed', () => {
     const value: TriageResult = {
       _tag: 'TriageAdvised',
       cause: { _tag: 'WrongApproach' },
-      resolution: { _tag: 'Requeue' },
+      resolution: 'Requeue',
       summary: 'the approach will not converge',
+      want: null,
       // @ts-expect-error TriageAdvised carries no why
       why: 'nope',
     }

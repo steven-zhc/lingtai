@@ -3,10 +3,12 @@
  * §11, `#497`).
  *
  * **It is a fold and nothing else, and it reads `RunSpent` and no other spend
- * source.** `RunFinished`, `FixApplied`, `DiscussionAnswered`, `DiscussionHeld`
- * and `TriageAgent` are the old places a cost briefly lived or still lives for
+ * source.** `RunFinished`, `FixApplied`, `DiscussionAnswered` and
+ * `DiscussionHeld` are the old places a cost briefly lived or still lives for
  * another reason — `task_view` and `finding_backlog` must keep not reading
- * `RunSpent` (0110 §13), and this fold must keep not reading them.
+ * `RunSpent` (0110 §13), and this fold must keep not reading them. `TriageAgent`
+ * held one too, until 0118 removed it; it stays named here because it is still
+ * an exported type a later edit could reach for.
  *
  * **Facts only, never a price** (0110 §5): no rate card, no clock, no network
  * call lives here. `cost_usd` is written exactly as the runtime reported it,
