@@ -14,6 +14,7 @@
  */
 import type { Runtime, RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
+import { readingFor } from '@lingtai/conductor/discuss'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -154,7 +155,7 @@ async function gatherEvidence(
       routed,
       published,
       diffStat,
-      reading: readingForTriage({ base, baseSha, attempt: runAttempt, head: headSha }),
+      reading: readingFor({ base, baseSha, attempt: runAttempt, head: headSha }),
       refs,
     },
     baseSha,
@@ -163,45 +164,13 @@ async function gatherEvidence(
 }
 
 /**
- * `readingFor`'s own three lines (`packages/conductor/src/discuss.ts:164-187`),
- * written out rather than imported: importing `@lingtai/conductor/discuss` for
- * one function would pull a runtime-shaped module in beside
- * `@lingtai/conductor/triage`'s pure one, which is exactly the seam
- * `triage.ts`'s header draws. Kept byte-identical to `readingFor`'s wording,
- * including the branch for an attempt that committed nothing, so a reader of
- * both briefs sees the same sentences.
- */
-function readingForTriage(input: {
-  base: string
-  baseSha: string | null
-  /** 1-based, in the ticket's own claim order, or null when there is no run to read (`OwnQuestion`). */
-  attempt: number | null
-  /** The commit the attempt produced, or null when it produced none. */
-  head: string | null
-}): string[] {
-  const lines: string[] = []
-  lines.push(
-    input.baseSha === null
-      ? `${input.base}: not in Lingtai's mirror — no file can be read`
-      : `${input.base}: readable at ${input.baseSha.slice(0, 7)}`,
-  )
-  if (input.attempt === null) return lines
-  if (input.head !== null) {
-    lines.push(`attempt-${input.attempt}: readable at ${input.head.slice(0, 7)}`)
-    return lines
-  }
-  lines.push(
-    `attempt ${input.attempt} left no branch; I am reading ${input.base}. ` +
-      'worktree.ts resets the branch with -B on every run, so an attempt that committed nothing ' +
-      `left agent/<n> pointing at ${input.base} — there is no code of its own to read.`,
-  )
-  return lines
-}
-
-/**
  * One wait, triaged. Appends `TriageStarted`, dispatches the agent under
  * Discussion's containment, and ends with exactly one `WaitTriaged` carrying
- * the same `attempt` — never throws.
+ * the same `attempt`. Every failure up to and including the agent's own run
+ * is caught and turned into a `TriageFailed` `WaitTriaged` rather than
+ * thrown — except the `WaitTriaged` append itself, which throws if it still
+ * cannot be made to land after retrying, rather than reporting a result that
+ * was never recorded.
  */
 export async function waitTriage(
   deps: TriagePorts,
@@ -275,15 +244,35 @@ export async function waitTriage(
     // and reasoning `resolve-wait.ts`'s `requestContinuation` uses: a dropped
     // connection is as transient as a lost version race, and the version read
     // above the append is re-taken on every attempt so a concurrent writer
-    // (another appender on the same ticket) is not mistaken for one. `null`
-    // once it lands; otherwise the last error's message, which ends the
+    // (another appender on the same ticket) is not mistaken for one. **A
+    // retry is not always "nothing was written" though** — a dropped
+    // connection can reject the promise after the transaction already
+    // committed, and a blind retry would then append a second, identical
+    // `RunSpent` for the one call. So before every attempt (including the
+    // first retry), check whether the stream already carries one matching
+    // this exact outcome since this `spend()` call started, and treat that as
+    // landed rather than writing it again. `null` once it has landed, one way
+    // or the other; otherwise the last error's message, which ends the
     // triage rather than leaving a paid call unrecorded.
     const spend = async (outcome: RunOutcome): Promise<string | null> => {
+      const since = (await deps.store.read(stream)).length
       let lastError: unknown = null
       for (let i = 0; i < 5; i += 1) {
         try {
-          const version = (await deps.store.read(stream)).length
-          await deps.store.append(stream, version, [
+          const current = await deps.store.read(stream)
+          const alreadyLanded = current.slice(since).some((e) => {
+            if (e.type !== 'RunSpent') return false
+            const data = e.data as PayloadOf<'RunSpent'>
+            return (
+              data.for._tag === 'Triage' &&
+              data.for.waitId === request.waitId &&
+              data.turns === outcome.turns &&
+              data.durationMs === outcome.durationMs &&
+              data.costUsd === outcome.costUsd
+            )
+          })
+          if (alreadyLanded) return null
+          await deps.store.append(stream, current.length, [
             {
               type: 'RunSpent',
               actor: 'conductor',
@@ -428,27 +417,46 @@ export async function waitTriage(
     final = { _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) }
   }
 
-  try {
-    const version = (await deps.store.read(stream)).length
-    await deps.store.append(stream, version, [
-      {
-        type: 'WaitTriaged',
-        actor: 'conductor',
-        data: parsePayload('WaitTriaged', {
-          waitId: request.waitId,
-          attempt,
-          // `headOf(run) ?? baseSha ?? ''` — the empty string is for a mirror
-          // with no base either, where `reading` already says no file can be
-          // read.
-          headSha: headSha ?? baseSha ?? '',
-          result: final,
-          by,
-        }),
-      },
-    ])
-  } catch (err) {
-    log(`triage ${request.waitId}: WaitTriaged append failed — ${(err as Error).message}`)
+  // The one append this function's contract is about, so unlike `TriageStarted`
+  // above it is neither swallowed nor left to a single attempt. Retried on any
+  // error up to five attempts, the version re-read each time, the same bound
+  // `spend` and `resolve-wait.ts`'s `requestContinuation` use — a `WaitTriaged`
+  // for this `attempt` landing twice is harmless (a reader takes the latest
+  // attempt's result, and a retry sends the same one), so unlike `spend` this
+  // needs no check for whether an earlier attempt already landed. If it still
+  // will not land after five attempts, this throws rather than returning
+  // `final` as though it had: `holdDiscussion`'s own terminal append
+  // (`discuss.ts:500-508`) is never wrapped in a `try`, for the same reason —
+  // a caller told this succeeded when the log carries no `WaitTriaged` would
+  // let `triageStatus` read `Interrupted` and buy a second triage of a wait
+  // this one already answered. The caller is a daemon subscriber, which logs
+  // and drops a thrown error (0015) rather than acting on a false success.
+  let lastError: unknown = null
+  for (let i = 0; i < 5; i += 1) {
+    try {
+      const version = (await deps.store.read(stream)).length
+      await deps.store.append(stream, version, [
+        {
+          type: 'WaitTriaged',
+          actor: 'conductor',
+          data: parsePayload('WaitTriaged', {
+            waitId: request.waitId,
+            attempt,
+            // `headOf(run) ?? baseSha ?? ''` — the empty string is for a mirror
+            // with no base either, where `reading` already says no file can be
+            // read.
+            headSha: headSha ?? baseSha ?? '',
+            result: final,
+            by,
+          }),
+        },
+      ])
+      return { attempt, result: final }
+    } catch (err) {
+      lastError = err
+    }
   }
-
-  return { attempt, result: final }
+  const message = lastError instanceof Error ? lastError.message : String(lastError)
+  log(`triage ${request.waitId}: WaitTriaged append failed — ${message}`)
+  throw lastError
 }

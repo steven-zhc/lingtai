@@ -124,6 +124,27 @@ function flakyAppend(store: EventStore, type: string, failTimes: number, error?:
   }
 }
 
+/**
+ * `store`, whose `append` of an event of `type` actually lands — unlike
+ * `flakyAppend` — and only then rejects the first `failTimes` calls, standing
+ * in for a dropped connection whose acknowledgement is lost *after* the
+ * transaction committed, not before it ran.
+ */
+function appendsThenRejects(store: EventStore, type: string, failTimes: number): EventStore {
+  let seen = 0
+  return {
+    ...store,
+    append: async (streamId, expectedVersion, events) => {
+      const result = await store.append(streamId, expectedVersion, events)
+      if (events[0]?.type === type && seen < failTimes) {
+        seen += 1
+        throw new Error('connection dropped after commit')
+      }
+      return result
+    },
+  }
+}
+
 describe('waitTriage', () => {
   it('appends TriageStarted, one RunSpent per call, then one WaitTriaged — advised on a good reply', async () => {
     const store = createMemoryEventStore()
@@ -278,6 +299,50 @@ describe('waitTriage', () => {
     expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
     const triaged = events.find((e) => e.type === 'WaitTriaged')!.data as { result: { _tag: string } }
     expect(triaged.result._tag).toBe('TriageFailed')
+  })
+
+  it('lands exactly one RunSpent, never two, when the append commits but the acknowledgement is lost', async () => {
+    const store = appendsThenRejects(createMemoryEventStore(), 'RunSpent', 1)
+    const ticketId = ticketStream('lingtai', 18)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    // Not `['TriageStarted', 'RunSpent', 'RunSpent', 'WaitTriaged']` — a retry
+    // that blindly re-appended on this error would double the ledger row for
+    // one paid call (0110 §2).
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  it('retries the WaitTriaged append when something else appended to the ticket stream between the read and the append', async () => {
+    const store = flakyAppend(createMemoryEventStore(), 'WaitTriaged', 1)
+    const ticketId = ticketStream('lingtai', 19)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  it('throws, rather than reporting the advice as recorded, when WaitTriaged cannot be made to land even after retries', async () => {
+    const store = flakyAppend(createMemoryEventStore(), 'WaitTriaged', 5, () => new Error('connection dropped'))
+    const ticketId = ticketStream('lingtai', 20)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    await expect(waitTriage(deps, requestOn(ticketId, aWaitId()))).rejects.toThrow('connection dropped')
+
+    // `TriageStarted` and `RunSpent` landed — only the one append this
+    // function's contract is about is missing, so the caller must be told
+    // rather than handed a `TriageAdvised` the log does not contain.
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent'])
   })
 
   it('passes the abort signal to the runtime, and aborting mid-call kills the runtime and appends one failed WaitTriaged, with nothing after it', async () => {
@@ -452,9 +517,16 @@ describe('waitTriage', () => {
       }),
     })
 
-    await waitTriage(deps, requestOn(ticketId, aWaitId()))
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
     expect(readAtCalls).toEqual([{ project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000 }])
+
+    // Two runtime calls (the `read`, then the `advised` that follows it), so
+    // two `RunSpent` rows — one per call, the invariant this suite is named
+    // for, which stays unchecked if nothing here reads the ticket stream.
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'RunSpent', 'WaitTriaged'])
   })
 
   it("creates the runtime with tools: 'none', and the first call's limits equal triageCallFor(triage)", async () => {
