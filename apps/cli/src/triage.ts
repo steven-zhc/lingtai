@@ -216,7 +216,9 @@ export async function waitTriage(
   } catch (err) {
     log(`triage ${request.waitId}: could not read ${stream} — ${(err as Error).message}`)
     return {
-      attempt: 1,
+      // 0, not 1 — no `TriageStarted` was ever appended, so there is no
+      // attempt for this result to share a number with.
+      attempt: 0,
       result: { _tag: 'TriageFailed', why: clip(`could not read the ticket: ${(err as Error).message}`) },
     }
   }
@@ -307,6 +309,7 @@ export async function waitTriage(
 
     const served: { at: string; text: string | null }[] = []
     let costSpent = 0
+    let turnsSpent = 0
     let result: TriageResult | null = null
 
     for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
@@ -328,6 +331,16 @@ export async function waitTriage(
         break
       }
 
+      // `call.turns` bounds the whole triage, not one call — `holdDiscussion`
+      // hands every round the full budget, but a triage can run
+      // `MAX_READ_ROUNDS + 1` rounds, and the recipe's `limits` is documented
+      // as what one triage run may spend in total.
+      const turnsLeft = call.turns - turnsSpent
+      if (turnsLeft <= 0) {
+        result = { _tag: 'TriageFailed', why: 'out of turns' }
+        break
+      }
+
       const prompt = triageBrief({
         evidence,
         served,
@@ -344,7 +357,7 @@ export async function waitTriage(
           ...(call.model === undefined ? {} : { model: call.model }),
           settingsPath,
           env: runnableEnv({}),
-          limits: { turns: call.turns, wallMs: wallLeft, usd: usdLeft },
+          limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
           signal: request.signal,
         })
         .catch((err: unknown): RunOutcome => {
@@ -370,6 +383,7 @@ export async function waitTriage(
           break
         }
         if (outcome.costUsd !== null) costSpent += outcome.costUsd
+        turnsSpent += outcome.turns
       }
 
       if (outcome.failure) {

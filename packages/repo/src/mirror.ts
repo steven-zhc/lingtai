@@ -65,7 +65,12 @@ export async function readAt(
 }
 
 /**
- * `git diff --stat <base> <head>`, bounded the way `readAt` bounds a file.
+ * `git diff --stat <base>...<head>`, bounded the way `readAt` bounds a file.
+ *
+ * Three-dot, from the merge base, so a `base` that moved after the attempt's
+ * run started does not show up as reverted — two-dot would diff against
+ * `base`'s current tip and render every change `base` gained since as if
+ * the attempt had undone it.
  *
  * Null where the mirror has no such diff — one of the two refs missing, or
  * `git` itself refusing — never thrown: a caller putting this in a prompt
@@ -76,7 +81,7 @@ export async function diffStatAt(
   options: MirrorOptions & { base: string; head: string; limitBytes?: number },
 ): Promise<string | null> {
   const limit = options.limitBytes ?? 8_000
-  const text = await git(['diff', '--stat', options.base, options.head], {
+  const text = await git(['diff', '--stat', `${options.base}...${options.head}`], {
     cwd: mirrorPathFor(options.project, options.home),
   }).catch(() => null)
   if (text === null) return null
