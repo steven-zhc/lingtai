@@ -40,9 +40,11 @@ export type IssueChannel = Pick<Tickets, 'comment' | 'setLabels' | 'closeIssue' 
    * The labels as GitHub holds them — names, and the colours it sends beside
    * them. Only the names matter here: what Lingtai writes back is a set of
    * names, and a repository's colour is a fact for the board to read (#85), not
-   * one a write has any business carrying.
+   * one a write has any business carrying. `body` is read by `edit-body.ts`'s
+   * `writeSection` (#422), which needs the body itself to find a section and
+   * compose its replacement.
    */
-  getIssue(number: number): Promise<{ labels: readonly { name: string }[] }>
+  getIssue(number: number): Promise<{ labels: readonly { name: string }[]; body: string }>
 }
 
 /**
@@ -89,12 +91,17 @@ export interface RefChannel {
  * because that is what GitHub takes — composing it is the caller's job, and
  * doing it here would put "what the sentence should look like" inside the
  * function that only knows how to send one.
+ *
+ * `body`'s `ifUnchanged`, when given, is passed straight through to
+ * `IssueChannel.updateBody` — `writeSection` (`edit-body.ts`, #422) is what
+ * sets it, so a body edited since it was read is refused with `BodyChanged`
+ * rather than overwritten.
  */
 export type IssueChange =
   | { kind: 'comment'; body: string }
   | { kind: 'labels'; labels: readonly string[] }
   | { kind: 'closed' }
-  | { kind: 'body'; body: string }
+  | { kind: 'body'; body: string; ifUnchanged?: string }
   | { kind: 'refs'; andTheBranch: boolean }
 
 /**
@@ -117,8 +124,12 @@ export interface TellOptions {
   change: IssueWrite
 }
 
-/** `ticket-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
-function split(ticketId: string): { project: string; issue: number } | null {
+/**
+ * `ticket-project-155` → project and issue. Split at the *last* hyphen: a
+ * project name may contain one. Exported for `writeSection` (`edit-body.ts`,
+ * #422), which needs the issue number for `github.getIssue` itself.
+ */
+export function split(ticketId: string): { project: string; issue: number } | null {
   const parsed = parseTicketStream(ticketId)
   if (!parsed) return null
   // This path nominates issues by number; a non-numeric ref is not one it can
@@ -126,6 +137,17 @@ function split(ticketId: string): { project: string; issue: number } | null {
   const issue = Number(parsed.issue)
   return Number.isInteger(issue) ? { project: parsed.project, issue } : null
 }
+
+/**
+ * What `tellGitHub` recorded — the error itself, not just which event landed,
+ * because `writeSection` (`edit-body.ts`, #422) has to tell a `BodyChanged`
+ * (retry against the new body) from any other failure (stop) and the error is
+ * otherwise kept only as `.message`, inside `IssueUpdateFailed.error`.
+ *
+ * `recorded: null` is `split(ticketId)` failing — the ticketId did not parse,
+ * so nothing was tried and nothing was appended either.
+ */
+export type Told = { recorded: 'IssueUpdated' } | { recorded: 'IssueUpdateFailed'; error: unknown } | { recorded: null }
 
 /**
  * Do it, and append what happened. Never throws.
@@ -139,10 +161,10 @@ function split(ticketId: string): { project: string; issue: number } | null {
  * selection criteria. A label somebody adds inside the round trip is lost, and
  * that is a far smaller wrong than deleting all of them.
  */
-export async function tellGitHub(options: TellOptions): Promise<void> {
+export async function tellGitHub(options: TellOptions): Promise<Told> {
   const { store, github, ticketId, change } = options
   const target = split(ticketId)
-  if (target === null) return
+  if (target === null) return { recorded: null }
   const { project, issue } = target
 
   let detail = ''
@@ -165,7 +187,11 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
         await github.closeIssue(issue)
         break
       case 'body':
-        await github.updateBody(issue, change.body)
+        await github.updateBody(
+          issue,
+          change.body,
+          change.ifUnchanged !== undefined ? { ifUnchanged: change.ifUnchanged } : undefined,
+        )
         // The size, not the text. The body is on GitHub and the sentence that
         // was added is on the log already — `PromptEdited` or the discussion
         // that proposed it — and a third copy here is one that can disagree.
@@ -179,7 +205,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
       change: change.kind,
       error: (err as Error).message,
     })
-    return
+    return { recorded: 'IssueUpdateFailed', error: err }
   }
   await record(store, ticketId, 'IssueUpdated', {
     project,
@@ -187,6 +213,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
     change: change.kind,
     detail,
   })
+  return { recorded: 'IssueUpdated' }
 }
 
 /**
@@ -306,8 +333,12 @@ export function sweepFailure(err: unknown, gone: readonly string[]): string {
  * does not yet — it converges worktrees and nothing else (`#69`). Until it
  * does, a swallowed append here is a fact nothing recovers. Swallowing is still
  * right: failing the caller would turn a lost record into a lost merge.
+ *
+ * Exported for `writeSection` (`edit-body.ts`, #422) alone, which appends a
+ * second `IssueUpdated` when a write `tellGitHub` recorded as failed is found
+ * on the read-back anyway — the call threw, but it had already landed.
  */
-async function record(
+export async function record(
   store: EventStore,
   ticketId: string,
   type: 'IssueUpdated' | 'IssueUpdateFailed',

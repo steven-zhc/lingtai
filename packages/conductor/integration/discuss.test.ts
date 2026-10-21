@@ -162,14 +162,14 @@ describe('a discussion, on the log', () => {
       },
     )
 
-    let written: string | null = null
+    let body = 'The original ticket.'
     const github: IssueChannel = {
-      getIssue: async () => ({ labels: [] }),
+      getIssue: async () => ({ labels: [], body }),
       comment: async () => ({ id: 1 }),
       setLabels: async () => {},
       closeIssue: async () => {},
-      updateBody: async (_issue, body) => {
-        written = body
+      updateBody: async (_issue, newBody) => {
+        body = newBody
       },
     }
 
@@ -180,13 +180,13 @@ describe('a discussion, on the log', () => {
       by: 'human:steven',
       outcome: 'ticket',
       text: 'The runtime must pass --max-turns.',
-      ticket: { github, body: 'The original ticket.' },
+      ticket: { github, body },
       now: new Date('2026-09-09T10:00:00Z'),
     })
 
     expect(ok.ok).toBe(true)
-    expect(written).toContain('The original ticket.')
-    expect(written).toContain('The runtime must pass --max-turns.')
+    expect(body).toContain('The original ticket.')
+    expect(body).toContain('The runtime must pass --max-turns.')
     expect((await store.read(ticketId)).map((e) => e.type)).toEqual(['IssueUpdated', 'DiscussionHeld'])
 
     // And the refusal path, on a second conversation about the same item.

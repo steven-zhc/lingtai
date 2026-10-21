@@ -70,7 +70,7 @@ import { chatStream, parsePayload, type Envelope, type RuntimeId, type ToAppend,
 import type { EventStore } from '@lingtai/event-store'
 
 import { editHash } from './attempts.ts'
-import { tellGitHub, type IssueChannel } from './tell.ts'
+import { writeSection, type IssueChannel } from './edit-body.ts'
 
 export type { IssueChannel } from './tell.ts'
 
@@ -639,12 +639,14 @@ export async function holdDiscussion(ports: DiscussionPorts, options: HoldOption
  *
  * Named rather than anonymous so a second addition is legible as a second
  * addition, and so a person reading the issue can see which sentences came out
- * of Lingtai rather than out of whoever filed it.
+ * of Lingtai rather than out of whoever filed it. Written through
+ * `writeSection` (`edit-body.ts`, #422) keyed `chat-<chatId>`, so a second
+ * conclusion of the same discussion replaces its own section rather than
+ * appending a duplicate.
  */
-export function appendToBody(body: string, text: string, by: string, at: Date): string {
+export function discussionSection(text: string, by: string, at: Date): string {
   const stamp = at.toISOString().slice(0, 10)
-  const block = `## Added from a discussion, ${stamp}, by ${by}\n\n${text.trim()}\n`
-  return body.trim() === '' ? block : `${body.trimEnd()}\n\n${block}`
+  return `## Added from a discussion, ${stamp}, by ${by}\n\n${text.trim()}`
 }
 
 export interface ConcludeOptions {
@@ -655,7 +657,11 @@ export interface ConcludeOptions {
   outcome: 'prompt' | 'ticket' | 'none'
   /** The artefact, for the two outcomes that have one. */
   text?: string
-  /** GitHub and the issue's body as it stands, for `ticket`. */
+  /**
+   * GitHub, for `ticket`. `body` is no longer read: `writeSection` reads the
+   * body itself. Kept on the type so `apps/board/src/app/actions.ts` still
+   * compiles unchanged — #520 is what drops it there.
+   */
   ticket?: { github: IssueChannel; body: string }
   now?: Date
 }
@@ -707,19 +713,16 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
   if (options.outcome === 'ticket') {
     if (text === '') return { ok: false, detail: 'there is nothing to add to the ticket' }
     if (!options.ticket) return { ok: false, detail: 'the ticket could not be read, so it cannot be edited' }
-    const body = appendToBody(options.ticket.body, text, by, options.now ?? new Date())
-    // Through `tellGitHub`, so the write is recorded the way every other write
-    // to an issue is — `IssueUpdated` or `IssueUpdateFailed`, and never a throw.
-    await tellGitHub({
+    const section = discussionSection(text, by, options.now ?? new Date())
+    const written = await writeSection({
       store,
       github: options.ticket.github,
       ticketId,
-      change: { kind: 'body', body },
+      key: `chat-${chatId}`,
+      text: section,
     })
-    const said = await store.read(ticketId)
-    const last = said[said.length - 1]
-    ok = last?.type === 'IssueUpdated'
-    detail = ok ? 'the ticket carries it' : 'GitHub refused the edit; the log says why'
+    ok = written.written
+    detail = written.written ? 'the ticket carries it' : `GitHub refused the edit; the log says why (${written.detail})`
   }
 
   const at = (await store.read(ticketId)).length

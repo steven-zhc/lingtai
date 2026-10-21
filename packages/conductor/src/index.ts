@@ -115,6 +115,7 @@ export {
   type IssueWrite,
   type RefChannel,
   type TellOptions,
+  type Told,
 } from './tell.ts'
 export { acceptFinding, declineFinding, proposalFor, type BacklogDecision, type DecideOptions } from './backlog.ts'
 export {
@@ -132,3 +133,11 @@ export {
   type TicketStore,
 } from './ticket-store.ts'
 export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-section.ts'
+export {
+  editBodyAndRequeue,
+  editBodyAndRequeueHolding,
+  writeSection,
+  type EditBodyAndRequeueOptions,
+  type EditBodyAndRequeueResult,
+  type WriteSectionResult,
+} from './edit-body.ts'
