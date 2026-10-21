@@ -13,6 +13,7 @@
     "./ask": "./src/ask.ts",
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",
+    "./triage": "./src/triage.ts",
     "./filter": "./src/filter.ts",
     "./ceiling": "./src/ceiling.ts",
     "./branches": "./src/branches.ts",

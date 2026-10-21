@@ -70,9 +70,24 @@ import { chatStream, parsePayload, type Envelope, type RuntimeId, type ToAppend,
 import type { EventStore } from '@lingtai/event-store'
 
 import { editHash } from './attempts.ts'
+import {
+  jsonCandidates,
+  MAX_READ_ROUNDS,
+  parseRead,
+  READ_CONTRACT,
+  READS_PER_TURN,
+  renderIndex,
+  renderServed,
+  type ReadableRef,
+} from './read-step.ts'
 import { tellGitHub, type IssueChannel } from './tell.ts'
 
 export type { IssueChannel } from './tell.ts'
+// Re-exported: `apps/board/src/lib/recipe.ts` and `discuss.test.ts` both
+// import these from `@lingtai/conductor/discuss`, and the move to
+// `read-step.ts` (`#412`) must not change what this subpath exports.
+export { MAX_READ_ROUNDS, READS_PER_TURN }
+export type { ReadableRef }
 
 /**
  * What one turn of the assistant comes back with.
@@ -97,19 +112,6 @@ export interface Answered {
   usage?: Usage
 }
 
-/** Files one turn may ask for. Enough to follow a call site into its callee. */
-export const READS_PER_TURN = 6
-
-/**
- * How many times one question may ask for files before it has to answer.
- *
- * Not a spend limit — see the header. It is what stops a question that cannot
- * be answered from being asked forever by a machine while the person who asked
- * it watches a spinner. When it runs out the assistant answers with what it
- * has, and says so.
- */
-export const MAX_READ_ROUNDS = 4
-
 /** Bytes of one file served into the prompt. */
 export const FILE_BYTES = 24_000
 
@@ -123,16 +125,6 @@ export interface DiscussionTicket {
   ref: string
   title: string
   body: string
-}
-
-/** A ref the assistant may name a path at, and what is in it. */
-export interface ReadableRef {
-  /** The name the assistant uses: `main`, or `attempt-2`. */
-  ref: string
-  /** What it resolves to in the mirror. The name is for reading; this is the fact. */
-  sha: string
-  paths: readonly string[]
-  truncated: boolean
 }
 
 /** Everything the assistant is given before it asks for anything. */
@@ -226,10 +218,7 @@ const CONTRACT = `
 
 One JSON object and nothing else. Two shapes, and only two.
 
-To ask for files — up to ${READS_PER_TURN}, each \`<ref>:<path>\` using a ref and a path
-from the index above:
-
-{"read":["main:packages/agent/src/claude-code.ts"]}
+${READ_CONTRACT}
 
 To answer:
 
@@ -280,9 +269,7 @@ export function buildBrief(input: {
   prompt?: string
 }): string {
   const { evidence } = input
-  const index = evidence.refs
-    .map((r) => `### ${r.ref}\n\n${r.paths.join('\n')}${r.truncated ? '\n[index truncated]' : ''}`)
-    .join('\n\n')
+  const index = renderIndex(evidence.refs)
 
   const ticket =
     evidence.ticket === null
@@ -296,16 +283,7 @@ export function buildBrief(input: {
           .map((t) => `**${t.by} asked:** ${t.question}\n\n**You answered:** ${t.answer ?? '(no answer was recorded)'}`)
           .join('\n\n')}\n`
 
-  const files =
-    input.served.length === 0
-      ? ''
-      : `## Files you asked for\n\n${input.served
-          .map((f) =>
-            f.text === null
-              ? `### ${f.at}\n\nThere is no such path at that ref.`
-              : `### ${f.at}\n\n\`\`\`\n${f.text}\n\`\`\``,
-          )
-          .join('\n\n')}\n`
+  const files = renderServed(input.served)
 
   const budget =
     input.roundsLeft > 0
@@ -377,6 +355,9 @@ export type Reply =
 export function parseReply(text: string | null): Reply {
   if (text === null || text.trim() === '') return { kind: 'unreadable', text: '' }
 
+  const read = parseRead(text)
+  if (read !== null) return read
+
   for (const candidate of jsonCandidates(text)) {
     let value: unknown
     try {
@@ -386,18 +367,6 @@ export function parseReply(text: string | null): Reply {
     }
     if (typeof value !== 'object' || value === null) continue
     const v = value as Record<string, unknown>
-
-    if (Array.isArray(v['read'])) {
-      const paths = v['read']
-        .map((p) => String(p))
-        .filter((p) => p.includes(':'))
-        .slice(0, READS_PER_TURN)
-      // An empty or unusable `read` is not a request for nothing — it is a turn
-      // that said neither shape, and answering it as "read no files" would spend
-      // another turn to arrive back here.
-      if (paths.length > 0) return { kind: 'read', paths }
-      continue
-    }
 
     if (typeof v['answer'] === 'string') {
       const proposal = v['proposal']
@@ -422,17 +391,6 @@ function proposalOf(p: Record<string, unknown>): { kind: 'prompt' | 'ticket'; te
   // Anything that is not the two carriers is dropped rather than guessed at.
   // 0033 §2: a discussion introduces no third place to put an instruction.
   return p['kind'] === 'prompt' || p['kind'] === 'ticket' ? { kind: p['kind'], text } : null
-}
-
-function jsonCandidates(text: string): string[] {
-  const out: string[] = []
-  for (const block of text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? []) {
-    out.push(block.replace(/```(?:json)?/g, '').replace(/```/g, ''))
-  }
-  const brace = text.indexOf('{')
-  if (brace >= 0) out.push(text.slice(brace))
-  out.push(text)
-  return out
 }
 
 // ------------------------------------------------------------------ hold ----
