@@ -756,6 +756,16 @@ details[open] > summary::before { content: "▾"; }
    this reason (#111); there is now nothing left to carve out of. */
 .detail-body > section { width: 100%; }
 
+.unpushed {
+  border-left: 3px solid var(--fail);
+  padding: 0.65rem 1rem;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.unpushed strong { color: var(--fail); }
+.unpushed p { margin: 0.4rem 0 0; }
+.unpushed pre { overflow-x: auto; margin: 0.8rem 0 0; }
+
 /* The section's one fact sits at the right of the label's own rule, which is
    why there is no separate summary band: a band that totals what is under it
    is a second copy of the same arithmetic, and the two disagree the first time

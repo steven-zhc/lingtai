@@ -53,6 +53,33 @@ const RUN_1 = 'pass-11111111-0000-0000-0000-000000000000'
 const RUN_2 = 'pass-22222222-0000-0000-0000-000000000000'
 const SHA = 'a'.repeat(40)
 
+it('exposes unpushed work only while its wait is current', () => {
+  const unpushed = {
+    branch: 'agent/89',
+    said: 'remote rejected the push',
+    keptAt: { _tag: 'Mirror' as const, ref: 'refs/lingtai/unpushed/89/pass-1', sha: SHA, arm: 'agent/89-arm' },
+  }
+  const own = [
+    e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+    e(ITEM, 'WaitStarted', {
+      waitId: 'wait-unpushed',
+      reason: {
+        _tag: 'SignoffRequired',
+        run: { runId: RUN_1, unpushed },
+        step: 'merge',
+        action: 'human',
+        question: 'review?',
+      },
+    }),
+  ]
+
+  expect(standingOf(own, []).unpushed).toEqual(unpushed)
+  expect(
+    standingOf([...own, e(ITEM, 'WaitResolved', { waitId: 'wait-unpushed', resolution: { _tag: 'Requeue' } })], [])
+      .unpushed,
+  ).toBeNull()
+})
+
 const claim = (runId: string, at: string): Claim => ({ runId, at, repair: false, released: null })
 
 /** A `verdict`-yield action, the shape a gate's own check or review declares. */
@@ -600,6 +627,7 @@ const HELD: StandingView = {
     proposal: { _tag: 'MergeConflict', output: 'apps/web/page.tsx', paths: null, baseSha: null, headSha: null },
     because: { _tag: 'NotAsked' },
   },
+  unpushed: null,
   approvedSha: null,
 }
 

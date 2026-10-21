@@ -1,4 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
+import type { RunRef } from '@lingtai/domain/wait'
 import { describeHold } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -50,6 +51,56 @@ import { Coords, Standing } from '../../standing.tsx'
  * `history-row.tsx`.
  */
 export const dynamic = 'force-dynamic'
+
+const shellArg = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+
+/** The current wait's failed publish, with a command only for the recorded commit. */
+export function UnpushedBanner({
+  unpushed,
+  mirror,
+}: {
+  unpushed: RunRef['unpushed'] | null
+  mirror: TaskDetail['unpushedMirror']
+}) {
+  if (!unpushed) return null
+  const kept = unpushed.keptAt
+  const command =
+    kept?._tag === 'Mirror' && mirror?.sha === kept.sha
+      ? `git -C ${shellArg(mirror.path)} push origin ${shellArg(`+${kept.ref}:refs/heads/${kept.arm}`)}`
+      : null
+
+  return (
+    <aside className="unpushed" role="alert" data-rank="unpushed">
+      <strong>Unpushed work</strong>
+      <p>
+        Git could not push <code>{unpushed.branch}</code>: {unpushed.said}
+      </p>
+      {kept?._tag === 'Mirror' ? (
+        <>
+          <p>
+            {mirror === null || mirror.sha === null
+              ? `The kept ref ${kept.ref} is no longer in the mirror.`
+              : command === null
+                ? `The kept ref ${kept.ref} no longer names the recorded commit in the mirror.`
+                : `The commits are kept in the local mirror at ${kept.ref} (${kept.sha}).`}
+          </p>
+          {command === null ? null : (
+            <>
+              <pre>
+                <code>{command}</code>
+              </pre>
+              <p>This command uses your own git credentials to push to origin.</p>
+            </>
+          )}
+        </>
+      ) : kept?._tag === 'Arm' ? (
+        <p>The commits are on origin at {kept.ref}.</p>
+      ) : (
+        <p>The commits were not kept.</p>
+      )}
+    </aside>
+  )
+}
 
 /**
  * What was asked for, in the record's prompt row.
@@ -725,6 +776,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
       <Reveal />
 
       <div className="detail-body">
+        <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
         <Standing
           standing={task.standing}

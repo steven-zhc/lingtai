@@ -23,7 +23,7 @@ import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { RECORD_TABS, TaskBody } from '../src/app/task/[id]/page.tsx'
+import { RECORD_TABS, TaskBody, UnpushedBanner } from '../src/app/task/[id]/page.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   foldRun,
@@ -86,6 +86,7 @@ const CRASH = 'the reviewer did not finish (crash): Error: Session ID 1d391e10 i
 
 const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
   taskId: ITEM,
+  unpushedMirror: null,
   standing: standingOf(own, runs),
   want: null,
   ticket: TICKET,
@@ -181,6 +182,53 @@ function running(): TaskDetail {
 }
 
 const page = (t: TaskDetail) => renderToStaticMarkup(<TaskBody task={t} />)
+
+describe('unpushed work', () => {
+  const ref = `refs/lingtai/unpushed/147/${RUN}`
+  const arm = 'agent/147-arm-1'
+  const unpushed = {
+    branch: 'agent/147',
+    said: 'remote rejected the push',
+    keptAt: { _tag: 'Mirror' as const, ref, sha: HEAD, arm },
+  }
+  const mirror = { path: '/tmp/local mirror/lingtai.git', sha: HEAD }
+  const banner = (
+    work: typeof unpushed | { branch: string; said: string; keptAt?: { _tag: 'Arm'; ref: string; sha: string } },
+    checked: TaskDetail['unpushedMirror'],
+  ) => renderToStaticMarkup(<UnpushedBanner unpushed={work} mirror={checked} />)
+
+  it('shows the local mirror rescue command and the credentials it uses', () => {
+    const html = banner(unpushed, mirror)
+    expect(html).toContain('remote rejected the push')
+    expect(html).toContain(
+      `git -C &#x27;/tmp/local mirror/lingtai.git&#x27; push origin &#x27;+${ref}:refs/heads/${arm}&#x27;`,
+    )
+    expect(html).toContain('your own git credentials')
+  })
+
+  it('offers no command when the kept ref is absent or points elsewhere', () => {
+    const absent = banner(unpushed, { ...mirror, sha: null })
+    expect(absent).toContain('no longer in the mirror')
+    expect(absent).not.toContain('git -C')
+    const changed = banner(unpushed, { ...mirror, sha: BASE })
+    expect(changed).toContain('no longer names the recorded commit')
+    expect(changed).not.toContain('git -C')
+  })
+
+  it('names an arm already on origin and says when no commits were kept', () => {
+    expect(banner({ ...unpushed, keptAt: { _tag: 'Arm', ref: arm, sha: HEAD } }, null)).toContain(
+      `The commits are on origin at ${arm}`,
+    )
+    expect(banner({ branch: 'agent/147', said: 'push failed' }, null)).toContain('The commits were not kept')
+  })
+
+  it('puts the banner before the standing block', () => {
+    const t = blocked()
+    const html = page({ ...t, standing: { ...t.standing, unpushed }, unpushedMirror: mirror })
+    const body = html.slice(html.indexOf('class="detail-body"'))
+    expect(body.indexOf('data-rank="unpushed"')).toBeLessThan(body.indexOf('class="standing'))
+  })
+})
 
 /**
  * Each rank, in page order, with the words in it. The record is its row names
