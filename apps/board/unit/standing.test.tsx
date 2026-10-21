@@ -728,13 +728,10 @@ describe('the block, rendered', () => {
     )
     expect(html).not.toContain('a repair for conflict produced this diff')
     expect(html).toContain('the branch does not merge into develop')
-    // Rank 2: the refusal in its own words, and open — the evidence was on this
-    // page the whole time, three ranks down behind a disclosure, and the block
-    // whose job is to say why a task stopped had a gate's name to say it with.
-    // Git's words and no gate's, so unattributed (see the test below).
-    expect(html).toContain('CONFLICT (content)')
-    expect(html).toContain('<details class="sreason" open=""')
-    expect(html).toContain('what refused, verbatim')
+    // The holder's concise diagnosis remains here; its verbatim evidence is
+    // rendered by the record, after the available decisions.
+    expect(html).not.toContain('CONFLICT (content)')
+    expect(html).not.toContain('<details class="sreason" open=""')
     // And the question is gone, because `what`, `did` and `rec` say what it
     // said: three sentences overlapping was the defect, not a feature.
     expect(html).not.toContain('conflict: agent/112 does not merge into develop')
@@ -782,8 +779,8 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('CONFLICT (content)')
-    expect(html).toContain('what refused, verbatim')
+    expect(html).not.toContain('CONFLICT (content)')
+    expect(html).not.toContain('what refused, verbatim')
     expect(html).not.toContain('proposed / build')
   })
 
@@ -867,7 +864,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('proposed / review')
+    expect(html).not.toContain('proposed / review')
     expect(html).not.toContain('what refused, verbatim')
   })
 

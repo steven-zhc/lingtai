@@ -269,11 +269,60 @@ describe('a blocked task', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
 
-  it('quotes the refusal at rank 2 and says what it means in one sentence at rank 3', () => {
+  it('reads an advised wait as ticket, where, triage, resolutions, record', () => {
+    const t = blocked()
+    const standing: TaskDetail['standing'] = {
+      ...t.standing,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: 'Requeue',
+          summary: 'Start again from the current base',
+          want: 'Get the reviewer running',
+        },
+      },
+    }
+    const html = page({ ...t, standing, want: 'Get the reviewer running' })
+    const positions = ['subject', 'where', 'triage', 'resolutions', 'record'].map((rank) =>
+      html.indexOf(`data-rank="${rank}"`),
+    )
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(html.indexOf('Send attempt 2')).toBeLessThan(html.indexOf('>Close</button>'))
+    expect(html.slice(0, positions[4])).not.toContain('<pre class="sraw"')
+    expect(html.slice(positions[4])).toContain(`<pre class="sraw">${CRASH}</pre>`)
+  })
+
+  it('puts a recommended body edit before the other resolutions in reading order', () => {
+    const t = blocked()
+    const standing: TaskDetail['standing'] = {
+      ...t.standing,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: 'EditBodyAndRequeue',
+          summary: 'Add the missing context',
+          want: 'Get the reviewer running',
+        },
+      },
+    }
+    const html = page({ ...t, standing })
+    const resolutions = html.slice(html.indexOf('data-rank="resolutions"'), html.indexOf('data-rank="pair"'))
+    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('data-rank="moves"'))
+    expect(resolutions.indexOf('data-rank="moves"')).toBeLessThan(resolutions.indexOf('Send attempt 2'))
+  })
+
+  it('keeps the raw refusal in Attempts, after the decision', () => {
     const html = page(blocked())
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
-    expect(why).toContain('Session ID 1d391e10 is already in use')
-    expect(why).toContain('<details class="sreason" open=""')
+    const attempts = html.slice(html.indexOf('id="record-attempts"'))
+    expect(why).not.toContain('<pre class="sraw"')
+    expect(attempts).toContain('<details class="sreason" open=""')
+    expect(attempts).toContain(CRASH)
   })
 
   it('prints each identifier once', () => {
@@ -401,7 +450,7 @@ describe('the rail on the task page', () => {
     return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
   }
 
-  const why = (html: string) => html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
+  const why = (html: string) => html.slice(html.indexOf('class="swhere"'), html.indexOf('data-rank="so-what"'))
   const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
 
   /**
