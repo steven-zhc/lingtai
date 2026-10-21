@@ -53,12 +53,20 @@ export function TriageBand({
     case 'NotDeclared':
       return null
     case 'Queued':
-      return <section className="triage-band">triage is waiting to run</section>
+      return (
+        <section className="triage-band" data-rank="triage">
+          triage is waiting to run
+        </section>
+      )
     case 'Running':
-      return <section className="triage-band">triage is running</section>
+      return (
+        <section className="triage-band" data-rank="triage">
+          triage is running
+        </section>
+      )
     case 'Interrupted':
       return (
-        <section className="triage-band">
+        <section className="triage-band" data-rank="triage">
           the daemon stopped during triage; it will be tried again on the next start
         </section>
       )
@@ -66,7 +74,7 @@ export function TriageBand({
       const result = status.result
       if (result._tag === 'TriageFailed')
         return (
-          <section className="triage-band">
+          <section className="triage-band" data-rank="triage">
             {headLine ? <p>{headLine}</p> : null}
             triage failed: “{result.why}”
           </section>
@@ -137,7 +145,7 @@ export function TriageBand({
         </>
       )
       return (
-        <section className="triage-band">
+        <section className="triage-band" data-rank="triage">
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
             triageReading
@@ -492,7 +500,7 @@ export function Standing({
         {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
-        <section className="swhere" aria-label="Where it is">
+        <section className="swhere" aria-label="Where it is" data-rank="where">
           <h2 className="ssectiontitle">Where it is</h2>
           <p className="sread" data-rank="state">
             <span className="sstate">{standing.state}</span>
@@ -591,7 +599,7 @@ export function Standing({
 
                 {standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason
-                    raw={standing.state === 'blocked' && raw?.trim() ? null : raw}
+                    raw={raw}
                     said={said}
                     diagnosed={standing.diagnosis !== null}
                     refused={standing.failed}
@@ -627,6 +635,7 @@ export function Standing({
         <section
           className={standing.state === 'blocked' ? 'sresolutions' : 'sactions'}
           aria-label={standing.state === 'blocked' ? 'Resolutions' : 'Actions'}
+          data-rank={standing.state === 'blocked' ? 'resolutions' : undefined}
         >
           {standing.state === 'blocked' ? <h2 className="ssectiontitle">Resolutions</h2> : null}
 

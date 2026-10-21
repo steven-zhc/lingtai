@@ -269,6 +269,32 @@ describe('a blocked task', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
 
+  it('reads an advised wait as ticket, where, triage, resolutions, record', () => {
+    const t = blocked()
+    const standing: TaskDetail['standing'] = {
+      ...t.standing,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: { _tag: 'Requeue' },
+          summary: 'Start again from the current base',
+          want: 'Get the reviewer running',
+        },
+      },
+    }
+    const html = page({ ...t, standing, want: 'Get the reviewer running' })
+    const positions = ['subject', 'where', 'triage', 'resolutions', 'record'].map((rank) =>
+      html.indexOf(`data-rank="${rank}"`),
+    )
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(html.indexOf('Send attempt 2')).toBeLessThan(html.indexOf('>Close</button>'))
+    expect(html.slice(0, positions[4])).not.toContain('<pre class="sraw"')
+    expect(html.slice(positions[4])).toContain(`<pre class="sraw">${CRASH}</pre>`)
+  })
+
   it('keeps the raw refusal in Attempts, after the decision', () => {
     const html = page(blocked())
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
@@ -403,7 +429,7 @@ describe('the rail on the task page', () => {
     return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
   }
 
-  const why = (html: string) => html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
+  const why = (html: string) => html.slice(html.indexOf('class="swhere"'), html.indexOf('data-rank="so-what"'))
   const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
 
   /**

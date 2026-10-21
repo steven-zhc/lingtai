@@ -779,8 +779,8 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('CONFLICT (content)')
-    expect(html).toContain('what refused, verbatim')
+    expect(html).not.toContain('CONFLICT (content)')
+    expect(html).not.toContain('what refused, verbatim')
     expect(html).not.toContain('proposed / build')
   })
 
@@ -864,7 +864,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('proposed / review')
+    expect(html).not.toContain('proposed / review')
     expect(html).not.toContain('what refused, verbatim')
   })
 
