@@ -18,6 +18,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
+import { agentBranchOf, waitWords } from '@lingtai/domain'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
@@ -210,10 +211,10 @@ export async function status(
     // **A question asked before any run is printed, not counted** (#147). It is
     // the one hold whose whole content is a sentence a person has to read, and
     // `1 waiting on you` would say there is a question without saying which.
-    const askedBefore = known.filter((t) => t.waiting && t.asked)
+    const askedBefore = known.filter((t) => t.wait?.reason._tag === 'OwnQuestion')
     for (const t of known) {
       if (t.state === 'queued') continue
-      if (t.waiting && t.asked) continue
+      if (t.wait?.reason._tag === 'OwnQuestion') continue
       const label = NAMES[t.state] ?? t.state
       elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1)
     }
@@ -227,8 +228,11 @@ export async function status(
     if (askedBefore.length > 0 && !options.all) {
       log(`  asked, before any run — lingtai answer ${name} --issue <n> "<choice>":`)
       for (const t of askedBefore) {
-        log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait(t)}]`)}`)
-        if (t.note) log(`             ${oneLine(t.note)}`)
+        const words = waitWords(t.wait!.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
+        log(
+          `    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait({ waiting: true, asked: true, awaitingSha: t.awaitingSha, needs: words.needs })}]`)}`,
+        )
+        log(`             ${oneLine(words.line)}`)
       }
     }
 
@@ -246,16 +250,12 @@ export async function status(
       repairPending?: boolean
       /** The card's line: what it is waiting on, or why it stopped. */
       note?: string | null
-      /** Whether a person is holding a question, as opposed to merely waiting. */
-      waiting?: boolean
-      /** Asked before any run, and the sha a review is about. Absent on a GitHub offer. */
-      asked?: boolean
+      /** The wait on a projected row. Absent on a GitHub offer. */
+      wait?: TaskCard['wait']
+      /** The sha a review is about. Absent on a GitHub offer. */
       awaitingSha?: string | null
       /** Approaches abandoned. Absent on a GitHub offer. */
       restarts?: number
-      /** The hold, as `describeHold` reads it. Absent on a GitHub offer. */
-      needs?: TaskCard['needs']
-      diagnosis?: TaskCard['diagnosis']
     }[] = queuedRows
     if (options.all) {
       const ids = new Set(known.map((t) => t.taskId))
@@ -298,11 +298,13 @@ export async function status(
       // a hue would be spending the vocabulary on decoration.
       // Which wait, where it is one of the two a person can tell apart at a
       // glance — the board's chip, in the same words (#147).
+      const words =
+        t.wait == null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
       const wait = describeWait({
-        waiting: t.waiting === true,
-        asked: t.asked === true,
+        waiting: t.wait != null,
+        asked: t.wait?.reason._tag === 'OwnQuestion',
         awaitingSha: t.awaitingSha ?? null,
-        needs: t.needs ?? null,
+        needs: words?.needs ?? null,
       })
       const note =
         t.state !== 'queued'
@@ -345,16 +347,16 @@ export async function status(
       // state — for the reason the card's controls use the same test: the
       // waiting lane also holds a refused dispatch and a run that asked
       // something mid-flight.
-      if (t.waiting) {
-        if (t.note) log(`             ${oneLine(t.note)}`)
-        for (const line of describeHold({ needs: t.needs ?? null, diagnosis: t.diagnosis ?? null })) {
+      if (words !== null) {
+        log(`             ${oneLine(words.line)}`)
+        for (const line of describeHold(words)) {
           log(`             ${oneLine(line.text)}`)
         }
         // The raw failure is not printed and is not lost: a hundred lines of git
         // output would bury the listing it belongs to. Said rather than silently
         // dropped, because a summary that hides the output has to admit there is
         // output — the card puts it one disclosure away.
-        if (t.diagnosis?.raw) log('             (the failure itself is on the log, and on the card)')
+        if (words.diagnosis?.raw) log('             (the failure itself is on the log, and on the card)')
       }
     }
   }

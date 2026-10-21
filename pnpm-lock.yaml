@@ -166,6 +166,9 @@ importers:
 
   apps/site:
     dependencies:
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@lingtai/projector':
         specifier: workspace:*
         version: link:../../packages/projector

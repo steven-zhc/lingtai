@@ -16,7 +16,6 @@
  * #484's to rewrite, so a pin built on them could not survive either ticket
  * unedited.
  */
-import { aWaitId } from '@lingtai/domain/test/events'
 import { WaitReason } from '@lingtai/domain/wait'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
 import { taskViewProjection, type TaskCard } from '@lingtai/projector/task-view'
@@ -97,10 +96,7 @@ function buttonsOf(html: string): string[] {
   return [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')
 }
 
-async function foldOne(
-  fx: Fixture,
-  options: { row?: Partial<TaskCard>; freshWaitId?: ReturnType<typeof aWaitId>; freshNote?: string } = {},
-): Promise<string> {
+async function foldOne(fx: Fixture, options: { row?: Partial<TaskCard> } = {}): Promise<string> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
@@ -110,17 +106,7 @@ async function foldOne(
     const row = rows.find((r) => r.taskId === fx.taskId)
     if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
     const projected = { ...row, ...options.row }
-    const card = toCard(
-      projected,
-      null,
-      null,
-      null,
-      null,
-      undefined,
-      undefined,
-      options.freshWaitId ?? projected.wait?.waitId ?? null,
-      options.freshNote ?? null,
-    )
+    const card = toCard(projected)
     return renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
   } finally {
     db.close()
@@ -175,62 +161,24 @@ describe('the cause line', () => {
     expect(buttonsOf(html)).toEqual([])
   })
 
-  it('uses the fresh wait first line when the projected advice belongs to an older wait', async () => {
+  it('uses the wait reason when the copied note is stale', async () => {
     const html = await foldOne(fx, {
-      row: { triage: { started: null, result: advised } },
-      freshWaitId: aWaitId(),
-      freshNote: 'new wait sentence\nold detail',
+      row: { note: 'old detail' },
     })
-    expect(questionOf(html)).toBe('new wait sentence')
-    expect(html).not.toContain(advised.summary)
+    expect(questionOf(html)).toBe(fx.expectedQuestion)
     expect(html).not.toContain('old detail')
   })
 
   it('uses the wait first line when triage failed', async () => {
     const html = await foldOne(fx, {
       row: { triage: { started: null, result: { _tag: 'TriageFailed', why: 'raw failure' } } },
-      freshNote: 'own words\nmore detail',
     })
-    expect(questionOf(html)).toBe('own words')
+    expect(questionOf(html)).toBe(fx.expectedQuestion)
     expect(html).not.toContain('raw failure')
   })
 
-  it('renders no empty cause element when the wait has no note', async () => {
-    const html = await foldOne(fx, { row: { note: null }, freshWaitId: aWaitId() })
-    expect(questionOf(html)).toBeNull()
-  })
-})
-
-describe('a card whose wait id could not be read (#510)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('shows the wait sentence and no resolution when the wait id could not be read', async () => {
-    const fx = FIXTURES[0]!
-    const db = openSqliteProjections(':memory:')
-    let html: string
-    try {
-      const store = createSqliteProjectionStore(db)
-      await store.transact((ctx) => taskViewProjection.create(ctx))
-      await store.transact((ctx) => taskViewProjection.apply(fx.events, ctx))
-      const rows = await store.tasks({ retentionDays: 2 })
-      const row = rows.find((r) => r.taskId === fx.taskId)
-      if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
-      // `laneWaitIds`'s own read failed (or the fold moved off `blocked`
-      // before it ran) — the null this test is about, distinct from the
-      // staleness guard the fixtures above pass a real id for.
-      const card = toCard(row, null, null, null, null, undefined, undefined, null)
-      html = renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
-    } finally {
-      db.close()
-    }
+  it('still renders the reason when the copied note is null', async () => {
+    const html = await foldOne(fx, { row: { note: null } })
     expect(questionOf(html)).toBe(fx.expectedQuestion)
-    expect(html).not.toContain('class="btnrow"')
-    expect(buttonsOf(html)).toEqual([])
   })
 })

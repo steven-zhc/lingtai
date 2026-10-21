@@ -740,7 +740,12 @@ describe('a card stopped on a person', () => {
    */
   it('never says between steps about a pass that is not between anything', () => {
     const html = render(
-      { state: 'waiting', note: 'conflict: base moved', updatedAt: new Date('2026-09-15T17:25:00Z') },
+      {
+        state: 'waiting',
+        note: 'stale note',
+        wait: { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'conflict: base moved', by: 'steven' } },
+        updatedAt: new Date('2026-09-15T17:25:00Z'),
+      },
       refusedByTheLane(),
     )
 
@@ -751,7 +756,7 @@ describe('a card stopped on a person', () => {
     expect(html).not.toContain('the agent has finished and no step has started yet')
     // The rail itself is unchanged and honest: the gates it drew all passed.
     expect(cellsAt(html, 'proposed')).toEqual(['t-pass', 't-pass'])
-    // And the reason is on the card, one line down, where `task_view` put it.
+    // And the reason is on the card, one line down, from the row's wait.
     expect(html).toContain('conflict: base moved')
   })
 })
