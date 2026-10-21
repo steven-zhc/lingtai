@@ -213,19 +213,17 @@ about something else are the three whose spend is not recorded.
     (`--max-budget-usd`) on its own count, as `turns` and `wall` are. Lingtai
     enforces no dollar ceiling of its own — per pass, per ticket or per day.
 
-13. **Until the log's reset, the old fields are written beside `RunSpent`, and
-    every reader reads exactly one of the two.** `RunFinished`, `FixApplied`,
-    `DiscussionAnswered` and `DiscussionHeld` keep their `turns`, `costUsd`
-    and `usage` until the reset that changes the stored events
-    ([0120](0120-a-reason-is-a-type.md)'s phase 2) removes them, with
-    `task_view`'s `cost_usd` and `repair_costs`. `TriageAgent` carries neither
-    field: a triage agent's cost is a `RunSpent` and nothing else, from the
-    start ([0118](0118-a-hold-explains-itself.md) §3). The `spend` fold reads
-    `RunSpent` and no other event; `task_view` reads the old fields and not
-    `RunSpent`; the card, `/spend` and the task page move to `spend` together.
-    No reader adds the two, so a dollar is never counted twice. What the old
-    fields recorded is not carried into `spend`: the reset forgets it with the
-    rest of the log.
+13. **No event but `RunSpent` carries spend.** The old fields — `turns`,
+    `costUsd` and `usage` on `RunFinished`, `DiscussionAnswered` and
+    `DiscussionHeld`, and `task_view`'s `cost_usd` and `repair_costs` — were
+    written beside `RunSpent` only until the reset that changed the stored
+    events ([0120](0120-a-reason-is-a-type.md)'s phase 2, #502), and are gone
+    with it (#506 dropped the columns). `TriageAgent` never carried them: a
+    triage agent's cost is a `RunSpent` and nothing else
+    ([0118](0118-a-hold-explains-itself.md) §3). The `spend` fold reads
+    `RunSpent` and no other event, and the card, `/spend` and the task page
+    all read `spend`. What the old fields recorded before the reset is not
+    carried into `spend`: the reset forgot it with the rest of the log.
 
 ## Consequences
 
