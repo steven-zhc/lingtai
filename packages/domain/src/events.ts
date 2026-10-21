@@ -1869,7 +1869,7 @@ export type TriageStartedBy = z.infer<typeof TriageStartedBy>
  * this triage is about (#502 — it named `blocked`, the position of a
  * `WorkItemBlocked`, before the switch). `attempt` is 1 for the first
  * attempt on that wait, then one more than the last `TriageStarted` for it.
- * The triage key is `waitId`, not the ticket; the head and the recipe are
+ * The triage key is the ticket and the wait; the head and the recipe are
  * not part of it (0118 §3).
  */
 export const TriageStarted = z.strictObject({
