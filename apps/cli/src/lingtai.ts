@@ -87,6 +87,7 @@ import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './servic
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
+import { daemonTriagePorts, onWaitStarted } from './triage.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -912,6 +913,8 @@ async function daemonCommand(
   // that gap was below the watermark of the only daemon holding the lock — so
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
   const since = started.since
+  let daemonStartedAt: Date | null = null
+  let startTimeRead = false
 
   if (!('no-conduct' in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
@@ -943,6 +946,11 @@ async function daemonCommand(
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.
       discuss: (event) => onDiscussionRequested(event, (line) => console.log(line)),
+      triage: (event) =>
+        onWaitStarted(
+          event,
+          daemonTriagePorts(daemonStartedAt, (line) => console.log(line)),
+        ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: async () => (await readControl(undefined, since)).paused,
@@ -954,6 +962,10 @@ async function daemonCommand(
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
         await noteStart(control)
+        if (!startTimeRead) {
+          startTimeRead = true
+          daemonStartedAt = (await startAfter(since).catch(() => null))?.at ?? null
+        }
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.

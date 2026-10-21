@@ -407,6 +407,9 @@ export async function run(
         try: () => world.currentRecipe(project, client ?? undefined),
         catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
       })
+      if (resolved.recipe.triage !== undefined) {
+        log('triage: is declared; waits from this run are triaged when a daemon next starts')
+      }
 
       let common: CommonPassOptions
       if (client === null) {

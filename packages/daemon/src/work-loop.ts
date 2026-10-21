@@ -241,6 +241,8 @@ export interface WorkLoopOptions {
    * and holds it identically to a declared subscriber's.
    */
   discuss?: (event: Envelope) => Promise<void>
+  /** A new wait, handed to the daemon's triage queue off the pass path. */
+  triage?: (event: Envelope) => Promise<void>
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
@@ -550,6 +552,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // `discuss` above: a question must not wait for a run.
           if (event.type === 'DiscussionRequested' && options.discuss) {
             deliver('discuss', event, options.discuss)
+          }
+          if (event.type === 'WaitStarted' && options.triage) {
+            deliver('triage', event, options.triage)
           }
           if (!triggers.has(event.type)) return
           void pump('completion')

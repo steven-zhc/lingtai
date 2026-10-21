@@ -12,9 +12,11 @@
  * test needs none of the real ones. `#413`/`#447` are the production callers
  * that hand this real ports; this file does not wire them.
  */
-import type { Runtime, RunOutcome } from '@lingtai/agent'
+import { createRuntime, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
+import { projectClient } from '@lingtai/conductor/filter'
+import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -26,16 +28,116 @@ import {
   parsePayload,
   parseTicketStream,
   reduceTicket,
+  triageFactsOf,
   TRIAGE_TEXT_MAX,
   type Envelope,
   type PayloadOf,
   type WaitId,
 } from '@lingtai/domain'
-import type { TriageResult, WaitReason } from '@lingtai/domain/wait'
-import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import { triageStatus, type TriageResult, type WaitReason } from '@lingtai/domain/wait'
+import { ConcurrencyError, eventStore, type EventStore } from '@lingtai/event-store'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
+import { diffStatAt, listAt, readAt, refSha } from '@lingtai/repo'
 
-import { headOf } from './discuss.ts'
+import { headOf, prepare } from './discuss.ts'
+
+/** One queue for this daemon process; the key stays present until its worker settles. */
+const queued = new Set<string>()
+let tail: Promise<void> = Promise.resolve()
+
+export function enqueueTriage(
+  key: { ticketId: string; waitId: WaitId },
+  run: () => Promise<unknown>,
+  log: (line: string) => void = console.error,
+): boolean {
+  const id = JSON.stringify([key.ticketId, key.waitId])
+  if (queued.has(id)) return false
+  queued.add(id)
+  tail = tail.then(async () => {
+    try {
+      await run()
+    } catch (err) {
+      log(`triage ${key.waitId}: ${(err as Error).message}`)
+    } finally {
+      queued.delete(id)
+    }
+  })
+  return true
+}
+
+export interface TriageTriggerPorts {
+  store: Pick<EventStore, 'read'>
+  triageFor(project: string): Promise<Triage | null>
+  daemonStartedAt: Date | null
+  run(request: WaitTriageRequest): Promise<unknown>
+  log?: (line: string) => void
+}
+
+function currentWait(events: readonly Envelope[], waitId: WaitId): boolean {
+  const lifecycle = reduceTicket(events).lifecycle
+  return lifecycle.status === 'blocked' && lifecycle.waitId === waitId
+}
+
+/** Hand over only a current, queued wait. The returned promise never waits for its worker. */
+export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): Promise<void> {
+  if (event.type !== 'WaitStarted') return
+  const parsed = parseTicketStream(event.streamId)
+  if (parsed === null) return
+  const triage = await deps.triageFor(parsed.project).catch(() => null)
+  const events = await deps.store.read(event.streamId)
+  const { waitId, reason } = event.data as PayloadOf<'WaitStarted'>
+  if (!currentWait(events, waitId)) return
+  const context = { declared: triage !== null, daemonStartedAt: deps.daemonStartedAt }
+  if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
+  enqueueTriage(
+    { ticketId: event.streamId, waitId },
+    async () => {
+      const latest = await deps.store.read(event.streamId)
+      if (!currentWait(latest, waitId)) return
+      if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
+      await deps.run({ ticketId: event.streamId, waitId, reason, triage })
+    },
+    deps.log,
+  )
+}
+
+/** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
+export function daemonTriagePorts(daemonStartedAt: Date | null, log: (line: string) => void): TriageTriggerPorts {
+  return {
+    store: eventStore,
+    daemonStartedAt,
+    log,
+    triageFor: async (project) => {
+      const state = await loadProject(project)
+      return state === null ? null : ((await currentRecipe(state)).recipe.triage ?? null)
+    },
+    run: (request) =>
+      waitTriage(
+        {
+          store: eventStore,
+          runtime: (agent) => createRuntime(agent),
+          mirror: { refSha, listAt, readAt, diffStatAt },
+          issue: async (ticketId) => {
+            const parsed = parseTicketStream(ticketId)
+            if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
+            const state = await loadProject(parsed.project)
+            if (state === null) throw new Error(`${parsed.project} is not registered`)
+            const { client } = await projectClient(state)
+            const live = await client.getIssue(Number(parsed.issue))
+            return { ref: String(live.number), title: live.title, body: live.body }
+          },
+          base: async (ticketId) => {
+            const project = parseTicketStream(ticketId)?.project ?? ''
+            return (await loadProject(project))?.base ?? 'main'
+          },
+          prepare,
+          now: Date.now,
+          log,
+        },
+        request,
+      ),
+  }
+}
 
 /** Discussion's own bound (`packages/conductor/src/discuss.ts:116`) — a caller is putting this in a prompt. */
 const FILE_BYTES = 24_000
