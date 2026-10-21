@@ -4,8 +4,10 @@
 
 A step that refuses with something an agent can be held to sends the agent back
 into the same worktree, carrying the evidence; `runtime.limits.rounds` bounds how
-often (depth). A refused *approach* may instead start the ticket over from the
-base, bounded by `runtime.limits.restarts` (breadth). Past both, a person. An
+often this happens automatically (depth). A person may explicitly buy one more
+round on the preserved branch per decision. A refused *approach* may instead
+start the ticket over from the base, bounded by `runtime.limits.restarts`
+(breadth). Past the automatic bounds, a person decides. An
 agent that never started met something account-wide, so the conductor pauses
 until the reset and the item goes back to the queue untouched. An agent that
 started and did not finish judged nothing: it buys no round, pauses nothing, and
@@ -87,19 +89,27 @@ fixes the bounds and the endings that router works inside.
    released. If the arm is not on origin, no restart is spent and the pass ends
    as `failed`. A restarted item waits out `source.backoff` like any release.
 
-8. **The limits are one block.** `runtime.limits` holds `turns` (300) and `wall`
+8. **The recipe bounds automatic spending; a person can grant one more round.**
+   `runtime.limits` holds `turns` (300) and `wall`
    (`2h`), which bound one agent run, and `rounds` (2) and `restarts` (0), which
-   count runs a pass and passes a ticket may buy. `rounds: 0` sends every refusal
-   to a person; `restarts: 0` sends a spent pass to a person. `rounds` and
+   count runs a pass and passes a ticket may buy automatically. `rounds: 0`
+   sends every refusal to a person; `restarts: 0` sends a spent pass to a person. `rounds` and
    `restarts` written inside a dispatch's own `limits:` are refused by name.
-   What a ticket may cost is `(restarts + 1) × (rounds + 1) × wall`, and
+   The automatic ceiling for a ticket is `(restarts + 1) × (rounds + 1) × wall`, and
    `passCeiling` (`packages/conductor/src/ceiling.ts`) is the one function that
    says it, wherever a project's limits are shown (onboarding, the project
    listing, `lingtai doctor`). Since `#370`, the same block may hold `usd` — a
    dollar ceiling on one run, with no default — and where it is declared the
-   formula gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
+   automatic ceiling gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
    printed beside the time figure rather than in place of it. Absent, the
-   sentence is unchanged, character for character.
+   sentence is unchanged, character for character. A person's explicit grant
+   authorizes exactly one additional `implement` round on the preserved branch;
+   it does not change `runtime.limits.rounds` or authorize another automatic
+   round. The grant and the extra run's spend are recorded and visible. Another
+   round needs another decision. Each granted run still obeys its own `turns`,
+   `wall` and, when declared, `usd` ceilings. Like any round (§3), its result
+   passes `build`, `review` and `proposed` again before the merge lane may land
+   it ([0118](0118-a-hold-explains-itself.md) §1, §11).
 
 9. **A minor finding does not refuse; it is filed.** `verdictFor`
     (`packages/actions/src/agent-action.ts`) refuses on a `blocker` or `major` and
