@@ -103,8 +103,11 @@ export function chatDir(chatId: string, home = stateDir()): string {
  *
  * Recreated per turn rather than reused, so a directory that somehow acquired
  * a file between two questions is not the directory the next turn runs in.
+ *
+ * Exported for `triage.ts` (`#428`), which contains a triage agent the same
+ * way — no worktree, no tools — under its own id rather than a chat's.
  */
-async function prepare(chatId: string, home = stateDir()): Promise<{ cwd: string; settingsPath: string }> {
+export async function prepare(chatId: string, home = stateDir()): Promise<{ cwd: string; settingsPath: string }> {
   const cwd = chatDir(chatId, home)
   await rm(cwd, { recursive: true, force: true })
   await mkdir(cwd, { recursive: true, mode: 0o700 })
