@@ -680,23 +680,17 @@ describe('all ten steps, in every lane', () => {
 
 /**
  * The Waiting lane folds since #170, and a fold is not a run in flight. What is
- * asserted here is that nothing the rail brought with it overwrote the lane's
- * own reading: `waiting 3h` is a question nobody has answered, and the sentence
- * under the bar has to agree with the segment above it.
+ * asserted here is that the rail keeps its own reading while the waiting card
+ * sheds its metadata pills. The sentence under the bar still agrees with its
+ * segment above it.
  */
 describe('a card stopped on a person', () => {
   const blocked = () => render({ state: 'waiting', waiting: true, failed: 1, awaitingSha: 'b'.repeat(40) }, refused())
 
-  /**
-   * The elapsed pill used to branch on *is there a rail*, which was the same
-   * test as *is this card running* only while Running was the one lane that
-   * folded. A refused card read `running 13h58m` about a run that is not
-   * running — a plausible number, which is the worst kind.
-   */
-  it("keeps the lane's own number and never claims the run is in flight", () => {
+  it('shows no status pill and never claims the run is in flight', () => {
     const html = blocked()
 
-    expect(html).toMatch(/<li class="pill" title="[^"]*">waiting /)
+    expect(html).not.toContain('class="pill')
     expect(html).not.toContain(`class="pill run"`)
   })
 

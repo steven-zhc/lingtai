@@ -8,10 +8,6 @@ import { readControl } from '@lingtai/daemon/control'
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a fold over its arguments (#216).
 import { hasGitHubApp } from '@lingtai/env'
-// The subpath, for the reason `board.ts` gives: the barrel pulls the gate
-// pipeline in behind it. `describeHold` is pure and lives beside the field it
-// reads, so the card and `lingtai status` say the same thing about a hold.
-import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { Fragment } from 'react'
 
@@ -20,7 +16,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
 
-import { Close, Decide, Requeue } from './decide.tsx'
+import { Close } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { Health } from './health.tsx'
 import { Paused } from './paused.tsx'
@@ -42,9 +38,8 @@ import { Rail, Segs } from './rail.tsx'
  * detail is folded from the event stream on demand, which makes a card's
  * contents a decision instead of a consequence.
  *
- * The controls stay on the card. Deciding is the thing this exists for, and
- * making somebody open a page to approve would put back the cost that the 45
- * items measured.
+ * A waiting card carries the rail and one cause line. Its resolutions and the
+ * rest of the wait's detail are on the task page (0118 §2).
  *
  * **Weight follows attention, and it used not to.** Landed rendered a card each
  * and was the heaviest thing on the page while one waiting card took about a
@@ -163,6 +158,21 @@ export function Card({
    */
   paused: boolean
 }) {
+  if (card.column === 'waiting') {
+    const cause = card.cause ?? card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
+    return (
+      <article className={`card ${accent(card)}`}>
+        <span className="id">
+          <IssueRef href={issue} issue={card.ref} />
+        </span>
+        <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
+          {card.title}
+        </Link>
+        {card.progress ? <Rail progress={card.progress} live={false} held={card.held} /> : null}
+        {cause ? <p className="question">{cause}</p> : null}
+      </article>
+    )
+  }
   const standing = queuedStanding(card, paused)
   // Dropped wherever the rail draws `held` instead (`#415`): a card with a
   // rail outside the Running lane says the same approach-abandoned fact under
@@ -314,18 +324,6 @@ export function Card({
             is what makes the other two worth reading. The sentences are
             `queuedStanding`'s and the backoff's is `lingtai status`'s own, so
             the two places this is asked cannot drift apart again. */}
-        {/* **Which wait**, where one brass chip used to stand for both (#147).
-            A question asked before any run wants an answer and has no diff; a
-            run holding a sha wants a review of the diff it has. The words are
-            `describeWait`'s, so `lingtai status` says the same. */}
-        {card.wait ? (
-          <li
-            className={card.asked ? 'pill sig' : 'pill hold'}
-            title={card.asked ? 'asked before any run — nothing has been spent' : 'a run is holding a diff for you'}
-          >
-            {card.wait}
-          </li>
-        ) : null}
         {standing ? (
           <li className="pill hold" title={standing.title}>
             {standing.text}
@@ -347,76 +345,6 @@ export function Card({
 
       {card.note ? <p className="question">{card.note}</p> : null}
 
-      <Held card={card} />
-
-      {/* Only where a person is actually the thing being waited on. A card in
-          Gates is waiting on a process, and offering to approve it would invite
-          a decision nobody is being asked for.
-
-          And only where Approve can *work*. "Waiting, and there is a head sha"
-          was also true of an item whose approved merge had hit a conflict: the
-          approval consumed, the run back to `gating`, and every click refused
-          with `not-awaiting-approval` (#84). That card gets the move it
-          actually has — back to the queue, where the next attempt is cut from a
-          base that has since moved — rather than a control that cannot act.
-
-          `waiting` and not the column, for the same reason: the lane also holds
-          a run that asked a question mid-flight, and it is not an item
-          anybody can hand back.
-
-          `awaitingSha` and not `headSha`: a question is open exactly when there
-          is a sha it is about, and that sha is the one the controls have to
-          send. Sending what the run *produced* is what made the board refuse
-          approvals the CLI accepted (#92).
-
-          **Requeue on every blocked card, beside Approve rather than instead
-          of it** (#150). It was the else of this test, so the card adjudicating
-          a disagreement — where *run it again* is the move — was the one card
-          without it. And no gate names: `approve()` reads which gates refuse
-          off the run, where this card once sent a literal `"build"` for a
-          refused `review`. `failed` only decides whether to ask why
-          before the click. */}
-      {card.waiting ? (
-        card.waitId === null ? (
-          // `laneWaitIds`' own read failed five times, or the fold had moved
-          // off `blocked` by the time it ran — not "no rail drawn" (#508):
-          // `Decide`/`Requeue`/`Close` all need a wait id to send back, and a
-          // button bound to resolve "whatever is open now" is the `#84`
-          // complaint this file already states as a rule, so none is offered
-          // on a card whose wait could not be read.
-          <div className="btnrow">
-            <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-          </div>
-        ) : (
-          <div className="btnrow">
-            {card.awaitingSha ? (
-              <Decide
-                project={card.project}
-                issue={Number(card.ref)}
-                onSha={card.awaitingSha}
-                waitId={card.waitId}
-                refusing={card.failed > 0}
-                recommended={card.diagnosis?.recommendation?.action ?? null}
-              />
-            ) : null}
-            <Requeue
-              project={card.project}
-              issue={Number(card.ref)}
-              waitId={card.waitId}
-              asked={card.asked}
-              question={card.note}
-              recommended={card.diagnosis?.recommendation?.action ?? null}
-            />
-            {/* The third of the three, and the only one that ends the ticket
-                rather than the wait (`#151`). Approve takes the diff, Requeue
-                throws it away and asks for another, and both assume the work is
-                still wanted. Without this, a card you have decided against could
-                only be argued with. */}
-            <Close project={card.project} issue={Number(card.ref)} waitId={card.waitId} />
-          </div>
-        )
-      ) : null}
-
       {/* And on a queued card, where it is the only move there is. The state
           this was written for is the item nothing is asking about: five sat in
           Queued that GitHub had closed hours earlier, because `gh issue close`
@@ -428,63 +356,6 @@ export function Card({
       ) : null}
     </article>
   )
-}
-
-/**
- * What is known about a hold, beyond the question.
- *
- * The question is rendered above this and is unchanged. Everything here is
- * absent on a block that carries only one — which is every block on the log at
- * the time #83 was written — so a card that has nothing to add reads exactly as
- * it did: the question, and the move it actually has.
- *
- * Order is what an operator does with it. Which *kind* of hold it is first,
- * because *a decision is yours* and *something failed and nobody has decided*
- * are opposite situations and the controls below mean different things in each.
- * Then what happened, then what was already done about it, then the
- * recommendation — which is also which button is primary (`decide.tsx`).
- *
- * The raw failure is last and collapsed, and it is not optional. A summary that
- * hides the git output is worse than the git output: the sentence is somebody's
- * reading of the failure, and the failure itself has to stay reachable from the
- * same card rather than only from the log.
- */
-function Held({ card }: { card: BoardCard }) {
-  // The sentences are `describeHold`'s, not this file's, so the card and
-  // `lingtai status` cannot come to describe the same hold differently. What
-  // this component decides is the weight each one is given.
-  const lines = describeHold(card)
-  const raw = card.diagnosis?.raw ?? null
-  if (lines.length === 0 && raw === null) return null
-  return (
-    <div className="held">
-      {lines.map((line) => (
-        <p key={line.part} className={HELD_CLASS[line.part]}>
-          {line.text}
-        </p>
-      ))}
-      {raw !== null ? (
-        <details>
-          <summary>the failure, as it arrived</summary>
-          <pre className="gevidence">{raw}</pre>
-        </details>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * Which sentence gets which weight.
- *
- * `what` is ink because it is the answer; `did` is muted because it is context;
- * `rec` carries the signal colour because it is the sentence the primary button
- * is the end of. A card where all four shout says nothing.
- */
-const HELD_CLASS: Record<HoldLine['part'], string> = {
-  needs: 'needs',
-  what: 'diag',
-  did: 'did',
-  rec: 'rec',
 }
 
 /**

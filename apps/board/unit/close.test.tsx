@@ -58,12 +58,13 @@ describe('Close', () => {
 })
 
 describe('the row of moves', () => {
-  it('offers it beside Approve and Requeue on a blocked card', () => {
-    for (const file of ['../src/app/page.tsx', '../src/app/standing.tsx']) {
-      const source = read(file)
-      expect(source, file).toMatch(/import \{ Close[,\s]/)
-      expect(source, file).toContain('<Close')
-    }
+  it('offers Close beside the task page resolutions, while the waiting card has no row', () => {
+    const standing = read('../src/app/standing.tsx')
+    expect(standing).toMatch(/import \{ Close[,\s]/)
+    expect(standing).toContain('<Close')
+    const page = read('../src/app/page.tsx')
+    expect(page).not.toContain('<Decide')
+    expect(page).not.toContain('<Requeue')
   })
 
   it('offers it on a queued card, which is where the ones that sat were', () => {
