@@ -1067,29 +1067,29 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* The Waiting page is a reading surface: ticket, progress, then triage. Keep
    this scope off the record and off the other task states. */
-.detail-body--waiting {
+.detail--waiting .detail-body {
   max-width: 76rem;
   gap: 2rem;
   margin-inline: auto;
   padding: clamp(1rem, 3vw, 2.5rem);
 }
-.detail-body--waiting .standing {
+.detail--waiting .standing {
   gap: clamp(1rem, 2.4vw, 1.75rem);
   padding: 0;
   border: 0;
   min-width: 0;
 }
-.detail-body--waiting .sticket,
-.detail-body--waiting .swhere {
+.detail--waiting .sticket,
+.detail--waiting .swhere {
   min-width: 0;
   padding: clamp(1.1rem, 2.3vw, 1.8rem);
   background: var(--surface);
   border: 1px solid var(--rule);
 }
-.detail-body--waiting .sticket { gap: 0.85rem; margin: 0; }
-.detail-body--waiting .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
-.detail-body--waiting .sref { font-size: 0.78rem; }
-.detail-body--waiting .stitle {
+.detail--waiting .sticket { gap: 0.85rem; margin: 0; }
+.detail--waiting .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
+.detail--waiting .sref { font-size: 0.78rem; }
+.detail--waiting .stitle {
   max-width: 60rem;
   font-size: clamp(1.35rem, 2.6vw, 2rem);
   font-weight: 600;
@@ -1097,52 +1097,52 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   letter-spacing: -0.025em;
   text-wrap: pretty;
 }
-.detail-body--waiting .swant {
+.detail--waiting .swant {
   max-width: 70ch;
   padding-left: 0.85rem;
   border-left: 3px solid var(--accent);
   color: var(--ink);
   font-size: 0.95rem;
 }
-.detail-body--waiting .topening {
+.detail--waiting .topening {
   max-width: 72ch;
   padding-top: 0.65rem;
   border-top: 1px solid var(--rule);
 }
-.detail-body--waiting .topening summary { color: var(--accent-ink); font-weight: 600; }
-.detail-body--waiting .swhere { gap: 1rem; }
-.detail-body--waiting .ssectiontitle {
+.detail--waiting .topening summary { color: var(--accent-ink); font-weight: 600; }
+.detail--waiting .swhere { gap: 1rem; }
+.detail--waiting .ssectiontitle {
   color: var(--muted);
   font-size: 0.7rem;
   letter-spacing: 0.09em;
 }
-.detail-body--waiting .sread { gap: 0.5rem 1rem; }
-.detail-body--waiting .sread .sstate { font-size: clamp(1.4rem, 3vw, 2rem); }
-.detail-body--waiting .sread .sage { font-size: clamp(0.95rem, 2vw, 1.2rem); }
-.detail-body--waiting .swhere .segs { margin: 0; }
-.detail-body--waiting .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
-.detail-body--waiting .swhere .sbar { height: 6px; }
-.detail-body--waiting .sbody { gap: 0.55rem; padding-top: 0.9rem; }
-.detail-body--waiting .squestion,
-.detail-body--waiting .sbody .diag { font-size: 0.98rem; }
-.detail-body--waiting .sowhat { font-size: 0.9rem; }
+.detail--waiting .sread { gap: 0.5rem 1rem; }
+.detail--waiting .sread .sstate { font-size: clamp(1.4rem, 3vw, 2rem); }
+.detail--waiting .sread .sage { font-size: clamp(0.95rem, 2vw, 1.2rem); }
+.detail--waiting .swhere .segs { margin: 0; }
+.detail--waiting .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
+.detail--waiting .swhere .sbar { height: 6px; }
+.detail--waiting .sbody { gap: 0.55rem; padding-top: 0.9rem; }
+.detail--waiting .squestion,
+.detail--waiting .sbody .diag { font-size: 0.98rem; }
+.detail--waiting .sowhat { font-size: 0.9rem; }
 
-.detail-body--waiting .triage-band {
+.detail--waiting .triage-band {
   gap: 0.8rem;
   padding: clamp(1.25rem, 2.5vw, 2rem);
   border: 1px solid var(--rule);
   background: var(--accent-soft);
 }
-.detail-body--waiting .triage-label,
-.detail-body--waiting .triage-reading-label {
+.detail--waiting .triage-label,
+.detail--waiting .triage-reading-label {
   color: var(--accent-ink);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-.detail-body--waiting .triage-label { margin-bottom: 0.25rem; }
-.detail-body--waiting .triage-cause {
+.detail--waiting .triage-label { margin-bottom: 0.25rem; }
+.detail--waiting .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
   background: var(--accent);
@@ -1150,40 +1150,40 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-size: 0.78rem;
   font-weight: 600;
 }
-.detail-body--waiting .triage-summary,
-.detail-body--waiting .triage-disagreement {
+.detail--waiting .triage-summary,
+.detail--waiting .triage-disagreement {
   max-width: 65ch;
   color: var(--ink);
   font-size: clamp(1.1rem, 2vw, 1.4rem);
   line-height: 1.4;
   text-wrap: pretty;
 }
-.detail-body--waiting .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
-.detail-body--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
-.detail-body--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
-.detail-body--waiting .triage-evidence > div,
-.detail-body--waiting .triage-evidence > details,
-.detail-body--waiting .triage-readings > div {
+.detail--waiting .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
+.detail--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
+.detail--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
+.detail--waiting .triage-evidence > div,
+.detail--waiting .triage-evidence > details,
+.detail--waiting .triage-readings > div {
   min-width: 0;
   padding: 0.85rem 1rem;
   border: 1px solid var(--rule);
   background: var(--surface);
 }
-.detail-body--waiting .triage-evidence > details { overflow-wrap: anywhere; }
-.detail-body--waiting .triage-readings > div > p { margin: 0 0 0.45rem; }
-.detail-body--waiting .triage-band--failed { border-left: 4px solid var(--fail); }
-.detail-body--waiting .triage-band--failed .triage-label { color: var(--fail); }
-.detail-body--waiting .triage-band--failed > p:last-child {
+.detail--waiting .triage-evidence > details { overflow-wrap: anywhere; }
+.detail--waiting .triage-readings > div > p { margin: 0 0 0.45rem; }
+.detail--waiting .triage-band--failed { border-left: 4px solid var(--fail); }
+.detail--waiting .triage-band--failed .triage-label { color: var(--fail); }
+.detail--waiting .triage-band--failed > p:last-child {
   max-width: 65ch;
   color: var(--ink);
   font-size: clamp(1.1rem, 2vw, 1.4rem);
 }
-.detail-body--waiting .triage-band--conflict .triage-cause { background: var(--held); }
+.detail--waiting .triage-band--conflict .triage-cause { background: var(--held); }
 
 @media (max-width: 48rem) {
-  .detail-body--waiting .swhere .segs { overflow-x: auto; padding-bottom: 0.35rem; }
-  .detail-body--waiting .swhere .seg { min-width: 3.5rem; }
-  .detail-body--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
+  .detail--waiting .swhere .segs { overflow-x: auto; padding-bottom: 0.35rem; }
+  .detail--waiting .swhere .seg { min-width: 3.5rem; }
+  .detail--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Verbatim stopping evidence in Attempts and in a disagreement comparison.

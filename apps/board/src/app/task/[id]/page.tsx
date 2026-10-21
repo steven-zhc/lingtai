@@ -755,7 +755,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
   const spendCurrency = spendChip(task.spendCurrency)
 
   return (
-    <main className="detail">
+    <main className={`detail${task.standing.state === 'blocked' ? ' detail--waiting' : ''}`}>
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai
@@ -778,7 +778,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           select that tab — see `openTo` here, and `panelOf` there. */}
       <Reveal />
 
-      <div className={`detail-body${task.standing.state === 'blocked' ? ' detail-body--waiting' : ''}`}>
+      <div className="detail-body">
         <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
         <Standing
