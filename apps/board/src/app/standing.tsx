@@ -60,7 +60,12 @@ export function TriageBand({
     case 'Done': {
       const result = status.result
       if (result._tag === 'TriageFailed')
-        return <section className="triage-band">triage failed: “{result.why}”</section>
+        return (
+          <section className="triage-band">
+            {headLine ? <p>{headLine}</p> : null}
+            triage failed: “{result.why}”
+          </section>
+        )
       const cause = result.cause
       let parts: React.ReactNode = null
       switch (cause._tag) {

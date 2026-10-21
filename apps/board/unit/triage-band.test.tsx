@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
+import { triageHeadLine, type MirrorHead } from '../src/lib/triage-head.ts'
 
 function draw(status: TriageStatus, headLine?: string): string {
   const reason: WaitReason = { _tag: 'OwnQuestion', question: 'why?', by: 'person' }
@@ -33,6 +34,20 @@ describe('current wait triage band', () => {
     const html = draw({ _tag: 'Done', result: { _tag: 'TriageFailed', why: '<failed>' } })
     expect(html).toContain('&lt;failed&gt;')
     expect(html).not.toContain('Recommends')
+  })
+
+  it.each([
+    [{ at: '9876543210abcdef' }, 'Triage read abcdef1; mirror head, as of its last fetch: 9876543.'],
+    [{ missing: true }, 'The branch is no longer in the mirror.'],
+    [{ unreadable: 'git failed' }, 'Could not read the mirror: git failed'],
+  ] as const)('shows the mirror warning beside a failed triage: %j', (mirror, warning) => {
+    const html = draw(
+      { _tag: 'Done', result: { _tag: 'TriageFailed', why: '<failed>' } },
+      triageHeadLine('abcdef1234567890', mirror as MirrorHead) ?? undefined,
+    )
+    expect(html).toContain(warning)
+    expect(html.match(/<p>/g)).toHaveLength(1)
+    expect(html).toContain('triage failed: “&lt;failed&gt;”')
   })
 
   it('draws questions and their recommended answer as text', () => {
