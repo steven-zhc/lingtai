@@ -26,6 +26,7 @@
  */
 import {
   MERGE_HUNKS_ONE_BY_ONE,
+  TRIAGE_ANSWERS_MAX,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
   TRIAGE_SENTENCE_MAX,
@@ -37,8 +38,8 @@ import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 import {
   jsonCandidates,
   MAX_READ_ROUNDS,
-  parseRead,
   READ_CONTRACT,
+  readOf,
   READS_PER_TURN,
   renderIndex,
   renderServed,
@@ -80,20 +81,35 @@ others. An extra key, for example \`"confidence"\`, is refused by name rather
 than ignored.
 
 \`summary\` and \`want\` are each at most ${TRIAGE_SENTENCE_MAX} characters — one
-sentence, not a paragraph.
+sentence, not a paragraph. Every other free-text field below — every \`id\`,
+\`path\`, \`what\`, \`text\` and \`recommended\` — is at most ${TRIAGE_TEXT_MAX}
+characters.
 
 \`cause\` is exactly one of these six (0118 §4), and its parts belong to it —
 never repeated beside it:
 
-- \`UndecidedQuestion\` — *a decision for you*: \`questions\`, only a person can answer them, at most ${TRIAGE_QUESTIONS_MAX}
-- \`FixableLines\` — *lines to fix*: \`fixes\`, specific edits, at most ${TRIAGE_FIXES_MAX}; the approach is sound
+- \`UndecidedQuestion\` — *a decision for you*: \`questions\`, at most
+  ${TRIAGE_QUESTIONS_MAX}, only a person can answer them. Each question is an
+  object, never a bare string:
+  \`{"id": "q1", "text": "approve or requeue?",
+  "answers": [{"id": "a", "text": "approve"}, {"id": "b", "text": "requeue"}],
+  "recommended": "a"}\` — \`answers\` is at most ${TRIAGE_ANSWERS_MAX} entries,
+  and \`recommended\` must name one of their \`id\`s.
+- \`FixableLines\` — *lines to fix*: \`fixes\`, at most ${TRIAGE_FIXES_MAX}; the
+  approach is sound. Each fix is an object, never a one-line string:
+  \`{"path": "a.ts", "line": 10, "what": "fix the thing"}\` — \`line\` may be
+  \`null\` where no one line applies.
 - \`WrongApproach\` — *the approach is wrong*: patching will not converge
-- \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict. List
-  every hunk in \`hunks\` when \`total\` is at most ${MERGE_HUNKS_ONE_BY_ONE} — one
-  entry per hunk, and \`hunks.length\` must equal \`total\`. Past that bound, send
-  \`"hunks": []\` with \`total\` the real count; listing more than
-  ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that does not match \`total\` at or
-  below it, is refused.
+- \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict. Each
+  hunk carries its own \`_tag\`: \`{"_tag": "Mechanical", "path": "a.ts",
+  "line": 10}\` where git merged it without trouble, or
+  \`{"_tag": "Divergent", "path": "a.ts", "line": 10, "question": <a question,
+  shaped as in \`UndecidedQuestion\` above>}\` where the two sides behave
+  differently. List every hunk in \`hunks\` when \`total\` is at most
+  ${MERGE_HUNKS_ONE_BY_ONE} — one entry per hunk, and \`hunks.length\` must
+  equal \`total\`. Past that bound, send \`"hunks": []\` with \`total\` the real
+  count; listing more than ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that
+  does not match \`total\` at or below it, is refused.
 - \`TicketTooBig\` — *try it again, narrower*: the run did not finish
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
@@ -251,9 +267,6 @@ export function parseTriage(text: string | null): TriageReply {
     return { kind: 'refused', why: 'the reply was empty', raw: text ?? '' }
   }
 
-  const read = parseRead(text)
-  if (read !== null) return read
-
   let found: Record<string, unknown> | null = null
   for (const candidate of jsonCandidates(text)) {
     let value: unknown
@@ -262,10 +275,18 @@ export function parseTriage(text: string | null): TriageReply {
     } catch {
       continue
     }
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      found = value as Record<string, unknown>
-      break
-    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const v = value as Record<string, unknown>
+
+    // Read before answer, but per candidate rather than across all of them —
+    // the same precedence `parseReply` uses (discuss.ts): a later candidate's
+    // `{"read":[...]}` must not outrank an earlier candidate that already answered.
+    const read = readOf(v)
+    if (read.kind === 'read') return read
+    if (read.kind === 'skip') continue
+
+    found = v
+    break
   }
   if (found === null) {
     return { kind: 'refused', why: 'no JSON object in the reply', raw: text }

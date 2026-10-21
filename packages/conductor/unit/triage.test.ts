@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 
 import {
   MERGE_HUNKS_ONE_BY_ONE,
+  TRIAGE_FIXES_MAX,
+  TRIAGE_QUESTIONS_MAX,
   TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
   type JudgeReply,
@@ -114,6 +116,24 @@ describe('parseTriage', () => {
       kind: 'read',
       paths: ['main:packages/conductor/src/triage.ts'],
     })
+  })
+
+  /**
+   * The earlier candidate decides, even when a later one asks to read — the
+   * same precedence `discuss.test.ts` pins for `parseReply`. An agent that
+   * answers at round 0 and then offers a second, unreadable confirmation must
+   * not have its paid answer discarded for a read `#428` has no round left to
+   * serve.
+   */
+  it('reads the earlier candidate as advice, even when a later one asks to read', () => {
+    const reply = parseTriage(
+      '```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```\n\n' +
+        'If you want me to confirm, I can read:\n\n```json\n{"read":["main:a.ts"]}\n```',
+    )
+    expect(reply.kind).toBe('advised')
+    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.result.cause._tag).toBe('WrongApproach')
+    expect(reply.result.summary).toBe('s')
   })
 
   const CAUSES: Array<{ tag: string; answer: Record<string, unknown> }> = [
@@ -233,6 +253,7 @@ describe('parseTriage', () => {
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('want')
+    expect(reply.why).toContain(`${TRIAGE_SENTENCE_MAX}`)
   })
 
   it('refuses more than 5 questions, and names the bound', () => {
@@ -253,6 +274,7 @@ describe('parseTriage', () => {
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('questions')
+    expect(reply.why).toContain(`${TRIAGE_QUESTIONS_MAX}`)
   })
 
   it('refuses more than 20 fixes, and names the bound', () => {
@@ -263,6 +285,7 @@ describe('parseTriage', () => {
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('fixes')
+    expect(reply.why).toContain(`${TRIAGE_FIXES_MAX}`)
   })
 
   it('refuses 21 or more hunks listed, and names the bound', () => {
@@ -279,6 +302,7 @@ describe('parseTriage', () => {
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('hunks')
+    expect(reply.why).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
 
   it('refuses text over TRIAGE_TEXT_MAX, and names the bound', () => {
@@ -293,6 +317,7 @@ describe('parseTriage', () => {
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('what')
+    expect(reply.why).toContain(`${TRIAGE_TEXT_MAX}`)
   })
 
   it("returns the tag 'Approve'", () => {
