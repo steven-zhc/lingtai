@@ -3,7 +3,7 @@ import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
 import { aRunRef, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { type EventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Triage, triageCallFor } from '@lingtai/recipe'
 /**
@@ -104,6 +104,26 @@ function typesOf(events: readonly Envelope[]): string[] {
   return events.map((e) => e.type)
 }
 
+/**
+ * `store`, whose `append` fails the first `failTimes` attempts at an event of
+ * `type` — a `ConcurrencyError` by default, standing in for "something else
+ * appended to the stream between the read and the append" (#428's own
+ * scenario), or `error` when given, standing in for a dropped connection.
+ */
+function flakyAppend(store: EventStore, type: string, failTimes: number, error?: () => Error): EventStore {
+  let seen = 0
+  return {
+    ...store,
+    append: async (streamId, expectedVersion, events) => {
+      if (events[0]?.type === type && seen < failTimes) {
+        seen += 1
+        throw error === undefined ? new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1]) : error()
+      }
+      return store.append(streamId, expectedVersion, events)
+    },
+  }
+}
+
 describe('waitTriage', () => {
   it('appends TriageStarted, one RunSpent per call, then one WaitTriaged — advised on a good reply', async () => {
     const store = createMemoryEventStore()
@@ -169,23 +189,119 @@ describe('waitTriage', () => {
     expect(triaged.by).toEqual({ _tag: 'Agent', runtime: 'claude-code', model: '' })
   })
 
-  it('aborting mid-call kills the runtime and appends one failed WaitTriaged, with nothing after it', async () => {
+  it('never throws when the initial read of the ticket stream fails, and reports TriageFailed instead', async () => {
+    const realStore = createMemoryEventStore()
+    const store: EventStore = {
+      ...realStore,
+      read: async () => {
+        throw new Error('connection dropped')
+      },
+    }
+    const ticketId = ticketStream('lingtai', 14)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageFailed')
+  })
+
+  it('never throws when the TriageStarted append fails for a reason other than a lost race, and lands nothing', async () => {
+    const store = flakyAppend(createMemoryEventStore(), 'TriageStarted', 1, () => new Error('connection dropped'))
+    const ticketId = ticketStream('lingtai', 15)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageFailed')
+    expect(await store.read(ticketId)).toEqual([])
+  })
+
+  it('never throws when prepare() rejects after TriageStarted has landed, and still answers it with one WaitTriaged', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 16)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      prepare: async () => {
+        throw new Error('EACCES: permission denied')
+      },
+    })
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageFailed')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+  })
+
+  it('never throws when the runtime factory itself throws, and still answers TriageStarted with one WaitTriaged', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 17)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      runtime: () => {
+        throw new Error('could not spin up the runtime')
+      },
+    })
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageFailed')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+  })
+
+  it('retries RunSpent when something else appended to the ticket stream between the read and the append, so a paid call still lands a spend row', async () => {
+    const store = flakyAppend(createMemoryEventStore(), 'RunSpent', 1)
+    const ticketId = ticketStream('lingtai', 12)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  it('ends the triage in TriageFailed, never a false advice, when RunSpent cannot be recorded even after retries', async () => {
+    const store = flakyAppend(createMemoryEventStore(), 'RunSpent', 5, () => new Error('connection dropped'))
+    const ticketId = ticketStream('lingtai', 13)
+    const { runtime } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime)
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(held.result._tag).toBe('TriageFailed')
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+    const triaged = events.find((e) => e.type === 'WaitTriaged')!.data as { result: { _tag: string } }
+    expect(triaged.result._tag).toBe('TriageFailed')
+  })
+
+  it('passes the abort signal to the runtime, and aborting mid-call kills the runtime and appends one failed WaitTriaged, with nothing after it', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 5)
+    const controller = new AbortController()
     // The real adapters resolve rather than reject when the signal fires
-    // (`claude-code.ts`'s `kill`) — the fake does the same.
-    const { runtime } = stubRuntime(() =>
-      outcomeOf({
+    // (`claude-code.ts`'s `kill`) — the fake does the same, and fires the
+    // abort itself to stand in for the conductor aborting mid-call.
+    const { runtime, requests } = stubRuntime(() => {
+      controller.abort()
+      return outcomeOf({
         turns: 0,
         durationMs: 1,
         costUsd: null,
         failure: { kind: 'aborted', detail: 'the conductor aborted the run' },
-      }),
-    )
+      })
+    })
     const deps = fakeDeps(store, runtime)
-    const controller = new AbortController()
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { signal: controller.signal }))
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.signal).toBe(controller.signal)
 
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'aborted' })
     const events = await store.read(ticketId)
@@ -246,6 +362,99 @@ describe('waitTriage', () => {
 
     expect(prompt).toContain('agent/7')
     expect(prompt).toContain('1 file changed, 2 insertions(+)')
+  })
+
+  it("labels the readable head with the run's real attempt number, from the ticket's own claim order — not a hardcoded attempt-1", async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 9)
+    const runId = 'pass-9b'
+    const headSha = 'd'.repeat(40)
+    const baseSha = 'b'.repeat(40)
+
+    const ticket = makeStream(ticketId)
+    await store.append(ticketId, 0, [
+      ticket('TicketClaimed', { runId: 'pass-9a', worker: 'lingtai:daemon:1', title: null, kind: null }),
+      ticket('TicketClaimed', { runId, worker: 'lingtai:daemon:1', title: null, kind: null }),
+    ])
+    const run = makeStream(runId)
+    await store.append(runId, 0, [
+      run('RunProducedDiff', { branch: 'agent/9', headSha, files: 1, insertions: 1, deletions: 0 }),
+    ])
+
+    let prompt = ''
+    const { runtime } = stubRuntime((request) => {
+      prompt = request.prompt
+      return ADVISED
+    })
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({
+        refSha: async ({ ref }) => (ref === 'main' ? baseSha : ref === headSha ? headSha : null),
+        listAt: async () => ({ paths: ['a.ts'], truncated: false }),
+      }),
+    })
+
+    await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn(runId) }))
+
+    // `runId` is the ticket's second claimed run (index 1), so it is attempt
+    // 2 — never the hardcoded `attempt-1` the ref and the reading line used
+    // to carry regardless of which attempt actually ran.
+    expect(prompt).toContain('### attempt-2')
+    expect(prompt).toContain('attempt-2: readable at')
+  })
+
+  it('says an attempt that committed nothing has no code of its own to read, rather than dropping the line', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 10)
+    const runId = 'pass-10'
+    const baseSha = 'e'.repeat(40)
+
+    const ticket = makeStream(ticketId)
+    await store.append(ticketId, 0, [
+      ticket('TicketClaimed', { runId, worker: 'lingtai:daemon:1', title: null, kind: null }),
+    ])
+    // No `RunProducedDiff`/`RunProposedCompletion` on `runId`'s own stream —
+    // `worktree.ts` resets the branch with `-B` on every run, so an attempt
+    // that committed nothing left no head of its own to read.
+
+    let prompt = ''
+    const { runtime } = stubRuntime((request) => {
+      prompt = request.prompt
+      return ADVISED
+    })
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async ({ ref }) => (ref === 'main' ? baseSha : null) }),
+    })
+
+    await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn(runId) }))
+
+    expect(prompt).toContain('there is no code of its own to read')
+  })
+
+  it("serves a read bounded by Discussion's FILE_BYTES, not readAt's own wider default", async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 11)
+    const baseSha = 'f'.repeat(40)
+    const readAtCalls: { project: string; ref: string; path: string; limitBytes?: number }[] = []
+
+    let call = 0
+    const { runtime } = stubRuntime(() => {
+      call += 1
+      return call === 1 ? outcomeOf({ text: JSON.stringify({ read: ['main:a.ts'] }) }) : ADVISED
+    })
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({
+        refSha: async ({ ref }) => (ref === 'main' ? baseSha : null),
+        listAt: async () => ({ paths: ['a.ts'], truncated: false }),
+        readAt: async (input) => {
+          readAtCalls.push(input)
+          return 'file contents'
+        },
+      }),
+    })
+
+    await waitTriage(deps, requestOn(ticketId, aWaitId()))
+
+    expect(readAtCalls).toEqual([{ project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000 }])
   })
 
   it("creates the runtime with tools: 'none', and the first call's limits equal triageCallFor(triage)", async () => {
