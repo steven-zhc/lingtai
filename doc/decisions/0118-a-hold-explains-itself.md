@@ -3,8 +3,8 @@
 **Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md)
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
-person's. It opens with the ticket itself (Problem, Want and Watch out, taken
-from the body), then where the pass stopped and what is left to spend (taken
+person's. It opens with the ticket itself (its title, triage's reading of
+what it wants, and the opening of the body, §2), then where the pass stopped and what is left to spend (taken
 from the log, which costs nothing), then a triage band, then the resolutions, then
 the record. Triage is an agent the daemon runs when a wait is recorded. It
 names the cause of the wait, asks the questions only a person can answer, and
@@ -61,7 +61,7 @@ was merely queued `queued` and the conductor pauses instead — and leaves an
 item already in this lane on a question exactly as it was, because only a
 person's answer may lift that. **Unpushed work** (the branch did
 not reach origin,
-`conduct.ts:3071-3072`, and the worktree that holds it is removed when the pass
+and the worktree that holds it is removed when the pass
 ends) can come on top of any wait that has a run. Today none of this is
 written down: the wait's event carried `needs`, `runId` and `diagnosis`, and
 which kind a wait was got inferred again in each place that needed it, from
@@ -188,7 +188,8 @@ which kind a wait was got inferred again in each place that needed it, from
 
      `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
      page and `recommendedResolution` match on, and what the daemon starts
-     triage on: it starts one only for `Queued`. It is derived from the wait
+     triage on: it starts one for `Queued`, and on its own start retries an
+     `Interrupted` one (§3). It is derived from the wait
      first and then from the strongest fact: a wait triage does not read is
      `NotNeeded` (§3), whatever the recipe or the log says; otherwise a result
      for the current wait's latest attempt is `Done`, whatever
@@ -239,6 +240,12 @@ which kind a wait was got inferred again in each place that needed it, from
        sides with the reviewer.
      - `NothingProduced` has no `Approve`: there is nothing on the branch to
        merge.
+     - `ProposedEscalated` carries the proposal the work fell short with
+       (0120): over `CheckRefused`, `FixerDisagrees` or `MergeRefused` it is
+       allowed what that variant's own row allows; over `NothingProduced`,
+       `BudgetExhausted`, `AnswerUnreadable` or `SetupRefused`, likewise. Only
+       its own `ReviewFindings`, `ReviewEmpty`, `BuildRed`, `VerifyRed`,
+       `MergeConflict` and `InputNeeded` follow the row above.
      - `ProposedEscalated` over `BuildRed`, `VerifyRed`, `MergeConflict` or
        `InputNeeded` has no `Approve`. Merging a red build would break _every
        path into `end` has been through `build`_; a conflict cannot be merged;
@@ -250,8 +257,8 @@ which kind a wait was got inferred again in each place that needed it, from
    - **A second pure function, `recommendedResolution(reason, status)`, picks
      at most one of those** to draw first and prefill. An advised resolution is
      recommended when `allowedResolutions` offers it, and otherwise is not, its
-     words still shown. With no advice (not declared, running or failed) the
-     wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
+     words still shown. With no advice (not needed, not declared, queued,
+     running, interrupted or failed) the wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
      `BudgetExhausted` and `AgentCrashed`, nothing elsewhere. A budget fact
      enters `allowedResolutions` only when a resolution that depends on one is
      decided (#426), not before.
@@ -299,7 +306,7 @@ which kind a wait was got inferred again in each place that needed it, from
      one answer, and two functions could disagree.
    - **What it advised is one event, `WaitTriaged`, on the ticket's stream.**
      It names the wait it explains and the head it read, and who answered: `Agent`, with its runtime and model, or `Mechanical`, when Lingtai answered without calling an agent (§8). **It carries no spend.** What an agent's triage cost is one `RunSpent { for: Triage { waitId } }`, appended where the runtime reported it, as every paid call is ([0110](0110-tokens-on-the-event-money-at-display.md) §10); a mechanical answer called nothing and appends none. Its result is
-     a `TriageResult`, `Failed` or `Advised`, the same type and not a copy of it,
+     a `TriageResult`, `TriageFailed` or `TriageAdvised`, the same type and not a copy of it,
      so an advised triage with a failure, or a failed one with advice, cannot
      be written. `Advised` carries the cause, the recommended resolution, one
      sentence for the card (`summary`), and one sentence of what the ticket
@@ -405,7 +412,7 @@ which kind a wait was got inferred again in each place that needed it, from
      (`close.ts:99-100`) stays on the board, the CLI and the conductor.
    - **The seam for a prefill exists and nothing wires it yet** (#424): `Close`
      takes an optional `prefill` and seeds its box from it
-     (`apps/board/src/app/decide.tsx`), but `WaitTriaged` has no schema,
+     (`apps/board/src/app/decide.tsx`), but nothing appends `WaitTriaged` yet,
      `task_view` has no triage column, and every `<Close>` call site is
      unchanged. Once triage lands (§3, §10), passing its one sentence in is
      what makes the close box start filled — still a box the person can
@@ -418,9 +425,9 @@ which kind a wait was got inferred again in each place that needed it, from
    releases with `cause: ByPerson`. Every cost line on the page says so.
 
 8. **A merge conflict is triaged.**
-   - The lane records only the conflicting paths
-     (`packages/repo/src/integrate.ts:401-413`), so triage reads both sides
-     from the mirror.
+   - The wait records only the conflicting paths and the two shas
+     (`ProposedEscalated{ proposal: MergeConflict{ paths, baseSha, headSha } }`),
+     so triage reads both sides from the mirror.
    - It resolves the mechanical hunks, and asks one question for each hunk
      whose behaviour differs on the two sides; that question is carried by
      the hunk it is about. The page lists every hunk with its status and
@@ -438,7 +445,7 @@ which kind a wait was got inferred again in each place that needed it, from
    and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
-10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from the wait's `WaitReason` and those facts by §1's order, through one pure function, `triageStatus`, the same one the daemon starts triage by. Adding the columns is a rebuild:
+10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It keeps the head that attempt read beside the result, for §9's line. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from the wait's `WaitReason` and those facts by §1's order, through one pure function, `triageStatus`, the same one the daemon starts triage by. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
 11. **A wait is resolved by its own id, and an approval continues the run.**
