@@ -1,6 +1,8 @@
 import type { WaitId } from '@lingtai/domain'
 import { aWaitId } from '@lingtai/domain/test/events'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
@@ -29,6 +31,7 @@ import { EditBodyAndRequeue } from '../src/app/decide.tsx'
 type ControlProps = {
   children?: ReactNode
   disabled?: boolean
+  placeholder?: string
   onClick?: () => void
   onChange?: (event: { target: { value: string } }) => void
 }
@@ -56,7 +59,7 @@ it('can submit a new answer after a successful wait while the editor stays mount
   const next = aWaitId()
   const render = (waitId: WaitId | null) => {
     harness.cursor = 0
-    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId })
+    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: null })
   }
 
   control(render(first), 'textarea').props.onChange?.({ target: { value: 'First answer' } })
@@ -77,4 +80,66 @@ it('can submit a new answer after a successful wait while the editor stays mount
     waitId: next,
     text: 'Second answer',
   })
+})
+
+it.each([
+  [
+    'AgentQuestion',
+    { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'implement', question: 'which helper?' },
+    'which helper?',
+  ],
+  [
+    'ProposedEscalated{InputNeeded}',
+    {
+      _tag: 'ProposedEscalated',
+      run: { runId: 'pass-2' },
+      proposal: { _tag: 'InputNeeded', from: 'design', question: 'which design?' },
+      because: { _tag: 'NotAsked' },
+    },
+    'which design?',
+  ],
+] as const)(
+  '%s presents the step question and sends its answer with the page wait ID',
+  async (_name, reason, question) => {
+    harness.values = []
+    harness.submit.mockClear()
+    const waitId = aWaitId()
+    const render = () => {
+      harness.cursor = 0
+      return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: reason as WaitReason })
+    }
+
+    const html = renderToStaticMarkup(render())
+    expect(html).toContain(`<p>${question}</p>`)
+    expect(html).toContain('Your answer')
+    expect(html).toContain('>Answer</button>')
+    expect(control(render(), 'textarea').props.placeholder).toBe('every attempt at this ticket is told this')
+
+    control(render(), 'textarea').props.onChange?.({ target: { value: 'Use the first option' } })
+    control(render(), 'button').props.onClick?.()
+    await vi.waitFor(() =>
+      expect(harness.submit).toHaveBeenCalledWith({
+        project: 'lingtai',
+        issue: 112,
+        waitId,
+        text: 'Use the first option',
+      }),
+    )
+  },
+)
+
+it('keeps the body-writing label for FixerDisagrees', () => {
+  harness.values = []
+  harness.cursor = 0
+  const html = renderToStaticMarkup(
+    EditBodyAndRequeue({
+      project: 'lingtai',
+      issue: 112,
+      waitId: aWaitId(),
+      reason: { _tag: 'FixerDisagrees', run: { runId: 'pass-3' }, said: 'no change needed' },
+    }),
+  )
+  expect(html).toContain('Text to add to the ticket body')
+  expect(html).toContain('Write it into the body &amp; requeue')
+  expect(html).not.toContain('Your answer')
 })

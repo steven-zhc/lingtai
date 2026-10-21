@@ -154,7 +154,7 @@ export async function answer(options: {
     return {
       ok: false,
       ticketId,
-      detail: `${ticketId} is held by ${runId}, not asking before a run — lingtai approve or lingtai requeue`,
+      detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai requeue <project> --issue <n> --into-body <text> to answer its question`,
     }
   }
   if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {

@@ -1,4 +1,4 @@
-import { parsePayload, reduceTicket, ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
+import { parsePayload, reduceTicket, ticketStream, waitsOf, type Envelope, type WaitId } from '@lingtai/domain'
 /**
  * `writeSection` and `editBodyAndRequeue` (#422, 0118 §6): a wait's answer
  * goes into the ticket's body before the wait is resolved. Checked against
@@ -146,6 +146,7 @@ describe('editBodyAndRequeueHolding', () => {
     expect(result).toMatchObject({ ok: true, written: true })
     const events = await store.read(ticketId)
     expect(events.some((e) => e.type === 'WaitResolved')).toBe(true)
+    expect(waitsOf(events).at(-1)?.resolution).toEqual({ _tag: 'EditBodyAndRequeue' })
     expect(reduceTicket(events).lifecycle.status).toBe('backlog')
 
     const issue = await tickets.getIssue(ISSUE)

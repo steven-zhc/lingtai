@@ -14,6 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import type { WaitId } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
@@ -258,10 +259,12 @@ export function EditBodyAndRequeue({
   project,
   issue,
   waitId,
+  reason,
 }: {
   project: string
   issue: number
   waitId: WaitId | null
+  reason: WaitReason | null
 }) {
   const [text, setText] = useState('')
   const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
@@ -269,15 +272,23 @@ export function EditBodyAndRequeue({
   const [detail, setDetail] = useState<string | null>(null)
   const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
   const [, startTransition] = useTransition()
+  const question =
+    reason?._tag === 'AgentQuestion'
+      ? reason.question
+      : reason?._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded'
+        ? reason.proposal.question
+        : null
 
   if (waitId === null && text === '' && !pending && detail === null) return null
 
   return (
     <div className="decide">
+      {question !== null ? <p>{question}</p> : null}
       <label className="reason">
-        <span>Text to add to the ticket body</span>
+        <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
         <textarea
           value={text}
+          placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
           onChange={(event) => {
             setText(event.target.value)
             setDraftWaitId(waitId)
@@ -300,7 +311,7 @@ export function EditBodyAndRequeue({
           })
         }}
       >
-        {pending ? '…' : 'Write it into the body & requeue'}
+        {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & requeue'}
       </button>
       {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}
     </div>

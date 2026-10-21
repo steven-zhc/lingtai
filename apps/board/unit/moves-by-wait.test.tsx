@@ -119,14 +119,17 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const requeuing = !answering && allowed.includes('Requeue')
       const closing = allowed.includes('Close')
       const editingBody = allowed.includes('EditBodyAndRequeue')
+      const stepQuestion =
+        standing.reason?._tag === 'AgentQuestion' ||
+        (standing.reason?._tag === 'ProposedEscalated' && standing.reason.proposal._tag === 'InputNeeded')
 
       expect(buttons.includes('Approve')).toBe(approveBtn)
       expect(row.includes(SENTENCE)).toBe(approveSentence)
-      expect(buttons.includes('Answer')).toBe(answering)
+      expect(buttons.includes('Answer')).toBe(answering || stepQuestion)
       expect(buttons.includes('Withdraw')).toBe(answering)
       expect(buttons.includes('Back to the queue')).toBe(requeuing)
       expect(buttons.includes('Close')).toBe(closing)
-      expect(buttons.includes('Write it into the body &amp; requeue')).toBe(editingBody)
+      expect(buttons.includes('Write it into the body &amp; requeue')).toBe(editingBody && !stepQuestion)
       const expectedCount =
         (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (editingBody ? 1 : 0) + (closing ? 1 : 0)
       expect(buttons.length).toBe(expectedCount)
