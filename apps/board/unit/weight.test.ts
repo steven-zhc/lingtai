@@ -1,3 +1,4 @@
+import { aWaitId } from '@lingtai/domain/test/events'
 import type { SpendRow } from '@lingtai/projector'
 import type { TaskCard } from '@lingtai/projector/task-view'
 /**
@@ -48,6 +49,12 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     awaitingSha: null,
     awaitingApproval: false,
     waiting: false,
+    // A real wait when the caller asks for `state: 'waiting'` — `wait: null`
+    // there is the combination `toCard`/`waitOf` can never produce.
+    wait:
+      over.state === 'waiting'
+        ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
+        : null,
     needs: null,
     diagnosis: null,
     asked: false,

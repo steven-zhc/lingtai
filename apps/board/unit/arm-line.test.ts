@@ -46,6 +46,7 @@ function requeued(): TaskCard {
     awaitingSha: null,
     awaitingApproval: false,
     waiting: false,
+    wait: null,
     needs: null,
     diagnosis: null,
     asked: false,

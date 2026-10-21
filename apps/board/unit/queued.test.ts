@@ -41,6 +41,7 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     awaitingSha: null,
     awaitingApproval: false,
     waiting: false,
+    wait: null,
     needs: null,
     diagnosis: null,
     asked: false,

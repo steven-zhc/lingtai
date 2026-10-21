@@ -1,4 +1,5 @@
 import { LABEL_STATES } from '@lingtai/domain'
+import { aWaitId } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'
 /**
  * Every state a task can be in is on exactly one column.
@@ -44,6 +45,12 @@ function task(state: TaskCard['state']): TaskCard {
     awaitingSha: null,
     awaitingApproval: false,
     waiting: false,
+    // A real wait on the one state that has one — `state: 'waiting'` with
+    // `wait: null` is the combination `toCard`/`waitOf` can never produce.
+    wait:
+      state === 'waiting'
+        ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
+        : null,
     needs: null,
     diagnosis: null,
     asked: false,
