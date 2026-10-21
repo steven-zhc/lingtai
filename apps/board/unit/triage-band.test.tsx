@@ -46,7 +46,8 @@ describe('current wait triage band', () => {
       triageHeadLine('abcdef1234567890', mirror as MirrorHead) ?? undefined,
     )
     expect(html).toContain(warning)
-    expect(html.match(/<p>/g)).toHaveLength(1)
+    expect(html.match(/<p>/g)).toHaveLength(2)
+    expect(html).toContain('triage-band--failed')
     expect(html).toContain('triage failed: “&lt;failed&gt;”')
   })
 

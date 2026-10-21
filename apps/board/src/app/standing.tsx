@@ -81,9 +81,9 @@ export function TriageBand({
       const result = status.result
       if (result._tag === 'TriageFailed')
         return (
-          <section className="triage-band" data-rank="triage">
+          <section className="triage-band triage-band--failed" data-rank="triage">
             {headLine ? <p>{headLine}</p> : null}
-            triage failed: “{result.why}”
+            <p>triage failed: “{result.why}”</p>
           </section>
         )
       const cause = result.cause
@@ -152,7 +152,7 @@ export function TriageBand({
         </>
       )
       return (
-        <section className="triage-band" data-rank="triage">
+        <section className="triage-band triage-band--advised" data-rank="triage">
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
             triageReading
