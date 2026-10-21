@@ -29,7 +29,7 @@ import {
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type SpentFor, type Tier, WIP_COMMIT_PREFIX, legacyColumns, parsePayload } from '@lingtai/domain'
+import { type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type ReleaseCause,
@@ -3924,8 +3924,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * which lives on `RunSpent` alone and not on the wait (0110), and
        * `MergeRefused`'s `paths`/`baseSha`/`headSha` go with `IntegrationRefused`'s
        * own fields, which 0120 drops in favour of the merge action's own
-       * `Conflicted` result. `legacyColumns` turns the reason back into the
-       * `question`/`needs`/`diagnosis` every reader below still wants.
+       * `Conflicted` result. `waitWords` turns the reason back into the
+       * line/`needs`/`diagnosis` every reader below still wants.
        */
       const waitReasonFor = (): WaitReason => {
         // `outcomeOf` answers `blocked` for `WaitOnPerson` alone, and this is
@@ -4075,7 +4075,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
         const reason = waitReasonFor()
-        const said_ = legacyColumns(reason, { branch, base, findings })
+        const said_ = waitWords(reason, { branch, base, findings })
         /**
          * **Something judged this diff and said no** — the second half of when a
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
@@ -4136,9 +4136,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         const question =
           !held && judged && onOrigin !== null
-            ? `Merge ${branch} into ${base} anyway? ${said_.question}` +
+            ? `Merge ${branch} into ${base} anyway? ${said_.line}` +
               (whatRefused(stopped) === null ? '' : ` (\`${whatRefused(stopped)}\`)`)
-            : said_.question
+            : said_.line
         /**
          * **The offer needs its own `signoff`, now that `ApprovalRequested` is
          * gone (#502).** The comment above only covers `approve.ts`'s own

@@ -145,7 +145,7 @@ describe('cardFactOf', () => {
     ])
   })
 
-  it('answers WaitStarted with the card line legacyColumns composes', () => {
+  it('answers WaitStarted with the card line waitWords composes', () => {
     const item = makeStream('ticket-1')
     const waitId = aWaitId()
     const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }

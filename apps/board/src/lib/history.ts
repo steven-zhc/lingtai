@@ -28,7 +28,7 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
-import { boardFactOf, fromOf, legacyColumns, PASS_STREAM_PREFIX, routeNext } from '@lingtai/domain'
+import { boardFactOf, fromOf, PASS_STREAM_PREFIX, routeNext, waitWords } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
@@ -272,7 +272,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * `WaitOnPerson`): `candidate.next._tag === 'HandToPerson'`, an escalated
    * decision, or a reply a judge never gave one for. The `WaitStarted` row
    * right after this one carries the same `WaitReason` in full; this one
-   * only has to say which step asked and why, through `legacyColumns` —
+   * only has to say which step asked and why, through `waitWords` —
    * never `routedVisit`'s own `chose`/`ceiling` split, which is
    * `packages/conductor`'s own reading of the offer and not this package's
    * to duplicate.
@@ -290,13 +290,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     // its own — `branch` is `groupHistory`'s reading of that run's
     // `RunStarted`, the one event on the stream that has one. Most
     // `WaitReason`s never open on it at all (an agent's own question names
-    // no subject), so a missing branch is only a problem once
-    // `legacyColumns` actually reached for one — the one shape of sentence
-    // that does is `"${subjectOf} is waiting on you. …"`, and `subjectOf`
-    // reads as the empty string when `branch` is `''`. Falling back to the
-    // payload there, rather than rendering a sentence open on nothing, is
-    // rule 2.
-    const question = legacyColumns(next.reason, { branch: branch ?? '', base: '', findings: [] }).question
+    // no subject), so a missing branch is only a problem once `waitWords`
+    // actually reached for one — the one shape of sentence that does is
+    // `"${subjectOf} is waiting on you. …"`, and `subjectOf` reads as the
+    // empty string when `branch` is `''`. Falling back to the payload there,
+    // rather than rendering a sentence open on nothing, is rule 2.
+    const question = waitWords(next.reason, { branch: branch ?? '', base: '', findings: [] }).line
     if (branch === undefined && question.trimStart().startsWith('is waiting on you')) {
       throw new Error('PassRouted opens on a subject, but no branch was given')
     }
@@ -486,7 +485,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
    * were both the same shape of wait, and they are opposite kinds of thing.
    *
    * `boardFactOf` already tried to parse the wait and read it through
-   * `legacyColumns` (or, where that did not parse, read the v1/v2 fields
+   * `waitWords` (or, where that did not parse, read the v1/v2 fields
    * instead) — `question` is `undefined` only where neither had anything,
    * which this throws on, the same way `need` does, so `summarise` falls to
    * `describePayload`.
