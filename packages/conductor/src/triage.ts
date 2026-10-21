@@ -173,14 +173,33 @@ reason above. \`decision\` is what the router did with it.
 ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decision }, null, 2)}
 \`\`\``
 
-  const publishedLine =
-    evidence.published === null
-      ? 'No `RunRefsPublished` was recorded for this run. That is evidence and not proof: ' +
+  const publishedLine = (() => {
+    const p = evidence.published
+    if (p === null) {
+      return (
+        'No `RunRefsPublished` was recorded for this run. That is evidence and not proof: ' +
         'the publish may never have run, may have been refused, or may have run and lost its own record. ' +
         'Do not read its absence as *nothing was done*.'
-      : `branch \`${evidence.published.branch}\`, arm \`${evidence.published.arm}\`, ` +
-        `head ${evidence.published.headSha === null ? 'none' : `\`${evidence.published.headSha}\``}, ` +
-        `outcome \`${evidence.published.outcome}\`.`
+      )
+    }
+    const base =
+      `branch \`${p.branch}\`, arm \`${p.arm}\`, ` +
+      `head ${p.headSha === null ? 'none' : `\`${p.headSha}\``}, ` +
+      `outcome \`${p.outcome}\`.`
+    const carries =
+      p.outcome === 'arm-only'
+        ? "`branch` is a sibling claim's ref, not this run's — the arm above is what this run actually pushed."
+        : p.branchCarries === false
+          ? "`branch` does **not** carry `headSha`: that head is the arm's own only — " +
+            'an agent that committed nothing of its own, with only its WIP published.'
+          : '`branch` carries `headSha`.'
+    const armShaLine =
+      p.armSha != null && p.armSha !== p.headSha
+        ? ` The arm's own head is \`${p.armSha}\`, one commit ahead of \`branch\` — a kept WIP commit.`
+        : ''
+    const detailLine = p.detail === null ? '' : ` ${p.detail}`
+    return `${base} ${carries}${armShaLine}${detailLine}`
+  })()
 
   const diffLine = evidence.diffStat === null ? 'No diff stat could be read for this attempt.' : evidence.diffStat
 
@@ -284,6 +303,12 @@ export function parseTriage(text: string | null): TriageReply {
     const read = readOf(v)
     if (read.kind === 'read') return read
     if (read.kind === 'skip') continue
+
+    // A candidate that carries neither key is not an attempt at the answer
+    // shape — an echoed example, say — and the next candidate gets the
+    // chance, the same way `parseReply` moves on from an object with no
+    // `answer` string rather than adopting it.
+    if (!('cause' in v) && !('resolution' in v)) continue
 
     found = v
     break

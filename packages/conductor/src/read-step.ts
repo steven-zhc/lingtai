@@ -99,19 +99,3 @@ export function readOf(v: Record<string, unknown>): ReadCheck {
   // that said neither shape, and the caller tries the next candidate.
   return paths.length > 0 ? { kind: 'read', paths } : { kind: 'skip' }
 }
-
-/** A request for files, or null where nothing readable as one was said. */
-export function parseRead(text: string): { kind: 'read'; paths: string[] } | null {
-  for (const candidate of jsonCandidates(text)) {
-    let value: unknown
-    try {
-      value = JSON.parse(candidate.trim())
-    } catch {
-      continue
-    }
-    if (typeof value !== 'object' || value === null) continue
-    const check = readOf(value as Record<string, unknown>)
-    if (check.kind === 'read') return check
-  }
-  return null
-}

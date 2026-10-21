@@ -85,6 +85,53 @@ describe('triageBrief', () => {
     expect(brief).toContain('{"read":["main:packages/agent/src/claude-code.ts"]}')
   })
 
+  /**
+   * `#427`'s gap: a `branchCarries: false` row means `branch` holds only the
+   * WIP, with the agent's own commits never on it — the brief must say so
+   * rather than rendering the row as though `branch` carried `headSha`.
+   */
+  it('says branch does not carry headSha when branchCarries is false, rather than implying the work is on it', () => {
+    const brief = triageBrief({
+      evidence: {
+        ...EVIDENCE,
+        published: {
+          branch: 'agent/412',
+          arm: 'agent/412-attempt-1',
+          headSha: 'wip1234',
+          outcome: 'published',
+          branchCarries: false,
+          detail: null,
+        },
+      },
+      served: [],
+      roundsLeft: 4,
+    })
+
+    expect(brief).toContain('does **not** carry')
+    expect(brief).toContain('an agent that committed nothing of its own')
+  })
+
+  /** On `arm-only`, `branch` is a sibling claim's ref, never this run's own. */
+  it("says branch is a sibling claim's ref on an arm-only outcome", () => {
+    const brief = triageBrief({
+      evidence: {
+        ...EVIDENCE,
+        published: {
+          branch: 'agent/412',
+          arm: 'agent/412-attempt-1',
+          headSha: 'armsha1',
+          outcome: 'arm-only',
+          detail: "push-rejected: 'refs/heads/agent/412' fetch first",
+        },
+      },
+      served: [],
+      roundsLeft: 4,
+    })
+
+    expect(brief).toContain("sibling claim's ref")
+    expect(brief).toContain('fetch first')
+  })
+
   it('says so explicitly when nothing was published or no diff stat could be read, rather than a blank section', () => {
     const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
 
@@ -129,6 +176,24 @@ describe('parseTriage', () => {
     const reply = parseTriage(
       '```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```\n\n' +
         'If you want me to confirm, I can read:\n\n```json\n{"read":["main:a.ts"]}\n```',
+    )
+    expect(reply.kind).toBe('advised')
+    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.result.cause._tag).toBe('WrongApproach')
+    expect(reply.result.summary).toBe('s')
+  })
+
+  /**
+   * An echoed example from the brief — one of the six JSON shapes
+   * `triageBrief` quotes, carrying neither `cause` nor `resolution` — must not
+   * be adopted as the answer just because it is the first candidate that
+   * parses to an object. The real answer, in a later block, is what should be
+   * read; refusing the reply here would discard advice that is in the text.
+   */
+  it('skips an earlier candidate that carries neither cause nor resolution, and reads the real answer after it', () => {
+    const reply = parseTriage(
+      'Here is the hunk shape I used:\n```json\n{"_tag":"Mechanical","path":"a.ts","line":10}\n```\n' +
+        'My answer:\n```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```',
     )
     expect(reply.kind).toBe('advised')
     if (reply.kind !== 'advised') throw new Error('unreachable')
