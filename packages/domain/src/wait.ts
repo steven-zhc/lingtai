@@ -561,8 +561,9 @@ export type TriageResult = z.infer<typeof TriageResult>
 /**
  * Derived on read and never stored (0118 §1, §10): two of these six depend
  * on the recipe and the running daemon, which a fold never reads. Plain
- * TypeScript rather than zod, for `triage.ts:157-163`'s own reason: nothing
- * should ever parse a `TriageStatus` off the log.
+ * TypeScript rather than zod: a schema would let something parse a
+ * `TriageStatus` off the log, and nothing should — those two cases cannot be
+ * recovered from the log alone.
  */
 export type TriageStatus =
   | { _tag: 'NotNeeded' }
