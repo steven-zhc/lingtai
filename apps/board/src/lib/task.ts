@@ -1626,7 +1626,7 @@ export async function loadCurrentTriageStatus(
   const [cards, project, daemon] = await Promise.all([
     readTasks({ project: projectName }),
     loadProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
-    readStatus().catch(() => null),
+    readStatus(),
   ])
   const card = cards.find((row) => row.taskId === taskId)
   return currentTriageStatus(standing, card ?? null, {

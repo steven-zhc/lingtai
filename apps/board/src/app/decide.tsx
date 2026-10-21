@@ -91,8 +91,8 @@ export function Decide({
    */
   refusing: boolean
   /**
-   * What the diagnosis recommends, when it recommends anything. Amber stays on
-   * Approve unless the recommendation is to run it again.
+   * What this wait recommends, when it recommends anything. Approve wears amber
+   * only when it is recommended; an absent recommendation marks no control.
    */
   recommended?: Recommended
 }) {
