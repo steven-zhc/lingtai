@@ -684,13 +684,28 @@ export function Standing({
                     data-resolution={tag}
                     hidden={!visible}
                   >
-                    <div className="sresolutionhead">
-                      <h3>{copy.title}</h3>
-                      {triageRecommended === tag ? <span className="sresolutionbadge">Triage recommended</span> : null}
-                    </div>
-                    <p className="sresolutionconsequence">{consequence}</p>
+                    {visible ? (
+                      <>
+                        <div className="sresolutionhead">
+                          <h3>{copy.title}</h3>
+                          {triageRecommended === tag ? (
+                            <span className="sresolutionbadge">Triage recommended</span>
+                          ) : null}
+                        </div>
+                        <p className="sresolutionconsequence">{consequence}</p>
+                        {tag === 'AnswerQuestion' || tag === 'EditBodyAndRequeue' || tag === 'Close' ? (
+                          <p className="sresolutioninput">
+                            {tag === 'AnswerQuestion'
+                              ? 'An answer is required to continue; withdrawing needs no answer.'
+                              : tag === 'Close'
+                                ? 'A closing reason is required.'
+                                : 'Enter the text to add before this can run.'}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
                     <div className="sresolutionaction">
-                      {tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
+                      {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
                         <Decide
                           project={project}
                           issue={issue}
@@ -700,10 +715,10 @@ export function Standing({
                           recommended={recommended === 'Approve' ? 'approve' : null}
                         />
                       ) : null}
-                      {tag === 'Approve' && standing.awaitingSha === null ? (
+                      {visible && tag === 'Approve' && standing.awaitingSha === null ? (
                         <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
                       ) : null}
-                      {tag === 'AnswerQuestion' && waitId !== null ? (
+                      {visible && tag === 'AnswerQuestion' && waitId !== null ? (
                         <Requeue
                           project={project}
                           issue={issue}
@@ -713,10 +728,10 @@ export function Standing({
                           recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
                         />
                       ) : null}
-                      {tag === 'Requeue' && sendable !== null ? (
+                      {visible && tag === 'Requeue' && sendable !== null && waitId !== null ? (
                         <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
                       ) : null}
-                      {tag === 'Requeue' && sendable === null && waitId !== null ? (
+                      {visible && tag === 'Requeue' && sendable === null && waitId !== null ? (
                         <Requeue
                           project={project}
                           issue={issue}
@@ -734,8 +749,9 @@ export function Standing({
                           reason={standing.reason}
                         />
                       ) : null}
-                      {tag === 'Close' && waitId !== null ? (
+                      {visible && tag === 'Close' && waitId !== null ? (
                         <Close
+                          key={closePrefill ?? ''}
                           project={project}
                           issue={issue}
                           waitId={waitId}
@@ -831,38 +847,6 @@ export function Standing({
       </section>
     </TriagePicks>
   )
-}
-
-/**
- * The moves row, as a list of what to draw — and the one thing #442 asks for:
- * every entry comes off `allowed` (`allowedResolutions(standing.reason)`),
- * never off `awaitingSha`, `asked` or `state === 'blocked'`.
- *
- * `awaitingSha` and `sendable` still decide a control's *form*, not whether it
- * exists: `Approve` allowed with a sha to send is `'approve'`, allowed with
- * none is `'approve-unavailable'` (a sentence, never a button bound to a null
- * sha, #84); `Requeue` allowed and not answering is `'send'` where there is a
- * document to send and `'requeue'` where there is not. `AnswerQuestion`
- * allowed draws `'answer'` — `Requeue`'s own answer mode, Answer and the
- * Withdraw beside it — and when it is allowed `Requeue`'s plain mode adds
- * nothing more, so `'send'`/`'requeue'` and `'answer'` never both appear.
- * `EditBodyAndRequeue` draws its own text box on the page (#520).
- */
-export function movesOf(
-  allowed: readonly Resolution['_tag'][],
-  awaitingSha: string | null,
-  sendable: number | null,
-): Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> {
-  const moves: Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> = []
-  if (allowed.includes('Approve')) moves.push(awaitingSha !== null ? 'approve' : 'approve-unavailable')
-  if (allowed.includes('AnswerQuestion')) {
-    moves.push('answer')
-  } else if (allowed.includes('Requeue')) {
-    moves.push(sendable !== null ? 'send' : 'requeue')
-  }
-  if (allowed.includes('EditBodyAndRequeue')) moves.push('edit-body')
-  if (allowed.includes('Close')) moves.push('close')
-  return moves
 }
 
 /**

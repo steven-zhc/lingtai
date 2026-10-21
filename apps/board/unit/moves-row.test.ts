@@ -49,7 +49,7 @@ describe('a row of moves', () => {
     expect(row).toMatch(/align-items:\s*flex-start/)
   })
 
-  it("is ruled once: the task page's row is a .btnrow that adds only spacing", () => {
+  it("keeps the task page's action inside its card", () => {
     // `.smoves` re-declaring the layout is how the two drifted apart.
     for (const block of blocks('.smoves')) {
       expect(block).not.toMatch(/display|align-items|flex-wrap/)
@@ -57,7 +57,7 @@ describe('a row of moves', () => {
     // Waiting resolutions now live on the task page; the board keeps only
     // the queued card's Close, which has no growing reason form beside it.
     expect(read('../src/app/page.tsx')).not.toContain('<Decide')
-    expect(rowAround(read('../src/app/standing.tsx'))).toEqual(expect.arrayContaining(['btnrow', 'smoves']))
+    expect(rowAround(read('../src/app/standing.tsx'))).toEqual(['sresolutionaction'])
   })
 })
 
