@@ -40,6 +40,7 @@ const EVIDENCE: DiscussionEvidence = {
   attempt: 2,
   ticket: { ref: '89', title: 'the run does not stop at the turn limit', body: '…' },
   ticketProblem: null,
+  triage: null,
   log: ['1  2026-09-08 04:12:00  ticket-lingtai-89  TicketClaimed  conductor  {}'],
   reading: ['main: readable at abc1234'],
   refs: [{ ref: 'main', sha: 'abc1234', paths: ['packages/agent/src/claude-code.ts'], truncated: false }],

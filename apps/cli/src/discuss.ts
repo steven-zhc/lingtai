@@ -59,6 +59,7 @@ import {
   parseTicketStream,
   reduceControl,
   reduceTicket,
+  triageFactsOf,
   CONTROL_STREAM,
   type DiscussionRequest,
   type Envelope,
@@ -173,6 +174,8 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   const project = parsed?.project ?? ''
   const own = await eventStore.read(request.ticketId)
   const item = reduceTicket(own)
+  const triageResult = item.lifecycle.status === 'blocked' ? triageFactsOf(own, item.lifecycle.waitId).result : null
+  const triage = triageResult?._tag === 'TriageAdvised' ? triageResult : null
 
   const runIds = [...item.runs]
   const streams = await Promise.all(runIds.map((id) => eventStore.read(id)))
@@ -220,6 +223,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
     attempt: request.attempt,
     ticket,
     ticketProblem,
+    triage,
     log: logLines([...own, ...streams.flat()].sort(bySeq), LOG_LINES),
     // The sentence about a branch that is not there, computed here and recorded
     // on `DiscussionAsked` — never left to the assistant to remember.

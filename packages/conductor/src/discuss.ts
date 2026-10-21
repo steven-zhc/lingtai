@@ -67,6 +67,7 @@
  * caller's own in-memory receipt, not a second write of the same fact.
  */
 import { chatStream, parsePayload, type Envelope, type RuntimeId, type ToAppend, type Usage } from '@lingtai/domain'
+import type { TriageResult } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 
 import { editHash } from './attempts.ts'
@@ -135,6 +136,8 @@ export interface DiscussionEvidence {
   ticket: DiscussionTicket | null
   /** Why the ticket is absent, when it is. Never merely missing (#76). */
   ticketProblem: string | null
+  /** Advice for the current blocked wait, if its latest triage succeeded. */
+  triage: Extract<TriageResult, { _tag: 'TriageAdvised' }> | null
   /** The log, oldest first, one line per event. */
   log: readonly string[]
   /**
@@ -276,6 +279,36 @@ export function buildBrief(input: {
       ? `The ticket could not be read: ${evidence.ticketProblem ?? 'no reason recorded'}.`
       : `#${evidence.ticket.ref} — ${evidence.ticket.title}\n\n${evidence.ticket.body}`
 
+  const quote = (value: string): string =>
+    value
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n')
+  const triage = evidence.triage
+  const triageParts: string[] = []
+  if (triage !== null) {
+    triageParts.push(`Cause: ${triage.cause._tag}`, `Summary: ${triage.summary}`)
+    if (triage.cause._tag === 'UndecidedQuestion') {
+      for (const question of triage.cause.questions) {
+        triageParts.push(`Question: ${question.text}`)
+        triageParts.push(
+          `Recommended answer: ${question.answers.find((a) => a.id === question.recommended)?.text ?? ''}`,
+        )
+      }
+    } else if (triage.cause._tag === 'ConflictingHunks') {
+      for (const hunk of triage.cause.hunks) {
+        if (hunk._tag !== 'Divergent') continue
+        triageParts.push(`Question (${hunk.path}:${hunk.line ?? '?'}): ${hunk.question.text}`)
+        triageParts.push(
+          `Recommended answer: ${hunk.question.answers.find((a) => a.id === hunk.question.recommended)?.text ?? ''}`,
+        )
+      }
+    } else if (triage.cause._tag === 'FixableLines') {
+      for (const fix of triage.cause.fixes) triageParts.push(`Fix (${fix.path}:${fix.line ?? '?'}): ${fix.what}`)
+    }
+  }
+  const triageSection = triage === null ? '' : `\n\n## What triage found\n\n${quote(triageParts.join('\n'))}`
+
   const conversation =
     input.history.length === 0
       ? ''
@@ -304,7 +337,7 @@ ${evidence.ticketId}${evidence.attempt === null ? '' : ` · the question is abou
 
 ## The ticket
 
-${ticket}
+${ticket}${triageSection}
 
 ## The log, in order
 
