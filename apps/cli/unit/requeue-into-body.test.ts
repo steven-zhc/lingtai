@@ -26,7 +26,7 @@ async function blocked(store: EventStore, issue: number) {
 }
 
 const loadProject = async () => ({ owner: 'steven' }) as ProjectState
-const withProjector = async (_log: (line: string) => void, work: () => Promise<number>) => work()
+const withProjector = async <T>(_log: (line: string) => void, work: () => Promise<T>) => work()
 
 describe('requeue command', () => {
   it('--into-body writes the section and resolves EditBodyAndRequeue', async () => {

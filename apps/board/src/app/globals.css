@@ -641,7 +641,7 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .btn.held:hover:not(:disabled) { color: var(--held); border-color: var(--held); }
 
 .reason { display: grid; gap: 3px; font-size: 11px; color: var(--muted); }
-.reason input {
+.reason input, .reason textarea {
   font: 12px/1.4 var(--sans);
   padding: 4px 6px;
   border: 1px solid var(--rule-2);
@@ -654,6 +654,7 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   width: 38ch;
   max-width: 100%;
 }
+.reason textarea { min-height: 5rem; resize: vertical; }
 
 /* Not styled as an error: the work landed, and this says so. */
 .decided { margin: 0; font-size: 11px; color: var(--pass); font-family: var(--mono); }

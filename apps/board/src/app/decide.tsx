@@ -290,7 +290,7 @@ export function EditBodyAndRequeue({ project, issue, waitId }: { project: string
   return (
     <div className="decide">
       <label className="reason">
-        <span>Write it into the body &amp; requeue</span>
+        <span>Text to add to the ticket body</span>
         <textarea value={text} onChange={(event) => setText(event.target.value)} />
       </label>
       <button
