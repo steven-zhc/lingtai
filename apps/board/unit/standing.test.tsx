@@ -1261,15 +1261,20 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
       outgoing: OUTGOING,
       queued: null,
     })
-    const find = (node: ReactNode, path: string): { path: string; key: string | null; waitId: unknown } | null => {
+    const find = (
+      node: ReactNode,
+      path: string,
+      hidden = false,
+    ): { path: string; waitId: unknown; hidden: boolean } | null => {
       let found: ReturnType<typeof find> = null
       Children.forEach(node, (child, index) => {
         if (found !== null || !isValidElement(child)) return
-        const here = `${path}/${index}`
+        const here = `${path}/${child.key ?? index}`
+        const isHidden = hidden || (child.props as { hidden?: boolean }).hidden === true
         if (child.type === EditBodyAndRequeue) {
-          found = { path: here, key: child.key, waitId: (child.props as { waitId: unknown }).waitId }
+          found = { path: here, waitId: (child.props as { waitId: unknown }).waitId, hidden: isHidden }
         } else {
-          found = find((child.props as { children?: ReactNode }).children, here)
+          found = find((child.props as { children?: ReactNode }).children, here, isHidden)
         }
       })
       return found
@@ -1281,8 +1286,9 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
   const moved = editorOn({ ...HELD, state: 'queued', onYou: false, reason: null, waitId: null })
   expect(offered?.waitId).toBe(HELD.waitId)
   expect(moved?.waitId).toBeNull()
-  expect(offered?.path).toContain('/3/2/')
-  expect(moved?.path).toContain('/3/2/')
+  expect(moved?.path).toBe(offered?.path)
+  expect(offered?.hidden).toBe(false)
+  expect(moved?.hidden).toBe(false)
 })
 
 it('ignores triage facts for a wait that is no longer current', () => {

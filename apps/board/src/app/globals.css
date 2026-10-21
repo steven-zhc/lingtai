@@ -1200,6 +1200,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   overflow-wrap: anywhere;
 }
 .sresolution[hidden] { display: none; }
+.sresolution[data-resolution='EditBodyAndRequeue']:has(.sresolutionaction:empty) { display: none; }
 .sresolution--recommended { grid-column: span 2; border: 2px solid var(--accent); }
 .sresolutionhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
 .sresolutionhead h3 { margin: 0; font-size: 1.05rem; line-height: 1.35; }

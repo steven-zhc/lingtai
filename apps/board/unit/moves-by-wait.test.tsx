@@ -77,7 +77,14 @@ const render = (fx: WaitFixture, outgoing: OutgoingView | null) =>
 /** Just the row of moves. */
 const movesOf = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
 const cardsOf = (html: string) =>
-  [...html.matchAll(/<article[^>]*data-resolution="([^"]+)"(?![^>]*hidden)[^>]*>/g)].map((match) => match[1])
+  [...html.matchAll(/<article([^>]*)>(.*?)<\/article>/gs)]
+    .map((match) => ({ attrs: match[1] ?? '', body: match[2] ?? '' }))
+    .filter(
+      ({ attrs, body }) =>
+        !attrs.includes('hidden=""') &&
+        !(attrs.includes('data-resolution="EditBodyAndRequeue"') && body.includes('class="sresolutionaction"></div>')),
+    )
+    .map(({ attrs }) => attrs.match(/data-resolution="([^"]+)"/)?.[1])
 
 /** Every `<button>`'s own text, in document order. */
 const buttonsOf = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')

@@ -682,7 +682,7 @@ export function Standing({
                     key={tag}
                     className={`sresolution${triageRecommended === tag ? ' sresolution--recommended' : ''}`}
                     data-resolution={tag}
-                    hidden={!visible}
+                    hidden={!visible && tag !== 'EditBodyAndRequeue'}
                   >
                     {visible ? (
                       <>
