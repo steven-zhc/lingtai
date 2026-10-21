@@ -80,6 +80,26 @@ export function jsonCandidates(text: string): string[] {
   return out
 }
 
+/** What `v['read']` alone says, decided from one already-parsed candidate. */
+export type ReadCheck = { kind: 'read'; paths: string[] } | { kind: 'skip' } | { kind: 'none' }
+
+/**
+ * `v['read']` alone, so a caller trying the read shape and another shape
+ * against the *same* candidate — `parseReply`'s read-then-answer order,
+ * candidate by candidate — can ask the question one candidate at a time
+ * rather than across every candidate at once.
+ */
+export function readOf(v: Record<string, unknown>): ReadCheck {
+  if (!Array.isArray(v['read'])) return { kind: 'none' }
+  const paths = v['read']
+    .map((p) => String(p))
+    .filter((p) => p.includes(':'))
+    .slice(0, READS_PER_TURN)
+  // An empty or unusable `read` is not a request for nothing — it is a turn
+  // that said neither shape, and the caller tries the next candidate.
+  return paths.length > 0 ? { kind: 'read', paths } : { kind: 'skip' }
+}
+
 /** A request for files, or null where nothing readable as one was said. */
 export function parseRead(text: string): { kind: 'read'; paths: string[] } | null {
   for (const candidate of jsonCandidates(text)) {
@@ -90,17 +110,8 @@ export function parseRead(text: string): { kind: 'read'; paths: string[] } | nul
       continue
     }
     if (typeof value !== 'object' || value === null) continue
-    const v = value as Record<string, unknown>
-
-    if (Array.isArray(v['read'])) {
-      const paths = v['read']
-        .map((p) => String(p))
-        .filter((p) => p.includes(':'))
-        .slice(0, READS_PER_TURN)
-      // An empty or unusable `read` is not a request for nothing — it is a turn
-      // that said neither shape, and the caller tries the next candidate.
-      if (paths.length > 0) return { kind: 'read', paths }
-    }
+    const check = readOf(value as Record<string, unknown>)
+    if (check.kind === 'read') return check
   }
   return null
 }

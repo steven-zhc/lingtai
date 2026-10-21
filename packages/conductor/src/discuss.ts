@@ -73,9 +73,9 @@ import { editHash } from './attempts.ts'
 import {
   jsonCandidates,
   MAX_READ_ROUNDS,
-  parseRead,
   READ_CONTRACT,
   READS_PER_TURN,
+  readOf,
   renderIndex,
   renderServed,
   type ReadableRef,
@@ -355,9 +355,6 @@ export type Reply =
 export function parseReply(text: string | null): Reply {
   if (text === null || text.trim() === '') return { kind: 'unreadable', text: '' }
 
-  const read = parseRead(text)
-  if (read !== null) return read
-
   for (const candidate of jsonCandidates(text)) {
     let value: unknown
     try {
@@ -367,6 +364,13 @@ export function parseReply(text: string | null): Reply {
     }
     if (typeof value !== 'object' || value === null) continue
     const v = value as Record<string, unknown>
+
+    // Read before answer, but per candidate rather than across all of them —
+    // a later candidate's `{"read":[...]}` must not outrank an earlier
+    // candidate that already answered.
+    const read = readOf(v)
+    if (read.kind === 'read') return read
+    if (read.kind === 'skip') continue
 
     if (typeof v['answer'] === 'string') {
       const proposal = v['proposal']

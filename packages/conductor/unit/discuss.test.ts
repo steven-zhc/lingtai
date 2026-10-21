@@ -151,6 +151,21 @@ describe('the reply', () => {
   })
 
   /**
+   * The first candidate that parses decides between read and answer — not
+   * whichever candidate anywhere in the text happens to carry a `read`
+   * array. Round 4's `runDiscussion` (`discuss.ts:557,573-582`) takes the
+   * `read`-after-`MAX_READ_ROUNDS` branch on a `read` kind, discarding an
+   * answer already in hand, if this precedence slips.
+   */
+  it('reads the earlier candidate as an answer, even when a later one asks to read', () => {
+    const reply = parseReply(
+      '```json\n{"answer":"the flag is not passed","cannot":[]}\n```\n\n' +
+        'If you want me to confirm:\n\n```json\n{"read":["main:a.ts"]}\n```',
+    )
+    expect(reply).toEqual({ kind: 'answer', text: 'the flag is not passed', cannot: [], proposal: null })
+  })
+
+  /**
    * The prose is kept and marked, never promoted. Treating a half-finished
    * thought as the answer is how a refusal gets presented as a conclusion.
    */

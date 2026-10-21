@@ -5,7 +5,7 @@
  * checks the conductor never reaches for a driver.
  */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -88,6 +88,23 @@ describe('triageBrief', () => {
 
     expect(brief).toContain('evidence and not proof')
     expect(brief).toContain('No diff stat could be read')
+  })
+
+  /**
+   * The bounds `parseTriage` enforces through `TriageResult.safeParse`, so an
+   * answer written exactly to the brief does not come back refused: the
+   * strict key set, the >20-hunk rule, and the character bound on `summary`
+   * and `want`.
+   */
+  it('states the strict key set, the character bound, and the >20-hunk rule', () => {
+    const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
+
+    expect(brief).toContain('cause`, `resolution`, `summary`, `want`')
+    expect(brief).toMatch(/and no\s+others/)
+    expect(brief).toContain('"confidence"')
+    expect(brief).toContain(`at most ${TRIAGE_SENTENCE_MAX} characters`)
+    expect(brief).toMatch(/Past that bound, send\s+`"hunks": \[\]` with `total`/)
+    expect(brief).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
 })
 
@@ -307,9 +324,31 @@ describe('the fence: triage.ts and read-step.ts stay pure', () => {
   /** Ignores the prose, the same way `one-store.test.ts` does. */
   const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-  it('imports nothing from @lingtai/agent or @lingtai/repo', () => {
-    for (const file of ['triage.ts', 'read-step.ts']) {
-      const text = code(readFileSync(join(SRC, file), 'utf8'))
+  /**
+   * Every local file the two starting files reach, walking their own
+   * `from './x.ts'` imports recursively — the actual transitivity. Naming two
+   * files and checking only those two would miss a third file either of them
+   * comes to import later; this follows however many hops that import chain
+   * grows to.
+   */
+  function localClosure(startFiles: readonly string[]): Set<string> {
+    const seen = new Set<string>()
+    const queue = startFiles.map((f) => join(SRC, f))
+    while (queue.length > 0) {
+      const abs = queue.shift()!
+      if (seen.has(abs)) continue
+      seen.add(abs)
+      const text = code(readFileSync(abs, 'utf8'))
+      for (const m of text.matchAll(/from ['"](\.[^'"]+)['"]/g)) {
+        queue.push(resolve(dirname(abs), m[1]!))
+      }
+    }
+    return seen
+  }
+
+  it('imports nothing from @lingtai/agent or @lingtai/repo, transitively through every local import it reaches', () => {
+    for (const abs of localClosure(['triage.ts', 'read-step.ts'])) {
+      const text = code(readFileSync(abs, 'utf8'))
       expect(text).not.toMatch(/from ['"]@lingtai\/agent/)
       expect(text).not.toMatch(/from ['"]@lingtai\/repo/)
     }

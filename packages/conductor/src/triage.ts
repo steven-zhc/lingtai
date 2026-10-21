@@ -24,7 +24,14 @@
  * twelve `WaitReason` tags to pull out the one field that misled last time —
  * the next field to mislead would not be on that list.
  */
-import { TRIAGE_TEXT_MAX, type PayloadOf } from '@lingtai/domain'
+import {
+  MERGE_HUNKS_ONE_BY_ONE,
+  TRIAGE_FIXES_MAX,
+  TRIAGE_QUESTIONS_MAX,
+  TRIAGE_SENTENCE_MAX,
+  TRIAGE_TEXT_MAX,
+  type PayloadOf,
+} from '@lingtai/domain'
 import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 
 import {
@@ -68,13 +75,25 @@ const ANSWER_SHAPE = `{"cause": {"_tag": "UndecidedQuestion", "questions": [...]
  "summary": "one sentence for the card",
  "want": "one sentence of what the ticket wants, or null"}
 
+Exactly these four keys — \`cause\`, \`resolution\`, \`summary\`, \`want\` — and no
+others. An extra key, for example \`"confidence"\`, is refused by name rather
+than ignored.
+
+\`summary\` and \`want\` are each at most ${TRIAGE_SENTENCE_MAX} characters — one
+sentence, not a paragraph.
+
 \`cause\` is exactly one of these six (0118 §4), and its parts belong to it —
 never repeated beside it:
 
-- \`UndecidedQuestion\` — *a decision for you*: \`questions\`, only a person can answer them
-- \`FixableLines\` — *lines to fix*: \`fixes\`, specific edits; the approach is sound
+- \`UndecidedQuestion\` — *a decision for you*: \`questions\`, only a person can answer them, at most ${TRIAGE_QUESTIONS_MAX}
+- \`FixableLines\` — *lines to fix*: \`fixes\`, specific edits, at most ${TRIAGE_FIXES_MAX}; the approach is sound
 - \`WrongApproach\` — *the approach is wrong*: patching will not converge
-- \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict
+- \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict. List
+  every hunk in \`hunks\` when \`total\` is at most ${MERGE_HUNKS_ONE_BY_ONE} — one
+  entry per hunk, and \`hunks.length\` must equal \`total\`. Past that bound, send
+  \`"hunks": []\` with \`total\` the real count; listing more than
+  ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that does not match \`total\` at or
+  below it, is refused.
 - \`TicketTooBig\` — *try it again, narrower*: the run did not finish
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
