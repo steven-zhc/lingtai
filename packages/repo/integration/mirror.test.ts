@@ -16,7 +16,7 @@ import { promisify } from 'node:util'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { diffStatAt, mirrorPathFor } from '../src/index.ts'
+import { conflictedPathsAt, diffStatAt, mirrorPathFor } from '../src/index.ts'
 
 const exec = promisify(execFile)
 const g = (args: string[], cwd: string) =>
@@ -51,6 +51,7 @@ beforeAll(async () => {
 
   // The merge base: one commit, pushed as `main`.
   await writeFile(join(work, 'README.md'), 'hello\n')
+  await writeFile(join(work, 'leading.txt'), '\n\nbase\n')
   await g(['add', '-A'], work)
   await g(['commit', '-qm', 'first'], work)
   await g(['push', '-q', 'origin', 'main'], work)
@@ -93,5 +94,56 @@ describe('diffStatAt', () => {
     const stat = await diffStatAt({ project: PROJECT, home, base: baseSha, head: '0'.repeat(40) })
 
     expect(stat).toBeNull()
+  })
+})
+
+describe('conflictedPathsAt', () => {
+  it('reads real merge-tree stages and counts markers, including add/add without stage 1', async () => {
+    const work = join(root, 'work')
+    const lines = (word: string) =>
+      `${word}\n${Array.from({ length: 12 }, (_, i) => `same ${i}`).join('\n')}\n${word} again\n`
+    await g(['checkout', '-q', '-b', 'conflict-base', baseSha], work)
+    await writeFile(join(work, 'README.md'), lines('ours'))
+    await writeFile(join(work, 'leading.txt'), '\n\nours\n')
+    await writeFile(join(work, 'both.txt'), 'ours only\n')
+    await g(['add', '-A'], work)
+    await g(['commit', '-qm', 'ours'], work)
+    await g(['push', '-q', 'origin', 'conflict-base'], work)
+    const ours = (await g(['rev-parse', 'HEAD'], work)).stdout.trim()
+
+    await g(['checkout', '-q', '-b', 'conflict-head', baseSha], work)
+    await writeFile(join(work, 'README.md'), lines('theirs'))
+    await writeFile(join(work, 'leading.txt'), '\n\ntheirs\n')
+    await writeFile(join(work, 'both.txt'), 'theirs only\n')
+    await g(['add', '-A'], work)
+    await g(['commit', '-qm', 'theirs'], work)
+    await g(['push', '-q', 'origin', 'conflict-head'], work)
+    const theirs = (await g(['rev-parse', 'HEAD'], work)).stdout.trim()
+
+    const paths = await conflictedPathsAt({ project: PROJECT, home, baseSha: ours, headSha: theirs })
+    expect(paths.map((path) => path.path).sort()).toEqual(['README.md', 'both.txt', 'leading.txt'])
+    const readme = paths.find((path) => path.path === 'README.md')!
+    expect(readme.hunks).toBe(2)
+    expect(readme.hunkLines).toHaveLength(2)
+    expect(readme.hunkLines[0]).toBe(1)
+    expect(readme.hunkLines[1]).toBeGreaterThan(readme.hunkLines[0]!)
+    expect(readme.baseOid).toBe((await g(['rev-parse', `${baseSha}:README.md`], work)).stdout.trim())
+    expect(readme.oursOid).toBe((await g(['rev-parse', `${ours}:README.md`], work)).stdout.trim())
+    expect(readme.theirsOid).toBe((await g(['rev-parse', `${theirs}:README.md`], work)).stdout.trim())
+    expect(readme.base).toContain('hello')
+    expect(readme.ours).toContain('ours')
+    expect(readme.theirs).toContain('theirs')
+    const added = paths.find((path) => path.path === 'both.txt')!
+    expect(added.baseOid).toBeNull()
+    expect(added.base).toBeNull()
+    expect(added.ours).toBe('ours only\n')
+    expect(added.theirs).toBe('theirs only\n')
+    expect(added.hunks).toBe(1)
+    expect(added.hunkLines).toEqual([1])
+    const leading = paths.find((path) => path.path === 'leading.txt')!
+    expect(leading.hunkLines).toEqual([3])
+    expect(leading.base).toBe('\n\nbase\n')
+    expect(leading.ours).toBe('\n\nours\n')
+    expect(leading.theirs).toBe('\n\ntheirs\n')
   })
 })

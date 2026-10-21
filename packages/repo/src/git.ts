@@ -25,6 +25,8 @@ export type TokenSource = string | (() => Promise<string>)
 
 export interface GitRunOptions {
   cwd?: string
+  /** Preserve leading and trailing whitespace for blob content and line positions. */
+  trimOutput?: boolean
   /**
    * An installation token, passed through `GIT_CONFIG_*` environment variables
    * rather than on the command line or in `.git/config`.
@@ -53,7 +55,7 @@ export async function git(args: string[], options: GitRunOptions = {}): Promise<
   env['GIT_TERMINAL_PROMPT'] = '0'
 
   const { stdout } = await exec('git', args, { cwd: options.cwd, env, maxBuffer: 32 * 1024 * 1024 })
-  return stdout.trim()
+  return options.trimOutput === false ? stdout : stdout.trim()
 }
 
 /**
