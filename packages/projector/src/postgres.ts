@@ -106,10 +106,8 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     lastAttemptAt: row.last_attempt_at,
     restarts: row.restarts ?? 0,
     restartsOf: row.restarts_of ?? 0,
-    // Through `columnOf`: a row from a
-    // table that predates these two columns has neither key at all, and
-    // reading them off the row directly would read as a wait with no
-    // reason rather than as the drift it is.
+    // `waitOf` reads both columns through `columnOf`, so a stale table
+    // reports shape drift instead of drawing a card without its wait.
     wait,
     triage:
       wait === null

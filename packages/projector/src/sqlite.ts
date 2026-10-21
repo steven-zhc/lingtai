@@ -303,13 +303,8 @@ function toCard(row: ProjectionRow): TaskCard {
     lastAttemptAt: parseAt(row.last_attempt_at),
     restarts: Number(row.restarts ?? 0),
     restartsOf: Number(row.restarts_of ?? 0),
-    // Through `columnOf`, for `postgres.ts`'s reason: a row from a table
-    // created before the rename has no `waiting` key, and reading it off the
-    // row directly would count that drift as a card with nothing to answer.
-    // Through `columnOf`: a row from a
-    // table that predates these two columns has neither key at all, and
-    // reading them off the row directly would read as a wait with no
-    // reason rather than as the drift it is.
+    // `waitOf` reads both columns through `columnOf`, so a stale table
+    // reports shape drift instead of drawing a card without its wait.
     wait,
     triage:
       wait === null

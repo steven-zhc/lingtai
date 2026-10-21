@@ -605,7 +605,7 @@ export const taskViewProjection: Projection = {
                   // (`ticket.ts`), so a row left `waiting` here would
                   // disagree with it: the home board would keep rendering
                   // Decide/Requeue over a question that is answered, and
-                  // `page.tsx`'s own `card.waiting` is what decides that.
+                  // `page.tsx` reads the current wait to decide that.
                   //
                   // `state: 'approved'`, not `'running'` and not `'queued'`
                   // (#510). `selectRunnable` reads `state === 'queued'` as

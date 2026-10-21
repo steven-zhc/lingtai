@@ -29,8 +29,7 @@ import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.t
  * default `waitWords`' own `pass` argument carries.
  *
  * Exported for `attempts.ts` (`@lingtai/conductor`), the one other reader
- * that needs a `WaitStarted`'s branch rather than the card fact `cardFactOf`
- * already carries it in (#443).
+ * that needs a `WaitStarted`'s branch (#443).
  */
 export function waitBranchOf(event: Envelope): string {
   const parsed = parseTicketStream(event.streamId)

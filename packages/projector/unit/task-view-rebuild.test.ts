@@ -5,9 +5,9 @@
  *
  * **Generated from today's code, and never regenerated after the `src`
  * change.** The snapshot this file commits alongside it was captured against
- * `task-view.ts` before #480's rewrite; `vitest -u` after the rewrite would
- * turn this file into a tautology rather than a pin. If this test goes red,
- * the fold changed — fix `task-view.ts`/`read-model.ts`, never the snapshot.
+ * `task-view.ts` before #480's rewrite. #522 removed only the four redundant
+ * columns from it. If this test goes red, the fold changed — inspect the
+ * changed values rather than regenerating the pin.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
  * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
