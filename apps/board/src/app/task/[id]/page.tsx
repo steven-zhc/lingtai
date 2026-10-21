@@ -66,7 +66,7 @@ export function UnpushedBanner({
   const kept = unpushed.keptAt
   const command =
     kept?._tag === 'Mirror' && mirror?.sha === kept.sha
-      ? `git -C ${shellArg(mirror.path)} push origin ${shellArg(`+${kept.ref}:refs/heads/${kept.arm}`)}`
+      ? `git -C ${shellArg(mirror.path)} push origin ${shellArg(`+${kept.ref}:${kept.arm}`)}`
       : null
 
   return (

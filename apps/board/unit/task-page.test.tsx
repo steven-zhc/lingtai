@@ -185,7 +185,7 @@ const page = (t: TaskDetail) => renderToStaticMarkup(<TaskBody task={t} />)
 
 describe('unpushed work', () => {
   const ref = `refs/lingtai/unpushed/147/${RUN}`
-  const arm = 'agent/147-arm-1'
+  const arm = 'refs/heads/agent/147-arm-1'
   const unpushed = {
     branch: 'agent/147',
     said: 'remote rejected the push',
@@ -200,9 +200,7 @@ describe('unpushed work', () => {
   it('shows the local mirror rescue command and the credentials it uses', () => {
     const html = banner(unpushed, mirror)
     expect(html).toContain('remote rejected the push')
-    expect(html).toContain(
-      `git -C &#x27;/tmp/local mirror/lingtai.git&#x27; push origin &#x27;+${ref}:refs/heads/${arm}&#x27;`,
-    )
+    expect(html).toContain(`git -C &#x27;/tmp/local mirror/lingtai.git&#x27; push origin &#x27;+${ref}:${arm}&#x27;`)
     expect(html).toContain('your own git credentials')
   })
 
