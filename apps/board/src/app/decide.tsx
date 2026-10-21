@@ -32,7 +32,7 @@ import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } 
  * (#150). What a person agreeing with a refusal wants is a new run, so it reads
  * as `requeue` — see `primaryMove`.
  */
-export type Recommended = 'approve' | 'reject' | 'requeue' | null
+export type Recommended = 'approve' | 'reject' | 'requeue' | 'answer' | null
 
 /**
  * Which of the two moves wears the amber. Amber appears once per screen.
@@ -40,8 +40,9 @@ export type Recommended = 'approve' | 'reject' | 'requeue' | null
  * Not exported: this is a client module, and a server component calling a
  * function from one gets a reference rather than the function.
  */
-function primaryMove(recommended: Recommended | undefined): 'approve' | 'requeue' {
-  return recommended === 'reject' || recommended === 'requeue' ? 'requeue' : 'approve'
+function primaryMove(recommended: Recommended | undefined): 'approve' | 'requeue' | 'answer' | null {
+  if (recommended === 'reject' || recommended === 'requeue') return 'requeue'
+  return recommended ?? null
 }
 
 /**
@@ -90,8 +91,8 @@ export function Decide({
    */
   refusing: boolean
   /**
-   * What the diagnosis recommends, when it recommends anything. Amber stays on
-   * Approve unless the recommendation is to run it again.
+   * What this wait recommends, when it recommends anything. Approve wears amber
+   * only when it is recommended; an absent recommendation marks no control.
    */
   recommended?: Recommended
 }) {
@@ -325,7 +326,7 @@ export function Requeue({
       <div className="decide">
         <div className="btnrow">
           <button
-            className={asked || primaryMove(recommended) === 'requeue' ? 'btn pri' : 'btn'}
+            className={primaryMove(recommended) === (asked ? 'answer' : 'requeue') ? 'btn pri' : 'btn'}
             onClick={() => setAsking('primary')}
           >
             {asked ? 'Answer' : 'Back to the queue'}
@@ -407,10 +408,7 @@ export function Requeue({
  * months from now gets, so an empty box refuses rather than defaulting — a
  * close with no why is indistinguishable from a misclick.
  *
- * **Never amber.** Brass on this board means a person is being waited on, and
- * closing is a person deciding, not being asked. A diagnosis never recommends
- * it either: an agent may report that work is impossible, and *the ticket is
- * over* is still not its call to make.
+ * Triage may recommend closing; the person still confirms the reason.
  *
  * **Offered on a queued card too, not only a blocked one.** The state this was
  * written for is the item nothing is asking about — five sat in Queued that
@@ -423,6 +421,7 @@ export function Close({
   issue,
   waitId,
   prefill,
+  primary = false,
 }: {
   project: string
   issue: number
@@ -436,6 +435,7 @@ export function Close({
   waitId: WaitId | null
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
+  primary?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -450,7 +450,7 @@ export function Close({
     return (
       <div className="decide">
         <div className="btnrow">
-          <button className="btn" onClick={() => setAsking(true)}>
+          <button className={primary ? 'btn pri' : 'btn'} onClick={() => setAsking(true)}>
             Close
           </button>
         </div>

@@ -370,6 +370,7 @@ describe('what will happen', () => {
 
 const NEVER_RUN: StandingView = {
   state: 'queued',
+  triageStatus: null,
   since: null,
   onYou: false,
   who: 'waiting for a conductor to take it',

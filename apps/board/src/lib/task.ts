@@ -1,5 +1,6 @@
 import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   applyTicket,
@@ -17,7 +18,7 @@ import {
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
-import { triageStatus, type WaitReason } from '@lingtai/domain/wait'
+import { triageStatus, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
 /**
  * One task, folded from its streams on demand.
  *
@@ -61,6 +62,7 @@ import { eventStore } from '@lingtai/event-store'
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
+import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
@@ -376,6 +378,8 @@ export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'close
  */
 export interface StandingView {
   state: StandingState
+  /** Derived for this wait alone, after matching the projection row. */
+  triageStatus: TriageStatus | null
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -733,6 +737,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
+    triageStatus: null,
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
@@ -1601,6 +1606,35 @@ export function currentWaitWant(own: readonly Envelope[], standing: StandingView
   return status._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
 }
 
+/** A projected triage belongs on the page only while it names the folded current wait. */
+export function currentTriageStatus(
+  standing: StandingView,
+  card: Pick<TaskCard, 'wait' | 'triage'> | null,
+  context: { declared: boolean; daemonStartedAt: Date | null },
+): TriageStatus | null {
+  if (standing.state !== 'blocked' || standing.waitId === null || standing.reason === null) return null
+  if (card?.wait?.waitId !== standing.waitId) return null
+  return triageStatus(standing.reason, card.triage, context)
+}
+
+/** Read the inputs for this wait; a failed read must reach the page as an error. */
+export async function loadCurrentTriageStatus(
+  taskId: string,
+  projectName: string,
+  standing: StandingView,
+): Promise<TriageStatus | null> {
+  const [cards, project, daemon] = await Promise.all([
+    readTasks({ project: projectName }),
+    loadProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
+    readStatus(),
+  ])
+  const card = cards.find((row) => row.taskId === taskId)
+  return currentTriageStatus(standing, card ?? null, {
+    declared: project?.recipe.triage !== undefined,
+    daemonStartedAt: daemon?.startedAt ?? null,
+  })
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await eventStore.read(taskId)
 
@@ -1642,8 +1676,18 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))))
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
-  const standing = standingOf(own, folded)
-  const want = currentWaitWant(own, standing)
+  const foldedStanding = standingOf(own, folded)
+  let status: TriageStatus | null = null
+  if (
+    foldedStanding.state === 'blocked' &&
+    foldedStanding.waitId !== null &&
+    foldedStanding.reason !== null &&
+    ticket !== null
+  ) {
+    status = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
+  }
+  const standing = { ...foldedStanding, triageStatus: status }
+  const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
   // and a page that waited for the sum would pay for both round trips end to

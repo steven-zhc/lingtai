@@ -1,8 +1,9 @@
 import { inWords } from '@lingtai/conductor/queue'
+import { MERGE_HUNKS_ONE_BY_ONE } from '@lingtai/domain'
 // The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
 // off (#483) — so the page and the server action can never disagree about
 // which resolutions a wait allows.
-import { allowedResolutions, type Resolution } from '@lingtai/domain/wait'
+import { allowedResolutions, recommendedResolution, type Resolution, type TriageStatus } from '@lingtai/domain/wait'
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
 // reads, so this block, the card and `lingtai status` say the same thing about
@@ -24,6 +25,78 @@ import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 
 const TICKET_OPENING_LINES = 8
+
+/** Agent-written fields stay React text; there is no markdown path in this band. */
+export function TriageBand({ status }: { status: TriageStatus }) {
+  switch (status._tag) {
+    case 'NotNeeded':
+    case 'NotDeclared':
+      return null
+    case 'Queued':
+      return <section className="triage-band">triage is waiting to run</section>
+    case 'Running':
+      return <section className="triage-band">triage is running</section>
+    case 'Interrupted':
+      return (
+        <section className="triage-band">
+          the daemon stopped during triage; it will be tried again on the next start
+        </section>
+      )
+    case 'Done': {
+      const result = status.result
+      if (result._tag === 'TriageFailed')
+        return <section className="triage-band">triage failed: “{result.why}”</section>
+      const cause = result.cause
+      let parts: React.ReactNode = null
+      switch (cause._tag) {
+        case 'UndecidedQuestion':
+          parts = cause.questions.map((question) => (
+            <div key={question.id}>
+              <p>{question.text}</p>
+              <ul>
+                {question.answers.map((answer) => (
+                  <li key={answer.id}>
+                    {answer.text}
+                    {answer.id === question.recommended ? ' (recommended)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+          break
+        case 'FixableLines':
+          parts = cause.fixes.map((fix, index) => (
+            <p key={index}>
+              {fix.path}:{fix.line ?? '?'} — {fix.what}
+            </p>
+          ))
+          break
+        case 'ConflictingHunks':
+          parts = (
+            <>
+              <p>{cause.total} conflicting hunks; the hunk list is not drawn yet.</p>
+              {cause.hunks.length === 0 && cause.total > MERGE_HUNKS_ONE_BY_ONE ? (
+                <p>The conflict is past one-by-one resolution; start over from the new base.</p>
+              ) : null}
+            </>
+          )
+          break
+        case 'WrongApproach':
+        case 'TicketTooBig':
+        case 'SetupBroken':
+          break
+      }
+      return (
+        <section className="triage-band">
+          <p>{cause._tag}</p>
+          <p>{result.summary}</p>
+          <p>Recommends {result.resolution}</p>
+          {parts}
+        </section>
+      )
+    }
+  }
+}
 
 export function ticketOpening(body: string): { text: string; longer: boolean } {
   const lines = body.split('\n')
@@ -232,6 +305,29 @@ export function Standing({
   // The moves row's own list, and the only thing it draws from (#442). See
   // `movesOf`.
   const moves = movesOf(allowed, standing.awaitingSha, sendable)
+  const recommended =
+    standing.reason !== null && standing.triageStatus !== null
+      ? recommendedResolution(standing.reason, standing.triageStatus)
+      : null
+  const moveFor = (move: (typeof moves)[number]): Resolution['_tag'] | null => {
+    switch (move) {
+      case 'approve':
+        return 'Approve'
+      case 'send':
+      case 'requeue':
+        return 'Requeue'
+      case 'answer':
+        return 'AnswerQuestion'
+      case 'close':
+        return 'Close'
+      case 'approve-unavailable':
+        return null
+    }
+  }
+  const orderedMoves =
+    recommended === null
+      ? moves
+      : [...moves].sort((a, b) => Number(moveFor(b) === recommended) - Number(moveFor(a) === recommended))
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -431,6 +527,10 @@ export function Standing({
         </p>
       </div>
 
+      {standing.state === 'blocked' && standing.triageStatus !== null ? (
+        <TriageBand status={standing.triageStatus} />
+      ) : null}
+
       {/* ---- rank 4: the moves ---------------------------------------------- */}
 
       {/* Above both boxes rather than under them (#152). Under them, a
@@ -466,75 +566,87 @@ export function Standing({
                 still decides what `Decide` sends, and `sendable` still decides
                 whether Requeue sends a document or asks for one, but neither
                 decides whether a control is on the row. */}
-            {moves.includes('approve') && standing.awaitingSha !== null ? (
-              <Decide
-                project={project}
-                issue={issue}
-                onSha={standing.awaitingSha}
-                waitId={standing.waitId}
-                refusing={standing.failed.length > 0}
-                recommended={standing.diagnosis?.recommendation?.action ?? null}
-              />
-            ) : null}
+            {orderedMoves.map((move) => {
+              const waitId = standing.waitId
+              if (waitId === null) return null
+              switch (move) {
+                case 'approve':
+                  return standing.awaitingSha !== null ? (
+                    <Decide
+                      key={move}
+                      project={project}
+                      issue={issue}
+                      onSha={standing.awaitingSha}
+                      waitId={waitId}
+                      refusing={standing.failed.length > 0}
+                      recommended={recommended === 'Approve' ? 'approve' : null}
+                    />
+                  ) : null
 
-            {/* `Approve` is allowed and there is nothing to send it with — a
-                `MergeRefused` whose run never reached origin, say. Never a
-                `Decide` bound to a null sha (#84): the sentence is the whole
-                of what this move can say. */}
-            {moves.includes('approve-unavailable') ? (
-              <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
-            ) : null}
+                case 'approve-unavailable':
+                  return (
+                    <p key={move} className="refusal">
+                      nothing to approve — this run recorded no sha to continue from
+                    </p>
+                  )
 
-            {moves.includes('send') && sendable !== null ? (
-              <Send
-                taskId={taskId}
-                attempt={sendable}
-                // Amber once per screen. Send carries it where there is no
-                // Approve beside it — sending is then the only move that moves
-                // anything, whatever a diagnosis written before #83 recommends —
-                // and otherwise only when the recommendation points here.
-                primary={
-                  !moves.includes('approve') ||
-                  standing.diagnosis?.recommendation?.action === 'requeue' ||
-                  standing.diagnosis?.recommendation?.action === 'reject'
+                case 'send':
+                  return sendable !== null ? (
+                    <Send
+                      key={move}
+                      taskId={taskId}
+                      attempt={sendable}
+                      // Amber follows the current wait's recommendation.
+                      primary={recommended === 'Requeue'}
+                    />
+                  ) : null
+
+                case 'requeue':
+                  return (
+                    <Requeue
+                      key={move}
+                      project={project}
+                      issue={issue}
+                      waitId={waitId}
+                      asked={false}
+                      question={standing.askedQuestion}
+                      recommended={recommended === 'Requeue' ? 'requeue' : null}
+                    />
+                  )
+
+                case 'answer':
+                  return (
+                    <Requeue
+                      key={move}
+                      project={project}
+                      issue={issue}
+                      waitId={waitId}
+                      asked={true}
+                      question={standing.askedQuestion}
+                      recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
+                    />
+                  )
+
+                case 'close': {
+                  const prefill =
+                    recommended === 'Close' &&
+                    standing.triageStatus?._tag === 'Done' &&
+                    standing.triageStatus.result._tag === 'TriageAdvised'
+                      ? standing.triageStatus.result.summary
+                      : null
+                  return (
+                    <Close
+                      key={`${move}:${prefill ?? ''}`}
+                      project={project}
+                      issue={issue}
+                      waitId={standing.waitId}
+                      primary={recommended === 'Close'}
+                      prefill={prefill}
+                    />
+                  )
                 }
-              />
-            ) : null}
-
-            {/* Wherever there is no prompt to send, whether or not an approval is
-                open (#150): Send is this move with a document, and without one a
-                card asking for approval still needs *run it again* beside
-                Approve. It keeps asking why — the reason Send does not is that
-                Send's reason is the document, and this has none. */}
-            {moves.includes('requeue') ? (
-              <Requeue
-                project={project}
-                issue={issue}
-                waitId={standing.waitId}
-                asked={false}
-                question={standing.askedQuestion}
-                recommended={standing.diagnosis?.recommendation?.action ?? null}
-              />
-            ) : null}
-
-            {/* `AnswerQuestion` only, in `Requeue`'s own answer mode — Answer
-                and the Withdraw beside it. */}
-            {moves.includes('answer') ? (
-              <Requeue
-                project={project}
-                issue={issue}
-                waitId={standing.waitId}
-                asked={true}
-                question={standing.askedQuestion}
-                recommended={standing.diagnosis?.recommendation?.action ?? null}
-              />
-            ) : null}
-
-            {/* The third move, beside whichever two are here (`#151`). Approve
-                and Send take what the run produced, Requeue asks for another, and
-                all three assume the ticket is still wanted. This is the one that
-                says it is not. */}
-            {moves.includes('close') ? <Close project={project} issue={issue} waitId={standing.waitId} /> : null}
+              }
+            })}
           </div>
         )
       ) : null}
