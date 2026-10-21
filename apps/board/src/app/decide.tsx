@@ -18,7 +18,15 @@ import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
 
-import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from './actions.ts'
+import {
+  answerCard,
+  approveCard,
+  closeCard,
+  editBodyAndRequeueCard,
+  requeueCard,
+  runNow,
+  sendAttempt,
+} from './actions.ts'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -272,6 +280,40 @@ export function ScheduleContinuation({
  * *is there an approval open*, so it was missing exactly where a person reading
  * a disagreement agrees with the reviewer and wants the ticket run again.
  */
+export function EditBodyAndRequeue({ project, issue, waitId }: { project: string; issue: number; waitId: WaitId }) {
+  const [text, setText] = useState('')
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [, startTransition] = useTransition()
+
+  return (
+    <div className="decide">
+      <label className="reason">
+        <span>Write it into the body &amp; requeue</span>
+        <textarea value={text} onChange={(event) => setText(event.target.value)} />
+      </label>
+      <button
+        className="btn"
+        disabled={pending || done || !text.trim()}
+        onClick={() => {
+          setPending(true)
+          setDetail(null)
+          startTransition(async () => {
+            const result = await editBodyAndRequeueCard({ project, issue, waitId, text })
+            setPending(false)
+            setDone(result.ok)
+            setDetail(result.detail)
+          })
+        }}
+      >
+        {pending ? '…' : 'Write it into the body & requeue'}
+      </button>
+      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
+    </div>
+  )
+}
+
 export function Requeue({
   project,
   issue,

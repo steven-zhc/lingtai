@@ -38,6 +38,7 @@ import { close } from '@lingtai/conductor/close'
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
+import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
 import { projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
@@ -231,6 +232,35 @@ export async function requeueCard(input: {
       waitId: input.waitId,
     })
 
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/** Write the answer to the issue before resolving the wait shown on this page. */
+export async function editBodyAndRequeueCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  text: string
+  note?: string
+}): Promise<ActionResult> {
+  try {
+    if (!input.waitId) {
+      return {
+        ok: false,
+        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
+      }
+    }
+    const state = await project(input.project)
+    const { client } = await projectClient(state)
+    const result = await editBodyAndRequeue({
+      ...input,
+      by: actor(),
+      github: client,
+    })
     revalidatePath('/')
     return { ok: result.ok, detail: result.detail }
   } catch (err) {

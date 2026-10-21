@@ -23,7 +23,7 @@ import { holding, place, type QueuedView } from '@/lib/queued'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 
-import { Close, Decide, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
+import { Close, Decide, EditBodyAndRequeue, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
 import { Discussion } from './discussion.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
@@ -389,6 +389,8 @@ export function Standing({
       case 'send':
       case 'requeue':
         return 'Requeue'
+      case 'edit-body':
+        return 'EditBodyAndRequeue'
       case 'answer':
         return 'AnswerQuestion'
       case 'close':
@@ -700,6 +702,9 @@ export function Standing({
                     />
                   )
 
+                case 'edit-body':
+                  return <EditBodyAndRequeue key={move} project={project} issue={issue} waitId={waitId} />
+
                 case 'close': {
                   const prefill =
                     recommended === 'Close' &&
@@ -813,20 +818,21 @@ export function Standing({
  * allowed draws `'answer'` — `Requeue`'s own answer mode, Answer and the
  * Withdraw beside it — and when it is allowed `Requeue`'s plain mode adds
  * nothing more, so `'send'`/`'requeue'` and `'answer'` never both appear.
- * `EditBodyAndRequeue` has no control yet (#422/#520) and draws nothing here.
+ * `EditBodyAndRequeue` draws its own text box on the page (#520).
  */
 export function movesOf(
   allowed: readonly Resolution['_tag'][],
   awaitingSha: string | null,
   sendable: number | null,
-): Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'close'> {
-  const moves: Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'close'> = []
+): Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> {
+  const moves: Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'edit-body' | 'close'> = []
   if (allowed.includes('Approve')) moves.push(awaitingSha !== null ? 'approve' : 'approve-unavailable')
   if (allowed.includes('AnswerQuestion')) {
     moves.push('answer')
   } else if (allowed.includes('Requeue')) {
     moves.push(sendable !== null ? 'send' : 'requeue')
   }
+  if (allowed.includes('EditBodyAndRequeue')) moves.push('edit-body')
   if (allowed.includes('Close')) moves.push('close')
   return moves
 }

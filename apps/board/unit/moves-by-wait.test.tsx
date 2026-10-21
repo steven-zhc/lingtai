@@ -103,6 +103,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const answering = allowed.includes('AnswerQuestion')
       const requeuing = !answering && allowed.includes('Requeue')
       const closing = allowed.includes('Close')
+      const editingBody = allowed.includes('EditBodyAndRequeue')
 
       expect(buttons.includes('Approve')).toBe(approveBtn)
       expect(row.includes(SENTENCE)).toBe(approveSentence)
@@ -110,9 +111,9 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       expect(buttons.includes('Withdraw')).toBe(answering)
       expect(buttons.includes('Back to the queue')).toBe(requeuing)
       expect(buttons.includes('Close')).toBe(closing)
-      // `EditBodyAndRequeue` has no control (#422/#520), and nothing else is on
-      // this row — every button drawn is accounted for above.
-      const expectedCount = (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (closing ? 1 : 0)
+      expect(buttons.includes('Write it into the body &amp; requeue')).toBe(editingBody)
+      const expectedCount =
+        (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (editingBody ? 1 : 0) + (closing ? 1 : 0)
       expect(buttons.length).toBe(expectedCount)
     })
   }
