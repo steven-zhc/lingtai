@@ -1,9 +1,13 @@
 /**
- * The home board's own `BoardCard.waitId` (#465). `task_view` carries no
- * `wait_id` column, so `toCard` takes it as an argument — `laneWaitIds`'s own
- * read of the item stream, never cut the way `laneProgress`'s rails are —
- * rather than reading it off the `TaskCard` the way every other field here
- * does.
+ * The home board's own `BoardCard.waitId` (#465). `task_view` carries
+ * `wait_id` since #440, but `toCard` still takes `waitId` as its own
+ * argument rather than reading `t.wait.waitId` off the row it is handed:
+ * `laneWaitIds` reads the item's own stream fresh, never cut the way
+ * `laneProgress`'s rails are, because `t` can lag a reclaim that already
+ * produced a new wait (`board.ts:538`'s `freshNote` is the same reasoning
+ * for the question beside it). Whether that staleness still justifies the
+ * argument once #443 moves `laneWaitIds` onto the row is that ticket's call,
+ * not a reason stated here.
  */
 import { aWaitId } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'

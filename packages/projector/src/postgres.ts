@@ -104,7 +104,16 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     // created before the rename has no `waiting` key, and reading it off the
     // row directly would count that drift as a card with nothing to answer.
     waiting: columnOf(row, 'task_view', 'waiting') === true,
-    wait: waitOf(row.task_id, row.state as TaskState, row.wait_id, row.wait_reason),
+    // Through `columnOf`, for the same reason as `waiting`: a row from a
+    // table that predates these two columns has neither key at all, and
+    // reading them off the row directly would read as a wait with no
+    // reason rather than as the drift it is.
+    wait: waitOf(
+      row.task_id,
+      row.state as TaskState,
+      columnOf(row, 'task_view', 'wait_id'),
+      columnOf(row, 'task_view', 'wait_reason'),
+    ),
     needs: row.needs ?? null,
     // Written from a parsed payload and read back as it was written, so the
     // shape is the event's rather than this reader's guess about it.

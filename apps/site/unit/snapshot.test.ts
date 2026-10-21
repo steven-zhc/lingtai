@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import type { SpendRow } from '@lingtai/projector'
-import type { TaskCard } from '@lingtai/projector/task-view'
+import { waitOf, type TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -59,7 +59,12 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     awaitingSha: null,
     awaitingApproval: false,
     waiting: false,
-    wait: null,
+    // A real wait when the caller asks for `state: 'waiting'` — `wait: null`
+    // there is the combination `toCard`/`waitOf` can never produce.
+    wait:
+      over.state === 'waiting'
+        ? waitOf('ticket-1', 'waiting', 'wait-1', { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' })
+        : null,
     needs: null,
     diagnosis: null,
     asked: false,

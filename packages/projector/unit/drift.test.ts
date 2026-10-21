@@ -193,6 +193,47 @@ describe('the board, reading a task_view built before #477 renamed blocked to wa
 })
 
 /**
+ * A store whose `task_view` is the real one, but born before #440 added
+ * `wait_id` and `wait_reason` — the shape `lingtai projection rebuild
+ * task_view` fixes and a live table has until somebody runs it. Unlike
+ * `storeWithWaitingColumn` above, this row has `waiting` but neither new
+ * column at all, which is `select t.*` on a table that never had them.
+ */
+async function storeWithoutWaitColumns(): Promise<ProjectionStore> {
+  const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
+  await store.transact(async (ctx) => {
+    await taskViewProjection.create(ctx)
+    await ctx.query('alter table task_view drop column wait_id')
+    await ctx.query('alter table task_view drop column wait_reason')
+    await ctx.query(
+      `insert into task_view
+         (task_id, project, issue, state, run_id, waiting, updated_at, updated_seq)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      ['ticket-drift-3', 'drift', '3', 'waiting', RUN, true, new Date().toISOString(), 1],
+    )
+  })
+  return store
+}
+
+describe('the board, reading a task_view built before #440 added wait_id and wait_reason', () => {
+  it('refuses the read by name rather than throwing a wait with no reason', async () => {
+    // The finding this pins: before this fix, `waitOf` read `row.wait_id` and
+    // `row.wait_reason` straight off the row, so a missing column answered
+    // `undefined` and `waitOf` raised a plain `Error` naming neither the
+    // drift nor the rebuild — which `emptyIfUnbuilt` (apps/board's
+    // `does not exist` check) does not catch, so it reddens the whole board
+    // instead of being swallowed as *no projection yet*.
+    const store = await storeWithoutWaitColumns()
+    try {
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(ProjectionShapeError)
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(/lingtai projection rebuild task_view/)
+    } finally {
+      await store.close()
+    }
+  })
+})
+
+/**
  * The columns `finding_backlog` is declared with, and the value each one holds
  * in the row below. Written as the entry a reader is owed, so that the two names
  * for one column — `gate` in the table, `step` on the entry — are the only place
