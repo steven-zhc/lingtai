@@ -42,6 +42,7 @@ const CONFLICT_PATH = {
   ours: 'ours',
   theirs: 'theirs',
   hunks: 1,
+  hunkLines: [1],
 }
 
 function requestOn(ticketId: string, waitId: WaitId, overrides: Partial<WaitTriageRequest> = {}): WaitTriageRequest {
@@ -271,7 +272,14 @@ describe('waitTriage', () => {
     let prompt = ''
     const { runtime } = stubRuntime((request) => {
       prompt = request.prompt
-      return ADVISED
+      return outcomeOf({
+        text: JSON.stringify({
+          cause: { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
+          resolution: 'Requeue',
+          summary: 'one mechanical conflict',
+          want: null,
+        }),
+      })
     })
     const mirrorCall = vi.fn(async () => [CONFLICT_PATH])
     const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: mirrorCall }) })
@@ -281,6 +289,133 @@ describe('waitTriage', () => {
     expect(prompt).toContain('"ours": "ours"')
     expect(prompt).toContain('"theirs": "theirs"')
     expect(prompt).toContain('Give each Divergent hunk its own question')
+  })
+
+  it.each([
+    { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
+    { _tag: 'WrongApproach' },
+  ])('refuses conflict advice that omits a mirror-counted hunk: %j', async (cause) => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 418)
+    const { runtime } = stubRuntime(() =>
+      outcomeOf({ text: JSON.stringify({ cause, resolution: 'Requeue', summary: 'incomplete', want: null }) }),
+    )
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 2, hunkLines: [1, 50] }] }),
+    })
+    const result = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: conflictReason('a', 'b') }))
+    expect(result.result).toEqual({
+      _tag: 'TriageFailed',
+      why: 'agent advice did not classify every counted merge hunk',
+    })
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+  })
+
+  it('refuses duplicate classifications that conceal a second merge hunk', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 419)
+    const mechanical = { _tag: 'Mechanical', path: 'a.ts', line: 1 }
+    const { runtime } = stubRuntime(() =>
+      outcomeOf({
+        text: JSON.stringify({
+          cause: { _tag: 'ConflictingHunks', total: 2, hunks: [mechanical, mechanical] },
+          resolution: 'Requeue',
+          summary: 'both mechanical',
+          want: null,
+        }),
+      }),
+    )
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 2, hunkLines: [1, 50] }] }),
+    })
+
+    const result = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: conflictReason('a', 'b') }))
+
+    expect(result.result).toEqual({
+      _tag: 'TriageFailed',
+      why: 'agent advice did not classify every counted merge hunk',
+    })
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+  })
+
+  it('refuses distinct lines in one hunk when another mirror hunk is unclassified', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 420)
+    const { runtime } = stubRuntime(() =>
+      outcomeOf({
+        text: JSON.stringify({
+          cause: {
+            _tag: 'ConflictingHunks',
+            total: 2,
+            hunks: [
+              { _tag: 'Mechanical', path: 'a.ts', line: 1 },
+              { _tag: 'Mechanical', path: 'a.ts', line: 2 },
+            ],
+          },
+          resolution: 'Requeue',
+          summary: 'both mechanical',
+          want: null,
+        }),
+      }),
+    )
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 2, hunkLines: [1, 50] }] }),
+    })
+
+    const result = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: conflictReason('a', 'b') }))
+
+    expect(result.result).toEqual({
+      _tag: 'TriageFailed',
+      why: 'agent advice did not classify every counted merge hunk',
+    })
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+  })
+
+  it('accepts one classification for each mirror hunk line', async () => {
+    const store = createMemoryEventStore()
+    const advice = {
+      cause: {
+        _tag: 'ConflictingHunks',
+        total: 2,
+        hunks: [
+          { _tag: 'Mechanical', path: 'a.ts', line: 1 },
+          {
+            _tag: 'Divergent',
+            path: 'a.ts',
+            line: 50,
+            question: {
+              id: 'q1',
+              text: 'Which behavior should survive?',
+              answers: [
+                { id: 'ours', text: 'Keep ours' },
+                { id: 'theirs', text: 'Keep theirs' },
+              ],
+              recommended: 'ours',
+            },
+          },
+        ],
+      },
+      resolution: 'Requeue',
+      summary: 'one divergent hunk',
+      want: null,
+    }
+    const { runtime } = stubRuntime(() => outcomeOf({ text: JSON.stringify(advice) }))
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 2, hunkLines: [1, 50] }] }),
+    })
+
+    const result = await waitTriage(
+      deps,
+      requestOn(ticketStream('lingtai', 421), aWaitId(), { reason: conflictReason('a', 'b') }),
+    )
+
+    expect(result.result).toMatchObject({ _tag: 'TriageAdvised', ...advice })
   })
 
   it.each([

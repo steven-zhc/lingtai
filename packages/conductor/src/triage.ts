@@ -78,6 +78,7 @@ export interface TriageEvidence {
         ours: string | null
         theirs: string | null
         hunks: number
+        hunkLines: readonly number[]
       }[]
     | null
 }
@@ -252,7 +253,7 @@ ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decis
   const conflicts =
     evidence.conflicts === null || evidence.conflicts === undefined
       ? ''
-      : `\n## Merge conflict from the mirror\n\n${JSON.stringify(evidence.conflicts, null, 2)}\n\nList every counted hunk as Mechanical or Divergent. Give each Divergent hunk its own question. Propose a resolution; apply nothing.\n`
+      : `\n## Merge conflict from the mirror\n\n${JSON.stringify(evidence.conflicts, null, 2)}\n\nList every counted hunk as Mechanical or Divergent, using its exact hunkLines entry as the line. Give each Divergent hunk its own question. Propose a resolution; apply nothing.\n`
 
   const budget =
     input.roundsLeft > 0

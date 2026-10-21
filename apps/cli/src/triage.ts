@@ -733,7 +733,29 @@ export async function waitTriage(
         }
 
         if (reply.kind === 'advised') {
-          result = reply.result
+          if (conflictPaths !== null) {
+            const cause = reply.result.cause
+            const counted = new Set(
+              conflictPaths.flatMap((path) => path.hunkLines.map((line) => JSON.stringify([path.path, line]))),
+            )
+            const classified = new Set<string>()
+            if (cause._tag === 'ConflictingHunks') {
+              for (const hunk of cause.hunks) {
+                classified.add(JSON.stringify([hunk.path, hunk.line]))
+              }
+            }
+            const complete =
+              cause._tag === 'ConflictingHunks' &&
+              cause.total === conflictPaths.reduce((sum, path) => sum + path.hunks, 0) &&
+              classified.size === cause.hunks.length &&
+              classified.size === counted.size &&
+              [...counted].every((identity) => classified.has(identity))
+            result = complete
+              ? reply.result
+              : { _tag: 'TriageFailed', why: 'agent advice did not classify every counted merge hunk' }
+          } else {
+            result = reply.result
+          }
           break
         }
 

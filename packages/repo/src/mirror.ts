@@ -135,6 +135,8 @@ export interface ConflictedPath {
   ours: string | null
   theirs: string | null
   hunks: number
+  /** One-based conflict marker lines in the written tree, or line 1 when it has no readable markers. */
+  hunkLines: number[]
 }
 
 /**
@@ -177,15 +179,21 @@ export async function conflictedPathsAt(
   const limit = options.limitBytes ?? 64_000
   const readBlob = async (oid: string | null): Promise<string | null> => {
     if (oid === null) return null
-    const content = await git(['cat-file', '-p', oid], { cwd })
+    const content = await git(['cat-file', '-p', oid], { cwd, trimOutput: false })
     return content.length > limit
       ? `${content.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${content.length}]`
       : content
   }
   const paths: ConflictedPath[] = []
   for (const [path, [baseOid, oursOid, theirsOid]] of stages) {
-    const merged = await git(['show', `${tree}:${path}`], { cwd }).catch(() => null)
-    const hunks = Math.max(1, merged?.split('\n').filter((line) => line.startsWith('<<<<<<< ')).length ?? 0)
+    const merged = await git(['show', `${tree}:${path}`], { cwd, trimOutput: false }).catch((err: unknown) => {
+      const failure = err as Error & { code?: number; stderr?: string }
+      if (failure.code === 128 && /fatal: path .* does not exist in /.test(failure.stderr ?? '')) return null
+      throw err
+    })
+    const markerLines =
+      merged?.split('\n').flatMap((line, index) => (line.startsWith('<<<<<<< ') ? [index + 1] : [])) ?? []
+    const hunkLines = markerLines.length === 0 ? [1] : markerLines
     paths.push({
       path,
       baseOid,
@@ -194,7 +202,8 @@ export async function conflictedPathsAt(
       base: await readBlob(baseOid),
       ours: await readBlob(oursOid),
       theirs: await readBlob(theirsOid),
-      hunks,
+      hunks: hunkLines.length,
+      hunkLines,
     })
   }
   return paths
