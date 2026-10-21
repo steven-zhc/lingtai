@@ -1,8 +1,8 @@
 import { userInfo } from 'node:os'
 
 /**
- * `lingtai requeue <project> --issue <n> [--note <why>]` — hand a blocked item
- * back to the queue.
+ * `lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]` —
+ * hand a blocked item back to the queue.
  *
  * The board has had this button since `#84`; the terminal has not. The two are
  * wanted at different moments, and the moment this one is wanted is the worst
@@ -17,9 +17,11 @@ import { userInfo } from 'node:os'
  * stream and nothing else, to no other stream, whichever side asked — a run
  * it sends back is left as it was, and nothing it does reads as a run
  * failing. It refuses, appending nothing, while an approval of the same item
- * is still merging (#150). No GitHub client, because there is no GitHub call
- * to make — the event is the whole of the decision and `reconcile` converges
- * the label an earlier block left behind.
+ * is still merging (#150). Without `--into-body`, there is no GitHub call:
+ * the event is the whole of the decision and `reconcile` converges the label
+ * an earlier block left behind. With `--into-body`, the issue body is written
+ * through the GitHub client before the wait is resolved. A refusal after that
+ * write leaves the body changed and reports the item's current state.
  */
 import { loadProject, requeue } from '@lingtai/conductor'
 import { editBodyAndRequeue, type IssueChannel } from '@lingtai/conductor/edit-body'

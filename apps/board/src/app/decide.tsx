@@ -280,23 +280,41 @@ export function ScheduleContinuation({
  * *is there an approval open*, so it was missing exactly where a person reading
  * a disagreement agrees with the reviewer and wants the ticket run again.
  */
-export function EditBodyAndRequeue({ project, issue, waitId }: { project: string; issue: number; waitId: WaitId }) {
+export function EditBodyAndRequeue({
+  project,
+  issue,
+  waitId,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId | null
+}) {
   const [text, setText] = useState('')
+  const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [, startTransition] = useTransition()
 
+  if (waitId === null && text === '' && !pending && detail === null) return null
+
   return (
     <div className="decide">
       <label className="reason">
         <span>Text to add to the ticket body</span>
-        <textarea value={text} onChange={(event) => setText(event.target.value)} />
+        <textarea
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value)
+            setDraftWaitId(waitId)
+          }}
+        />
       </label>
       <button
         className="btn"
-        disabled={pending || done || !text.trim()}
+        disabled={pending || done || !text.trim() || waitId === null || draftWaitId !== waitId}
         onClick={() => {
+          if (waitId === null || draftWaitId !== waitId) return
           setPending(true)
           setDetail(null)
           startTransition(async () => {

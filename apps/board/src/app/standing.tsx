@@ -703,7 +703,7 @@ export function Standing({
                   )
 
                 case 'edit-body':
-                  return <EditBodyAndRequeue key={move} project={project} issue={issue} waitId={waitId} />
+                  return null
 
                 case 'close': {
                   const prefill =
@@ -727,6 +727,16 @@ export function Standing({
             })}
           </div>
         )
+      ) : null}
+
+      {/* Keep the editor mounted across a Follow refresh: a body write can
+          succeed just before another decision moves this wait out of blocked. */}
+      {acting ? (
+        <EditBodyAndRequeue
+          project={project}
+          issue={issue}
+          waitId={standing.state === 'blocked' && moves.includes('edit-body') ? standing.waitId : null}
+        />
       ) : null}
 
       {/* The queued item's own row, and it has exactly one move. `lingtai now`

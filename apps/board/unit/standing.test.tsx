@@ -19,7 +19,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Close } from '../src/app/decide.tsx'
+import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
@@ -1251,6 +1251,42 @@ function closeOn(standing: StandingView): { key: string | null; prefill: string 
   if (close === null) throw new Error('Close was not rendered')
   return close
 }
+
+it('keeps the body editor at the same mount when a written wait moves out of blocked', () => {
+  const editorOn = (standing: StandingView) => {
+    const page = Standing({
+      subject: null,
+      standing,
+      project: 'lingtai',
+      issue: 112,
+      taskId: 'ticket-lingtai-112',
+      discussions: [],
+      outgoing: OUTGOING,
+      queued: null,
+    })
+    const find = (node: ReactNode, path: string): { path: string; key: string | null; waitId: unknown } | null => {
+      let found: ReturnType<typeof find> = null
+      Children.forEach(node, (child, index) => {
+        if (found !== null || !isValidElement(child)) return
+        const here = `${path}/${index}`
+        if (child.type === EditBodyAndRequeue) {
+          found = { path: here, key: child.key, waitId: (child.props as { waitId: unknown }).waitId }
+        } else {
+          found = find((child.props as { children?: ReactNode }).children, here)
+        }
+      })
+      return found
+    }
+    return find(page, '')
+  }
+
+  const offered = editorOn(HELD)
+  const moved = editorOn({ ...HELD, state: 'queued', onYou: false, reason: null, waitId: null })
+  expect(offered?.waitId).toBe(HELD.waitId)
+  expect(moved?.waitId).toBeNull()
+  expect(moved?.path).toBe(offered?.path)
+  expect(moved?.key).toBe(offered?.key)
+})
 
 it('ignores triage facts for a wait that is no longer current', () => {
   const oldWait = aWaitId()
