@@ -924,12 +924,14 @@ details[open] > summary::before { content: "▾"; }
 
 .sticket { display: grid; gap: 0.35rem; margin-bottom: 1rem; }
 .swhere,
-.sresolutions {
+.sresolutions,
+.triage-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
   padding: 1rem 0;
   border-top: 1px solid var(--rule);
+  min-width: 0;
 }
 .ssectiontitle {
   order: -2;
@@ -1050,6 +1052,16 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    would be a second say. It was `.needs`, `.did` and `.rec` in a row. */
 .sowhat { margin: 0.2rem 0 0; max-width: 62rem; font-size: 0.85rem; line-height: 1.5; color: var(--ink); }
 
+.triage-band { overflow-wrap: anywhere; }
+.triage-band > p { margin: 0; max-width: 62rem; line-height: 1.5; }
+.triage-band--failed { border-left: 2px solid var(--fail); padding-left: 0.75rem; }
+.triage-band--failed > p:last-child { color: var(--fail); }
+.triage-band details { min-width: 0; padding: 0.4rem 0; border-top: 1px solid var(--rule); }
+.triage-band details > summary { overflow-wrap: anywhere; cursor: pointer; }
+.triage-band fieldset { min-width: 0; margin: 0.5rem 0; border-color: var(--rule); }
+.triage-band legend { max-width: 100%; overflow-wrap: anywhere; }
+.triage-band label { display: flex; align-items: baseline; gap: 0.45rem; overflow-wrap: anywhere; }
+.triage-band label input { flex: none; }
 .triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .triage-readings > div { min-width: 0; }
 
@@ -1236,6 +1248,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   gap: 0.5rem 0.75rem;
   margin: 0.2rem 0;
 }
+.smoves > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.smoves .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
 
 /* --- what will be sent ----------------------------------------------------
    The other of the two objects the decision column allows a frame around, and
