@@ -106,7 +106,7 @@ describe('current wait triage band', () => {
     expect(html).toContain('&lt;which behavior?&gt;')
     expect(html).toContain('keep A')
     expect(html).toContain('keep B (recommended)')
-    expect(html).toContain('value="b" checked=""')
+    expect(html).toContain('checked="" value="b"')
   })
 
   it('keeps triage visible with a mirror-head line', () => {
