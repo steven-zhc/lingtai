@@ -55,6 +55,8 @@ function task(state: TaskCard['state']): TaskCard {
     diagnosis: null,
     asked: false,
     answer: null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
     repairPending: false,
   }
 }

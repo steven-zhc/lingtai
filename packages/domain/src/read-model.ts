@@ -289,6 +289,14 @@ export type CardFact =
       readonly card: { readonly question: string } & Pick<WaitWords, 'needs' | 'diagnosis'>
     }
   | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly resolution: Resolution }
+  | { readonly _tag: 'TriageStarted'; readonly waitId: WaitId; readonly attempt: number }
+  | {
+      readonly _tag: 'WaitTriaged'
+      readonly waitId: WaitId
+      readonly attempt: number
+      readonly headSha: string
+      readonly result: TriageResult
+    }
   | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
 
 /** `cardFactOf`'s one entry point — see the section header for what it does and does not answer. */
@@ -340,6 +348,16 @@ export function cardFactOf(event: Envelope): CardFact[] {
     case 'WaitResolved': {
       const d = event.data as PayloadOf<'WaitResolved'>
       return [{ _tag: 'WaitResolved', by: d.by, note: d.note, resolution: d.resolution }]
+    }
+
+    case 'TriageStarted': {
+      const d = event.data as PayloadOf<'TriageStarted'>
+      return [{ _tag: 'TriageStarted', waitId: d.waitId, attempt: d.attempt }]
+    }
+
+    case 'WaitTriaged': {
+      const d = event.data as PayloadOf<'WaitTriaged'>
+      return [{ _tag: 'WaitTriaged', waitId: d.waitId, attempt: d.attempt, headSha: d.headSha, result: d.result }]
     }
 
     case 'RunFailed': {

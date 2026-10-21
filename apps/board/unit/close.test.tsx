@@ -129,6 +129,8 @@ describe('a closed item in the archive', () => {
     diagnosis: null,
     asked: false,
     answer: null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
     repairPending: false,
     restarts: 0,
     restartsOf: 0,

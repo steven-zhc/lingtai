@@ -46,6 +46,8 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     diagnosis: null,
     asked: false,
     answer: null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
     repairPending: false,
     ...over,
   }
