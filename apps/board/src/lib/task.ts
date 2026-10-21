@@ -18,7 +18,7 @@ import {
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
-import { triageStatus, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
+import { triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
 /**
  * One task, folded from its streams on demand.
  *
@@ -64,7 +64,7 @@ import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
-import { mirrorBranchSha } from '@lingtai/repo'
+import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
@@ -510,6 +510,8 @@ export interface StandingView {
    * `waitId` is not.
    */
   reason: WaitReason | null
+  /** Unpushed work on the current blocked wait's run, never an earlier wait's. */
+  unpushed: RunRef['unpushed'] | null
   /**
    * The sha `WaitResolved{Approve}` recorded, while `approved` — what
    * `ScheduleContinuation` sends back as `onSha` (#508), so a click made
@@ -774,6 +776,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     restartsOf: 0,
     waitId: life.status === 'blocked' || life.status === 'approved' ? life.waitId : null,
     reason: blocked ? life.reason : null,
+    unpushed: blocked && 'run' in life.reason ? (life.reason.run.unpushed ?? null) : null,
     approvedSha: approved ? life.onSha : null,
   }
 }
@@ -802,6 +805,8 @@ export interface HistoryGroup {
 
 export interface TaskDetail {
   taskId: string
+  /** Local mirror check for the current wait's kept ref; null for every other case. */
+  unpushedMirror: { path: string; sha: string | null } | null
   /**
    * Why it is not moving, above everything else. See `StandingView`.
    *
@@ -1682,6 +1687,11 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
   const foldedStanding = standingOf(own, folded)
+  const keptAt = foldedStanding.unpushed?.keptAt
+  const unpushedMirror =
+    keptAt?._tag === 'Mirror' && ticket !== null
+      ? { path: mirrorPathFor(ticket.project), sha: await refSha({ project: ticket.project, ref: keptAt.ref }) }
+      : null
   let triage: Awaited<ReturnType<typeof loadCurrentTriageStatus>> = null
   if (
     foldedStanding.state === 'blocked' &&
@@ -1770,6 +1780,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   return {
     taskId,
+    unpushedMirror,
     standing,
     want,
     ticket,
