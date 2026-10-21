@@ -122,13 +122,33 @@ describe('triageFactsOf', () => {
     ).toEqual({ started: null, result: null })
   })
 
-  it('a WaitTriaged for a different waitId is ignored', () => {
+  it("a WaitTriaged for a different waitId is ignored, even at the same attempt as this wait's own start", () => {
     const item = makeStream('ticket-1')
     const waitId = aWaitId()
     const otherWaitId = aWaitId()
+    const startedAt = new Date('2026-09-01T00:00:00.000Z')
     const failed: TriageResult = { _tag: 'TriageFailed', why: 'could not parse an answer' }
-    const events = [...aTriageStart(item, otherWaitId, 1), ...aTriaged(item, otherWaitId, 1, failed)]
-    expect(triageFactsOf(events, waitId)).toEqual({ started: null, result: null })
+    const events = [
+      ...aTriageStart(item, waitId, 1, startedAt),
+      ...aTriageStart(item, otherWaitId, 1),
+      ...aTriaged(item, otherWaitId, 1, failed),
+    ]
+    expect(triageFactsOf(events, waitId)).toEqual({ started: { attempt: 1, at: startedAt }, result: null })
+  })
+
+  it('a WaitTriaged finishing the latest TriageStarted attempt gives that result', () => {
+    const item = makeStream('ticket-1')
+    const waitId = aWaitId()
+    const startedAt = new Date('2026-09-01T00:00:00.000Z')
+    const advised: TriageResult = {
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'WrongApproach' },
+      resolution: 'Requeue',
+      summary: 'patching will not converge',
+      want: null,
+    }
+    const events = [...aTriageStart(item, waitId, 1, startedAt), ...aTriaged(item, waitId, 1, advised)]
+    expect(triageFactsOf(events, waitId)).toEqual({ started: { attempt: 1, at: startedAt }, result: advised })
   })
 
   it(

@@ -586,11 +586,14 @@ export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAd
 export type TriageResult = z.infer<typeof TriageResult>
 
 /**
- * Derived on read and never stored (0118 §1, §10): two of these six depend
- * on the recipe and the running daemon, which a fold never reads. Plain
- * TypeScript rather than zod: a schema would let something parse a
- * `TriageStatus` off the log, and nothing should — those two cases cannot be
- * recovered from the log alone.
+ * Derived on read and never stored (0118 §1, §10): four of these six —
+ * `NotDeclared`/`Queued`, which turn on whether triage is declared, and
+ * `Running`/`Interrupted`, which turn on when the daemon doing the triage
+ * last started — depend on the recipe and the running daemon, which a fold
+ * never reads. Plain TypeScript rather than zod: a schema would let
+ * something parse a `TriageStatus` off the log, and nothing should — those
+ * four cases cannot be recovered from the log alone. Update that count when
+ * you touch it.
  */
 export type TriageStatus =
   | { _tag: 'NotNeeded' }
