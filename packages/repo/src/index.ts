@@ -22,5 +22,5 @@ export {
   type ProvisionOptions,
   type Worktree,
 } from './worktree.ts'
-export { listAt, mirrorPathFor, readAt, refSha, type MirrorOptions } from './mirror.ts'
+export { diffStatAt, listAt, mirrorPathFor, readAt, refSha, type MirrorOptions } from './mirror.ts'
 export { integrate, integrateEffect, type IntegrateOptions, type IntegrateResult } from './integrate.ts'
