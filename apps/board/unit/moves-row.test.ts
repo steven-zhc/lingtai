@@ -54,7 +54,9 @@ describe('a row of moves', () => {
     for (const block of blocks('.smoves')) {
       expect(block).not.toMatch(/display|align-items|flex-wrap/)
     }
-    expect(rowAround(read('../src/app/page.tsx'))).toContain('btnrow')
+    // Waiting resolutions now live on the task page; the board keeps only
+    // the queued card's Close, which has no growing reason form beside it.
+    expect(read('../src/app/page.tsx')).not.toContain('<Decide')
     expect(rowAround(read('../src/app/standing.tsx'))).toEqual(expect.arrayContaining(['btnrow', 'smoves']))
   })
 })

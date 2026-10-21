@@ -12,6 +12,7 @@ import {
   reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
+import { triageStatus } from '@lingtai/domain/wait'
 import { eventStore } from '@lingtai/event-store'
 import type { SpendRow } from '@lingtai/projector'
 /**
@@ -143,6 +144,8 @@ export interface BoardCard {
   costUsd: Bill
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
   note: string | null
+  /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
+  cause: string | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -542,6 +545,10 @@ export function toCard(
    */
   freshNote: string | null = null,
 ): BoardCard {
+  const status =
+    waitId !== null && t.wait?.waitId === waitId
+      ? triageStatus(t.wait.reason, t.triage, { declared: false, daemonStartedAt: null })
+      : null
   return {
     taskId: t.taskId,
     project: t.project,
@@ -562,6 +569,10 @@ export function toCard(
     turns: t.turns,
     costUsd,
     note: freshNote ?? t.note,
+    cause:
+      status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
+        ? `${status.result.cause._tag}: ${status.result.summary}`
+        : null,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t, limits?.restarts ?? null),
@@ -785,6 +796,7 @@ export async function queuedCards(
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
         note: null,
+        cause: null,
         attempts: 0,
         // Nothing has run, so no approach has been abandoned.
         arm: null,

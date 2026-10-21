@@ -8,15 +8,8 @@
  * — the same path `task-view-rebuild.test.ts` runs, unit under 0060 §1 — read
  * back with `store.tasks`, turned into a `BoardCard` with `toCard`
  * (`lib/board.ts`) and rendered with `<Card>` exactly as the page does. What
- * is pinned is the wait pill's text, the `.question` sentence, and the
- * ordered button labels inside `.btnrow` — the three things a person reads
- * on a card that is waiting on them.
- *
- * **Generated from today's code, and never regenerated after the `src`**
- * **change.** The literals below are what `legacyColumns` (`@lingtai/domain`),
- * `describeWait` (`@lingtai/projector/task-view`) and `decide.tsx` produce
- * now; if this test goes red once #483 lands, the card changed and the fix
- * belongs in `src`, never in this file.
+ * is pinned is the wait's first line, with no wait pill, hold detail, or
+ * resolutions. Those now live on the task page (0118 §2).
  *
  * `standing.tsx` and the task page's own controls are out of scope on
  * purpose: their props are `StandingView`/`RunView`, which are #483's and
@@ -26,7 +19,7 @@
 import { aWaitId } from '@lingtai/domain/test/events'
 import { WaitReason } from '@lingtai/domain/wait'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
-import { taskViewProjection } from '@lingtai/projector/task-view'
+import { taskViewProjection, type TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -35,96 +28,60 @@ import { toCard } from '../src/lib/board.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
 
 interface Fixture extends WaitFixture {
-  /** `card.wait` — the pill's text — or null where the wait draws none. */
-  expectedPill: string | null
-  /** `card.note`, rendered in the `.question` paragraph. */
+  /** The wait's own first line when triage has no current advice. */
   expectedQuestion: string | null
-  /** The `.btnrow` button labels, in document order. */
-  expectedButtons: string[]
 }
 
 /** Keyed by `WaitFixture.name` — the events are `test/waits.ts`'s own, shared with `moves-by-wait.test.tsx`. */
-const EXPECTED: Record<string, Pick<Fixture, 'expectedPill' | 'expectedQuestion' | 'expectedButtons'>> = {
+const EXPECTED: Record<string, Pick<Fixture, 'expectedQuestion'>> = {
   ownquestion: {
-    expectedPill: 'waiting for your answer',
     expectedQuestion: 'which base branch?',
-    expectedButtons: ['Answer', 'Withdraw', 'Close'],
   },
   agentquestion: {
-    expectedPill: null,
     expectedQuestion: 'the `implement` step asked: which approach?',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   signoffrequired: {
-    expectedPill: 'waiting for your review',
     expectedQuestion: 'the `merge` step held: merge this?',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   fixerdisagrees: {
-    expectedPill: null,
     expectedQuestion: 'the `implement` step declined: the fixer thinks this is fine',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   nothingproduced: {
-    expectedPill: null,
     expectedQuestion: 'the `implement` step did-not-finish: the agent produced no commits',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   'proposedescalated-buildred': {
-    expectedPill: 'waiting for your review',
     expectedQuestion: 'agent/buildred is waiting on you. tsc failed',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   'proposedescalated-verifyred': {
-    expectedPill: 'waiting for your review',
     expectedQuestion: 'agent/verifyred is waiting on you. verify red output',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   'proposedescalated-mergeconflict': {
-    expectedPill: 'waiting for your review',
     expectedQuestion: 'agent/mergeconflict is waiting on you. conflict output',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   'proposedescalated-reviewfindings': {
-    expectedPill: 'waiting for your review',
     expectedQuestion: 'agent/reviewfindings is waiting on you. bug',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   'proposedescalated-unpushed': {
-    expectedPill: null,
     expectedQuestion: 'agent/unpushed is waiting on you. tsc failed',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   checkrefused: {
-    expectedPill: null,
     expectedQuestion: 'the `merge` step refused: ci red',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   mergerefused: {
-    expectedPill: null,
     expectedQuestion: 'dirty-base: uncommitted changes present',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
   budgetexhausted: {
-    expectedPill: null,
     expectedQuestion: 'out-of-turns: spent 80 turns',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   agentcrashed: {
-    expectedPill: null,
     expectedQuestion: 'the `implement` step did-not-finish: segfault',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   setuprefused: {
-    expectedPill: null,
     expectedQuestion: 'the `prepared` step refused: npm install failed',
-    expectedButtons: ['Back to the queue', 'Close'],
   },
   answerunreadable: {
-    expectedPill: 'waiting for your review',
     expectedQuestion:
       'agent/answerunreadable is waiting on you. `review`&#x27;s findings could not be read at all: not json',
-    expectedButtons: ['Approve', 'Back to the queue', 'Close'],
   },
 }
 
@@ -135,17 +92,15 @@ function questionOf(html: string): string | null {
   return /<p class="question">([^<]*)<\/p>/.exec(html)?.[1] ?? null
 }
 
-/** The wait pill's text — the one `<li class="pill sig">`/`<li class="pill hold">` this card ever draws. */
-function waitPillOf(html: string): string | null {
-  return /<li class="pill (?:sig|hold)"[^>]*>([^<]*)<\/li>/.exec(html)?.[1] ?? null
-}
-
-/** Every `<button>`'s own text, in document order — Decide's, then Requeue's, then Close's. */
+/** Every `<button>`'s own text, in document order. */
 function buttonsOf(html: string): string[] {
   return [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')
 }
 
-async function foldOne(fx: Fixture): Promise<string> {
+async function foldOne(
+  fx: Fixture,
+  options: { row?: Partial<TaskCard>; freshWaitId?: ReturnType<typeof aWaitId>; freshNote?: string } = {},
+): Promise<string> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
@@ -154,10 +109,18 @@ async function foldOne(fx: Fixture): Promise<string> {
     const rows = await store.tasks({ retentionDays: 2 })
     const row = rows.find((r) => r.taskId === fx.taskId)
     if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
-    // A wait id, not read off `laneWaitIds` here — this fixture is about the
-    // button set per `WaitReason`, not about the staleness guard, and `Card`
-    // only ever checks this for `=== null` (#508).
-    const card = toCard(row, null, null, null, null, undefined, undefined, aWaitId())
+    const projected = { ...row, ...options.row }
+    const card = toCard(
+      projected,
+      null,
+      null,
+      null,
+      null,
+      undefined,
+      undefined,
+      options.freshWaitId ?? projected.wait?.waitId ?? null,
+      options.freshNote ?? null,
+    )
     return renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
   } finally {
     db.close()
@@ -182,11 +145,60 @@ describe('the waiting card is pinned for every WaitReason (#482)', () => {
   for (const fx of FIXTURES) {
     it(`${fx.tag} — ${fx.name}`, async () => {
       const html = await foldOne(fx)
-      expect(waitPillOf(html)).toBe(fx.expectedPill)
       expect(questionOf(html)).toBe(fx.expectedQuestion)
-      expect(buttonsOf(html)).toEqual(fx.expectedButtons)
+      expect(html).toContain('class="id"')
+      expect(html).toContain('class="ti"')
+      expect(html).not.toContain('class="proj"')
+      expect(html).not.toContain('class="kdot"')
+      expect(html).not.toContain('class="pill')
+      expect(html).not.toContain('class="held"')
+      expect(html).not.toContain('class="btnrow"')
+      expect(buttonsOf(html)).toEqual([])
     })
   }
+})
+
+describe('the cause line', () => {
+  const fx = FIXTURES.find((f) => f.name === 'agentquestion')!
+  const advised = {
+    _tag: 'TriageAdvised' as const,
+    cause: { _tag: 'WrongApproach' as const },
+    resolution: 'Requeue' as const,
+    summary: 'the approach cannot converge',
+    want: null,
+  }
+
+  it('shows the current wait cause and summary as plain text', async () => {
+    const html = await foldOne(fx, { row: { triage: { started: null, result: advised } } })
+    expect(questionOf(html)).toBe('WrongApproach: the approach cannot converge')
+    expect(html).not.toContain('class="held"')
+    expect(buttonsOf(html)).toEqual([])
+  })
+
+  it('uses the fresh wait first line when the projected advice belongs to an older wait', async () => {
+    const html = await foldOne(fx, {
+      row: { triage: { started: null, result: advised } },
+      freshWaitId: aWaitId(),
+      freshNote: 'new wait sentence\nold detail',
+    })
+    expect(questionOf(html)).toBe('new wait sentence')
+    expect(html).not.toContain(advised.summary)
+    expect(html).not.toContain('old detail')
+  })
+
+  it('uses the wait first line when triage failed', async () => {
+    const html = await foldOne(fx, {
+      row: { triage: { started: null, result: { _tag: 'TriageFailed', why: 'raw failure' } } },
+      freshNote: 'own words\nmore detail',
+    })
+    expect(questionOf(html)).toBe('own words')
+    expect(html).not.toContain('raw failure')
+  })
+
+  it('renders no empty cause element when the wait has no note', async () => {
+    const html = await foldOne(fx, { row: { note: null }, freshWaitId: aWaitId() })
+    expect(questionOf(html)).toBeNull()
+  })
 })
 
 describe('a card whose wait id could not be read (#510)', () => {
@@ -198,7 +210,7 @@ describe('a card whose wait id could not be read (#510)', () => {
     vi.useRealTimers()
   })
 
-  it('shows the refusal and offers no Decide/Requeue/Close', async () => {
+  it('shows the wait sentence and no resolution when the wait id could not be read', async () => {
     const fx = FIXTURES[0]!
     const db = openSqliteProjections(':memory:')
     let html: string
@@ -217,7 +229,8 @@ describe('a card whose wait id could not be read (#510)', () => {
     } finally {
       db.close()
     }
-    expect(html).toContain('the wait on this card could not be read')
+    expect(questionOf(html)).toBe(fx.expectedQuestion)
+    expect(html).not.toContain('class="btnrow"')
     expect(buttonsOf(html)).toEqual([])
   })
 })
