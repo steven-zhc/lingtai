@@ -28,6 +28,7 @@ import {
   parsePayload,
   parseTicketStream,
   reduceTicket,
+  ticketStream,
   triageFactsOf,
   TRIAGE_TEXT_MAX,
   type Envelope,
@@ -36,41 +37,178 @@ import {
 } from '@lingtai/domain'
 import { triageStatus, type TriageResult, type WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError, eventStore, type EventStore } from '@lingtai/event-store'
+import { readTasks, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
 import { diffStatAt, listAt, readAt, refSha } from '@lingtai/repo'
 
 import { headOf, prepare } from './discuss.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
-const queued = new Set<string>()
+const queued = new Map<string, Promise<unknown>>()
 let tail: Promise<void> = Promise.resolve()
+
+function queueTriage(
+  key: { ticketId: string; waitId: WaitId },
+  run: () => Promise<unknown>,
+  log: (line: string) => void,
+): { added: boolean; done: Promise<unknown> } {
+  const id = JSON.stringify([key.ticketId, key.waitId])
+  const existing = queued.get(id)
+  if (existing) return { added: false, done: existing }
+  const done = tail.then(run)
+  queued.set(id, done)
+  tail = done
+    .then(
+      () => {},
+      (err) => {
+        log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
+      },
+    )
+    .finally(() => {
+      queued.delete(id)
+    })
+  return { added: true, done }
+}
 
 export function enqueueTriage(
   key: { ticketId: string; waitId: WaitId },
   run: () => Promise<unknown>,
   log: (line: string) => void = console.error,
 ): boolean {
-  const id = JSON.stringify([key.ticketId, key.waitId])
-  if (queued.has(id)) return false
-  queued.add(id)
-  tail = tail.then(async () => {
-    try {
-      await run()
-    } catch (err) {
-      log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      queued.delete(id)
-    }
-  })
-  return true
+  return queueTriage(key, run, log).added
 }
 
 export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
   triageFor(project: string): Promise<Triage | null>
   daemonStartedAt: Date | null
-  run(request: WaitTriageRequest): Promise<unknown>
+  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
+}
+
+export interface CatchUpTriagePorts {
+  store: Pick<EventStore, 'read' | 'append'>
+  readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
+  baseSha(project: string): Promise<string | null>
+  daemonStartedAt: Date | null
+  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
+  log?: (line: string) => void
+}
+
+/** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
+export async function catchUpTriage(project: string, triage: Triage | null, deps: CatchUpTriagePorts): Promise<void> {
+  if (triage === null) return
+  for (const card of await deps.readTasks(project)) {
+    if (card.state !== 'waiting') continue
+    // The stream name comes from the domain helper, not the board's row key.
+    const stream = ticketStream(project, card.issue)
+    await catchUpWait(stream, triage, deps)
+  }
+}
+
+async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriagePorts): Promise<void> {
+  const events = await deps.store.read(ticketId)
+  const lifecycle = reduceTicket(events).lifecycle
+  if (lifecycle.status !== 'blocked') return
+  const { waitId, reason } = lifecycle
+  const status = triageStatus(reason, triageFactsOf(events, waitId), {
+    declared: true,
+    daemonStartedAt: deps.daemonStartedAt,
+  })
+  if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
+  await queueTriage(
+    { ticketId, waitId },
+    async () => {
+      // A person or the live subscriber may have answered this while it waited in the queue.
+      const latest = await deps.store.read(ticketId)
+      const current = reduceTicket(latest).lifecycle
+      if (current.status !== 'blocked' || current.waitId !== waitId) return
+      const facts = triageFactsOf(latest, waitId)
+      const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: deps.daemonStartedAt })
+      if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
+        const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
+        if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
+      } else if (next._tag === 'Interrupted') {
+        await finishInterrupted(ticketId, waitId, deps)
+      }
+    },
+    deps.log ?? console.error,
+  ).done
+}
+
+/** Finish the second interrupted attempt only while it is still the latest unfinished attempt. */
+async function finishInterrupted(ticketId: string, waitId: WaitId, deps: CatchUpTriagePorts): Promise<void> {
+  for (let tries = 0; tries < 5; tries += 1) {
+    const events = await deps.store.read(ticketId)
+    const lifecycle = reduceTicket(events).lifecycle
+    if (lifecycle.status !== 'blocked' || lifecycle.waitId !== waitId) return
+    const facts = triageFactsOf(events, waitId)
+    if (
+      facts.started === null ||
+      facts.started.attempt < 2 ||
+      triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: deps.daemonStartedAt })._tag !==
+        'Interrupted'
+    )
+      return
+    const started = events.findLast(
+      (e) =>
+        e.type === 'TriageStarted' &&
+        (e.data as PayloadOf<'TriageStarted'>).waitId === waitId &&
+        (e.data as PayloadOf<'TriageStarted'>).attempt === facts.started!.attempt,
+    )!
+    const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
+    const headSha = runId === null ? null : headOf(await deps.store.read(runId))
+    const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
+    try {
+      await deps.store.append(ticketId, events.length, [
+        {
+          type: 'WaitTriaged',
+          actor: 'conductor',
+          data: parsePayload('WaitTriaged', {
+            waitId,
+            attempt: facts.started.attempt,
+            headSha: headSha ?? baseSha ?? '',
+            result: { _tag: 'TriageFailed', why: 'interrupted' },
+            by: (started.data as PayloadOf<'TriageStarted'>).by,
+          }),
+        },
+      ])
+      return
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError)) throw err
+    }
+  }
+  throw new Error(`could not finish interrupted triage ${waitId} after version conflicts`)
+}
+
+/** A successful scan pins the resolved triage section until a later pass sees a different one. */
+export async function catchUpChangedTriage(
+  project: string,
+  triage: Triage | null,
+  hashes: Map<string, string>,
+  deps: CatchUpTriagePorts,
+): Promise<void> {
+  const hash = JSON.stringify(triage)
+  if (hashes.get(project) === hash) return
+  await catchUpTriage(project, triage, deps)
+  hashes.set(project, hash)
+}
+
+/** An unreadable recipe supplies no triage declaration; try it again on a later pass. */
+export async function catchUpRegisteredTriage<T extends { project: string | null }>(
+  projects: readonly T[],
+  resolve: (project: T) => Promise<Triage | null>,
+  scan: (project: string, triage: Triage | null) => Promise<void>,
+  log: (line: string) => void,
+): Promise<void> {
+  for (const project of projects) {
+    if (project.project === null) continue
+    try {
+      await scan(project.project, await resolve(project))
+    } catch (err) {
+      log(`triage catch-up ${project.project}: ${(err as Error).message}`)
+    }
+  }
 }
 
 function currentWait(events: readonly Envelope[], waitId: WaitId): boolean {
@@ -95,18 +233,28 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
       const latest = await deps.store.read(event.streamId)
       if (!currentWait(latest, waitId)) return
       if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
-      await deps.run({ ticketId: event.streamId, waitId, reason, triage })
+      const outcome = await deps.run({ ticketId: event.streamId, waitId, reason, triage })
+      if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
     },
     deps.log,
   )
 }
 
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
-export function daemonTriagePorts(daemonStartedAt: Date | null, log: (line: string) => void): TriageTriggerPorts {
+export function daemonTriagePorts(
+  daemonStartedAt: Date | null,
+  log: (line: string) => void,
+): TriageTriggerPorts & CatchUpTriagePorts {
   return {
     store: eventStore,
     daemonStartedAt,
     log,
+    readTasks: (project) => readTasks({ project }),
+    baseSha: async (project) => {
+      const state = await loadProject(project)
+      if (state === null) return null
+      return refSha({ project, ref: state.base ?? 'main' })
+    },
     triageFor: async (project) => {
       const state = await loadProject(project)
       return state === null ? null : ((await currentRecipe(state)).recipe.triage ?? null)
@@ -284,7 +432,7 @@ async function gatherEvidence(
 export async function waitTriage(
   deps: TriagePorts,
   request: WaitTriageRequest,
-): Promise<{ attempt: number; result: TriageResult }> {
+): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
   const log = deps.log ?? (() => {})
   const stream = request.ticketId
 
@@ -298,7 +446,14 @@ export async function waitTriage(
       // attempt for this result to share a number with.
       attempt: 0,
       result: { _tag: 'TriageFailed', why: clip(`could not read the ticket: ${(err as Error).message}`) },
+      started: false,
     }
+  }
+  const waitIsCurrent = (events: readonly Envelope[]): boolean =>
+    !events.some((e) => e.type === 'WaitStarted' && (e.data as PayloadOf<'WaitStarted'>).waitId === request.waitId) ||
+    currentWait(events, request.waitId)
+  if (!waitIsCurrent(before)) {
+    return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
   }
   const priorAttempts = before
     .filter((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
@@ -307,14 +462,8 @@ export async function waitTriage(
 
   const by = { _tag: 'Agent' as const, runtime: request.triage.agent, model: request.triage.model ?? '' }
 
-  // A `ConcurrencyError` here says only that *something* appended to the
-  // ticket stream between the read above and this append — not that it was
-  // another triage attempt. `resolveWait` appending `WaitResolved` to the same
-  // stream, or any other appender, conflicts the same way a second triage
-  // attempt would. So re-read and check: only when the new events actually
-  // carry a `TriageStarted` for this same `waitId` is a second attempt really
-  // starting; anything else is unrelated, and the append is retried at the
-  // fresh version rather than abandoning the triage with a false reason.
+  // A version conflict can be a person's WaitResolved or another triage.
+  // Re-read the lifecycle before retrying the paid attempt's append.
   let started = false
   let startedErr: unknown = null
   for (let i = 0; i < 5 && !started; i += 1) {
@@ -331,24 +480,35 @@ export async function waitTriage(
       if (err instanceof ConcurrencyError) {
         const since = before.length
         before = await deps.store.read(stream)
+        if (!waitIsCurrent(before)) {
+          return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
+        }
         const racedByOther = before
           .slice(since)
           .some((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
         if (racedByOther) {
           log(`triage ${request.waitId}: lost the race to start attempt ${attempt} — nothing dispatched`)
-          return { attempt, result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') } }
+          return {
+            attempt,
+            result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') },
+            started: false,
+          }
         }
         startedErr = err
         continue
       }
       log(`triage ${request.waitId}: TriageStarted append failed — ${(err as Error).message}`)
-      return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) } }
+      return {
+        attempt,
+        result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) },
+        started: false,
+      }
     }
   }
   if (!started) {
     const message = startedErr instanceof Error ? startedErr.message : String(startedErr)
     log(`triage ${request.waitId}: TriageStarted append failed — ${message}`)
-    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) } }
+    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) }, started: false }
   }
 
   let baseSha: string | null = null

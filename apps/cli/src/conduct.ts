@@ -80,6 +80,8 @@ export interface ConductOptions {
    */
   paused?: () => Promise<string | null>
   log?: (line: string) => void
+  /** The resolved recipe each project's pass actually used. */
+  onRecipe?: (project: string, recipe: Recipe) => void
 }
 
 export interface PassOutcome {
@@ -126,6 +128,7 @@ export interface ConductWorkOptions {
   merge?: boolean
   paused?: () => Promise<string | null>
   log: (line: string) => void
+  onRecipe?: (project: string, recipe: Recipe) => void
   /**
    * Read fresh to settle whether a `control.continuing` row is still live
    * (`#465`, below) — never to decide what to run with, which `common`
@@ -183,6 +186,7 @@ export function conductWork(
       // `client.defaultBranch()`, which there is no client to ask.
       where.ref = project.base
       resolved = await world.currentRecipe(project, undefined, where.ref ?? undefined)
+      options.onRecipe?.(name, resolved.recipe)
       if (where.ref === null) where.ref = baseOf(resolved.recipe)
 
       // Both before `where.looked()`: a refusal here — no `source.tickets:
@@ -206,6 +210,7 @@ export function conductWork(
       const client = await world.createGitHubClient({ auth: githubApp(), owner: project.owner, repo: name })
       where.ref = project.base ?? (await client.defaultBranch())
       resolved = await world.currentRecipe(project, client, where.ref)
+      options.onRecipe?.(name, resolved.recipe)
       // Where this project's tickets actually live (`ticketsFor`, `#382`) —
       // **before `where.looked()`**, so a refusal here (a `db` project whose
       // log already has GitHub-numbered work items) is durable: a throw after
@@ -431,6 +436,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       ...(options.merge === undefined ? {} : { merge: options.merge }),
       ...(options.paused ? { paused: options.paused } : {}),
       log,
+      ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
     }),
   })
 }

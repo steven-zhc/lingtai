@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs'
 import { connect } from 'node:net'
 import { hostname } from 'node:os'
 
-import { describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
 import {
   clientsForProjects,
   createStatusTable,
@@ -47,6 +47,7 @@ import { log } from '@lingtai/event-store'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
+import type { Triage } from '@lingtai/recipe'
 
 import { addFlow, liveAddWorld, parseFlags } from './add.ts'
 import { approveCommand } from './approve.ts'
@@ -87,7 +88,7 @@ import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './servic
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
-import { daemonTriagePorts, onWaitStarted } from './triage.ts'
+import { catchUpChangedTriage, catchUpRegisteredTriage, daemonTriagePorts, onWaitStarted } from './triage.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -915,6 +916,19 @@ async function daemonCommand(
   const since = started.since
   let daemonStartedAt: Date | null = null
   let startTimeRead = false
+  const triageHashes = new Map<string, string>()
+  const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
+    try {
+      await catchUpChangedTriage(
+        project,
+        triage,
+        triageHashes,
+        daemonTriagePorts(daemonStartedAt, (line) => console.log(line)),
+      )
+    } catch (err) {
+      console.error(`triage catch-up ${project}: ${(err as Error).message}`)
+    }
+  }
 
   if (!('no-conduct' in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
@@ -991,6 +1005,7 @@ async function daemonCommand(
 
       pass: async (reason) => {
         await declared.retry()
+        const recipes = new Map<string, Triage | null>()
         const outcome = await conductorPass({
           merge: !('no-merge' in flags),
           // The commit read at startup, so a refusal on the log says which
@@ -1010,7 +1025,9 @@ async function daemonCommand(
             }
           },
           log: (line) => console.log(line),
+          onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
         })
+        for (const [project, triage] of recipes) await scanTriage(project, triage)
         // The run told GitHub as it went (0022), so there is nothing left
         // here to send and nothing to report about sending it.
         // A routine pass, in the accent — structure, not a verdict. What the
@@ -1040,6 +1057,13 @@ async function daemonCommand(
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
     await loop.start()
+    // The subscription is live; a wait made during this scan is delivered by its live handler.
+    await catchUpRegisteredTriage(
+      await loadProjects(),
+      async (state) => (await currentRecipe(state)).recipe.triage ?? null,
+      scanTriage,
+      (line) => console.error(line),
+    )
     // A question asked while nothing was listening is waiting in the stream,
     // exactly as a pause is (0013). After `start`, so the subscription is
     // already up and a question that arrives during this one is not missed.
