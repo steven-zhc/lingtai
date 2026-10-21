@@ -114,12 +114,41 @@ describe('WaitStarted triage trigger', () => {
     await drained()
   })
 
+  it('rechecks the wait when its queued turn begins', async () => {
+    let release!: () => void
+    enqueueTriage(
+      { ticketId: 'ticket-blocker-1', waitId: 'wait-blocker' as WaitId },
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    )
+    const f = fixture(judgement)
+    await onWaitStarted(f.started, f.deps)
+    f.setEvents([
+      f.started,
+      f.event('WaitResolved', {
+        waitId: f.waitId,
+        by: 'steven',
+        resolution: { _tag: 'Requeue' },
+        note: 'continue',
+      }),
+    ])
+    await drained()
+    release()
+    await drained()
+    expect(f.dispatched).not.toHaveBeenCalled()
+  })
+
   it('deduplicates queued keys and continues after a failed worker', async () => {
     let finish!: () => void
     const first = new Promise<void>((resolve) => {
       finish = resolve
     })
-    const second = vi.fn(async () => {})
+    const second = vi.fn(async () => {
+      throw new Error('read failed')
+    })
+    const third = vi.fn(async () => {})
     const log = vi.fn()
     expect(enqueueTriage({ ticketId: 'ticket-a-1', waitId: 'wait-a' as WaitId }, () => first, log)).toBe(true)
     expect(enqueueTriage({ ticketId: 'ticket-a-2', waitId: 'wait-b' as WaitId }, second, log)).toBe(true)
@@ -129,6 +158,10 @@ describe('WaitStarted triage trigger', () => {
     finish()
     await drained()
     expect(second).toHaveBeenCalledOnce()
+    expect(log).toHaveBeenCalledWith('triage wait-b: read failed')
+    expect(enqueueTriage({ ticketId: 'ticket-a-3', waitId: 'wait-c' as WaitId }, third, log)).toBe(true)
+    await drained()
+    expect(third).toHaveBeenCalledOnce()
   })
 
   it('keeps the recipe triage wall below the subscriber timeout', () => {
