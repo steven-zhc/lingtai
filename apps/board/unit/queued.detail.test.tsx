@@ -389,6 +389,7 @@ const NEVER_RUN: StandingView = {
   restarts: 0,
   restartsOf: 0,
   waitId: null,
+  reason: null,
   approvedSha: null,
 }
 

@@ -1,4 +1,8 @@
 import { inWords } from '@lingtai/conductor/queue'
+// The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
+// off (#483) — so the page and the server action can never disagree about
+// which resolutions a wait allows.
+import { allowedResolutions, type Resolution } from '@lingtai/domain/wait'
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
 // reads, so this block, the card and `lingtai status` say the same thing about
@@ -195,15 +199,26 @@ export function Standing({
   // simply next, which is the answer rather than an omission.
   const stopped = queued === null ? null : holding(queued)
   const inLine = queued === null ? null : place(queued)
+  // 0118 §1's own answer to *which controls does this wait allow*, and the
+  // only thing the moves row below reads to decide (#442). `[]` where there
+  // is no reason to read — a wait that could not be folded, or no wait at all
+  // — so every move below is drawn as absent rather than guessed at.
+  const allowed = standing.reason === null ? [] : allowedResolutions(standing.reason)
   // There is a document to send exactly when there is one to show. `problem` is
   // the case #76 is about — an unregistered project, a template that is not
   // there — and a Send on a prompt nobody could compose would send whatever the
   // conductor composes later, unseen, which is the opposite of this column.
   //
-  // **And not on a question asked before any run** (#147): what that block wants
+  // **And not where `AnswerQuestion` is allowed** (#147): what that wait wants
   // is an answer, and sending would put it back in the queue unanswered — the
-  // server refuses it, and a row offering only that would be #84 again.
-  const sendable = outgoing !== null && outgoing.problem === null && !standing.asked ? outgoing.attempt : null
+  // same rule `sendAttempt` enforces on the server (`actions.ts`, #483), so the
+  // page and the action can never disagree.
+  const sendable =
+    outgoing !== null && outgoing.problem === null && !allowed.includes('AnswerQuestion') ? outgoing.attempt : null
+
+  // The moves row's own list, and the only thing it draws from (#442). See
+  // `movesOf`.
+  const moves = movesOf(allowed, standing.awaitingSha, sendable)
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -407,20 +422,27 @@ export function Standing({
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
       {acting && standing.state === 'blocked' ? (
-        standing.waitId === null ? (
+        standing.waitId === null || standing.reason === null ? (
           // Defensive, not reachable in the ordinary case: `standingOf` sets
-          // `waitId` from the same fold as `state`, so a `blocked` standing
-          // carries one by construction. Kept rather than asserted past,
-          // because a button `Decide`/`Requeue`/`Close` cannot send a wait id
-          // to is exactly the `#84` complaint this file's own header states as
-          // a rule — a card must never offer a control bound to refuse (#508),
-          // so none is offered here.
+          // `waitId` and `reason` from the same fold as `state`, so a
+          // `blocked` standing carries both by construction. Kept rather than
+          // asserted past, because a button `Decide`/`Requeue`/`Close` cannot
+          // send a wait id to is exactly the `#84` complaint this file's own
+          // header states as a rule — a card must never offer a control bound
+          // to refuse (#508), so none is offered here.
           <div className="btnrow smoves" data-rank="moves">
             <p className="refusal">the wait on this card could not be read — reload and read it again</p>
           </div>
         ) : (
           <div className="btnrow smoves" data-rank="moves">
-            {standing.awaitingSha !== null ? (
+            {/* Every move drawn below comes off `moves` (`movesOf`,
+                `allowedResolutions(standing.reason)`) and nothing else — no
+                `awaitingSha`, `asked` or `state === 'blocked'` condition
+                decides which control exists any more (#442). `awaitingSha`
+                still decides what `Decide` sends, and `sendable` still decides
+                whether Requeue sends a document or asks for one, but neither
+                decides whether a control is on the row. */}
+            {moves.includes('approve') && standing.awaitingSha !== null ? (
               <Decide
                 project={project}
                 issue={issue}
@@ -431,7 +453,15 @@ export function Standing({
               />
             ) : null}
 
-            {sendable !== null ? (
+            {/* `Approve` is allowed and there is nothing to send it with — a
+                `MergeRefused` whose run never reached origin, say. Never a
+                `Decide` bound to a null sha (#84): the sentence is the whole
+                of what this move can say. */}
+            {moves.includes('approve-unavailable') ? (
+              <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
+            ) : null}
+
+            {moves.includes('send') && sendable !== null ? (
               <Send
                 taskId={taskId}
                 attempt={sendable}
@@ -440,7 +470,7 @@ export function Standing({
                 // anything, whatever a diagnosis written before #83 recommends —
                 // and otherwise only when the recommendation points here.
                 primary={
-                  standing.awaitingSha === null ||
+                  !moves.includes('approve') ||
                   standing.diagnosis?.recommendation?.action === 'requeue' ||
                   standing.diagnosis?.recommendation?.action === 'reject'
                 }
@@ -452,12 +482,25 @@ export function Standing({
                 card asking for approval still needs *run it again* beside
                 Approve. It keeps asking why — the reason Send does not is that
                 Send's reason is the document, and this has none. */}
-            {sendable === null ? (
+            {moves.includes('requeue') ? (
               <Requeue
                 project={project}
                 issue={issue}
                 waitId={standing.waitId}
-                asked={standing.asked}
+                asked={false}
+                question={standing.askedQuestion}
+                recommended={standing.diagnosis?.recommendation?.action ?? null}
+              />
+            ) : null}
+
+            {/* `AnswerQuestion` only, in `Requeue`'s own answer mode — Answer
+                and the Withdraw beside it. */}
+            {moves.includes('answer') ? (
+              <Requeue
+                project={project}
+                issue={issue}
+                waitId={standing.waitId}
+                asked={true}
                 question={standing.askedQuestion}
                 recommended={standing.diagnosis?.recommendation?.action ?? null}
               />
@@ -466,9 +509,8 @@ export function Standing({
             {/* The third move, beside whichever two are here (`#151`). Approve
                 and Send take what the run produced, Requeue asks for another, and
                 all three assume the ticket is still wanted. This is the one that
-                says it is not — and it is offered on every acting row, because
-                the moment you decide a ticket is over is whenever you read it. */}
-            <Close project={project} issue={issue} waitId={standing.waitId} />
+                says it is not. */}
+            {moves.includes('close') ? <Close project={project} issue={issue} waitId={standing.waitId} /> : null}
           </div>
         )
       ) : null}
@@ -547,6 +589,37 @@ export function Standing({
       </div>
     </section>
   )
+}
+
+/**
+ * The moves row, as a list of what to draw — and the one thing #442 asks for:
+ * every entry comes off `allowed` (`allowedResolutions(standing.reason)`),
+ * never off `awaitingSha`, `asked` or `state === 'blocked'`.
+ *
+ * `awaitingSha` and `sendable` still decide a control's *form*, not whether it
+ * exists: `Approve` allowed with a sha to send is `'approve'`, allowed with
+ * none is `'approve-unavailable'` (a sentence, never a button bound to a null
+ * sha, #84); `Requeue` allowed and not answering is `'send'` where there is a
+ * document to send and `'requeue'` where there is not. `AnswerQuestion`
+ * allowed draws `'answer'` — `Requeue`'s own answer mode, Answer and the
+ * Withdraw beside it — and when it is allowed `Requeue`'s plain mode adds
+ * nothing more, so `'send'`/`'requeue'` and `'answer'` never both appear.
+ * `EditBodyAndRequeue` has no control yet (#422/#520) and draws nothing here.
+ */
+export function movesOf(
+  allowed: readonly Resolution['_tag'][],
+  awaitingSha: string | null,
+  sendable: number | null,
+): Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'close'> {
+  const moves: Array<'approve' | 'approve-unavailable' | 'answer' | 'send' | 'requeue' | 'close'> = []
+  if (allowed.includes('Approve')) moves.push(awaitingSha !== null ? 'approve' : 'approve-unavailable')
+  if (allowed.includes('AnswerQuestion')) {
+    moves.push('answer')
+  } else if (allowed.includes('Requeue')) {
+    moves.push(sendable !== null ? 'send' : 'requeue')
+  }
+  if (allowed.includes('Close')) moves.push('close')
+  return moves
 }
 
 /**
