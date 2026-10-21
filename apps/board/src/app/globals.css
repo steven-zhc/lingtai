@@ -2168,6 +2168,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mdask > summary:hover { color: var(--ink-2); }
 
 @media (max-width: 46rem) {
+  .triage-readings { grid-template-columns: minmax(0, 1fr); }
   /* Stacked, with the marker keeping its own column so the row still reads as
      something that opens. */
   .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }
