@@ -34,6 +34,48 @@ it opens on load and its run log opens with it, following. Only the running
 one — a page with six attempts would otherwise follow six files nobody asked to
 see (#110).
 
+## Visual comparison of a Waiting page
+
+Compared the current component, render tests and width rules with 0118 §2 and
+the illustrative [`Hold`](../decisions/0118/Hold.dc.html),
+[`More`](../decisions/0118/More.dc.html) and
+[`Conflict`](../decisions/0118/Conflict.dc.html) pages. The references are
+source and CSS evidence, not screenshots of a live self-hosted wait: its recipe
+declares no `triage:`, so that page cannot show advised triage. The mockups are
+fixed-width examples; the narrow comparison below follows the board's width
+rules rather than shrinking a 1200px mockup.
+
+| Part | Current evidence | 0118 requirement | Disposition |
+|---|---|---|---|
+| Ticket | Title, plain triage reading when available, and a collapsed, rendered opening precede state (`apps/board/src/app/standing.tsx:457-485`; `apps/board/unit/standing.test.tsx:1660-1691`). | Title, current advice's reading and collapsed opening; unstructured bodies are valid (§2). | **Intentional difference:** keep the opening collapsed. The mockups' Problem/Want/Watch out columns (`0118/Hold.dc.html:44-57`) are hand-written examples, not fields to parse from the body. |
+| Where it is | State and age precede the rail; the rail and refusal sit inside the same `.sbody` as the `soWhat` sentence (`standing.tsx:488-603`; `globals.css:949-961`). | A ten-step rail followed by one line saying what refused, rounds spent and restarts left (§2). | **Change #526:** give the rail and its budget/refusal line a distinct, adjacent place in the page hierarchy. Keep the state and age visible; #527 owns their visual weight and narrow-width layout. |
+| Triage | Current blocked waits render advice, progress or failure between the state block and moves (`standing.tsx:38-156,604-606`); `NotDeclared` renders nothing (`apps/board/unit/triage-band.test.tsx:24-43`). The band has no `.triage-band` rule; only disagreement has a grid (`globals.css:1036-1037`). | Show the current wait's cause, questions and recommendation; absent when undeclared, failure stated without invented advice; discussion follows (§2-3, §9). | **Change #527:** make advised, failed and conflict triage visibly legible as a band, including a narrow stack. Preserve the intentional absence when undeclared. |
+| Resolutions | Allowed moves follow triage, but buttons occupy `.smoves`, the body editor follows separately, and prompt/discussion sit in `.spair` (`standing.tsx:627-790`; `globals.css:1215-1224`). | Put available resolutions after triage, with the recommended one apparent; unpushed work first (§1-2, §6). | **Change #526:** make the existing controls read as one resolutions section, including the body edit. #527 owns state and narrow-width presentation of that section. The mockup's large option cards are a cue, not a required control design. |
+| Record | `Record` follows `Standing`; its five tabs are History, Diff, Findings, Attempts, Ticket (`task/[id]/page.tsx:514-520,732-735,838-839`; `globals.css:1576-1609`). | Record last, with those five tabs (§2). | **Intentional difference:** retain the tabs rather than the mockups' particular panel styling. No gap. |
+
+**Fixtures and widths.** The same shared separation of *where it is*, triage
+and resolutions applies to each Waiting fixture; it is recorded once above.
+At desktop width (at least 64rem) `.spair` has two columns; below 64rem it
+stacks, and at 46rem or less the history rows stack too
+(`globals.css:1167-1196,2141-2150`). The source comparison at both widths is:
+
+| Current Waiting fixture | Desktop (at least 64rem) | Narrow (at most 46rem) |
+|---|---|---|
+| Advised `TriageAdvised` with a `want` | Reading appears at the ticket, cause/questions/recommendation in triage, and recommended move is selected (`standing.tsx:443-450,470,87-150,370-390`; `standing.test.tsx:1694-1726`). | Same content and order; prompt/discussion stack while the band has no narrow rule (`globals.css:1036-1037,1182-1196`). #527 owns its narrow emphasis. |
+| `NotDeclared` | No band; the holder's words remain in the state block (`triage-band.test.tsx:24-27`; `standing.tsx:558-589`). | Same absence and words; no empty band takes space. Intentional. |
+| `TriageFailed` | Failure text, with no recommendation (`triage-band.test.tsx:38-43`; `standing.tsx:63-72`). | Same unstyled failure text. #527 owns its visible treatment at both widths. |
+| `ConflictingHunks` | Count and every hunk are listed; only divergent hunks open with a question (`triage-band.test.tsx:94-127`; `standing.tsx:87-119`). | Same list without a hunk-specific width rule. #527 owns readable hunk/status layout at both widths. |
+
+The conflict mockup's three code columns are illustrative: the current `Hunk`
+contract carries path, line and, for a divergent hunk, a question
+(`packages/domain/src/triage.ts:58-77`), not three code excerpts.
+
+A Queued page is not a Waiting fixture: it has its own Run now/Close row and
+the triage band is gated on `blocked` (`standing.tsx:604-606,748-761`). For a
+real advised wait, establish which advice is current from `WaitStarted.waitId`
+and the latest matching `TriageStarted`/`WaitTriaged` attempt and result; the
+page's `want` uses that current-wait join (`apps/board/src/lib/task.ts:1620-1627`).
+
 ## 1. The skeleton is the attempt
 
 The log keeps one stream per run, and the page does not flatten what the log
