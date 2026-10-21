@@ -1617,6 +1617,24 @@ export function currentTriageStatus(
   return triageStatus(standing.reason, card.triage, context)
 }
 
+/** Read the inputs for this wait; a failed read must reach the page as an error. */
+export async function loadCurrentTriageStatus(
+  taskId: string,
+  projectName: string,
+  standing: StandingView,
+): Promise<TriageStatus | null> {
+  const [cards, project, daemon] = await Promise.all([
+    readTasks({ project: projectName }),
+    loadProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
+    readStatus().catch(() => null),
+  ])
+  const card = cards.find((row) => row.taskId === taskId)
+  return currentTriageStatus(standing, card ?? null, {
+    declared: project?.recipe.triage !== undefined,
+    daemonStartedAt: daemon?.startedAt ?? null,
+  })
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await eventStore.read(taskId)
 
@@ -1666,18 +1684,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     foldedStanding.reason !== null &&
     ticket !== null
   ) {
-    const [cards, project, daemon] = await Promise.all([
-      readTasks({ project: ticket.project }).catch(() => []),
-      loadProject(ticket.project)
-        .then((state) => (state === null ? null : currentRecipe(state)))
-        .catch(() => null),
-      readStatus().catch(() => null),
-    ])
-    const card = cards.find((row) => row.taskId === taskId)
-    status = currentTriageStatus(foldedStanding, card ?? null, {
-      declared: project?.recipe.triage !== undefined,
-      daemonStartedAt: daemon?.startedAt ?? null,
-    })
+    status = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
   }
   const standing = { ...foldedStanding, triageStatus: status }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null

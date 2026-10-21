@@ -1,5 +1,6 @@
 import type { Action, Envelope, Finding, Step } from '@lingtai/domain'
 import { aWaitId } from '@lingtai/domain/test/events'
+import { Children, isValidElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The page says why a task is not moving, and says it first.
@@ -18,6 +19,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
+import { Close } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
@@ -1194,6 +1196,34 @@ const render = (standing: StandingView, outgoing: OutgoingView | null) =>
     />,
   )
 
+function closeOn(standing: StandingView): { key: string | null; prefill: string | null | undefined } {
+  const page = Standing({
+    subject: null,
+    standing,
+    project: 'lingtai',
+    issue: 112,
+    taskId: 'ticket-lingtai-112',
+    discussions: [],
+    outgoing: OUTGOING,
+    queued: null,
+  })
+  const find = (node: ReactNode): { key: string | null; prefill: string | null | undefined } | null => {
+    let found: ReturnType<typeof find> = null
+    Children.forEach(node, (child) => {
+      if (found !== null || !isValidElement(child)) return
+      if (child.type === Close) {
+        found = { key: child.key, prefill: (child.props as { prefill?: string | null }).prefill }
+      } else {
+        found = find((child.props as { children?: ReactNode }).children)
+      }
+    })
+    return found
+  }
+  const close = find(page)
+  if (close === null) throw new Error('Close was not rendered')
+  return close
+}
+
 it('ignores triage facts for a wait that is no longer current', () => {
   const oldWait = aWaitId()
   const card = {
@@ -1297,6 +1327,26 @@ describe('the moves the column ends in', () => {
     expect(html.indexOf('>Close</button>')).toBeLessThan(html.indexOf('>Send attempt'))
     expect(html).toContain('class="btn pri">Close')
     expect(html).not.toContain('class="btn pri">Send')
+  })
+
+  it('remounts Close with triage summary when Follow refreshes a running triage', () => {
+    const running = closeOn({ ...HELD, triageStatus: { _tag: 'Running' } })
+    const advised = closeOn({
+      ...HELD,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: 'Close',
+          summary: 'stop this approach',
+          want: null,
+        },
+      },
+    })
+    expect(running.prefill).toBeNull()
+    expect(advised.prefill).toBe('stop this approach')
+    expect(advised.key).not.toBe(running.key)
   })
 
   it('leaves the existing order and no primary for disallowed advice', () => {

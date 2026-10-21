@@ -596,10 +596,7 @@ export function Standing({
                       key={move}
                       taskId={taskId}
                       attempt={sendable}
-                      // Amber once per screen. Send carries it where there is no
-                      // Approve beside it — sending is then the only move that moves
-                      // anything, whatever a diagnosis written before #83 recommends —
-                      // and otherwise only when the recommendation points here.
+                      // Amber follows the current wait's recommendation.
                       primary={recommended === 'Requeue'}
                     />
                   ) : null
@@ -630,23 +627,24 @@ export function Standing({
                     />
                   )
 
-                case 'close':
+                case 'close': {
+                  const prefill =
+                    recommended === 'Close' &&
+                    standing.triageStatus?._tag === 'Done' &&
+                    standing.triageStatus.result._tag === 'TriageAdvised'
+                      ? standing.triageStatus.result.summary
+                      : null
                   return (
                     <Close
-                      key={move}
+                      key={`${move}:${prefill ?? ''}`}
                       project={project}
                       issue={issue}
                       waitId={standing.waitId}
                       primary={recommended === 'Close'}
-                      prefill={
-                        recommended === 'Close' &&
-                        standing.triageStatus?._tag === 'Done' &&
-                        standing.triageStatus.result._tag === 'TriageAdvised'
-                          ? standing.triageStatus.result.summary
-                          : null
-                      }
+                      prefill={prefill}
                     />
                   )
+                }
               }
             })}
           </div>
