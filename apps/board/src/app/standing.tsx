@@ -426,12 +426,15 @@ export function Standing({
       : null
   const orderedResolutions =
     recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
-  const resolutionCards: Resolution['_tag'][] =
-    acting && (standing.state === 'blocked' || (standing.state === 'queued' && !standing.afterMove))
+  // Keep the keyed body editor mounted across Follow refreshes so an unsent
+  // draft remains available after somebody else resolves the wait.
+  const resolutionCards: Resolution['_tag'][] = acting
+    ? standing.state === 'blocked'
       ? orderedResolutions.includes('EditBodyAndRequeue')
         ? orderedResolutions
         : [...orderedResolutions, 'EditBodyAndRequeue']
-      : []
+      : ['EditBodyAndRequeue']
+    : []
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -719,8 +722,8 @@ export function Standing({
                 return (
                   <article
                     key={tag}
-                    className={`sresolution${triageRecommended === tag ? ' sresolution--recommended' : ''}`}
-                    data-resolution={tag}
+                    className={`sresolution${triageRecommended === tag ? ' sresolution--recommended' : ''}${!visible ? ' sresolution--draft' : ''}`}
+                    data-resolution={visible ? tag : undefined}
                     hidden={!visible && tag !== 'EditBodyAndRequeue'}
                   >
                     {visible ? (

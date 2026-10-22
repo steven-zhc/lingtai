@@ -288,6 +288,9 @@ export function EditBodyAndRequeue({
 
   return (
     <div className="decide">
+      {waitId === null ? (
+        <p className="refusal">This wait has ended. Your unsent draft is below; copy it before leaving.</p>
+      ) : null}
       {question !== null ? <p>{question}</p> : null}
       <label className="reason">
         <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>

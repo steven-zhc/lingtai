@@ -85,6 +85,22 @@ it('can submit a new answer after a successful wait while the editor stays mount
   })
 })
 
+it('keeps an unsent answer visible but unsendable after another person ends the wait', () => {
+  harness.values = []
+  harness.triage = null
+  const waitId = aWaitId()
+  const render = (currentWaitId: WaitId | null) => {
+    harness.cursor = 0
+    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId: currentWaitId, reason: null })
+  }
+
+  control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My unsent answer' } })
+  const afterMove = render(null)
+  expect(control(afterMove, 'textarea').props.value).toBe('My unsent answer')
+  expect(control(afterMove, 'button').props.disabled).toBe(true)
+  expect(renderToStaticMarkup(afterMove)).toContain('Your unsent draft is below; copy it before leaving.')
+})
+
 it('follows triage picks until a manual edit, then resets the draft on the next wait', async () => {
   harness.values = []
   harness.submit.mockClear()
