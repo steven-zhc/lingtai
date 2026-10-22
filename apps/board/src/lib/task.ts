@@ -774,6 +774,10 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue') &&
     (outcome.data as { cause?: { _tag: string; waitId?: string } }).cause?._tag === 'ByPerson' &&
     (outcome.data as { cause: { waitId: string } }).cause.waitId === move?.waitId
+  const requeued =
+    latestLifecycle === lastMove &&
+    life.status === 'backlog' &&
+    (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue')
   const bodyEvent = [...own]
     .reverse()
     .find(
@@ -788,13 +792,15 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
     afterMove:
-      move !== undefined && (closed || released)
+      move !== undefined && (closed || released || requeued)
         ? {
             resolution: move.resolution._tag,
             by: move.by,
             note: move.note,
             result: closed ? 'closed' : 'requeued',
-            reason: (outcome!.data as { reason: string }).reason,
+            reason: requeued
+              ? 'The wait was resolved and the ticket returned to the queue.'
+              : (outcome!.data as { reason: string }).reason,
           }
         : null,
     bodyOutcome:

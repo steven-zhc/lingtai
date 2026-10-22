@@ -194,13 +194,7 @@ function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: En
       by: 'steven',
       note: 'the review cannot run',
     }),
-    resolution === 'Close'
-      ? e(ITEM, 'TicketClosed', { by: 'steven', reason: 'the review cannot run' })
-      : e(ITEM, 'TicketReleased', {
-          runId: RUN,
-          reason: 'retry with context',
-          cause: { _tag: 'ByPerson', waitId: 'wait-147' },
-        }),
+    ...(resolution === 'Close' ? [e(ITEM, 'TicketClosed', { by: 'steven', reason: 'the review cannot run' })] : []),
   ]
   return task(own, [])
 }
@@ -222,15 +216,23 @@ describe('after the move', () => {
 
   it('states a recorded requeue without claiming a body write', () => {
     const html = page(moved('Requeue'))
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
     expect(html).toContain('The ticket returned to the queue.')
     expect(html).toContain('Decision: the review cannot run')
-    expect(html).toContain('Result: retry with context')
+    expect(html).toContain('Result: The wait was resolved and the ticket returned to the queue.')
     expect(html).not.toContain('body write completed')
     expect(html).not.toContain('data-resolution=')
   })
 
-  it('states the completed body edit only after resolution and release', () => {
-    const html = page(moved('EditBodyAndRequeue'))
+  it('states the completed body edit after the wait is resolved', () => {
+    const html = page(
+      moved('EditBodyAndRequeue', [
+        e(ITEM, 'IssueUpdated', { project: 'lingtai', issue: '147', change: 'body', detail: '42 bytes' }),
+      ]),
+    )
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
     expect(html).toContain('The body write completed before the wait was resolved.')
   })
 
@@ -279,6 +281,22 @@ describe('after the move', () => {
     const html = page(task(own, [], { ticket: t.ticket }))
     expect(html).not.toContain('After the move')
     expect(html).not.toContain('waiting for a conductor to take it')
+  })
+
+  it('does not present a past requeue as the current move after another release', () => {
+    const own = [
+      e(ITEM, 'TicketClaimed', { runId: RUN }),
+      e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-147',
+        resolution: { _tag: 'Requeue' },
+        by: 'steven',
+        note: 'the review cannot run',
+      }),
+      e(ITEM, 'TicketReleased', { runId: RUN, reason: 'another release', cause: null }),
+    ]
+    const html = page(task(own, []))
+    expect(html).not.toContain('After the move')
   })
 })
 
