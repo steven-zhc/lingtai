@@ -427,7 +427,7 @@ export function Standing({
   const orderedResolutions =
     recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
   const resolutionCards: Resolution['_tag'][] =
-    acting && standing.state === 'blocked'
+    acting && (standing.state === 'blocked' || (standing.state === 'queued' && !standing.afterMove))
       ? orderedResolutions.includes('EditBodyAndRequeue')
         ? orderedResolutions
         : [...orderedResolutions, 'EditBodyAndRequeue']
