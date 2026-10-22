@@ -21,11 +21,28 @@ Have these ready:
   push -u origin <your base branch>` — skip the push and `lingtai start` fails
   on an empty origin.
 
+If you do not have a project ready, use [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
+a small Astro site for jointly written novels. It begins with passing checks
+and two Markdown chapters. This makes a private, writable `origin` from its
+public seed; no GitHub account or App is needed for this local-project route:
+
+```bash
+git clone --bare https://github.com/steven-zhc/chapter-garden.git ~/chapter-garden-origin.git
+git clone ~/chapter-garden-origin.git ~/chapter-garden
+cd ~/chapter-garden
+git switch -c my-story
+git push -u origin my-story
+```
+
+The working directory's `origin` is now your own bare repository, not the
+public seed. To run this site's checks, install Node.js 22.23.4 or newer and
+confirm `node --version` and `npm --version` work in your terminal.
+
 There is no database to provision. Lingtai's own log is a SQLite file under
 `~/.lingtai` unless you give `init` a Postgres URL instead.
 
-Choose a small first ticket — a focused bug with an obvious test, not a test
-of its limits.
+Choose a small first ticket with an obvious check, not a test of the system's
+limits. Chapter Garden's example below adds a third chapter.
 
 Install the CLI:
 
@@ -106,6 +123,17 @@ lingtai init --store sqlite --project local --local <dir> --base <branch> \
 
 `--agent` names the runtime — omit it with two signed in and the run refuses.
 
+For Chapter Garden, use `~/chapter-garden` as the directory and `my-story` as
+the base. Choose `npm ci` for install, then `npm run check` and `npm run build`
+as the two build commands. Its initial build passes, including the trial run
+during setup. With Codex signed in, the same choices can be scripted:
+
+```bash
+lingtai init --store sqlite --local ~/chapter-garden --base my-story \
+  --agent codex --install 'npm ci' --build 'npm run check' \
+  --build 'npm run build' --defaults --land hold
+```
+
 `init` ends by registering the project and printing its recipe:
 
 ```text
@@ -161,10 +189,23 @@ Describe the problem here.
 
 The first line is the title; `labels:` must carry one of the kinds your
 recipe took in Step 1, or the ticket is created but the queue passes over it.
+On Chapter Garden, replace the form with this first ticket:
+
+```text
+Add the third chapter of After the Rain
+labels: feature
+
+Add a third Markdown chapter under src/content/books/after-rain/.
+Continue from the person who looks like Lin Che stepping off the 7:40 train
+with a letter. Write 300–600 Chinese characters and keep the first two
+chapters intact. Give the new chapter frontmatter a title and order: 3,
+then run npm run check and npm run build.
+```
+
 Save and quit to create it:
 
 ```text
-created #1  My first ticket
+created #1  Add the third chapter of After the Rain
 ```
 
 If a run needs project secrets, add only the names your recipe's `build`
