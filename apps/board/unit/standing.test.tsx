@@ -1762,6 +1762,39 @@ describe('the subject, at the top', () => {
     expect(withoutWatch).not.toContain('>Watch out</h2>')
   })
 
+  it('keeps the context panel and resolves references when a row has trailing whitespace', () => {
+    const body = [
+      '| | |',
+      '|---|---|',
+      '| **Problem** | A problem |',
+      '| **Want** | A want |',
+      '| **Fix** | A fix |',
+      '| **Watch out** | Read [the API][api] | ',
+      '',
+      '[api]: https://example.com/api',
+    ].join('\n')
+    expect(ticketOpening(body)).toEqual({ problem: 'A problem', want: 'A want', watchOut: 'Read [the API][api]' })
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+        body={body}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="#record-ticket"'))
+    expect(context).toContain('>Problem</h2>')
+    expect(context).toContain('>Want</h2>')
+    expect(context).toContain('>Watch out</h2>')
+    expect(context).toContain('href="https://example.com/api"')
+    expect(context).not.toContain('[the API][api]')
+  })
+
   it('does not promote malformed, hostile, or long cells into facts', () => {
     const base = '| | |\n|---|---|\n| **Problem** | A problem |\n| **Want** | A want |\n| **Fix** | A fix |'
     expect(ticketOpening(`${base}\n| **Watch out** | <script>alert(1)</script> |`)).toBeNull()

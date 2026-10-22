@@ -213,7 +213,13 @@ export function ticketOpening(body: string): { problem: string; want: string; wa
   const row = (line: string | undefined, label: string): string | null => {
     if (!line) return null
     const cells = line.split('|')
-    if (cells.length !== 4 || cells[0] !== '' || cells[3] !== '' || cells[1] === undefined || cells[2] === undefined)
+    if (
+      cells.length !== 4 ||
+      cells[0] !== '' ||
+      cells[3].trim() !== '' ||
+      cells[1] === undefined ||
+      cells[2] === undefined
+    )
       return null
     if (cells[1].trim() !== `**${label}**`) return null
     const value = cells[2].trim()
@@ -233,7 +239,8 @@ export function ticketOpening(body: string): { problem: string; want: string; wa
   return { problem, want, watchOut }
 }
 
-function TicketContext({ opening }: { opening: ReturnType<typeof ticketOpening> }) {
+function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpening>; body: string | null }) {
+  const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className="topening">
       {opening === null ? (
@@ -251,7 +258,11 @@ function TicketContext({ opening }: { opening: ReturnType<typeof ticketOpening> 
             .map(([label, value]) => (
               <div className="tcontext-field" key={label}>
                 <h2>{label}</h2>
-                <DocumentBody source="ticket-body" text={value!} rawClass="tbodytext" />
+                <DocumentBody
+                  source="ticket-body"
+                  text={references ? `${value!}\n\n${references}` : value!}
+                  rawClass="tbodytext"
+                />
               </div>
             ))}
         </div>
@@ -591,7 +602,7 @@ export function Standing({
             {subject !== null ? (
               <div className="sticket">
                 {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-                <TicketContext opening={opening} />
+                <TicketContext opening={opening} body={body} />
               </div>
             ) : null}
           </header>
@@ -602,7 +613,7 @@ export function Standing({
               {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-            <TicketContext opening={opening} />
+            <TicketContext opening={opening} body={body} />
           </div>
         ) : null}
         {standing.afterMove ? (
