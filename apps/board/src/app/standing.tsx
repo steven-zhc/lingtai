@@ -838,6 +838,8 @@ export function Standing({
             <Discussion
               taskId={taskId}
               attempt={standing.attempt}
+              reason={standing.reason}
+              triageStatus={standing.triageStatus}
               discussions={discussions}
               discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
               quiet={standing.state === 'running'}

@@ -22,6 +22,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import type { TriageStatus, WaitReason } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -104,6 +105,62 @@ describe('the box while it is being answered', () => {
       ],
     }
     expect(render([answered])).not.toContain('data-trace')
+  })
+})
+
+describe('the six Discussion reference contexts', () => {
+  const wait = { _tag: 'CheckRefused' } as WaitReason
+  const question = { _tag: 'OwnQuestion' } as WaitReason
+  const signoff = { _tag: 'SignoffRequired' } as WaitReason
+  const advised = {
+    _tag: 'Done',
+    result: {
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'FixableLines', lines: [] },
+      resolution: { _tag: 'FixLines', lines: [] },
+      summary: 'The test needs one more assertion.',
+      want: null,
+    },
+  } as TriageStatus
+  const fixtures = [
+    { name: 'triage running', reason: wait, status: { _tag: 'Running' } as TriageStatus, state: 'running' },
+    {
+      name: 'triage failed',
+      reason: wait,
+      status: { _tag: 'Done', result: { _tag: 'TriageFailed', why: 'The triage limit was reached.' } } as TriageStatus,
+      state: 'failed',
+    },
+    { name: 'lines to fix', reason: wait, status: advised, state: 'advised' },
+    { name: 'out of budget', reason: { _tag: 'BudgetExhausted' } as WaitReason, status: advised, state: 'advised' },
+    { name: 'asked before a run', reason: question, status: { _tag: 'NotNeeded' } as TriageStatus, state: 'question' },
+    {
+      name: 'compact acknowledgement',
+      reason: signoff,
+      status: { _tag: 'NotNeeded' } as TriageStatus,
+      state: 'not-needed',
+    },
+  ]
+
+  it.each(fixtures)('shows $name without inventing destination actions', ({ reason, status, state, name }) => {
+    const html = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[]} reason={reason} triageStatus={status} />,
+    )
+    expect(html).toContain(`data-context="${state}"`)
+    expect(html).not.toMatch(/Add as fix|Use as the split|Use as my answer/)
+    if (name === 'compact acknowledgement') {
+      expect(html).toContain('class="chatentry"')
+      expect(html).not.toContain('class="chatask"')
+    } else {
+      expect(html).toContain('class="chatask"')
+    }
+  })
+
+  it('keeps an open conversation visible under a compact eligible wait', () => {
+    const html = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[waiting]} reason={signoff} />,
+    )
+    expect(html).toContain('class="chatscroll"')
+    expect(html).not.toContain('class="chatentry"')
   })
 })
 
