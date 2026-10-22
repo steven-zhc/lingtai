@@ -213,7 +213,8 @@ export function ticketOpening(body: string): { problem: string; want: string; wa
   const row = (line: string | undefined, label: string): string | null => {
     if (!line) return null
     const cells = line.split('|')
-    if (cells.length !== 4 || cells[0] !== '' || cells[3] !== '') return null
+    if (cells.length !== 4 || cells[0] !== '' || cells[3] !== '' || cells[1] === undefined || cells[2] === undefined)
+      return null
     if (cells[1].trim() !== `**${label}**`) return null
     const value = cells[2].trim()
     // A cell is a short, single-line statement. Raw HTML and extra pipes make
