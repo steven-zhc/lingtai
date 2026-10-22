@@ -189,6 +189,7 @@ export function Attempt({
   alone,
   deciding,
   followed = false,
+  now = Date.now(),
 }: {
   run: RunView
   alone: boolean
@@ -209,6 +210,7 @@ export function Attempt({
    * went rather than opening a second follower on the same file.
    */
   followed?: boolean
+  now?: number
 }) {
   /**
    * The one attempt that is producing output while you read the page.
@@ -272,7 +274,7 @@ export function Attempt({
         {/* Dated *and* relative. `04:12:15` alone cannot tell a run from three
             days ago apart from one ten minutes old (#102). */}
         <span className="aage" title={run.at}>
-          {run.at.slice(0, 10)} · {inWords(Date.now() - Date.parse(run.at))} ago
+          {run.at.slice(0, 10)} · {inWords(now - Date.parse(run.at))} ago
         </span>
       </summary>
 
@@ -540,7 +542,7 @@ function plural(n: number, word: string): string {
  * collapsed rows before — Diff, Findings and Ticket still list every
  * attempt's share, newest first.
  */
-export function Record({ task }: { task: TaskDetail }) {
+export function Record({ task, now }: { task: TaskDetail; now?: number }) {
   const newest = [...task.runs].reverse()
   const many = task.runs.length > 1
   const project = task.ticket?.project ?? ''
@@ -686,6 +688,7 @@ export function Record({ task }: { task: TaskDetail }) {
                   alone={task.runs.length === 1}
                   deciding={task.standing.deciding?.attempt === run.attempt}
                   followed={task.standing.state === 'running' && task.standing.runId === run.runId}
+                  now={now}
                 />
               ))}
             </div>
@@ -742,7 +745,7 @@ export function Record({ task }: { task: TaskDetail }) {
  * The page, given what `loadTask` folded. Apart from the route so a test can
  * render the whole arrangement without a database (#152).
  */
-export function TaskBody({ task }: { task: TaskDetail }) {
+export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
   // The issue the controls would act on. `ref` is GitHub's own number, so
   // anything that does not parse is an id that was never one.
   const ref = Number(task.ticket?.ref)
@@ -813,6 +816,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // The same budget line the board's card draws under its own rail —
           // `loadTask`'s, so the two cannot word one ticket's hold two ways.
           held={task.held}
+          now={now}
           // The one thing a 404 used to be standing in for: nothing in the log
           // and no answer from GitHub is *I cannot tell*, and a page that said
           // "it does not exist" was making a claim Lingtai is not in a position
@@ -829,7 +833,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           }
         />
 
-        <Record task={task} />
+        <Record task={task} now={now} />
       </div>
     </main>
   )
