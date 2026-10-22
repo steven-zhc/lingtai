@@ -62,6 +62,7 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
+import { presentCause, type CausePresentation } from './triage-cause.ts'
 
 /**
  * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
@@ -142,7 +143,7 @@ export interface BoardCard {
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
   note: string | null
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
-  cause: { label: string; summary: string } | null
+  cause: (CausePresentation & { summary: string }) | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -557,7 +558,7 @@ export function toCard(
     note: words?.line ?? t.note,
     cause:
       status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
-        ? { label: status.result.cause._tag, summary: status.result.summary }
+        ? { ...presentCause(status.result.cause), summary: status.result.summary }
         : null,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,

@@ -22,6 +22,7 @@ import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, type QueuedView } from '@/lib/queued'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
+import { presentCause } from '@/lib/triage-cause'
 
 import { Close, Decide, EditBodyAndRequeue, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
 import { Discussion } from './discussion.tsx'
@@ -107,6 +108,7 @@ export function TriageBand({
           </section>
         )
       const cause = result.cause
+      const presentation = presentCause(cause)
       let parts: React.ReactNode = null
       switch (cause._tag) {
         case 'UndecidedQuestion':
@@ -165,17 +167,14 @@ export function TriageBand({
       const readings = disagreement(reason, result)
       const triageReading = (
         <>
-          <p className="triage-cause">{cause._tag}</p>
+          <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">Recommends {result.resolution}</p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
       )
       return (
-        <section
-          className={`triage-band triage-band--advised${cause._tag === 'ConflictingHunks' ? ' triage-band--conflict' : ''}`}
-          data-rank="triage"
-        >
+        <section className="triage-band triage-band--advised" data-rank="triage">
           <span className="triage-label">Triage</span>
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (

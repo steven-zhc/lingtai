@@ -34,6 +34,23 @@ function e(type: string, data: unknown, actor = 'conductor'): Envelope {
 }
 
 describe('a line of history', () => {
+  it('uses the readable cause in triage history', () => {
+    const said = summarise(
+      e('WaitTriaged', {
+        attempt: 2,
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'FixableLines', fixes: [] },
+          resolution: 'Requeue',
+          summary: 'One edit remains',
+          want: null,
+        },
+      }),
+    )
+    expect(said).toContain('Lines to fix → Requeue')
+    expect(said).not.toContain('FixableLines')
+  })
+
   it('says something for every type in the catalogue, whatever the payload', () => {
     for (const type of Object.keys(EVENTS)) {
       for (const data of [{}, null, { of: 'an unexpected shape' }]) {

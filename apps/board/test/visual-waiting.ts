@@ -43,6 +43,10 @@ export const CASES = {
       'One local change can address the finding.',
     ),
   },
+  'wrong-approach': {
+    fixture: 'fixerdisagrees',
+    result: advised({ _tag: 'WrongApproach' }, 'Patching the current approach will not converge.'),
+  },
   'conflicting-hunks': {
     fixture: 'proposedescalated-mergeconflict',
     result: advised(
@@ -56,6 +60,14 @@ export const CASES = {
       },
       'The branch and base made different choices.',
     ),
+  },
+  'ticket-too-big': {
+    fixture: 'budgetexhausted',
+    result: advised({ _tag: 'TicketTooBig' }, 'This ticket needs a smaller scope.'),
+  },
+  'setup-broken': {
+    fixture: 'setuprefused',
+    result: advised({ _tag: 'SetupBroken' }, 'The repository setup needs repair.'),
   },
   'triage-failed': {
     fixture: 'agentquestion',

@@ -31,6 +31,7 @@ import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
 import { boardFactOf, fromOf, PASS_STREAM_PREFIX, routeNext, waitWords } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
+import { presentCause } from './triage-cause.ts'
 
 /** One row: the four columns, plus everything the disclosure shows. */
 export interface HistoryLine {
@@ -503,7 +504,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   WaitTriaged: (f) => {
     const result = f.result
     if (result._tag === 'TriageFailed') return `attempt ${f.attempt} · failed: ${clip(result.why)}`
-    return `attempt ${f.attempt} · ${result.cause._tag} → ${result.resolution}: ${clip(result.summary)}`
+    return `attempt ${f.attempt} · ${presentCause(result.cause).label} → ${result.resolution}: ${clip(result.summary)}`
   },
 
   RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,

@@ -362,13 +362,22 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   flex: none;
   max-width: 45%;
   padding: 0 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--surface);
   font-size: 11px;
-  font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* The same cause keeps its words and color on the card and task page. */
+.cause-chip {
+  border: 1px solid currentColor;
+  font-weight: 600;
+  line-height: 1.5;
+}
+/* The 0118 hues stay solid in either scheme; white text clears 4.5:1 on each. */
+.cause-chip--decision { background: #0b6a70; color: #fff; border-color: #0b6a70; }
+.cause-chip--lines { background: #315f9e; color: #fff; border-color: #315f9e; }
+.cause-chip--approach { background: #a33029; color: #fff; border-color: #a33029; }
+.cause-chip--merge { background: #63549e; color: #fff; border-color: #63549e; }
+.cause-chip--oversized { background: #7a3e6e; color: #fff; border-color: #7a3e6e; }
+.cause-chip--setup { background: #3a4a50; color: #fff; border-color: #3a4a50; }
 .waiting-cause-summary,
 .waiting-fallback {
   min-width: 0;
@@ -1296,10 +1305,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
-  background: var(--accent);
-  color: var(--surface);
   font-size: 0.78rem;
-  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .detail--waiting .triage-summary,
 .detail--waiting .triage-disagreement {
@@ -1329,8 +1337,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--ink);
   font-size: clamp(1.1rem, 2vw, 1.4rem);
 }
-.detail--waiting .triage-band--conflict .triage-cause { background: var(--held); }
-
 /* Each allowed outcome has its own reading and action surface. The first card
    gets extra room, while auto-fit lets the remaining cards wrap inside the
    Waiting page's bounded measure. */
