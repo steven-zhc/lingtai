@@ -264,6 +264,13 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .col-h .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .col.hot .col-h { color: var(--signal); }
 
+/* The Waiting lane is a compact reading list at the reference's 440px width.
+   Its count and card hierarchy stay distinct from the other lanes. */
+.col.hot { min-width: min(100%, 440px); }
+.col.hot .col-h { padding: 1px 4px 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.col.hot .col-h .ct { font-size: 22px; font-weight: 500; line-height: 1; letter-spacing: 0; }
+.col.hot .cards { gap: 9px; }
+
 .cards { display: flex; flex-direction: column; gap: 7px; }
 .empty {
   padding: 14px 4px; font-size: 12px; color: var(--muted); line-height: 1.6;
@@ -319,6 +326,67 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    because the failure is not a gate's: a run killed from outside fails nothing,
    and without this the card was indistinguishable from one nobody had run. */
 .card.a-hold { border-left-color: var(--held); }
+
+.waiting-card {
+  min-width: 0;
+  gap: 9px;
+  padding: 14px 16px;
+  border-left-width: 1px;
+  border-radius: 0;
+}
+.waiting-card .ti {
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.waiting-card .ti:hover { color: var(--accent-ink); text-decoration: underline; }
+.waiting-card .seq { min-width: 0; gap: 5px; }
+.waiting-card .snow { font-size: 11px; overflow-wrap: anywhere; }
+.waiting-cause {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+.waiting-cause-label {
+  flex: none;
+  max-width: 45%;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.waiting-cause-summary,
+.waiting-fallback {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.waiting-cause-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.waiting-card .waiting-fallback { margin: 0; color: var(--ink-2); font-size: 12.5px; }
+@media (max-width: 480px) {
+  .waiting-card { padding: 12px; }
+  .waiting-cause { flex-wrap: wrap; gap: 5px 8px; }
+  .waiting-cause-label { max-width: 100%; }
+}
 
 /* Reference and kind on one mono line. They are the same fact — which ticket —
    and splitting them across the card made the kind read as a status badge. */

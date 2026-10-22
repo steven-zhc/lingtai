@@ -159,9 +159,9 @@ export function Card({
   paused: boolean
 }) {
   if (card.column === 'waiting') {
-    const cause = card.cause ?? card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
+    const fallback = card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
     return (
-      <article className={`card ${accent(card)}`}>
+      <article className={`card waiting-card ${accent(card)}`}>
         <span className="id">
           <IssueRef href={issue} issue={card.ref} />
         </span>
@@ -169,7 +169,14 @@ export function Card({
           {card.title}
         </Link>
         {card.progress ? <Rail progress={card.progress} live={false} held={card.held} /> : null}
-        {cause ? <p className="question">{cause}</p> : null}
+        {card.cause ? (
+          <p className="waiting-cause">
+            <span className="waiting-cause-label">{card.cause.label}</span>
+            <span className="waiting-cause-summary">{card.cause.summary}</span>
+          </p>
+        ) : fallback ? (
+          <p className="question waiting-fallback">{fallback}</p>
+        ) : null}
       </article>
     )
   }
