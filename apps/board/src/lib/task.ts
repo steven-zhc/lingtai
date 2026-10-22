@@ -764,9 +764,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     .slice(0, moveIndex)
     .findLastIndex((e) => e.type === 'WaitStarted' && (e.data as { waitId: string }).waitId === move?.waitId)
   const currentMove =
-    move !== undefined &&
-    startedForMove >= 0 &&
-    !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
+    move !== undefined && startedForMove >= 0 && !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
   const outcome = own.slice(moveIndex + 1).find((e) => e.type === 'TicketClosed' || e.type === 'TicketReleased')
   const latestLifecycle = [...own].reverse().find((e) => LIFECYCLE_MOVES.has(e.type))
   const closed =
