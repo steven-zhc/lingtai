@@ -32,7 +32,7 @@ import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 import { TriageChoices, TriagePicks } from './triage-picks.tsx'
 
-const TICKET_OPENING_LINES = 8
+const MAX_TICKET_CELL = 600
 
 const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
   Approve: {
@@ -205,9 +205,59 @@ export function TriageBand({
   }
 }
 
-export function ticketOpening(body: string): { text: string; longer: boolean } {
-  const lines = body.split('\n')
-  return { text: lines.slice(0, TICKET_OPENING_LINES).join('\n'), longer: lines.length > TICKET_OPENING_LINES }
+export function ticketOpening(body: string): { problem: string; want: string; watchOut: string | null } | null {
+  const lines = body.replace(/\r\n/g, '\n').split('\n')
+  if (!/^\|\s*\|\s*\|\s*$/.test(lines[0] ?? '') || !/^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*$/.test(lines[1] ?? ''))
+    return null
+
+  const row = (line: string | undefined, label: string): string | null => {
+    if (!line) return null
+    const cells = line.split('|')
+    if (cells.length !== 4 || cells[0] !== '' || cells[3] !== '') return null
+    if (cells[1].trim() !== `**${label}**`) return null
+    const value = cells[2].trim()
+    // A cell is a short, single-line statement. Raw HTML and extra pipes make
+    // the table ambiguous; neither gets promoted into a ticket fact.
+    if (!value || value.length > MAX_TICKET_CELL || /[<>]/.test(value)) return null
+    return value
+  }
+
+  const problem = row(lines[2], 'Problem')
+  const want = row(lines[3], 'Want')
+  const fix = row(lines[4], 'Fix')
+  if (problem === null || want === null || fix === null) return null
+  const watchOut = row(lines[5], 'Watch out')
+  if (lines[5]?.trim().startsWith('|') && watchOut === null) return null
+  if (lines[6]?.trim().startsWith('|') || (watchOut === null && lines[5]?.trim().startsWith('|'))) return null
+  return { problem, want, watchOut }
+}
+
+function TicketContext({ opening }: { opening: ReturnType<typeof ticketOpening> }) {
+  return (
+    <div className="topening">
+      {opening === null ? (
+        <p>The ticket’s context is in the complete issue.</p>
+      ) : (
+        <div className="tcontext">
+          {(
+            [
+              ['Problem', opening.problem],
+              ['Want', opening.want],
+              ['Watch out', opening.watchOut],
+            ] as const
+          )
+            .filter(([, value]) => value !== null)
+            .map(([label, value]) => (
+              <div className="tcontext-field" key={label}>
+                <h2>{label}</h2>
+                <DocumentBody source="ticket-body" text={value!} rawClass="tbodytext" />
+              </div>
+            ))}
+        </div>
+      )}
+      <a href="#record-ticket">The whole ticket ↓</a>
+    </div>
+  )
 }
 
 /**
@@ -540,15 +590,7 @@ export function Standing({
             {subject !== null ? (
               <div className="sticket">
                 {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-                {opening !== null && opening.text !== '' ? (
-                  <div className="topening">
-                    <details>
-                      <summary>Opening of the ticket</summary>
-                      <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
-                    </details>
-                    {opening.longer ? <a href="#record-ticket">The whole ticket ↓</a> : null}
-                  </div>
-                ) : null}
+                <TicketContext opening={opening} />
               </div>
             ) : null}
           </header>
@@ -559,15 +601,7 @@ export function Standing({
               {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-            {opening !== null && opening.text !== '' ? (
-              <div className="topening">
-                <details>
-                  <summary>Opening of the ticket</summary>
-                  <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
-                </details>
-                {opening.longer ? <a href="#record-ticket">The whole ticket ↓</a> : null}
-              </div>
-            ) : null}
+            <TicketContext opening={opening} />
           </div>
         ) : null}
         {standing.afterMove ? (
