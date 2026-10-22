@@ -22,6 +22,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import type { TriageStatus, WaitReason } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -104,6 +105,69 @@ describe('the box while it is being answered', () => {
       ],
     }
     expect(render([answered])).not.toContain('data-trace')
+  })
+})
+
+describe('the six Discussion reference contexts', () => {
+  const wait = { _tag: 'CheckRefused' } as WaitReason
+  const question = { _tag: 'OwnQuestion' } as WaitReason
+  const signoff = { _tag: 'SignoffRequired' } as WaitReason
+  const advised: TriageStatus = {
+    _tag: 'Done',
+    result: {
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'Add the assertion' }] },
+      resolution: 'Requeue',
+      summary: 'The test needs one more assertion.',
+      want: null,
+    },
+  }
+  const fixtures = [
+    { name: 'triage running', reason: wait, status: { _tag: 'Running' } as TriageStatus, state: 'running' },
+    {
+      name: 'triage failed',
+      reason: wait,
+      status: { _tag: 'Done', result: { _tag: 'TriageFailed', why: 'The triage limit was reached.' } } as TriageStatus,
+      state: 'failed',
+    },
+    { name: 'lines to fix', reason: wait, status: advised, state: 'advised' },
+    { name: 'out of budget', reason: { _tag: 'BudgetExhausted' } as WaitReason, status: advised, state: 'advised' },
+    { name: 'asked before a run', reason: question, status: { _tag: 'NotNeeded' } as TriageStatus, state: 'question' },
+    {
+      name: 'compact acknowledgement',
+      reason: signoff,
+      status: { _tag: 'NotNeeded' } as TriageStatus,
+      state: 'not-needed',
+    },
+  ]
+
+  it.each(fixtures)('shows $name without inventing destination actions', ({ reason, status, state, name }) => {
+    const html = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[]} reason={reason} triageStatus={status} />,
+    )
+    expect(html).toContain(`data-context="${state}"`)
+    expect(html).not.toMatch(/Add as fix|Use as the split|Use as my answer/)
+    if (name === 'compact acknowledgement') {
+      expect(html).toContain('class="chatentry"')
+      expect(html).not.toContain('class="chatask"')
+    } else {
+      expect(html).toContain('class="chatask"')
+    }
+  })
+
+  it('keeps an open conversation visible under a compact eligible wait', () => {
+    const html = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[waiting]} reason={signoff} />,
+    )
+    expect(html).toContain('class="chatscroll"')
+    expect(html).not.toContain('class="chatentry"')
+  })
+
+  it('follows the conversation when expanding a compact entry', () => {
+    const source = readFileSync(new URL('../src/app/discussion.tsx', import.meta.url), 'utf8')
+    expect(source).toMatch(
+      /const pane = conversation\.current[\s\S]*?pane\.scrollTo\(\{ top: pane\.scrollHeight \}\)[\s\S]*?follow\.observe\(child\)[\s\S]*?\}, \[shown, compact\]\)/,
+    )
   })
 })
 
@@ -497,9 +561,59 @@ describe("the pair's height", () => {
     expect(decls).toContainEqual(['align-self', 'start'])
     expect(decls.filter(([name]) => name === 'align-self').map(([, v]) => v)).toEqual(['start'])
     expect(decls.filter(([name]) => name === 'height')).toEqual([])
-    expect(decls.filter(([name]) => name === 'min-height').map(([, v]) => v)).toEqual(['24rem'])
+    expect(decls.filter(([name]) => name === 'min-height').map(([, v]) => v)).toEqual(['24rem', '0'])
+    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
     for (const [name, value] of decls) {
       if (/pair-top|vh|%/.test(value)) expect(name).toBe('max-height')
+    }
+  })
+
+  it('lets a compact discussion occupy only its content height on narrow screens', () => {
+    expect(css).toMatch(/@media \(max-width: 63\.999rem\)\s*\{\s*\.spair\s*\{\s*grid-auto-rows:\s*auto;/)
+    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
+  })
+
+  it('keeps long context scrollable while the grown Ask form remains visible', () => {
+    expect(css).toMatch(
+      /\.chat > \.chatcontext\s*\{[^}]*flex:\s*0 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/,
+    )
+    expect(css).toMatch(/\.chatscroll\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;/)
+    expect(css).toMatch(/\.chat > \*\s*\{\s*flex:\s*0 0 auto;/)
+  })
+
+  it('uses the active palette for Discussion state text and backgrounds', () => {
+    expect(css).toMatch(/\.chat\[data-context='advised'\]\s*\{\s*background:\s*var\(--accent-soft\);/)
+    expect(css).toMatch(/\.chat\[data-context='question'\]\s*\{\s*background:\s*var\(--signal-soft\);/)
+    expect(css).toMatch(/\.chat\[data-context='interrupted'\]\s*\{\s*background:\s*var\(--surface-2\);/)
+    expect(css).toMatch(/\.chat\[data-context='failed'\] \.chatcontextdetail\s*\{\s*color:\s*var\(--ink-2\);/)
+  })
+
+  it('keeps question text readable on the accent in both palettes', () => {
+    const bubble = css.match(/\.bubble\.asked\s*\{([^}]*)\}/)?.[1] ?? ''
+    const background = bubble.match(/background:\s*(var\(--[\w-]+\)|#[\da-fA-F]+)\s*;/)?.[1] ?? ''
+    const color = bubble.match(/color:\s*(var\(--[\w-]+\)|#[\da-fA-F]+)\s*;/)?.[1] ?? ''
+    expect(background).not.toBe('')
+    expect(color).not.toBe('')
+    const light = css.match(/:root\s*\{([^}]*)\}/)?.[1] ?? ''
+    const dark = css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/)?.[1] ?? ''
+    const resolve = (value: string, palette: string) =>
+      value.startsWith('var(')
+        ? (palette.match(new RegExp(`${value.slice(4, -1)}:\\s*(#[\\da-fA-F]+)`))?.[1] ?? '')
+        : value
+    const luminance = (hex: string) => {
+      const rgb = hex.match(/[\da-fA-F]{2}/g)?.map((part) => parseInt(part, 16) / 255) ?? []
+      const [red, green, blue] = rgb.map((channel) =>
+        channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+      )
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!
+    }
+    for (const palette of [light, dark]) {
+      const bg = resolve(background, palette)
+      const fg = resolve(color, palette)
+      expect(bg).toMatch(/^#[\da-fA-F]{6}$/)
+      expect(fg).toMatch(/^#[\da-fA-F]{6}$/)
+      const levels = [luminance(bg), luminance(fg)].sort((a, b) => b - a)
+      expect((levels[0]! + 0.05) / (levels[1]! + 0.05)).toBeGreaterThanOrEqual(4.5)
     }
   })
 

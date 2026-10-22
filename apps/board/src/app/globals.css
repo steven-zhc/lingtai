@@ -1475,6 +1475,10 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    past the row height, which is a bound that loses content rather than one
    that holds it. */
 .spair > .plan { overflow-y: auto; }
+.spair > .chat.compact { min-height: 0; }
+@media (max-width: 63.999rem) {
+  .spair { grid-auto-rows: auto; }
+}
 
 /* The moves, above both boxes (#152). One row whatever the item has: Approve where
    there is an approval open, Send where there is a prompt to send, Back to the
@@ -1655,7 +1659,38 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border: 1px solid var(--rule);
   border-radius: 2px;
   background: var(--surface-2);
+  min-width: 0;
 }
+.chat[data-context='advised'] { background: var(--accent-soft); }
+.chat[data-context='question'] { background: var(--signal-soft); }
+.chat[data-context='running'],
+.chat[data-context='pending'],
+.chat[data-context='failed'],
+.chat[data-context='interrupted'] { background: var(--surface-2); }
+.chat.compact { min-height: 0; padding: 0.25rem 0.8rem; }
+.chatentry {
+  width: 100%;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  text-align: left;
+  font: 500 0.85rem var(--sans);
+  cursor: pointer;
+}
+.chatentry span { color: var(--accent-ink); font-family: var(--mono); }
+.chatentry small { color: var(--muted); font: 400 0.78rem var(--sans); }
+.chatentry:hover, .chatentry:focus-visible { color: var(--accent-ink); }
+.chat > .chatcontext { display: grid; gap: 0.2rem; flex: 0 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
+.chatcontext p { margin: 0; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; }
+.chatcontextdetail { color: var(--muted); }
+.chat[data-context='failed'] .chatcontextdetail { color: var(--ink-2); }
+.chat[data-context='question'] .chatcontext { color: var(--signal); }
+.chat[data-context='advised'] .chatcontext { color: var(--accent-ink); }
 .chat > * { flex: 0 0 auto; }
 /* Pinned to the bottom, because the newest line is the one being read — and
    pinned by `Discussion`, not by what is inside it: a turn or an answer
@@ -1666,6 +1701,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 0.6rem;
   align-content: start;
@@ -1689,9 +1725,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .chatfact { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 
-.chatlog { display: grid; gap: 0.6rem; }
+.chatlog { display: grid; gap: 0.6rem; min-width: 0; }
 .chatlog.done { opacity: 0.72; }
-.chatturn { display: grid; gap: 0.3rem; }
+.chatturn { display: grid; gap: 0.3rem; min-width: 0; }
 
 .chatq { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
 /* **Turns, not a transcript** (#152): a bubble each, and who said it on top.
@@ -1702,10 +1738,13 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   display: grid;
   gap: 0.25rem;
   max-width: 92%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 0.4rem 0.55rem;
   border-radius: 6px;
 }
-.bubble.asked { justify-self: end; background: var(--accent-soft); }
+.bubble.asked { justify-self: end; background: var(--accent); color: var(--ground); }
+.bubble.asked .chatq, .bubble.asked .chatwho { color: inherit; }
 .bubble.answer { justify-self: start; background: var(--surface); border: 1px solid var(--rule); }
 .chatwho {
   margin: 0;
@@ -1824,6 +1863,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 .chatask { display: grid; gap: 0.35rem; }
+.chatask, .chatask textarea, .chatprop, .chattrace { min-width: 0; }
+.chatprop .btnrow { flex-wrap: wrap; }
 /* Grows with what is typed (`Discussion` sets the height), to a bound, and then
    scrolls in itself: a long question takes room from the conversation above it
    only so far (#173). */
