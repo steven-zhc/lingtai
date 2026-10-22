@@ -112,16 +112,16 @@ describe('the six Discussion reference contexts', () => {
   const wait = { _tag: 'CheckRefused' } as WaitReason
   const question = { _tag: 'OwnQuestion' } as WaitReason
   const signoff = { _tag: 'SignoffRequired' } as WaitReason
-  const advised = {
+  const advised: TriageStatus = {
     _tag: 'Done',
     result: {
       _tag: 'TriageAdvised',
-      cause: { _tag: 'FixableLines', lines: [] },
-      resolution: { _tag: 'FixLines', lines: [] },
+      cause: { _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'Add the assertion' }] },
+      resolution: 'Requeue',
       summary: 'The test needs one more assertion.',
       want: null,
     },
-  } as TriageStatus
+  }
   const fixtures = [
     { name: 'triage running', reason: wait, status: { _tag: 'Running' } as TriageStatus, state: 'running' },
     {
