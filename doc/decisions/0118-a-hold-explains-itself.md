@@ -301,11 +301,14 @@ which kind a wait was got inferred again in each place that needed it, from
 2. **The page is in this order:** the ticket, where it is, triage, the resolutions,
    the record.
    - **The ticket** is its title, triage's one sentence of what the ticket
-     wants when there is one, and the opening of the body, collapsed, with a
-     link to the whole of it. A body is not assumed to have any structure: the
-     sentence is labelled as triage's reading, never as the ticket's words, and
-     is plain text. Where triage could not say what the ticket wants, that is
-     itself the wait's question.
+     wants when there is one, and a bounded reading of the issue's opening
+     table when it follows this repository's Problem, Want, Fix and optional
+     Watch out style. Problem, Want and Watch out appear in that order before
+     the rail. An unrecognized table gets a generic invitation to read the
+     complete issue; no fields are inferred. The complete body is one click
+     away in the Ticket record. Triage's sentence is labelled as its reading,
+     never as the ticket's words, and is plain text. Where triage could not say
+     what the ticket wants, that is itself the wait's question.
    - **Where it is** is the ten-step rail the board already draws, and one line
      under it: what refused, the automatic rounds spent, any human-granted
      rounds and their spend, and the restarts left. It is put together from the

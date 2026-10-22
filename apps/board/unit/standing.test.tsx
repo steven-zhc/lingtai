@@ -1704,10 +1704,104 @@ describe('the subject, at the top', () => {
     expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('Triage’s reading:'))
     expect(html.indexOf('Triage’s reading:')).toBeLessThan(html.indexOf('data-rank="where"'))
     expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
-    expect(html).toContain('<details><summary>Opening of the ticket</summary>')
+    expect(html).toContain('The ticket’s context is in the complete issue.')
     expect(html).toContain('href="#record-ticket"')
     expect(html).not.toContain('alert(1)')
-    expect(ticketOpening('one\ntwo')).toEqual({ text: 'one\ntwo', longer: false })
+    expect(ticketOpening('one\ntwo')).toBeNull()
+  })
+
+  it('reads only the documented opening table, with Watch out optional', () => {
+    const table = [
+      '| | |',
+      '|---|---|',
+      '| **Problem** | The **rail** hides the reason. |',
+      '| **Want** | Show the reason. |',
+      '| **Fix** | Read the opening table. |',
+      '| **Watch out** | Keep the full issue. |',
+      '',
+      '## Evidence',
+      'Long evidence follows.',
+    ].join('\n')
+    expect(ticketOpening(table)).toEqual({
+      problem: 'The **rail** hides the reason.',
+      want: 'Show the reason.',
+      watchOut: 'Keep the full issue.',
+    })
+    expect(ticketOpening(table.replace('| **Watch out** | Keep the full issue. |\n', ''))?.watchOut).toBeNull()
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+        body={table}
+        want="Triage thinks something else"
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    expect(html.indexOf('>Problem</h2>')).toBeLessThan(html.indexOf('>Want</h2>'))
+    expect(html.indexOf('>Want</h2>')).toBeLessThan(html.indexOf('>Watch out</h2>'))
+    expect(html.indexOf('>Watch out</h2>')).toBeLessThan(html.indexOf('data-rank="where"'))
+    expect(html).toContain('href="#record-ticket"')
+    const withoutWatch = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+        body={table.replace('| **Watch out** | Keep the full issue. |\n', '')}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    expect(withoutWatch).not.toContain('>Watch out</h2>')
+  })
+
+  it('keeps the context panel and resolves references when a row has trailing whitespace', () => {
+    const body = [
+      '| | |',
+      '|---|---|',
+      '| **Problem** | A problem |',
+      '| **Want** | A want |',
+      '| **Fix** | A fix |',
+      '| **Watch out** | Read [the API][api] | ',
+      '',
+      '[api]: https://example.com/api',
+    ].join('\n')
+    expect(ticketOpening(body)).toEqual({ problem: 'A problem', want: 'A want', watchOut: 'Read [the API][api]' })
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+        body={body}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="#record-ticket"'))
+    expect(context).toContain('>Problem</h2>')
+    expect(context).toContain('>Want</h2>')
+    expect(context).toContain('>Watch out</h2>')
+    expect(context).toContain('href="https://example.com/api"')
+    expect(context).not.toContain('[the API][api]')
+  })
+
+  it('does not promote malformed, hostile, or long cells into facts', () => {
+    const base = '| | |\n|---|---|\n| **Problem** | A problem |\n| **Want** | A want |\n| **Fix** | A fix |'
+    expect(ticketOpening(`${base}\n| **Watch out** | <script>alert(1)</script> |`)).toBeNull()
+    expect(ticketOpening(`${base}\n| **Watch out** | An extra | pipe |`)).toBeNull()
+    expect(ticketOpening(`${base}\n| **Other** | Not a field |`)).toBeNull()
+    expect(ticketOpening(base.replace('A problem', 'x'.repeat(601)))).toBeNull()
+    expect(ticketOpening(base.replace('**Want**', '**Problem**'))).toBeNull()
   })
 
   it('reads a want only from the current blocked wait’s completed advice', () => {

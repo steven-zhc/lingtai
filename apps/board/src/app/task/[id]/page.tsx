@@ -142,7 +142,7 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
       <h3 className="ttitle">{ticket.title ?? '(no title was recorded)'}</h3>
 
       {ticket.body ? (
-        <details className="tbody">
+        <details className="tbody" open>
           <summary>The ticket, as it was written</summary>
           <DocumentBody source="ticket-body" text={ticket.body} rawClass="tbodytext" />
         </details>
