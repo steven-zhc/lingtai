@@ -493,26 +493,70 @@ export function Standing({
       : cause?._tag === 'ConflictingHunks'
         ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
         : []
+  const waiting = standing.state === 'blocked'
+  const subjectRef =
+    subject === null ? null : subject.url !== null ? (
+      <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
+        #{subject.ref} ↗
+      </a>
+    ) : (
+      <span className="sref">#{subject.ref}</span>
+    )
+  const subjectTitle =
+    subject === null ? null : (
+      <span className="stitle">
+        {subject.title ??
+          (subject.askedGitHub
+            ? 'GitHub did not answer, so the title is not on this page'
+            : 'the title is not on this page')}
+      </span>
+    )
+  const stateReadout = (
+    <p className="sread" data-rank="state">
+      <span className="sstate">{standing.state}</span>
+      {standing.since !== null ? (
+        <span className="sage" title={standing.since}>
+          {inWords(now - Date.parse(standing.since))}
+        </span>
+      ) : null}
+      {inLine !== null ? <span className="sage">{inLine}</span> : null}
+    </p>
+  )
 
   return (
     <TriagePicks waitId={standing.state === 'blocked' ? standing.waitId : null} questions={triageQuestions}>
       <section className={`standing${mark}`}>
-        {subject !== null ? (
+        {waiting ? (
+          <header className="swaiting-head">
+            <div className="swaiting-meta">
+              {subjectRef}
+              {stateReadout}
+            </div>
+            {subjectTitle !== null ? (
+              <h1 className="swaiting-title" data-rank="subject">
+                {subjectTitle}
+              </h1>
+            ) : null}
+            {subject !== null ? (
+              <div className="sticket">
+                {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
+                {opening !== null && opening.text !== '' ? (
+                  <div className="topening">
+                    <details>
+                      <summary>Opening of the ticket</summary>
+                      <DocumentBody source="ticket-body" text={opening.text} rawClass="tbodytext" />
+                    </details>
+                    {opening.longer ? <a href="#record-ticket">The whole ticket ↓</a> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </header>
+        ) : subject !== null ? (
           <div className="sticket">
             <p className="ssubject" data-rank="subject">
-              {subject.url !== null ? (
-                <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
-                  #{subject.ref} ↗
-                </a>
-              ) : (
-                <span className="sref">#{subject.ref}</span>
-              )}
-              <span className="stitle">
-                {subject.title ??
-                  (subject.askedGitHub
-                    ? 'GitHub did not answer, so the title is not on this page'
-                    : 'the title is not on this page')}
-              </span>
+              {subjectRef}
+              {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
             {opening !== null && opening.text !== '' ? (
@@ -565,21 +609,7 @@ export function Standing({
           question, so `4h 12m` means there as it does here. */}
         <section className="swhere" aria-label="Where it is" data-rank="where">
           <h2 className="ssectiontitle">Where it is</h2>
-          <p className="sread" data-rank="state">
-            <span className="sstate">{standing.state}</span>
-            {/* The age, where there is one. Null is a ticket nothing in the log has
-            ever moved, and the render clock is not an answer for it — the card
-            refuses the same substitution for the same reason (#113). */}
-            {standing.since !== null ? (
-              <span className="sage" title={standing.since}>
-                {inWords(now - Date.parse(standing.since))}
-              </span>
-            ) : null}
-            {/* Where it is in line, at the same weight. On a queued item this is
-            the second value the age is everywhere else: *queued* and *queued,
-            fourteenth* are different situations. */}
-            {inLine !== null ? <span className="sage">{inLine}</span> : null}
-          </p>
+          {waiting ? null : stateReadout}
 
           {(standing.state === 'running' || standing.state === 'blocked' || standing.afterMove) && progress !== null ? (
             <Rail progress={progress} live={standing.state === 'running'} held={budget} />
