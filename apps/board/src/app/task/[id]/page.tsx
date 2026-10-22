@@ -742,7 +742,7 @@ export function Record({ task }: { task: TaskDetail }) {
  * The page, given what `loadTask` folded. Apart from the route so a test can
  * render the whole arrangement without a database (#152).
  */
-export function TaskBody({ task }: { task: TaskDetail }) {
+export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
   // The issue the controls would act on. `ref` is GitHub's own number, so
   // anything that does not parse is an id that was never one.
   const ref = Number(task.ticket?.ref)
@@ -813,6 +813,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // The same budget line the board's card draws under its own rail —
           // `loadTask`'s, so the two cannot word one ticket's hold two ways.
           held={task.held}
+          now={now}
           // The one thing a 404 used to be standing in for: nothing in the log
           // and no answer from GitHub is *I cannot tell*, and a page that said
           // "it does not exist" was making a claim Lingtai is not in a position

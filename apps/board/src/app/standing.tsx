@@ -315,6 +315,7 @@ export function Standing({
   // `describeHold`'s lines, rank 2 and 3's words — and this is a different
   // fact entirely, the rail's own budget (`#415`).
   held: budget = null,
+  now = Date.now(),
 }: {
   standing: StandingView
   /**
@@ -383,6 +384,8 @@ export function Standing({
    * so passing it on a running item costs nothing extra there.
    */
   held?: string | null
+  /** Fixed only by the development visual gallery. */
+  now?: number
 }) {
   const held = describeHold(standing)
   const opening = body === null ? null : ticketOpening(body)
@@ -532,7 +535,7 @@ export function Standing({
             refuses the same substitution for the same reason (#113). */}
             {standing.since !== null ? (
               <span className="sage" title={standing.since}>
-                {inWords(Date.now() - Date.parse(standing.since))}
+                {inWords(now - Date.parse(standing.since))}
               </span>
             ) : null}
             {/* Where it is in line, at the same weight. On a queued item this is
