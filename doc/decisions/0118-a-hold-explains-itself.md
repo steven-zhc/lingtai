@@ -223,7 +223,7 @@ which kind a wait was got inferred again in each place that needed it, from
        | { _tag: 'Approve'; onSha: string } // continue the run (§11); refused if the branch moved
        | { _tag: 'Requeue' } // a new pass from the base
        | { _tag: 'EditBodyAndRequeue' } // write into the body, then requeue
-       | { _tag: 'ExtraRound'; onSha: string } // one human-granted round on the preserved branch
+       | { _tag: 'GrantFixRound'; onSha: string; ref: string } // one human-granted round on a recorded remote ref
        | { _tag: 'ContinueConflict'; baseSha: string; headSha: string; grantExtraRound: boolean }
        | { _tag: 'Split'; children: ChildTicket[]; blockedBy: Dependency[] } // approved tickets and chain
        | { _tag: 'AnswerQuestion'; choice: string } // an OwnQuestion only
@@ -234,7 +234,7 @@ which kind a wait was got inferred again in each place that needed it, from
      ```
 
      `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
-     the board's buttons. `ExtraRound` is a person's separately logged grant
+     the board's buttons. `GrantFixRound` is a person's separately logged grant
      under [0108](0108-a-refusal-buys-a-round.md) §8; `ContinueConflict` is
      confirmation of proposed behavior, not approval of a merge; `Split`
      approves concrete child tickets and their dependency chain. The child and
@@ -272,10 +272,10 @@ which kind a wait was got inferred again in each place that needed it, from
        `BudgetExhausted`, `AnswerUnreadable` or `SetupRefused`, likewise. Only
        its own `ReviewFindings`, `ReviewEmpty`, `BuildRed`, `VerifyRed`,
        `MergeConflict` and `InputNeeded` follow their rows above.
-     - `ExtraRound` is offered for an actionable refusal with work preserved on
-       the branch, even after the automatic ceiling is spent. It runs one more
+     - `GrantFixRound` is offered for fixable review findings, a red build or a
+       red verification with work preserved on a recorded remote ref. It runs one more
        `implement` round under 0108 §8's per-run limits and gates, never waives
-       the refusal. It is unavailable when there is no branch to fix or no
+       the refusal. A missing or moved ref refuses the grant. It is unavailable when there is no branch to fix or no
        criterion for a fixer. `Split` is offered on waits where an oversized
        ticket may be the cause. Its child plan still needs the person's concrete
        approval (§12); triage may recommend it at the first wait, without

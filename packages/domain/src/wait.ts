@@ -202,6 +202,8 @@ export type WaitReason = z.infer<typeof WaitReason>
 
 /** Continue the run — refused if the branch moved off `onSha`. */
 const Approve = z.object({ _tag: z.literal('Approve'), onSha: z.string() })
+/** One human-authorized implement round on the saved remote ref. */
+const GrantFixRound = z.object({ _tag: z.literal('GrantFixRound'), onSha: z.string(), ref: z.string() })
 /** A new pass, from the base. */
 const Requeue = z.object({ _tag: z.literal('Requeue') })
 /** Write into the body, then requeue. */
@@ -212,7 +214,14 @@ const AnswerQuestion = z.object({ _tag: z.literal('AnswerQuestion'), choice: z.s
 const Close = z.object({ _tag: z.literal('Close') })
 
 /** What a person does about a wait, 0118 §1's five. */
-export const Resolution = z.discriminatedUnion('_tag', [Approve, Requeue, EditBodyAndRequeue, AnswerQuestion, Close])
+export const Resolution = z.discriminatedUnion('_tag', [
+  Approve,
+  GrantFixRound,
+  Requeue,
+  EditBodyAndRequeue,
+  AnswerQuestion,
+  Close,
+])
 export type Resolution = z.infer<typeof Resolution>
 
 /**
@@ -223,7 +232,7 @@ export type Resolution = z.infer<typeof Resolution>
  * the head at the moment a person approves, not something triage knows ahead
  * of them (0118 §1).
  */
-export const TriageAdvice = z.enum(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Close'])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
@@ -299,7 +308,15 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
-  return unpushed ? table.filter((tag) => tag !== 'Approve') : table
+  const fixable =
+    reason._tag === 'ProposedEscalated' &&
+    (reason.proposal._tag === 'BuildRed' ||
+      reason.proposal._tag === 'VerifyRed' ||
+      reason.proposal._tag === 'ReviewFindings')
+  return [
+    ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
+    ...(fixable ? (['GrantFixRound'] as const) : []),
+  ]
 }
 
 /** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */

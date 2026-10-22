@@ -70,6 +70,7 @@ import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
+import { grantFixRoundCommand } from './grant-fix-round.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
@@ -166,6 +167,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   the decisions — each the one the board's card takes, recorded the same way:
   lingtai approve <project> --issue <n>
+  lingtai grant-fix-round <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval, and required when
@@ -1274,6 +1276,15 @@ async function main(argv: string[]): Promise<number> {
         // `--no-merge` is absence of merging, so the flag's presence is the
         merge: !('no-merge' in flags),
       })
+    }
+    case 'grant-fix-round': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error('lingtai grant-fix-round <project> --issue <n>')
+        return 2
+      }
+      return grantFixRoundCommand({ project: positional[0], issue })
     }
     case 'approve': {
       const { positional, flags } = parseFlags(rest)

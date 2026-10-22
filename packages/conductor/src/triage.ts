@@ -127,7 +127,7 @@ never repeated beside it:
 - \`TicketTooBig\` — *try it again, narrower*: the run did not finish
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
-\`resolution\` is one of \`"Approve"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
+\`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
 \`"Close"\` — the tag alone, never an object, and never \`"AnswerQuestion"\`: that
 choice belongs to a person's own question, a wait you are not reading.`
 
