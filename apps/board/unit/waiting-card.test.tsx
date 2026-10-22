@@ -86,9 +86,9 @@ const EXPECTED: Record<string, Pick<Fixture, 'expectedQuestion'>> = {
 
 const FIXTURES: Fixture[] = WAIT_FIXTURES.map((f) => ({ ...f, ...EXPECTED[f.name]! }))
 
-/** `<p class="question">…</p>` — `card.note`, where there is one. */
+/** The unadvised wait's own first line, where there is one. */
 function questionOf(html: string): string | null {
-  return /<p class="question">([^<]*)<\/p>/.exec(html)?.[1] ?? null
+  return /<p class="question waiting-fallback">([^<]*)<\/p>/.exec(html)?.[1] ?? null
 }
 
 /** Every `<button>`'s own text, in document order. */
@@ -154,9 +154,11 @@ describe('the cause line', () => {
     want: null,
   }
 
-  it('shows the current wait cause and summary as plain text', async () => {
+  it('distinguishes the current wait cause from its summary', async () => {
     const html = await foldOne(fx, { row: { triage: { started: null, result: advised } } })
-    expect(questionOf(html)).toBe('WrongApproach: the approach cannot converge')
+    expect(html).toContain('<span class="waiting-cause-label">WrongApproach</span>')
+    expect(html).toContain('<span class="waiting-cause-summary">the approach cannot converge</span>')
+    expect(questionOf(html)).toBeNull()
     expect(html).not.toContain('class="held"')
     expect(buttonsOf(html)).toEqual([])
   })
@@ -174,6 +176,7 @@ describe('the cause line', () => {
       row: { triage: { started: null, result: { _tag: 'TriageFailed', why: 'raw failure' } } },
     })
     expect(questionOf(html)).toBe(fx.expectedQuestion)
+    expect(html).not.toContain('waiting-cause-label')
     expect(html).not.toContain('raw failure')
   })
 
