@@ -952,7 +952,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
-      const next = continuationOf(reason, stepOutcomesOf(runEvents))
+      const granted = folded.lifecycle.grantRef !== undefined
+      const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
       const lastFixRound = routesOf(runEvents)
         .filter((r) => r.next._tag === 'FixRound')
@@ -972,9 +973,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * every `Approve` this item has ever recorded for this run, so both
          * come back together.
          */
-        waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
+        waive: granted
+          ? []
+          : waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
-        roundsSpent: lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+        ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
+        roundsSpent:
+          (lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0) +
+          waitsOf(before).filter(
+            (w) =>
+              'run' in w.reason &&
+              w.reason.run.runId === options.continuing!.runId &&
+              w.resolution?._tag === 'GrantFixRound',
+          ).length,
+        ...(granted && reason._tag === 'ProposedEscalated'
+          ? {
+              grant: {
+                why: 'A person granted one checked fix round.',
+                asked: null,
+                printed:
+                  reason.proposal._tag === 'BuildRed'
+                    ? { step: 'build' as const, detail: reason.proposal.output }
+                    : reason.proposal._tag === 'VerifyRed'
+                      ? { step: 'merge' as const, detail: reason.proposal.output }
+                      : { step: 'review' as const, detail: 'Fix the recorded review findings.' },
+              },
+              findings: reason.proposal._tag === 'ReviewFindings' ? reason.proposal.findings : [],
+            }
+          : {}),
         /**
          * **The base every "what changed" read has to diff against — never
          * `onSha` above, and never `RunStarted.baseSha` alone** (#465).
@@ -2270,7 +2296,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // gone once its scope closed, and `provisionWorktree`'s own
               // `at` check refuses rather than silently taking a branch that
               // has moved since.
-              ...(continuation !== null ? { at: continuation.onSha } : {}),
+              ...(continuation !== null
+                ? { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                : {}),
             }),
           ),
         )
@@ -3726,7 +3754,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // every ordinary pass, which starts at `admit` and walks the
           // whole spine as it always has.
           ...(continuation !== null
-            ? { from: { step: continuation.step, waive: continuation.waive, roundsSpent: continuation.roundsSpent } }
+            ? {
+                from: {
+                  step: continuation.step,
+                  waive: continuation.waive,
+                  roundsSpent: continuation.roundsSpent,
+                  ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
+                },
+              }
             : {}),
         }),
       )

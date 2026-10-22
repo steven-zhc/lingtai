@@ -69,7 +69,7 @@ export type TicketLifecycle =
    * a continuation. `continueTicket` (`claim.ts`) is the only way out,
    * onto the same `runId`.
    */
-  | { status: 'approved'; runId: string; waitId: WaitId; onSha: string }
+  | { status: 'approved'; runId: string; waitId: WaitId; onSha: string; grantRef?: string }
 
 export type TicketStatus = TicketLifecycle['status']
 
@@ -353,11 +353,17 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       // not a fresh claim, and `block.runId` is never null here:
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
-      if (d.resolution._tag === 'Approve' && block !== null) {
+      if ((d.resolution._tag === 'Approve' || d.resolution._tag === 'GrantFixRound') && block !== null) {
         return {
           ...state,
           ...at,
-          lifecycle: { status: 'approved', runId: block.runId!, waitId: block.waitId, onSha: d.resolution.onSha },
+          lifecycle: {
+            status: 'approved',
+            runId: block.runId!,
+            waitId: block.waitId,
+            onSha: d.resolution.onSha,
+            ...(d.resolution._tag === 'GrantFixRound' ? { grantRef: d.resolution.ref } : {}),
+          },
         }
       }
       // `Close` does not return the item to the backlog on its own —

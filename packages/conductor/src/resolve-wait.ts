@@ -27,6 +27,7 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
+  type PayloadOf,
   reduceRun,
   reduceTicket,
   type RunState,
@@ -213,7 +214,48 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
-  if (options.resolution._tag === 'Approve') {
+  let resolution = options.resolution
+  if (resolution._tag === 'GrantFixRound') {
+    if (block.runId === null)
+      return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
+    const events = await store.read(block.runId)
+    const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
+    const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
+    const head = saved?.armSha ?? saved?.headSha
+    const ref =
+      saved?.armSha !== null && saved?.armSha !== undefined
+        ? saved.arm
+        : saved?.branchCarries === false || saved?.outcome === 'arm-only'
+          ? saved.arm
+          : saved?.branch
+    if (!saved || !head || !ref || !['published', 'already-published', 'arm-only'].includes(saved.outcome)) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-saved-head',
+        detail: `Run ${block.runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+      }
+    }
+    if (options.client === undefined)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-client',
+        detail: 'A remote ref check is required before granting a fix round.',
+      }
+    const remote = await options.client.refSha(`heads/${ref}`).catch(() => null)
+    if (remote !== head) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh pass.`,
+      }
+    }
+    resolution = { _tag: 'GrantFixRound', onSha: head, ref }
+  }
+
+  if (resolution._tag === 'Approve') {
     const refused = await checkApprove(options, store, ticketId, block.runId, options.resolution.onSha, note)
     if (refused !== null) return refused
   }
@@ -226,7 +268,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
         data: parsePayload('WaitResolved', {
           waitId: options.waitId,
           by: options.by,
-          resolution: options.resolution,
+          resolution,
           note,
         }),
       },
@@ -265,7 +307,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
   // a reason to say the approval itself did not happen.
   let unscheduled: string | undefined
-  if (options.resolution._tag === 'Approve') {
+  if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') {
     const parsed = parseTicketStream(ticketId)
     if (parsed !== null) {
       unscheduled =
