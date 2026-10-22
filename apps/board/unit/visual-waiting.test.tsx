@@ -12,6 +12,7 @@ describe('waiting visual previews', () => {
     ['questions', 'decision', 'A decision for you', 'UndecidedQuestion'],
     ['fixable-lines', 'lines', 'Lines to fix', 'FixableLines'],
     ['wrong-approach', 'approach', 'The approach is wrong', 'WrongApproach'],
+    ['disagreement', 'approach', 'The approach is wrong', 'WrongApproach'],
     ['conflicting-hunks', 'merge', 'Merge by hand', 'ConflictingHunks'],
     ['ticket-too-big', 'oversized', 'Ticket too big', 'TicketTooBig'],
     ['setup-broken', 'setup', 'Fix the setup', 'SetupBroken'],
@@ -26,6 +27,17 @@ describe('waiting visual previews', () => {
       expect(html).toContain(label)
       expect(html).not.toContain(tag)
     }
+  })
+
+  it('shows judge and triage readings from the disagreement fixture', async () => {
+    const { task } = await preview('disagreement')
+    const html = renderToStaticMarkup(
+      <TriageBand reason={task.standing.reason!} status={task.standing.triageStatus!} />,
+    )
+    expect(html).toContain('Which reading is right?')
+    expect(html).toContain('hand-to-person')
+    expect(html).toContain('The judge read the recorded finding as a local fix.')
+    expect(html).toContain('The approach needs to change before another pass.')
   })
 
   it.each(['no-triage', 'triage-running', 'triage-failed'] as const)('%s has no advised cause', async (name) => {

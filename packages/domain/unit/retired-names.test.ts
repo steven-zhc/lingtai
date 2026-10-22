@@ -825,6 +825,7 @@ describe('the retired names in doc/reference.md', () => {
         'apps/board/src/app/fonts/ibm-plex-sans-latin-500-normal.woff2',
         'apps/board/src/app/fonts/ibm-plex-sans-latin-600-normal.woff2',
         'apps/board/src/app/fonts/ibm-plex-sans-latin-700-normal.woff2',
+        'apps/board/src/app/fonts/ibm-plex-serif-regular.ttf',
         'packages/event-store/src/prisma/contract.json',
         'packages/event-store/src/prisma/contract.prisma',
       ].sort(),
