@@ -171,7 +171,7 @@ export function Card({
         {card.progress ? <Rail progress={card.progress} live={false} held={card.held} /> : null}
         {card.cause ? (
           <p className="waiting-cause">
-            <span className="waiting-cause-label">{card.cause.label}</span>
+            <span className={`waiting-cause-label cause-chip cause-chip--${card.cause.chip}`}>{card.cause.label}</span>
             <span className="waiting-cause-summary">{card.cause.summary}</span>
           </p>
         ) : fallback ? (

@@ -28,12 +28,14 @@ describe('current wait triage band', () => {
     [{ _tag: 'Interrupted' }, 'the daemon stopped during triage'],
   ] as const)('%s draws its progress', (status, words) => {
     expect(draw(status)).toContain(words)
+    expect(draw(status)).not.toContain('cause-chip')
   })
 
   it('draws a failure without advice', () => {
     const html = draw({ _tag: 'Done', result: { _tag: 'TriageFailed', why: '<failed>' } })
     expect(html).toContain('&lt;failed&gt;')
     expect(html).not.toContain('Recommends')
+    expect(html).not.toContain('cause-chip')
   })
 
   it.each([
@@ -113,13 +115,13 @@ describe('current wait triage band', () => {
   it('keeps triage visible with a mirror-head line', () => {
     const html = draw(advised({ _tag: 'WrongApproach' }), 'mirror head, as of its last fetch: 9876543')
     expect(html).toContain('mirror head, as of its last fetch: 9876543')
-    expect(html).toContain('WrongApproach')
+    expect(html).toContain('The approach is wrong')
     expect(html.match(/mirror head, as of its last fetch/g)).toHaveLength(1)
   })
 
   it.each(['WrongApproach', 'TicketTooBig', 'SetupBroken'] as const)('%s has its summary alone', (_tag) => {
     const html = draw(advised({ _tag }))
-    expect(html).toContain(_tag)
+    expect(html).not.toContain(_tag)
     expect(html).toContain('&lt;plain summary&gt;')
     expect(html).toContain('Recommends Close')
   })

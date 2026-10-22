@@ -156,7 +156,9 @@ describe('the cause line', () => {
 
   it('distinguishes the current wait cause from its summary', async () => {
     const html = await foldOne(fx, { row: { triage: { started: null, result: advised } } })
-    expect(html).toContain('<span class="waiting-cause-label">WrongApproach</span>')
+    expect(html).toContain(
+      '<span class="waiting-cause-label cause-chip cause-chip--approach">The approach is wrong</span>',
+    )
     expect(html).toContain('<span class="waiting-cause-summary">the approach cannot converge</span>')
     expect(questionOf(html)).toBeNull()
     expect(html).not.toContain('class="held"')
