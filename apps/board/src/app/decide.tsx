@@ -305,29 +305,31 @@ export function EditBodyAndRequeue({
           }}
         />
       </label>
-      <button
-        className="btn"
-        disabled={pending || doneWaitId === waitId || !currentText.trim() || waitId === null}
-        onClick={() => {
-          if (waitId === null || !currentText.trim()) return
-          setPending(true)
-          setDetail(null)
-          startTransition(async () => {
-            const result = await editBodyAndRequeueCard({
-              project,
-              issue,
-              waitId,
-              text: currentText,
-              ...(triage?.waitId === waitId && triage.note !== null ? { note: triage.note } : {}),
+      {waitId !== null ? (
+        <button
+          className="btn"
+          disabled={pending || doneWaitId === waitId || !currentText.trim()}
+          onClick={() => {
+            if (!currentText.trim()) return
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await editBodyAndRequeueCard({
+                project,
+                issue,
+                waitId,
+                text: currentText,
+                ...(triage?.waitId === waitId && triage.note !== null ? { note: triage.note } : {}),
+              })
+              setPending(false)
+              setDoneWaitId(result.ok ? waitId : null)
+              setDetail(result.detail)
             })
-            setPending(false)
-            setDoneWaitId(result.ok ? waitId : null)
-            setDetail(result.detail)
-          })
-        }}
-      >
-        {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & requeue'}
-      </button>
+          }}
+        >
+          {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & requeue'}
+        </button>
+      ) : null}
       {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}
     </div>
   )

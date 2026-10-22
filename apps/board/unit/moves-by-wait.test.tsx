@@ -82,6 +82,7 @@ const cardsOf = (html: string) =>
     .filter(
       ({ attrs, body }) =>
         !attrs.includes('hidden=""') &&
+        !attrs.includes('sresolution--draft') &&
         !(attrs.includes('data-resolution="EditBodyAndRequeue"') && body.includes('class="sresolutionaction"></div>')),
     )
     .map(({ attrs }) => attrs.match(/data-resolution="([^"]+)"/)?.[1])

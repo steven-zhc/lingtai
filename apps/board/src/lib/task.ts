@@ -760,21 +760,31 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   const lastMove = [...own].reverse().find((e) => e.type === 'WaitResolved')
   const moveIndex = lastMove === undefined ? -1 : own.indexOf(lastMove)
   const move = lastMove?.data as { waitId: string; resolution: { _tag: string }; by: string; note: string } | undefined
+  const startedForMove = own
+    .slice(0, moveIndex)
+    .findLastIndex((e) => e.type === 'WaitStarted' && (e.data as { waitId: string }).waitId === move?.waitId)
+  const currentMove =
+    move !== undefined &&
+    startedForMove >= 0 &&
+    !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
   const outcome = own.slice(moveIndex + 1).find((e) => e.type === 'TicketClosed' || e.type === 'TicketReleased')
   const latestLifecycle = [...own].reverse().find((e) => LIFECYCLE_MOVES.has(e.type))
   const closed =
     outcome?.type === 'TicketClosed' &&
     latestLifecycle === outcome &&
     life.status === 'closed' &&
+    currentMove &&
     move?.resolution._tag === 'Close'
   const released =
     outcome?.type === 'TicketReleased' &&
     latestLifecycle === outcome &&
     life.status === 'backlog' &&
+    currentMove &&
     (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue') &&
     (outcome.data as { cause?: { _tag: string; waitId?: string } }).cause?._tag === 'ByPerson' &&
     (outcome.data as { cause: { waitId: string } }).cause.waitId === move?.waitId
   const requeued =
+    currentMove &&
     latestLifecycle === lastMove &&
     life.status === 'backlog' &&
     (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue')
@@ -787,7 +797,6 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     )
   const bodyData = bodyEvent?.data as { change?: string; detail?: string; error?: string } | undefined
   const lastWaitStarted = own.findLastIndex((e) => e.type === 'WaitStarted')
-  const lastWaitResolved = own.findLastIndex((e) => e.type === 'WaitResolved')
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
@@ -807,8 +816,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
       bodyData?.change === 'body' &&
       bodyEvent !== undefined &&
       lastWaitStarted >= 0 &&
-      own.indexOf(bodyEvent) > lastWaitStarted &&
-      own.indexOf(bodyEvent) > lastWaitResolved
+      own.indexOf(bodyEvent) > lastWaitStarted
         ? {
             result: bodyEvent.type === 'IssueUpdated' ? 'updated' : 'failed',
             detail: bodyData.detail ?? bodyData.error ?? '',

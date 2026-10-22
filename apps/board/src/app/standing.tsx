@@ -546,11 +546,9 @@ export function Standing({
             </p>
             {standing.afterMove.note ? <p>Decision: {standing.afterMove.note}</p> : null}
             <p>Result: {standing.afterMove.reason}</p>
-            {standing.afterMove.resolution === 'EditBodyAndRequeue' ? (
-              <p>The body write completed before the wait was resolved.</p>
-            ) : null}
           </section>
-        ) : standing.bodyOutcome ? (
+        ) : null}
+        {standing.bodyOutcome ? (
           <section
             className={`saftermove saftermove--${standing.bodyOutcome.result === 'failed' ? 'failed' : 'partial'}`}
             aria-label="Body update record"

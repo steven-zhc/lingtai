@@ -225,7 +225,7 @@ describe('after the move', () => {
     expect(html).not.toContain('data-resolution=')
   })
 
-  it('states the completed body edit after the wait is resolved', () => {
+  it('shows the recorded body update separately from a completed body edit and requeue', () => {
     const html = page(
       moved('EditBodyAndRequeue', [
         e(ITEM, 'IssueUpdated', { project: 'lingtai', issue: '147', change: 'body', detail: '42 bytes' }),
@@ -233,7 +233,10 @@ describe('after the move', () => {
     )
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
-    expect(html).toContain('The body write completed before the wait was resolved.')
+    expect(html).toContain('Move: EditBodyAndRequeue')
+    expect(html).toContain('A body update was recorded.')
+    expect(html).toContain('The body update event does not identify a wait.')
+    expect(html).not.toContain('The body write completed before the wait was resolved.')
   })
 
   it.each(['IssueUpdated', 'IssueUpdateFailed'])('reports %s only as an unscoped body I/O fact', (type) => {

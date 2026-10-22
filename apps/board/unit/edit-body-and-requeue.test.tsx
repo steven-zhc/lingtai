@@ -97,7 +97,7 @@ it('keeps an unsent answer visible but unsendable after another person ends the 
   control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My unsent answer' } })
   const afterMove = render(null)
   expect(control(afterMove, 'textarea').props.value).toBe('My unsent answer')
-  expect(control(afterMove, 'button').props.disabled).toBe(true)
+  expect(() => control(afterMove, 'button')).toThrow()
   expect(renderToStaticMarkup(afterMove)).toContain('Your unsent draft is below; copy it before leaving.')
 })
 
