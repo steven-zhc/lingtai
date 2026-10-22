@@ -561,6 +561,26 @@ describe("the pair's height", () => {
     }
   })
 
+  it('lets a compact discussion occupy only its content height on narrow screens', () => {
+    expect(css).toMatch(/@media \(max-width: 63\.999rem\)\s*\{\s*\.spair\s*\{\s*grid-auto-rows:\s*auto;/)
+    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
+  })
+
+  it('keeps long context scrollable while the grown Ask form remains visible', () => {
+    expect(css).toMatch(
+      /\.chat > \.chatcontext\s*\{[^}]*flex:\s*0 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/,
+    )
+    expect(css).toMatch(/\.chatscroll\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;/)
+    expect(css).toMatch(/\.chat > \*\s*\{\s*flex:\s*0 0 auto;/)
+  })
+
+  it('uses the active palette for Discussion state text and backgrounds', () => {
+    expect(css).toMatch(/\.chat\[data-context='advised'\]\s*\{\s*background:\s*var\(--accent-soft\);/)
+    expect(css).toMatch(/\.chat\[data-context='question'\]\s*\{\s*background:\s*var\(--signal-soft\);/)
+    expect(css).toMatch(/\.chat\[data-context='interrupted'\]\s*\{\s*background:\s*var\(--surface-2\);/)
+    expect(css).toMatch(/\.chat\[data-context='failed'\] \.chatcontextdetail\s*\{\s*color:\s*var\(--ink-2\);/)
+  })
+
   it('puts the moves and the input on one screen wherever the old 24rem pair did', () => {
     // Heads of several hundred pixels in a 900px window: the pair ends above the fold.
     for (const top of [300, 420, 516]) expect(top + row(900, top)).toBeLessThanOrEqual(900)

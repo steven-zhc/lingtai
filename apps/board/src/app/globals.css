@@ -1476,6 +1476,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    that holds it. */
 .spair > .plan { overflow-y: auto; }
 .spair > .chat.compact { min-height: 0; }
+@media (max-width: 63.999rem) {
+  .spair { grid-auto-rows: auto; }
+}
 
 /* The moves, above both boxes (#152). One row whatever the item has: Approve where
    there is an approval open, Send where there is a prompt to send, Back to the
@@ -1658,12 +1661,12 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   background: var(--surface-2);
   min-width: 0;
 }
-.chat[data-context='advised'] { background: #dceded; }
-.chat[data-context='question'] { background: #f7ead6; }
+.chat[data-context='advised'] { background: var(--accent-soft); }
+.chat[data-context='question'] { background: var(--signal-soft); }
 .chat[data-context='running'],
 .chat[data-context='pending'],
 .chat[data-context='failed'],
-.chat[data-context='interrupted'] { background: #e9eeee; }
+.chat[data-context='interrupted'] { background: var(--surface-2); }
 .chat.compact { min-height: 0; padding: 0.25rem 0.8rem; }
 .chatentry {
   width: 100%;
@@ -1682,12 +1685,12 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .chatentry span { color: var(--accent-ink); font-family: var(--mono); }
 .chatentry small { color: var(--muted); font: 400 0.78rem var(--sans); }
 .chatentry:hover, .chatentry:focus-visible { color: var(--accent-ink); }
-.chatcontext { display: grid; gap: 0.2rem; min-width: 0; }
+.chat > .chatcontext { display: grid; gap: 0.2rem; flex: 0 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
 .chatcontext p { margin: 0; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; }
 .chatcontextdetail { color: var(--muted); }
 .chat[data-context='failed'] .chatcontextdetail { color: var(--ink-2); }
-.chat[data-context='question'] .chatcontext { color: #9c5a08; }
-.chat[data-context='advised'] .chatcontext { color: #075056; }
+.chat[data-context='question'] .chatcontext { color: var(--signal); }
+.chat[data-context='advised'] .chatcontext { color: var(--accent-ink); }
 .chat > * { flex: 0 0 auto; }
 /* Pinned to the bottom, because the newest line is the one being read — and
    pinned by `Discussion`, not by what is inside it: a turn or an answer
