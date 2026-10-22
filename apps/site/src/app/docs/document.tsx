@@ -6,26 +6,103 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import type { ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
-import rehypeSanitize from 'rehype-sanitize'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 
+import { ShellTabs } from './shell-tabs'
+
 /**
- * Syntax colour for the three languages `doc/` fences, and no others: a recipe
- * is YAML, a command is bash, a signature is TypeScript. Registered by name so
+ * Syntax colour for the languages used by `doc/` fences. Shell fences keep
+ * their own names; highlight.js uses its Bash grammar for POSIX shells and
+ * Fish. Registered by name so
  * nothing guesses a language — a fence that says `text` stays plain text.
  * Highlighting runs after sanitising, so the only markup it adds is its own
  * `hljs-*` spans, which the site's stylesheet colours from the palette.
  */
-const HIGHLIGHT = { languages: { bash, typescript, ts: typescript, yaml }, detect: false }
+const HIGHLIGHT = {
+  languages: { bash, sh: bash, zsh: bash, fish: bash, typescript, ts: typescript, yaml },
+  detect: false,
+}
+const SANITIZE = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'details', 'summary'],
+  attributes: {
+    ...defaultSchema.attributes,
+    div: [...(defaultSchema.attributes?.div ?? []), ['className', 'shell-tabs']],
+  },
+}
+
+const SHELLS = ['bash', 'zsh', 'fish'] as const
+type MarkdownNode = {
+  type: string
+  children?: MarkdownNode[]
+  value?: string
+  lang?: string | null
+  data?: { hName: string; hProperties?: { className: string[] } }
+}
+
+/** GitHub renders Markdown inside `<details>`; project the same disclosure on
+ * the site without enabling arbitrary raw HTML. */
+function remarkTutorialDetails() {
+  return (tree: { children: MarkdownNode[] }) => {
+    for (let i = 0; i < tree.children.length; i++) {
+      const opening = tree.children[i]
+      if (opening?.type !== 'html') continue
+      const match = opening.value?.trim().match(/^<details>\s*<summary>([^<]+)<\/summary>$/)
+      if (!match) continue
+      const end = tree.children.findIndex(
+        (node, index) => index > i && node.type === 'html' && node.value?.trim() === '</details>',
+      )
+      if (end < 0) continue
+      tree.children.splice(i, end - i + 1, {
+        type: 'tutorialDetails',
+        data: { hName: 'details' },
+        children: [
+          { type: 'paragraph', data: { hName: 'summary' }, children: [{ type: 'text', value: match[1] }] },
+          ...tree.children.slice(i + 1, end),
+        ],
+      })
+    }
+  }
+}
+
+/** Group the tutorial's three labelled code fences for the site only. The
+ * Markdown source keeps every variant visible when read on GitHub. */
+function remarkShellTabs() {
+  return (tree: { children: MarkdownNode[] }) => {
+    for (let i = 0; i <= tree.children.length - 6; i++) {
+      const group = tree.children.slice(i, i + 6)
+      const matches = SHELLS.every((shell, index) => {
+        const label = group[index * 2]
+        const code = group[index * 2 + 1]
+        return (
+          label?.type === 'paragraph' &&
+          label.children?.length === 1 &&
+          label.children[0]?.type === 'strong' &&
+          label.children[0].children?.length === 1 &&
+          label.children[0].children[0]?.type === 'text' &&
+          label.children[0].children[0].value?.toLowerCase() === shell &&
+          code?.type === 'code' &&
+          code.lang === shell
+        )
+      })
+      if (!matches) continue
+      tree.children.splice(i, 6, {
+        type: 'shellTabs',
+        data: { hName: 'div', hProperties: { className: ['shell-tabs'] } },
+        children: [group[1]!, group[3]!, group[5]!],
+      })
+    }
+  }
+}
 import { headingsOf, resolveHref } from '@/lib/docs'
 
 /**
  * A file from `doc/`, rendered.
  *
- * Two things happen here and nothing else does. The file is not rewritten, not
- * reformatted, and not summarised — the projection's whole claim is that the
- * page and the repository cannot disagree, and the moment this function starts
- * improving a document that claim is gone.
+ * The file is not rewritten, reformatted, or summarised. Links and anchors
+ * follow the repository source; the tutorial's shell variants are grouped
+ * into tabs for the site while all three remain in its Markdown source.
  *
  * **Links are resolved.** A doc file's links are written for somebody reading
  * the repository: `decisions-archive/0022-the-seams.md`, `../../packages/domain/src/events.ts`.
@@ -108,6 +185,14 @@ export function Document({
   }
 
   const components: Components = {
+    div({ node, children, className, ...rest }) {
+      if (className === 'shell-tabs') return <ShellTabs>{children}</ShellTabs>
+      return (
+        <div className={className} {...rest}>
+          {children}
+        </div>
+      )
+    },
     tr({ node, children, ...rest }) {
       return (
         <tr data-row={rowKind(node)} {...rest}>
@@ -142,8 +227,11 @@ export function Document({
   return (
     <div className={slug === 'tutorial' ? 'prose tutorial-prose' : 'prose'}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSanitize, [rehypeHighlight, HIGHLIGHT]]}
+        remarkPlugins={[remarkGfm, ...(slug === 'tutorial' ? [remarkShellTabs, remarkTutorialDetails] : [])]}
+        rehypePlugins={[
+          [rehypeSanitize, SANITIZE],
+          [rehypeHighlight, HIGHLIGHT],
+        ]}
         components={components}
       >
         {body}
