@@ -554,7 +554,8 @@ describe("the pair's height", () => {
     expect(decls).toContainEqual(['align-self', 'start'])
     expect(decls.filter(([name]) => name === 'align-self').map(([, v]) => v)).toEqual(['start'])
     expect(decls.filter(([name]) => name === 'height')).toEqual([])
-    expect(decls.filter(([name]) => name === 'min-height').map(([, v]) => v)).toEqual(['24rem'])
+    expect(decls.filter(([name]) => name === 'min-height').map(([, v]) => v)).toEqual(['24rem', '0'])
+    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
     for (const [name, value] of decls) {
       if (/pair-top|vh|%/.test(value)) expect(name).toBe('max-height')
     }
