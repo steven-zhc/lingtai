@@ -1159,6 +1159,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   /** The merge commit a `Landed` visit reported, read back once the walk is over. */
   let landed: string | null = null
   let roundsSpent = options.from?.roundsSpent ?? 0
+  const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'admit'
@@ -1228,7 +1229,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   ): Promise<boolean> => {
     const offer = offerFor(
       proposal,
-      { rounds: options.from?.roundLimit ?? ceilings.rounds, restarts: ceilings.restarts },
+      { rounds: roundLimit, restarts: ceilings.restarts },
       {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,
