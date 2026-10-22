@@ -231,7 +231,8 @@ lingtai status <project> --all
 ```
 
 The hold is the one your recipe wrote: *"Land this? The setup was answered
-'hold'."* Approve it:
+'hold'."* Approve the ticket number printed when you created it (shown as `1`
+below on a fresh local store):
 
 ```bash
 lingtai approve <project> --issue 1
@@ -239,15 +240,18 @@ lingtai approve <project> --issue 1
 
 ![Read which hold or check stopped it, then approve, requeue with a note, or attach to the run log.](img/waiting.svg)
 
-If the approach is wrong instead, send it back with a note:
+If the approach is wrong instead, start a new pass from the base branch with a
+note:
 
 ```bash
 lingtai requeue <project> --issue 1 --note "what should change next time"
 ```
 
-`approve` merges it immediately — nothing further to run. Confirm all three:
-the card is in **Landed**, the commit is on your base branch, and you can say
-which checks let it through.
+`approve` records your decision; the running conductor then continues the held
+run from its recorded commit and takes it through the merge lane. Wait for
+**Landed** rather than treating the command's exit as a completed merge. Confirm
+all three: the card is in **Landed**, the commit is on your base branch, and you
+can say which checks let it through.
 
 For a live run log while a pass is in flight: `lingtai attach <runId>`. The
 [operating guide](operating.md) maps every other stopped state to its

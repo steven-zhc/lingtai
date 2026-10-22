@@ -1421,10 +1421,12 @@ board.** A waiver is not a move of its own: it is what approving over a refusal
 *is*, and `--note` is the reason it carries. Two verbs for one act let a person
 waive a gate and then wonder why the item had not moved — a decision reported as
 taken that took nothing. `#129` added the command when the board had a Waive
-button and the terminal did not; `#150` removed the button, and this removes the
-verb that outlived it. `waive()` itself is still there, called by `approve`.
+button and the terminal did not; `#150` removed the button, and the standalone
+`waive()` was later removed too.
 
-`approve` merges **what the held run actually produced**, not a fresh attempt.
+`approve` records the decision; the conductor then continues and merges **what
+the held run actually produced**, not a fresh attempt. A successful command
+does not by itself mean the merge has landed. Check the ticket's state afterward.
 If the branch moved since the run asked, it refuses and names both commits —
 you would otherwise be merging something you have not read. When a gate still
 refuses that head, `--note` is required: approving waives each refusing gate,
