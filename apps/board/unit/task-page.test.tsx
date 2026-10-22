@@ -225,6 +225,28 @@ describe('after the move', () => {
     expect(html).not.toContain('data-resolution=')
   })
 
+  it('shows the completed answer to an OwnQuestion in the resolved reading frame', () => {
+    const own = [
+      e(ITEM, 'WaitStarted', {
+        waitId: 'wait-question',
+        reason: { _tag: 'OwnQuestion', question: 'Which approach should we take?', by: 'steven' },
+      }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-question',
+        resolution: { _tag: 'AnswerQuestion', choice: 'Use the smaller change' },
+        by: 'steven',
+        note: 'Use the smaller change',
+      }),
+    ]
+    const html = page(task(own, []))
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
+    expect(html).toContain('Move: AnswerQuestion · by steven')
+    expect(html).toContain('Decision: Use the smaller change')
+    expect(html).toContain('The ticket returned to the queue.')
+    expect(html.indexOf('data-rank="after-move"')).toBeLessThan(html.indexOf('data-rank="where"'))
+  })
+
   it('shows the recorded body update separately from a completed body edit and requeue', () => {
     const html = page(
       moved('EditBodyAndRequeue', [

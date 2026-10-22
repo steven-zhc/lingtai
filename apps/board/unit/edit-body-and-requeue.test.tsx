@@ -101,6 +101,26 @@ it('keeps an unsent answer visible but unsendable after another person ends the 
   expect(renderToStaticMarkup(afterMove)).toContain('Your unsent draft is below; copy it before leaving.')
 })
 
+it('does not call a submitted answer an unsent draft after Follow ends the wait', async () => {
+  harness.values = []
+  harness.triage = null
+  harness.submit.mockClear()
+  const waitId = aWaitId()
+  const render = (currentWaitId: WaitId | null) => {
+    harness.cursor = 0
+    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId: currentWaitId, reason: null })
+  }
+
+  control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My submitted answer' } })
+  control(render(waitId), 'button').props.onClick?.()
+  await vi.waitFor(() => expect(harness.values[4]).toBe(waitId))
+
+  const afterFollow = render(null)
+  expect(control(afterFollow, 'textarea').props.value).toBe('My submitted answer')
+  expect(renderToStaticMarkup(afterFollow)).toContain('back in the queue')
+  expect(renderToStaticMarkup(afterFollow)).not.toContain('Your unsent draft is below')
+})
+
 it('follows triage picks until a manual edit, then resets the draft on the next wait', async () => {
   harness.values = []
   harness.submit.mockClear()

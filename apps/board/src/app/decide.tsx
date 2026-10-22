@@ -288,7 +288,7 @@ export function EditBodyAndRequeue({
 
   return (
     <div className="decide">
-      {waitId === null ? (
+      {waitId === null && (doneWaitId === null || doneWaitId !== draftWaitId) ? (
         <p className="refusal">This wait has ended. Your unsent draft is below; copy it before leaving.</p>
       ) : null}
       {question !== null ? <p>{question}</p> : null}

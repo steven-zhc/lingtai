@@ -785,7 +785,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     currentMove &&
     latestLifecycle === lastMove &&
     life.status === 'backlog' &&
-    (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue')
+    (move?.resolution._tag === 'Requeue' ||
+      move?.resolution._tag === 'EditBodyAndRequeue' ||
+      move?.resolution._tag === 'AnswerQuestion')
   const bodyEvent = [...own]
     .reverse()
     .find(
