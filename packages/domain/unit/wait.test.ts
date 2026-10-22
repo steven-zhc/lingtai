@@ -90,12 +90,12 @@ describe('allowedResolutions', () => {
 
     it('BuildRed: Requeue, EditBodyAndRequeue, Close — no Approve, a red build cannot be merged', () => {
       const reason = parseProposed({ _tag: 'BuildRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
     })
 
     it('ReviewFindings: Approve, Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'ReviewFindings', findings: [] })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
     })
 
     it('ReviewEmpty: Approve, Requeue, EditBodyAndRequeue, Close', () => {
@@ -121,7 +121,7 @@ describe('allowedResolutions', () => {
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'VerifyRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
     })
 
     it('every Proposal tag is covered above', () => {

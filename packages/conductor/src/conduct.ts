@@ -995,7 +995,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   reason.proposal._tag === 'BuildRed'
                     ? { step: 'build' as const, detail: reason.proposal.output }
                     : reason.proposal._tag === 'VerifyRed'
-                      ? { step: 'merge' as const, detail: reason.proposal.output }
+                      ? { step: 'build' as const, detail: `merge verification failed: ${reason.proposal.output}` }
                       : { step: 'review' as const, detail: 'Fix the recorded review findings.' },
               },
               findings: reason.proposal._tag === 'ReviewFindings' ? reason.proposal.findings : [],

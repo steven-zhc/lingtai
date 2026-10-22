@@ -39,6 +39,10 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     title: 'Approve and continue',
     consequence: 'Continue this run from its recorded commit. Any refusal at this hold is waived.',
   },
+  GrantFixRound: {
+    title: 'Grant one fix round',
+    consequence: 'Continue the saved work through one implement call, then run the normal checks again.',
+  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
@@ -821,6 +825,9 @@ export function Standing({
                       </>
                     ) : null}
                     <div className="sresolutionaction">
+                      {visible && tag === 'GrantFixRound' ? (
+                        <code>{`lingtai grant-fix-round ${project} --issue ${issue}`}</code>
+                      ) : null}
                       {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
                         <Decide
                           project={project}

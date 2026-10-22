@@ -183,10 +183,12 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // `resolve-wait.test.ts`'s own check holds to — and asks only for the
   // row the first one was owed.
   if (
-    options.resolution._tag === 'Approve' &&
+    (options.resolution._tag === 'Approve' || options.resolution._tag === 'GrantFixRound') &&
     item.lifecycle.status === 'approved' &&
     item.lifecycle.waitId === options.waitId &&
-    item.lifecycle.onSha === options.resolution.onSha
+    (options.resolution._tag === 'GrantFixRound'
+      ? item.lifecycle.grantRef !== undefined
+      : item.lifecycle.onSha === options.resolution.onSha)
   ) {
     const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
@@ -256,7 +258,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   }
 
   if (resolution._tag === 'Approve') {
-    const refused = await checkApprove(options, store, ticketId, block.runId, options.resolution.onSha, note)
+    const refused = await checkApprove(options, store, ticketId, block.runId, resolution.onSha, note)
     if (refused !== null) return refused
   }
 
