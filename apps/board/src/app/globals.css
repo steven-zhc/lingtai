@@ -1133,31 +1133,30 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .triage-readings > div { min-width: 0; }
 
-/* The Waiting page is a reading surface: ticket, progress, then triage. Keep
-   this scope off the record and off the other task states. */
-.detail--waiting .detail-body {
+/* Waiting and completed moves share the ticket and progress reading frame. */
+:is(.detail--waiting, .detail--resolved) .detail-body {
   max-width: 76rem;
   gap: 2rem;
   margin-inline: auto;
   padding: clamp(1rem, 3vw, 2.5rem);
 }
-.detail--waiting .standing {
+:is(.detail--waiting, .detail--resolved) .standing {
   gap: clamp(1rem, 2.4vw, 1.75rem);
   padding: 0;
   border: 0;
   min-width: 0;
 }
-.detail--waiting .sticket,
-.detail--waiting .swhere {
+:is(.detail--waiting, .detail--resolved) .sticket,
+:is(.detail--waiting, .detail--resolved) .swhere {
   min-width: 0;
   padding: clamp(1.1rem, 2.3vw, 1.8rem);
   background: var(--surface);
   border: 1px solid var(--rule);
 }
-.detail--waiting .sticket { gap: 0.85rem; margin: 0; }
-.detail--waiting .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
-.detail--waiting .sref { font-size: 0.78rem; }
-.detail--waiting .stitle {
+:is(.detail--waiting, .detail--resolved) .sticket { gap: 0.85rem; margin: 0; }
+:is(.detail--waiting, .detail--resolved) .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
+:is(.detail--waiting, .detail--resolved) .sref { font-size: 0.78rem; }
+:is(.detail--waiting, .detail--resolved) .stitle {
   max-width: 60rem;
   font-size: clamp(1.35rem, 2.6vw, 2rem);
   font-weight: 600;
@@ -1165,35 +1164,44 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   letter-spacing: -0.025em;
   text-wrap: pretty;
 }
-.detail--waiting .swant {
+:is(.detail--waiting, .detail--resolved) .swant {
   max-width: 70ch;
   padding-left: 0.85rem;
   border-left: 3px solid var(--accent);
   color: var(--ink);
   font-size: 0.95rem;
 }
-.detail--waiting .topening {
+:is(.detail--waiting, .detail--resolved) .topening {
   max-width: 72ch;
   padding-top: 0.65rem;
   border-top: 1px solid var(--rule);
 }
-.detail--waiting .topening summary { color: var(--accent-ink); font-weight: 600; }
-.detail--waiting .swhere { gap: 1rem; }
-.detail--waiting .ssectiontitle {
+:is(.detail--waiting, .detail--resolved) .topening summary { color: var(--accent-ink); font-weight: 600; }
+:is(.detail--waiting, .detail--resolved) .swhere { gap: 1rem; }
+:is(.detail--waiting, .detail--resolved) .ssectiontitle {
   color: var(--muted);
   font-size: 0.7rem;
   letter-spacing: 0.09em;
 }
-.detail--waiting .sread { gap: 0.5rem 1rem; }
-.detail--waiting .sread .sstate { font-size: clamp(1.4rem, 3vw, 2rem); }
-.detail--waiting .sread .sage { font-size: clamp(0.95rem, 2vw, 1.2rem); }
-.detail--waiting .swhere .segs { margin: 0; }
-.detail--waiting .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
-.detail--waiting .swhere .sbar { height: 6px; }
-.detail--waiting .sbody { gap: 0.55rem; padding-top: 0.9rem; }
-.detail--waiting .squestion,
-.detail--waiting .sbody .diag { font-size: 0.98rem; }
-.detail--waiting .sowhat { font-size: 0.9rem; }
+:is(.detail--waiting, .detail--resolved) .sread { gap: 0.5rem 1rem; }
+:is(.detail--waiting, .detail--resolved) .sread .sstate { font-size: clamp(1.4rem, 3vw, 2rem); }
+:is(.detail--waiting, .detail--resolved) .sread .sage { font-size: clamp(0.95rem, 2vw, 1.2rem); }
+:is(.detail--waiting, .detail--resolved) .swhere .segs { margin: 0; }
+:is(.detail--waiting, .detail--resolved) .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
+:is(.detail--waiting, .detail--resolved) .swhere .sbar { height: 6px; }
+:is(.detail--waiting, .detail--resolved) .sbody { gap: 0.55rem; padding-top: 0.9rem; }
+:is(.detail--waiting, .detail--resolved) .squestion,
+:is(.detail--waiting, .detail--resolved) .sbody .diag { font-size: 0.98rem; }
+:is(.detail--waiting, .detail--resolved) .sowhat { font-size: 0.9rem; }
+
+.saftermove { display: grid; gap: 0.65rem; min-width: 0; padding: clamp(1.1rem, 2.3vw, 1.8rem); border: 1px solid; overflow-wrap: anywhere; }
+.saftermove h2 { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em; }
+.saftermove p { margin: 0; max-width: 75ch; line-height: 1.45; }
+.saftermove-title { display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem; align-items: baseline; }
+.saftermove-title strong { font-size: 1.2rem; }
+.saftermove--requeued { background: #dfeee4; border-color: #b7d8c2; }
+.saftermove--closed, .saftermove--failed { background: #f6e1de; border-color: #e8c3be; }
+.saftermove--partial { background: #f7ead6; border-color: #e0c9a4; }
 
 .detail--waiting .triage-band {
   gap: 0.8rem;

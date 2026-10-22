@@ -426,12 +426,12 @@ export function Standing({
       : null
   const orderedResolutions =
     recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
-  // Keep the keyed editor mounted even when Follow moves the wait out of blocked.
-  const resolutionCards: Resolution['_tag'][] = acting
-    ? orderedResolutions.includes('EditBodyAndRequeue')
-      ? orderedResolutions
-      : [...orderedResolutions, 'EditBodyAndRequeue']
-    : []
+  const resolutionCards: Resolution['_tag'][] =
+    acting && standing.state === 'blocked'
+      ? orderedResolutions.includes('EditBodyAndRequeue')
+        ? orderedResolutions
+        : [...orderedResolutions, 'EditBodyAndRequeue']
+      : []
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
@@ -523,6 +523,42 @@ export function Standing({
             ) : null}
           </div>
         ) : null}
+        {standing.afterMove ? (
+          <section
+            className={`saftermove saftermove--${standing.afterMove.result}`}
+            aria-label="After the move"
+            data-rank="after-move"
+          >
+            <h2>After the move</h2>
+            <p className="saftermove-title">
+              <strong>{standing.afterMove.result === 'closed' ? 'Closed' : 'Requeued'}</strong>
+              <span>
+                {standing.afterMove.result === 'closed'
+                  ? 'The ticket was closed.'
+                  : 'The ticket returned to the queue.'}
+              </span>
+            </p>
+            <p>
+              Move: {standing.afterMove.resolution} · by {standing.afterMove.by}
+            </p>
+            {standing.afterMove.note ? <p>Decision: {standing.afterMove.note}</p> : null}
+            <p>Result: {standing.afterMove.reason}</p>
+            {standing.afterMove.resolution === 'EditBodyAndRequeue' ? (
+              <p>The body write completed before the wait was resolved.</p>
+            ) : null}
+          </section>
+        ) : standing.bodyOutcome ? (
+          <section
+            className={`saftermove saftermove--${standing.bodyOutcome.result === 'failed' ? 'failed' : 'partial'}`}
+            aria-label="Body update record"
+            data-rank="after-move"
+          >
+            <h2>Body update record</h2>
+            <p>{standing.bodyOutcome.result === 'failed' ? 'A body update failed.' : 'A body update was recorded.'}</p>
+            <p>{standing.bodyOutcome.detail}</p>
+            <p>The body update event does not identify a wait. Current ticket state: {standing.state}.</p>
+          </section>
+        ) : null}
         {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
@@ -544,7 +580,7 @@ export function Standing({
             {inLine !== null ? <span className="sage">{inLine}</span> : null}
           </p>
 
-          {(standing.state === 'running' || standing.state === 'blocked') && progress !== null ? (
+          {(standing.state === 'running' || standing.state === 'blocked' || standing.afterMove) && progress !== null ? (
             <Rail progress={progress} live={standing.state === 'running'} held={budget} />
           ) : null}
 
