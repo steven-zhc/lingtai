@@ -1226,7 +1226,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   ): Promise<boolean> => {
     const offer = offerFor(
       proposal,
-      { rounds: ceilings.rounds, restarts: ceilings.restarts },
+      { rounds: options.from?.grant ? (options.from.roundsSpent ?? 0) : ceilings.rounds, restarts: ceilings.restarts },
       {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,

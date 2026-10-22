@@ -99,7 +99,7 @@ describe('resolveWait', () => {
         deletions: 0,
       }),
     ])
-    const grant = (remote: string | null) =>
+    const grant = (remote: string | null, selectedStore: EventStore = store) =>
       resolveWaitHolding(
         {
           ticketId,
@@ -108,13 +108,20 @@ describe('resolveWait', () => {
           resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
           by: 'human:steven',
           client: fakeClient(remote),
-          store,
+          store: selectedStore,
         },
         ticketId,
       )
     expect(await grant(SHA)).toMatchObject({ ok: false, reason: 'stale' })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toBeNull()
-    expect(await grant(SHA2)).toEqual({ ok: true, ticketId })
+    const unschedulable: EventStore = {
+      ...store,
+      append: async (streamId, expectedVersion, events) => {
+        if (streamId === CONTROL_STREAM) throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+        return store.append(streamId, expectedVersion, events)
+      },
+    }
+    expect(await grant(SHA2, unschedulable)).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
       _tag: 'GrantFixRound',
       onSha: SHA2,
@@ -128,6 +135,7 @@ describe('resolveWait', () => {
     })
     expect(await grant(SHA2)).toEqual({ ok: true, ticketId })
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
+    expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
   })
 
   it('refuses a stale waitId — the item is blocked on a different wait', async () => {

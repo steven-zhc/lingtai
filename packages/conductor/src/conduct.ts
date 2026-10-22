@@ -29,9 +29,10 @@ import {
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
+import { type PayloadOf, type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
+  type Envelope,
   type ReleaseCause,
   type RuntimeId,
   type Step,
@@ -522,6 +523,21 @@ function detailOf(ending: PassOver['stopped']): string {
  * everything under it: the five gate points are ten steps, the sequence is
  * `runPass`'s, and this is the caller the pass was written to be called by.
  */
+/** A grant buys the next implement visit after every round already recorded on this run. */
+export function continuationRound(runEvents: readonly Envelope[], granted: boolean): number {
+  const lastFixRound = routesOf(runEvents)
+    .filter((route) => route.next._tag === 'FixRound')
+    .at(-1)
+  const lastRecordedRound = Math.max(
+    0,
+    lastFixRound?.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+    ...runEvents
+      .filter((event) => event.type === 'StepStarted' && (event.data as PayloadOf<'StepStarted'>).step === 'implement')
+      .map((event) => (event.data as PayloadOf<'StepStarted'>).round),
+  )
+  return granted ? lastRecordedRound + 1 : lastRecordedRound
+}
+
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
   return Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
@@ -955,9 +971,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const granted = folded.lifecycle.grantRef !== undefined
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
-      const lastFixRound = routesOf(runEvents)
-        .filter((r) => r.next._tag === 'FixRound')
-        .at(-1)
       return {
         step: next.step,
         /**
@@ -976,14 +989,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
-        roundsSpent:
-          (lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0) +
-          waitsOf(before).filter(
-            (w) =>
-              'run' in w.reason &&
-              w.reason.run.runId === options.continuing!.runId &&
-              w.resolution?._tag === 'GrantFixRound',
-          ).length,
+        roundsSpent: continuationRound(runEvents, granted),
         ...(granted && reason._tag === 'ProposedEscalated'
           ? {
               grant: {

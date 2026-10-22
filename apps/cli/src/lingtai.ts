@@ -167,12 +167,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   the decisions — each the one the board's card takes, recorded the same way:
   lingtai approve <project> --issue <n>
-  lingtai grant-fix-round <project> --issue <n>
                                 merge what a held run produced, if its head has
                                 not moved since the approval was asked for
     --note <text>               recorded with the approval, and required when
                                 a step still refuses the head: approving then
                                 waives each refusing step, with this as why
+  lingtai grant-fix-round <project> --issue <n>
+                                run one more implementation round on saved work,
+                                then repeat the checks without waiving a refusal
   lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval

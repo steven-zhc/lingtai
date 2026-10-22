@@ -32,7 +32,10 @@ export async function grantFixRoundCommand(
   return withProjector(log, async () => {
     const ticketId = ticketStream(options.project, options.issue)
     const item = reduceTicket(await eventStore.read(ticketId))
-    if (item.lifecycle.status !== 'blocked') {
+    if (
+      item.lifecycle.status !== 'blocked' &&
+      !(item.lifecycle.status === 'approved' && item.lifecycle.grantRef !== undefined)
+    ) {
       log(`${ticketId} is not waiting on a fix decision`)
       return 1
     }
