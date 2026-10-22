@@ -89,6 +89,15 @@ describe('resolveWait', () => {
         outcome: 'published',
         detail: null,
       }),
+      run.event('RunKeptUncommitted', {
+        arm: 'agent/539-attempt-1',
+        sha: SHA2,
+        parentSha: SHA,
+        stoppedBy: 'out-of-turns',
+        files: 1,
+        insertions: 1,
+        deletions: 0,
+      }),
     ])
     const grant = (remote: string | null) =>
       resolveWaitHolding(

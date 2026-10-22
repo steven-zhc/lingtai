@@ -223,6 +223,25 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     const events = await store.read(block.runId)
     const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
     const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
+    // `armSha` is a kept dirty tree, not a reviewed diff head. It can be the
+    // starting tree for a new fix, but only when its own saved-work receipt
+    // identifies that exact commit on that exact arm.
+    if (
+      saved?.armSha != null &&
+      !events.some(
+        (e) =>
+          e.type === 'RunKeptUncommitted' &&
+          (e.data as PayloadOf<'RunKeptUncommitted'>).sha === saved.armSha &&
+          (e.data as PayloadOf<'RunKeptUncommitted'>).arm === saved.arm,
+      )
+    ) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'unrecorded-wip',
+        detail: `Run ${block.runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
+      }
+    }
     const head = saved?.armSha ?? saved?.headSha
     const ref =
       saved?.armSha !== null && saved?.armSha !== undefined

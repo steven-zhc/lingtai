@@ -973,9 +973,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * every `Approve` this item has ever recorded for this run, so both
          * come back together.
          */
-        waive: granted
-          ? []
-          : waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
+        waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent:

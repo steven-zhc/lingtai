@@ -310,9 +310,10 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
   const fixable =
     reason._tag === 'ProposedEscalated' &&
-    (reason.proposal._tag === 'BuildRed' ||
-      reason.proposal._tag === 'VerifyRed' ||
-      reason.proposal._tag === 'ReviewFindings')
+    (reason.proposal._tag === 'ReviewFindings'
+      ? reason.proposal.findings.some((finding) => finding.failureScenario.trim().length > 0)
+      : (reason.proposal._tag === 'BuildRed' || reason.proposal._tag === 'VerifyRed') &&
+        reason.proposal.output.trim().length > 0)
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable ? (['GrantFixRound'] as const) : []),

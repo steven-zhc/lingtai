@@ -94,8 +94,24 @@ describe('allowedResolutions', () => {
     })
 
     it('ReviewFindings: Approve, Requeue, EditBodyAndRequeue, Close', () => {
-      const reason = parseProposed({ _tag: 'ReviewFindings', findings: [] })
+      const reason = parseProposed({
+        _tag: 'ReviewFindings',
+        findings: [
+          {
+            file: 'src/index.ts',
+            line: 1,
+            claim: 'the fix fails',
+            failureScenario: 'input is empty',
+            severity: 'major',
+          },
+        ],
+      })
       expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+    })
+
+    it('does not offer a grant without a recorded failure criterion', () => {
+      expect(allowedResolutions(parseProposed({ _tag: 'ReviewFindings', findings: [] }))).not.toContain('GrantFixRound')
+      expect(allowedResolutions(parseProposed({ _tag: 'BuildRed', output: '  ' }))).not.toContain('GrantFixRound')
     })
 
     it('ReviewEmpty: Approve, Requeue, EditBodyAndRequeue, Close', () => {
