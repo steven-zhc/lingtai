@@ -183,6 +183,148 @@ function running(): TaskDetail {
 
 const page = (t: TaskDetail) => renderToStaticMarkup(<TaskBody task={t} />)
 
+function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: Envelope[] = []): TaskDetail {
+  const own = [
+    e(ITEM, 'TicketClaimed', { runId: RUN }),
+    e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+    ...extra,
+    e(ITEM, 'WaitResolved', {
+      waitId: 'wait-147',
+      resolution: { _tag: resolution },
+      by: 'steven',
+      note: 'the review cannot run',
+    }),
+    ...(resolution === 'Close' ? [e(ITEM, 'TicketClosed', { by: 'steven', reason: 'the review cannot run' })] : []),
+  ]
+  return task(own, [])
+}
+
+describe('after the move', () => {
+  it('states a recorded close and retires the old resolution', () => {
+    const html = page(moved('Close'))
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
+    expect(html).toContain('The ticket was closed.')
+    expect(html).toContain('Decision: the review cannot run')
+    expect(html).toContain('Result: the review cannot run')
+    expect(html).not.toContain('waiting for a conductor to take it')
+    expect(html).not.toContain('data-resolution=')
+    expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('data-rank="after-move"'))
+    expect(html.indexOf('data-rank="after-move"')).toBeLessThan(html.indexOf('data-rank="where"'))
+    expect(html).toContain('data-rank="record"')
+  })
+
+  it('states a recorded requeue without claiming a body write', () => {
+    const html = page(moved('Requeue'))
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
+    expect(html).toContain('The ticket returned to the queue.')
+    expect(html).toContain('Decision: the review cannot run')
+    expect(html).toContain('Result: The wait was resolved and the ticket returned to the queue.')
+    expect(html).not.toContain('body write completed')
+    expect(html).not.toContain('data-resolution=')
+  })
+
+  it('shows the completed answer to an OwnQuestion in the resolved reading frame', () => {
+    const own = [
+      e(ITEM, 'WaitStarted', {
+        waitId: 'wait-question',
+        reason: { _tag: 'OwnQuestion', question: 'Which approach should we take?', by: 'steven' },
+      }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-question',
+        resolution: { _tag: 'AnswerQuestion', choice: 'Use the smaller change' },
+        by: 'steven',
+        note: 'Use the smaller change',
+      }),
+    ]
+    const html = page(task(own, []))
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
+    expect(html).toContain('Move: AnswerQuestion · by steven')
+    expect(html).toContain('Decision: Use the smaller change')
+    expect(html).toContain('The ticket returned to the queue.')
+    expect(html.indexOf('data-rank="after-move"')).toBeLessThan(html.indexOf('data-rank="where"'))
+  })
+
+  it('shows the recorded body update separately from a completed body edit and requeue', () => {
+    const html = page(
+      moved('EditBodyAndRequeue', [
+        e(ITEM, 'IssueUpdated', { project: 'lingtai', issue: '147', change: 'body', detail: '42 bytes' }),
+      ]),
+    )
+    expect(html).toContain('detail--resolved')
+    expect(html).toContain('After the move')
+    expect(html).toContain('Move: EditBodyAndRequeue')
+    expect(html).toContain('A body update was recorded.')
+    expect(html).toContain('The body update event does not identify a wait.')
+    expect(html).not.toContain('The body write completed before the wait was resolved.')
+  })
+
+  it.each(['IssueUpdated', 'IssueUpdateFailed'])('reports %s only as an unscoped body I/O fact', (type) => {
+    const own = [
+      e(ITEM, 'TicketClaimed', { runId: RUN }),
+      e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+      e(ITEM, type, {
+        project: 'lingtai',
+        issue: '147',
+        change: 'body',
+        detail: '42 bytes',
+        error: 'GitHub answered 502',
+      }),
+    ]
+    const html = page(task(own, []))
+    expect(html).toContain('The body update event does not identify a wait. Current ticket state: blocked.')
+    expect(html).toContain(type === 'IssueUpdated' ? 'A body update was recorded.' : 'A body update failed.')
+    expect(html).not.toContain('The body write completed before the wait was resolved.')
+    expect(html).not.toContain('The ticket returned to the queue.')
+  })
+
+  it('does not call an unscoped write a completed body edit after another release', () => {
+    const own = [
+      e(ITEM, 'TicketClaimed', { runId: RUN }),
+      e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+      e(ITEM, 'IssueUpdated', { project: 'lingtai', issue: '147', change: 'body', detail: '42 bytes' }),
+      e(ITEM, 'TicketReleased', {
+        runId: RUN,
+        reason: 'other release',
+        cause: { _tag: 'ByPerson', waitId: 'wait-147' },
+      }),
+    ]
+    const html = page(task(own, []))
+    expect(html).toContain('A body update was recorded.')
+    expect(html).toContain('Current ticket state: queued.')
+    expect(html).not.toContain('The body write completed before the wait was resolved.')
+  })
+
+  it('does not present a past requeue as the move behind a later close', () => {
+    const t = moved('Requeue')
+    const own = [
+      e(ITEM, 'WaitResolved', { waitId: 'wait-old', resolution: { _tag: 'Requeue' }, by: 'steven', note: 'old move' }),
+      e(ITEM, 'TicketClosed', { by: 'steven', reason: 'later close' }),
+    ]
+    const html = page(task(own, [], { ticket: t.ticket }))
+    expect(html).not.toContain('After the move')
+    expect(html).not.toContain('waiting for a conductor to take it')
+  })
+
+  it('does not present a past requeue as the current move after another release', () => {
+    const own = [
+      e(ITEM, 'TicketClaimed', { runId: RUN }),
+      e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-147',
+        resolution: { _tag: 'Requeue' },
+        by: 'steven',
+        note: 'the review cannot run',
+      }),
+      e(ITEM, 'TicketReleased', { runId: RUN, reason: 'another release', cause: null }),
+    ]
+    const html = page(task(own, []))
+    expect(html).not.toContain('After the move')
+  })
+})
+
 describe('unpushed work', () => {
   const ref = `refs/lingtai/unpushed/147/${RUN}`
   const arm = 'refs/heads/agent/147-arm-1'

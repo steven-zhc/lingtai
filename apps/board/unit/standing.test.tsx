@@ -1283,12 +1283,30 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
   }
 
   const offered = editorOn(HELD)
-  const moved = editorOn({ ...HELD, state: 'queued', onYou: false, reason: null, waitId: null })
+  const moved = editorOn({
+    ...HELD,
+    state: 'queued',
+    onYou: false,
+    reason: null,
+    waitId: null,
+    afterMove: { resolution: 'Requeue', by: 'steven', note: '', result: 'requeued', reason: 'returned to queue' },
+  })
+  const closed = editorOn({
+    ...HELD,
+    state: 'closed',
+    onYou: false,
+    reason: null,
+    waitId: null,
+    afterMove: { resolution: 'Close', by: 'steven', note: '', result: 'closed', reason: 'closed' },
+  })
   expect(offered?.waitId).toBe(HELD.waitId)
   expect(moved?.waitId).toBeNull()
+  expect(closed?.waitId).toBeNull()
   expect(moved?.path).toBe(offered?.path)
+  expect(closed?.path).toBe(offered?.path)
   expect(offered?.hidden).toBe(false)
   expect(moved?.hidden).toBe(false)
+  expect(closed?.hidden).toBe(false)
 })
 
 it('ignores triage facts for a wait that is no longer current', () => {

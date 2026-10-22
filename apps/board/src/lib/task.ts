@@ -381,6 +381,10 @@ export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'close
  */
 export interface StandingView {
   state: StandingState
+  /** The last person's move, only when its resulting lifecycle is still current. */
+  afterMove?: { resolution: string; by: string; note: string; result: 'closed' | 'requeued'; reason: string } | null
+  /** A body I/O fact on this stream; these events do not identify a wait. */
+  bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
   triageStatus: TriageStatus | null
   /** A comparison with the local mirror, only for a completed current triage. */
@@ -550,14 +554,14 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
 }
 
 /**
- * The five events that replace the lifecycle in `applyTicket`.
+ * The events that replace the lifecycle in `applyTicket`.
  *
  * Listed rather than inferred, because *when the state began* is the second
  * half of this block and nothing else on the item's stream may move it: a
  * `TicketLinked`, a restarted pass or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
-const LIFECYCLE_MOVES = new Set(['TicketClaimed', 'TicketReleased', ...WAIT_EVENTS, 'TicketLanded'])
+const LIFECYCLE_MOVES = new Set(['TicketClaimed', 'TicketReleased', ...WAIT_EVENTS, 'TicketLanded', 'TicketClosed'])
 
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
@@ -708,6 +712,8 @@ function whoWaits(life: TicketLifecycle): string {
       return `merged into ${life.base}`
     case 'approved':
       return 'approved — waiting for a conductor to continue it'
+    case 'closed':
+      return 'this ticket is closed'
     default:
       // Not stuck. The reading #94 got wrong: an item nobody is holding comes
       // back on its own, and the page has to say so in as many words.
@@ -751,9 +757,71 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
       })
     : null
   const raw = words?.diagnosis?.raw ?? null
+  const lastMove = [...own].reverse().find((e) => e.type === 'WaitResolved')
+  const moveIndex = lastMove === undefined ? -1 : own.indexOf(lastMove)
+  const move = lastMove?.data as { waitId: string; resolution: { _tag: string }; by: string; note: string } | undefined
+  const startedForMove = own
+    .slice(0, moveIndex)
+    .findLastIndex((e) => e.type === 'WaitStarted' && (e.data as { waitId: string }).waitId === move?.waitId)
+  const currentMove =
+    move !== undefined && startedForMove >= 0 && !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
+  const outcome = own.slice(moveIndex + 1).find((e) => e.type === 'TicketClosed' || e.type === 'TicketReleased')
+  const latestLifecycle = [...own].reverse().find((e) => LIFECYCLE_MOVES.has(e.type))
+  const closed =
+    outcome?.type === 'TicketClosed' &&
+    latestLifecycle === outcome &&
+    life.status === 'closed' &&
+    currentMove &&
+    move?.resolution._tag === 'Close'
+  const released =
+    outcome?.type === 'TicketReleased' &&
+    latestLifecycle === outcome &&
+    life.status === 'backlog' &&
+    currentMove &&
+    (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue') &&
+    (outcome.data as { cause?: { _tag: string; waitId?: string } }).cause?._tag === 'ByPerson' &&
+    (outcome.data as { cause: { waitId: string } }).cause.waitId === move?.waitId
+  const requeued =
+    currentMove &&
+    latestLifecycle === lastMove &&
+    life.status === 'backlog' &&
+    (move?.resolution._tag === 'Requeue' ||
+      move?.resolution._tag === 'EditBodyAndRequeue' ||
+      move?.resolution._tag === 'AnswerQuestion')
+  const bodyEvent = [...own]
+    .reverse()
+    .find(
+      (e) =>
+        (e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed') &&
+        (e.data as { change?: string }).change === 'body',
+    )
+  const bodyData = bodyEvent?.data as { change?: string; detail?: string; error?: string } | undefined
+  const lastWaitStarted = own.findLastIndex((e) => e.type === 'WaitStarted')
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
+    afterMove:
+      move !== undefined && (closed || released || requeued)
+        ? {
+            resolution: move.resolution._tag,
+            by: move.by,
+            note: move.note,
+            result: closed ? 'closed' : 'requeued',
+            reason: requeued
+              ? 'The wait was resolved and the ticket returned to the queue.'
+              : (outcome!.data as { reason: string }).reason,
+          }
+        : null,
+    bodyOutcome:
+      bodyData?.change === 'body' &&
+      bodyEvent !== undefined &&
+      lastWaitStarted >= 0 &&
+      own.indexOf(bodyEvent) > lastWaitStarted
+        ? {
+            result: bodyEvent.type === 'IssueUpdated' ? 'updated' : 'failed',
+            detail: bodyData.detail ?? bodyData.error ?? '',
+          }
+        : null,
     triageStatus: null,
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
