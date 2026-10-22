@@ -68,27 +68,54 @@ describe('resolveWait', () => {
     const waitId = aWaitId()
     await seed(store, ticketId, [
       ...aClaim(item, run.runId),
-      ...aWait(item, {
-        _tag: 'ProposedEscalated', run: aRunRef(run.runId),
-        proposal: { _tag: 'BuildRed', output: 'typecheck failed' }, because: { _tag: 'NotAsked' },
-      }, waitId),
+      ...aWait(
+        item,
+        {
+          _tag: 'ProposedEscalated',
+          run: aRunRef(run.runId),
+          proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+          because: { _tag: 'NotAsked' },
+        },
+        waitId,
+      ),
     ])
-    await seed(store, run.runId, [run.event('RunRefsPublished', {
-      branch: 'agent/539', arm: 'agent/539-attempt-1', headSha: SHA,
-      armSha: SHA2, branchCarries: true, outcome: 'published', detail: null,
-    })])
-    const grant = (remote: string | null) => resolveWaitHolding({
-      ticketId, issue: 539, waitId, resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
-      by: 'human:steven', client: fakeClient(remote), store,
-    }, ticketId)
+    await seed(store, run.runId, [
+      run.event('RunRefsPublished', {
+        branch: 'agent/539',
+        arm: 'agent/539-attempt-1',
+        headSha: SHA,
+        armSha: SHA2,
+        branchCarries: true,
+        outcome: 'published',
+        detail: null,
+      }),
+    ])
+    const grant = (remote: string | null) =>
+      resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          by: 'human:steven',
+          client: fakeClient(remote),
+          store,
+        },
+        ticketId,
+      )
     expect(await grant(SHA)).toMatchObject({ ok: false, reason: 'stale' })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toBeNull()
     expect(await grant(SHA2)).toEqual({ ok: true, ticketId })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
-      _tag: 'GrantFixRound', onSha: SHA2, ref: 'agent/539-attempt-1',
+      _tag: 'GrantFixRound',
+      onSha: SHA2,
+      ref: 'agent/539-attempt-1',
     })
     expect(reduceTicket(await store.read(ticketId)).lifecycle).toMatchObject({
-      status: 'approved', runId: run.runId, onSha: SHA2, grantRef: 'agent/539-attempt-1',
+      status: 'approved',
+      runId: run.runId,
+      onSha: SHA2,
+      grantRef: 'agent/539-attempt-1',
     })
     expect(await grant(SHA2)).toEqual({ ok: true, ticketId })
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)

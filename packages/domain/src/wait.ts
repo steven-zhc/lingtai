@@ -232,14 +232,14 @@ export type Resolution = z.infer<typeof Resolution>
  * the head at the moment a person approves, not something triage knows ahead
  * of them (0118 §1).
  */
-export const TriageAdvice = z.enum(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Close'])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
 // a Resolution tag added later must be added here or excluded here on purpose
 const _triageAdviceCoversResolution: AssertEqual<
   TriageAdvice,
-  Exclude<Resolution['_tag'], 'AnswerQuestion' | 'GrantFixRound'>
+  Exclude<Resolution['_tag'], 'AnswerQuestion'>
 > = true as const
 
 /**
