@@ -216,7 +216,7 @@ export function ticketOpening(body: string): { problem: string; want: string; wa
     if (
       cells.length !== 4 ||
       cells[0] !== '' ||
-      cells[3].trim() !== '' ||
+      cells[3]?.trim() !== '' ||
       cells[1] === undefined ||
       cells[2] === undefined
     )
