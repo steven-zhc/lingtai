@@ -1743,7 +1743,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   padding: 0.4rem 0.55rem;
   border-radius: 6px;
 }
-.bubble.asked { justify-self: end; background: var(--accent); color: white; }
+.bubble.asked { justify-self: end; background: var(--accent); color: var(--ground); }
 .bubble.asked .chatq, .bubble.asked .chatwho { color: inherit; }
 .bubble.answer { justify-self: start; background: var(--surface); border: 1px solid var(--rule); }
 .chatwho {

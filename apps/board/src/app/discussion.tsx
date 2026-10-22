@@ -529,7 +529,7 @@ export function Discussion({
     })
     for (const child of Array.from(pane.children)) follow.observe(child)
     return () => follow.disconnect()
-  }, [shown])
+  }, [shown, compact])
 
   /**
    * Where the pair starts, handed to `.spair` as `--pair-top` (#173). The pair

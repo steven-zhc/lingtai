@@ -162,6 +162,13 @@ describe('the six Discussion reference contexts', () => {
     expect(html).toContain('class="chatscroll"')
     expect(html).not.toContain('class="chatentry"')
   })
+
+  it('follows the conversation when expanding a compact entry', () => {
+    const source = readFileSync(new URL('../src/app/discussion.tsx', import.meta.url), 'utf8')
+    expect(source).toMatch(
+      /const pane = conversation\.current[\s\S]*?pane\.scrollTo\(\{ top: pane\.scrollHeight \}\)[\s\S]*?follow\.observe\(child\)[\s\S]*?\}, \[shown, compact\]\)/,
+    )
+  })
 })
 
 /**
@@ -579,6 +586,35 @@ describe("the pair's height", () => {
     expect(css).toMatch(/\.chat\[data-context='question'\]\s*\{\s*background:\s*var\(--signal-soft\);/)
     expect(css).toMatch(/\.chat\[data-context='interrupted'\]\s*\{\s*background:\s*var\(--surface-2\);/)
     expect(css).toMatch(/\.chat\[data-context='failed'\] \.chatcontextdetail\s*\{\s*color:\s*var\(--ink-2\);/)
+  })
+
+  it('keeps question text readable on the accent in both palettes', () => {
+    const bubble = css.match(/\.bubble\.asked\s*\{([^}]*)\}/)?.[1] ?? ''
+    const background = bubble.match(/background:\s*(var\(--[\w-]+\)|#[\da-fA-F]+)\s*;/)?.[1] ?? ''
+    const color = bubble.match(/color:\s*(var\(--[\w-]+\)|#[\da-fA-F]+)\s*;/)?.[1] ?? ''
+    expect(background).not.toBe('')
+    expect(color).not.toBe('')
+    const light = css.match(/:root\s*\{([^}]*)\}/)?.[1] ?? ''
+    const dark = css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/)?.[1] ?? ''
+    const resolve = (value: string, palette: string) =>
+      value.startsWith('var(')
+        ? (palette.match(new RegExp(`${value.slice(4, -1)}:\\s*(#[\\da-fA-F]+)`))?.[1] ?? '')
+        : value
+    const luminance = (hex: string) => {
+      const rgb = hex.match(/[\da-fA-F]{2}/g)?.map((part) => parseInt(part, 16) / 255) ?? []
+      const [red, green, blue] = rgb.map((channel) =>
+        channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+      )
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!
+    }
+    for (const palette of [light, dark]) {
+      const bg = resolve(background, palette)
+      const fg = resolve(color, palette)
+      expect(bg).toMatch(/^#[\da-fA-F]{6}$/)
+      expect(fg).toMatch(/^#[\da-fA-F]{6}$/)
+      const levels = [luminance(bg), luminance(fg)].sort((a, b) => b - a)
+      expect((levels[0]! + 0.05) / (levels[1]! + 0.05)).toBeGreaterThanOrEqual(4.5)
+    }
   })
 
   it('puts the moves and the input on one screen wherever the old 24rem pair did', () => {
