@@ -1685,7 +1685,7 @@ describe('what the refusal means for the decision', () => {
  * somewhere in the markup — which was already true and was not the point.
  */
 describe('the subject, at the top', () => {
-  it('shows a plain triage reading and a sanitized, line-boundary opening before the state', () => {
+  it('shows compact state and title before the ticket context', () => {
     const html = renderToStaticMarkup(
       <Standing
         subject={{ ref: '159', title: 'A ticket', url: 'https://github.com/example/issues/159', askedGitHub: true }}
@@ -1700,8 +1700,9 @@ describe('the subject, at the top', () => {
         queued={null}
       />,
     )
+    expect(html.indexOf('data-rank="state"')).toBeLessThan(html.indexOf('data-rank="subject"'))
     expect(html.indexOf('data-rank="subject"')).toBeLessThan(html.indexOf('Triage’s reading:'))
-    expect(html.indexOf('Triage’s reading:')).toBeLessThan(html.indexOf('data-rank="state"'))
+    expect(html.indexOf('Triage’s reading:')).toBeLessThan(html.indexOf('data-rank="where"'))
     expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
     expect(html).toContain('<details><summary>Opening of the ticket</summary>')
     expect(html).toContain('href="#record-ticket"')
