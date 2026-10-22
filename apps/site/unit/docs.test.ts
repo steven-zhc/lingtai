@@ -93,8 +93,15 @@ describe('what the site publishes', () => {
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path short and in order', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
+    // Shell variants repeat commands a reader only needs to read once.
+    // Bound the narrative separately, and still cap the whole page.
+    const prose = body
+      .replace(/```[\s\S]*?```/g, '')
+      .trim()
+      .split(/\s+/).length
     const words = body.trim().split(/\s+/).length
-    expect(words, 'the tutorial has become a reference manual again').toBeLessThan(1400)
+    expect(prose, 'the tutorial has become a reference manual again').toBeLessThan(1400)
+    expect(words, 'the tutorial has too many command variants').toBeLessThan(2000)
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)

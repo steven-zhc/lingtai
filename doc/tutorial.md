@@ -1,61 +1,75 @@
 # Tutorial — get one ticket to land
 
-This is the shortest path from a new machine to one ticket worked by an agent
-and merged.
-
-You will do two things once — set up this machine, open one ticket — then
-watch it move. Everything else happens on its own.
+This tutorial uses [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
+a small Astro site for jointly written novels, to walk through Lingtai's full
+local-project flow: set up a project, open a ticket, run an agent and checks,
+approve the result, and land it. You can use another Git project instead;
+provide that project's own install and build commands during setup.
 
 > **You are done when** the ticket reaches **Landed**, its commit is on your
 > base branch, and you can explain which checks allowed it through.
 
 ## Before you start
 
-Have these ready:
+For Lingtai, install Git and either Claude Code or Codex, then sign in to the
+agent. To develop Chapter Garden, also install Node.js and npm and
+[add your SSH key to GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account).
+If you use another project, prepare its development tools instead.
 
-- **Git**
-- **Claude Code or Codex**, installed and signed in
-- **A repository with an `origin` remote carrying your base branch.** The
-  merge lane pushes there — it need not be on GitHub. A bare repository works:
-  `git init --bare` somewhere, `git remote add origin <that path>`, then `git
-  push -u origin <your base branch>` — skip the push and `lingtai start` fails
-  on an empty origin.
+Check SSH access with `ssh -T git@github.com`; a successful connection says
+`Hi <username>!` (GitHub does not provide shell access). Then clone Chapter
+Garden and create your own branch. You need permission to push that branch:
 
-If you do not have a project ready, use [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
-a small Astro site for jointly written novels. It begins with passing checks
-and two Markdown chapters. This makes a private, writable `origin` from its
-public seed; no GitHub account or App is needed for this local-project route:
+**Bash**
 
 ```bash
-git clone --bare https://github.com/steven-zhc/chapter-garden.git ~/chapter-garden-origin.git
-git clone ~/chapter-garden-origin.git ~/chapter-garden
+git clone git@github.com:steven-zhc/chapter-garden.git ~/chapter-garden
 cd ~/chapter-garden
-git switch -c my-story
-git push -u origin my-story
+tutorial_branch="tutorial-$USER-$(date +%Y%m%d%H%M%S)"
+git switch -c "$tutorial_branch"
+git push -u origin "$tutorial_branch"
 ```
 
-The working directory's `origin` is now your own bare repository, not the
-public seed. To run this site's checks, install Node.js 22.23.4 or newer and
-confirm `node --version` and `npm --version` work in your terminal.
+**Zsh**
+
+```zsh
+git clone git@github.com:steven-zhc/chapter-garden.git ~/chapter-garden
+cd ~/chapter-garden
+tutorial_branch="tutorial-$USER-$(date +%Y%m%d%H%M%S)"
+git switch -c "$tutorial_branch"
+git push -u origin "$tutorial_branch"
+```
+
+**Fish**
+
+```fish
+git clone git@github.com:steven-zhc/chapter-garden.git ~/chapter-garden
+cd ~/chapter-garden
+set tutorial_branch tutorial-$USER-(date +%Y%m%d%H%M%S)
+git switch -c $tutorial_branch
+git push -u origin $tutorial_branch
+```
+
+Use your new branch as the base throughout this tutorial; `main` is protected.
+If you cannot push to Chapter Garden, clone a repository you can push to and
+create your branch there. Lingtai's local-project route needs no GitHub App.
 
 There is no database to provision. Lingtai's own log is a SQLite file under
 `~/.lingtai` unless you give `init` a Postgres URL instead.
 
-Choose a small first ticket with an obvious check, not a test of the system's
-limits. Chapter Garden's example below adds a third chapter.
+Start with one small change you can check when it is done.
 
 Install the CLI:
 
-```bash
-curl -fsSL https://lingtai.hczhang.com/install.sh | sh
+```sh
+curl -fsSL https://lingtai.hczhang.com/install.sh | env LINGTAI_NO_INIT=1 sh
 ```
 
-The installer verifies the downloaded archive, installs `lingtai` under
-`~/.local/bin`, and starts setup. If you prefer an address that does not depend
-on this site:
+The installer verifies the download and installs `lingtai` under
+`~/.local/bin`. The flag leaves setup to Step 1. If you prefer the release URL:
 
-```bash
-curl -fsSL https://github.com/steven-zhc/lingtai/releases/latest/download/install.sh | sh
+```sh
+curl -fsSL https://github.com/steven-zhc/lingtai/releases/latest/download/install.sh | env LINGTAI_NO_INIT=1 sh
 ```
 
 Running from source instead? Run `pnpm install`, then use `pnpm lingtai`
@@ -63,116 +77,69 @@ wherever this guide says `lingtai`.
 
 ## Step 1 — Set up this machine
 
-If the installer did not already start setup:
+Run this once after cloning Chapter Garden. It uses Codex, checks each change,
+and waits for your approval before merging.
+
+**Bash**
 
 ```bash
-lingtai init
-```
-
-`init` looks before it asks:
-
-```text
-looking before asking
-  git          git version 2.50.1
-  claude-code  signed in via claude.ai
-  codex        Logged in using ChatGPT
-  home         ~/.lingtai — no config.yml · no projects
-```
-
-Then, in order:
-
-1. **The store** — `a Postgres URL for the log — empty for SQLite: `. Press
-   enter for SQLite; Postgres is here only as something you may paste.
-2. **The project** — `a GitHub project, or one on this machine only [github]:
-   `. **Type `local`.** Enter alone takes GitHub, which this tutorial is not
-   using.
-3. **The directory**, then **the base branch** — the repository from *Before
-   you start*, and the branch its recipe will govern.
-4. **`use every default? [yes]: `.** Type `no` to see what you are agreeing
-   to; `yes` is faster once you trust the defaults.
-
-Answering `no` asks the rest of the recipe one question at a time — which
-agent writes the change and which reviews it, an install command (a fresh
-directory has none to detect; type one, or `none`), a build check (press
-enter when done — typing `none` there writes it as a literal command), and
-which labels count as work (`bug, feature, documentation` by default). A
-local project is never asked where its tickets live — there is one legal
-answer, its own table.
-
-Then the one question worth reading closely:
-
-```text
-land this on which branch, or "hold" to hold every pass for a person [main]: 
-```
-
-**Type `hold`.** This is the trap: if you take the default here instead
-(empty line, or answering `yes` to *use every default?* above), Lingtai lands
-every passing run on your base branch with nobody approving it. `hold` is how
-you watch the first one before trusting it. It confirms:
-
-```text
-landing       hold — every pass stops at proposed for a person
-```
-
-A script skips the terminal with the same answers:
-
-```bash
-lingtai init --store sqlite --project local --local <dir> --base <branch> \
-  --agent claude-code --install none --defaults --land hold
-```
-
-`--agent` names the runtime — omit it with two signed in and the run refuses.
-
-For Chapter Garden, use `~/chapter-garden` as the directory and `my-story` as
-the base. Choose `npm ci` for install, then `npm run check` and `npm run build`
-as the two build commands. Its initial build passes, including the trial run
-during setup. With Codex signed in, the same choices can be scripted:
-
-```bash
-lingtai init --store sqlite --local ~/chapter-garden --base my-story \
+lingtai init --store sqlite --local ~/chapter-garden \
+  --base "$(git -C ~/chapter-garden branch --show-current)" \
   --agent codex --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
 
-`init` ends by registering the project and printing its recipe:
+**Zsh**
 
-```text
-project      local — <name>, registered with its own origin as repo.remote
-~/.lingtai/<name>/recipe.yml
+```zsh
+lingtai init --store sqlite --local ~/chapter-garden \
+  --base "$(git -C ~/chapter-garden branch --show-current)" \
+  --agent codex --install 'npm ci' --build 'npm run check' \
+  --build 'npm run build' --defaults --land hold
 ```
 
-The `hold` answer above is this entry, inside that file (shortened — the rest
-of the file is every other default `init` pinned: the agent, the build
-steps, the limits):
+**Fish**
 
-```yaml
-steps:
-  proposed:
-    - name: hold every pass
-      human: Land this? The setup was answered 'hold'.
+```fish
+lingtai init --store sqlite --local ~/chapter-garden \
+  --base (git -C ~/chapter-garden branch --show-current) \
+  --agent codex --install 'npm ci' --build 'npm run check' \
+  --build 'npm run build' --defaults --land hold
 ```
+
+Look for `landing hold` and both build commands in the printed recipe, then
+continue to Step 2.
 
 ![The recipe feeds three gates between a ticket and a merge: is it work, does it pass, do you approve.](img/recipe.svg)
 
-It is local to this machine; nothing is committed to the repository. Last,
-`init` prints `lingtai doctor`'s own report, then:
+<details>
+<summary>What does this command set?</summary>
 
-```text
-no board was started — lingtai board starts it
-```
+| Option | Effect |
+|---|---|
+| `--store sqlite` | Keeps Lingtai's log on this machine. |
+| `--local ~/chapter-garden` | Registers this checkout without a GitHub App. |
+| `--base ...` | Uses your current tutorial branch as the merge target. |
+| `--agent codex` | Uses the Codex account you signed in to. |
+| `--install 'npm ci'` | Installs Chapter Garden's dependencies in each worktree. |
+| `--build ...` (twice) | Runs `npm run check` and `npm run build` before review. |
+| `--land hold` | Waits for your approval before merging. |
+| `--defaults` | Accepts remaining defaults without more questions. |
 
-Before moving on, confirm doctor is clean:
+Already ran `lingtai init` without these flags? It does not reconfigure an
+existing project. Run `lingtai add --local ~/chapter-garden --agent codex
+--install 'npm ci' --build 'npm run check' --build 'npm run build' --land hold
+--defaults` to set the missing checks and hold.
 
-```bash
-lingtai doctor
-```
+With Codex, the doctor report currently marks its default 300-turn limit as
+failed because Codex enforces the two-hour wall limit but not turns. This one
+known failure does not block `lingtai start`; resolve any other failed check.
 
-Do not open a ticket while `doctor` is red. Its output names the failing check
-and what to fix.
+</details>
 
 ## Step 2 — Open one ticket
 
-```bash
+```text
 lingtai ticket new --project <name>
 ```
 
@@ -189,29 +156,32 @@ Describe the problem here.
 
 The first line is the title; `labels:` must carry one of the kinds your
 recipe took in Step 1, or the ticket is created but the queue passes over it.
-On Chapter Garden, replace the form with this first ticket:
+Replace the form with a small change you want in Chapter Garden. Fill in each
+`<...>` with a concrete answer; you can use this template again for another
+change:
 
 ```text
-Add the third chapter of After the Rain
+Improve <one specific part of Chapter Garden>
 labels: feature
 
-Add a third Markdown chapter under src/content/books/after-rain/.
-Continue from the person who looks like Lin Che stepping off the 7:40 train
-with a letter. Write 300–600 Chinese characters and keep the first two
-chapters intact. Give the new chapter frontmatter a title and order: 3,
-then run npm run check and npm run build.
+In <book, page, or file>, <describe what you see now>.
+Change it so <describe the result you want>.
+Keep existing books and chapters intact.
+Done when <describe how you will check the result> and both
+npm run check and npm run build pass.
 ```
 
-Save and quit to create it:
+Use `bug` for a defect or `documentation` for a docs change. Save and quit to
+create the ticket; note the number printed for the approval step:
 
 ```text
-created #1  Add the third chapter of After the Rain
+created #<ticket-number>  Improve ...
 ```
 
 If a run needs project secrets, add only the names your recipe's `build`
 step requires:
 
-```bash
+```text
 lingtai env set <project> DATABASE_URL
 lingtai env list <project>
 ```
@@ -223,7 +193,7 @@ shows names, never values.
 
 Preview what Lingtai can take without claiming anything:
 
-```bash
+```text
 lingtai status <project>
 ```
 
@@ -242,7 +212,7 @@ shows it too.
 
 When the queue looks right, start Lingtai:
 
-```bash
+```text
 lingtai start
 ```
 
@@ -267,16 +237,15 @@ GitHub issue / ticket  →  Queued  →  Running  →  Waiting on you  →  Land
 
 Confirm what stopped it (`--all`, since a hold outside the queue needs it):
 
-```bash
+```text
 lingtai status <project> --all
 ```
 
 The hold is the one your recipe wrote: *"Land this? The setup was answered
-'hold'."* Approve the ticket number printed when you created it (shown as `1`
-below on a fresh local store):
+'hold'."* Use the ticket number printed when you created it:
 
-```bash
-lingtai approve <project> --issue 1
+```text
+lingtai approve <project> --issue <ticket-number>
 ```
 
 ![Read which hold or check stopped it, then approve, requeue with a note, or attach to the run log.](img/waiting.svg)
@@ -284,8 +253,8 @@ lingtai approve <project> --issue 1
 If the approach is wrong instead, start a new pass from the base branch with a
 note:
 
-```bash
-lingtai requeue <project> --issue 1 --note "what should change next time"
+```text
+lingtai requeue <project> --issue <ticket-number> --note "what should change next time"
 ```
 
 `approve` records your decision; the running conductor then continues the held
@@ -308,7 +277,7 @@ evidence and the next action.
 
 To stop taking new work while you adjust things:
 
-```bash
+```text
 lingtai pause "tuning the first recipe"
 lingtai resume
 ```
