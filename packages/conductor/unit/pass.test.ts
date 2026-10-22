@@ -1572,6 +1572,38 @@ describe('a granted fix round', () => {
     expect(result.end._tag).toBe('WaitOnPerson')
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
+
+  it('keeps the granted round cap after an intervening human approval', async () => {
+    let implementations = 0
+    const { bodies } = watching()
+    const { emit } = events()
+    const { actionsAt } = watchingActions({
+      implement: [
+        {
+          ...committedSomething('fix'),
+          run: async () => {
+            implementations += 1
+            return { ...PASSED, head: COMMITTED }
+          },
+        },
+      ],
+      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
+    })
+
+    const result = await runPass({
+      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      from: { step: 'build', waive: [], roundsSpent: 1, roundLimit: 1 },
+    })
+
+    expect(implementations).toBe(0)
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
+  })
 })
 
 describe('proposed routes on the way through as well as on the way back', () => {

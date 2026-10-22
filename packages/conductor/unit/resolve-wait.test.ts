@@ -60,7 +60,7 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
 }
 
 describe('resolveWait', () => {
-  it('grants one fix round on the recorded arm head and refuses a moved ref', async () => {
+  it('refuses a recorded WIP head and grants a clean saved head only at its recorded ref', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 539)
     const item = makeStream(ticketId)
@@ -112,8 +112,28 @@ describe('resolveWait', () => {
         },
         ticketId,
       )
-    expect(await grant(SHA)).toMatchObject({ ok: false, reason: 'stale' })
+    expect(await grant(SHA2)).toMatchObject({
+      ok: false,
+      reason: 'wip-head',
+      detail: expect.stringContaining('clean commit'),
+    })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toBeNull()
+    await store.append(run.runId, (await store.read(run.runId)).length, [
+      {
+        type: 'RunRefsPublished',
+        actor: 'conductor',
+        data: run.event('RunRefsPublished', {
+          branch: 'agent/539',
+          arm: 'agent/539-attempt-2',
+          headSha: SHA,
+          armSha: null,
+          branchCarries: true,
+          outcome: 'published',
+          detail: null,
+        }).data,
+      },
+    ])
+    expect(await grant(SHA2)).toMatchObject({ ok: false, reason: 'stale' })
     const unschedulable: EventStore = {
       ...store,
       append: async (streamId, expectedVersion, events) => {
@@ -121,19 +141,19 @@ describe('resolveWait', () => {
         return store.append(streamId, expectedVersion, events)
       },
     }
-    expect(await grant(SHA2, unschedulable)).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
+    expect(await grant(SHA, unschedulable)).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
       _tag: 'GrantFixRound',
-      onSha: SHA2,
-      ref: 'agent/539-attempt-1',
+      onSha: SHA,
+      ref: 'agent/539',
     })
     expect(reduceTicket(await store.read(ticketId)).lifecycle).toMatchObject({
       status: 'approved',
       runId: run.runId,
-      onSha: SHA2,
-      grantRef: 'agent/539-attempt-1',
+      onSha: SHA,
+      grantRef: 'agent/539',
     })
-    expect(await grant(SHA2)).toEqual({ ok: true, ticketId })
+    expect(await grant(SHA)).toEqual({ ok: true, ticketId })
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
     expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
   })

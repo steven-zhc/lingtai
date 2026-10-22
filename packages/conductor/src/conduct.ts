@@ -969,6 +969,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const granted = folded.lifecycle.grantRef !== undefined
+      const priorGrant = waitsOf(before).some(
+        (wait) =>
+          wait.resolution?._tag === 'GrantFixRound' &&
+          'run' in wait.reason &&
+          wait.reason.run.runId === options.continuing!.runId,
+      )
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
       return {
@@ -990,6 +996,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         onSha: approvedOnSha,
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent: continuationRound(runEvents, granted),
+        ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
         ...(granted && reason._tag === 'ProposedEscalated'
           ? {
               grant: {
@@ -3763,6 +3770,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   step: continuation.step,
                   waive: continuation.waive,
                   roundsSpent: continuation.roundsSpent,
+                  ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                   ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 },
               }

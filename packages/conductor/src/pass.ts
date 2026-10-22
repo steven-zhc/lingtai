@@ -924,6 +924,8 @@ export interface PassOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** A prior human grant caps automatic fix routing across later continuations. */
+    readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
     readonly grant?: SentBack
     readonly findings?: readonly ActionFinding[]
@@ -1226,7 +1228,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   ): Promise<boolean> => {
     const offer = offerFor(
       proposal,
-      { rounds: options.from?.grant ? (options.from.roundsSpent ?? 0) : ceilings.rounds, restarts: ceilings.restarts },
+      { rounds: options.from?.roundLimit ?? ceilings.rounds, restarts: ceilings.restarts },
       {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,
