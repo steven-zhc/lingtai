@@ -68,9 +68,19 @@ describe('current wait triage band', () => {
   })
 
   it('draws each fix with its location', () => {
-    expect(
-      draw(advised({ _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'change this' }] })),
-    ).toContain('src/a.ts:8 — change this')
+    const html = draw(
+      advised({
+        _tag: 'FixableLines',
+        fixes: [
+          { path: 'src/a.ts', line: 8, what: 'change this' },
+          { path: 'src/b.ts', line: null, what: 'check that' },
+        ],
+      }),
+    )
+    expect(html).toContain('<ol class="triage-fixes">')
+    expect(html).toContain('src/a.ts:8</span><span>change this</span>')
+    expect(html).toContain('src/b.ts</span><span>check that</span>')
+    expect(html).not.toContain('src/b.ts:?')
   })
 
   it('draws a conflict count and the new-base recommendation past 20', () => {
@@ -104,12 +114,22 @@ describe('current wait triage band', () => {
         ],
       }),
     )
-    expect(html).toContain('<details><summary>src/a.ts:4 — Mechanical</summary></details>')
-    expect(html).toContain('<details open=""><summary>src/b.ts:9 — Divergent</summary>')
+    expect(html).toContain('Mechanical · 1')
+    expect(html).toContain('Divergent · 1 question')
+    expect(html).toContain('src/a.ts:4</span><span>Mechanical</span>')
+    expect(html).toContain('src/b.ts:9</span><fieldset>')
+    expect(html).not.toContain('<details')
     expect(html).toContain('&lt;which behavior?&gt;')
     expect(html).toContain('keep A')
     expect(html).toContain('keep B (recommended)')
     expect(html).toContain('checked="" value="b"')
+  })
+
+  it('draws an empty conflict list without inventing a hunk or a question', () => {
+    const html = draw(advised({ _tag: 'ConflictingHunks', total: 0, hunks: [] }))
+    expect(html).toContain('0 conflicting hunks')
+    expect(html).not.toContain('triage-hunk-group')
+    expect(html).not.toContain('start over from the new base')
   })
 
   it('keeps triage visible with a mirror-head line', () => {

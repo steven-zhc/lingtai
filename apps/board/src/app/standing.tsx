@@ -119,40 +119,64 @@ export function TriageBand({
           ))
           break
         case 'FixableLines':
-          parts = cause.fixes.map((fix, index) => (
-            <p key={index}>
-              {fix.path}:{fix.line ?? '?'} — {fix.what}
-            </p>
-          ))
+          parts =
+            cause.fixes.length > 0 ? (
+              <ol className="triage-fixes">
+                {cause.fixes.map((fix, index) => (
+                  <li key={index}>
+                    <span className="triage-number">{index + 1}</span>
+                    <span className="triage-location">
+                      {fix.path}
+                      {fix.line === null ? '' : `:${fix.line}`}
+                    </span>
+                    <span>{fix.what}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : null
           break
         case 'ConflictingHunks':
+          const mechanical = cause.hunks.filter((hunk) => hunk._tag === 'Mechanical')
+          const divergent = cause.hunks.filter((hunk) => hunk._tag === 'Divergent')
           parts = (
             <>
-              <p>{cause.total} conflicting hunks</p>
-              {cause.hunks.map((hunk, index) => {
-                switch (hunk._tag) {
-                  case 'Mechanical':
-                    return (
-                      <details key={index}>
-                        <summary>
-                          {hunk.path}:{hunk.line ?? '?'} — Mechanical
-                        </summary>
-                      </details>
-                    )
-                  case 'Divergent':
-                    return (
-                      <details key={index} open>
-                        <summary>
-                          {hunk.path}:{hunk.line ?? '?'} — Divergent
-                        </summary>
-                        <TriageChoices
-                          question={hunk.question}
-                          index={cause.hunks.slice(0, index).filter((previous) => previous._tag === 'Divergent').length}
-                        />
-                      </details>
-                    )
-                }
-              })}
+              <p className="triage-hunk-count">
+                {cause.total} conflicting {cause.total === 1 ? 'hunk' : 'hunks'}
+              </p>
+              {mechanical.length > 0 ? (
+                <div className="triage-hunk-group">
+                  <h3>Mechanical · {mechanical.length}</h3>
+                  <ul>
+                    {mechanical.map((hunk, index) => (
+                      <li key={index} className="triage-hunk triage-hunk--mechanical">
+                        <span className="triage-location">
+                          {hunk.path}
+                          {hunk.line === null ? '' : `:${hunk.line}`}
+                        </span>
+                        <span>Mechanical</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {divergent.length > 0 ? (
+                <div className="triage-hunk-group">
+                  <h3>
+                    Divergent · {divergent.length} {divergent.length === 1 ? 'question' : 'questions'}
+                  </h3>
+                  <ol>
+                    {divergent.map((hunk, index) => (
+                      <li key={index} className="triage-hunk triage-hunk--divergent">
+                        <span className="triage-location">
+                          {hunk.path}
+                          {hunk.line === null ? '' : `:${hunk.line}`}
+                        </span>
+                        <TriageChoices question={hunk.question} index={index} />
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
               {cause.hunks.length === 0 && cause.total > MERGE_HUNKS_ONE_BY_ONE ? (
                 <p>The conflict is past one-by-one resolution; start over from the new base.</p>
               ) : null}
@@ -185,8 +209,8 @@ export function TriageBand({
               <div className="triage-readings">
                 <div>
                   <p className="triage-reading-label">Judge</p>
-                  <p>Chose {readings.judge.chose}</p>
-                  {readings.judge.why !== null ? <p>{readings.judge.why}</p> : null}
+                  <p className="triage-reading-choice">{readings.judge.chose}</p>
+                  {readings.judge.why !== null ? <p className="triage-reading-why">{readings.judge.why}</p> : null}
                   {raw !== null && raw !== undefined && raw.trim() !== '' ? (
                     <RawEvidence raw={raw} said={said ?? null} />
                   ) : null}

@@ -35,6 +35,7 @@
   --mark: url("/logo.png");
   --sans: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: var(--font-serif), Georgia, serif;
   color-scheme: light;
 }
 
@@ -1311,17 +1312,36 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .detail--waiting .triage-summary,
 .detail--waiting .triage-disagreement {
-  max-width: 65ch;
+  max-width: 55ch;
   color: var(--ink);
-  font-size: clamp(1.1rem, 2vw, 1.4rem);
-  line-height: 1.4;
+  font-family: var(--serif);
+  font-size: clamp(1.2rem, 2vw, 1.4rem);
+  line-height: 1.45;
   text-wrap: pretty;
 }
 .detail--waiting .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
 .detail--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
 .detail--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
-.detail--waiting .triage-evidence > div,
-.detail--waiting .triage-evidence > details,
+.detail--waiting .triage-fixes,
+.detail--waiting .triage-hunk-group ul,
+.detail--waiting .triage-hunk-group ol { margin: 0; padding: 0; list-style: none; }
+.detail--waiting .triage-fixes,
+.detail--waiting .triage-hunk-group { min-width: 0; border: 1px solid var(--rule); background: var(--surface); }
+.detail--waiting .triage-evidence > div:not(.triage-hunk-group) { min-width: 0; padding: 0.85rem 1rem; border: 1px solid var(--rule); background: var(--surface); }
+.detail--waiting .triage-fixes li { display: grid; grid-template-columns: 2rem minmax(8rem, 16rem) minmax(0, 1fr); gap: 0.8rem; align-items: baseline; padding: 0.7rem 1rem; }
+.detail--waiting .triage-fixes li + li,
+.detail--waiting .triage-hunk + .triage-hunk { border-top: 1px solid var(--rule); }
+.detail--waiting .triage-number,
+.detail--waiting .triage-location { font-family: var(--mono); font-size: 0.78rem; overflow-wrap: anywhere; }
+.detail--waiting .triage-number { color: var(--accent-ink); }
+.detail--waiting .triage-location { color: var(--ink-2); }
+.detail--waiting .triage-hunk-count { font-family: var(--mono); font-weight: 500; }
+.detail--waiting .triage-hunk-group h3 { margin: 0; padding: 0.65rem 1rem; border-bottom: 1px solid var(--rule); color: var(--accent-ink); font-size: 0.76rem; letter-spacing: 0.07em; text-transform: uppercase; }
+.detail--waiting .triage-hunk { display: grid; grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr); gap: 0.8rem; padding: 0.8rem 1rem; min-width: 0; }
+.detail--waiting .triage-hunk--mechanical > span:last-child { color: var(--pass); font-size: 0.8rem; font-weight: 600; }
+.detail--waiting .triage-hunk--divergent { border-left: 3px solid var(--signal); }
+.detail--waiting .triage-hunk--divergent fieldset { margin: 0; padding: 0; border: 0; }
+.detail--waiting .triage-hunk--divergent legend { margin-bottom: 0.55rem; font-family: var(--serif); font-size: 1.12rem; line-height: 1.4; }
 .detail--waiting .triage-readings > div {
   min-width: 0;
   padding: 0.85rem 1rem;
@@ -1330,6 +1350,11 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .detail--waiting .triage-evidence > details { overflow-wrap: anywhere; }
 .detail--waiting .triage-readings > div > p { margin: 0 0 0.45rem; }
+.detail--waiting .triage-readings .triage-reading-choice,
+.detail--waiting .triage-readings .triage-summary { font-family: var(--serif); font-size: clamp(1.05rem, 1.7vw, 1.25rem); line-height: 1.45; }
+.detail--waiting .triage-readings .triage-reading-choice { color: var(--ink); }
+.detail--waiting .triage-readings .triage-reading-why { color: var(--ink-2); line-height: 1.5; }
+.detail--waiting .triage-readings > div { display: flex; flex-direction: column; gap: 0.45rem; }
 .detail--waiting .triage-band--failed { border-left: 4px solid var(--fail); }
 .detail--waiting .triage-band--failed .triage-label { color: var(--fail); }
 .detail--waiting .triage-band--failed > p:last-child {
@@ -1381,6 +1406,10 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sresolutionaction .btn { max-width: 100%; white-space: normal; }
 
 @media (max-width: 48rem) {
+  .detail--waiting .triage-fixes li,
+  .detail--waiting .triage-hunk { grid-template-columns: 2rem minmax(0, 1fr); gap: 0.35rem 0.7rem; }
+  .detail--waiting .triage-fixes li > span:last-child,
+  .detail--waiting .triage-hunk > :last-child { grid-column: 2; }
   .detail--waiting .swhere .segs {
     grid-template-columns: repeat(10, minmax(3.5rem, 1fr));
     overflow-x: auto;
