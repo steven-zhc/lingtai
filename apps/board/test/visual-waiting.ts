@@ -112,13 +112,37 @@ export async function preview(name: CaseName) {
     kind: 'feature',
     triage: facts,
   }
-  const card = toCard(projected)
   const { own, runs } = split(fixture.taskId, fixture.events)
+  const runId = row.wait?.reason && 'run' in row.wait.reason ? row.wait.reason.run.runId : null
+  // Some wait pins name a claimed run but omit its stream. Give those previews
+  // a minimal run event so both production surfaces can draw the same rail.
+  if (runId !== null && !runs.has(runId)) {
+    runs.set(runId, [
+      {
+        ...fixture.events[0]!,
+        streamId: runId,
+        type: 'RunStarted',
+        at: new Date(PREVIEW_NOW - 86_400_000),
+        data: {
+          ticketId: fixture.taskId,
+          runtime: 'claude-code',
+          model: 'preview',
+          promptVersion: 'preview',
+          baseSha: 'a'.repeat(40),
+          configHash: 'preview',
+          worktree: '/preview',
+          invocation: null,
+        },
+      },
+    ])
+  }
   const foldedRuns = [...runs.entries()].map(([runId, events], index) => {
     const claim: Claim = { runId, at: (events[0]?.at ?? new Date(0)).toISOString(), repair: false, released: null }
     return foldRun(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
+  const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
+  const card = toCard(projected, null, progress)
   const status: TriageStatus =
     'status' in spec && spec.status === 'NotDeclared'
       ? { _tag: 'NotDeclared' }

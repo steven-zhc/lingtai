@@ -2,7 +2,7 @@
 
 From the repository root, run `pnpm --filter @lingtai/board dev` and open
 `http://localhost:17820/dev/waiting` (or the port configured by `board.port` or
-`BOARD_PORT`). This development-only gallery uses the production `Card` and
+`LINGTAI_BOARD_PORT`). This development-only gallery uses the production `Card` and
 `TaskBody`, the board stylesheet and fonts, and the wait event fixtures shared
 by the unit tests. It reads no live issue or event log, starts no triage, and
 cannot submit a resolution. The previews are inert, and the gallery frames

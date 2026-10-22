@@ -189,6 +189,7 @@ export function Attempt({
   alone,
   deciding,
   followed = false,
+  now = Date.now(),
 }: {
   run: RunView
   alone: boolean
@@ -209,6 +210,7 @@ export function Attempt({
    * went rather than opening a second follower on the same file.
    */
   followed?: boolean
+  now?: number
 }) {
   /**
    * The one attempt that is producing output while you read the page.
@@ -272,7 +274,7 @@ export function Attempt({
         {/* Dated *and* relative. `04:12:15` alone cannot tell a run from three
             days ago apart from one ten minutes old (#102). */}
         <span className="aage" title={run.at}>
-          {run.at.slice(0, 10)} · {inWords(Date.now() - Date.parse(run.at))} ago
+          {run.at.slice(0, 10)} · {inWords(now - Date.parse(run.at))} ago
         </span>
       </summary>
 
@@ -540,7 +542,7 @@ function plural(n: number, word: string): string {
  * collapsed rows before — Diff, Findings and Ticket still list every
  * attempt's share, newest first.
  */
-export function Record({ task }: { task: TaskDetail }) {
+export function Record({ task, now }: { task: TaskDetail; now?: number }) {
   const newest = [...task.runs].reverse()
   const many = task.runs.length > 1
   const project = task.ticket?.project ?? ''
@@ -686,6 +688,7 @@ export function Record({ task }: { task: TaskDetail }) {
                   alone={task.runs.length === 1}
                   deciding={task.standing.deciding?.attempt === run.attempt}
                   followed={task.standing.state === 'running' && task.standing.runId === run.runId}
+                  now={now}
                 />
               ))}
             </div>
@@ -830,7 +833,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
           }
         />
 
-        <Record task={task} />
+        <Record task={task} now={now} />
       </div>
     </main>
   )
