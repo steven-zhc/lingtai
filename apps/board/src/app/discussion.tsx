@@ -479,12 +479,7 @@ export function Discussion({
   const open = discussions.find((d) => d.held === null) ?? null
   const echoed = echoing(discussions, echo)
   const context = discussionContext(reason, triageStatus)
-  const compact =
-    !expanded &&
-    question === '' &&
-    open === null &&
-    echoed === null &&
-    (reason?._tag === 'SignoffRequired' || reason?._tag === 'MergeRefused')
+  const compact = !expanded && question === '' && open === null && echoed === null && reason?._tag === 'SignoffRequired'
 
   /**
    * The reply is at the bottom of its own scroller, and that is where the box
