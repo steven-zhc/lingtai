@@ -209,7 +209,7 @@ export function TriageBand({
               <div className="triage-readings">
                 <div>
                   <p className="triage-reading-label">Judge</p>
-                  <p className="triage-reading-choice">{readings.judge.chose}</p>
+                  <p className="triage-reading-choice">Chose {readings.judge.chose}</p>
                   {readings.judge.why !== null ? <p className="triage-reading-why">{readings.judge.why}</p> : null}
                   {raw !== null && raw !== undefined && raw.trim() !== '' ? (
                     <RawEvidence raw={raw} said={said ?? null} />
