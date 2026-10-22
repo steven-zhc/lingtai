@@ -47,6 +47,11 @@ export const CASES = {
     fixture: 'fixerdisagrees',
     result: advised({ _tag: 'WrongApproach' }, 'Patching the current approach will not converge.'),
   },
+  disagreement: {
+    fixture: 'proposedescalated-reviewfindings',
+    result: advised({ _tag: 'WrongApproach' }, 'The approach needs to change before another pass.'),
+    judgeWhy: 'The judge read the recorded finding as a local fix.',
+  },
   'conflicting-hunks': {
     fixture: 'proposedescalated-mergeconflict',
     result: advised(
@@ -153,6 +158,13 @@ export async function preview(name: CaseName) {
     return foldRun(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
+  const previewStanding =
+    'judgeWhy' in spec && standing.reason?._tag === 'ProposedEscalated'
+      ? {
+          ...standing,
+          reason: { ...standing.reason, because: { _tag: 'JudgeHandedOver' as const, why: spec.judgeWhy } },
+        }
+      : standing
   const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
   const card = toCard(projected, null, progress)
   const status: TriageStatus =
@@ -174,7 +186,7 @@ export async function preview(name: CaseName) {
   const task: TaskDetail = {
     taskId: fixture.taskId,
     unpushedMirror: null,
-    standing: { ...standing, triageStatus: status },
+    standing: { ...previewStanding, triageStatus: status },
     want: spec.result?._tag === 'TriageAdvised' ? spec.result.want : null,
     ticket,
     runs: foldedRuns,

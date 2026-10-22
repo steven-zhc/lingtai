@@ -37,6 +37,12 @@ const mono = localFont({
   display: 'swap',
 })
 
+const serif = localFont({
+  src: './fonts/ibm-plex-serif-regular.ttf',
+  variable: '--font-serif',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
   title: 'Lingtai',
   description: 'Event-sourced scheduler for autonomous code agents',
@@ -61,7 +67,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
       <body>{children}</body>
     </html>
   )
