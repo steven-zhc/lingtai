@@ -1746,6 +1746,20 @@ describe('the subject, at the top', () => {
     expect(html.indexOf('>Want</h2>')).toBeLessThan(html.indexOf('>Watch out</h2>'))
     expect(html.indexOf('>Watch out</h2>')).toBeLessThan(html.indexOf('data-rank="where"'))
     expect(html).toContain('href="#record-ticket"')
+    const withoutWatch = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+        body={table.replace('| **Watch out** | Keep the full issue. |\n', '')}
+        standing={HELD}
+        project="lingtai"
+        issue={159}
+        taskId="ticket-lingtai-159"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    expect(withoutWatch).not.toContain('>Watch out</h2>')
   })
 
   it('does not promote malformed, hostile, or long cells into facts', () => {

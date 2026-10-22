@@ -3,7 +3,7 @@
 exports[`a blocked task > is arranged as the four questions, then the record 1`] = `
 "coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from attempt 1 of 1 ↓ #147 ↗
 state: blocked 4h 33m
-subject: the reviewer crashes on a reused session id Opening of the ticket The reviewer crashed.
+subject: the reviewer crashes on a reused session id The ticket’s context is in the complete issue. The whole ticket ↓
 where: Where it is claim admit prepared design implement build review proposed merge end proposed:review refused
 why: the \`proposed\` step refused: the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.
 so-what: a failure needs acknowledging
@@ -15,7 +15,7 @@ record: history · diff · findings · attempts · ticket"
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
 "coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from attempt 1 of 1 ↓
-subject: #147 ↗ the reviewer crashes on a reused session id Opening of the ticket The reviewer crashed.
+subject: #147 ↗ the reviewer crashes on a reused session id The ticket’s context is in the complete issue. The whole ticket ↓
 where: Where it is
 state: running 20m claim admit prepared design implement build review proposed merge end agent 4h33m
 why: run log not reading
