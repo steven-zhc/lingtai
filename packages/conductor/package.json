@@ -10,6 +10,7 @@
     "./onboard": "./src/onboard.ts",
     "./pick-repository": "./src/pick-repository.ts",
     "./decide": "./src/approve.ts",
+    "./resolve-wait": "./src/resolve-wait.ts",
     "./ask": "./src/ask.ts",
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",

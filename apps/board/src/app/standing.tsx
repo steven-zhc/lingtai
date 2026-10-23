@@ -207,7 +207,10 @@ export function TriageBand({
         <>
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
-          <p className="triage-recommendation">Recommends {result.resolution}</p>
+          <p className="triage-recommendation">
+            Recommends {RESOLUTION_COPY[result.resolution].title}
+            {result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
+          </p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
       )
@@ -518,7 +521,11 @@ export function Standing({
   const recommended =
     advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork) ? 'Requeue' : advised
   const triageRecommended =
-    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised' ? recommended : null
+    standing.triageStatus?._tag === 'Done' &&
+    standing.triageStatus.result._tag === 'TriageAdvised' &&
+    advised === recommended
+      ? recommended
+      : null
   const closePrefill =
     triageRecommended === 'Close' &&
     standing.triageStatus?._tag === 'Done' &&

@@ -138,7 +138,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       expect(row.includes(SENTENCE)).toBe(approveSentence)
       expect(buttons.includes('Answer')).toBe(answering || stepQuestion)
       expect(buttons.includes('Withdraw')).toBe(answering)
-      expect(buttons.includes('Back to the queue')).toBe(requeuing)
+      expect(buttons.includes('Start over from base')).toBe(requeuing)
       expect(buttons.includes('Close')).toBe(closing)
       expect(buttons.includes('Write it into the body &amp; requeue')).toBe(editingBody && !stepQuestion)
       const expectedCount =
@@ -168,7 +168,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
   it('draws Send rather than Back to the queue wherever there is a prompt to send', () => {
     const fx = WAIT_FIXTURES.find((f) => f.name === 'checkrefused')!
     const html = movesOf(render(fx, OUTGOING))
-    expect(buttonsOf(html)).toContain(`Send attempt ${OUTGOING.attempt}`)
+    expect(buttonsOf(html)).toContain(`Send attempt ${OUTGOING.attempt} from base`)
     expect(html).not.toContain('Back to the queue')
   })
 

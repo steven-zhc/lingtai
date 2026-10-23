@@ -59,7 +59,7 @@ describe('the box, rendered', () => {
   it('shows the composed prompt, raw, before anything is sent', () => {
     const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} />)
 
-    expect(html).toContain('will be sent')
+    expect(html).toContain('next pass from base')
     expect(html).toContain('what attempt 1 did')
     // Raw. `markdown.ts` §6: the prompt is never rendered, and the edit box is
     // never anything but text.
