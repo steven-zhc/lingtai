@@ -44,6 +44,7 @@ import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
+import { resolveWait } from '@lingtai/conductor/resolve-wait'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
 import {
@@ -151,6 +152,48 @@ export async function approveCard(input: {
               : `approved — but the continuation was not scheduled (${result.unscheduled}); approve again to schedule it`,
         }
       : { ok: false, detail: `${result.reason}: ${result.detail}` }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/** Grant one implement round on the published head shown by this wait. */
+export async function continueFixingCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+}): Promise<ActionResult> {
+  try {
+    if (!input.waitId || !input.onSha)
+      return { ok: false, detail: 'stale: reload this wait before granting a fix round' }
+    const state = await loadProject(input.project)
+    if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
+    const client =
+      state.owner === null
+        ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+        : hasGitHubApp()
+          ? (await projectClient(state)).client
+          : null
+    if (client === null) return { ok: false, detail: 'no GitHub App configured' }
+    const result = await resolveWait({
+      ticketId: ticketStream(input.project, input.issue),
+      issue: input.issue,
+      waitId: input.waitId,
+      resolution: { _tag: 'GrantFixRound', onSha: input.onSha, ref: '' },
+      by: actor(),
+      client,
+    })
+    revalidatePath(`/task/${result.ticketId}`)
+    revalidatePath('/')
+    return result.ok
+      ? {
+          ok: true,
+          detail: result.unscheduled
+            ? `fix round granted on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'fix round granted on saved work',
+        }
+      : { ok: false, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

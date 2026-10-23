@@ -23,6 +23,7 @@ import {
   answerCard,
   approveCard,
   closeCard,
+  continueFixingCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -255,6 +256,49 @@ export function ScheduleContinuation({
   )
 }
 
+/** A fix grant has its own action; sending a new attempt always starts from base. */
+export function ContinueFixing({
+  project,
+  issue,
+  waitId,
+  onSha,
+  primary,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+  primary: boolean
+}) {
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [, startTransition] = useTransition()
+  return (
+    <div className="decide">
+      {done ? null : (
+        <button
+          className={primary ? 'btn pri' : 'btn'}
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await continueFixingCard({ project, issue, waitId, onSha })
+              setPending(false)
+              setDone(result.ok)
+              setDetail(result.detail)
+            })
+          }}
+        >
+          {pending ? 'granting…' : 'Continue fixing current work'}
+        </button>
+      )}
+      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
+    </div>
+  )
+}
+
 /** Write text into the ticket body and requeue only when the current wait allows it. */
 export function EditBodyAndRequeue({
   project,
@@ -419,7 +463,7 @@ export function Requeue({
             className={primaryMove(recommended) === (asked ? 'answer' : 'requeue') ? 'btn pri' : 'btn'}
             onClick={() => setAsking('primary')}
           >
-            {asked ? 'Answer' : 'Back to the queue'}
+            {asked ? 'Answer' : 'Start over from base'}
           </button>
           {asked ? (
             <button className="btn" onClick={() => setAsking('withdraw')}>
@@ -666,7 +710,7 @@ export function Send({
             })
           }}
         >
-          {pending ? 'sending…' : `Send attempt ${attempt}`}
+          {pending ? 'sending…' : `Send attempt ${attempt} from base`}
         </button>
         <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
           Leave blocked
