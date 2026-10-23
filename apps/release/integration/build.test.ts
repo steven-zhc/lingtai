@@ -78,9 +78,13 @@ afterAll(() => {
 })
 
 describe('pnpm build', () => {
-  it('writes the CLI as one CommonJS file beside the board, and a package that is not private', () => {
-    expect(readdirSync(first).sort()).toEqual(['board', 'lingtai.cjs', 'package.json'])
+  it('writes the CLI and everything a pass reads beside it', () => {
+    expect(readdirSync(first).sort()).toEqual(['board', 'lingtai.cjs', 'package.json', 'packages', 'prompts'])
     expect(existsSync(join(first, 'board', 'apps', 'board', 'server.js'))).toBe(true)
+    const hook = join(first, 'packages', 'hook', 'bin', 'lingtai-hook')
+    expect(existsSync(hook)).toBe(true)
+    expect(spawnSync(hook, [], { encoding: 'utf8' }).status).toBe(2)
+    expect(existsSync(join(first, 'prompts', 'ticket.md'))).toBe(true)
 
     const pkg = JSON.parse(readFileSync(join(first, 'package.json'), 'utf8'))
     expect(pkg.private).toBeUndefined()
@@ -97,6 +101,10 @@ describe('pnpm build', () => {
 
   it('serves a page from the built board, started by the bundled CLI', async () => {
     await servesAPage(process.execPath, [join(first, 'lingtai.cjs')])
+  })
+
+  it('starts a pass from the bundled CLI without refusing its runtime assets', async () => {
+    await startsEmptyPass(process.execPath, [join(first, 'lingtai.cjs')])
   })
 })
 
@@ -150,7 +158,11 @@ describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason
       const publish = (v: string, lingtaiDir: string) => {
         const dir = join(releases, `v${v}`)
         mkdirSync(dir, { recursive: true })
-        tar(join(dir, `lingtai-${platform}.tar.gz`), lingtaiDir, 'lingtai')
+        tar(
+          join(dir, `lingtai-${platform}.tar.gz`),
+          lingtaiDir,
+          ...(existsSync(join(lingtaiDir, 'packages')) ? ['lingtai', 'packages', 'prompts'] : ['lingtai']),
+        )
         tar(join(dir, 'board.tar.gz'), first, 'board')
         const sum = (name: string) =>
           `${createHash('sha256')
@@ -183,6 +195,10 @@ describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason
 
       install(version)
       expect(says()).toContain(`lingtai ${version} ${platform} (binary,`)
+      expect(existsSync(join(user, '.lingtai', 'versions', version, 'packages', 'hook', 'bin', 'lingtai-hook'))).toBe(
+        true,
+      )
+      expect(existsSync(join(user, '.lingtai', 'versions', version, 'prompts', 'ticket.md'))).toBe(true)
       install(newer)
       expect(says()).toContain(`lingtai ${newer} `)
 
@@ -191,6 +207,7 @@ describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason
       const back = spawnSync(old, ['rollback'], { env, cwd: work, encoding: 'utf8' })
       expect(back.status, `${back.stdout}${back.stderr}`).toBe(0)
       expect(says()).toContain(`lingtai ${version} ${platform} (binary,`)
+      await startsEmptyPass(old, [])
 
       // Installed, `.env.local` is looked for one directory above the binary.
       writeFileSync(
@@ -202,12 +219,47 @@ describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason
   )
 })
 
-function tar(out: string, dir: string, entry: string): void {
-  const ran = spawnSync('tar', ['-czf', out, '-C', dir, entry], {
+function tar(out: string, dir: string, ...entries: string[]): void {
+  const ran = spawnSync('tar', ['-czf', out, '-C', dir, ...entries], {
     encoding: 'utf8',
     env: { ...process.env, COPYFILE_DISABLE: '1' },
   })
   expect(ran.status, ran.stderr).toBe(0)
+}
+
+/** The conductor checks the hook and ticket template before it counts projects. */
+async function startsEmptyPass(command: string, args: string[]): Promise<void> {
+  const home = mkdtempSync(join(work, 'pass-home-'))
+  writeFileSync(join(home, 'config.yml'), 'database:\n  store: sqlite\n')
+  const env = { ...childEnv(), LINGTAI_HOME: home }
+  const child = spawn(command, [...args, 'start'], {
+    cwd: work,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no startup pass:\n${output}`)), 15_000)
+      const collect = (chunk: Buffer) => {
+        output += chunk.toString()
+        if (!output.includes('pass (startup):')) return
+        clearTimeout(timer)
+        resolve()
+      }
+      child.stdout?.on('data', collect)
+      child.stderr?.on('data', collect)
+      child.once('exit', (code, signal) => {
+        clearTimeout(timer)
+        reject(new Error(`daemon exited ${code ?? signal}:\n${output}`))
+      })
+    })
+    expect(output).toContain('pass (startup): 0 project(s), 0 run(s)')
+    expect(output).not.toContain('refused')
+  } finally {
+    child.kill()
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 /**

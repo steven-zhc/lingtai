@@ -407,7 +407,9 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
     // A run that records nothing must not start. Refusing the pass rather than
     // the daemon: the projections stay current, which is what makes the reason
     // visible on the board.
-    outcome.refused.push({ project: '*', detail: `no lingtai-hook binary at ${hookBinary}` })
+    const detail = `no lingtai-hook binary at ${hookBinary}`
+    outcome.refused.push({ project: '*', detail })
+    log(detail)
     return outcome
   }
 
