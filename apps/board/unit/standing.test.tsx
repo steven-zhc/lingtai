@@ -1298,6 +1298,34 @@ it('uses triage advice to recommend a choice without granting it', () => {
   expect(conflictingMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
   expect(conflictingMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="GrantFixRound"/)
   expect(conflictingMoves).toContain('Recommended for this diagnosis')
+  const reviewFindings = render(
+    {
+      ...FIXABLE,
+      reason: {
+        _tag: 'ProposedEscalated',
+        run: { runId: RUN_2 },
+        proposal: {
+          _tag: 'ReviewFindings',
+          findings: [
+            { severity: 'major', file: 'src/x.ts', line: 4, claim: 'wrong approach', failureScenario: 'start over' },
+          ],
+        },
+        because: { _tag: 'NotAsked' },
+      },
+      awaitingSha: SHA,
+      triageStatus: advice({ _tag: 'WrongApproach' }, 'Approve'),
+    },
+    OUTGOING,
+  )
+  const reviewMoves = moves(reviewFindings)
+  expect(reviewFindings).toContain('The approach is wrong; start over from base instead of continuing saved work.')
+  expect(reviewMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
+    reviewMoves.indexOf('data-resolution="Approve"'),
+  )
+  expect(reviewMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
+  expect(reviewMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="Approve"/)
+  expect(reviewMoves).toContain('Send attempt 3 from base')
+  expect(reviewMoves).not.toContain('class="btn pri">Approve and continue')
   const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
   expect(waiver).toContain('approval, which waives the refusal')
   expect(waiver).not.toContain('sresolution--recommended')

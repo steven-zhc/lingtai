@@ -208,7 +208,7 @@ export function TriageBand({
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
-            {cause._tag === 'WrongApproach' && result.resolution === 'GrantFixRound'
+            {cause._tag === 'WrongApproach'
               ? 'The approach is wrong; start over from base instead of continuing saved work.'
               : cause._tag === 'FixableLines' && result.resolution === 'Approve'
                 ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
@@ -527,8 +527,7 @@ export function Standing({
   const wrongApproachAdvice =
     standing.triageStatus?._tag === 'Done' &&
     standing.triageStatus.result._tag === 'TriageAdvised' &&
-    standing.triageStatus.result.cause._tag === 'WrongApproach' &&
-    rawAdvice === 'GrantFixRound'
+    standing.triageStatus.result.cause._tag === 'WrongApproach'
   const advised = wrongApproachAdvice
     ? 'Requeue'
     : standing.triageStatus?._tag === 'Done' &&
