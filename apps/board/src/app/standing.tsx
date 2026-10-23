@@ -208,10 +208,14 @@ export function TriageBand({
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
-            {cause._tag === 'FixableLines' && result.resolution === 'Approve'
-              ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
-              : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
-            {result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
+            {cause._tag === 'WrongApproach' && result.resolution === 'GrantFixRound'
+              ? 'The approach is wrong; start over from base instead of continuing saved work.'
+              : cause._tag === 'FixableLines' && result.resolution === 'Approve'
+                ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
+                : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
+            {result.resolution === 'GrantFixRound' && cause._tag !== 'WrongApproach'
+              ? ' — only your click grants the paid round.'
+              : null}
           </p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
@@ -520,11 +524,17 @@ export function Standing({
     standing.reason !== null && standing.triageStatus !== null
       ? recommendedResolution(standing.reason, standing.triageStatus)
       : null
-  const advised =
+  const wrongApproachAdvice =
     standing.triageStatus?._tag === 'Done' &&
     standing.triageStatus.result._tag === 'TriageAdvised' &&
-    standing.triageStatus.result.cause._tag === 'FixableLines' &&
-    rawAdvice === 'Approve'
+    standing.triageStatus.result.cause._tag === 'WrongApproach' &&
+    rawAdvice === 'GrantFixRound'
+  const advised = wrongApproachAdvice
+    ? 'Requeue'
+    : standing.triageStatus?._tag === 'Done' &&
+        standing.triageStatus.result._tag === 'TriageAdvised' &&
+        standing.triageStatus.result.cause._tag === 'FixableLines' &&
+        rawAdvice === 'Approve'
       ? null
       : rawAdvice
   const recommended =
@@ -870,7 +880,9 @@ export function Standing({
                         <div className="sresolutionhead">
                           <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3>
                           {triageRecommended === tag ? (
-                            <span className="sresolutionbadge">Triage recommended</span>
+                            <span className="sresolutionbadge">
+                              {wrongApproachAdvice ? 'Recommended for this diagnosis' : 'Triage recommended'}
+                            </span>
                           ) : null}
                         </div>
                         <p className="sresolutionconsequence">{consequence}</p>

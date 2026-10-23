@@ -1288,6 +1288,16 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
   expect(wrong.indexOf('data-resolution="Requeue"')).toBeLessThan(wrong.indexOf('data-resolution="GrantFixRound"'))
   expect(wrong).toContain('Start over from base')
+  const conflicting = render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'GrantFixRound') }, OUTGOING)
+  const conflictingMoves = moves(conflicting)
+  expect(conflicting).toContain('The approach is wrong; start over from base instead of continuing saved work.')
+  expect(conflicting).not.toContain('only your click grants the paid round')
+  expect(conflictingMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
+    conflictingMoves.indexOf('data-resolution="GrantFixRound"'),
+  )
+  expect(conflictingMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
+  expect(conflictingMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="GrantFixRound"/)
+  expect(conflictingMoves).toContain('Recommended for this diagnosis')
   const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
   expect(waiver).toContain('approval, which waives the refusal')
   expect(waiver).not.toContain('sresolution--recommended')
