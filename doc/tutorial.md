@@ -141,16 +141,16 @@ Step 1 registered a local project, so this ticket lives in Lingtai's local datab
 
 Pick a story from the [Chapter Garden bookshelf](https://cg.hczhang.com/en/). These are the current titles:
 
-| Genre | Story |
-|---|---|
-| Fantasy | Fate Owes Me a Page |
-| Magic | The Thirteenth Tower Teaches No Magic |
-| Horror | Room Zero Checks Out Tonight |
-| Time travel | Weather Duty a Thousand Years Ago |
-| Science fiction | The Sun's Ninth Minute |
-| Detective | The Missing Person Filed Her Own Report |
-| Power fantasy | I Won't Cover for Them Anymore |
-| Mystery | After the Rain |
+| Genre           | Story                                   |
+| --------------- | --------------------------------------- |
+| Fantasy         | Fate Owes Me a Page                     |
+| Magic           | The Thirteenth Tower Teaches No Magic   |
+| Horror          | Room Zero Checks Out Tonight            |
+| Time travel     | Weather Duty a Thousand Years Ago       |
+| Science fiction | The Sun's Ninth Minute                  |
+| Detective       | The Missing Person Filed Her Own Report |
+| Power fantasy   | I Won't Cover for Them Anymore          |
+| Mystery         | After the Rain                          |
 
 Replace the form with this request. Change only `<story title>` to one title from the table:
 
@@ -224,3 +224,11 @@ To share the chapter, open [Chapter Garden's pull requests](https://github.com/s
 and choose **New pull request**. Set **base** to `main` and **compare** to your
 tutorial branch. If you used a fork, choose your fork and tutorial branch as
 the compare source. Review the diff, then submit the PR.
+
+Or, from your Chapter Garden checkout, use the signed-in GitHub CLI:
+
+```sh
+gh pr create --repo steven-zhc/chapter-garden --base main
+```
+
+The CLI uses your current tutorial branch and asks for the PR title and description.

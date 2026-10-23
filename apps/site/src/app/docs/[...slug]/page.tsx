@@ -111,14 +111,16 @@ export default async function DocPage({ params }: Params) {
               <article>
                 <Status decided={decided} parts={parts} />
                 <Document slug={doc.slug} source={doc.source} body={doc.body} published={files} />
-                <p className="source">
-                  Rendered from{' '}
-                  <a href={`${GITHUB_BLOB}doc/${doc.source}`}>
-                    <code>doc/{doc.source}</code>
-                  </a>{' '}
-                  at build time. The file is the document; this page is a projection of it, and never a copy — which is
-                  why the fix for anything wrong on it is a pull request against that file.
-                </p>
+                {slug !== 'tutorial' && (
+                  <p className="source">
+                    Rendered from{' '}
+                    <a href={`${GITHUB_BLOB}doc/${doc.source}`}>
+                      <code>doc/{doc.source}</code>
+                    </a>{' '}
+                    at build time. The file is the document; this page is a projection of it, and never a copy — which
+                    is why the fix for anything wrong on it is a pull request against that file.
+                  </p>
+                )}
               </article>
               <Contents headings={headings} />
             </div>
