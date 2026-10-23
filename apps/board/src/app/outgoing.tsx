@@ -110,7 +110,7 @@ export function Outgoing({
     return (
       <div className="outgoing">
         <p className="outhead">
-          <span className="outname">will be sent</span>
+          <span className="outname">next pass from base</span>
         </p>
         {/* Never merely absent. A missing template, an unregistered project and
             a recipe that will not parse all look like "no prompt", and only the
@@ -125,7 +125,7 @@ export function Outgoing({
   return (
     <div className="outgoing">
       <p className="outhead">
-        <span className="outname">will be sent</span>
+        <span className="outname">next pass from base</span>
         {/* How long the edit lasts, on the box that makes it. The next claim
             consumes it, whoever starts it. */}
         <span className="outonly">attempt {outgoing.attempt} only</span>
@@ -177,8 +177,8 @@ export function Outgoing({
             placeholder="`claude --help` does not list it; read the shipped bundle instead of guessing."
           />
           <p className="outnote">
-            Added to attempt {outgoing.attempt} and to no other. Anything meant to last belongs in the ticket, where
-            every later attempt reads it.
+            Added to attempt {outgoing.attempt} from base and to no other. Editing this prompt does not continue saved
+            work. Anything meant to last belongs in the ticket, where every later attempt reads it.
           </p>
           <div className="btnrow">
             {/* Send is primary when there is something to send: the commonest
@@ -187,7 +187,7 @@ export function Outgoing({
                 rarer of the two. */}
             {sendable ? (
               <button className="btn pri" disabled={busy || draft.trim() === ''} onClick={() => send(draft)}>
-                {busy ? '…' : `Send attempt ${outgoing.attempt}`}
+                {busy ? '…' : `Send attempt ${outgoing.attempt} from base`}
               </button>
             ) : null}
             <button

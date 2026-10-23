@@ -26,6 +26,7 @@ import {
   currentTriageStatus,
   currentWaitWant,
   foldRun,
+  savedFixWork,
   standingOf,
   type Claim,
   type StandingView,
@@ -658,7 +659,7 @@ describe('the block, rendered', () => {
     )
     expect(html).toContain('conflict: agent/112 does not merge into develop')
     // The move that is left when there is no diff to approve (#84).
-    expect(html).toContain('Back to the queue')
+    expect(html).toContain('Start over from base')
     // Nothing pretends to a diagnosis nobody wrote.
     expect(html).not.toContain('class="diag"')
     expect(html).not.toContain('class="rec"')
@@ -1120,7 +1121,7 @@ describe('the block, rendered', () => {
     expect(off).not.toContain('onyou')
     expect(off).toContain('an agent is working')
     // Nothing is being asked, so nothing offers to answer it.
-    expect(off).not.toContain('Back to the queue')
+    expect(off).not.toContain('Start over from base')
   })
 
   it('states the state with no move at all when the id is not a work item', () => {
@@ -1137,7 +1138,7 @@ describe('the block, rendered', () => {
       />,
     )
     expect(html).toContain('blocked')
-    expect(html).not.toContain('Back to the queue')
+    expect(html).not.toContain('Start over from base')
   })
 
   /**
@@ -1220,6 +1221,115 @@ const render = (standing: StandingView, outgoing: OutgoingView | null) =>
       queued={null}
     />,
   )
+
+const FIXABLE: StandingView = {
+  ...HELD,
+  reason: {
+    _tag: 'ProposedEscalated',
+    run: { runId: RUN_2 },
+    proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+    because: { _tag: 'NotAsked' },
+  },
+  fixWork: { head: SHA, ref: 'agent/112' },
+}
+
+it('offers distinct saved-head and base-starting actions without triage', () => {
+  const html = render(FIXABLE, OUTGOING)
+  expect(html).toContain('data-resolution="GrantFixRound"')
+  expect(html).toContain('Continue fixing current work')
+  expect(html).toContain('saved branch and head')
+  expect(html).toContain('Build and review run again')
+  expect(html).toContain('Start over from base')
+  expect(html).toContain('Send attempt 3 from base')
+  expect(html).not.toContain('Approve and continue')
+})
+
+it('does not offer a continuation button for missing or moved saved work', () => {
+  for (const refusal of ['no published head', 'agent/112 is missing, not the saved head']) {
+    const html = render({ ...FIXABLE, fixWork: { refusal } }, OUTGOING)
+    expect(html).toContain(refusal)
+    expect(html).not.toContain('>Continue fixing current work</button>')
+    expect(html).toContain('Send attempt 3 from base')
+  }
+  expect(savedFixWork(RUN_2, [])).toHaveProperty('refusal')
+  expect(
+    savedFixWork(RUN_2, [
+      e(RUN_2, 'RunRefsPublished', {
+        outcome: 'published',
+        branch: 'agent/112',
+        headSha: SHA,
+        arm: 'agent/112-attempt-2',
+        armSha: null,
+        branchCarries: true,
+      }),
+    ]),
+  ).toEqual({ head: SHA, ref: 'agent/112' })
+})
+
+it('uses triage advice to recommend a choice without granting it', () => {
+  const advice = (
+    cause: { _tag: 'FixableLines'; fixes: [] } | { _tag: 'WrongApproach' },
+    resolution: 'GrantFixRound' | 'Requeue' | 'Approve',
+  ) => ({
+    _tag: 'Done' as const,
+    result: {
+      _tag: 'TriageAdvised' as const,
+      cause,
+      resolution,
+      summary: 'Choose a start point',
+      want: null,
+    },
+  })
+  const fixable = moves(
+    render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound') }, OUTGOING),
+  )
+  expect(fixable.indexOf('data-resolution="GrantFixRound"')).toBeLessThan(fixable.indexOf('data-resolution="Requeue"'))
+  expect(fixable).toContain('Continue fixing current work')
+  const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
+  expect(wrong.indexOf('data-resolution="Requeue"')).toBeLessThan(wrong.indexOf('data-resolution="GrantFixRound"'))
+  expect(wrong).toContain('Start over from base')
+  const conflicting = render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'GrantFixRound') }, OUTGOING)
+  const conflictingMoves = moves(conflicting)
+  expect(conflicting).toContain('The approach is wrong; start over from base instead of continuing saved work.')
+  expect(conflicting).not.toContain('only your click grants the paid round')
+  expect(conflictingMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
+    conflictingMoves.indexOf('data-resolution="GrantFixRound"'),
+  )
+  expect(conflictingMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
+  expect(conflictingMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="GrantFixRound"/)
+  expect(conflictingMoves).toContain('Recommended for this diagnosis')
+  const reviewFindings = render(
+    {
+      ...FIXABLE,
+      reason: {
+        _tag: 'ProposedEscalated',
+        run: { runId: RUN_2 },
+        proposal: {
+          _tag: 'ReviewFindings',
+          findings: [
+            { severity: 'major', file: 'src/x.ts', line: 4, claim: 'wrong approach', failureScenario: 'start over' },
+          ],
+        },
+        because: { _tag: 'NotAsked' },
+      },
+      awaitingSha: SHA,
+      triageStatus: advice({ _tag: 'WrongApproach' }, 'Approve'),
+    },
+    OUTGOING,
+  )
+  const reviewMoves = moves(reviewFindings)
+  expect(reviewFindings).toContain('The approach is wrong; start over from base instead of continuing saved work.')
+  expect(reviewMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
+    reviewMoves.indexOf('data-resolution="Approve"'),
+  )
+  expect(reviewMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
+  expect(reviewMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="Approve"/)
+  expect(reviewMoves).toContain('Send attempt 3 from base')
+  expect(reviewMoves).not.toContain('class="btn pri">Approve and continue')
+  const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
+  expect(waiver).toContain('approval, which waives the refusal')
+  expect(waiver).not.toContain('sresolution--recommended')
+})
 
 function closeOn(standing: StandingView): { key: string | null; prefill: string | null | undefined } {
   const page = Standing({
@@ -1397,8 +1507,9 @@ describe('the moves the column ends in', () => {
     // The box says `attempt 3 only` and the button says `Send attempt 3`: one
     // number, said twice, because that is how long the edit lasts (0032 §5).
     expect(html).toContain('attempt 3 only')
-    // Named for the document it hands over, not for the queue it joins.
-    expect(html).not.toContain('Back to the queue')
+    // The base-starting move is named in the card; Send remains the button.
+    expect(html).toContain('<h3>Start over from base</h3>')
+    expect(html).not.toContain('>Start over from base</button>')
   })
 
   /**
@@ -1430,7 +1541,7 @@ describe('the moves the column ends in', () => {
     )
 
     expect(html).toContain('Approve')
-    expect(html).toContain('Back to the queue')
+    expect(html).toContain('Start over from base')
     expect(moves(html).match(/btn pri/g)).toHaveLength(1)
   })
 
@@ -1519,7 +1630,7 @@ describe('the moves the column ends in', () => {
   it('keeps Back to the queue for the item whose prompt could not be composed', () => {
     const html = render(HELD, { ...OUTGOING, problem: 'lingtai is not a registered project' })
 
-    expect(html).toContain('Back to the queue')
+    expect(html).toContain('Start over from base')
     expect(html).not.toContain('Send attempt')
   })
 
@@ -1588,7 +1699,7 @@ describe('the moves the column ends in', () => {
     const html = render(HELD, OUTGOING)
 
     expect(html).toContain('class="spair"')
-    expect(html.indexOf('will be sent')).toBeLessThan(html.indexOf('discussion'))
+    expect(html.indexOf('next pass from base')).toBeLessThan(html.indexOf('discussion'))
     expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('class="spair"'))
   })
 })

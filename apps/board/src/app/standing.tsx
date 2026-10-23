@@ -24,7 +24,16 @@ import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 import { presentCause } from '@/lib/triage-cause'
 
-import { Close, Decide, EditBodyAndRequeue, Requeue, RunNow, ScheduleContinuation, Send } from './decide.tsx'
+import {
+  Close,
+  ContinueFixing,
+  Decide,
+  EditBodyAndRequeue,
+  Requeue,
+  RunNow,
+  ScheduleContinuation,
+  Send,
+} from './decide.tsx'
 import { Discussion } from './discussion.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
@@ -41,16 +50,17 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     consequence: 'Continue this run from its recorded commit. Any refusal at this hold is waived.',
   },
   GrantFixRound: {
-    title: 'Grant one fix round',
-    consequence: 'Continue the saved work through one implement call, then run the normal checks again.',
+    title: 'Continue fixing current work',
+    consequence:
+      'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
   },
   Requeue: {
-    title: 'Start another pass',
-    consequence: 'Return the ticket to the queue for a new pass from main. The current branch is not continued.',
+    title: 'Start over from base',
+    consequence: 'Start a new pass from base with the recipe’s rounds. The saved branch is not continued.',
   },
   EditBodyAndRequeue: {
     title: 'Add to the ticket and start over',
@@ -197,7 +207,19 @@ export function TriageBand({
         <>
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
-          <p className="triage-recommendation">Recommends {result.resolution}</p>
+          <p className="triage-recommendation">
+            {cause._tag === 'WrongApproach' &&
+            (result.resolution === 'Requeue' ||
+              result.resolution === 'Approve' ||
+              result.resolution === 'GrantFixRound')
+              ? 'The approach is wrong; start over from base instead of continuing saved work.'
+              : cause._tag === 'FixableLines' && result.resolution === 'Approve'
+                ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
+                : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
+            {result.resolution === 'GrantFixRound' && cause._tag !== 'WrongApproach'
+              ? ' — only your click grants the paid round.'
+              : null}
+          </p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
       )
@@ -501,12 +523,31 @@ export function Standing({
   const sendable =
     outgoing !== null && outgoing.problem === null && !allowed.includes('AnswerQuestion') ? outgoing.attempt : null
 
-  const recommended =
+  const rawAdvice =
     standing.reason !== null && standing.triageStatus !== null
       ? recommendedResolution(standing.reason, standing.triageStatus)
       : null
+  const wrongApproachAdvice =
+    standing.triageStatus?._tag === 'Done' &&
+    standing.triageStatus.result._tag === 'TriageAdvised' &&
+    standing.triageStatus.result.cause._tag === 'WrongApproach'
+  const wrongApproachOverride = wrongApproachAdvice && (rawAdvice === 'Approve' || rawAdvice === 'GrantFixRound')
+  const advised = wrongApproachOverride
+    ? 'Requeue'
+    : standing.triageStatus?._tag === 'Done' &&
+        standing.triageStatus.result._tag === 'TriageAdvised' &&
+        standing.triageStatus.result.cause._tag === 'FixableLines' &&
+        rawAdvice === 'Approve'
+      ? null
+      : rawAdvice
+  const recommended =
+    advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork) ? 'Requeue' : advised
   const triageRecommended =
-    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised' ? recommended : null
+    standing.triageStatus?._tag === 'Done' &&
+    standing.triageStatus.result._tag === 'TriageAdvised' &&
+    advised === recommended
+      ? recommended
+      : null
   const closePrefill =
     triageRecommended === 'Close' &&
     standing.triageStatus?._tag === 'Done' &&
@@ -651,11 +692,19 @@ export function Standing({
           >
             <h2>After the move</h2>
             <p className="saftermove-title">
-              <strong>{standing.afterMove.result === 'closed' ? 'Closed' : 'Requeued'}</strong>
+              <strong>
+                {standing.afterMove.result === 'closed'
+                  ? 'Closed'
+                  : standing.afterMove.result === 'continued'
+                    ? 'Continued saved work'
+                    : 'Started over from base'}
+              </strong>
               <span>
                 {standing.afterMove.result === 'closed'
                   ? 'The ticket was closed.'
-                  : 'The ticket returned to the queue.'}
+                  : standing.afterMove.result === 'continued'
+                    ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
+                    : 'The ticket returned to the queue for a new pass from base.'}
               </span>
             </p>
             <p>
@@ -816,9 +865,11 @@ export function Standing({
                 const visible = standing.state === 'blocked' && allowed.includes(tag)
                 const waitId = standing.waitId
                 const copy = RESOLUTION_COPY[tag]
-                const consequence =
-                  tag === 'Requeue' && sendable !== null
-                    ? `Send the composed prompt for attempt ${sendable} and return this ticket to the queue.`
+                const fixUnavailable = tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+                const consequence = fixUnavailable
+                  ? 'The saved branch and head must be available before a fix round can be granted.'
+                  : tag === 'Requeue' && sendable !== null
+                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds.`
                     : copy.consequence
                 return (
                   <article
@@ -830,9 +881,11 @@ export function Standing({
                     {visible ? (
                       <>
                         <div className="sresolutionhead">
-                          <h3>{copy.title}</h3>
+                          <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3>
                           {triageRecommended === tag ? (
-                            <span className="sresolutionbadge">Triage recommended</span>
+                            <span className="sresolutionbadge">
+                              {wrongApproachOverride ? 'Recommended for this diagnosis' : 'Triage recommended'}
+                            </span>
                           ) : null}
                         </div>
                         <p className="sresolutionconsequence">{consequence}</p>
@@ -848,8 +901,25 @@ export function Standing({
                       </>
                     ) : null}
                     <div className="sresolutionaction">
-                      {visible && tag === 'GrantFixRound' ? (
-                        <code>{`lingtai grant-fix-round ${project} --issue ${issue}`}</code>
+                      {visible &&
+                      tag === 'GrantFixRound' &&
+                      standing.fixWork &&
+                      'head' in standing.fixWork &&
+                      waitId !== null ? (
+                        <ContinueFixing
+                          project={project}
+                          issue={issue}
+                          waitId={waitId}
+                          onSha={standing.fixWork.head}
+                          primary={recommended === 'GrantFixRound'}
+                        />
+                      ) : null}
+                      {visible && tag === 'GrantFixRound' && (!standing.fixWork || 'refusal' in standing.fixWork) ? (
+                        <p className="refusal">
+                          {standing.fixWork && 'refusal' in standing.fixWork
+                            ? standing.fixWork.refusal
+                            : 'Saved work could not be verified; reload this wait before continuing.'}
+                        </p>
                       ) : null}
                       {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
                         <Decide
@@ -941,6 +1011,7 @@ export function Standing({
                 issue={issue}
                 onSha={standing.approvedSha}
                 waitId={standing.waitId}
+                grant={standing.afterMove?.resolution === 'GrantFixRound'}
               />
             </div>
           ) : null}

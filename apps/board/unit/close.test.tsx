@@ -60,7 +60,7 @@ describe('Close', () => {
 describe('the row of moves', () => {
   it('offers Close beside the task page resolutions, while the waiting card has no row', () => {
     const standing = read('../src/app/standing.tsx')
-    expect(standing).toMatch(/import \{ Close[,\s]/)
+    expect(standing).toMatch(/import\s*\{\s*Close[,\s]/)
     expect(standing).toContain('<Close')
     const page = read('../src/app/page.tsx')
     expect(page).not.toContain('<Decide')

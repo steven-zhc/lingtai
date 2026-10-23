@@ -1,4 +1,5 @@
-import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readStatus } from '@lingtai/daemon/control'
 import {
@@ -16,10 +17,12 @@ import {
   type BlockDiagnosis,
   type BoardFact,
   type Envelope,
+  type PayloadOf,
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
-import { triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
+import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
+import { hasGitHubApp } from '@lingtai/env'
 /**
  * One task, folded from its streams on demand.
  *
@@ -382,7 +385,17 @@ export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'close
 export interface StandingView {
   state: StandingState
   /** The last person's move, only when its resulting lifecycle is still current. */
-  afterMove?: { resolution: string; by: string; note: string; result: 'closed' | 'requeued'; reason: string } | null
+  afterMove?: {
+    resolution: string
+    by: string
+    note: string
+    result: 'closed' | 'requeued' | 'continued'
+    reason: string
+    ref?: string
+    head?: string
+  } | null
+  /** Render-time check only; resolveWait checks the remote again under the decision lock. */
+  fixWork?: { head: string; ref: string } | { refusal: string } | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
@@ -788,6 +801,11 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     (move?.resolution._tag === 'Requeue' ||
       move?.resolution._tag === 'EditBodyAndRequeue' ||
       move?.resolution._tag === 'AnswerQuestion')
+  const continued =
+    currentMove &&
+    latestLifecycle === lastMove &&
+    life.status === 'approved' &&
+    move?.resolution._tag === 'GrantFixRound'
   const bodyEvent = [...own]
     .reverse()
     .find(
@@ -801,15 +819,25 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
     afterMove:
-      move !== undefined && (closed || released || requeued)
+      move !== undefined && (closed || released || requeued || continued)
         ? {
             resolution: move.resolution._tag,
             by: move.by,
             note: move.note,
-            result: closed ? 'closed' : 'requeued',
-            reason: requeued
-              ? 'The wait was resolved and the ticket returned to the queue.'
-              : (outcome!.data as { reason: string }).reason,
+            result: closed ? 'closed' : continued ? 'continued' : 'requeued',
+            reason: continued
+              ? 'Continued saved work for one additional fix round; build and review run again.'
+              : requeued
+                ? 'The wait was resolved; a new pass starts from base.'
+                : released
+                  ? `${(outcome!.data as { reason: string }).reason} A new pass starts from base.`
+                  : (outcome!.data as { reason: string }).reason,
+            ...(continued
+              ? {
+                  ref: (move.resolution as { ref?: string }).ref,
+                  head: (move.resolution as { onSha?: string }).onSha,
+                }
+              : {}),
           }
         : null,
     bodyOutcome:
@@ -858,6 +886,36 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     unpushed: blocked && 'run' in life.reason ? (life.reason.run.unpushed ?? null) : null,
     approvedSha: approved ? life.onSha : null,
   }
+}
+
+/** The same published-head precondition the grant checks before its remote comparison. */
+export function savedFixWork(
+  runId: string,
+  events: readonly Envelope[],
+): { head: string; ref: string } | { refusal: string } {
+  const saved = events.findLast((e) => e.type === 'RunRefsPublished')?.data as PayloadOf<'RunRefsPublished'> | undefined
+  if (saved?.outcome === 'arm-only')
+    return {
+      refusal: `${saved.arm} holds saved work, but ${saved.branch} rejected its push. Reconcile the refs or start over from base.`,
+    }
+  if (
+    saved?.armSha &&
+    ((saved.outcome !== 'published' && saved.outcome !== 'already-published') || saved.branchCarries === false)
+  )
+    return {
+      refusal: `Run ${runId} saved a WIP head on ${saved.arm}. Recover a clean published head or start over from base.`,
+    }
+  if (
+    !saved ||
+    (saved.outcome !== 'published' && saved.outcome !== 'already-published') ||
+    saved.branchCarries === false ||
+    !saved.headSha ||
+    !saved.branch
+  )
+    return {
+      refusal: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or start over from base.`,
+    }
+  return { head: saved.headSha, ref: saved.branch }
 }
 
 /**
@@ -1788,7 +1846,40 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
           await mirrorBranchSha({ project: ticket.project, ref: `refs/heads/${agentBranchOf(ticket.ref)}` }),
         )
       : null
-  const standing = { ...foldedStanding, triageStatus: status, triageHeadLine: triageHeadLineText }
+  const standing: StandingView = { ...foldedStanding, triageStatus: status, triageHeadLine: triageHeadLineText }
+  if (
+    standing.state === 'blocked' &&
+    standing.reason !== null &&
+    allowedResolutions(standing.reason).includes('GrantFixRound') &&
+    standing.runId !== null &&
+    ticket !== null
+  ) {
+    const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
+    const saved = savedFixWork(standing.runId, streams[runIndex] ?? [])
+    if ('refusal' in saved) standing.fixWork = saved
+    else {
+      try {
+        const state = await loadProject(ticket.project)
+        if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
+        const client =
+          state.owner === null
+            ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+            : hasGitHubApp()
+              ? (await projectClient(state)).client
+              : null
+        if (client === null) throw new Error('no GitHub App configured')
+        const remote = await client.refSha(`heads/${saved.ref}`)
+        standing.fixWork =
+          remote === saved.head
+            ? saved
+            : {
+                refusal: `${saved.ref} is ${remote ?? 'missing'}, not the saved ${saved.head}. Restore that ref to the saved head or start over from base.`,
+              }
+      } catch (err) {
+        standing.fixWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
+      }
+    }
+  }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,

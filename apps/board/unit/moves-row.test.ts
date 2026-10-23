@@ -33,13 +33,16 @@ const blocks = (selector: string) =>
     )
     .map((parts) => parts[parts.length - 1]!)
 
-/** The class list of the element that directly wraps the first `<Decide`. */
+/** The action wrapper containing the first `<Decide>`, even when other controls precede it. */
 const rowAround = (source: string) => {
   const at = source.indexOf('<Decide')
   expect(at).toBeGreaterThan(-1)
   const before = source.slice(0, at)
-  const open = before.lastIndexOf('className="')
-  return before.slice(open + 'className="'.length, before.indexOf('"', open + 'className="'.length)).split(' ')
+  const open = before.lastIndexOf('<div className="')
+  expect(open).toBeGreaterThan(-1)
+  expect(before.slice(open)).not.toContain('</div>')
+  const start = open + '<div className="'.length
+  return before.slice(start, before.indexOf('"', start)).split(' ')
 }
 
 describe('a row of moves', () => {

@@ -218,9 +218,9 @@ describe('after the move', () => {
     const html = page(moved('Requeue'))
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
-    expect(html).toContain('The ticket returned to the queue.')
+    expect(html).toContain('The ticket returned to the queue for a new pass from base.')
     expect(html).toContain('Decision: the review cannot run')
-    expect(html).toContain('Result: The wait was resolved and the ticket returned to the queue.')
+    expect(html).toContain('Result: The wait was resolved; a new pass starts from base.')
     expect(html).not.toContain('body write completed')
     expect(html).not.toContain('data-resolution=')
   })
@@ -243,7 +243,7 @@ describe('after the move', () => {
     expect(html).toContain('After the move')
     expect(html).toContain('Move: AnswerQuestion · by steven')
     expect(html).toContain('Decision: Use the smaller change')
-    expect(html).toContain('The ticket returned to the queue.')
+    expect(html).toContain('The ticket returned to the queue for a new pass from base.')
     expect(html.indexOf('data-rank="after-move"')).toBeLessThan(html.indexOf('data-rank="where"'))
   })
 
@@ -277,7 +277,25 @@ describe('after the move', () => {
     expect(html).toContain('The body update event does not identify a wait. Current ticket state: blocked.')
     expect(html).toContain(type === 'IssueUpdated' ? 'A body update was recorded.' : 'A body update failed.')
     expect(html).not.toContain('The body write completed before the wait was resolved.')
-    expect(html).not.toContain('The ticket returned to the queue.')
+    expect(html).not.toContain('The ticket returned to the queue for a new pass from base.')
+  })
+
+  it('shows the recorded saved ref and head after a fix grant', () => {
+    const own = [
+      e(ITEM, 'TicketClaimed', { runId: RUN }),
+      e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-147',
+        resolution: { _tag: 'GrantFixRound', onSha: HEAD, ref: 'agent/147' },
+        by: 'steven',
+        note: '',
+      }),
+    ]
+    const html = page(task(own, []))
+    expect(html).toContain('Continued saved work')
+    expect(html).toContain(`Continued agent/147 at ${HEAD}`)
+    expect(html).toContain('Result: Continued saved work for one additional fix round; build and review run again.')
+    expect(html).toContain('Schedule saved-work fix round')
   })
 
   it('does not call an unscoped write a completed body edit after another release', () => {

@@ -23,6 +23,7 @@ import {
   answerCard,
   approveCard,
   closeCard,
+  continueFixingCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -212,6 +213,7 @@ export function ScheduleContinuation({
   issue,
   onSha,
   waitId,
+  grant = false,
 }: {
   project: string
   issue: number
@@ -219,6 +221,8 @@ export function ScheduleContinuation({
   onSha: string
   /** The wait that approval resolved — `StandingView.waitId`. */
   waitId: WaitId
+  /** A recorded fix grant must be retried as that same resolution. */
+  grant?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
@@ -237,7 +241,9 @@ export function ScheduleContinuation({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = await approveCard({ project, issue, onSha, waitId, note: '' })
+              const result = grant
+                ? await continueFixingCard({ project, issue, onSha, waitId })
+                : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -247,10 +253,53 @@ export function ScheduleContinuation({
             })
           }}
         >
-          {pending ? 'asking…' : 'Schedule it'}
+          {pending ? 'asking…' : grant ? 'Schedule saved-work fix round' : 'Schedule it'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/** A fix grant has its own action; sending a new attempt always starts from base. */
+export function ContinueFixing({
+  project,
+  issue,
+  waitId,
+  onSha,
+  primary,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+  primary: boolean
+}) {
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [, startTransition] = useTransition()
+  return (
+    <div className="decide">
+      {done ? null : (
+        <button
+          className={primary ? 'btn pri' : 'btn'}
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await continueFixingCard({ project, issue, waitId, onSha })
+              setPending(false)
+              setDone(result.ok)
+              setDetail(result.detail)
+            })
+          }}
+        >
+          {pending ? 'granting…' : 'Continue fixing current work'}
+        </button>
+      )}
+      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
     </div>
   )
 }
@@ -419,7 +468,7 @@ export function Requeue({
             className={primaryMove(recommended) === (asked ? 'answer' : 'requeue') ? 'btn pri' : 'btn'}
             onClick={() => setAsking('primary')}
           >
-            {asked ? 'Answer' : 'Back to the queue'}
+            {asked ? 'Answer' : 'Start over from base'}
           </button>
           {asked ? (
             <button className="btn" onClick={() => setAsking('withdraw')}>
@@ -666,7 +715,7 @@ export function Send({
             })
           }}
         >
-          {pending ? 'sending…' : `Send attempt ${attempt}`}
+          {pending ? 'sending…' : `Send attempt ${attempt} from base`}
         </button>
         <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
           Leave blocked
