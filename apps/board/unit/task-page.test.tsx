@@ -295,6 +295,7 @@ describe('after the move', () => {
     expect(html).toContain('Continued saved work')
     expect(html).toContain(`Continued agent/147 at ${HEAD}`)
     expect(html).toContain('Build and review run again')
+    expect(html).toContain('Schedule saved-work fix round')
   })
 
   it('does not call an unscoped write a completed body edit after another release', () => {

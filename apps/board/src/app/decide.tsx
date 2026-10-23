@@ -213,6 +213,7 @@ export function ScheduleContinuation({
   issue,
   onSha,
   waitId,
+  grant = false,
 }: {
   project: string
   issue: number
@@ -220,6 +221,8 @@ export function ScheduleContinuation({
   onSha: string
   /** The wait that approval resolved — `StandingView.waitId`. */
   waitId: WaitId
+  /** A recorded fix grant must be retried as that same resolution. */
+  grant?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
@@ -238,7 +241,9 @@ export function ScheduleContinuation({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = await approveCard({ project, issue, onSha, waitId, note: '' })
+              const result = grant
+                ? await continueFixingCard({ project, issue, onSha, waitId })
+                : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -248,7 +253,7 @@ export function ScheduleContinuation({
             })
           }}
         >
-          {pending ? 'asking…' : 'Schedule it'}
+          {pending ? 'asking…' : grant ? 'Schedule saved-work fix round' : 'Schedule it'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}

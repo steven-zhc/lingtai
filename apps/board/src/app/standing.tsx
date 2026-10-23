@@ -996,6 +996,7 @@ export function Standing({
                 issue={issue}
                 onSha={standing.approvedSha}
                 waitId={standing.waitId}
+                grant={standing.afterMove?.resolution === 'GrantFixRound'}
               />
             </div>
           ) : null}
