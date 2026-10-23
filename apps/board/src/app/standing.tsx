@@ -843,8 +843,10 @@ export function Standing({
                 const visible = standing.state === 'blocked' && allowed.includes(tag)
                 const waitId = standing.waitId
                 const copy = RESOLUTION_COPY[tag]
-                const consequence =
-                  tag === 'Requeue' && sendable !== null
+                const fixUnavailable = tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+                const consequence = fixUnavailable
+                  ? 'The saved branch and head must be available before a fix round can be granted.'
+                  : tag === 'Requeue' && sendable !== null
                     ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds.`
                     : copy.consequence
                 return (
@@ -857,7 +859,7 @@ export function Standing({
                     {visible ? (
                       <>
                         <div className="sresolutionhead">
-                          <h3>{copy.title}</h3>
+                          <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3>
                           {triageRecommended === tag ? (
                             <span className="sresolutionbadge">Triage recommended</span>
                           ) : null}

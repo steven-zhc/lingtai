@@ -741,7 +741,7 @@ export async function sendAttempt(input: {
 
     revalidatePath(`/task/${input.taskId}`)
     revalidatePath('/')
-    return { ok: result.ok, detail: result.ok ? 'sent — the next pass claims it' : result.detail }
+    return { ok: result.ok, detail: result.ok ? 'sent — the next pass starts from base' : result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
