@@ -26,6 +26,8 @@
  * started. This only ever reports. Whether a daemon should restart itself is
  * deliberately open.
  */
+import { isSea } from 'node:sea'
+
 import { lastBeat, readStatus } from '@lingtai/daemon/control'
 import { codeCurrency, describeCurrency } from '@lingtai/daemon/currency'
 
@@ -47,9 +49,18 @@ async function news(): Promise<CodeNews | null> {
   if (!lastBeat(status).up) return null
 
   if (!status.codeSha) {
+    // An installed binary has a release version, not a checkout commit. Its
+    // missing SHA is expected and cannot be repaired by restarting the daemon.
+    if (isSea()) {
+      return {
+        wrong: null,
+        action: null,
+        said: 'running an installed Lingtai binary; Git commit comparison does not apply',
+      }
+    }
     return {
       wrong: 'code unknown',
-      action: 'restart it with: pnpm lingtai daemon',
+      action: 'restart it with: lingtai restart',
       said: 'this daemon started before the beacon carried a commit, so what code it is running cannot be read from here',
     }
   }

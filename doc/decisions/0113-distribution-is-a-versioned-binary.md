@@ -3,8 +3,9 @@
 **Status** accepted · 2026-10-01
 
 `pnpm build` writes `dist/` — one CommonJS CLI bundle and the board as Next
-`standalone` — and that is the only publishable unit; both workspace manifests
-stay private. `pnpm binary` turns the bundle into a Node single-executable
+`standalone`, plus the ticket prompt and compiled hook. That is the only
+publishable unit; both workspace manifests stay private. `pnpm binary` turns
+the bundle into a Node single-executable
 application, built and run on each of four platforms and signed ad hoc on
 macOS. A tag `v*` publishes the four binaries, one board, the installer and
 `SHA256SUMS` to GitHub Releases. On a user's machine each version is unpacked
@@ -25,8 +26,9 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
 1. **`dist/` is the package, and nothing else is.** `pnpm build` runs
    `apps/release/src/build.ts`, which writes `dist/package.json` (name
    `lingtai`, bin `lingtai.cjs`, no dependencies, not private),
-   `dist/lingtai.cjs` (the CLI bundled from `apps/cli/src/entry.ts` by esbuild)
-   and `dist/board/` (entry `board/apps/board/server.js`). The root and
+   `dist/lingtai.cjs` (the CLI bundled from `apps/cli/src/entry.ts` by esbuild),
+   `dist/board/` (entry `board/apps/board/server.js`), `dist/prompts/ticket.md`,
+   and `dist/packages/hook/bin/lingtai-hook`. The root and
    `apps/cli` manifests stay `"private": true`: the root is the workspace, and
    `apps/cli`'s bin is TypeScript source with `workspace:*` dependencies.
    `apps/release` is private too.
@@ -45,13 +47,16 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
    needs Node 25.5 or later to build, and runs on the repository's own Node
    (0101 §1). Code cache and snapshot are off. Inside a SEA the bundle treats
    `process.execPath` as its own location, so `board/` is found beside the
-   binary.
+   binary. The prompt and hook also live beside the binary, and the CLI reads
+   them from that version's directory before a pass.
 5. **Four platforms, each built and run on itself.** `macos-arm64`,
    `macos-x64`, `linux-x64`, `linux-arm64`, with Node 26, in
    `.github/workflows/release.yml`. Each job runs
    `apps/release/integration/build.test.ts` (bundle and binary both start the
    board and serve a page), builds the artifact, runs `dist/lingtai version` and
-   checks it names its platform and, on a tag, the tag's version. No Windows.
+   checks it names its platform and, on a tag, the tag's version. Bun builds
+   the hook on each platform; the release test starts an empty pass from the
+   bundle and installed binary to verify both runtime assets. No Windows.
 6. **macOS binaries are always signed ad hoc** with `codesign --sign -` and
    verified. The test asserts the signature with `codesign --verify`, and that a
    build without the step has none, so the step cannot be dropped quietly — the
@@ -65,7 +70,8 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
    `lingtai-<platform>.tar.gz` ×4, one `board.tar.gz`, `install.sh` and
    `SHA256SUMS` over all of them to a GitHub Release.
 9. **A version is a directory, written once.**
-   `~/.lingtai/versions/<v>/` holds `lingtai` and `board/`. It is unpacked into
+   `~/.lingtai/versions/<v>/` holds `lingtai`, `board/`, `prompts/`, and
+   `packages/hook/`. It is unpacked into
    its own `versions/.<v>.partial-*`, run once (`lingtai version` must report
    `<v>`), then renamed into place. A version already present is used as it is.
    Nothing but `uninstall` removes one.
@@ -78,8 +84,8 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
 12. **The installer is `apps/site/public/install.sh`.** It names the platform or
     refuses by name, asks GitHub Releases for the newest version unless
     `LINGTAI_VERSION` says, fetches and verifies, unpacks, points the shim, and
-    runs `lingtai init` where there is a terminal (`LINGTAI_NO_INIT` stops
-    before it). It edits no shell profile. `LINGTAI_HOME`, `LINGTAI_BIN_DIR`
+    tells the person to run `lingtai init` separately. It edits no shell profile.
+    `LINGTAI_HOME`, `LINGTAI_BIN_DIR`
     and `LINGTAI_RELEASES_URL` move where it installs and fetches from. The
     canonical address is the release asset
     (`releases/latest/download/install.sh`); the site's `/install.sh` is the

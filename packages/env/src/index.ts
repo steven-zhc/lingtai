@@ -30,11 +30,12 @@ import { parse as parseYaml } from 'yaml'
 const here = dirname(fileURLToPath(import.meta.url))
 /**
  * `packages/env/src` → the repository root. Bundled, `import.meta.url` is
- * `dist/lingtai.cjs`'s, and the root is one directory up (#183):
+ * the CLI path in `dist/` or the installed version directory, where the
+ * runtime assets live beside it.
  * `apps/release/src/build.ts` defines `LINGTAI_BUNDLED`, and the source never does.
  */
 declare const LINGTAI_BUNDLED: boolean | undefined
-const root = resolve(here, typeof LINGTAI_BUNDLED === 'undefined' ? '../../..' : '..')
+const root = resolve(here, typeof LINGTAI_BUNDLED === 'undefined' ? '../../..' : '.')
 
 /**
  * Whether this process is a test run.

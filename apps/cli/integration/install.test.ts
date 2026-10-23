@@ -637,23 +637,23 @@ describe('install.sh', () => {
     expect(twice.said).toContain('already runs 1.0.0')
   })
 
-  it('names lingtai init rather than running it where there is no terminal to answer it (#186)', () => {
+  it('installs without running lingtai init and names the separate setup command', () => {
     const ran = install('1.0.0')
     expect(ran.code, ran.said).toBe(0)
-    expect(ran.said).toContain('next: lingtai init — there is no terminal here')
+    expect(ran.said).toContain("next: lingtai init — set up the database, agent and project when you're ready")
     expect(ran.said).not.toContain('running lingtai init')
   })
 
-  it('does not run lingtai init over a machine that already has a config.yml (#186)', () => {
+  it('recognizes an existing setup without running lingtai init', () => {
     const at = join(home, '.lingtai')
     mkdirSync(at, { recursive: true })
     writeFileSync(join(at, 'config.yml'), 'runtime:\n  agent: claude-code\n')
     const ran = install('1.0.0')
     rmSync(join(at, 'config.yml'))
     expect(ran.code, ran.said).toBe(0)
-    expect(ran.said).toContain('not running lingtai init')
+    expect(ran.said).toContain(`setup already exists at ${join(at, 'config.yml')}`)
     expect(ran.said).not.toContain('running lingtai init\n')
-    expect(ran.said).not.toContain('there is no terminal here')
+    expect(ran.said).not.toContain('next: lingtai init')
   })
 
   it('refuses when either artifact does not match its checksum, and unpacks neither', () => {

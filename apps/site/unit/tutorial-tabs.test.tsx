@@ -42,7 +42,7 @@ echo fish
     const html = renderToStaticMarkup(<Document slug="tutorial" source="tutorial.md" body={body} published={[]} />)
     expect(html.match(/class="shell-tabs"/g)).toHaveLength(2)
     expect(html).toContain('<details>')
-    expect(html).toContain('<summary>What does this command set?</summary>')
+    expect(html).toContain('<summary>What did this command choose?</summary>')
     expect(html).toContain('<table>')
     expect(html).not.toContain('&lt;details&gt;')
   })

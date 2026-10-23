@@ -1,53 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 832 280" role="img" aria-label="One pass: claim, worktree, agent, checks, approval, merge, end. A failed check goes back to the agent for a fix round; a hold, an unresolved refusal or a conflict stops at Waiting on you.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 294" role="img" aria-labelledby="title description">
+<title id="title">Step 3: Lingtai runs Chapter Garden to the landing hold</title>
+<desc id="description">The pass claims a ticket, creates a worktree, installs dependencies, lets Codex write the chapter, runs the checks, and asks Codex to review. It then waits at the proposed step for your approval. A failed build can return to Codex for a fix round.</desc>
 <style>
 :root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
 @media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
 text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
-.s{font-size:11.5px;fill:var(--mute)}.h{font-weight:600}.lab{font-size:11.5px;fill:var(--mute)}
-.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}
-.acc{fill:var(--accf);stroke:var(--acc);stroke-width:1.6}
-.warn{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
-.zone{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:5 4}
-.ln{fill:none;stroke:var(--line);stroke-width:1.4}.lnw{fill:none;stroke:var(--warn);stroke-width:1.4}.lna{fill:none;stroke:var(--acc);stroke-width:1.6}
-.dash{stroke-dasharray:4 3}
+.title{font-size:15px;font-weight:700}.step{font-size:10.5px;fill:var(--mute)}.name{font-size:14px;font-weight:600}.detail{font-size:11.5px;fill:var(--mute)}.note{font-size:12px;fill:var(--mute)}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}.accent{fill:var(--accf);stroke:var(--acc);stroke-width:1.5}.hold{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
+.arrow{fill:none;stroke:var(--line);stroke-width:1.5;marker-end:url(#arrow)}
 </style>
-<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
-<rect class="box" x="20" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="72.0" y="79.0" text-anchor="middle">Claim</text>
-<text class="s" x="72.0" y="95.0" text-anchor="middle">takes the issue</text>
-<rect class="box" x="138" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="190.0" y="79.0" text-anchor="middle">Worktree</text>
-<text class="s" x="190.0" y="95.0" text-anchor="middle">new branch</text>
-<rect class="acc" x="256" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="308.0" y="79.0" text-anchor="middle">Agent</text>
-<text class="s" x="308.0" y="95.0" text-anchor="middle">edits, commits</text>
-<rect class="box" x="374" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="426.0" y="79.0" text-anchor="middle">Checks</text>
-<text class="s" x="426.0" y="95.0" text-anchor="middle">your recipe</text>
-<rect class="box" x="492" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="544.0" y="79.0" text-anchor="middle">Approval</text>
-<text class="s" x="544.0" y="95.0" text-anchor="middle">if you asked</text>
-<rect class="box" x="610" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="662.0" y="79.0" text-anchor="middle">Merge</text>
-<text class="s" x="662.0" y="95.0" text-anchor="middle">into your base</text>
-<rect class="box" x="728" y="56" width="104" height="52" rx="6"/>
-<text class="h" x="780.0" y="79.0" text-anchor="middle">End</text>
-<text class="s" x="780.0" y="95.0" text-anchor="middle">close, label</text>
-<path class="ln" d="M124 82.0 L138 82.0" marker-end="url(#a)"/>
-<path class="ln" d="M242 82.0 L256 82.0" marker-end="url(#a)"/>
-<path class="ln" d="M360 82.0 L374 82.0" marker-end="url(#a)"/>
-<path class="ln" d="M478 82.0 L492 82.0" marker-end="url(#a)"/>
-<path class="ln" d="M596 82.0 L610 82.0" marker-end="url(#a)"/>
-<path class="ln" d="M714 82.0 L728 82.0" marker-end="url(#a)"/>
-<path class="lna" d="M426 56 L426 28 L308 28 L308 54" marker-end="url(#a)"/>
-<text class="lab" x="367.0" y="20" text-anchor="middle">fix round</text>
-<rect class="warn" x="374" y="196" width="340" height="44" rx="6"/>
-<text class="h" x="544.0" y="215.0" text-anchor="middle">Waiting on you</text>
-<text class="s" x="544.0" y="231.0" text-anchor="middle">the card names the attempt, the check or the hold</text>
-<path class="lnw" d="M426 108 L426 196" marker-end="url(#a)"/>
-<text class="lab" x="434" y="150" text-anchor="start">red, rounds spent</text>
-<path class="lnw" d="M544 108 L544 196" marker-end="url(#a)"/>
-<text class="lab" x="552" y="150" text-anchor="start">your approval</text>
-<path class="lnw" d="M662 108 L662 196" marker-end="url(#a)"/>
-<text class="lab" x="670" y="150" text-anchor="start">conflict</text>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<text class="title" x="18" y="27">lingtai start · one pass to your approval</text>
+<rect class="box" x="18" y="50" width="190" height="62" rx="7"/>
+<text class="step" x="32" y="69">1 · claim</text><text class="name" x="32" y="88">Take the ticket</text><text class="detail" x="32" y="103">feature enters the queue</text>
+<rect class="box" x="228" y="50" width="190" height="62" rx="7"/>
+<text class="step" x="242" y="69">2 · admit</text><text class="name" x="242" y="88">Create a worktree</text><text class="detail" x="242" y="103">from your tutorial branch</text>
+<rect class="box" x="438" y="50" width="190" height="62" rx="7"/>
+<text class="step" x="452" y="69">3 · prepared</text><text class="name" x="452" y="88">Install dependencies</text><text class="detail" x="452" y="103">npm ci</text>
+<rect class="accent" x="648" y="50" width="190" height="62" rx="7"/>
+<text class="step" x="662" y="69">5 · implement</text><text class="name" x="662" y="88">Codex writes</text><text class="detail" x="662" y="103">the next chapter</text>
+<path class="arrow" d="M208 81H226"/><path class="arrow" d="M418 81H436"/><path class="arrow" d="M628 81H646"/>
+<path class="arrow" d="M743 112V164"/>
+<text class="note" x="18" y="153">4 · design has no action in this recipe.</text>
+<rect class="box" x="648" y="166" width="190" height="62" rx="7"/>
+<text class="step" x="662" y="185">6 · build</text><text class="name" x="662" y="204">Check the site</text><text class="detail" x="662" y="219">npm run check · build</text>
+<rect class="box" x="438" y="166" width="190" height="62" rx="7"/>
+<text class="step" x="452" y="185">7 · review</text><text class="name" x="452" y="204">Codex reviews</text><text class="detail" x="452" y="219">the change cold</text>
+<rect class="hold" x="228" y="166" width="190" height="62" rx="7"/>
+<text class="step" x="242" y="185">8 · proposed</text><text class="name" x="242" y="204">Waiting on you</text><text class="detail" x="242" y="219">landing hold from the recipe</text>
+<path class="arrow" d="M648 197H630"/><path class="arrow" d="M438 197H420"/>
+<text class="note" x="18" y="270">A failed build can return to Codex for a fix round. Approval, merge and end are in Step 4.</text>
 </svg>

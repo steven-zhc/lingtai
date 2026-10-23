@@ -284,9 +284,11 @@ export function renderTicketForm(form: TicketFormFields, instructions: readonly 
  * the first blank line has already ended the header by the time one could
  * appear there.
  *
- * **Line 0 is always the title slot, and is read as nothing else.** The `#!`
- * filter below runs only over the header lines after it. Were it run over
- * line 0 too, a typed title starting `#!` would be dropped and the rendered
+ * **The first nonblank line is the title slot when it is not `labels:` or
+ * `#!`.** This accepts blank lines pasted before a title while retaining the
+ * empty title in `new`'s initial form. The `#!` filter below runs only over
+ * the header lines after the title. Were it run over the title too, a typed
+ * title starting `#!` would be dropped and the rendered
  * `labels:` line would be promoted into the title slot — the labels silently
  * come back empty and the real text is gone the moment the caller discards
  * the file (#386 round 4). Refusing a line 0 starting `labels:` guards the
@@ -300,16 +302,23 @@ export function renderTicketForm(form: TicketFormFields, instructions: readonly 
  * title": folding the empty-title case in here would make that comparison
  * collapse two different saves (same blank title, different body) into one,
  * discarding whichever body the first comparison looked at. The other ways
- * this returns `ok: false` are line 0 reading as an instruction or a labels
+ * this returns `ok: false` are the title slot reading as an instruction or a labels
  * line, and a header line below it that is neither the title, the optional
  * `labels:` line, nor dropped as an instruction — text that belongs in the
  * body but landed above the blank line instead.
  */
 export function parseTicketForm(text: string): ParsedTicketForm {
-  const lines = text.split('\n')
-  // Searched from line 1, not line 0: line 0 is always the title, however it
-  // reads, so a blank title must never be mistaken for the separator that
-  // ends the header — that would hand the real `labels:` line to the body.
+  const rawLines = text.split('\n')
+  const firstContent = rawLines.findIndex((line) => line.trim() !== '')
+  const firstLine = rawLines[firstContent]
+  // Keep the blank title slot when the next line is a form field or an
+  // instruction; otherwise discard blank lines pasted before a real title.
+  const lines =
+    firstContent > 0 && firstLine !== undefined && !firstLine.startsWith('labels:') && !firstLine.startsWith('#!')
+      ? rawLines.slice(firstContent)
+      : rawLines
+  // Search after the title slot, so an intentionally blank title does not
+  // become the separator and move labels: into the body.
   const blankAt = lines.indexOf('', 1)
   const headerLines = blankAt === -1 ? lines : lines.slice(0, blankAt)
   const bodyLines = blankAt === -1 ? [] : lines.slice(blankAt + 1)

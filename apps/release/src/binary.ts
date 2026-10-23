@@ -5,9 +5,12 @@
  *     lingtai         this: a copy of the building Node with lingtai.cjs injected
  *     lingtai.cjs     what `pnpm build` wrote, and what goes in
  *     board/          unchanged — pure JavaScript, the same on every platform
+ *     packages/hook/  the compiled hook for this platform
+ *     prompts/        the ticket template
  *
  * So `dist/` minus `lingtai.cjs` and `package.json` is what an installer unpacks
- * into `versions/<v>/`, and the binary finds `board/` beside itself.
+ * into `versions/<v>/`, and the binary finds all three resource directories
+ * beside itself.
  *
  * **SEA copies the Node that runs this**, so a binary is built on the platform
  * it is for — four builds, never a cross-compile. `node --build-sea` does the

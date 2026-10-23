@@ -5,6 +5,8 @@
  *     package.json    not private: this is the package, and nothing else is
  *     lingtai.cjs     the CLI, one CommonJS file, because a SEA's main is one
  *     board/          Next's standalone output; server.js is apps/board/server.js
+ *     prompts/        the ticket template read before a pass
+ *     packages/hook/  the native hook required before a pass
  *
  * 0010 still governs development — the source runs unbuilt, and nothing here
  * changes how a checkout runs. This is for shipping, as `packages/hook`'s Bun
@@ -30,7 +32,25 @@ export async function buildRelease({ out, root = ROOT }: BuildOptions): Promise<
   mkdirSync(out, { recursive: true })
   buildBoard(root, out)
   await bundleCli(root, out)
+  buildPassAssets(root, out)
   writePackage(root, out)
+}
+
+/** Build the platform-specific hook and copy the prompt beside the CLI. */
+function buildPassAssets(root: string, out: string): void {
+  const hook = join(out, 'packages', 'hook', 'bin', 'lingtai-hook')
+  mkdirSync(join(out, 'packages', 'hook', 'bin'), { recursive: true })
+  const built = spawnSync('bun', ['build', '--compile', '--minify', '--outfile', hook, 'src/lingtai-hook.ts'], {
+    cwd: join(root, 'packages', 'hook'),
+    encoding: 'utf8',
+  })
+  if (built.status !== 0) {
+    throw new Error(
+      `hook build failed: ${built.error?.message ?? `exited ${built.status}`}\n${built.stdout}\n${built.stderr}`,
+    )
+  }
+  mkdirSync(join(out, 'prompts'), { recursive: true })
+  cpSync(join(root, 'prompts', 'ticket.md'), join(out, 'prompts', 'ticket.md'))
 }
 
 /**
@@ -155,8 +175,8 @@ async function bundleCli(root: string, out: string): Promise<void> {
       'import.meta.url': '__import_meta_url',
       'import.meta.filename': '__lingtai_filename',
       'import.meta.dirname': '__lingtai_dirname',
-      // `@lingtai/env` finds the root relative to itself; bundled, that is
-      // `dist/`, one directory below the checkout rather than three.
+      // `@lingtai/env` uses this file's directory as the bundled root, so it
+      // reads `prompts/` and `packages/hook/` beside the CLI.
       LINGTAI_BUNDLED: 'true',
     },
     legalComments: 'none',

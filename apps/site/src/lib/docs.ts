@@ -382,6 +382,7 @@ export async function entriesOf(section: Section): Promise<DocEntry[]> {
  * refuses. So the projection rewrites the *links* instead, at render:
  *
  * - another projected document → its route here
+ * - a diagram in `doc/img/` → the asset route serving that same file
  * - anything else inside the repository → the file on GitHub, which is where
  *   `packages/domain/src/events.ts` actually is
  * - a drawing in `HTML_DOCS` → the copy the build put in `public/doc/`
@@ -404,6 +405,7 @@ export function resolveHref(from: string, href: string, isPublished: (file: stri
   const rel = path.posix.normalize(path.posix.join(fromDir === '.' ? '' : fromDir, target))
 
   if (rel.startsWith('../')) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, '') + suffix
+  if (/^img\/[a-z0-9-]+\.svg$/.test(rel)) return `/img/docs/${rel.slice('img/'.length)}${suffix}`
   if (rel.endsWith('.md') && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`
   if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`
   return `${GITHUB_BLOB}doc/${rel}${suffix}`
