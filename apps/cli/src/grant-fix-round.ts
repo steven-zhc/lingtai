@@ -10,7 +10,7 @@ import { withProjector } from './projector.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
 export async function grantFixRoundCommand(
-  options: { project: string; issue: number },
+  options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Promise<number> {
   const project = await loadProject(options.project)
@@ -43,7 +43,7 @@ export async function grantFixRoundCommand(
       ticketId,
       issue: options.issue,
       waitId: item.lifecycle.waitId,
-      resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+      resolution: { _tag: 'GrantFixRound', onSha: options.ifHead ?? '', ref: '' },
       by: `human:${userInfo().username}`,
       client,
     })

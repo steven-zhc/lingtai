@@ -316,7 +316,7 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
         reason.proposal.output.trim().length > 0)
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
-    ...(fixable ? (['GrantFixRound'] as const) : []),
+    ...(fixable && !unpushed ? (['GrantFixRound'] as const) : []),
   ]
 }
 

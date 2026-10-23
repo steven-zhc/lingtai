@@ -187,7 +187,8 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     item.lifecycle.status === 'approved' &&
     item.lifecycle.waitId === options.waitId &&
     (options.resolution._tag === 'GrantFixRound'
-      ? item.lifecycle.grantRef !== undefined
+      ? item.lifecycle.grantRef !== undefined &&
+        (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
       : item.lifecycle.onSha === options.resolution.onSha)
   ) {
     const parsed = parseTicketStream(ticketId)!
@@ -223,9 +224,13 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     const events = await store.read(block.runId)
     const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
     const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
-    // A kept dirty tree remains in every descendant's history. The merge
-    // lane rejects that history even after the fixer commits a clean change.
-    if (saved?.armSha != null) {
+    // A WIP commit on the arm does not taint the clean head already published
+    // on the issue branch. Continue that head; never cut from the WIP arm.
+    const cleanBranch =
+      saved !== undefined &&
+      (saved.outcome === 'published' || saved.outcome === 'already-published') &&
+      saved.branchCarries !== false
+    if (saved?.armSha != null && !cleanBranch) {
       const recorded = events.some(
         (e) =>
           e.type === 'RunKeptUncommitted' &&
@@ -241,19 +246,30 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
           : `Run ${block.runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
       }
     }
-    const head = saved?.armSha ?? saved?.headSha
-    const ref =
-      saved?.armSha !== null && saved?.armSha !== undefined
-        ? saved.arm
-        : saved?.branchCarries === false || saved?.outcome === 'arm-only'
-          ? saved.arm
-          : saved?.branch
-    if (!saved || !head || !ref || !['published', 'already-published', 'arm-only'].includes(saved.outcome)) {
+    if (saved?.outcome === 'arm-only') {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'branch-diverged',
+        detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
+      }
+    }
+    const head = cleanBranch ? saved.headSha : null
+    const ref = cleanBranch ? saved.branch : null
+    if (!head || !ref) {
       return {
         ok: false,
         ticketId,
         reason: 'no-saved-head',
         detail: `Run ${block.runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+      }
+    }
+    if (resolution.onSha && resolution.onSha !== head) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `The saved head is ${head}, not the displayed ${resolution.onSha}. Reload this wait before granting a round.`,
       }
     }
     if (options.client === undefined)

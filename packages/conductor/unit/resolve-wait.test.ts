@@ -60,7 +60,7 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
 }
 
 describe('resolveWait', () => {
-  it('refuses a recorded WIP head and grants a clean saved head only at its recorded ref', async () => {
+  it('refuses a WIP-only arm but grants the clean branch head beside a WIP arm', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 539)
     const item = makeStream(ticketId)
@@ -83,10 +83,10 @@ describe('resolveWait', () => {
       run.event('RunRefsPublished', {
         branch: 'agent/539',
         arm: 'agent/539-attempt-1',
-        headSha: SHA,
+        headSha: SHA2,
         armSha: SHA2,
-        branchCarries: true,
-        outcome: 'published',
+        branchCarries: false,
+        outcome: 'arm-only',
         detail: null,
       }),
       run.event('RunKeptUncommitted', {
@@ -126,7 +126,7 @@ describe('resolveWait', () => {
           branch: 'agent/539',
           arm: 'agent/539-attempt-2',
           headSha: SHA,
-          armSha: null,
+          armSha: SHA2,
           branchCarries: true,
           outcome: 'published',
           detail: null,
@@ -134,6 +134,20 @@ describe('resolveWait', () => {
       },
     ])
     expect(await grant(SHA2)).toMatchObject({ ok: false, reason: 'stale' })
+    expect(
+      await resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
+        ticketId,
+      ),
+    ).toMatchObject({ ok: false, reason: 'stale', detail: expect.stringContaining('displayed') })
     const unschedulable: EventStore = {
       ...store,
       append: async (streamId, expectedVersion, events) => {
@@ -153,9 +167,71 @@ describe('resolveWait', () => {
       onSha: SHA,
       grantRef: 'agent/539',
     })
+    expect(
+      await resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
+        ticketId,
+      ),
+    ).toMatchObject({ ok: false, reason: 'not-blocked' })
     expect(await grant(SHA)).toEqual({ ok: true, ticketId })
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
     expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
+  })
+
+  it('refuses an arm-only head so a fix cannot overwrite a diverged issue branch', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 540)
+    const item = makeStream(ticketId)
+    const run = aRun('pass-arm-only')
+    const waitId = aWaitId()
+    await seed(store, ticketId, [
+      ...aClaim(item, run.runId),
+      ...aWait(
+        item,
+        {
+          _tag: 'ProposedEscalated',
+          run: aRunRef(run.runId),
+          proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+          because: { _tag: 'NotAsked' },
+        },
+        waitId,
+      ),
+    ])
+    await seed(store, run.runId, [
+      run.event('RunRefsPublished', {
+        branch: 'agent/540',
+        arm: 'agent/540-attempt-1',
+        headSha: SHA,
+        outcome: 'arm-only',
+        detail: 'issue branch lease refused',
+      }),
+    ])
+    const result = await resolveWaitHolding(
+      {
+        ticketId,
+        issue: 540,
+        waitId,
+        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+        by: 'human:steven',
+        client: fakeClient(SHA),
+        store,
+      },
+      ticketId,
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'branch-diverged',
+      detail: expect.stringContaining('agent/540-attempt-1'),
+    })
+    expect((await store.read(ticketId)).filter((event) => event.type === 'WaitResolved')).toHaveLength(0)
   })
 
   it('refuses a stale waitId — the item is blocked on a different wait', async () => {

@@ -172,7 +172,7 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --note <text>               recorded with the approval, and required when
                                 a step still refuses the head: approving then
                                 waives each refusing step, with this as why
-  lingtai grant-fix-round <project> --issue <n>
+  lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]
                                 run one more implementation round on saved work,
                                 then repeat the checks without waiving a refusal
   lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
@@ -1283,10 +1283,14 @@ async function main(argv: string[]): Promise<number> {
       const { positional, flags } = parseFlags(rest)
       const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai grant-fix-round <project> --issue <n>')
+        console.error('lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]')
         return 2
       }
-      return grantFixRoundCommand({ project: positional[0], issue })
+      if ('if-head' in flags && !flags['if-head']) {
+        console.error('--if-head takes the displayed commit SHA')
+        return 2
+      }
+      return grantFixRoundCommand({ project: positional[0], issue, ifHead: flags['if-head'] })
     }
     case 'approve': {
       const { positional, flags } = parseFlags(rest)
