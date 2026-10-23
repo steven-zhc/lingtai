@@ -214,3 +214,13 @@ stopped for another reason, the [operating guide](operating.md) explains the
 next action.
 
 ![Step 4 reviews and approves the landing hold, then Lingtai merges the change and marks the ticket Landed.](img/waiting.svg)
+
+## Optional Step 5 — Open a pull request
+
+**Landed** means Lingtai merged the change into the tutorial branch you chose
+as `repo.base` in Step 1. It has not entered Chapter Garden's `main` branch.
+
+To share the chapter, open [Chapter Garden's pull requests](https://github.com/steven-zhc/chapter-garden/pulls)
+and choose **New pull request**. Set **base** to `main` and **compare** to your
+tutorial branch. If you used a fork, choose your fork and tutorial branch as
+the compare source. Review the diff, then submit the PR.
