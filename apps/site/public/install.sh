@@ -24,7 +24,7 @@
 #   4. unpacks into ~/.lingtai/versions/<version>/, and runs it once to see that
 #      it does run here
 #   5. points ~/.local/bin/lingtai at it
-#   6. runs lingtai init, where there is a terminal to answer it
+#   6. tells you to run lingtai init separately
 #
 # Run again over an install, it changes only what is different and says which.
 # A version already unpacked is never unpacked over: a process may be running
@@ -32,8 +32,7 @@
 # requests above.
 #
 # LINGTAI_HOME, LINGTAI_BIN_DIR, LINGTAI_VERSION and LINGTAI_RELEASES_URL move
-# where it installs, which version, and where it fetches from. LINGTAI_NO_INIT
-# stops before init.
+# where it installs, which version, and where it fetches from.
 
 set -eu
 
@@ -169,23 +168,10 @@ esac
 
 # ---------------------------------------------------------------------- init --
 
-# The installer runs `lingtai init` (#186), so there is no second command to
-# discover. Its questions are asked of the terminal, which under `curl | sh` is
-# not stdin — stdin is the script — so they are read from /dev/tty, and only
-# when there is one: with nobody to answer, it is named and not run.
-#
-# Only where init has never run. Over a machine that has a config.yml the run is
-# an upgrade, and init there would start a board in this process and hold the
-# `curl | sh` open on it, or fail on the port the machine's own board holds.
-if [ -n "${LINGTAI_NO_INIT:-}" ]; then
-  say "next: lingtai init — the database, the agent and the GitHub App, ending on the board"
-elif [ -e "$HOME_DIR/config.yml" ]; then
-  say "not running lingtai init — $HOME_DIR/config.yml is already here; lingtai init reports it, or continues where it stopped"
-elif [ -t 1 ] && { : < /dev/tty; } 2> /dev/null; then
-  say "running lingtai init"
-  # Init stopping — a refusal, or a Ctrl+C — is not the install failing: the
-  # binary and the shim are in place, and init run again continues from its file.
-  "$target" init < /dev/tty || say "lingtai init stopped (exit $?) — lingtai is installed; lingtai init continues where it left off"
+# Installation and setup are separate commands, including on a first install
+# with a terminal. A person can choose the project and flags before setup.
+if [ -e "$HOME_DIR/config.yml" ]; then
+  say "setup already exists at $HOME_DIR/config.yml — run lingtai init to inspect or continue it"
 else
-  say "next: lingtai init — there is no terminal here to answer its questions, so it was not run"
+  say "next: lingtai init — set up the database, agent and project when you're ready"
 fi
