@@ -209,7 +209,7 @@ export function TriageBand({
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
             {cause._tag === 'FixableLines' && result.resolution === 'Approve'
-              ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the red gate when saved work is available.'
+              ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
               : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
             {result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>

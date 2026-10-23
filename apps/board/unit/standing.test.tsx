@@ -1469,8 +1469,9 @@ describe('the moves the column ends in', () => {
     // The box says `attempt 3 only` and the button says `Send attempt 3`: one
     // number, said twice, because that is how long the edit lasts (0032 §5).
     expect(html).toContain('attempt 3 only')
-    // Named for the document it hands over, not for the queue it joins.
-    expect(html).not.toContain('Start over from base')
+    // The base-starting move is named in the card; Send remains the button.
+    expect(html).toContain('<h3>Start over from base</h3>')
+    expect(html).not.toContain('>Start over from base</button>')
   })
 
   /**

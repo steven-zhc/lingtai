@@ -294,7 +294,7 @@ describe('after the move', () => {
     const html = page(task(own, []))
     expect(html).toContain('Continued saved work')
     expect(html).toContain(`Continued agent/147 at ${HEAD}`)
-    expect(html).toContain('Build and review run again')
+    expect(html).toContain('Result: Continued saved work for one additional fix round; build and review run again.')
     expect(html).toContain('Schedule saved-work fix round')
   })
 
