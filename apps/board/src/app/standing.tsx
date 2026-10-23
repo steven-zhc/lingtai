@@ -208,7 +208,10 @@ export function TriageBand({
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
-            {cause._tag === 'WrongApproach'
+            {cause._tag === 'WrongApproach' &&
+            (result.resolution === 'Requeue' ||
+              result.resolution === 'Approve' ||
+              result.resolution === 'GrantFixRound')
               ? 'The approach is wrong; start over from base instead of continuing saved work.'
               : cause._tag === 'FixableLines' && result.resolution === 'Approve'
                 ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
@@ -528,7 +531,8 @@ export function Standing({
     standing.triageStatus?._tag === 'Done' &&
     standing.triageStatus.result._tag === 'TriageAdvised' &&
     standing.triageStatus.result.cause._tag === 'WrongApproach'
-  const advised = wrongApproachAdvice
+  const wrongApproachOverride = wrongApproachAdvice && (rawAdvice === 'Approve' || rawAdvice === 'GrantFixRound')
+  const advised = wrongApproachOverride
     ? 'Requeue'
     : standing.triageStatus?._tag === 'Done' &&
         standing.triageStatus.result._tag === 'TriageAdvised' &&
@@ -880,7 +884,7 @@ export function Standing({
                           <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3>
                           {triageRecommended === tag ? (
                             <span className="sresolutionbadge">
-                              {wrongApproachAdvice ? 'Recommended for this diagnosis' : 'Triage recommended'}
+                              {wrongApproachOverride ? 'Recommended for this diagnosis' : 'Triage recommended'}
                             </span>
                           ) : null}
                         </div>
