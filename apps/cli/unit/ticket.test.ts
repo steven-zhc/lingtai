@@ -298,6 +298,25 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect(fake.discards).toBe(1)
   })
 
+  it('new accepts blank lines pasted before a title', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit('\n\nAdd the next chapter\nlabels: feature\n\nContinue the story.\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('created #1')
+    const created = await tickets.getIssue(1)
+    expect(created.title).toBe('Add the next chapter')
+    expect(created.labels.map((label) => label.name)).toEqual(['feature'])
+    expect(created.body).toBe('Continue the story.')
+  })
+
   it("new still creates the ticket when no kind label is in labels:, with a warning that the queue won't take it", async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const fake = fakeEdit('untriaged\nlabels: \n\nbody\n')
