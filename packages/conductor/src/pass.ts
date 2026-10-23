@@ -924,6 +924,11 @@ export interface PassOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** A prior human grant caps automatic fix routing across later continuations. */
+    readonly roundLimit?: number
+    /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
+    readonly grant?: SentBack
+    readonly findings?: readonly ActionFinding[]
   }
 }
 
@@ -1154,6 +1159,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   /** The merge commit a `Landed` visit reported, read back once the walk is over. */
   let landed: string | null = null
   let roundsSpent = options.from?.roundsSpent ?? 0
+  const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'admit'
@@ -1178,7 +1184,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
    * nothing has been refused yet.
    */
   let onSha = options.context.onSha
-  let recheck: readonly ActionFinding[] = options.context.recheck ?? []
+  let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
   let lapStart = 0
 
@@ -1223,7 +1229,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   ): Promise<boolean> => {
     const offer = offerFor(
       proposal,
-      { rounds: ceilings.rounds, restarts: ceilings.restarts },
+      { rounds: roundLimit, restarts: ceilings.restarts },
       {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,
@@ -1697,7 +1703,13 @@ async function runStep(
         context: {
           ...reaching.context,
           design: designOn(reached),
-          again: sentBackTo(spec.step, reached),
+          again:
+            spec.step === 'implement' &&
+            options.from?.step === 'implement' &&
+            !reached.some((visit) => visit.step === 'implement') &&
+            options.from.grant
+              ? options.from.grant
+              : sentBackTo(spec.step, reached),
         },
         emit: options.emit,
       })

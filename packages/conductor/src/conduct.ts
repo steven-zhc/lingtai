@@ -29,9 +29,10 @@ import {
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
+import { type PayloadOf, type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
+  type Envelope,
   type ReleaseCause,
   type RuntimeId,
   type Step,
@@ -522,6 +523,21 @@ function detailOf(ending: PassOver['stopped']): string {
  * everything under it: the five gate points are ten steps, the sequence is
  * `runPass`'s, and this is the caller the pass was written to be called by.
  */
+/** A grant buys the next implement visit after every round already recorded on this run. */
+export function continuationRound(runEvents: readonly Envelope[], granted: boolean): number {
+  const lastFixRound = routesOf(runEvents)
+    .filter((route) => route.next._tag === 'FixRound')
+    .at(-1)
+  const lastRecordedRound = Math.max(
+    0,
+    lastFixRound?.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+    ...runEvents
+      .filter((event) => event.type === 'StepStarted' && (event.data as PayloadOf<'StepStarted'>).step === 'implement')
+      .map((event) => (event.data as PayloadOf<'StepStarted'>).round),
+  )
+  return granted ? lastRecordedRound + 1 : lastRecordedRound
+}
+
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
   return Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
@@ -952,11 +968,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
-      const next = continuationOf(reason, stepOutcomesOf(runEvents))
+      const granted = folded.lifecycle.grantRef !== undefined
+      const priorGrant = waitsOf(before).some(
+        (wait) =>
+          wait.resolution?._tag === 'GrantFixRound' &&
+          'run' in wait.reason &&
+          wait.reason.run.runId === options.continuing!.runId,
+      )
+      const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
-      const lastFixRound = routesOf(runEvents)
-        .filter((r) => r.next._tag === 'FixRound')
-        .at(-1)
       return {
         step: next.step,
         /**
@@ -974,7 +994,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
-        roundsSpent: lastFixRound !== undefined && lastFixRound.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
+        ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
+        roundsSpent: continuationRound(runEvents, granted),
+        ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
+        ...(granted && reason._tag === 'ProposedEscalated'
+          ? {
+              grant: {
+                why: 'A person granted one checked fix round.',
+                asked: null,
+                printed:
+                  reason.proposal._tag === 'BuildRed'
+                    ? { step: 'build' as const, detail: reason.proposal.output }
+                    : reason.proposal._tag === 'VerifyRed'
+                      ? { step: 'build' as const, detail: `merge verification failed: ${reason.proposal.output}` }
+                      : { step: 'review' as const, detail: 'Fix the recorded review findings.' },
+              },
+              findings: reason.proposal._tag === 'ReviewFindings' ? reason.proposal.findings : [],
+            }
+          : {}),
         /**
          * **The base every "what changed" read has to diff against — never
          * `onSha` above, and never `RunStarted.baseSha` alone** (#465).
@@ -2270,7 +2307,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // gone once its scope closed, and `provisionWorktree`'s own
               // `at` check refuses rather than silently taking a branch that
               // has moved since.
-              ...(continuation !== null ? { at: continuation.onSha } : {}),
+              ...(continuation !== null
+                ? { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                : {}),
             }),
           ),
         )
@@ -3726,7 +3765,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // every ordinary pass, which starts at `admit` and walks the
           // whole spine as it always has.
           ...(continuation !== null
-            ? { from: { step: continuation.step, waive: continuation.waive, roundsSpent: continuation.roundsSpent } }
+            ? {
+                from: {
+                  step: continuation.step,
+                  waive: continuation.waive,
+                  roundsSpent: continuation.roundsSpent,
+                  ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
+                  ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
+                },
+              }
             : {}),
         }),
       )

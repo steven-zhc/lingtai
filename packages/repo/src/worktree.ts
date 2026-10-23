@@ -41,6 +41,8 @@ export interface ProvisionOptions {
    * origin since.
    */
   at?: string
+  /** The recorded remote ref carrying `at`, when it is an arm rather than the issue branch. */
+  atRef?: string
   home?: string
   /**
    * The environment every `git` child gets.
@@ -154,8 +156,13 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   // somebody may have pushed to `branch` — the agent, on a re-run, or a
   // second decision. Re-cutting from a moved branch would continue a diff
   // nobody approved, so this refuses rather than silently taking it.
-  if (options.at !== undefined && remoteHead !== options.at) {
-    throw new Error(`${options.branch} is now ${remoteHead ?? 'gone'}, not ${options.at} — the approval is stale`)
+  const checkedRef = options.atRef ?? options.branch
+  const checkedHead =
+    options.atRef === undefined
+      ? remoteHead
+      : await git(['rev-parse', '--verify', `refs/heads/${checkedRef}`], { ...run, cwd: mirror }).catch(() => null)
+  if (options.at !== undefined && checkedHead !== options.at) {
+    throw new Error(`${checkedRef} is now ${checkedHead ?? 'gone'}, not ${options.at} — the continuation is stale`)
   }
   /**
    * **Detached, and that is what lets the worktree outlive the merge lane**

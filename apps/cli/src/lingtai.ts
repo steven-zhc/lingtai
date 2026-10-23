@@ -70,6 +70,7 @@ import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
+import { grantFixRoundCommand } from './grant-fix-round.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
@@ -171,6 +172,9 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --note <text>               recorded with the approval, and required when
                                 a step still refuses the head: approving then
                                 waives each refusing step, with this as why
+  lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]
+                                run one more implementation round on saved work,
+                                then repeat the checks without waiving a refusal
   lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval
@@ -1274,6 +1278,19 @@ async function main(argv: string[]): Promise<number> {
         // `--no-merge` is absence of merging, so the flag's presence is the
         merge: !('no-merge' in flags),
       })
+    }
+    case 'grant-fix-round': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error('lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]')
+        return 2
+      }
+      if ('if-head' in flags && !flags['if-head']) {
+        console.error('--if-head takes the displayed commit SHA')
+        return 2
+      }
+      return grantFixRoundCommand({ project: positional[0], issue, ifHead: flags['if-head'] })
     }
     case 'approve': {
       const { positional, flags } = parseFlags(rest)

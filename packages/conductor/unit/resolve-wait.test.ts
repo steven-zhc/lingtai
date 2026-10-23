@@ -60,6 +60,180 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
 }
 
 describe('resolveWait', () => {
+  it('refuses a WIP-only arm but grants the clean branch head beside a WIP arm', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 539)
+    const item = makeStream(ticketId)
+    const run = aRun('pass-539')
+    const waitId = aWaitId()
+    await seed(store, ticketId, [
+      ...aClaim(item, run.runId),
+      ...aWait(
+        item,
+        {
+          _tag: 'ProposedEscalated',
+          run: aRunRef(run.runId),
+          proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+          because: { _tag: 'NotAsked' },
+        },
+        waitId,
+      ),
+    ])
+    await seed(store, run.runId, [
+      run.event('RunRefsPublished', {
+        branch: 'agent/539',
+        arm: 'agent/539-attempt-1',
+        headSha: SHA2,
+        armSha: SHA2,
+        branchCarries: false,
+        outcome: 'arm-only',
+        detail: null,
+      }),
+      run.event('RunKeptUncommitted', {
+        arm: 'agent/539-attempt-1',
+        sha: SHA2,
+        parentSha: SHA,
+        stoppedBy: 'out-of-turns',
+        files: 1,
+        insertions: 1,
+        deletions: 0,
+      }),
+    ])
+    const grant = (remote: string | null, selectedStore: EventStore = store) =>
+      resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          by: 'human:steven',
+          client: fakeClient(remote),
+          store: selectedStore,
+        },
+        ticketId,
+      )
+    expect(await grant(SHA2)).toMatchObject({
+      ok: false,
+      reason: 'wip-head',
+      detail: expect.stringContaining('clean commit'),
+    })
+    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toBeNull()
+    await store.append(run.runId, (await store.read(run.runId)).length, [
+      {
+        type: 'RunRefsPublished',
+        actor: 'conductor',
+        data: run.event('RunRefsPublished', {
+          branch: 'agent/539',
+          arm: 'agent/539-attempt-2',
+          headSha: SHA,
+          armSha: SHA2,
+          branchCarries: true,
+          outcome: 'published',
+          detail: null,
+        }).data,
+      },
+    ])
+    expect(await grant(SHA2)).toMatchObject({ ok: false, reason: 'stale' })
+    expect(
+      await resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
+        ticketId,
+      ),
+    ).toMatchObject({ ok: false, reason: 'stale', detail: expect.stringContaining('displayed') })
+    const unschedulable: EventStore = {
+      ...store,
+      append: async (streamId, expectedVersion, events) => {
+        if (streamId === CONTROL_STREAM) throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+        return store.append(streamId, expectedVersion, events)
+      },
+    }
+    expect(await grant(SHA, unschedulable)).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
+    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
+      _tag: 'GrantFixRound',
+      onSha: SHA,
+      ref: 'agent/539',
+    })
+    expect(reduceTicket(await store.read(ticketId)).lifecycle).toMatchObject({
+      status: 'approved',
+      runId: run.runId,
+      onSha: SHA,
+      grantRef: 'agent/539',
+    })
+    expect(
+      await resolveWaitHolding(
+        {
+          ticketId,
+          issue: 539,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
+        ticketId,
+      ),
+    ).toMatchObject({ ok: false, reason: 'not-blocked' })
+    expect(await grant(SHA)).toEqual({ ok: true, ticketId })
+    expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
+    expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
+  })
+
+  it('refuses an arm-only head so a fix cannot overwrite a diverged issue branch', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 540)
+    const item = makeStream(ticketId)
+    const run = aRun('pass-arm-only')
+    const waitId = aWaitId()
+    await seed(store, ticketId, [
+      ...aClaim(item, run.runId),
+      ...aWait(
+        item,
+        {
+          _tag: 'ProposedEscalated',
+          run: aRunRef(run.runId),
+          proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+          because: { _tag: 'NotAsked' },
+        },
+        waitId,
+      ),
+    ])
+    await seed(store, run.runId, [
+      run.event('RunRefsPublished', {
+        branch: 'agent/540',
+        arm: 'agent/540-attempt-1',
+        headSha: SHA,
+        outcome: 'arm-only',
+        detail: 'issue branch lease refused',
+      }),
+    ])
+    const result = await resolveWaitHolding(
+      {
+        ticketId,
+        issue: 540,
+        waitId,
+        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+        by: 'human:steven',
+        client: fakeClient(SHA),
+        store,
+      },
+      ticketId,
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'branch-diverged',
+      detail: expect.stringContaining('agent/540-attempt-1'),
+    })
+    expect((await store.read(ticketId)).filter((event) => event.type === 'WaitResolved')).toHaveLength(0)
+  })
+
   it('refuses a stale waitId — the item is blocked on a different wait', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 1)

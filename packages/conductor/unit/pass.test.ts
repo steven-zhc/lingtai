@@ -1532,6 +1532,80 @@ describe('every step that does not pass arrives at proposed', () => {
   })
 })
 
+describe('a granted fix round', () => {
+  it('runs one implement call and holds on a red build even when the recipe has spare rounds', async () => {
+    let implementations = 0
+    const { bodies } = watching()
+    const { emit, seen } = events()
+    const { actionsAt } = watchingActions({
+      implement: [
+        {
+          ...committedSomething('fix'),
+          run: async () => {
+            implementations += 1
+            return { ...PASSED, head: COMMITTED }
+          },
+        },
+      ],
+      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
+    })
+
+    const result = await runPass({
+      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      from: {
+        step: 'implement',
+        waive: [],
+        roundsSpent: 1,
+        grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+      },
+    })
+
+    expect(implementations).toBe(1)
+    expect(seen.filter((event) => event.type === 'StepStarted' && event.data.step === 'implement')).toMatchObject([
+      { data: { round: 1 } },
+    ])
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
+  })
+
+  it('keeps the granted round cap after an intervening human approval', async () => {
+    let implementations = 0
+    const { bodies } = watching()
+    const { emit } = events()
+    const { actionsAt } = watchingActions({
+      implement: [
+        {
+          ...committedSomething('fix'),
+          run: async () => {
+            implementations += 1
+            return { ...PASSED, head: COMMITTED }
+          },
+        },
+      ],
+      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
+    })
+
+    const result = await runPass({
+      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      from: { step: 'build', waive: [], roundsSpent: 1, roundLimit: 1 },
+    })
+
+    expect(implementations).toBe(0)
+    expect(result.end._tag).toBe('WaitOnPerson')
+    expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
+  })
+})
+
 describe('proposed routes on the way through as well as on the way back', () => {
   /**
    * **`review` refuses with its findings, and the step still ends `passed`**

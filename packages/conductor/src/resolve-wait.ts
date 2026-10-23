@@ -27,6 +27,7 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
+  type PayloadOf,
   reduceRun,
   reduceTicket,
   type RunState,
@@ -182,10 +183,13 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // `resolve-wait.test.ts`'s own check holds to — and asks only for the
   // row the first one was owed.
   if (
-    options.resolution._tag === 'Approve' &&
+    (options.resolution._tag === 'Approve' || options.resolution._tag === 'GrantFixRound') &&
     item.lifecycle.status === 'approved' &&
     item.lifecycle.waitId === options.waitId &&
-    item.lifecycle.onSha === options.resolution.onSha
+    (options.resolution._tag === 'GrantFixRound'
+      ? item.lifecycle.grantRef !== undefined &&
+        (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
+      : item.lifecycle.onSha === options.resolution.onSha)
   ) {
     const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
@@ -213,8 +217,82 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
-  if (options.resolution._tag === 'Approve') {
-    const refused = await checkApprove(options, store, ticketId, block.runId, options.resolution.onSha, note)
+  let resolution = options.resolution
+  if (resolution._tag === 'GrantFixRound') {
+    if (block.runId === null)
+      return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
+    const events = await store.read(block.runId)
+    const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
+    const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
+    // A WIP commit on the arm does not taint the clean head already published
+    // on the issue branch. Continue that head; never cut from the WIP arm.
+    const cleanBranch =
+      saved !== undefined &&
+      (saved.outcome === 'published' || saved.outcome === 'already-published') &&
+      saved.branchCarries !== false
+    if (saved?.armSha != null && !cleanBranch) {
+      const recorded = events.some(
+        (e) =>
+          e.type === 'RunKeptUncommitted' &&
+          (e.data as PayloadOf<'RunKeptUncommitted'>).sha === saved.armSha &&
+          (e.data as PayloadOf<'RunKeptUncommitted'>).arm === saved.arm,
+      )
+      return {
+        ok: false,
+        ticketId,
+        reason: recorded ? 'wip-head' : 'unrecorded-wip',
+        detail: recorded
+          ? `Run ${block.runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
+          : `Run ${block.runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
+      }
+    }
+    if (saved?.outcome === 'arm-only') {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'branch-diverged',
+        detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
+      }
+    }
+    const head = cleanBranch ? saved.headSha : null
+    const ref = cleanBranch ? saved.branch : null
+    if (!head || !ref) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-saved-head',
+        detail: `Run ${block.runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+      }
+    }
+    if (resolution.onSha && resolution.onSha !== head) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `The saved head is ${head}, not the displayed ${resolution.onSha}. Reload this wait before granting a round.`,
+      }
+    }
+    if (options.client === undefined)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-client',
+        detail: 'A remote ref check is required before granting a fix round.',
+      }
+    const remote = await options.client.refSha(`heads/${ref}`).catch(() => null)
+    if (remote !== head) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh pass.`,
+      }
+    }
+    resolution = { _tag: 'GrantFixRound', onSha: head, ref }
+  }
+
+  if (resolution._tag === 'Approve') {
+    const refused = await checkApprove(options, store, ticketId, block.runId, resolution.onSha, note)
     if (refused !== null) return refused
   }
 
@@ -226,7 +304,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
         data: parsePayload('WaitResolved', {
           waitId: options.waitId,
           by: options.by,
-          resolution: options.resolution,
+          resolution,
           note,
         }),
       },
@@ -265,7 +343,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
   // a reason to say the approval itself did not happen.
   let unscheduled: string | undefined
-  if (options.resolution._tag === 'Approve') {
+  if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') {
     const parsed = parseTicketStream(ticketId)
     if (parsed !== null) {
       unscheduled =

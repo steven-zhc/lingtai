@@ -90,12 +90,52 @@ describe('allowedResolutions', () => {
 
     it('BuildRed: Requeue, EditBodyAndRequeue, Close — no Approve, a red build cannot be merged', () => {
       const reason = parseProposed({ _tag: 'BuildRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
     })
 
     it('ReviewFindings: Approve, Requeue, EditBodyAndRequeue, Close', () => {
-      const reason = parseProposed({ _tag: 'ReviewFindings', findings: [] })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+      const reason = parseProposed({
+        _tag: 'ReviewFindings',
+        findings: [
+          {
+            file: 'src/index.ts',
+            line: 1,
+            claim: 'the fix fails',
+            failureScenario: 'input is empty',
+            severity: 'major',
+          },
+        ],
+      })
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+    })
+
+    it('does not offer a grant without a recorded failure criterion', () => {
+      expect(allowedResolutions(parseProposed({ _tag: 'ReviewFindings', findings: [] }))).not.toContain('GrantFixRound')
+      expect(allowedResolutions(parseProposed({ _tag: 'BuildRed', output: '  ' }))).not.toContain('GrantFixRound')
+    })
+
+    it('does not offer a grant when the issue branch push failed, even if the arm was published', () => {
+      const proposal = { _tag: 'BuildRed' as const, output: 'typecheck failed' }
+      const base = { _tag: 'ProposedEscalated' as const, proposal, because }
+      expect(
+        allowedResolutions({
+          ...base,
+          run: { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'push failed' } },
+        }),
+      ).not.toContain('GrantFixRound')
+      expect(
+        allowedResolutions({
+          ...base,
+          run: {
+            runId: 'pass-1',
+            unpushed: {
+              branch: 'agent/1',
+              said: 'branch push failed',
+              keptAt: { _tag: 'Arm', ref: 'refs/heads/agent/1-attempt-1', sha: 'abc' },
+            },
+          },
+        }),
+      ).not.toContain('GrantFixRound')
     })
 
     it('ReviewEmpty: Approve, Requeue, EditBodyAndRequeue, Close', () => {
@@ -121,7 +161,7 @@ describe('allowedResolutions', () => {
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'VerifyRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
     })
 
     it('every Proposal tag is covered above', () => {
