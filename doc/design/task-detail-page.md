@@ -18,14 +18,22 @@ page keeps whatever lane its item is in, which 0118 does not restate.
   body's opening lines collapsed, with a link to the whole of it. No structure
   in the body is assumed.
 - **Where it is** — the ten-step rail ([the-card.md](the-card.md)) and one line
-  under it: what refused, the rounds spent, the restarts left. Composed from the
-  log on every render, never generated.
+  under it: what refused, automatic rounds spent, human-granted rounds and
+  their spend, and restarts left. Composed from the log on every render, never
+  generated. A grant adds one paid round; it does not change the recipe's limit.
 - **Triage** — `HoldTriaged`'s cause, questions and recommended move, shown only
   while the block it names is the current one (0118 §3, §9). Where the recipe
   declares no `triage:`, this band is absent and the holder's own words stand in
   its place. Discussion sits under it.
 - **The moves** — by kind of hold (0118 §1, §6). Unpushed work goes above
-  everything else on the page.
+  everything else on the page. The resolution cards say where each move starts
+  and what it costs: **Continue fixing current work** is available only for a
+  fixable refusal with saved work still at its recorded head. It buys one
+  `implement` round there, subject to that run's limits, then repeats `build`,
+  `review` and `proposed` before merge; it waives no refusal. **Start over from
+  base** requeues for a new pass with the recipe's rounds, leaves the saved work
+  behind, and neither spends nor refunds an automatic restart ([#426](https://github.com/steven-zhc/lingtai/issues/426),
+  0108 §8, 0118 §7).
 - **The record** — History, Diff, Findings, Attempts and Ticket, as tabs.
 
 An item that is not held has no triage and no moves: the ticket, where it is,

@@ -102,14 +102,19 @@ fixes the bounds and the endings that router works inside.
    dollar ceiling on one run, with no default — and where it is declared the
    automatic ceiling gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
    printed beside the time figure rather than in place of it. Absent, the
-   sentence is unchanged, character for character. A person's explicit grant
-   authorizes exactly one additional `implement` round on the preserved branch;
-   it does not change `runtime.limits.rounds` or authorize another automatic
-   round. The grant and the extra run's spend are recorded and visible. Another
-   round needs another decision. Each granted run still obeys its own `turns`,
-   `wall` and, when declared, `usd` ceilings. Like any round (§3), its result
-   passes `build`, `review` and `proposed` again before the merge lane may land
-   it ([0118](0118-a-hold-explains-itself.md) §1, §11).
+   sentence is unchanged, character for character. A person's `GrantFixRound`
+   ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
+   one additional `implement` round on saved work when the wait has a fixable
+   refusal with evidence and a recorded remote ref. The ref must still exist at
+   the saved head sha; a missing or moved ref refuses the grant. It does not
+   change `runtime.limits.rounds`, authorize another automatic round, or waive
+   the refusal. The grant and the extra run's spend are recorded and visible;
+   another round needs another decision. Each granted run still obeys its own
+   `turns`, `wall` and, when declared, `usd` ceilings. Like any round (§3), its
+   result passes `build`, `review` and `proposed` again before the merge lane
+   may land it ([0118](0118-a-hold-explains-itself.md) §1, §11). A person's
+   `Requeue` instead starts a new pass from base with the recipe's rounds; it
+   neither spends nor refunds an automatic restart (0118 §7).
 
 9. **A minor finding does not refuse; it is filed.** `verdictFor`
     (`packages/actions/src/agent-action.ts`) refuses on a `blocker` or `major` and
