@@ -1269,7 +1269,7 @@ it('does not offer a continuation button for missing or moved saved work', () =>
 it('uses triage advice to recommend a choice without granting it', () => {
   const advice = (
     cause: { _tag: 'FixableLines'; fixes: [] } | { _tag: 'WrongApproach' },
-    resolution: 'GrantFixRound' | 'Requeue',
+    resolution: 'GrantFixRound' | 'Requeue' | 'Approve',
   ) => ({
     _tag: 'Done' as const,
     result: {
@@ -1288,6 +1288,9 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
   expect(wrong.indexOf('data-resolution="Requeue"')).toBeLessThan(wrong.indexOf('data-resolution="GrantFixRound"'))
   expect(wrong).toContain('Start over from base')
+  const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
+  expect(waiver).toContain('approval, which waives the refusal')
+  expect(waiver).not.toContain('sresolution--recommended')
 })
 
 function closeOn(standing: StandingView): { key: string | null; prefill: string | null | undefined } {

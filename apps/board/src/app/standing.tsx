@@ -208,7 +208,9 @@ export function TriageBand({
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
-            Recommends {RESOLUTION_COPY[result.resolution].title}
+            {cause._tag === 'FixableLines' && result.resolution === 'Approve'
+              ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the red gate when saved work is available.'
+              : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
             {result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
@@ -514,10 +516,17 @@ export function Standing({
   const sendable =
     outgoing !== null && outgoing.problem === null && !allowed.includes('AnswerQuestion') ? outgoing.attempt : null
 
-  const advised =
+  const rawAdvice =
     standing.reason !== null && standing.triageStatus !== null
       ? recommendedResolution(standing.reason, standing.triageStatus)
       : null
+  const advised =
+    standing.triageStatus?._tag === 'Done' &&
+    standing.triageStatus.result._tag === 'TriageAdvised' &&
+    standing.triageStatus.result.cause._tag === 'FixableLines' &&
+    rawAdvice === 'Approve'
+      ? null
+      : rawAdvice
   const recommended =
     advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork) ? 'Requeue' : advised
   const triageRecommended =
