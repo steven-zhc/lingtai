@@ -184,7 +184,7 @@ which kind a wait was got inferred again in each place that needed it, from
      type TriageResult =
        | { _tag: 'TriageFailed'; why: string }
        | { _tag: 'TriageAdvised'; cause: RootCause; resolution: TriageAdvice; summary: string; want: string | null }
-     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' | 'ExtraRound' | 'ContinueConflict' | 'Split' // a Resolution's tag, never AnswerQuestion
+     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' | 'GrantFixRound' | 'ContinueConflict' | 'Split' // a Resolution's tag, never AnswerQuestion
      type TriageStatus =
        // derived on read, never stored
        | { _tag: 'NotNeeded' }
@@ -252,11 +252,11 @@ which kind a wait was got inferred again in each place that needed it, from
      | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                                           | —                              |
      | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                                       | —                              |
      | `SignoffRequired`                                                        | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                            | its step, the signoff `Waived` |
-     | `CheckRefused`                                                           | `Approve`, `ExtraRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                              | its step, the check `Waived`   |
-     | `FixerDisagrees`                                                         | `Approve`, `ExtraRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                              | `proposed`                     |
-     | `ProposedEscalated` over `ReviewFindings`                                 | `Approve`, `ExtraRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                    | `proposed`                     |
+     | `CheckRefused`                                                           | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | its step, the check `Waived`   |
+     | `FixerDisagrees`                                                         | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | `proposed`                     |
+     | `ProposedEscalated` over `ReviewFindings`                                 | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                 | `proposed`                     |
      | `ProposedEscalated` over `ReviewEmpty`                                    | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                          | `proposed`                     |
-     | `ProposedEscalated` over `BuildRed` or `VerifyRed`                        | `ExtraRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                               | —                              |
+     | `ProposedEscalated` over `BuildRed` or `VerifyRed`                        | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                            | —                              |
      | `ProposedEscalated` over `MergeConflict`                                 | `ContinueConflict`, `Requeue`, `Close`                                                      | —                              |
      | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                                     | —                              |
      | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
@@ -272,14 +272,21 @@ which kind a wait was got inferred again in each place that needed it, from
        `BudgetExhausted`, `AnswerUnreadable` or `SetupRefused`, likewise. Only
        its own `ReviewFindings`, `ReviewEmpty`, `BuildRed`, `VerifyRed`,
        `MergeConflict` and `InputNeeded` follow their rows above.
-     - `GrantFixRound` is offered for fixable review findings, a red build or a
-       red verification with work preserved on a recorded remote ref. It runs one more
-       `implement` round under 0108 §8's per-run limits and gates, never waives
-       the refusal. A missing or moved ref refuses the grant. It is unavailable when there is no branch to fix or no
-       criterion for a fixer. `Split` is offered on waits where an oversized
-       ticket may be the cause. Its child plan still needs the person's concrete
-       approval (§12); triage may recommend it at the first wait, without
-       waiting for the round budget to run out.
+     - `GrantFixRound` is offered for fixable review findings (including a fixer
+       that disagreed), a red build or verification, or a check refusal with
+       evidence, with work preserved on a recorded remote ref. It authorizes
+       exactly one additional `implement` round on that saved head under
+       [0108](0108-a-refusal-buys-a-round.md) §8, subject to that run's `turns`,
+       `wall` and declared `usd` limits. It changes no recipe limit and waives no
+       refusal. The ref must still exist at the recorded head sha when the
+       grant is used; a missing or moved ref refuses it. No branch to fix or no
+       criterion for a fixer means no grant. The grant and the round's spend
+       are logged separately; another round needs another decision. The result
+       visits `build`, `review` and `proposed` again before merge (§11).
+     - `Split` is offered on waits where an oversized ticket may be the cause.
+       Its child plan still needs the person's concrete approval (§12); triage
+       may recommend it at the first wait, without waiting for the round budget
+       to run out.
      - `ProposedEscalated` over `BuildRed`, `VerifyRed`, `MergeConflict` or
        `InputNeeded` has no `Approve`. Merging a red build would break _every
        path into `end` has been through `build`_; a conflict needs a confirmed
@@ -457,9 +464,11 @@ which kind a wait was got inferred again in each place that needed it, from
      what makes the close box start filled — still a box the person can
      clear, which still refuses.
 
-7. **A requeue keeps its meaning.** A person's requeue is a new pass cut from
-   the base, with the recipe's rounds again. It does not spend a restart and
-   does not refund one: restarts are counted from
+7. **A requeue keeps its meaning.** A person's `Requeue` is a new pass cut from
+   the base, with the recipe's rounds again. It leaves the saved work behind;
+   `GrantFixRound` instead continues that work for one paid `implement` round
+   under §1 and 0108 §8. A requeue does not spend or refund an automatic
+   restart: restarts are counted from
    `TicketReleased{cause: Restart}` (0120 §5), and a person's requeue
    releases with `cause: ByPerson`. Every cost line on the page says so.
 
@@ -520,8 +529,9 @@ which kind a wait was got inferred again in each place that needed it, from
       (`:216`) and by sha (`:228`), and neither is lost.
     - It checks the resolution against `allowedResolutions` and acts: a requeue
       releases the item, a close closes it, an answer is written into the body
-      (§6), an extra round continues the preserved branch (0108 §8), conflict
-      continuation follows §8, and a split follows §12. `WaitResolved` records
+      (§6), `GrantFixRound` continues the preserved branch for one round
+      (0108 §8), conflict continuation follows §8, and a split follows §12.
+      `WaitResolved` records
       the completed choice; a partial split cannot resolve the wait.
     - **An approval continues the same run** with
       `runPass({…, from: {step, approved: waitId}})`, at the step in §1's

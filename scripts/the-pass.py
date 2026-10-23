@@ -219,6 +219,11 @@ EN = dict(
     s4p2="<b>Nothing here bounds what you are asked.</b> A step that did not "
          "finish — an agent that stopped to ask, a reviewer that crashed — buys "
          "no round, because it passed no judgement on your change.",
+    s4p3="A person's extra fix-round grant pays for <b>one more</b> agent run on "
+         "saved work. It does not raise the recipe's <code>rounds</code> limit; "
+         "another round needs another decision. That run still has its own "
+         "<code>turns</code> and <code>wall</code> limits (and a dollar limit "
+         "where declared).",
 
     s5h="When it stops and waits for you",
     s5l="One place to look, however it got there.",
@@ -240,6 +245,16 @@ EN = dict(
     gap2="And <code>end</code> still runs. Closing the ticket yourself is an "
          "outcome like any other, and the step that tidies up runs on every "
          "outcome rather than only on the happy one.",
+    choice_h="Two ways forward",
+    choice_p="<b>Continue fixing current work</b> is offered when there is a "
+             "fixable refusal and the saved branch is still at its recorded "
+             "commit. Your grant buys one paid fix round there; it waives no "
+             "refusal, and the result runs through <code>build</code>, "
+             "<code>review</code> and <code>proposed</code> again before merge. "
+             "A missing or moved saved branch cannot continue this way. "
+             "<b>Start over from base</b> requeues the ticket for a new pass "
+             "with the recipe's rounds. It leaves the saved work behind and "
+             "neither spends nor refunds an automatic restart.",
 
     foot="Generated from scripts/the-pass.py · Lingtai",
     f1_alt="One pass from claim to end. Ten steps on a spine; four of them may "
@@ -364,6 +379,10 @@ ZH = dict(
     s4p2="<b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— "
          "agent 停下来问、reviewer 崩了 —— 不买任何一轮，"
          "因为它对你的改动没有做出任何裁决。",
+    s4p3="人额外批准的一轮修复，是在保存的改动上再付费运行 <b>一次</b> agent。"
+         "这不会提高 recipe 的 <code>rounds</code> 上限；再来一轮还须再决定。"
+         "这次运行仍受自己的 <code>turns</code>、<code>wall</code> 以及已声明的"
+         "金额上限约束。",
 
     s5h="它什么时候停下来等你",
     s5l="一个去处，不管它怎么到的。",
@@ -381,6 +400,13 @@ ZH = dict(
          "冲突的那些路径。你不该为了搞清一张票为什么在等而去翻日志。",
     gap2="而且 <code>end</code> 照样会跑。你自己把票关掉，也是一种结局；"
          "那个负责收尾的步对每一种结局都跑，而不是只对顺利的那一种。",
+    choice_h="两种继续方式",
+    choice_p="<b>继续修复当前改动</b>只在拒绝有可修复的依据、保存的分支仍指向记录的"
+             "提交时提供。你的批准在这份改动上购买一轮付费修复；它不豁免任何拒绝，"
+             "结果还须重新经过 <code>build</code>、<code>review</code> 和 "
+             "<code>proposed</code> 才能合并。保存的分支丢失或移动后，不能这样继续。"
+             "<b>从 base 重新开始</b>则把票重新排队，从 base 开始一趟新 pass，"
+             "重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。",
 
     foot="由 scripts/the-pass.py 生成 · 灵台",
     f1_alt="一趟 pass，从 claim 到 end。主干上十步，其中四步会拒绝 —— prepared、"
@@ -605,6 +631,7 @@ def page(T, other):
     <p class="lede">{T['s4l']}</p>
     <p>{T['s4p']}</p>
     <p>{T['s4p2']}</p>
+    <p>{T['s4p3']}</p>
   </section>
 
   <section>
@@ -620,6 +647,8 @@ def page(T, other):
       <p>{T['gap1']}</p>
       <p>{T['gap2']}</p>
     </div>
+    <h3>{T['choice_h']}</h3>
+    <p>{T['choice_p']}</p>
   </section>
 
   <footer>

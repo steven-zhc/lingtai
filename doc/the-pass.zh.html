@@ -432,6 +432,7 @@
     <p class="lede">四个数，前三个会被第四个乘一遍。</p>
     <p>把它当算术读：一趟 pass 最多 <code>rounds + 1</code> 次 agent run，每次由 <code>turns</code> 和 <code>wall</code> 封顶 —— 而 <code>restarts</code> 是一张票最多买几趟 pass。<code>lingtai add</code> 会在任何东西跑起来之前把这笔总账打印给你。</p>
     <p><b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— agent 停下来问、reviewer 崩了 —— 不买任何一轮，因为它对你的改动没有做出任何裁决。</p>
+    <p>人额外批准的一轮修复，是在保存的改动上再付费运行 <b>一次</b> agent。这不会提高 recipe 的 <code>rounds</code> 上限；再来一轮还须再决定。这次运行仍受自己的 <code>turns</code>、<code>wall</code> 以及已声明的金额上限约束。</p>
   </section>
 
   <section>
@@ -447,6 +448,8 @@
       <p>是什么拒的、为什么，用那一步自己的话 —— findings、build 的输出、冲突的那些路径。你不该为了搞清一张票为什么在等而去翻日志。</p>
       <p>而且 <code>end</code> 照样会跑。你自己把票关掉，也是一种结局；那个负责收尾的步对每一种结局都跑，而不是只对顺利的那一种。</p>
     </div>
+    <h3>两种继续方式</h3>
+    <p><b>继续修复当前改动</b>只在拒绝有可修复的依据、保存的分支仍指向记录的提交时提供。你的批准在这份改动上购买一轮付费修复；它不豁免任何拒绝，结果还须重新经过 <code>build</code>、<code>review</code> 和 <code>proposed</code> 才能合并。保存的分支丢失或移动后，不能这样继续。<b>从 base 重新开始</b>则把票重新排队，从 base 开始一趟新 pass，重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。</p>
   </section>
 
   <footer>
