@@ -293,9 +293,14 @@ p { max-width: var(--measure); }
    contents goes *above* the document: on a phone the whole problem is the
    scroll, so a list of sections after the scroll would be furniture. */
 .doc-wrap { max-width: 84rem; }
+.tutorial-page .doc-wrap { max-width: 96rem; }
 .doc-layout {
   display: grid; gap: 36px; align-items: start; justify-content: center;
   grid-template-columns: 14rem minmax(0, 48rem) 13rem;
+}
+.tutorial-page .doc-layout {
+  gap: 24px;
+  grid-template-columns: 11rem minmax(0, 60rem) 10rem;
 }
 /* The document fills its column. A measure of about 80 characters at 16px is
    what long-form reading tolerates best; the column is that measure, so the
@@ -341,8 +346,14 @@ p { max-width: var(--measure); }
 .contents a { color: var(--ink-2); text-decoration: none; }
 .contents a:hover { color: var(--accent-ink); }
 
+@media (min-width: 1081px) and (max-width: 1240px) {
+  .tutorial-page .doc-layout { grid-template-columns: minmax(0, 1fr) 10rem; }
+  .tutorial-page .doctree { display: none; }
+}
+
 @media (max-width: 1080px) {
   .doc-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .tutorial-page .doc-layout { grid-template-columns: minmax(0, 1fr); }
   .doctree {
     position: static; max-height: 9.5rem; order: -2;
     border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; background: var(--surface);
@@ -395,13 +406,13 @@ p { max-width: var(--measure); }
 /* The tutorial is a path, not a reference page. Its source is still the same
    Markdown file the repository reads; this only makes the steps scan like the
    sequence they describe. */
-.tutorial-prose { max-width: 46rem; font-size: 16px; line-height: 1.72; }
+.tutorial-prose { font-size: 16px; line-height: 1.72; }
 .tutorial-prose h1 {
   max-width: 14ch; margin-bottom: 20px;
   font-size: clamp(36px, 5vw, 52px); line-height: 1.05;
 }
 .tutorial-prose > h1 + p {
-  max-width: 53ch; margin-bottom: 12px;
+  margin-bottom: 12px;
   color: var(--ink-2); font-size: 18px; line-height: 1.6;
 }
 .tutorial-prose blockquote {
@@ -422,8 +433,13 @@ p { max-width: var(--measure); }
   padding: 14px 10px; border: 1px solid var(--rule); border-radius: 6px;
   background: var(--surface);
 }
+.tutorial-prose img[src="/img/docs/recipe.svg"] {
+  width: min(900px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
 .tutorial-prose pre {
-  margin: 18px 0; border-left: 3px solid var(--accent);
+  max-width: 100%; margin: 18px 0; border-left: 3px solid var(--accent);
   box-shadow: 0 3px 10px rgba(15, 24, 28, .035);
 }
 .tutorial-prose details {

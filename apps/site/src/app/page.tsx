@@ -1,6 +1,6 @@
 import { readSnapshot, stamp } from '@/lib/snapshot'
 
-import { Bar, Foot, INSTALL_FALLBACK, INSTALL_URL } from './chrome'
+import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
 import { NoSnapshot, SnapshotBoard } from './snapshot-board'
 
@@ -23,15 +23,12 @@ export default async function Home() {
               <div className="install">
                 <CopyCommand command={`curl -fsSL ${INSTALL_URL} | sh`} />
                 <p className="install-note">
-                  macOS and Linux, arm64 or x64. It checks a SHA256 before it unpacks a byte, and ends at{' '}
-                  <code>lingtai init</code>. Or read it first:{' '}
+                  macOS and Linux, arm64 or x64. It checks a SHA256 before it unpacks a byte. Then run{' '}
+                  <code>lingtai init</code> to set up your project. Read{' '}
                   <a className="link" href={INSTALL_URL}>
                     the script
                   </a>{' '}
-                  ·{' '}
-                  <a className="link" href={INSTALL_FALLBACK}>
-                    from the release
-                  </a>
+                  first if you like.
                 </p>
               </div>
               <div className="hero-actions">

@@ -1,43 +1,98 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 250" role="img" aria-label="The recipe feeds three gates on the way from issue to merge: what counts as work, what must pass, and whether a person approves.">
-<style>
-:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
-@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
-text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
-.s{font-size:11.5px;fill:var(--mute)}.h{font-weight:600}.lab{font-size:11.5px;fill:var(--mute)}
-.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}
-.acc{fill:var(--accf);stroke:var(--acc);stroke-width:1.6}
-.warn{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
-.zone{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:5 4}
-.ln{fill:none;stroke:var(--line);stroke-width:1.4}.lnw{fill:none;stroke:var(--warn);stroke-width:1.4}.lna{fill:none;stroke:var(--acc);stroke-width:1.6}
-.dash{stroke-dasharray:4 3}
-</style>
-<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
-<rect class="box" x="20" y="40" width="70" height="56" rx="6"/>
-<text class="h" x="55.0" y="72.5" text-anchor="middle">Issue</text>
-<rect class="acc" x="120" y="40" width="120" height="56" rx="6"/>
-<text class="h" x="180.0" y="65.0" text-anchor="middle">Is it work?</text>
-<text class="s" x="180.0" y="81.0" text-anchor="middle">your labels</text>
-<rect class="box" x="270" y="40" width="130" height="56" rx="6"/>
-<text class="h" x="335.0" y="65.0" text-anchor="middle">Agent</text>
-<text class="s" x="335.0" y="81.0" text-anchor="middle">edits, commits</text>
-<rect class="acc" x="430" y="40" width="130" height="56" rx="6"/>
-<text class="h" x="495.0" y="65.0" text-anchor="middle">Does it pass?</text>
-<text class="s" x="495.0" y="81.0" text-anchor="middle">your checks</text>
-<rect class="acc" x="590" y="40" width="140" height="56" rx="6"/>
-<text class="h" x="660.0" y="65.0" text-anchor="middle">Do you approve?</text>
-<text class="s" x="660.0" y="81.0" text-anchor="middle">or nobody</text>
-<rect class="box" x="760" y="40" width="70" height="56" rx="6"/>
-<text class="h" x="795.0" y="72.5" text-anchor="middle">Landed</text>
-<path class="ln" d="M90 68.0 L120 68.0" marker-end="url(#a)"/>
-<path class="ln" d="M240 68.0 L270 68.0" marker-end="url(#a)"/>
-<path class="ln" d="M400 68.0 L430 68.0" marker-end="url(#a)"/>
-<path class="ln" d="M560 68.0 L590 68.0" marker-end="url(#a)"/>
-<path class="ln" d="M730 68.0 L760 68.0" marker-end="url(#a)"/>
-<rect class="box" x="120" y="160" width="610" height="46" rx="6"/>
-<text class="h" x="425.0" y="180.0" text-anchor="middle">recipe.yml</text>
-<text class="s" x="425.0" y="196.0" text-anchor="middle">~/.lingtai/&lt;project&gt;/ — local to this machine, never committed</text>
-<path class="lna dash" d="M180 160 L180 100" marker-end="url(#a)"/>
-<path class="lna dash" d="M495 160 L495 100" marker-end="url(#a)"/>
-<path class="lna dash" d="M660 160 L660 100" marker-end="url(#a)"/>
-<text class="s" x="425" y="234" text-anchor="middle">Change the recipe and you change the gates; nothing in the repository moves.</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 796 582" role="img" aria-labelledby="title desc">
+  <title id="title">Chapter Garden recipe excerpt beside Lingtai's ten steps</title>
+  <desc id="desc">Selected recipe fields, reordered to follow the pass; omitted fields mean this is not a copyable recipe. Seven short arrows link sections to steps. Design and end use defaults; repo.base also supplies the merge target.</desc>
+  <style>
+    :root{--ink:#13282e;--muted:#526970;--rule:#bed0d1;--paper:#f8fbfa;--panel:#fff;--accent:#087477;--teal:#157e82;--gold:#9b681c;--hold:#fff2d9}
+    @media(prefers-color-scheme:dark){:root{--ink:#e7f2f2;--muted:#aec3c6;--rule:#496266;--paper:#132327;--panel:#1b3034;--accent:#75d9d2;--teal:#62c4c2;--gold:#e5bb71;--hold:#46391f}}
+    text{fill:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .title{font-size:20px;font-weight:700}.sub{font-size:12px;fill:var(--muted)}
+    .path{font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:var(--accent)}
+    .code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .heading{fill:var(--accent);font-weight:700}
+    .card-title{font-size:14px;font-weight:700}.card-note{font-size:11.5px;fill:var(--muted)}
+    .num{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:var(--accent)}
+    .wire{fill:none;stroke:var(--teal);stroke-width:2;opacity:.8}.wire-hold{stroke:var(--gold)}
+    .dot{fill:var(--teal)}.dot-hold{fill:var(--gold)}
+    .panel,.card{fill:var(--panel);stroke:var(--rule);stroke-width:1.2}
+    .default{fill:var(--paper);stroke-dasharray:4 4}.hold{fill:var(--hold);stroke:var(--gold)}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--teal)"/></marker><marker id="arrow-hold" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--gold)"/></marker></defs>
+  <text class="title" x="16" y="27">The recipe fills the steps</text>
+  <text class="sub" x="16" y="46">Selected fields, reordered for the diagram; not a copyable recipe.</text>
+  <rect class="panel" x="14" y="64" width="442" height="504" rx="7"/>
+  <text class="path" x="28" y="86">~/.lingtai/chapter-garden/recipe.yml</text>
+  <path d="M28 97H441" stroke="var(--rule)"/>
+  <text class="path" x="510" y="86">LINGTAI · ONE TICKET</text>
+<path class="wire" d="M449 151 C471 151, 483 130, 507 130" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="151" r="2.5"/>
+<path class="wire" d="M449 223 C471 223, 483 175, 507 175" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="223" r="2.5"/>
+<path class="wire" d="M449 295 C471 295, 483 220, 507 220" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="295" r="2.5"/>
+<path class="wire" d="M449 343 C471 343, 483 310, 507 310" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="343" r="2.5"/>
+<path class="wire" d="M449 391 C471 391, 483 355, 507 355" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="391" r="2.5"/>
+<path class="wire" d="M449 463 C471 463, 483 400, 507 400" marker-end="url(#arrow)"/>
+<circle class="dot" cx="449" cy="463" r="2.5"/>
+<path class="wire wire-hold" d="M449 511 C471 511, 483 445, 507 445" marker-end="url(#arrow-hold)"/>
+<circle class="dot-hold" cx="449" cy="511" r="2.5"/>
+<text class="code" x="28" y="132">version: 2</text>
+<text class="code heading" x="28" y="156">source:</text>
+<text class="code" x="43" y="180">tickets: db</text>
+<text class="code" x="43" y="204">kinds: [bug, feature, documentation]</text>
+<text class="code heading" x="28" y="228">repo:</text>
+<text class="code" x="43" y="252">base: tutorial-steven-20261022141656</text>
+<text class="code heading" x="28" y="276">steps:</text>
+<text class="code heading" x="43" y="300">prepared:</text>
+<text class="code" x="58" y="324">- run: npm ci</text>
+<text class="code heading" x="43" y="348">implement:</text>
+<text class="code" x="58" y="372">- agent: codex</text>
+<text class="code heading" x="43" y="396">build:</text>
+<text class="code" x="58" y="420">- run: npm run check</text>
+<text class="code" x="58" y="444">- run: npm run build</text>
+<text class="code heading" x="43" y="468">review:</text>
+<text class="code" x="58" y="492">- agent: codex</text>
+<text class="code heading" x="43" y="516">proposed:</text>
+<text class="code" x="58" y="540">- human: Land this? …</text>
+<rect class="card" x="510" y="112" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="127">01</text>
+<text class="card-title" x="550" y="128">claim</text>
+<text class="card-note" x="550" y="142">db tickets + labels</text>
+<rect class="card" x="510" y="157" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="172">02</text>
+<text class="card-title" x="550" y="173">admit</text>
+<text class="card-note" x="550" y="187">worktree from base</text>
+<rect class="card" x="510" y="202" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="217">03</text>
+<text class="card-title" x="550" y="218">prepared</text>
+<text class="card-note" x="550" y="232">npm ci</text>
+<rect class="card default" x="510" y="247" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="262">04</text>
+<text class="card-title" x="550" y="263">design</text>
+<text class="card-note" x="550" y="277">default</text>
+<rect class="card" x="510" y="292" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="307">05</text>
+<text class="card-title" x="550" y="308">implement</text>
+<text class="card-note" x="550" y="322">Codex writes</text>
+<rect class="card" x="510" y="337" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="352">06</text>
+<text class="card-title" x="550" y="353">build</text>
+<text class="card-note" x="550" y="367">check + build</text>
+<rect class="card" x="510" y="382" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="397">07</text>
+<text class="card-title" x="550" y="398">review</text>
+<text class="card-note" x="550" y="412">Codex reviews</text>
+<rect class="card hold" x="510" y="427" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="442">08</text>
+<text class="card-title" x="550" y="443">proposed</text>
+<text class="card-note" x="550" y="457">wait for approval</text>
+<rect class="card" x="510" y="472" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="487">09</text>
+<text class="card-title" x="550" y="488">merge</text>
+<text class="card-note" x="550" y="502">land on base</text>
+<rect class="card default" x="510" y="517" width="270" height="37" rx="5"/>
+<text class="num" x="521" y="532">10</text>
+<text class="card-title" x="550" y="533">end</text>
+<text class="card-note" x="550" y="547">default</text>
 </svg>

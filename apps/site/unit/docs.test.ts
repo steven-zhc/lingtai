@@ -110,9 +110,8 @@ describe('the tutorial stays a first-run path', () => {
       'Before you start',
       'Step 1 — Set up this machine',
       'Step 2 — Open one ticket',
-      'Step 3 — Check the queue, then start',
-      'Step 4 — Read the result',
-      'Next: make it yours',
+      'Step 3 — Run the agent and checks',
+      'Step 4 — Approve and confirm',
     ])
   })
 })
@@ -146,6 +145,12 @@ describe('what a document says it is', () => {
 describe('where a link inside a document goes', () => {
   const isPublished = (file: string) =>
     ['tutorial.md', 'decisions-archive/0022-the-seams.md', 'decisions-archive/0016-the-settled-model.md'].includes(file)
+
+  it('opens the tutorial diagram from the same site build as the page', async () => {
+    const tutorial = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
+    expect(tutorial).toContain('[Open the diagram at full size](img/recipe.svg)')
+    expect(resolveHref('tutorial.md', 'img/recipe.svg', isPublished)).toBe('/img/docs/recipe.svg')
+  })
 
   it('sends a link between two projected documents to its route here', () => {
     expect(resolveHref('decisions-archive/0022-the-seams.md', '0016-the-settled-model.md', isPublished)).toBe(
