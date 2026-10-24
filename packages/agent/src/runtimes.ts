@@ -45,8 +45,8 @@ export interface RuntimeOptions {
    * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §1) — no
    * worktree, no hook, no gates, and therefore **no tools at all**. Claude Code's
    * row turns it into `--permission-mode default` beside a settings file that
-   * denies every tool by name; **Codex's row refuses it**, because Codex has no
-   * way to say it (`ToolsCannotBeDenied`).
+   * denies every tool by name; Codex uses the separately configured model-only
+   * API route or refuses it by name (`ToolsCannotBeDenied`).
    */
   tools?: 'full' | 'none'
 }
@@ -111,6 +111,7 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
      * Nothing else in the binary closes it: the `[permissions]` filesystem table
      * did not restrict reads under `-s` when tried, and `enabled_tools` /
      * `disabled_tools` are MCP server keys and not the built-in shell.
+     * The model-only Responses path below never launches this binary.
      */
     if (options.tools === 'none') {
       let configured: CodexTextOptions | undefined = options.codexText
@@ -123,6 +124,16 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
         }
       }
       if (!configured) throw new ToolsCannotBeDenied('codex')
+      const { apiKey, model, maxOutputTokens, maxUsd, inputUsdPerMillion, outputUsdPerMillion } = configured.config
+      if (
+        !apiKey ||
+        !model ||
+        !Number.isSafeInteger(maxOutputTokens) ||
+        maxOutputTokens <= 0 ||
+        [maxUsd, inputUsdPerMillion, outputUsdPerMillion].some((value) => !Number.isFinite(value) || value <= 0)
+      ) {
+        throw new ToolsCannotBeDenied('codex')
+      }
       return createCodexTextRuntime(configured)
     }
     return createCodexRuntime({

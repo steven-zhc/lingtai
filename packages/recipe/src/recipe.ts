@@ -2824,19 +2824,17 @@ const Version = z
  * run is refused when the recipe resolves rather than at the call a person is
  * watching (0070 §3, `#243`).
  *
- * Today that subset is `["claude-code"]`: `@lingtai/agent`'s `RUNTIMES` table
- * has one row that can be given no tools, and Codex's throws
- * `ToolsCannotBeDenied` — measured on codex-cli 0.155.1, `-s read-only`
- * forbids writes and forbids nothing else, so the agent would keep a shell and
- * read access to the whole machine while a discussion's whole containment is
- * *no tools at all* (0033 §1).
+ * Codex qualifies through its separately configured model-only API route.
+ * Without explicit API approval and configuration its row throws
+ * `ToolsCannotBeDenied` before dispatch. Codex CLI's `-s read-only` remains
+ * unsuitable: it leaves shell and host-file reads available (0033 §1).
  *
  * **Not read off `@lingtai/agent`.** `packages/recipe/package.json` depends on
  * `@lingtai/domain`, `@lingtai/env`, `picomatch` and `yaml`, and answering this
  * by importing the agent package would give the recipe a dependency on every
  * runtime adapter to name three letters. `apps/cli/unit/discuss-agent.test.ts`
  * pins the two against each other instead — it constructs every `RuntimeId`
- * with `tools: "none"` and asserts that the ones which do not throw are
+ * with `tools: "none"` and test-only API configuration, then asserts that the ones which do not throw are
  * exactly this enum's options — so a runtime that gains the ability to be
  * given no tools is a test failure there rather than a schema this file
  * forgot to widen.
