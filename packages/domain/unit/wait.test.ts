@@ -163,7 +163,7 @@ describe('allowedResolutions', () => {
         baseSha: 'abc',
         headSha: 'def',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'ContinueConflict'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'ContinueConflict'])
     })
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {

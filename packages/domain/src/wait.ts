@@ -297,6 +297,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'VerifyRed':
           return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
         case 'MergeConflict':
+          // 0118 §1: `ContinueConflict`, `Requeue`, `Close` — no body edit.
+          return ['Requeue', 'Close']
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
         // `#471`'s seven, each given the direct `WaitReason` variant's own
