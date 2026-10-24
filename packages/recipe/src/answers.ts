@@ -7,6 +7,7 @@
  * that it resolves. `apps/cli/src/landing.ts` asks the questions and calls
  * `setRecipe`; this is the one place both of those tests import.
  */
+import { UNBOUNDED } from './duration.ts'
 import type { RecipeChange } from './emit.ts'
 import type { TicketSource } from './recipe.ts'
 
@@ -93,6 +94,17 @@ export function landingChanges(
 /** `runtime.limits.rounds` — how many times a pass sends the agent back. */
 export function roundsChange(rounds: number): RecipeChange {
   return { path: ['runtime', 'limits', 'rounds'], value: rounds }
+}
+
+/**
+ * `runtime.limits.turns: unbounded` — the recipe saying it promises no turn
+ * ceiling (#547). Written for a runtime whose `enforces` omits `turns`, so a
+ * project it starts does not open on a doctor failure about a bound the
+ * schema's default of 300 made up; the caller checks the file does not
+ * already declare one, because a number somebody wrote must stay a number.
+ */
+export function unboundedTurnsChange(): RecipeChange {
+  return { path: ['runtime', 'limits', 'turns'], value: UNBOUNDED }
 }
 
 /** `runtime.limits.wall` — what one agent run may take. */

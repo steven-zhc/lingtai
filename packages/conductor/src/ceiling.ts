@@ -6,7 +6,7 @@
  * move — the same sentence `lingtai status` and `lingtai add` print, called
  * rather than rewritten.
  */
-import { formatDuration } from '@lingtai/recipe/duration'
+import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/duration'
 
 /**
  * What one pass may spend, as one sentence, out of the numbers that decide it
@@ -58,17 +58,17 @@ import { formatDuration } from '@lingtai/recipe/duration'
 export function passCeiling(limits: {
   rounds: number
   restarts: number
-  turns: number
+  turns: TurnLimit
   wall: string
   wallMs: number
   usd?: number
   /** The dispatching steps whose own bound is not the figure named above. */
-  steps?: readonly { step: string; turns: number; wall: string }[]
+  steps?: readonly { step: string; turns: TurnLimit; wall: string }[]
 }): string {
   const elsewhere =
     limits.steps === undefined || limits.steps.length === 0
       ? ''
-      : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${s.turns} turns`).join(', ')})`
+      : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${formatTurns(s.turns)}`).join(', ')})`
   const at = elsewhere === '' ? '' : ' at implement'
   // Byte-identical to the pre-#370 text when `usd` is absent (0070 §8's rule,
   // carried to the new field): the join between `wall` and `turns` only
@@ -76,11 +76,11 @@ export function passCeiling(limits: {
   const eachUsd = limits.usd === undefined ? '' : ` and $${limits.usd}`
   const wallAndTurns =
     limits.usd === undefined
-      ? `${limits.wall} and ${limits.turns} turns`
-      : `${limits.wall}, ${limits.turns} turns and $${limits.usd}`
+      ? `${limits.wall} and ${formatTurns(limits.turns)}`
+      : `${limits.wall}, ${formatTurns(limits.turns)} and $${limits.usd}`
   const pass =
     limits.rounds === 0
-      ? `one agent run — ${limits.wall}, ${limits.turns} turns${eachUsd}${at}${elsewhere}`
+      ? `one agent run — ${limits.wall}, ${formatTurns(limits.turns)}${eachUsd}${at}${elsewhere}`
       : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
         `back to the agent carrying what refused it. ${wallAndTurns} each${at}${elsewhere}, ` +
         `so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}` +

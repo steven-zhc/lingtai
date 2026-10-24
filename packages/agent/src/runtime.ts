@@ -119,7 +119,7 @@ export interface RunRequest {
   traceTools?: boolean
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>
-  limits: { turns: number; wallMs: number; usd?: number }
+  limits: { turns?: number; wallMs: number; usd?: number }
   /**
    * The answer's shape, as JSON Schema — sent only by the cold reviewer and
    * absent on every other run (`#369`). Each adapter hands it to the runtime

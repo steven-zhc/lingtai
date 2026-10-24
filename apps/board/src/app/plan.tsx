@@ -23,6 +23,8 @@
  * No state, no click. It is the one thing in this column you only read — which
  * is why it is a server component and why nothing here is a control.
  */
+import { formatTurns } from '@lingtai/recipe/duration'
+
 import type { PlanView } from '@/lib/queued'
 
 /**
@@ -47,7 +49,7 @@ import type { PlanView } from '@/lib/queued'
  */
 function limits(plan: PlanView): string {
   return [
-    `${plan.turns} turns`,
+    formatTurns(plan.turns),
     plan.wall,
     plan.tier,
     plan.rounds === 0 ? 'no rounds' : `${plan.rounds} round(s) back`,

@@ -21,6 +21,7 @@ import {
   type RecipeChange,
   type RecipeFiles,
   type SetRecipeResult,
+  type TurnLimit,
   baseOf,
   boundsBesides,
   budgetChange,
@@ -84,7 +85,7 @@ async function resolvedFile(
       proposed: readonly Record<string, unknown>[]
       admit: readonly Record<string, unknown>[]
       base: string
-      limits: { turns: number; wall: string; rounds: number; restarts: number; usd?: number }
+      limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number; usd?: number }
       agent: string
     }
   | { refused: string }

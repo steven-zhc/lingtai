@@ -48,7 +48,8 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
       if (request.model && request.model !== config.model)
         return failure('crash', 'model differs from codex_text.model and its configured prices')
       if (request.outputSchema) return failure('crash', 'model-only calls do not support outputSchema')
-      if (request.limits.turns < 1) return failure('out-of-turns', 'one model response requires one turn')
+      if (request.limits.turns !== undefined && request.limits.turns < 1)
+        return failure('out-of-turns', 'one model response requires one turn')
       if (request.limits.wallMs <= 0) return failure('timeout', 'no wall time remains')
       if (bound > config.maxUsd || (request.limits.usd !== undefined && bound > request.limits.usd)) {
         return failure('out-of-usd', 'the conservative request bound exceeds the remaining USD limit')
