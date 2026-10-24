@@ -818,13 +818,9 @@ const TriageAdvised = TriageAnswer.extend({ _tag: z.literal('TriageAdvised') }).
  * go with.
  */
 export const TriageEnvelope = z.strictObject({
-  read: z
-    .array(z.string())
-    .max(READS_PER_TURN)
-    .nullable()
-    .meta({
-      description: 'Files to read before advising, as `<ref>:<path>`. Fill this or `answer`, and null the other.',
-    }),
+  read: z.array(z.string()).max(READS_PER_TURN).nullable().meta({
+    description: 'Files to read before advising, as `<ref>:<path>`. Fill this or `answer`, and null the other.',
+  }),
   answer: TriageAnswer.nullable().meta({
     description: 'The advice. Fill this or `read`, and null the other.',
   }),
