@@ -2957,41 +2957,46 @@ export const TRIAGE_WALL_MAX = 8 * 60_000
  * See `Recipe.triage` below for why this is optional with no default, unlike
  * `discuss:`.
  */
-export const Triage = z.strictObject({
-  /** Which runtime answers. `DiscussAgent`, not a second enum — see its doc. */
-  agent: DiscussAgent.default('claude-code'),
-  /** Codex CLI can inspect a private disposable checkout when explicitly selected. */
-  tools: z.enum(['none', 'full']).default('none'),
-  /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
-  model: DISPATCH.model,
-  /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
-  prompt: DISPATCH.prompt.optional(),
-  /** What one triage run may spend. */
-  limits: z
-    .strictObject({
-      turns: z.number().int().positive().default(40),
-      wall: z
-        .string()
-        .default('5m')
-        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' })
-        // The shape check runs first so `parseDuration` never throws here on
-        // text this refine would refuse anyway for a different reason.
-        .refine((text) => !positiveDuration(text) || parseDuration(text) < TRIAGE_WALL_MAX, {
-          message: `must be under ${formatDuration(TRIAGE_WALL_MAX)} — the daemon gives a subscriber 10m`,
-        }),
-      /**
-       * A dollar ceiling, defaulted — unlike `runtime.limits.usd`, which is
-       * absent on purpose so that "no ceiling" is never assumed. Here, writing
-       * `triage:` at all is what turns the spend on, so the key needs a
-       * number to mean anything the day someone writes it with nothing else
-       * underneath. 0.50 is #427's measurement of a hold triaged without
-       * reading any files; the real step reads them, so this leaves room
-       * rather than pinning the measured number exactly.
-       */
-      usd: z.number().positive().default(0.5),
-    })
-    .default({ turns: 40, wall: '5m', usd: 0.5 }),
-})
+export const Triage = z
+  .strictObject({
+    /** Which runtime answers. `DiscussAgent`, not a second enum — see its doc. */
+    agent: DiscussAgent.default('claude-code'),
+    /** Codex CLI can inspect a private disposable checkout when explicitly selected. */
+    tools: z.enum(['none', 'full']).default('none'),
+    /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
+    model: DISPATCH.model,
+    /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
+    prompt: DISPATCH.prompt.optional(),
+    /** What one triage run may spend. */
+    limits: z
+      .strictObject({
+        turns: z.number().int().positive().default(40),
+        wall: z
+          .string()
+          .default('5m')
+          .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' })
+          // The shape check runs first so `parseDuration` never throws here on
+          // text this refine would refuse anyway for a different reason.
+          .refine((text) => !positiveDuration(text) || parseDuration(text) < TRIAGE_WALL_MAX, {
+            message: `must be under ${formatDuration(TRIAGE_WALL_MAX)} — the daemon gives a subscriber 10m`,
+          }),
+        /**
+         * A dollar ceiling, defaulted — unlike `runtime.limits.usd`, which is
+         * absent on purpose so that "no ceiling" is never assumed. Here, writing
+         * `triage:` at all is what turns the spend on, so the key needs a
+         * number to mean anything the day someone writes it with nothing else
+         * underneath. 0.50 is #427's measurement of a hold triaged without
+         * reading any files; the real step reads them, so this leaves room
+         * rather than pinning the measured number exactly.
+         */
+        usd: z.number().positive().default(0.5),
+      })
+      .default({ turns: 40, wall: '5m', usd: 0.5 }),
+  })
+  .refine((triage) => triage.tools === 'none' || triage.agent === 'codex', {
+    message: 'tools: full needs agent: codex — only the Codex CLI runs against a checkout',
+    path: ['tools'],
+  })
 export type Triage = z.infer<typeof Triage>
 
 /**

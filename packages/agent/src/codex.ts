@@ -1304,9 +1304,18 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           hard = setTimeout(() => {
             signalGroup('SIGKILL')
             hard = null
+            // A scan that could not complete is not a clean stop: say so,
+            // rather than let the caller delete a checkout still in use.
             stopRunProcesses(processMarker, seen).then(
               () => finish(stopped!),
-              () => finish(stopped!),
+              (error: unknown) =>
+                finish({
+                  ...stopped!,
+                  failure: {
+                    kind: 'crash',
+                    detail: `${stopped!.failure?.detail ?? 'stopped'}; process cleanup incomplete: ${(error as Error).message}`,
+                  },
+                }),
             )
           }, 5_000)
         }
@@ -1347,7 +1356,12 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           // A CLI that exited while a tool left a same-group subprocess behind
           // must not hand its checkout back with that subprocess still running.
           signalGroup('SIGKILL')
-          await stopRunProcesses(processMarker, seen)
+          let cleanupFailure: string | null = null
+          try {
+            await stopRunProcesses(processMarker, seen)
+          } catch (error) {
+            cleanupFailure = (error as Error).message
+          }
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()
@@ -1366,11 +1380,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           // One decision, and a pure one — `codexClose`. `out-of-turns` is not
           // among its answers and that is correct: nothing bounds turns, so no
           // run can be stopped at one.
-          const failure = codexClose(receipt, {
-            exitCode: code,
-            stderr,
-            stdoutTail,
-          })
+          const failure =
+            cleanupFailure !== null
+              ? { kind: 'crash' as const, detail: `process cleanup incomplete: ${cleanupFailure}` }
+              : codexClose(receipt, {
+                  exitCode: code,
+                  stderr,
+                  stdoutTail,
+                })
 
           // Codex prints no `structured_output` of its own: under a schema the
           // final `agent_message` *is* the constrained JSON, so this is where it

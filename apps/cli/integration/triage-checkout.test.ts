@@ -75,3 +75,41 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_t
     expect(await git(['rev-parse', 'HEAD'], { cwd: mirror, env })).toBe(head)
   }
 })
+
+it('hands a login Codex refreshed in the private home back to the original', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'triage-auth-'))
+  roots.push(root)
+  const source = join(root, 'source')
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1' }
+  await mkdir(join(root, 'repos'))
+  await git(['init', source], { env })
+  await git(['config', 'user.name', 'Fixture'], { cwd: source, env })
+  await git(['config', 'user.email', 'fixture@example.invalid'], { cwd: source, env })
+  await writeFile(join(source, 'a.txt'), 'a\n')
+  await git(['add', 'a.txt'], { cwd: source, env })
+  await git(['commit', '-m', 'base'], { cwd: source, env })
+  const sha = await git(['rev-parse', 'HEAD'], { cwd: source, env })
+  await git(['clone', '--bare', source, mirrorPathFor('project', root)], { env })
+  const home = join(root, 'home')
+  await mkdir(join(home, '.codex'), { recursive: true })
+  const auth = join(home, '.codex', 'auth.json')
+  await writeFile(auth, '{"refresh":"old"}')
+  const saved = process.env['HOME']
+  process.env['HOME'] = home
+  try {
+    const checkout = await prepareTriageCheckout('project', sha, root)
+    expect(await readFile(join(checkout.env['CODEX_HOME']!, 'auth.json'), 'utf8')).toBe('{"refresh":"old"}')
+    await writeFile(join(checkout.env['CODEX_HOME']!, 'auth.json'), '{"refresh":"new"}')
+    await checkout.cleanup()
+    expect(await readFile(auth, 'utf8')).toBe('{"refresh":"new"}')
+
+    const second = await prepareTriageCheckout('project', sha, root)
+    await writeFile(join(second.env['CODEX_HOME']!, 'auth.json'), '{"refresh":"stale"}')
+    await writeFile(auth, '{"refresh":"newer"}')
+    await second.cleanup()
+    expect(await readFile(auth, 'utf8')).toBe('{"refresh":"newer"}')
+  } finally {
+    if (saved === undefined) delete process.env['HOME']
+    else process.env['HOME'] = saved
+  }
+})
