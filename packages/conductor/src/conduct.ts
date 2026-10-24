@@ -47,7 +47,14 @@ import {
   ticketStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
-import { continuationOf, waivedActionsAt, type KeptAt, type RunRef, type WaitReason } from '@lingtai/domain/wait'
+import {
+  continuationOf,
+  grantCriterion,
+  waivedActionsAt,
+  type KeptAt,
+  type RunRef,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
@@ -1002,19 +1009,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
-        ...(granted && reason._tag === 'ProposedEscalated'
+        ...(granted && grantCriterion(reason) !== null
           ? {
               grant: {
                 why: 'A person granted one checked fix round.',
                 asked: null,
-                printed:
-                  reason.proposal._tag === 'BuildRed'
-                    ? { step: 'build' as const, detail: reason.proposal.output }
-                    : reason.proposal._tag === 'VerifyRed'
-                      ? { step: 'build' as const, detail: `merge verification failed: ${reason.proposal.output}` }
-                      : { step: 'review' as const, detail: 'Fix the recorded review findings.' },
+                printed: grantCriterion(reason)!.printed,
               },
-              findings: reason.proposal._tag === 'ReviewFindings' ? reason.proposal.findings : [],
+              findings: grantCriterion(reason)!.findings,
             }
           : {}),
         /**
