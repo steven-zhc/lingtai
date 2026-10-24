@@ -91,15 +91,13 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
         ) {
           return failure('crash', 'Responses receipt has no usable token counts')
         }
-        if (
-          (input as number) > Buffer.byteLength(request.prompt, 'utf8') + 4096 ||
-          (produced as number) > config.maxOutputTokens
-        ) {
-          return failure('crash', 'Responses receipt exceeded the preflight token bound')
-        }
         const billed = {
           turns: 1,
-          spendBoundUsd: bound,
+          spendBoundUsd: Math.max(
+            bound,
+            ((input as number) * config.inputUsdPerMillion + (produced as number) * config.outputUsdPerMillion) /
+              1_000_000,
+          ),
           usage: [
             {
               model: config.model,
@@ -112,6 +110,12 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
           ],
         }
         const receiptFailure = (detail: string): RunOutcome => ({ ...failure('crash', detail), ...billed })
+        if (
+          (input as number) > Buffer.byteLength(request.prompt, 'utf8') + 4096 ||
+          (produced as number) > config.maxOutputTokens
+        ) {
+          return receiptFailure('Responses receipt exceeded the preflight token bound')
+        }
         const output = receipt.output
         if (
           !Array.isArray(output) ||

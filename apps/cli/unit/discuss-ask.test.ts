@@ -1,4 +1,11 @@
-import { NO_RUN_LOG, type Runtime, type RunOutcome, type RunRequest } from '@lingtai/agent'
+import {
+  NO_RUN_LOG,
+  ToolsCannotBeDenied,
+  createRuntime,
+  type Runtime,
+  type RunOutcome,
+  type RunRequest,
+} from '@lingtai/agent'
 import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
 /**
  * `discussionAsk`: what a round's `call` — the recipe's `discuss.limits` and
@@ -71,6 +78,27 @@ describe('discussionAsk', () => {
 
     expect(requests[0]?.model).toBe('haiku')
     expect(requests[0]?.runId).toBe('chat-1:0:1')
+  })
+
+  it('turns an unconfigured Codex runtime into an ask rejection the discussion can record', async () => {
+    const ask = discussionAsk(
+      () =>
+        createRuntime('codex', {
+          tools: 'none',
+          codexText: {
+            config: {
+              apiKey: '',
+              model: 'test-model',
+              maxOutputTokens: 32,
+              maxUsd: 1,
+              inputUsdPerMillion: 1,
+              outputUsdPerMillion: 1,
+            },
+          },
+        }),
+      { runId: async () => 'chat-1:0:0', cwd: '/tmp/chat-1', settingsPath: '/tmp/settings', log: NO_RUN_LOG },
+    )
+    await expect(ask('the brief', 0, { turns: 1, wallMs: 1000 })).rejects.toThrow(ToolsCannotBeDenied)
   })
 })
 

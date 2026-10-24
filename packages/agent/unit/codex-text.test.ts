@@ -99,6 +99,27 @@ describe('Codex model-only route', () => {
     expect(result.costUsd).toBeNull()
   })
 
+  it('retains reported usage when an incomplete receipt exceeds the preflight input bound', async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 'resp_over_bound',
+            status: 'incomplete',
+            incomplete_details: { reason: 'max_output_tokens' },
+            output: [],
+            usage: { input_tokens: 5000, output_tokens: 64 },
+          }),
+        ),
+    )
+    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    expect(result.failure).toEqual({ kind: 'crash', detail: 'Responses receipt exceeded the preflight token bound' })
+    expect(result.turns).toBe(1)
+    expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 5000, output: 64 } }])
+    expect(result.spendBoundUsd).toBe((5000 + 64) / 1_000_000)
+    expect(result.costUsd).toBeNull()
+  })
+
   it('separates cached input from fresh input in a completed response', async () => {
     const transport = vi.fn(
       async () =>
