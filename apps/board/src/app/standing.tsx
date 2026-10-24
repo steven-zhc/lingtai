@@ -44,6 +44,9 @@ import { TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
 
+/** Every requeue's cost line says so (0118 §7): a restart is neither spent nor refunded. */
+const NO_RESTART_EFFECT = 'This neither spends nor refunds an automatic restart.'
+
 const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
   Approve: {
     title: 'Approve and continue',
@@ -65,11 +68,13 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
   },
   Requeue: {
     title: 'Start over from base',
-    consequence: 'Start a new pass from base with the recipe’s rounds. The saved branch is not continued.',
+    consequence:
+      'Start a new pass from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
   },
   EditBodyAndRequeue: {
     title: 'Add to the ticket and start over',
-    consequence: 'Append your text to the ticket body, then queue a new pass from main with that text.',
+    consequence:
+      'Append your text to the ticket body, then queue a new pass from main with that text. ' + NO_RESTART_EFFECT,
   },
   Split: {
     title: 'Split into smaller tickets',
@@ -912,7 +917,7 @@ export function Standing({
                 const consequence = fixUnavailable
                   ? 'The saved branch and head must be available before a fix round can be granted.'
                   : tag === 'Requeue' && sendable !== null
-                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds.`
+                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
                     : copy.consequence
                 return (
                   <article

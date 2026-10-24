@@ -3636,7 +3636,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         await appendNow(runId, [
           runSpentFrom(
             fixed,
-            { _tag: 'Action', step: 'implement', name: spec.name, round },
+            {
+              _tag: 'Action',
+              step: 'implement',
+              name: spec.name,
+              round,
+              // The lap a person's grant paid for is capped at one round
+              // (`runPass`'s `roundLimit`), so this is that round.
+              ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
+            },
             dispatched.capabilities.id,
           ),
         ])

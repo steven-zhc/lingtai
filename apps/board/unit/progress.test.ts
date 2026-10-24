@@ -314,16 +314,22 @@ describe('rounds spent against the ceiling', () => {
 
 describe('describeHeld', () => {
   it('says the rounds spent against their ceiling, and the restarts left against theirs', () => {
-    expect(describeHeld({ spent: 2, roundsOf: 3, restarts: 1, restartsOf: 2 })).toBe('2 of 3 rounds · 1 restart left')
+    expect(describeHeld({ granted: [], spent: 2, roundsOf: 3, restarts: 1, restartsOf: 2 })).toBe(
+      '2 of 3 rounds · 1 restart left',
+    )
   })
 
   /** A ceiling nothing bought and a ceiling nothing configured are one fact, and `0 of 0` reads as a typo of it. */
   it('reads a zero ceiling as none, never as 0 of 0', () => {
-    expect(describeHeld({ spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe('no rounds · no restarts left')
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe(
+      'no rounds · no restarts left',
+    )
   })
 
   it('never reads restarts left below zero', () => {
-    expect(describeHeld({ spent: 0, roundsOf: 0, restarts: 3, restartsOf: 2 })).toBe('no rounds · 0 restarts left')
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 3, restartsOf: 2 })).toBe(
+      'no rounds · 0 restarts left',
+    )
   })
 
   /**
@@ -333,7 +339,78 @@ describe('describeHeld', () => {
    * bought, the second says there was never anything to buy.
    */
   it('reads a null ceiling as unknown, never as zero', () => {
-    expect(describeHeld({ spent: 1, roundsOf: null, restarts: 1, restartsOf: null })).toBe('1 rounds · 1 restart')
+    expect(describeHeld({ granted: [], spent: 1, roundsOf: null, restarts: 1, restartsOf: null })).toBe(
+      '1 rounds · 1 restart',
+    )
+  })
+})
+
+/**
+ * A round a person granted (#573) is named by its own `RunSpent`'s `for.grant`,
+ * and is neither one of the automatic rounds nor matched to a `WaitResolved`.
+ */
+describe('human-granted rounds', () => {
+  const opened = (spentRounds: number) => {
+    const proposal: Proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'red' }
+    const offer = offerFor(proposal, { rounds: 5, restarts: 1 }, { rounds: spentRounds, restarts: 0 })
+    const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines' }
+    return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
+  }
+  const spent = (round: number, costUsd: number | null, grant?: string) =>
+    at('2026-09-04T17:50:00Z', 'RunSpent', {
+      for: { _tag: 'Action', step: 'implement', name: 'agent', round, ...(grant ? { grant } : {}) },
+      runtime: 'claude-code',
+      turns: 1,
+      durationMs: 1,
+      usage: [],
+      costUsd,
+    })
+  const automatic = () => [
+    ...timeline(),
+    at('2026-09-04T17:34:01Z', 'PassRouted', opened(0)),
+    spent(1, 0.5),
+    at('2026-09-04T17:40:01Z', 'PassRouted', opened(1)),
+    spent(2, 0.5),
+  ]
+
+  it('takes a granted round out of the automatic count and bills it on its own', () => {
+    // Both histories: the granted lap opened a round (3) or wrote none.
+    for (const withOpened of [true, false]) {
+      const events = [
+        ...automatic(),
+        spent(3, 1.416, 'wait-1'),
+        ...(withOpened ? [at('2026-09-04T17:55:00Z', 'PassRouted', opened(2))] : []),
+      ]
+      const progress = foldProgress(events, PLAN)
+      expect(progress?.rounds.spent).toBe(2)
+      expect(progress?.granted).toEqual([{ round: 3, waitId: 'wait-1', costUsd: 1.416 }])
+      expect(
+        describeHeld({
+          spent: progress!.rounds.spent,
+          granted: progress!.granted,
+          roundsOf: 2,
+          restarts: 0,
+          restartsOf: 1,
+        }),
+      ).toBe('2 of 2 rounds · round 3 granted, $1.42 · 1 restart left')
+    }
+  })
+
+  it('reads a granted round whose cost was not said as unknown, never $0.00', () => {
+    const progress = foldProgress([...automatic(), spent(3, null, 'wait-1')], PLAN)
+    expect(
+      describeHeld({
+        spent: progress!.rounds.spent,
+        granted: progress!.granted,
+        roundsOf: 2,
+        restarts: 1,
+        restartsOf: 1,
+      }),
+    ).toBe('2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left')
+  })
+
+  it('has none where no RunSpent names a grant', () => {
+    expect(foldProgress(automatic(), PLAN)?.granted).toEqual([])
   })
 })
 

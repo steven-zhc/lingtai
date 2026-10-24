@@ -203,3 +203,51 @@ describe('a confirmed conflict whose base moved is put back to a person (#558)',
     },
   )
 })
+
+describe('a granted round names the grant it spent (#573)', () => {
+  it('tags the granted lap’s implement RunSpent with the wait, and no automatic round', async () => {
+    const store = memoryStore()
+    const ticketId = ticketStream(PROJECT, 7)
+    const ports = fakePorts([], store)
+    const args = (continuing?: { runId: string }) => ({
+      project,
+      client: fakeGitHub([], MANY_ROUNDS),
+      runtime: refusingRuntime,
+      issue: 7,
+      hookBinary: '/tmp/fake/lingtai-hook',
+      prompt: 'fix {{issue}}',
+      merge: false,
+      home: '/tmp/fake-home',
+      store,
+      ...(continuing === undefined ? {} : { continuing }),
+    })
+    const first = await once(args(), ports)
+    if (first.ok !== 'held') throw new Error(`the first pass did not hold: ${JSON.stringify(first)}`)
+
+    const wait = waitsOf(await store.read(ticketId)).at(-1)!
+    await store.append(
+      ticketId,
+      (await store.read(ticketId)).length,
+      aResolution(
+        makeStream(ticketId),
+        wait.waitId,
+        { _tag: 'GrantFixRound', onSha: 'd'.repeat(40), ref: 'agent/7' },
+        'human:steven',
+      ),
+    )
+    const next = await once(args({ runId: first.runId }), ports)
+    if (next.ok === false) throw new Error(`stopped at ${next.stage}: ${next.detail}`)
+
+    const implementSpends = (await store.read(first.runId))
+      .filter((e) => e.type === 'RunSpent')
+      .map((e) => (e.data as { for: { _tag: string; step?: string; round?: number; grant?: string } }).for)
+      .filter((f) => f._tag === 'Action' && f.step === 'implement')
+    const granted = implementSpends.filter((f) => f.grant !== undefined)
+    const automatic = implementSpends.filter((f) => f.grant === undefined)
+    expect(granted.map((f) => f.grant)).toEqual([wait.waitId])
+    // The first pass's own implement run is in the ungranted set.
+    expect(automatic.length).toBeGreaterThan(0)
+    // Absent, not set to undefined: the stored payload carries no key at all.
+    for (const f of automatic) expect('grant' in f).toBe(false)
+  })
+})

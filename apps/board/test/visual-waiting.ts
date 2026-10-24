@@ -448,7 +448,13 @@ export async function preview(name: CaseName) {
     queued: null,
     held:
       representative && progress
-        ? describeHeld({ spent: progress.rounds.spent, roundsOf: 2, restarts: 0, restartsOf: 1 })
+        ? describeHeld({
+            spent: progress.rounds.spent,
+            granted: progress.granted,
+            roundsOf: 2,
+            restarts: 0,
+            restartsOf: 1,
+          })
         : null,
     totals: totalsOf(foldedRuns, discussions),
     spendCurrency: { lag: 0 },

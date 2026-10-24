@@ -207,6 +207,14 @@ export interface RunProgress {
    * budget's only source for one.
    */
   rounds: { spent: number; of: number | null }
+  /**
+   * The rounds a person's grant paid for, each with the bill of its
+   * `implement` run (0118 §2, #573) — read off the `RunSpent` that names the
+   * grant (`for.grant`), never matched to a `WaitResolved` by round number.
+   * `costUsd` is null where any run of that round did not say what it cost
+   * (0110 §4). In round order; empty where nothing was granted.
+   */
+  granted: readonly { round: number; waitId: string; costUsd: number | null }[]
 }
 
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
@@ -387,8 +395,10 @@ export function foldProgress(
   /** The round in flight, if the pass bought one and it has not come back. */
   let fixing: string | null = null
   /** The highest round spent, and the last ceiling named above zero. See `RunProgress.rounds`. */
-  let roundsSpent = 0
+  const roundsOpened: number[] = []
   let roundsOf: number | null = null
+  /** Per granted round, keyed by wait and round: the fixer's bill. See `RunProgress.granted`. */
+  const grantedRounds = new Map<string, { round: number; waitId: string; costUsd: number | null }>()
 
   const close = (key: string, state: StepState) => {
     verdicts.set(key, state)
@@ -432,6 +442,23 @@ export function foldProgress(
       case 'RunFinished':
         clearAgentPhase()
         break
+
+      case 'RunSpent': {
+        const spentFor = data['for'] as { _tag?: string; round?: unknown; grant?: unknown } | undefined
+        if (spentFor?._tag !== 'Action' || typeof spentFor.grant !== 'string' || typeof spentFor.round !== 'number') {
+          break
+        }
+        const cost = typeof data['costUsd'] === 'number' ? data['costUsd'] : null
+        const key = `${spentFor.grant}:${spentFor.round}`
+        const before = grantedRounds.get(key)
+        grantedRounds.set(key, {
+          round: spentFor.round,
+          waitId: spentFor.grant,
+          costUsd:
+            before === undefined ? cost : before.costUsd === null || cost === null ? null : before.costUsd + cost,
+        })
+        break
+      }
 
       case 'StepsResolved': {
         const steps = (data['steps'] ?? []) as { step: string; actions: string[] }[]
@@ -553,7 +580,7 @@ export function foldProgress(
              * `roundsOf` stays null from this fold.
              */
             case 'RoundOpened': {
-              roundsSpent = Math.max(roundsSpent, fact.round)
+              roundsOpened.push(fact.round)
               break
             }
 
@@ -605,7 +632,13 @@ export function foldProgress(
     return { step, planned, state, actions }
   })
 
-  return { since: first.at.toISOString(), now, steps, rounds: { spent: roundsSpent, of: roundsOf } }
+  // A granted round is a person's, not one of the automatic ones: the
+  // `RunSpent` names its own round, so it is taken out of `spent` by that
+  // number on this one stream.
+  const granted = [...grantedRounds.values()].sort((a, b) => a.round - b.round)
+  const grantedNumbers = new Set(granted.map((g) => g.round))
+  const roundsSpent = Math.max(0, ...roundsOpened.filter((r) => !grantedNumbers.has(r)))
+  return { since: first.at.toISOString(), now, steps, rounds: { spent: roundsSpent, of: roundsOf }, granted }
 }
 
 /**
@@ -635,12 +668,19 @@ export function foldProgress(
  */
 export function describeHeld({
   spent,
+  granted,
   roundsOf,
   restarts,
   restartsOf,
 }: {
-  /** The highest round this run's stream has spent. */
+  /** The highest automatic round this run's stream has spent — granted rounds are not in it. */
   spent: number
+  /**
+   * The rounds a person granted, each with the bill of its fixer run — the
+   * `implement` round the grant bought (0118 §7), not the whole lap, which
+   * the cold reviewer also spends in.
+   */
+  granted: RunProgress['granted']
   /** The resolved rounds ceiling, already event-then-recipe. Zero means none; null means unreadable. */
   roundsOf: number | null
   /** How many approaches this ticket has abandoned so far. */
@@ -655,5 +695,16 @@ export function describeHeld({
       : restartsOf > 0
         ? `${Math.max(0, restartsOf - restarts)} restart${Math.max(0, restartsOf - restarts) === 1 ? '' : 's'} left`
         : 'no restarts left'
-  return `${rounds} · ${restartsLine}`
+  const grants = granted.map((g) => `round ${g.round} granted, ${grantedBill(g.costUsd)}`)
+  return [rounds, ...grants, restartsLine].join(' · ')
+}
+
+/**
+ * Cents rounded once, and a run that did not say what it cost reads
+ * `cost unknown` rather than `$0.00` (0110 §4/§7) — `billText`'s rule, spelled
+ * here because `lib/spend.ts` reaches the projector's runner and this file is
+ * in `rail.tsx`'s client graph.
+ */
+function grantedBill(costUsd: number | null): string {
+  return costUsd === null ? 'cost unknown' : `$${(Math.round(costUsd * 100) / 100).toFixed(2)}`
 }
