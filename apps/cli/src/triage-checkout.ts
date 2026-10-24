@@ -46,7 +46,11 @@ export async function prepareTriageCheckout(
     await writeFile(settingsPath, '{}\n', { mode: 0o600 })
     return { cwd, settingsPath, env, cleanup }
   } catch (error) {
-    await cleanup().catch(() => {})
+    try {
+      await cleanup()
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'triage checkout preparation and cleanup failed')
+    }
     throw error
   }
 }
