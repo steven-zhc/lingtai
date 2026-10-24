@@ -385,7 +385,8 @@ async function gatherEvidence(
       if (e.type === 'PassRouted') routed = e.data as PayloadOf<'PassRouted'>
       if (e.type === 'RunRefsPublished') published = e.data as PayloadOf<'RunRefsPublished'>
     }
-    head = headOf(runEvents)
+    const produced = runEvents.findLast((e) => e.type === 'RunProducedDiff')
+    head = produced === undefined ? null : (produced.data as PayloadOf<'RunProducedDiff'>).headSha
   }
 
   const baseSha = await deps.mirror.refSha({ project, ref: base }).catch(() => null)
@@ -835,9 +836,10 @@ export async function waitTriage(
   for (let i = 0; i < 5; i += 1) {
     try {
       const current = await deps.store.read(stream)
-      if (!waitIsCurrent(current) || request.signal?.aborted) {
+      if (!waitIsCurrent(current)) {
         return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
       }
+      if (request.signal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
       const version = current.length
       await deps.store.append(stream, version, [
         {
