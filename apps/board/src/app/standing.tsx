@@ -647,6 +647,11 @@ export function Standing({
       : cause?._tag === 'ConflictingHunks'
         ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
         : []
+  // The hunk each divergent question belongs to, parallel to `triageQuestions`.
+  const triageKeys =
+    cause?._tag === 'ConflictingHunks'
+      ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [`${hunk.path}:${hunk.line}`] : []))
+      : []
   const waiting = standing.state === 'blocked'
   const subjectRef =
     subject === null ? null : subject.url !== null ? (
@@ -970,6 +975,7 @@ export function Standing({
                             waitId={waitId}
                             work={standing.conflictWork}
                             triageQuestions={triageQuestions}
+                            triageKeys={triageKeys}
                             primary={recommended === 'ContinueConflict'}
                           />
                         ) : standing.conflictWork && 'tooMany' in standing.conflictWork ? (

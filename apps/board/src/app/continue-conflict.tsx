@@ -35,6 +35,7 @@ export function ContinueConflict({
   waitId,
   work,
   triageQuestions,
+  triageKeys,
   primary,
 }: {
   project: string
@@ -43,6 +44,8 @@ export function ContinueConflict({
   work: Rows
   /** The questions the triage band draws, in its order, so a pick there is read here. */
   triageQuestions: readonly TriageQuestion[]
+  /** The `path:line` each of `triageQuestions` belongs to, in the same order. */
+  triageKeys: readonly string[]
   primary: boolean
 }) {
   const draft = useTriageDraft()
@@ -57,21 +60,13 @@ export function ContinueConflict({
   const [done, setDone] = useState(false)
   const [, startTransition] = useTransition()
 
-  // Each row takes the band question that is the same question (same id and
-  // content) and not already taken by an earlier row, so ids shared by two
-  // hunks still address two different picks.
+  // Each row takes the band question of the same hunk, by `(path, line)`, so
+  // two hunks with identical questions still address their own picks whatever
+  // order the band lists them in.
   const bandIndexes = new Map<string, number>()
-  const taken = new Set<number>()
   for (const row of work.rows) {
-    if (row.question === null) continue
-    const wanted = JSON.stringify(row.question)
-    const index = triageQuestions.findIndex((q, i) => !taken.has(i) && JSON.stringify(q) === wanted)
-    const fallback = triageQuestions.findIndex((q, i) => !taken.has(i) && q.id === row.question!.id)
-    const found = index >= 0 ? index : fallback
-    if (found >= 0) {
-      taken.add(found)
-      bandIndexes.set(conflictRowKey(row), found)
-    }
+    const found = row.question === null ? -1 : triageKeys.indexOf(conflictRowKey(row))
+    if (found >= 0) bandIndexes.set(conflictRowKey(row), found)
   }
   const bandIndex = (row: ConflictRow) => bandIndexes.get(conflictRowKey(row)) ?? -1
   const picked = (row: ConflictRow): string | null => {
