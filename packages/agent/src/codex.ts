@@ -1112,7 +1112,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         const child = spawn(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited (0007).
-          env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as NodeJS.ProcessEnv,
+          env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as unknown as NodeJS.ProcessEnv,
           // **`"ignore"` on stdin is load-bearing**, not tidiness: `codex exec`
           // reads stdin even when a prompt was given as an argument — *"if stdin
           // is piped and a prompt is also provided, stdin is appended as a
