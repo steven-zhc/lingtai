@@ -520,16 +520,20 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
   /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
   let owed = 0
 
-  /** Only the process's first beat begins the row again; every later one is the same life. */
-  let first = true
+  /**
+   * Whether the row has yet been begun by this process. Cleared by a beat that
+   * landed and not by one that was asked for, so a first beat that fails leaves
+   * the next one fresh instead of the previous daemon's start surviving.
+   */
+  let begun = false
 
   const write = (word: string): Promise<void> => {
-    const fresh = first
-    first = false
     owed += 1
     chain = chain.then(async () => {
       try {
+        const fresh = !begun
         await beat(word, { ...beatOptions, fresh })
+        begun = true
       } catch {
         // Every beat, the first one included — and that is a change. Startup
         // used to `await beat("starting")` uncaught, and the CLI's top-level

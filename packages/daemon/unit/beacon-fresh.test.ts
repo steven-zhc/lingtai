@@ -24,4 +24,22 @@ describe('startBeacon', () => {
     expect(beats.map((b) => b.state)).toEqual(['starting', 'up', 'draining', 'stopped'])
     expect(beats.map((b) => b.fresh)).toEqual([true, false, false, false])
   })
+
+  it('keeps the next beat fresh when the first one failed to land', async () => {
+    const beats: Beat[] = []
+    let failures = 1
+    const store = {
+      beat: async (b: Beat) => {
+        beats.push(b)
+        if (failures-- > 0) throw new Error('transient')
+      },
+      close: async () => {},
+    } as unknown as DaemonStore
+    const beacon = startBeacon('starting', { store, every: 3_600_000 })
+    await beacon.say('up')
+    await beacon.say('draining')
+    await beacon.stop('stopped')
+
+    expect(beats.map((b) => b.fresh)).toEqual([true, true, false, false])
+  })
 })

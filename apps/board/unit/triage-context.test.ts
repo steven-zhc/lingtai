@@ -8,7 +8,7 @@ import { aRunRef } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
-import { cardTriageStatus, triageContextOf } from '../src/lib/board.ts'
+import { cardTriageStatus, toCard, triageContextOf } from '../src/lib/board.ts'
 import { currentTriageStatus } from '../src/lib/task.ts'
 
 const waitId = 'wait-1' as WaitId
@@ -74,5 +74,21 @@ describe('a wait’s triage status', () => {
     const { card, page } = both(waiting({ started, result: null }), true)
     expect(card).toEqual({ _tag: 'Interrupted' })
     expect(card).toEqual(page)
+  })
+
+  it('is read by toCard, which shows a Done result however the beacon read', () => {
+    // The card exposes only what a `Done` status carries (`cause`), and `Done`
+    // does not depend on the context: this holds that toCard takes the context
+    // (or null for an unreadable beacon) and builds the card from the status.
+    const result = {
+      _tag: 'TriageAdvised',
+      summary: 'a summary',
+      cause: { _tag: 'Unknown' },
+    } as unknown as NonNullable<TaskCard['triage']['result']>
+    const card = waiting({ started: null, result })
+    const read = (context: Parameters<typeof toCard>[7]) =>
+      toCard(card, null, null, null, null, undefined, undefined, context)
+    expect(read(triageContextOf(true, daemon)).cause?.summary).toBe('a summary')
+    expect(read(null).cause?.summary).toBe('a summary')
   })
 })

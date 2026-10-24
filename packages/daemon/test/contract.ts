@@ -203,6 +203,8 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         await store.beat(beating({ state: 'starting' }))
         const first = await store.status()
 
+        // Past the clock's resolution, so "replaced" and "kept" read differently.
+        await new Promise((resolve) => setTimeout(resolve, 25))
         const second = await fixture.another()
         try {
           await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2', fresh: true }))
@@ -219,7 +221,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         expect(status!.currentRunId).toBe('pass-2')
         // A new process's first beat begins the row again: `started_at` is
         // what an interrupted triage is read against, so it is this life's.
-        expect(status!.startedAt.getTime()).toBeGreaterThanOrEqual(first!.startedAt.getTime())
+        expect(status!.startedAt.getTime()).toBeGreaterThan(first!.startedAt.getTime())
         const begun = status!.startedAt.getTime()
         // And a beat that is not fresh leaves it where it is.
         await store.beat(beating({ state: 'up' }))

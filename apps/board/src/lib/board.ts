@@ -523,8 +523,16 @@ export function triageContextOf(declared: boolean, status: { startedAt: Date } |
 }
 
 /** The card's `TriageStatus`: the page's `currentTriageStatus` over the same wait gives the same answer. */
-export function cardTriageStatus(t: Pick<TaskCard, 'wait' | 'triage'>, context: TriageContext): TriageStatus | null {
-  return t.wait === null ? null : triageStatus(t.wait.reason, t.triage, context)
+export function cardTriageStatus(
+  t: Pick<TaskCard, 'wait' | 'triage'>,
+  context: TriageContext | null,
+): TriageStatus | null {
+  if (t.wait === null) return null
+  if (context !== null) return triageStatus(t.wait.reason, t.triage, context)
+  // A beacon that could not be read: a finished triage does not depend on it, and
+  // nothing else is claimed, since `Running` would be a guess about the daemon.
+  const status = triageStatus(t.wait.reason, t.triage, { declared: false, daemonStartedAt: null })
+  return status._tag === 'Done' ? status : null
 }
 
 /**
@@ -556,7 +564,7 @@ export function toCard(
    * What `triageStatus` reads besides the wait. The queued-card stub has no
    * wait, so it never reaches `triageStatus` and the default is never used.
    */
-  triage: TriageContext = triageContextOf(false, null),
+  triage: TriageContext | null = triageContextOf(false, null),
 ): BoardCard {
   const words =
     t.wait === null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
@@ -982,8 +990,12 @@ export async function loadBoard(project?: string): Promise<Board> {
       ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
       : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
     // The beacon's row, once for the board: the page reads the same one.
-    // A beacon that cannot be read costs the interrupted reading, not the board.
-    readStatus().catch(() => null),
+    // A beacon that cannot be read costs the cards their triage status, not the
+    // board: `unreadable` says so, where a null row would say no daemon has run.
+    readStatus().then(
+      (row) => ({ row }),
+      () => 'unreadable' as const,
+    ),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
@@ -1020,7 +1032,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
-      triageContextOf(queued.triageDeclared.has(t.project), daemon),
+      daemon === 'unreadable' ? null : triageContextOf(queued.triageDeclared.has(t.project), daemon.row),
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so
