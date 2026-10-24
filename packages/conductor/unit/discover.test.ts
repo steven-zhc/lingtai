@@ -335,6 +335,12 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
     addBlockedBy: async () => {
       throw new Error('no writes in this test')
     },
+    removeSubIssue: async () => {
+      throw new Error('no writes in this test')
+    },
+    removeBlockedBy: async () => {
+      throw new Error('no writes in this test')
+    },
     deleteRef: async () => {
       throw new Error('no writes in this test')
     },

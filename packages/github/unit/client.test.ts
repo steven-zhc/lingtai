@@ -353,4 +353,15 @@ describe('sub-issues and blocked-by links', () => {
       { method: 'POST', url: `${base}/61/dependencies/blocked_by`, body: { issue_id: 5_466_453_198 } },
     ])
   })
+
+  it('unlinks by id: the child in a JSON body, the blocker in the path', async () => {
+    const sent = stubLinks(() => ({}))
+    const gh = await createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+    await gh.removeSubIssue(50, 5_467_364_530 as never)
+    await gh.removeBlockedBy(61, 5_466_453_198 as never)
+    expect(sent).toEqual([
+      { method: 'DELETE', url: `${base}/50/sub_issue`, body: { sub_issue_id: 5_467_364_530 } },
+      { method: 'DELETE', url: `${base}/61/dependencies/blocked_by/5466453198`, body: undefined },
+    ])
+  })
 })

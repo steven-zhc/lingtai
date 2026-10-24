@@ -36,6 +36,8 @@ export type SplitPort = Pick<
   | 'addSubIssue'
   | 'blockedBy'
   | 'addBlockedBy'
+  | 'removeSubIssue'
+  | 'removeBlockedBy'
 >
 
 /**
@@ -93,18 +95,47 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   async function findChildren(): Promise<{
     found: Map<string, { number: number; id: IssueId }>
     duplicates: { number: number; of: number }[]
+    /** Every issue carrying a child's marker that is not the child, open or closed. */
+    extras: { number: number; id: IssueId }[]
   }> {
     const issues = await port.listIssuesSince(since)
     const found = new Map<string, { number: number; id: IssueId }>()
     const duplicates: { number: number; of: number }[] = []
+    const extras: { number: number; id: IssueId }[] = []
     for (const child of plan.children) {
       const marker = splitMarker(parent, waitId, plan, child.key)
       const [oldest, ...rest] = issues.filter((i) => i.body.includes(marker)).sort((a, b) => a.number - b.number)
       if (oldest === undefined) continue
       found.set(child.key, { number: oldest.number, id: oldest.id })
-      for (const extra of rest) if (extra.state === 'open') duplicates.push({ number: extra.number, of: oldest.number })
+      for (const extra of rest) {
+        extras.push({ number: extra.number, id: extra.id })
+        if (extra.state === 'open') duplicates.push({ number: extra.number, of: oldest.number })
+      }
     }
-    return { found, duplicates }
+    return { found, duplicates, extras }
+  }
+
+  /**
+   * Links a withdrawn duplicate still holds: closing an issue detaches nothing,
+   * so a duplicate that was attached or made a blocker before it was withdrawn
+   * is still a native sub-issue and a blocker until it is unlinked.
+   */
+  async function strayLinks(): Promise<{
+    subs: IssueId[]
+    edges: { issue: number; blocker: IssueId }[]
+  }> {
+    const { found, extras } = await findChildren()
+    if (extras.length === 0) return { subs: [], edges: [] }
+    const ids = new Set(extras.map((e) => e.id as number))
+    const subs = (await port.subIssues(parent)).filter((i) => ids.has(i.id)).map((i) => i.id)
+    const edges: { issue: number; blocker: IssueId }[] = []
+    for (const ticket of new Set(plan.blockedBy.map((d) => d.ticket))) {
+      const dependent = found.get(ticket)
+      if (dependent === undefined) continue
+      for (const b of await port.blockedBy(dependent.number))
+        if (ids.has(b.id)) edges.push({ issue: dependent.number, blocker: b.id })
+    }
+    return { subs, edges }
   }
 
   /** Withdraws a newer duplicate in favour of the older issue that is the child. */
@@ -161,6 +192,9 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
       // became visible after a retry made another — is withdrawn first, so a
       // withdrawal that failed is tried again rather than forgotten.
       for (const d of (await findChildren()).duplicates) await withdraw(d.number, d.of)
+      const stray = await strayLinks()
+      for (const id of stray.subs) await port.removeSubIssue(parent, id)
+      for (const e of stray.edges) await port.removeBlockedBy(e.issue, e.blocker)
       for (const child of plan.children) {
         if (issues.has(child.key)) continue
         const marker = splitMarker(parent, waitId, plan, child.key)
@@ -205,6 +239,9 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     const open = (await findChildren()).duplicates
     if (open.length > 0)
       failure = `${failure === null ? '' : `${failure}; `}duplicate children still open: ${open.map((d) => `#${d.number}`).join(', ')}`
+    const stray = await strayLinks()
+    if (stray.subs.length + stray.edges.length > 0)
+      failure = `${failure === null ? '' : `${failure}; `}duplicate children still linked: ${stray.subs.length} sub-issue(s), ${stray.edges.length} blocked-by edge(s)`
   } catch (err) {
     failure = `${failure === null ? '' : `${failure}; `}read-back failed: ${messageOf(err)}`
   }

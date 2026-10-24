@@ -309,6 +309,18 @@ export interface GitHubClient {
   addBlockedBy(issue: number, blocker: IssueId): Promise<void>
 
   /**
+   * Detaches `child` from `parent`. `DELETE …/issues/{parent}/sub_issue` with
+   * `{ sub_issue_id }` as a JSON integer.
+   */
+  removeSubIssue(parent: number, child: IssueId): Promise<void>
+
+  /**
+   * Removes `blocker` from what blocks `issue`.
+   * `DELETE …/issues/{issue}/dependencies/blocked_by/{blocker}` — the id in the path.
+   */
+  removeBlockedBy(issue: number, blocker: IssueId): Promise<void>
+
+  /**
    * The current installation token, refreshed if it is about to expire.
    *
    * Exposed because git needs it and this client is the only thing that has it.
@@ -572,6 +584,14 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       await request<unknown>('POST', `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`, {
         issue_id: blocker,
       })
+    },
+
+    async removeSubIssue(parent, child) {
+      await request<unknown>('DELETE', `/repos/${owner}/${repo}/issues/${parent}/sub_issue`, { sub_issue_id: child })
+    },
+
+    async removeBlockedBy(issue, blocker) {
+      await request<unknown>('DELETE', `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by/${blocker}`)
     },
 
     async listIssuesSince(since) {

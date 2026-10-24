@@ -92,6 +92,12 @@ function fakeGitHub(fault?: Fault) {
       blocks.set(issue, (blocks.get(issue) ?? new Set()).add(blocker))
       if (throwAfter) throw new Error('edge timed out after landing')
     },
+    removeSubIssue: async (parent, childId) => {
+      subs.get(parent)?.delete(numberOf(childId)!)
+    },
+    removeBlockedBy: async (issue, blocker) => {
+      blocks.get(issue)?.delete(blocker)
+    },
   }
   return { port, issues, subs, blocks, calls }
 }
@@ -311,6 +317,46 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     github.issues.push({ ...a!, number: 700, id: 700_007 as Issue['id'], createdAt: 700 })
     expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
     expect(github.issues.find((i) => i.number === 700)!.state).toBe('closed')
+  })
+
+  it('unlinks a duplicate that was attached and made a blocker before the original became visible', async () => {
+    const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+    const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+    const listed = github.port.listIssuesSince
+    // The original a lands but the listing omits it.
+    github.port.listIssuesSince = async () => (await listed(new Date())).filter((i) => i.number !== 600)
+    expect(await split()).toMatchObject({ reason: 'split-partial' })
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    const replacement = github.issues.find((i) => i.number === 601)!
+    expect(github.subs.get(PARENT)).toContain(601)
+    // The original becomes visible: the replacement is withdrawn and unlinked.
+    github.port.listIssuesSince = listed
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    const at = (n: number) => github.issues.find((i) => i.number === n)!
+    const [original, b, c] = [at(600), at(602), at(603)] as const
+    expect(replacement.state).toBe('closed')
+    expect(github.subs.get(PARENT)).toEqual(new Set([original.number, b.number, c.number]))
+    expect(github.blocks.get(b.number)).toEqual(new Set([original.id]))
+    const last = types(await store.read(ticketId), 'SplitReconciled').at(-1)!.data as { failure: string | null }
+    expect(last.failure).toBeNull()
+    expect(splitProgressOf(await store.read(ticketId), waitId)!.owed.complete).toBe(true)
+  })
+
+  it('is not complete while a withdrawn duplicate is still linked', async () => {
+    const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+    const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+    const listed = github.port.listIssuesSince
+    github.port.listIssuesSince = async () => (await listed(new Date())).filter((i) => i.number !== 600)
+    await split()
+    await split()
+    github.port.listIssuesSince = listed
+    github.port.removeSubIssue = async () => {
+      throw new Error('unlink timed out')
+    }
+    expect(await split()).toMatchObject({ reason: 'split-partial' })
+    const failure = splitProgressOf(await store.read(ticketId), waitId)!.failure
+    expect(failure).toContain('unlink timed out')
+    expect(failure).toContain('still linked')
   })
 
   describe('a plan change', () => {
