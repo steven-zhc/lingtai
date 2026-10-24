@@ -50,7 +50,7 @@ describe('a judge asked in a continuation has a session of its own', () => {
   // reaches a judge from an approval (#580 names a conflict after one).
   const cases = [{ kind: 'GrantFixRound', recipe: MANY_ROUNDS, laps: 2, firstJudges: true }] as const
   for (const { kind, recipe, laps, firstJudges } of cases) {
-    it(`does not reuse an earlier id after ${kind}`, async () => {
+    it(`asks no judge after ${kind}, and no id repeats`, async () => {
       const store = memoryStore()
       const ticketId = ticketStream(PROJECT, 7)
       const ran: string[] = []
@@ -102,9 +102,9 @@ describe('a judge asked in a continuation has a session of its own', () => {
         const next = await once(args({ runId }), ports)
         if (next.ok === false) throw new Error(`stopped at ${next.stage}: ${next.detail}`)
         const asked = judgesOf().slice(before)
-        // A granted continuation buys no judge at all since #570: its rounds and its restarts
-        // are both capped, so only a person is left on offer. Were one ever asked, its id
-        // would still carry the wait it resumes (#580).
+        // A granted lap buys no judge since #570: rounds and restarts are both capped, so only
+        // a person is left on offer. If one were asked, its id must carry the wait it resumes
+        // (#580) — and no fixture reaches an ungranted continuation that asks (see above).
         expect(asked).toHaveLength(0)
         for (const id of asked) expect(id).toContain(`:judge:findings:${wait.waitId}:`)
         if (next.ok !== 'held') break

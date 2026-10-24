@@ -1160,11 +1160,10 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   let landed: string | null = null
   let roundsSpent = options.from?.roundsSpent ?? 0
   const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
-  // A restart is automatic fix routing too, and a bigger kind than a round: a
-  // granted run (the grant's own lap, or a later one carrying its `roundLimit`)
-  // ends at a person rather than at a restart nobody decided (#570).
-  const grantedRun = options.from?.grant !== undefined || options.from?.roundLimit !== undefined
-  const restartLimit = grantedRun ? ceilings.restartsSpent : ceilings.restarts
+  // A restart is automatic fix routing too, and a bigger kind than a round: the lap
+  // that spends a human grant ends at a person rather than at a restart nobody
+  // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
+  const restartLimit = options.from?.grant !== undefined ? ceilings.restartsSpent : ceilings.restarts
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = 'admit'

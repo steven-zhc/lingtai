@@ -1603,7 +1603,6 @@ describe('a granted fix round', () => {
     expect(implementations).toBe(0)
     expect(result.end._tag).toBe('WaitOnPerson')
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
-    expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
 
   describe('a review that refuses with a criterion and restarts left (#570)', () => {
@@ -1647,7 +1646,7 @@ describe('a granted fix round', () => {
       expect(result.end._tag).toBe('WaitOnPerson')
     })
 
-    it('ends the lap after an intervening approval at a person as well', async () => {
+    it('keeps the recipe restarts on a continuation from an approval without a grant', async () => {
       const { bodies } = watching()
       const { emit } = events()
       const result = await runPass({
@@ -1661,7 +1660,7 @@ describe('a granted fix round', () => {
         judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
       })
 
-      expect(result.end._tag).toBe('WaitOnPerson')
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     })
 
     it('still restarts an ungranted pass with the same proposal', async () => {
