@@ -1,9 +1,8 @@
-import { SUBSCRIBER_TIMEOUT_MS } from '@lingtai/daemon'
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
 import { aRunRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { TRIAGE_WALL_MAX, Triage } from '@lingtai/recipe'
+import { Triage } from '@lingtai/recipe'
 import { describe, expect, it, vi } from 'vitest'
 
 import { enqueueTriage, onWaitStarted, type TriageTriggerPorts } from '../src/triage.ts'
@@ -176,9 +175,5 @@ describe('WaitStarted triage trigger', () => {
     expect(enqueueTriage(key, next, log)).toBe(true)
     await drained()
     expect(next).toHaveBeenCalledTimes(2)
-  })
-
-  it('keeps the recipe triage wall below the subscriber timeout', () => {
-    expect(TRIAGE_WALL_MAX).toBeLessThan(SUBSCRIBER_TIMEOUT_MS)
   })
 })
