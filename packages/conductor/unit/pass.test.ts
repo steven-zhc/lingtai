@@ -1604,6 +1604,81 @@ describe('a granted fix round', () => {
     expect(result.end._tag).toBe('WaitOnPerson')
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
+
+  describe('a review that refuses with a criterion and restarts left (#570)', () => {
+    const finding: ActionFinding = {
+      file: 'packages/conductor/src/pass.ts',
+      line: 1,
+      claim: 'a blocker',
+      failureScenario: 'it does the wrong thing',
+      severity: 'major',
+    }
+    const refusing = () =>
+      watchingActions({
+        review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker', findings: [finding] })],
+      })
+    const ceilings = { rounds: 3, restarts: 2, restartsSpent: 0 }
+
+    it('ends a granted lap at a person, without asking the judge', async () => {
+      let asked = 0
+      const { bodies } = watching()
+      const { emit } = events()
+      const result = await runPass({
+        recipe: recipeWith({}),
+        context,
+        emit,
+        bodies,
+        actionsAt: refusing().actionsAt,
+        ceilings,
+        from: {
+          step: 'review',
+          waive: [],
+          roundsSpent: 1,
+          grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+        },
+        judge: async () => {
+          asked += 1
+          return { next: 'claim', named: 'test', why: 'restart it' }
+        },
+      })
+
+      expect(asked).toBe(0)
+      expect(result.end._tag).toBe('WaitOnPerson')
+    })
+
+    it('keeps the recipe restarts on a continuation from an approval without a grant', async () => {
+      const { bodies } = watching()
+      const { emit } = events()
+      const result = await runPass({
+        recipe: recipeWith({}),
+        context,
+        emit,
+        bodies,
+        actionsAt: refusing().actionsAt,
+        ceilings,
+        from: { step: 'review', waive: [], roundsSpent: 1, roundLimit: 1 },
+        judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
+      })
+
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    })
+
+    it('still restarts an ungranted pass with the same proposal', async () => {
+      const { bodies } = watching()
+      const { emit } = events()
+      const result = await runPass({
+        recipe: recipeWith({}),
+        context,
+        emit,
+        bodies,
+        actionsAt: refusing().actionsAt,
+        ceilings,
+        judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
+      })
+
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    })
+  })
 })
 
 describe('proposed routes on the way through as well as on the way back', () => {
