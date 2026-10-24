@@ -285,3 +285,72 @@ describe('updateBody with ifUnchanged', () => {
     expect(sent.at(-1)).toMatchObject({ method: 'PATCH' })
   })
 })
+
+/**
+ * The four link verbs (#561): GitHub's internal id and the issue number are
+ * different numbers, and a sub-issue or a blocked-by link names its other end by
+ * the id, as a JSON integer.
+ */
+describe('sub-issues and blocked-by links', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function stubLinks(answer: (url: string, init?: RequestInit) => unknown) {
+    const sent: { method: string; url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/access_tokens')) {
+        return new Response(
+          JSON.stringify({ token: 'ghs_x', expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      sent.push({
+        method: init?.method ?? 'GET',
+        url: String(url),
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      })
+      return new Response(JSON.stringify(answer(String(url), init)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    return sent
+  }
+
+  const base = 'https://api.github.com/repos/steven-zhc/lingtai/issues'
+
+  it('keeps the id of an issue apart from its number', async () => {
+    stubLinks(() => raw({ number: 12, id: 9_876_543_210 }))
+    const gh = await createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+    expect(await gh.getIssue(12)).toMatchObject({ number: 12, id: 9_876_543_210 })
+  })
+
+  it('lists sub-issues and blockers with both identifiers, paged to the end', async () => {
+    const page = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ number: from + i, id: (from + i) * 1000 + 7 }))
+    const sent = stubLinks((url) => {
+      if (url.includes('/sub_issues')) return url.includes('&page=2') ? page(101, 2) : page(1, 100)
+      return [{ number: 3, id: 3_007 }]
+    })
+    const gh = await createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+    const subs = await gh.subIssues(50)
+    expect(subs).toHaveLength(102)
+    expect(subs[101]).toEqual({ number: 102, id: 102_007 })
+    expect(await gh.blockedBy(61)).toEqual([{ number: 3, id: 3_007 }])
+    expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([
+      `GET ${base}/50/sub_issues?per_page=100&page=1`,
+      `GET ${base}/50/sub_issues?per_page=100&page=2`,
+      `GET ${base}/61/dependencies/blocked_by?per_page=100&page=1`,
+    ])
+  })
+
+  it('posts the id, not the number, as a JSON integer', async () => {
+    const sent = stubLinks(() => ({}))
+    const gh = await createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+    await gh.addSubIssue(50, 5_467_364_530 as never)
+    await gh.addBlockedBy(61, 5_466_453_198 as never)
+    expect(sent).toEqual([
+      { method: 'POST', url: `${base}/50/sub_issues`, body: { sub_issue_id: 5_467_364_530 } },
+      { method: 'POST', url: `${base}/61/dependencies/blocked_by`, body: { issue_id: 5_466_453_198 } },
+    ])
+  })
+})
