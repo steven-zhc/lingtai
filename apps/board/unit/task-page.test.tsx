@@ -614,6 +614,7 @@ describe('the rail on the task page', () => {
   }
 
   const why = (html: string) => html.slice(html.indexOf('class="swhere"'), html.indexOf('data-rank="so-what"'))
+  const opening = (html: string) => html.slice(html.indexOf('class="swaiting-head"'), html.indexOf('</header>') + 9)
   const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
 
   /**
@@ -677,10 +678,35 @@ describe('the rail on the task page', () => {
    * what refused, what is left to spend — was missing on the state this page
    * exists to explain.
    */
-  it('is drawn at rank 2 for a blocked item, not just a running one', () => {
-    const rank = why(page(blocked()))
-    expect(rank).toContain('class="seq"')
-    expect(rank).toContain('proposed:review refused')
+  it('draws the blocked rail and refusal once in the ticket opening', () => {
+    const html = page(blocked())
+    const header = opening(html)
+    expect(header).toContain('class="seq"')
+    expect(header).toContain('proposed:review refused')
+    expect(header.indexOf('data-rank="subject"')).toBeLessThan(header.indexOf('class="seq"'))
+    expect(html.match(/class="seq"/g)).toHaveLength(1)
+    expect(why(html)).not.toContain('class="seq"')
+  })
+
+  it('places recognized context before the rail and keeps the generic link when context is absent', () => {
+    const body = [
+      '| | |',
+      '|---|---|',
+      '| **Problem** | The reason is hard to find. |',
+      '| **Want** | Read the stop with the ticket. |',
+      '| **Fix** | Put the rail below the context. |',
+      '| **Watch out** | Keep the whole issue. |',
+    ].join('\n')
+    const withContext = opening(page({ ...blocked(), ticket: { ...TICKET, body } }))
+    expect(withContext.indexOf('>Problem</h2>')).toBeLessThan(withContext.indexOf('>Want</h2>'))
+    expect(withContext.indexOf('>Want</h2>')).toBeLessThan(withContext.indexOf('>Watch out</h2>'))
+    expect(withContext.indexOf('>Watch out</h2>')).toBeLessThan(withContext.indexOf('class="seq"'))
+
+    const generic = opening(page(blocked()))
+    expect(generic).toContain('The ticket’s context is in the complete issue.')
+    expect(generic).toContain('href="#record-ticket"')
+    expect(generic).not.toContain('class="tcontext"')
+    expect(generic.indexOf('href="#record-ticket"')).toBeLessThan(generic.indexOf('class="seq"'))
   })
 
   /**
@@ -690,9 +716,9 @@ describe('the rail on the task page', () => {
    * leaves it at the `task()` helper's default of `null` (`#415`).
    */
   it("carries loadTask's held line down through Standing into the rail", () => {
-    const rank = why(page({ ...blocked(), held: '1 of 3 rounds · 0 restarts left' }))
-    expect(rank).toContain('proposed:review refused')
-    expect(rank).toContain('<span class="shold"> — 1 of 3 rounds · 0 restarts left</span>')
+    const header = opening(page({ ...blocked(), held: '1 of 3 rounds · 0 restarts left' }))
+    expect(header).toContain('proposed:review refused')
+    expect(header).toContain('<span class="shold"> — 1 of 3 rounds · 0 restarts left</span>')
   })
 
   /**
