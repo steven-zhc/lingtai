@@ -1021,7 +1021,7 @@ export interface PassOver {
    * **Still here though `end` carries the terminal now**, because `end` alone
    * is `landed`/`blocked`/`failed` and the sentence a person or a judge reads
    * is worded from the step and the ending, not from the tag: a `signoff`'s request,
-   * `holdFor`'s branches and the stand-down all read `stopped` rather than
+   * the wait's branches in `conduct.ts` and the stand-down all read `stopped` rather than
    * `end`. Null is a pass that got through, or one the router sent to a person
    * on the way through with nothing of its own to report — `build` and `review`
    * both passed and what `proposed` judged was `review`'s findings. `end._tag`
@@ -1043,7 +1043,7 @@ export interface PassOver {
    * 'conductor'}}`, same as an agent meeting the account-wide wall always
    * has; anything else becomes `WaitOnPerson{AgentCrashed{cause: 'crash'}}`,
    * so a person is told rather than the pass vanishing. `stopped` is where
-   * the actual ending survives, and `holdFor` (`conduct.ts`) reads it instead
+   * the actual ending survives, and `conduct.ts` reads it instead
    * of `end.reason` exactly where this is `true`.
    */
   readonly unanswered: boolean
@@ -1415,7 +1415,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     if (next._tag === 'WaitOnPerson') {
       // `AgentCrashed` and `SignoffRequired` are the only two left here
       // (`#472`): every other fall-short is a `Propose` now, handled by the
-      // branch above. No router visit for either — `holdOf` (`#466`) reads
+      // branch above. No router visit for either — `conduct.ts` (`#466`) reads
       // `next.reason` directly.
       stopped = { step: at, ending }
       end = next
@@ -1490,7 +1490,7 @@ export async function claimStep(options: PassOptions): Promise<StepReached> {
  *
  * **Lossy on purpose.** `AgentCrashed`'s own `detail` is this ending's
  * sentence and nothing finer — the real ending survives on `PassOver.stopped`
- * regardless, which is what `conduct.ts`'s `holdFor` reads instead of
+ * regardless, which is what `conduct.ts` reads instead of
  * `end.reason` wherever `PassOver.unanswered` says this function built the
  * answer rather than `nextOf`.
  */

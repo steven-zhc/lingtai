@@ -81,7 +81,7 @@ export type Tier = z.infer<typeof Tier>
 
 /**
  * The ten steps a pass goes through, in the order it reaches them. Moved to
- * `vocabulary.ts` by #445, to break an import cycle with `hold.ts`; re-exported
+ * `vocabulary.ts` by #445, to break an import cycle; re-exported
  * above under the same name, so no importer of this module changes.
  *
  * **Closed forever** ([ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
@@ -302,8 +302,7 @@ export const WaitStarted = z.strictObject({
  * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
  *
- * `resolution` is 0118 §1's own `Resolution` — `Approve`, `GrantFixRound`,
- * `ContinueConflict`, `Requeue`, `EditBodyAndRequeue`, `AnswerQuestion` or `Close` — so which move a person
+ * `resolution` is 0118 §1's own `Resolution`, so which move a person
  * made is a value rather than re-derived from which other event followed.
  */
 export const WaitResolved = z.object({
@@ -686,7 +685,7 @@ export const RunFinished = z.object({
  * every payload a previous build wrote still parses against this.
  *
  * Moved to `vocabulary.ts` by #445, for the same reason `Step` was —
- * `hold.ts`'s `CeilingKind` is built from this list and `hold.ts` cannot
+ * `proposal.ts`'s `CeilingKind` is built from this list and cannot
  * import `events.ts` without a cycle. Re-exported above under the same name.
  */
 
@@ -913,7 +912,7 @@ export const StepStarted = z.object({
  * `packages/recipe/src/recipe.ts` is this array again.
  *
  * Moved to `vocabulary.ts` by #445, along with `Finding` below, for the same
- * reason `Step` was — `hold.ts`'s `Routed` carries `Finding[]`. Re-exported
+ * reason `Step` was — `proposal.ts`'s `Routed` carries `Finding[]`. Re-exported
  * above under the same names.
  */
 

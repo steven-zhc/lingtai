@@ -3979,8 +3979,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * classified the stop (`unansweredEnd` in `pass.ts`), and that
        * manufactured `AgentCrashed` is not the richer sentence `stopped`
        * already carries — but both branches now reach the same `WaitOnPerson`
-       * shape, so there is nothing left for this file to rebuild: `holdOf`,
-       * `holdOfPass` and `hold-of.ts` are gone, and so is the patching they
+       * shape, so there is nothing left for this file to rebuild: the old hold translators
+       * and `hold-of.ts` are gone, and so is the patching they
        * did — `ceilingHit`'s turns/dollars and `declined`'s `said` are spend,
        * which lives on `RunSpent` alone and not on the wait (0110), and
        * `MergeRefused`'s `paths`/`baseSha`/`headSha` go with `IntegrationRefused`'s

@@ -12,10 +12,10 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
-// pipeline in behind it. `describeHold` is pure and lives beside the field it
+// pipeline in behind it. `describeWaitLines` is pure and lives beside the field it
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
-import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
+import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -349,7 +349,7 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
  *
  * **Two renderings, one component** (design §3). Today: the state, the age, the
  * question verbatim, the actions. Once `#83` fills `diagnosis`, its sentence
- * and its recommendation fill into the same block through `describeHold` — and
+ * and its recommendation fill into the same block through `describeWaitLines` — and
  * a block with no diagnosis renders exactly as it does today, because those
  * lines are simply absent. That degradation is #83's own requirement, not a
  * courtesy.
@@ -432,7 +432,7 @@ export function Standing({
   unknown,
   progress = null,
   // Renamed on the way in: the component already has a `held` of its own —
-  // `describeHold`'s lines, rank 2 and 3's words — and this is a different
+  // `describeWaitLines`'s lines, rank 2 and 3's words — and this is a different
   // fact entirely, the rail's own budget (`#415`).
   held: budget = null,
   now = Date.now(),
@@ -507,7 +507,7 @@ export function Standing({
   /** Fixed only by the development visual gallery. */
   now?: number
 }) {
-  const held = describeHold(standing)
+  const held = describeWaitLines(standing)
   const opening = body === null ? null : ticketOpening(body)
   const acting = project !== null && issue !== null
   // What is stopping it and where it is in line — two facts, and the second is
@@ -592,7 +592,7 @@ export function Standing({
   // still your move. `live` only ever paints when nothing is on you.
   const mark = standing.onYou ? ' onyou' : standing.state === 'running' ? ' live' : ''
 
-  // `describeHold` decides the words. *What happened* is the reason and reads
+  // `describeWaitLines` decides the words. *What happened* is the reason and reads
   // second; what is needed and what is recommended are `soWhat`'s one sentence,
   // and what was already done is the record's (#152).
   const what = held.find((line) => line.part === 'what') ?? null
@@ -1098,21 +1098,21 @@ export function Standing({
  * Rank 3: what the quote means for the decision, in one sentence.
  *
  * **A string, so it cannot be a paragraph** (#152). What it replaces was
- * `describeHold`'s lines printed one after another — *your judgement is
+ * `describeWaitLines`'s lines printed one after another — *your judgement is
  * needed*, then the fix rounds and the decline (#142), then the recommendation
  * with the restart refusal (0040) inside its why — which were four tickets'
  * sentences and nobody's one. So: who is needed, and the move the diagnosis
  * recommends with the first clause of its reason, and it stops. What was done,
  * and the rest of the why, are in the record's attempts row.
  *
- * The needs wording is `describeHold`'s, so this page, the card and `lingtai
+ * The needs wording is `describeWaitLines`'s, so this page, the card and `lingtai
  * status` still say the same thing about the same hold. A state with nothing
  * needed of anybody says who is being waited on instead, which is the fact a
  * running or a queued item's reader came for.
  */
 export function soWhat(standing: StandingView): string {
   const needed =
-    standing.needs === null ? null : (describeHold({ needs: standing.needs, diagnosis: null })[0]?.text ?? null)
+    standing.needs === null ? null : (describeWaitLines({ needs: standing.needs, diagnosis: null })[0]?.text ?? null)
   const head = needed ?? standing.who
   const rec = standing.diagnosis?.recommendation ?? null
   if (rec === null) return head
@@ -1187,7 +1187,7 @@ export function Coords({
 }
 
 /** The card's weights, said once there and read here. See `page.tsx`'s `HELD_CLASS`. */
-const HELD_CLASS: Record<HoldLine['part'], string> = {
+const HELD_CLASS: Record<WaitLine['part'], string> = {
   needs: 'needs',
   what: 'diag',
   did: 'did',

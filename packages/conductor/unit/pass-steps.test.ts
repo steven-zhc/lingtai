@@ -797,8 +797,8 @@ describe('prepared refuses, and the refusal reports like any other', () => {
    * never on offer (`offerFor`'s `bornAtOrAfterImplement`), and with no
    * judge declared the pass rests with a person exactly as it did before
    * this ticket — `result.end` is `WaitOnPerson{ProposedEscalated{SetupRefused}}`
-   * now, not the direct `SetupRefused`, and `holdOf`'s own equality (`#471`) is
-   * what keeps the `Hold` the same either way.
+   * now, not the direct `SetupRefused`, and the equality `#471` pinned is
+   * what keeps the wait the same either way.
    */
   it('carries a failed install to a person, naming the install and not the router', async () => {
     const { result } = await pass({

@@ -1273,7 +1273,7 @@ export const queuePlugin = definePlugin('queue', {
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
  * entry's `when:` names. Moved into `@lingtai/domain` by #439 — see
- * `packages/domain/src/hold.ts` for the type and its doc comment — because
+ * `packages/domain/src/proposal.ts` for the type and its doc comment — because
  * `Judgement.Routed` there is typed over it and `@lingtai/recipe` depends on
  * `@lingtai/domain`, not the other way round. Re-exported here under the same
  * name so nothing importing it from `@lingtai/recipe` changes.

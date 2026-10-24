@@ -1,4 +1,6 @@
 import { answer, ask, close } from '@lingtai/conductor'
+import { answerHolding, type AnswerOptions } from '@lingtai/conductor/ask'
+import { closeHolding, type CloseOptions } from '@lingtai/conductor/close'
 import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/conductor/decide'
 /**
  * #485: pins what each CLI verb accepts and refuses, calling the function
@@ -12,8 +14,7 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * throws under `--project unit` (`lockDir()`, `packages/env/src/index.ts`),
  * so by 0060 §1 the whole of either locked function cannot run here —
  * `approveHolding`/`requeueHolding` are the functions underneath the lock,
- * exported for exactly this (`#487`). `ask()`, `answer()` and `close()` take
- * no lock and are called directly.
+ * exported for exactly this (`#487`). `answer()` and `close()` take the decide lock and are called directly.
  *
  * **Not a reduced copy of `wait-handlers-answer-as-today.test.ts`.** Most
  * cases below land on the same assertions as that file's, because most of
@@ -54,6 +55,14 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
+
+/** `answer()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
+const answerUnlocked = (o: AnswerOptions) =>
+  answerHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
+
+/** `close()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
+const closeUnlocked = (o: CloseOptions) =>
+  closeHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -314,7 +323,7 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
   it('refuses an item nothing is asking anything of', async () => {
     const store = createMemoryEventStore()
 
-    const result = await answer({ project: PROJECT, issue: 121, answer: 'yes', by: 'human:steven', store })
+    const result = await answerUnlocked({ project: PROJECT, issue: 121, answer: 'yes', by: 'human:steven', store })
 
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('not asking anything')
@@ -329,7 +338,7 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
       ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-122'), step: 'implement', question: 'which helper?' }),
     ])
 
-    const result = await answer({ project: PROJECT, issue: 122, answer: 'yes', by: 'human:steven', store })
+    const result = await answerUnlocked({ project: PROJECT, issue: 122, answer: 'yes', by: 'human:steven', store })
 
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('pass-122')
@@ -356,7 +365,13 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
       ...aWait(item, { _tag: 'OwnQuestion', question: 'second wording', by: 'human:steven' }),
     ])
 
-    const result = await answer({ project: PROJECT, issue: 123, answer: 'the first', by: 'human:steven', store })
+    const result = await answerUnlocked({
+      project: PROJECT,
+      issue: 123,
+      answer: 'the first',
+      by: 'human:steven',
+      store,
+    })
 
     expect(result.ok).toBe(true)
     const wait = waitsOf(await store.read(ticketId)).at(-1)
@@ -389,9 +404,15 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
 
   it('refuses an item already closed', async () => {
     const store = createMemoryEventStore()
-    await close({ project: PROJECT, issue: 131, reason: 'first close', by: 'human:steven', store })
+    await closeUnlocked({ project: PROJECT, issue: 131, reason: 'first close', by: 'human:steven', store })
 
-    const result = await close({ project: PROJECT, issue: 131, reason: 'second close', by: 'human:steven', store })
+    const result = await closeUnlocked({
+      project: PROJECT,
+      issue: 131,
+      reason: 'second close',
+      by: 'human:steven',
+      store,
+    })
 
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('already closed')
@@ -402,7 +423,7 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
     const ticketId = ticketStream(PROJECT, 132)
     await seed(store, ticketId, aLanding(makeStream(ticketId), 'c'.repeat(40)))
 
-    const result = await close({ project: PROJECT, issue: 132, reason: 'moot', by: 'human:steven', store })
+    const result = await closeUnlocked({ project: PROJECT, issue: 132, reason: 'moot', by: 'human:steven', store })
 
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('landed')
@@ -412,7 +433,13 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 133)
 
-    const result = await close({ project: PROJECT, issue: 133, reason: 'no longer wanted', by: 'human:steven', store })
+    const result = await closeUnlocked({
+      project: PROJECT,
+      issue: 133,
+      reason: 'no longer wanted',
+      by: 'human:steven',
+      store,
+    })
 
     expect(result).toEqual({
       ok: true,

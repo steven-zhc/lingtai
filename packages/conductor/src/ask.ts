@@ -25,6 +25,7 @@ import { parsePayload, reduceTicket, waitsOf, type WaitId, ticketStream } from '
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
+import { deciding } from './approve.ts'
 import { resolveWaitHolding } from './resolve-wait.ts'
 
 export interface AskOutcome {
@@ -90,22 +91,7 @@ export async function ask(options: {
   return { ok: true, ticketId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
 }
 
-/**
- * Answers a question asked before a run, and hands the item back to the queue.
- *
- * The same event `requeue` appends — resolving the wait, whose `note` is the
- * answer — and the fold keeps it, so a replay can say what was decided and
- * every later attempt's prompt carries it. A question that should not have been
- * asked is withdrawn instead — `requeue()`, which writes the unblock
- * `withdrawn` and keeps no answer.
- *
- * **Refused on a block a run is holding.** That block is about an attempt: a
- * diff waiting at a gate is approved or rejected (`lingtai approve`), and a
- * failure is acknowledged by `lingtai requeue`. Answering one of those as though
- * it were a question about the ticket would throw the diff away and put a
- * sentence about one attempt into every attempt after it.
- */
-export async function answer(options: {
+export interface AnswerOptions {
   project: string
   issue: number
   answer: string
@@ -127,14 +113,47 @@ export async function answer(options: {
   waitId?: WaitId
   by: string
   store?: EventStore
-}): Promise<AskOutcome> {
+}
+
+/**
+ * Answers a question asked before a run, and hands the item back to the queue.
+ *
+ * The same event `requeue` appends — resolving the wait, whose `note` is the
+ * answer — and the fold keeps it, so a replay can say what was decided and
+ * every later attempt's prompt carries it. A question that should not have been
+ * asked is withdrawn instead — `requeue()`, which writes the unblock
+ * `withdrawn` and keeps no answer.
+ *
+ * **Refused on a block a run is holding.** That block is about an attempt: a
+ * diff waiting at a gate is approved or rejected (`lingtai approve`), and a
+ * failure is acknowledged by `lingtai requeue`. Answering one of those as though
+ * it were a question about the ticket would throw the diff away and put a
+ * sentence about one attempt into every attempt after it.
+ */
+export async function answer(options: AnswerOptions): Promise<AskOutcome> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
-
   if (!options.answer.trim()) {
     return { ok: false, ticketId, detail: 'an answer needs an answer' }
   }
+  return deciding(
+    ticketId,
+    () => ({
+      ok: false,
+      ticketId,
+      detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
+    }),
+    () => answerHolding(options, store, ticketId),
+  )
+}
 
+/**
+ * **Exported for the unit half alone**, like `approveHolding`: `answer()` takes
+ * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1 it
+ * cannot be unit-tested — this function underneath it can. `index.ts` does not
+ * re-export it.
+ */
+export async function answerHolding(options: AnswerOptions, store: EventStore, ticketId: string): Promise<AskOutcome> {
   const events = await store.read(ticketId)
   const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked') {
@@ -169,9 +188,8 @@ export async function answer(options: {
   // `resolveWait`'s now (#465) — every check above this line is `answer`'s
   // own reading of what a question may be answered at all, which
   // `resolveWaitHolding`'s generic `allowedResolutions` check re-asks and
-  // agrees with by construction. `answer` never took the decide-lock
-  // `approve`/`requeue` do (#150 was never its problem), so it calls the
-  // unlocked half directly rather than gaining one now.
+  // agrees with by construction. `answer()` holds the decide-lock around all
+  // of it, as every other resolution does.
   const resolved = await resolveWaitHolding(
     {
       ticketId,

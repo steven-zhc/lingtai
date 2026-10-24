@@ -3,12 +3,11 @@
  * 0118's `WaitReason` existed — rebuilt from the `WaitReason` directly now
  * that `Hold` is gone (#502, 0120 phase 2).
  *
- * This translation once went through `Hold`, with `@lingtai/conductor`'s
- * `adapters.ts` (`holdOf`/`escalatedHold`) doing the other half,
+ * This translation once went through `Hold`, with a conductor adapter doing the other half,
  * `WaitReason -> Hold`, as a temporary translation layer. The switch deletes
  * `Hold` itself, so this is now the one function that goes straight from a
  * `WaitStarted.reason` to the sentence a card and a GitHub comment show —
- * `holdOf`'s and `escalatedHold`'s own per-variant text, carried over onto
+ * the adapters' own per-variant text, carried over onto
  * `WaitReason`'s twelve tags (thirteen counting `ProposedEscalated`'s own
  * proposal) rather than onto `Hold`'s ten.
  *

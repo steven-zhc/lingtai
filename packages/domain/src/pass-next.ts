@@ -7,7 +7,7 @@
  * without a second judgement.
  *
  * Imports leaves only — `action.ts`, `proposal.ts`, `wait.ts`,
- * `vocabulary.ts` — never `events.ts` or `hold.ts` (`hold.ts:15-19`'s ESM
+ * `vocabulary.ts` — never `events.ts` (`vocabulary.ts`'s ESM
  * cycle).
  *
  * **`Landed` is already exported from the root** (`integration.ts:37`), so
@@ -346,8 +346,8 @@ function requeuedNeverStarted(scope: 'conductor' | 'work-item'): NextOfResult {
  * none or an empty one. A kept `run:` (`kept-run-action.ts`, `plugin: 'run'`)
  * also yields `commit` — it commits what the agent left behind — but its
  * `evidence` is the command's own output, never the agent's words, and
- * `said` is specifically the agent's last words (`hold.ts`'s `Declined`,
- * `events.ts`'s `FixApplied` — both gone with #502, but the name stayed).
+ * `said` is specifically the agent's last words (`events.ts`'s `FixApplied`;
+ * the name stayed when #502 removed the rest).
  * Skipping it is what keeps a kept run's
  * `"nothing to commit"` from overwriting what the fixer actually said.
  */

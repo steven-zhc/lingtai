@@ -376,7 +376,7 @@ describe('holding one question', () => {
     expect((spent.data as { costUsd: number | null }).costUsd).toBe(0.42)
     const answer = answerOf(store.appended)
     expect(answer.failure).toContain('timeout')
-    // Every round — and here, the only one — receives the `HoldOptions.call` it was handed.
+    // Every round — and here, the only one — receives the `DiscussionTurnOptions.call` it was handed.
     expect(calls).toEqual([CALL])
   })
 

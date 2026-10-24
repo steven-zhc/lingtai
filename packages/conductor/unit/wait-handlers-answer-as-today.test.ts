@@ -32,7 +32,11 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { approveHolding, type ApproveOptions, requeueHolding } from '../src/approve.ts'
-import { answer, ask } from '../src/ask.ts'
+import { answer, answerHolding, type AnswerOptions, ask } from '../src/ask.ts'
+
+/** `answer()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
+const answerUnlocked = (o: AnswerOptions) =>
+  answerHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -119,7 +123,7 @@ describe('answer', () => {
 
   it('refuses an item nothing is asking anything of', async () => {
     const store = createMemoryEventStore()
-    const result = await answer({ project: PROJECT, issue: 5, answer: 'yes', by: 'human:steven', store })
+    const result = await answerUnlocked({ project: PROJECT, issue: 5, answer: 'yes', by: 'human:steven', store })
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('backlog')
   })
@@ -133,7 +137,7 @@ describe('answer', () => {
       ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-6'), step: 'implement', question: 'which helper?' }),
     ])
 
-    const result = await answer({ project: PROJECT, issue: 6, answer: 'yes', by: 'human:steven', store })
+    const result = await answerUnlocked({ project: PROJECT, issue: 6, answer: 'yes', by: 'human:steven', store })
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('pass-6')
     expect(result.detail).toContain('lingtai requeue <project> --issue <n> --into-body <text>')
@@ -143,7 +147,7 @@ describe('answer', () => {
     const store = createMemoryEventStore()
     await ask({ project: PROJECT, issue: 7, question: 'which design?', by: 'human:steven', store })
 
-    const result = await answer({
+    const result = await answerUnlocked({
       project: PROJECT,
       issue: 7,
       answer: 'the first',
@@ -160,7 +164,7 @@ describe('answer', () => {
     const ticketId = ticketStream(PROJECT, 8)
     await ask({ project: PROJECT, issue: 8, question: 'which design?', by: 'human:steven', store })
 
-    const result = await answer({ project: PROJECT, issue: 8, answer: 'the first', by: 'human:steven', store })
+    const result = await answerUnlocked({ project: PROJECT, issue: 8, answer: 'the first', by: 'human:steven', store })
     expect(result).toEqual({
       ok: true,
       ticketId,

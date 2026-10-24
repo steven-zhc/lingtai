@@ -167,7 +167,7 @@ export interface BoardCard {
    * same fact and the two must not word it differently (#100). It is
    * `describeArm`'s, fed the row's `restarts` and the recipe's own
    * `limits.restarts` as the ceiling, and the board does not get to have its
-   * own version of it — the same rule `runnableAt` and `describeHold`
+   * own version of it — the same rule `runnableAt` and `describeWaitLines`
    * already follow.
    *
    * It is not `attempts`. That counts claims, so a claim after a crash, after a
@@ -1124,7 +1124,7 @@ export function toColumns(
  * Why a Queued card is not moving, when something is stopping it.
  *
  * Typed alongside the sentence rather than only as one, for the reason
- * `describeHold` gives about a hold: what it *is* has to be assertable without
+ * `describeWaitLines` gives about a hold: what it *is* has to be assertable without
  * a test depending on the wording, and the wording has to be decided in one
  * place so two readers of the same row cannot be told different things.
  */

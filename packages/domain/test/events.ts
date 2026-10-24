@@ -3,7 +3,7 @@
  * — a test says what a pass *ended with* and this writes the `StepStarted`/
  * `StepEnded`/`WaitStarted`/`WaitResolved`/`PassRouted` the real pass would
  * have, with no translation layer in between (the adapters these builders
- * used to go through, `eventOf`/`holdOf`, are deleted with the switch).
+ * used to go through, `eventOf` and its hold counterpart, are deleted with the switch).
  */
 import type {
   Action,

@@ -126,7 +126,7 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
 
 /**
  * **The last `WaitStarted` on the slice is the same `WaitReason` `waitsOf`
- * reads back** (#502) — there is no `holdOf` translation left to cross-check:
+ * reads back** (#502) — there is no hold translation left to cross-check:
  * `WaitStarted.reason` is `@lingtai/domain/wait`'s own `WaitReason`, stored
  * verbatim, so `waitsOf`'s fold and the stored payload are the same object by
  * construction. What is still worth pinning is that `stepOutcomesOf(all)`
@@ -632,7 +632,7 @@ runtime:
    * at round 0 is `NothingProduced`, one of the seven `nextOf` now answers
    * `Propose` for, so `routeProposal` records a `PassRouted` right after
    * `StepDidNotFinish` on the run. With no `judge:` declared the router's
-   * floor is the same person, and `holdOf`'s `ProposedEscalated{NothingProduced}`
+   * floor is the same person, and the `ProposedEscalated{NothingProduced}`
    * branch calls the same `nothingProducedHold` builder the direct form did,
    * so the hold itself — `DidNotFinish`, `why: 'the agent produced no
    * commits'` — is unchanged. This is the ending #461's first run ended on,
@@ -693,7 +693,7 @@ runtime:
   /**
    * The fix round's own agent reads the review's findings and commits
    * nothing, without crashing — `committed` is false and `fixed.failure` is
-   * null, so `conduct.ts:2966` sets `declined` and `holdOfPass` reads the
+   * null, so `conduct.ts:2966` sets `declined` and the pass's ending reads the
    * `did-not-finish` ending as `Declined` rather than `DidNotFinish`.
    *
    * **Two `PassRouted`s, since `#472`**: `pass.routes` collects one decision
@@ -980,7 +980,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * `dirty-base` is one of the lane's other six reasons — no direction exists
    * for it, so it stays `MergeRefused` (`conduct.ts`'s own `MergeRefused`
    * patch, `#472`, filling `paths`/`baseSha`/`headSha` in from
-   * `lastIntegrationRefusal` since `holdOf` alone writes `null` for all
+   * `lastIntegrationRefusal` since nothing else writes `null` for all
    * three). The fake `integrate` appends a real `IntegrationRefused` row —
    * carrying those three fields for a `dirty-base` reason, which the real
    * lane (`packages/repo/src/integrate.ts`) only does for `conflict` — so
@@ -1375,7 +1375,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * round) — the same read as the cold reviewer's (14d), for a dispatch
    * `firstDispatch`'s own receipt never covers. `ceilingHit` is set only by
    * the implementer's first attempt (row 14a); a round bought on `review`'s
-   * findings that then runs out of turns leaves it `null`, so `holdFor`'s
+   * findings that then runs out of turns leaves it `null`, so `conduct.ts`'s
    * guard reads it as `DidNotFinish` rather than inventing a `Ceiling` — with
    * real numbers or not — for a budget the ticket's own scope never promised.
    */
@@ -1430,10 +1430,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * round). `ceilingHit` is `implement`'s own receipt alone (`firstDispatch`,
    * `fixRound`) — a reviewer that runs out of turns leaves it `null`, and
    * `nextOf`'s `BudgetExhausted` carries no step to gate itself with, so
-   * without `holdFor`'s guard this would read as `Ceiling{turns: null,
+   * without that guard this would read as `Ceiling{turns: null,
    * costUsd: null}`: the *scope alarm, requeue* sentence, for a budget the
    * implementer never touched. Before `#467` the same wall held as an
-   * ordinary `DidNotFinish` (`holdOfPass`'s step 3, gated on the same
+   * ordinary `DidNotFinish` (the old ending's third step, gated on the same
    * `ceilingHit`), and this is that shape surviving `nextOf`.
    */
   it('14d. the cold reviewer`s own wall is `DidNotFinish`, not a `Ceiling` nobody paid for', async () => {

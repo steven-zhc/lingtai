@@ -12,10 +12,11 @@ import {
   parsePayload,
   reduceRun,
   reduceTicket,
+  releaseCauseOf,
   waitsOf,
   ticketStream,
 } from '@lingtai/domain'
-import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -297,6 +298,67 @@ describe('resolveWait', () => {
       detail: expect.stringContaining('agent/540-attempt-1'),
     })
     expect((await store.read(ticketId)).filter((event) => event.type === 'WaitResolved')).toHaveLength(0)
+  })
+
+  describe("a person's requeue releases the held run ByPerson (0118 §7, #578)", () => {
+    async function blockedAfterOneRestart(resolution: 'Requeue' | 'EditBodyAndRequeue') {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream(PROJECT, 578)
+      const item = makeStream(ticketId)
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-1'),
+        ...aRelease(item, 'pass-1', 'restart', { _tag: 'Restart', restart: 1 }),
+        ...aClaim(item, 'pass-2'),
+        ...aWait(
+          item,
+          { _tag: 'AgentQuestion', run: aRunRef('pass-2'), step: 'implement', question: 'which?' },
+          waitId,
+        ),
+      ])
+      const before = reduceTicket(await store.read(ticketId)).restarts.length
+      const result = await resolveWaitHolding(
+        { ticketId, issue: 578, waitId, resolution: { _tag: resolution }, by: 'human:steven', store },
+        ticketId,
+      )
+      return { store, ticketId, waitId, before, result }
+    }
+
+    it.each(['Requeue', 'EditBodyAndRequeue'] as const)(
+      '%s appends the release and leaves restarts alone',
+      async (tag) => {
+        const { store, ticketId, waitId, before, result } = await blockedAfterOneRestart(tag)
+
+        expect(result.ok).toBe(true)
+        const events = await store.read(ticketId)
+        expect(releaseCauseOf(events)).toEqual([
+          { _tag: 'Restart', restart: 1 },
+          { _tag: 'ByPerson', waitId },
+        ])
+        const folded = reduceTicket(events)
+        expect(before).toBe(1)
+        expect(folded.restarts).toHaveLength(before)
+        expect(folded.lifecycle.status).toBe('backlog')
+      },
+    )
+
+    it('releases nothing for a question asked before any run', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream(PROJECT, 579)
+      const item = makeStream(ticketId)
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aWait(item, { _tag: 'OwnQuestion', question: 'which?', by: 'human:steven' }, waitId),
+      ])
+
+      const result = await resolveWaitHolding(
+        { ticketId, issue: 579, waitId, resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
+        ticketId,
+      )
+
+      expect(result.ok).toBe(true)
+      expect(releaseCauseOf(await store.read(ticketId))).toEqual([])
+    })
   })
 
   it('refuses a stale waitId — the item is blocked on a different wait', async () => {
