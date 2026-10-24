@@ -614,7 +614,10 @@ describe('the rail on the task page', () => {
   }
 
   const why = (html: string) => html.slice(html.indexOf('class="swhere"'), html.indexOf('data-rank="so-what"'))
-  const opening = (html: string) => html.slice(html.indexOf('class="swaiting-head"'), html.indexOf('</header>') + 9)
+  const opening = (html: string) => {
+    const start = html.indexOf('class="swaiting-head"')
+    return html.slice(start, html.indexOf('</header>', start) + 9)
+  }
   const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
 
   /**

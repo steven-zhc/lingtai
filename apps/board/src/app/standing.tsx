@@ -744,7 +744,7 @@ export function Standing({
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
         <section className="swhere" aria-label="Where it is" data-rank="where">
-          {waiting ? null : <h2 className="ssectiontitle">Where it is</h2>}
+          <h2 className="ssectiontitle">Where it is</h2>
           {waiting ? null : stateReadout}
 
           {!waiting &&
