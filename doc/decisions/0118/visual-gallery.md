@@ -11,8 +11,9 @@ from normal navigation.
 
 Each case has two direct URLs:
 `/dev/waiting/<case>/card` and `/dev/waiting/<case>/task`. Cases are
-`no-triage`, `questions`, `fixable-lines`, `conflicting-hunks`,
-`triage-failed`, `triage-running`, and `resolution-cards`. The last case shows
+`no-triage`, `questions`, `fixable-lines`, `fixable-lines-no-head`,
+`conflicting-hunks`,
+`triage-failed`, `triage-running`, and `resolution-cards`. The `resolution-cards` case shows
 the available moves drawn by the real `Standing` component.
 
 For the #393-style advised outcome, open
