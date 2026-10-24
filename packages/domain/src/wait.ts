@@ -7,7 +7,7 @@
  * in between.
  *
  * **Still a subpath, `@lingtai/domain/wait`, and not in `index.ts`.** The
- * collisions that put it here — `hold.ts`'s `Hold`-shaped `RunRef` and
+ * collisions that put it here — the old `Hold`-shaped `RunRef` and
  * `triage.ts`'s old `Failed`/`Advised`-shaped `TriageResult`/`TriageStatus` —
  * are gone with those two files, so nothing would collide at the root today.
  * Left as a subpath anyway: nine call sites already import it that way, and
@@ -56,7 +56,7 @@ export const KeptAt = z.discriminatedUnion('_tag', [
 export type KeptAt = z.infer<typeof KeptAt>
 
 /**
- * A run a wait belongs to, 0118 §1's own — not `hold.ts`'s `RunRef`, which
+ * A run a wait belongs to, 0118 §1's own — not the old `Hold`'s `RunRef`, which
  * also carries `repairOf` for `waitWords`' pre-#143 repair machinery, a
  * field this model has no place for. `unpushed` sits here, rather than on
  * `WaitReason` itself, so it can sit beside any wait with a run and cannot
@@ -143,8 +143,8 @@ const MergeRefused = z.object({
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
   run: RunRef,
-  // The same two values `hold.ts:232`'s `CeilingKind` extracts, written out
-  // rather than imported from `hold.ts`: a leaf here cannot import that file
+  // The same two values `CeilingKind` extracts, written out
+  // rather than imported: a leaf here cannot import that file
   // (see this file's own header) without closing the ESM cycle it avoids.
   cause: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
   detail: z.string(),
@@ -232,7 +232,7 @@ const AnswerQuestion = z.object({ _tag: z.literal('AnswerQuestion'), choice: z.s
 /** Ends the wait; `lingtai close` reaches it from any ticket, waiting or not. */
 const Close = z.object({ _tag: z.literal('Close') })
 
-/** What a person does about a wait, 0118 §1's five. */
+/** What a person does about a wait, 0118 §1's `Resolution`. */
 export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
   GrantFixRound,
@@ -302,8 +302,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
         // `#471`'s seven, each given the direct `WaitReason` variant's own
-        // row (`:217-240` above) rather than a new one — `holdOf`'s equality
-        // is a claim about the `Hold`, and the resolutions offered for it
+        // row (`:217-240` above) rather than a new one — `#471`'s equality
+        // is a claim about the wait, and the resolutions offered for it
         // follow the same `Hold`.
         case 'CheckRefused':
         case 'FixerDisagrees':
@@ -597,8 +597,8 @@ function lastRefusedActionName(
  *
  * **`ProposedEscalated` branches on its own proposal**, so an escalated
  * `BudgetExhausted` (`#471`) still prefills `Requeue`, the same as the direct
- * one above — `holdOf`'s equality is about the `Hold`, and the card's
- * prefilled resolution is read off this function rather than off the `Hold`.
+ * one above — `#471`'s equality is about the wait, and the card's
+ * prefilled resolution is read off this function.
  */
 function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
   switch (reason._tag) {

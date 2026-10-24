@@ -41,8 +41,8 @@
  * can reach `whoseFailure` and `REFUSAL_READING`'s own move without a second
  * copy of either — `@lingtai/conductor`'s index re-exports everything below
  * under the same names, so no importer of that package changes. `Failure` is
- * `AttributedFailure` here, because `hold.ts`'s own `Failure` union already
- * owns that name once both are re-exported from this package's index.
+ * `AttributedFailure` here, because a `Failure` name is already owned
+ * elsewhere once both are re-exported from this package's index.
  */
 import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
 import type { RefusalReason, RunFailureKind } from './vocabulary.ts'

@@ -20,11 +20,8 @@ import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts
 
 /**
  * **The twelve reasons a pass arrives at `proposed`**, which is what a
- * `judge:` entry's `when:` names — moved here from `hold.ts` by #502, since
- * `hold.ts` is deleted with the switch and `SpentFor`'s `Judge` variant
- * (`events.ts`) still needs this as a value import. See `hold.ts`'s former
- * header (git history) for the full history of this enum; the values
- * themselves are unchanged.
+ * `judge:` entry's `when:` names — and `SpentFor`'s `Judge` variant
+ * (`events.ts`) needs this as a value import.
  */
 export const JudgeWhen = z.enum([
   'red',
@@ -84,7 +81,7 @@ export type VerifyRed = z.infer<typeof VerifyRed>
  * `prepared` refused, or a non-`verdict` action did not finish — #471's
  * seven, added beside the original six with no caller yet (#472).
  *
- * **Not exported individually, unlike the six above.** `hold.ts` already
+ * **Not exported individually, unlike the six above.** `wait.ts` already
  * exports a `SetupRefused` and a `MergeRefused`, and `action.ts` an
  * `AnswerUnreadable`; both are re-exported at the package root (`index.ts`'s
  * `export *`), so a second top-level binding of the same name would make the
@@ -153,9 +150,8 @@ type MergeRefused = z.infer<typeof MergeRefused>
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
   from: Step,
-  // The same two values `hold.ts`'s `CeilingKind` extracts, written out
-  // rather than imported: this file must not import `hold.ts` (`wait.ts`'s
-  // own ESM-cycle reason, `wait.ts:138-140`).
+  // The same two values `CeilingKind` extracts, written out
+  // rather than imported (`wait.ts`'s own ESM-cycle reason).
   kind: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
   turns: z.number().nullable(),
   costUsd: z.number().nullable(),

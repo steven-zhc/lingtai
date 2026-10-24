@@ -449,7 +449,7 @@ export interface DiscussionPorts {
   log?: (line: string) => void
 }
 
-export interface HoldOptions {
+export interface DiscussionTurnOptions {
   chatId: string
   evidence: DiscussionEvidence
   question: string
@@ -491,7 +491,7 @@ export interface HeldTurn {
  * It never throws. A discussion is a thing a person is watching; an exception
  * that reached the daemon's subscription would stop the loop over a question.
  */
-export async function holdDiscussion(ports: DiscussionPorts, options: HoldOptions): Promise<HeldTurn> {
+export async function holdDiscussion(ports: DiscussionPorts, options: DiscussionTurnOptions): Promise<HeldTurn> {
   const log = ports.log ?? (() => {})
   const stream = chatStream(options.chatId)
   const before = await ports.store.read(stream)

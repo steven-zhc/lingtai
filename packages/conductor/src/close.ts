@@ -1,3 +1,45 @@
+export interface CloseOptions {
+  project: string
+  issue: number
+  by: string
+  /**
+   * Why, on the record. Required, unlike `requeue`'s note (#424): this is the
+   * only decision that cannot be revisited, so the sentence explaining it is
+   * the last thing anybody will have.
+   */
+  reason: string
+  /**
+   * The project as Lingtai has it onboarded, and a client on its repository.
+   *
+   * Both, or neither. Together they are what lets the `end` point run: the
+   * recipe is read from this machine, resolved against
+   * the `closed` outcome, and carried out on the same client afterwards.
+   *
+   * **Omitting them closes without resolving `end`**, and is for a caller that
+   * has no GitHub to reach — a test, or a project whose App is not configured.
+   * It is deliberately not the default: a terminal appended with a configured
+   * point left unresolved is the silence 0016 §4 calls Lingtai's bug, so the
+   * two commands a person actually uses both pass them.
+   */
+  state?: ProjectState
+  /** Only what `tellGitHubAbout` carries this out with (#383) — never the refs or the merge. */
+  client?: IssueChannel & RefChannel
+  /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
+  recipe?: () => Promise<ResolvedRecipe>
+  /**
+   * The wait the caller was shown, when closing a blocked item — checked
+   * against the one currently open rather than trusted from the fold
+   * (#465). Omitted (`undefined`) by the CLI, which keeps the old fallback
+   * to whatever is open. `null` is the board's own value for a card that
+   * rendered no wait at all — a queued card's Close (#508) — and refuses a
+   * close that turns out to be blocked rather than silently resolving
+   * whatever wait is open now, the same guard `approve.ts`'s own `waitId`
+   * closes for `Approve`.
+   */
+  waitId?: WaitId | null
+  store?: EventStore
+}
+
 /**
  * Ending a ticket nobody is going to do (#151).
  *
@@ -59,6 +101,7 @@ import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-st
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 
+import { deciding } from './approve.ts'
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
 import { currentRecipe } from './projects.ts'
@@ -71,54 +114,30 @@ export interface CloseOutcome {
   detail: string
 }
 
-export async function close(options: {
-  project: string
-  issue: number
-  by: string
-  /**
-   * Why, on the record. Required, unlike `requeue`'s note (#424): this is the
-   * only decision that cannot be revisited, so the sentence explaining it is
-   * the last thing anybody will have.
-   */
-  reason: string
-  /**
-   * The project as Lingtai has it onboarded, and a client on its repository.
-   *
-   * Both, or neither. Together they are what lets the `end` point run: the
-   * recipe is read from this machine, resolved against
-   * the `closed` outcome, and carried out on the same client afterwards.
-   *
-   * **Omitting them closes without resolving `end`**, and is for a caller that
-   * has no GitHub to reach — a test, or a project whose App is not configured.
-   * It is deliberately not the default: a terminal appended with a configured
-   * point left unresolved is the silence 0016 §4 calls Lingtai's bug, so the
-   * two commands a person actually uses both pass them.
-   */
-  state?: ProjectState
-  /** Only what `tellGitHubAbout` carries this out with (#383) — never the refs or the merge. */
-  client?: IssueChannel & RefChannel
-  /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
-  recipe?: () => Promise<ResolvedRecipe>
-  /**
-   * The wait the caller was shown, when closing a blocked item — checked
-   * against the one currently open rather than trusted from the fold
-   * (#465). Omitted (`undefined`) by the CLI, which keeps the old fallback
-   * to whatever is open. `null` is the board's own value for a card that
-   * rendered no wait at all — a queued card's Close (#508) — and refuses a
-   * close that turns out to be blocked rather than silently resolving
-   * whatever wait is open now, the same guard `approve.ts`'s own `waitId`
-   * closes for `Approve`.
-   */
-  waitId?: WaitId | null
-  store?: EventStore
-}): Promise<CloseOutcome> {
+export async function close(options: CloseOptions): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
-
   if (!options.reason.trim()) {
     return { ok: false, ticketId, detail: 'a close needs a reason' }
   }
+  return deciding(
+    ticketId,
+    () => ({
+      ok: false,
+      ticketId,
+      detail: `${ticketId} is being decided by someone else right now. Nothing was closed — reload and read it again.`,
+    }),
+    () => closeHolding(options, store, ticketId),
+  )
+}
 
+/**
+ * **Exported for the unit half alone**, like `approveHolding`: `close()` takes
+ * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1 it
+ * cannot be unit-tested — this function underneath it can. `index.ts` does not
+ * re-export it.
+ */
+export async function closeHolding(options: CloseOptions, store: EventStore, ticketId: string): Promise<CloseOutcome> {
   const events = await store.read(ticketId)
   const item = reduceTicket(events)
 

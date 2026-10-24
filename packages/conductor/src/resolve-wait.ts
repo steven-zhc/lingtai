@@ -359,6 +359,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
           note,
         }),
       },
+      ...releaseOf(options, resolution, block.runId),
       ...(options.with ?? []),
     ])
   } catch (err) {
@@ -539,4 +540,27 @@ async function checkApprove(
   }
 
   return null
+}
+
+/**
+ * **A person's requeue gives the claim up on the log** (0118 §7): the held run
+ * is released with `cause: ByPerson`, in the same append as the resolution.
+ * Only a wait a run holds has a claim to release — an `OwnQuestion` has no run.
+ * Restarts are counted from `cause: Restart` alone, so this adds none.
+ */
+function releaseOf(options: { waitId: WaitId; by: string }, resolution: Resolution, runId: string | null): ToAppend[] {
+  if (runId === null) return []
+  if (resolution._tag !== 'Requeue' && resolution._tag !== 'EditBodyAndRequeue') return []
+  const how = resolution._tag === 'EditBodyAndRequeue' ? ' with an edited body' : ''
+  return [
+    {
+      type: 'TicketReleased',
+      actor: options.by,
+      data: parsePayload('TicketReleased', {
+        runId,
+        reason: `Requeued by ${options.by}${how}.`,
+        cause: { _tag: 'ByPerson', waitId: options.waitId },
+      }),
+    },
+  ]
 }

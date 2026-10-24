@@ -1724,7 +1724,7 @@ describe('the moves the column ends in', () => {
 // -------------------------------------------------------------- rank 3 ----
 
 /**
- * **Rank 3 is one sentence** (#152). It was `describeHold`'s lines printed in a
+ * **Rank 3 is one sentence** (#152). It was `describeWaitLines`'s lines printed in a
  * row — *your judgement is needed*, the rounds and the decline (#142), the
  * recommendation with the restart refusal (0040) in its why — four tickets'
  * sentences and nobody's one. `soWhat` returns a string, and the block renders
@@ -1773,7 +1773,7 @@ describe('what the refusal means for the decision', () => {
     )
   })
 
-  it('renders in one element, and no line of `describeHold` beside it', () => {
+  it('renders in one element, and no line of `describeWaitLines` beside it', () => {
     const html = renderToStaticMarkup(
       <Standing
         subject={null}

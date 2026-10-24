@@ -18,10 +18,14 @@ import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
  */
 import { describe, expect, it } from 'vitest'
 
-import { close } from '../src/close.ts'
+import { close, closeHolding, type CloseOptions } from '../src/close.ts'
 import { dbTickets } from '../src/db-tickets.ts'
 import { passClientOf } from '../src/ticket-store.ts'
 import { fakeGitHub as fullFakeGitHub } from '../test/one-pass.ts'
+
+/** `close()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
+const closeUnlocked = (o: CloseOptions) =>
+  closeHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
 
 const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString()
 
@@ -193,7 +197,7 @@ describe('closing runs the end point', () => {
     const s = store()
     const g = github(await recipe())
 
-    const outcome = await close(args(s, g))
+    const outcome = await closeUnlocked(args(s, g))
 
     expect(outcome.ok).toBe(true)
     // One append, carrying both. A crash cannot leave a terminal whose point
@@ -212,7 +216,7 @@ describe('closing runs the end point', () => {
     const s = store()
     const g = github(await recipe())
 
-    await close(args(s, g))
+    await closeUnlocked(args(s, g))
 
     expect(g.closedIssues).toEqual([32])
     // And Lingtai's own labels come off: `labelsFor("closed")` is empty, and a
@@ -224,7 +228,7 @@ describe('closing runs the end point', () => {
     const s = store()
     const g = github(null)
 
-    const outcome = await close(args(s, g))
+    const outcome = await closeUnlocked(args(s, g))
 
     expect(outcome.ok).toBe(false)
     expect(outcome.detail).toContain('Nothing was closed.')
@@ -251,7 +255,7 @@ describe('closing a blocked item', () => {
       ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-40'), step: 'implement', question: 'which helper?' }),
     ])
 
-    const outcome = await close({
+    const outcome = await closeUnlocked({
       project: 'lingtai',
       issue: 40,
       by: 'human:steven',
@@ -311,7 +315,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const client = passClientOf(github, tickets)
 
     const events: Envelope[] = []
-    const outcome = await close({
+    const outcome = await closeUnlocked({
       project: 'lingtai',
       issue: opened.number,
       by: 'human:steven',

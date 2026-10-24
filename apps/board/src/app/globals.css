@@ -1110,7 +1110,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    the block at all: they are `.coords`, in the bar, at the bar's size (#152).
 
    These override the card's own `.diag`/`.needs`/`.did`/`.rec`, which are sized
-   in `px` for a 22rem column. The words are shared (`describeHold`); the sizes
+   in `px` for a 22rem column. The words are shared (`describeWaitLines`); the sizes
    are not, and never were. */
 .sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
 /* Rank 2's own grid, so what refused and the diagnosis' sentence keep the gap

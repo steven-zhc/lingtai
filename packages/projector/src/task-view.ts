@@ -1002,7 +1002,7 @@ export function waitOf(taskId: string, state: TaskState, waitId: unknown, reason
  * about why something is blocked is the failure this repository keeps finding* —
  * so the wording is decided once, here, beside the field it is read from.
  */
-export interface HoldLine {
+export interface WaitLine {
   part: 'needs' | 'what' | 'did' | 'rec'
   text: string
 }
@@ -1019,11 +1019,11 @@ export interface HoldLine {
  * cannot collapse it should link to the log instead of pasting a hundred lines
  * into a queue listing.
  */
-export function describeHold(card: {
+export function describeWaitLines(card: {
   needs: 'judgement' | 'acknowledgement' | null
   diagnosis: BlockDiagnosis | null
-}): HoldLine[] {
-  const lines: HoldLine[] = []
+}): WaitLine[] {
+  const lines: WaitLine[] = []
   if (card.needs !== null) {
     lines.push({
       part: 'needs',
@@ -1051,7 +1051,7 @@ export function describeHold(card: {
  * been produced, there is no diff and no branch, and the move is to decide.
  * **A review** is a run holding a diff at a sha: the move is to approve or
  * reject what is there. A failure that needs acknowledging is neither, and
- * stays what `describeHold` says it is.
+ * stays what `describeWaitLines` says it is.
  *
  * **`needs` is read, and that is what makes the third sentence true** (`#197`).
  * It used to hold by accident: the only blocks written `acknowledgement` — the
@@ -1069,7 +1069,7 @@ export function describeHold(card: {
  * and the headline agree: a branch that does not merge is exactly what *your
  * review* means.
  *
- * Beside `describeHold` for its reason (#83, #100): the card and `lingtai
+ * Beside `describeWaitLines` for its reason (#83, #100): the card and `lingtai
  * status` both say it, and must say it in the same words.
  */
 export function describeWait(card: {
@@ -1081,7 +1081,7 @@ export function describeWait(card: {
   if (!card.waiting) return null
   if (card.asked) return 'waiting for your answer'
   // Before the sha, because a block can now carry both and only one of them is
-  // a question to the person: an acknowledgement is `describeHold`'s to word.
+  // a question to the person: an acknowledgement is `describeWaitLines`'s to word.
   if (card.needs === 'acknowledgement') return null
   if (card.awaitingSha !== null) return 'waiting for your review'
   return null
@@ -1090,7 +1090,7 @@ export function describeWait(card: {
 /**
  * *restart 1 of 2*, or null when this ticket has only ever had one approach.
  *
- * **Beside `describeHold` and for its reason** (#83, #100): the board and
+ * **Beside `describeWaitLines` and for its reason** (#83, #100): the board and
  * `lingtai status` both show it, and two places that word the same fact
  * differently is the failure this repository keeps finding. So the sentence is
  * decided once, here — but the ceiling is the recipe's, never the row's, and

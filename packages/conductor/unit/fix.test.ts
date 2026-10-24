@@ -787,7 +787,7 @@ describe('the headline says what stopped the pass', () => {
   })
 
   /**
-   * **The line printed directly above the headline** (`describeHold`, #83).
+   * **The line printed directly above the headline** (`describeWaitLines`, #83).
    * `needs` was `judgement` whatever stopped the pass, so a crashed fixer's card
    * read *your judgement is needed* and then *this is infrastructure and not
    * your call* — the contradiction `#197` is about, one line earlier than the

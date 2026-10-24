@@ -212,7 +212,7 @@ export function fixStopOf(failure: { kind: RunFailureKind; detail: string }): Fi
  * `waitWords`'s `needs`, off a `WaitReason`.
  *
  * **Beside the headlines, because it is the line printed directly above one**
- * (`#197`). `describeHold` emits the `needs` line first and the diagnosis's
+ * (`#197`). `describeWaitLines` emits the `needs` line first and the diagnosis's
  * `what` second, and both the board card and `lingtai status` render them in
  * that order (#83, #100). A crashed fixer's block written `judgement`
  * unconditionally therefore reads *your judgement is needed* one line above *this

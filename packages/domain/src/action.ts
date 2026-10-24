@@ -5,12 +5,12 @@
  * Zod, not `Data.TaggedEnum`: 0101 §4 keeps `@lingtai/domain`'s only
  * dependency `zod`, and 0101 §1 wants events as zod schemas so a reader can
  * parse what the log actually holds. `_tag` is the discriminant on each
- * result union, matching `hold.ts`'s own convention.
+ * result union, matching the other unions here.
  *
  * Types only — nothing calls these yet. #464 puts `StepOutcome` on the log as
  * `StepEnded`.
  *
- * Imports from `vocabulary.ts` rather than from `events.ts`: `hold.ts:15-19`
+ * Imports from `vocabulary.ts` rather than from `events.ts`: `vocabulary.ts`
  * explains why a file here cannot import `events.ts` back without an ESM
  * cycle, and #464's `StepEnded` is the same situation this file is a leaf
  * for.
@@ -51,7 +51,7 @@ export const Integration = z.discriminatedUnion('_tag', [
      * this off the merge action's `ActionResult.conflict`, which is only set
      * when the real lane refused with one (`#466`). Never `[]`/`''`: an
      * absent field and an empty one are different facts, and `Hold.Routed`'s
-     * own fields (`hold.ts:201`) are `null` for the same reason.
+     * own fields are `null` for the same reason.
      */
     paths: z.array(z.string()).nullable(),
     baseSha: z.string().nullable(),

@@ -44,7 +44,7 @@ const failed = (n: number, stage: string): RunOnceResult => ({
   detail: 'why',
 })
 
-/** The `CheckRed` `Hold` a real merge-gate refusal becomes, through `holdOf`. */
+/** The `CheckRed` wait a real merge-gate refusal becomes. */
 const checkRefused = (n: number, evidence: string): WaitReason => ({
   _tag: 'CheckRefused',
   run: { runId: runId(n) },

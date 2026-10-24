@@ -20,7 +20,7 @@ import {
 } from '@lingtai/conductor'
 import { agentBranchOf, waitWords } from '@lingtai/domain'
 import { paint, stateInk } from '@lingtai/env/colour'
-import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
+import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 export interface StatusOptions {
@@ -339,7 +339,7 @@ export async function status(
       // the question was on the board and nowhere else, so the two places an
       // operator asks *why is this stuck* answered differently — which is the
       // failure #83 is about. The question first, then whatever was diagnosed
-      // about it, in `describeHold`'s words rather than this file's. A block
+      // about it, in `describeWaitLines`'s words rather than this file's. A block
       // that carries only a question prints one line, exactly as its card
       // shows one.
       //
@@ -349,7 +349,7 @@ export async function status(
       // something mid-flight.
       if (words !== null) {
         log(`             ${oneLine(words.line)}`)
-        for (const line of describeHold(words)) {
+        for (const line of describeWaitLines(words)) {
           log(`             ${oneLine(line.text)}`)
         }
         // The raw failure is not printed and is not lost: a hundred lines of git

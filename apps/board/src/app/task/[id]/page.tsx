@@ -1,6 +1,6 @@
 import { inWords } from '@lingtai/conductor/queue'
 import type { RunRef } from '@lingtai/domain/wait'
-import { describeHold } from '@lingtai/projector/task-view'
+import { describeWaitLines } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -560,7 +560,7 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
   // What the diagnosis said beyond rank 3's sentence: what was already done, and
   // the recommendation with the whole of its why. These were the block's rank 3
   // until #152 made that one sentence; they are true and they are record.
-  const beyond = describeHold({ needs: null, diagnosis: task.standing.diagnosis }).filter(
+  const beyond = describeWaitLines({ needs: null, diagnosis: task.standing.diagnosis }).filter(
     (line) => line.part === 'did' || line.part === 'rec',
   )
 
