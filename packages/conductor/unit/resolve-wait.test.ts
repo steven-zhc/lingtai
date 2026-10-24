@@ -504,7 +504,7 @@ describe('resolveWait', () => {
       expect(waitsOf(await b.store.read(b.ticketId)).at(-1)?.resolution).toBeNull()
     }
 
-    it('appends one WaitResolved and one ContinueRequested, and a second call adds neither', async () => {
+    it('appends one WaitResolved and one ContinueRequested, and a second call adds no second WaitResolved but re-asks for the row', async () => {
       const b = await blocked()
       expect(await continued(b)).toMatchObject({ ok: true })
       const resolved = (await b.store.read(b.ticketId)).filter((e) => e.type === 'WaitResolved')
@@ -517,8 +517,11 @@ describe('resolveWait', () => {
       const requests = async () => (await b.store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')
       expect(await requests()).toHaveLength(1)
 
+      // The way out of an unscheduled continuation: no second resolution, but the
+      // request is owed again, so it is appended again.
       expect(await continued(b)).toMatchObject({ ok: true })
       expect((await b.store.read(b.ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
+      expect(await requests()).toHaveLength(2)
     })
 
     it('refuses a moved base', async () => {

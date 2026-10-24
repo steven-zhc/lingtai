@@ -368,7 +368,13 @@ export function agentRefusal(
  * Either way the two call sites below pass `owner ?? ''` rather than this
  * type growing a branch of its own.
  */
-export type PassClient = Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }
+export type PassClient = Tickets &
+  RefChannel & {
+    readonly owner: string | null
+    readonly repo: string
+    /** Read only to see that a confirmed conflict's base has not moved (#558); absent, that cannot be seen. */
+    readonly refSha?: (ref: string) => Promise<string | null>
+  }
 
 export interface RunOnceOptions {
   project: ProjectState
@@ -983,6 +989,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // a later conflict.
       const resolved = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.resolution
       const confirmed = resolved?._tag === 'ContinueConflict' ? resolved : null
+      // 0118 §8: if the base moved while the continuation waited, the confirmation
+      // is stale. Nothing is dispatched and no round is spent; the item is not
+      // claimed, and a person confirms again against the new base.
+      if (confirmed !== null) {
+        const tip = (await options.client.refSha?.(`heads/${base}`)?.catch(() => null)) ?? null
+        if (tip !== confirmed.baseSha) return null
+      }
       const priorGrant = waitsOf(before).some(
         (wait) =>
           (wait.resolution?._tag === 'GrantFixRound' || wait.resolution?._tag === 'ContinueConflict') &&
@@ -3618,7 +3631,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
           }
         }
-        if (!committed) {
+        // A confirmed conflict is never carried forward past a crash (#558): the
+        // fixer may have committed before it died, and that commit has not been
+        // finished, so it must not walk on to `build` and a landing.
+        if (!committed || (fixed.failure && continuation?.conflict)) {
           // A decline judged the findings or the refusal rather than being cut
           // off mid-run, so `interrupted` does not stand for it either; a
           // crash or a wall does, in the runtime's own word for it (`#468`).
