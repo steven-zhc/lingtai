@@ -1187,7 +1187,7 @@ const OUTGOING: OutgoingView = {
 }
 
 /** Just the resolutions: the Ask button inside the discussion is amber too. */
-const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
+const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('data-rank="pair"'))
 
 /**
  * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
@@ -1686,21 +1686,38 @@ describe('the moves the column ends in', () => {
     expect(html).not.toContain('Approve')
   })
 
-  /**
-   * #111 §3. The viewport is 1440 and the column was a single stack: DOM order
-   * is reading order is tab order, so the prompt is first in the markup and the
-   * CSS reorders nothing.
-   *
-   * **And the moves are above the pair** (#152). Under it, a discussion that
-   * grew pushed the button you were deciding with off the screen; above it,
-   * nothing that grows comes before them in the page.
-   */
-  it('puts the prompt and the discussion in one pair, the prompt first, under the moves', () => {
-    const html = render(HELD, OUTGOING)
+  it('puts advised evidence and Discussion before the resolution cards and outgoing prompt', () => {
+    const html = render(
+      {
+        ...HELD,
+        triageStatus: {
+          _tag: 'Done',
+          result: {
+            _tag: 'TriageAdvised',
+            cause: { _tag: 'FixableLines', fixes: [{ path: 'apps/web/page.tsx', line: 12, what: 'repair this line' }] },
+            resolution: 'GrantFixRound',
+            summary: 'A focused repair is possible',
+            want: null,
+          },
+        },
+      },
+      OUTGOING,
+    )
 
-    expect(html).toContain('class="spair"')
-    expect(html.indexOf('next pass from base')).toBeLessThan(html.indexOf('discussion'))
-    expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('class="spair"'))
+    expect(html).toContain('class="sreading sreading--advised"')
+    expect(html.indexOf('repair this line')).toBeLessThan(html.indexOf('class="spair" data-rank="discussion"'))
+    expect(html.indexOf('class="spair" data-rank="discussion"')).toBeLessThan(html.indexOf('class="sresolutiongrid"'))
+    expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('next pass from base'))
+    expect(html.match(/class="chat /g)).toHaveLength(1)
+  })
+
+  it('keeps Discussion before moves without inventing triage when none was declared', () => {
+    const html = render({ ...HELD, triageStatus: { _tag: 'NotDeclared' } }, OUTGOING)
+
+    expect(html).not.toContain('class="triage-band')
+    expect(html).not.toContain('sreading--advised')
+    expect(html).toContain('No triage analysis for this wait')
+    expect(html.indexOf('class="spair" data-rank="discussion"')).toBeLessThan(html.indexOf('class="sresolutiongrid"'))
   })
 })
 
@@ -1774,9 +1791,11 @@ describe('what the refusal means for the decision', () => {
     expect(html).not.toMatch(/class="(needs|did|rec)"/)
     expect(html).not.toContain('fix-and-recheck')
     expect(html).not.toContain('And no second approach')
-    // Between rank 3 and the moves there is nothing but the end of the body.
-    const after = html.slice(html.indexOf('data-rank="so-what"'), html.indexOf('data-rank="moves"'))
-    expect(after.match(/<p\b/g) ?? []).toHaveLength(0)
+    const sentence = html.match(/<p class="sowhat" data-rank="so-what">([^<]*)<\/p>/g) ?? []
+    expect(sentence).toHaveLength(1)
+    expect(sentence[0]).toBe(
+      `<p class="sowhat" data-rank="so-what">${soWhat(diagnosed({ action: 'requeue', why: LONG_WHY }))}</p>`,
+    )
   })
 })
 

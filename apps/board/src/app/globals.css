@@ -1391,6 +1391,30 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--ink);
   font-size: clamp(1.1rem, 2vw, 1.4rem);
 }
+/* Advice and the follow-up it invites are one reading surface. Pending and
+   absent advice keep their own truthful Discussion presentation. */
+.sreading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
+.detail--waiting .sreading--advised {
+  gap: 0;
+  padding: clamp(1.25rem, 2.5vw, 2rem);
+  border: 1px solid var(--rule);
+  background: var(--accent-soft);
+}
+.detail--waiting .sreading--advised .triage-band {
+  padding: 0 0 1rem;
+  border: 0;
+  background: transparent;
+}
+.detail--waiting .sreading--advised .spair {
+  min-width: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule-2);
+}
+.detail--waiting .sreading--advised .chat {
+  background: transparent;
+  border: 0;
+  padding-inline: 0;
+}
 /* Each allowed outcome has its own reading and action surface. The first card
    gets extra room, while auto-fit lets the remaining cards wrap inside the
    Waiting page's bounded measure. */

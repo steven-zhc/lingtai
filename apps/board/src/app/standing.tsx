@@ -653,6 +653,19 @@ export function Standing({
     </p>
   )
 
+  const discussion = (
+    <Discussion
+      taskId={taskId}
+      attempt={standing.attempt}
+      reason={standing.reason}
+      triageStatus={standing.triageStatus}
+      discussions={discussions}
+      discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
+      quiet={standing.state === 'running'}
+    />
+  )
+  const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+
   return (
     <TriagePicks waitId={standing.state === 'blocked' ? standing.waitId : null} questions={triageQuestions}>
       <section className={`standing${mark}`}>
@@ -837,14 +850,21 @@ export function Standing({
           </div>
         </section>
 
-        {standing.state === 'blocked' && standing.reason !== null && standing.triageStatus !== null ? (
-          <TriageBand
-            reason={standing.reason}
-            status={standing.triageStatus}
-            headLine={standing.triageHeadLine}
-            raw={raw}
-            said={said}
-          />
+        {standing.state === 'blocked' ? (
+          <div className={`sreading${advisedSurface ? ' sreading--advised' : ''}`}>
+            {standing.reason !== null && standing.triageStatus !== null ? (
+              <TriageBand
+                reason={standing.reason}
+                status={standing.triageStatus}
+                headLine={standing.triageHeadLine}
+                raw={raw}
+                said={said}
+              />
+            ) : null}
+            <div className="spair" data-rank="discussion">
+              {discussion}
+            </div>
+          </div>
         ) : null}
 
         <section
@@ -1016,14 +1036,11 @@ export function Standing({
             </div>
           ) : null}
 
-          {/* ---- rank 5: the pair ----------------------------------------------- */}
+          {/* ---- rank 5: the outgoing prompt and nonblocked discussion ---------- */}
 
-          {/* Side by side above ~64rem, and stacked below it. The outgoing prompt
-          first in the DOM and first on the line, so reading order, use order
-          and tab order are one order — the column was a single stack wasting a
-          third of a 1440 viewport (#111). The two boxes are the two objects the
-          layout notes allow a frame around, which is why these two are the pair
-          and nothing else joins them. */}
+          {/* On blocked pages Discussion follows triage, before these moves. The
+          prompt stays below the moves it belongs to. Other states retain the
+          pair: prompt or plan first, then Discussion in reading and tab order. */}
           <div className="spair" data-rank="pair">
             {/* The document that will actually run, beside the discussion and under
             the buttons that send it. Only where there is a next attempt to be
@@ -1045,22 +1062,8 @@ export function Standing({
             given its plan, and its verdicts are in its own attempt. */}
             {queued !== null ? <Plan plan={queued.plan} /> : null}
 
-            {/* Offered whatever the state, deliberately. The commonest question is
-            about something that has stopped, but "what did attempt 1 actually
-            change" is asked of a landed item too, and a box that appeared only
-            on a blocked card would be one more thing to find out about.
-
-            `quiet` while it runs: nobody is waiting on you while the machine
-            works, so nothing in the box wears the brass either (#152). */}
-            <Discussion
-              taskId={taskId}
-              attempt={standing.attempt}
-              reason={standing.reason}
-              triageStatus={standing.triageStatus}
-              discussions={discussions}
-              discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
-              quiet={standing.state === 'running'}
-            />
+            {/* Discussion is offered in every state; only its placement changes. */}
+            {standing.state === 'blocked' ? null : discussion}
           </div>
         </section>
       </section>
