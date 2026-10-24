@@ -85,8 +85,10 @@ export interface DaemonStatus {
  * The pid and the host are the caller's — `control.ts` reads them from the
  * process — so that a store is a writer and never a source of facts about who
  * is running. `startedAt` is the exception and belongs to the store: it is set
- * when the row is first inserted and never overwritten, which is what makes a
- * beat an update of a running daemon's row rather than a new life for it.
+ * when the row is first inserted and again by a `fresh` beat, and a beat that
+ * is not fresh leaves it where it is. A new life per process, not per beat: the
+ * first beat of a process is `fresh`, because the row's beginning is what
+ * `triageStatus` reads an interrupted attempt against.
  */
 export interface Beat {
   pid: number
@@ -95,6 +97,14 @@ export interface Beat {
   currentRunId: string | null
   codeSha: string | null
   codeDirty: boolean
+  /** The first beat of this process: the row begins again, whoever wrote it before. */
+  fresh: boolean
+  /**
+   * This process's own start, when the caller knows it: what a `fresh` beat
+   * begins the row at, so a first beat that failed and landed late does not
+   * date the daemon from its write. Null leaves the store's clock to say.
+   */
+  startedAt: Date | null
 }
 
 /**

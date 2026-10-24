@@ -423,6 +423,10 @@ export async function createStatusTable(store?: DaemonStore): Promise<void> {
 export interface BeatOptions {
   /** The run this daemon is hosting, when it is hosting one. */
   currentRunId?: string | null
+  /** The first beat of this process, which begins the row again (`Beat.fresh`). */
+  fresh?: boolean
+  /** When this process began, for a `fresh` beat to date the row from (`Beat.startedAt`). */
+  startedAt?: Date | null
   /**
    * What code this process is running, read once at startup.
    *
@@ -443,7 +447,7 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null } = options
+  const { currentRunId = null, code = null, fresh = false, startedAt = null } = options
   await withDaemonStore(options.store, {}, (store) =>
     store.beat({
       pid: process.pid,
@@ -452,6 +456,8 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
       currentRunId,
       codeSha: code?.sha ?? null,
       codeDirty: code?.dirty ?? false,
+      fresh,
+      startedAt,
     }),
   )
 }
@@ -509,7 +515,7 @@ export interface BeaconOptions extends BeatOptions {
 }
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, ...beatOptions } = options
+  const { every = HEARTBEAT_MS, startedAt = null, ...beatOptions } = options
   let current = state
   let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
@@ -517,11 +523,20 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
   /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
   let owed = 0
 
+  /**
+   * Whether the row has yet been begun by this process. Cleared by a beat that
+   * landed and not by one that was asked for, so a first beat that fails leaves
+   * the next one fresh instead of the previous daemon's start surviving.
+   */
+  let begun = false
+
   const write = (word: string): Promise<void> => {
     owed += 1
     chain = chain.then(async () => {
       try {
-        await beat(word, beatOptions)
+        const fresh = !begun
+        await beat(word, { ...beatOptions, fresh, startedAt })
+        begun = true
       } catch {
         // Every beat, the first one included — and that is a change. Startup
         // used to `await beat("starting")` uncaught, and the CLI's top-level

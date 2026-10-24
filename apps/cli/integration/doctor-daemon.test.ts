@@ -73,6 +73,8 @@ describe('the daemon rows, read from a beacon in a file', () => {
         // written for: up, and unable to say from where.
         codeSha: null,
         codeDirty: false,
+        fresh: true,
+        startedAt: null,
       })
 
       const liveness = await daemonLiveness(

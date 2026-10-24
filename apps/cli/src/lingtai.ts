@@ -677,7 +677,6 @@ async function daemonCommand(
   })
   if (!opened.ok) return opened.code
   const { started, code } = opened
-
   // **Beating from here**, and not from after the reconcile below — which is
   // what `#144` was. The two lines that follow this one read a recipe per
   // project over the network, and the reconcile after them writes GitHub
@@ -687,6 +686,16 @@ async function daemonCommand(
   // timer for the whole life of the process, so there is no stretch of it
   // during which nothing says "still here".
   const beacon = startBeacon('starting', { code })
+  // This process's own start, dated by the store's clock and not this host's:
+  // `TriageStarted` is dated by the store, and a database ahead of this host
+  // would read an attempt a previous conductor cut off as `Running` (#576). The
+  // row's first beat is `fresh` and the lock is held, so the row it leaves is
+  // this process's; where it cannot be read, or is another pid's because the
+  // beat failed, this host's clock is the best there is.
+  await beacon.say('starting')
+  const daemonStartedAt = await readStatus()
+    .then((row) => (row !== null && row.pid === process.pid ? row.startedAt : new Date()))
+    .catch(() => new Date())
   console.log(
     `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
       `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,
@@ -918,8 +927,6 @@ async function daemonCommand(
   // that gap was below the watermark of the only daemon holding the lock — so
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
   const since = started.since
-  let daemonStartedAt: Date | null = null
-  let startTimeRead = false
   const triageHashes = new Map<string, string>()
   const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
     try {
@@ -980,10 +987,6 @@ async function daemonCommand(
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
         await noteStart(control)
-        if (!startTimeRead) {
-          startTimeRead = true
-          daemonStartedAt = (await startAfter(since).catch(() => null))?.at ?? null
-        }
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.

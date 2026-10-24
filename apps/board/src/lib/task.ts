@@ -70,7 +70,7 @@ import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
-import { issueUrl, type PassLimitsView } from './board.ts'
+import { issueUrl, triageContextOf, type PassLimitsView } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
@@ -1776,10 +1776,7 @@ export async function loadCurrentTriageStatus(
     readStatus(),
   ])
   const card = cards.find((row) => row.taskId === taskId)
-  return currentTriageStatus(standing, card ?? null, {
-    declared: project?.recipe.triage !== undefined,
-    daemonStartedAt: daemon?.startedAt ?? null,
-  })
+  return currentTriageStatus(standing, card ?? null, triageContextOf(project?.recipe.triage !== undefined, daemon))
 }
 
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {

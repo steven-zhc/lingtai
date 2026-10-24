@@ -120,22 +120,32 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
     },
 
     async beat(beat: Beat) {
-      // `started_at` is absent from the update list, exactly as it is in
+      // `started_at` moves only on a `fresh` beat, exactly as it does in
       // Postgres: a beat moves `last_seen_at` and leaves the moment this row
-      // began where it is.
+      // began where it is, and a process's first beat begins it again.
       db.prepare(
         `INSERT INTO daemon_status
            (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-         VALUES (1, ?, ?, ${NOW}, ${NOW}, ?, ?, ?, ?)
+         VALUES (1, ?, ?, coalesce(?, ${NOW}), ${NOW}, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE
            SET pid = excluded.pid,
                host = excluded.host,
+               started_at = CASE WHEN ? THEN excluded.started_at ELSE daemon_status.started_at END,
                last_seen_at = excluded.last_seen_at,
                state = excluded.state,
                current_run_id = excluded.current_run_id,
                code_sha = excluded.code_sha,
                code_dirty = excluded.code_dirty`,
-      ).run(beat.pid, beat.host, beat.state, beat.currentRunId, beat.codeSha, beat.codeDirty ? 1 : 0)
+      ).run(
+        beat.pid,
+        beat.host,
+        beat.startedAt?.toISOString() ?? null,
+        beat.state,
+        beat.currentRunId,
+        beat.codeSha,
+        beat.codeDirty ? 1 : 0,
+        beat.fresh ? 1 : 0,
+      )
     },
 
     async status(): Promise<DaemonStatus | null> {

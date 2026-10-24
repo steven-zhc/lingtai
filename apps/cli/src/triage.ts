@@ -82,7 +82,7 @@ export function enqueueTriage(
 export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
   triageFor(project: string): Promise<Triage | null>
-  daemonStartedAt: Date | null
+  daemonStartedAt: Date
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
@@ -91,7 +91,7 @@ export interface CatchUpTriagePorts {
   store: Pick<EventStore, 'read' | 'append'>
   readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
   baseSha(project: string): Promise<string | null>
-  daemonStartedAt: Date | null
+  daemonStartedAt: Date
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
@@ -243,7 +243,7 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
 
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
-  daemonStartedAt: Date | null,
+  daemonStartedAt: Date,
   log: (line: string) => void,
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {

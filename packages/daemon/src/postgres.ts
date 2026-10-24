@@ -95,21 +95,32 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
     async beat(beat: Beat) {
       const client = await connect()
       try {
-        // `started_at` is absent from the update list on purpose: a beat moves
-        // `last_seen_at` and leaves the moment this row began where it is.
+        // `started_at` moves only on a `fresh` beat: a beat moves
+        // `last_seen_at` and leaves the moment this row began where it is, and
+        // a process's first beat begins it again.
         await client.query(
           `insert into daemon_status
              (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-           values (1, $1, $2, now(), now(), $3, $4, $5, $6)
+           values (1, $1, $2, coalesce($8::timestamptz, now()), now(), $3, $4, $5, $6)
            on conflict (id) do update
              set pid = excluded.pid,
                  host = excluded.host,
+                 started_at = case when $7 then excluded.started_at else daemon_status.started_at end,
                  last_seen_at = excluded.last_seen_at,
                  state = excluded.state,
                  current_run_id = excluded.current_run_id,
                  code_sha = excluded.code_sha,
                  code_dirty = excluded.code_dirty`,
-          [beat.pid, beat.host, beat.state, beat.currentRunId, beat.codeSha, beat.codeDirty],
+          [
+            beat.pid,
+            beat.host,
+            beat.state,
+            beat.currentRunId,
+            beat.codeSha,
+            beat.codeDirty,
+            beat.fresh,
+            beat.startedAt,
+          ],
         )
       } finally {
         await client.end()

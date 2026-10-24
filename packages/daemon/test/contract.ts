@@ -94,6 +94,8 @@ function beating(over: Partial<Beat> = {}): Beat {
     currentRunId: null,
     codeSha: null,
     codeDirty: false,
+    fresh: false,
+    startedAt: null,
     ...over,
   }
 }
@@ -202,9 +204,11 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         await store.beat(beating({ state: 'starting' }))
         const first = await store.status()
 
+        // Past the clock's resolution, so "replaced" and "kept" read differently.
+        await new Promise((resolve) => setTimeout(resolve, 25))
         const second = await fixture.another()
         try {
-          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2' }))
+          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2', fresh: true }))
         } finally {
           await second.close()
         }
@@ -216,10 +220,13 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         expect(status!.state).toBe('draining')
         expect(status!.pid).toBe(9999)
         expect(status!.currentRunId).toBe('pass-2')
-        // And the row's beginning survives the overwriting. `started_at` is
-        // what makes a beat an update of a running daemon rather than a new
-        // life for it.
-        expect(status!.startedAt.getTime()).toBe(first!.startedAt.getTime())
+        // A new process's first beat begins the row again: `started_at` is
+        // what an interrupted triage is read against, so it is this life's.
+        expect(status!.startedAt.getTime()).toBeGreaterThan(first!.startedAt.getTime())
+        const begun = status!.startedAt.getTime()
+        // And a beat that is not fresh leaves it where it is.
+        await store.beat(beating({ state: 'up' }))
+        expect((await store.status())!.startedAt.getTime()).toBe(begun)
         // Beating moves, because that is the only field liveness is read from.
         expect(status!.lastSeenAt.getTime()).toBeGreaterThanOrEqual(first!.lastSeenAt.getTime())
       })
