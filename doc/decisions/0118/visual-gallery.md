@@ -15,6 +15,15 @@ Each case has two direct URLs:
 `triage-failed`, `triage-running`, and `resolution-cards`. The last case shows
 the available moves drawn by the real `Standing` component.
 
+For the #393-style advised outcome, open
+`http://localhost:17820/dev/waiting/fixable-lines/task` at **1200 px** and
+**390 px** viewport widths. It includes the recognized #393 ticket opening,
+five review findings, two spent fix rounds, a saved published head, and a
+discussion exchange. Compare
+`/dev/waiting/fixable-lines-no-head/task` at the same widths: the same advice
+has no published head, so continuing saved work is refused. Both are folded
+from local events; neither checks a remote ref or makes a live request.
+
 Capture the card at a **440 px viewport** and the task page at **1200 px** to
 compare with [Main.dc.html](Main.dc.html) and [Hold.dc.html](Hold.dc.html).
 Capture both at **390 px** as the narrow check. Use the same browser, zoom,

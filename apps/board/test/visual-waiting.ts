@@ -1,12 +1,15 @@
 /** Deterministic presentation data, folded from the same wait events as the unit pins. */
-import type { Envelope } from '@lingtai/domain'
+import { STEPS, type Envelope, type Finding, type Step } from '@lingtai/domain'
+import { aClaim, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 import type { TriageFacts, TriageResult, TriageStatus } from '@lingtai/domain/wait'
 import { triageStatus } from '@lingtai/domain/wait'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
 import { taskViewProjection } from '@lingtai/projector/task-view'
 
 import { toCard } from '@/lib/board'
-import { foldRun, standingOf, totalsOf, type Claim, type TaskDetail } from '@/lib/task'
+import { describeHeld } from '@/lib/progress'
+import { foldChat, foldRun, savedFixWork, standingOf, totalsOf, type Claim, type TaskDetail } from '@/lib/task'
 
 import { WAIT_FIXTURES } from './waits.ts'
 
@@ -30,6 +33,213 @@ const advised = (cause: Extract<TriageResult, { _tag: 'TriageAdvised' }>['cause'
   want: 'A maintainable fix that keeps the existing behavior.',
 })
 
+const HEAD = 'b'.repeat(40)
+const FINDINGS: Finding[] = [
+  {
+    file: 'apps/board/src/lib/task.ts',
+    line: 892,
+    claim: 'A saved head is required before a fix round',
+    failureScenario: 'A missing branch makes continuation impossible',
+    severity: 'major',
+  },
+  {
+    file: 'apps/board/src/app/standing.tsx',
+    line: 544,
+    claim: 'Advice must respect saved work',
+    failureScenario: 'A recommendation can point at a disabled move',
+    severity: 'major',
+  },
+  {
+    file: 'apps/board/src/app/standing.tsx',
+    line: 868,
+    claim: 'The unavailable state needs a reason',
+    failureScenario: 'A reader cannot tell why continuation is refused',
+    severity: 'minor',
+  },
+  {
+    file: 'apps/board/src/lib/progress.ts',
+    line: 608,
+    claim: 'The rail should retain all ten steps',
+    failureScenario: 'An omitted step hides where the pass stopped',
+    severity: 'minor',
+  },
+  {
+    file: 'apps/board/src/lib/task.ts',
+    line: 1428,
+    claim: 'Missing spend stays unknown',
+    failureScenario: 'An unmetered run reads as free',
+    severity: 'minor',
+  },
+]
+
+const FIXABLE_RESULT: TriageResult = {
+  _tag: 'TriageAdvised',
+  cause: { _tag: 'FixableLines', fixes: FINDINGS.map((f) => ({ path: f.file, line: f.line, what: f.claim })) },
+  resolution: 'GrantFixRound',
+  summary: 'Address the recorded findings on the saved branch, then run build and review again.',
+  want: 'A fix round that keeps the current branch and checks the five findings.',
+}
+
+const FIXABLE_BODY = `| | |
+|---|---|
+| **Problem** | A waiting pass hides its review findings and saved branch state. |
+| **Want** | The reader can compare the evidence and choose a possible next move. |
+| **Fix** | Show the ten-step run, five findings, discussion, and available resolutions. |
+| **Watch out** | A fix round requires a published head; missing spend must stay unknown. |
+
+---
+
+The review found five concrete cases. Continue the saved branch only when its published head is available.`
+
+function fixableFixture(published: boolean) {
+  const taskId = 'ticket-lingtai-393'
+  const runId = 'pass-preview-393'
+  const item = makeStream(taskId)
+  const run = makeStream(runId)
+  const chat = makeStream('chat-preview-393')
+  const at = (minute: number) => ({ at: new Date(Date.parse('2026-08-31T13:00:00Z') + minute * 60_000) })
+  const step = (
+    name: Step,
+    round: number,
+    verdict: 'accepted' | 'refused',
+    minute: number,
+    findings: Finding[] = [],
+  ) => [
+    run('StepStarted', { runId, step: name, round }, at(minute)),
+    run(
+      'StepEnded',
+      {
+        runId,
+        outcome: {
+          step: name,
+          round,
+          actions: [
+            {
+              plugin: 'run',
+              name,
+              onSha: HEAD,
+              evidence: verdict === 'refused' ? 'Review found five cases' : 'passed',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict, findings } },
+            },
+          ],
+        },
+      },
+      at(minute + 1),
+    ),
+  ]
+  const events: Envelope[] = [
+    ...aClaim(item, runId),
+    run(
+      'RunStarted',
+      {
+        ticketId: taskId,
+        runtime: 'claude-code',
+        model: 'preview',
+        promptVersion: 'ticket@393',
+        baseSha: 'a'.repeat(40),
+        configHash: 'preview',
+        worktree: '/preview',
+        invocation: { command: 'claude', args: [], tier: 'guarded', limits: { turns: 100, wallMs: 3_600_000 } },
+      },
+      at(0),
+    ),
+    run(
+      'StepsResolved',
+      {
+        runId,
+        configHash: 'preview',
+        steps: STEPS.map((name) => ({ step: name, actions: name === 'design' ? [] : [name] })),
+      },
+      at(1),
+    ),
+    ...step('claim', 0, 'accepted', 2),
+    ...step('admit', 0, 'accepted', 4),
+    ...step('prepared', 0, 'accepted', 6),
+    ...step('implement', 0, 'accepted', 8),
+    ...step('build', 0, 'refused', 10),
+    ...step('implement', 1, 'accepted', 12),
+    ...step('build', 1, 'accepted', 14),
+    ...step('review', 1, 'refused', 16, FINDINGS),
+    ...step('implement', 2, 'accepted', 18),
+    ...step('build', 2, 'accepted', 20),
+    ...step('review', 2, 'refused', 22, FINDINGS),
+    run('RunProposedCompletion', { headSha: HEAD }, at(24)),
+    run('RunFinished', { exitCode: 0, turns: 67, durationMs: 24 * 60_000 }, at(24)),
+    ...(published
+      ? [
+          run(
+            'RunRefsPublished',
+            {
+              branch: 'agent/393',
+              arm: 'agent/393-attempt-1',
+              headSha: HEAD,
+              outcome: 'published',
+              branchCarries: true,
+              armSha: null,
+              detail: null,
+            },
+            at(25),
+          ),
+        ]
+      : []),
+    run(
+      'StepEnded',
+      {
+        runId,
+        outcome: {
+          step: 'proposed',
+          round: 2,
+          actions: [
+            {
+              plugin: 'conductor',
+              name: 'conductor:judge',
+              onSha: HEAD,
+              evidence: '',
+              yields: 'signoff',
+              result: { _tag: 'Completed', requested: { question: 'Merge agent/393 into main anyway?' } },
+            },
+          ],
+        },
+      },
+      at(26),
+    ),
+    ...aWait(item, {
+      _tag: 'ProposedEscalated',
+      run: { runId },
+      proposal: { _tag: 'ReviewFindings', findings: FINDINGS },
+      because: { _tag: 'NotAsked' },
+    }),
+    chat(
+      'DiscussionAsked',
+      {
+        ticketId: taskId,
+        attempt: 1,
+        by: 'human:steven',
+        question: 'Can these findings be handled on the current branch?',
+        reading: ['agent/393: saved review head', 'Five review findings remain after two rounds'],
+      },
+      at(28),
+    ),
+    chat(
+      'DiscussionAnswered',
+      {
+        text: 'The findings are local to the saved branch. Keep its published head and rerun build and review after editing.',
+        read: ['apps/board/src/lib/task.ts', 'apps/board/src/app/standing.tsx'],
+        cannot: ['Whether the remote ref has moved since this snapshot'],
+        proposal: null,
+        turns: 5,
+        durationMs: 180_000,
+        failure: null,
+      },
+      at(31),
+    ),
+  ]
+  return { tag: 'ProposedEscalated', name: published ? 'fixable-preview' : 'fixable-no-head-preview', taskId, events }
+}
+
+const FIXABLE_FIXTURES = [fixableFixture(true), fixableFixture(false)]
+
 export const CASES = {
   'no-triage': { fixture: 'agentquestion', result: null, status: 'NotDeclared' },
   questions: {
@@ -37,11 +247,12 @@ export const CASES = {
     result: advised({ _tag: 'UndecidedQuestion', questions: [question] }, 'The next pass needs an approach decision.'),
   },
   'fixable-lines': {
-    fixture: 'fixerdisagrees',
-    result: advised(
-      { _tag: 'FixableLines', fixes: [{ path: 'src/handler.ts', line: 42, what: 'Handle the empty result' }] },
-      'One local change can address the finding.',
-    ),
+    fixture: 'fixable-preview',
+    result: FIXABLE_RESULT,
+  },
+  'fixable-lines-no-head': {
+    fixture: 'fixable-no-head-preview',
+    result: FIXABLE_RESULT,
   },
   'wrong-approach': {
     fixture: 'fixerdisagrees',
@@ -103,7 +314,7 @@ function split(taskId: string, events: readonly Envelope[]) {
 
 export async function preview(name: CaseName) {
   const spec = CASES[name]
-  const fixture = WAIT_FIXTURES.find((item) => item.name === spec.fixture)
+  const fixture = [...WAIT_FIXTURES, ...FIXABLE_FIXTURES].find((item) => item.name === spec.fixture)
   if (fixture === undefined) throw new Error(`Missing wait fixture: ${spec.fixture}`)
 
   const db = openSqliteProjections(':memory:')
@@ -122,10 +333,11 @@ export async function preview(name: CaseName) {
     started: 'status' in spec && spec.status === 'Running' ? { attempt: 1, at: new Date(PREVIEW_NOW) } : null,
     result: spec.result,
   }
+  const representative = name === 'fixable-lines' || name === 'fixable-lines-no-head'
   const projected = {
     ...row,
-    issue: '533',
-    title: 'Review a paused pass before continuing',
+    issue: representative ? '393' : '533',
+    title: representative ? 'FixableLines: show the waiting outcome' : 'Review a paused pass before continuing',
     kind: 'feature',
     triage: facts,
   }
@@ -153,6 +365,9 @@ export async function preview(name: CaseName) {
       },
     ])
   }
+  const chats = [...runs.entries()].filter(([id]) => id.startsWith('chat-'))
+  for (const [id] of chats) runs.delete(id)
+  const discussions = chats.map(([id, events]) => foldChat(id, events, null))
   const foldedRuns = [...runs.entries()].map(([runId, events], index) => {
     const claim: Claim = { runId, at: (events[0]?.at ?? new Date(0)).toISOString(), repair: false, released: null }
     return foldRun(claim, index + 1, events)
@@ -165,6 +380,9 @@ export async function preview(name: CaseName) {
           reason: { ...standing.reason, because: { _tag: 'JudgeHandedOver' as const, why: spec.judgeWhy } },
         }
       : standing
+  if (representative && standing.runId !== null) {
+    previewStanding.fixWork = savedFixWork(standing.runId, runs.get(standing.runId) ?? [])
+  }
   const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
   const card = toCard(projected, null, progress)
   const status: TriageStatus =
@@ -173,12 +391,12 @@ export async function preview(name: CaseName) {
       : triageStatus(standing.reason!, facts, { declared: true, daemonStartedAt: null })
   const ticket = {
     project: 'lingtai',
-    ref: '533',
+    ref: representative ? '393' : '533',
     title: projected.title,
     kind: 'feature',
     labels: ['feature'],
     url: null,
-    body: 'Review the paused pass and decide how work should continue.',
+    body: representative ? FIXABLE_BODY : 'Review the paused pass and decide how work should continue.',
     found: true,
     askedGitHub: false,
     problem: null,
@@ -190,11 +408,14 @@ export async function preview(name: CaseName) {
     want: spec.result?._tag === 'TriageAdvised' ? spec.result.want : null,
     ticket,
     runs: foldedRuns,
-    discussions: [],
+    discussions,
     outgoing: null,
     queued: null,
-    held: null,
-    totals: totalsOf(foldedRuns),
+    held:
+      representative && progress
+        ? describeHeld({ spent: progress.rounds.spent, roundsOf: 2, restarts: 0, restartsOf: 1 })
+        : null,
+    totals: totalsOf(foldedRuns, discussions),
     spendCurrency: { lag: 0 },
     history: [],
   }
