@@ -11,6 +11,7 @@
     "./pick-repository": "./src/pick-repository.ts",
     "./decide": "./src/approve.ts",
     "./resolve-wait": "./src/resolve-wait.ts",
+    "./continue-conflict-ports": "./src/continue-conflict-ports.ts",
     "./ask": "./src/ask.ts",
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",

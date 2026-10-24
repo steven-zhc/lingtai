@@ -1,4 +1,5 @@
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { continueConflictPorts } from '@lingtai/conductor/continue-conflict-ports'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readStatus } from '@lingtai/daemon/control'
@@ -71,6 +72,7 @@ import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
+import { conflictWorkOf, type ConflictWork } from './conflict-work.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
@@ -396,6 +398,8 @@ export interface StandingView {
   } | null
   /** Render-time check only; resolveWait checks the remote again under the decision lock. */
   fixWork?: { head: string; ref: string } | { refusal: string } | null
+  /** Render-time reading of a `ContinueConflict` card: its rows, or why it has none. `resolveWait` checks it all again. */
+  conflictWork?: ConflictWork | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
@@ -805,7 +809,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     currentMove &&
     latestLifecycle === lastMove &&
     life.status === 'approved' &&
-    move?.resolution._tag === 'GrantFixRound'
+    (move?.resolution._tag === 'GrantFixRound' || move?.resolution._tag === 'ContinueConflict')
   const bodyEvent = [...own]
     .reverse()
     .find(
@@ -826,7 +830,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
             note: move.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? 'Continued saved work for one additional fix round; build and review run again.'
+              ? move.resolution._tag === 'ContinueConflict'
+                ? 'Continuing the preserved conflict with the confirmed behavior; build and review run again.'
+                : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'The wait was resolved; a new pass starts from base.'
                 : released
@@ -835,7 +841,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
             ...(continued
               ? {
                   ref: (move.resolution as { ref?: string }).ref,
-                  head: (move.resolution as { onSha?: string }).onSha,
+                  head: (move.resolution as { onSha?: string; headSha?: string }).headSha ?? (move.resolution as { onSha?: string }).onSha,
                 }
               : {}),
           }
@@ -1878,6 +1884,33 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       } catch (err) {
         standing.fixWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
       }
+    }
+  }
+  if (
+    standing.state === 'blocked' &&
+    standing.reason !== null &&
+    standing.reason._tag === 'ProposedEscalated' &&
+    standing.reason.proposal._tag === 'MergeConflict' &&
+    allowedResolutions(standing.reason).includes('ContinueConflict') &&
+    standing.runId !== null &&
+    ticket !== null
+  ) {
+    const { baseSha, headSha } = standing.reason.proposal
+    const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
+    const runEvents = streams[runIndex] ?? []
+    try {
+      const state = await loadProject(ticket.project)
+      if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
+      const ports = await continueConflictPorts(state)
+      standing.conflictWork = await conflictWorkOf({
+        proposal: { baseSha: baseSha!, headSha: headSha! },
+        saved: savedFixWork(standing.runId, runEvents),
+        runEvents,
+        status,
+        ports: ports.ok ? ports : { refusal: ports.detail },
+      })
+    } catch (err) {
+      standing.conflictWork = { refusal: `The conflict could not be checked: ${(err as Error).message}` }
     }
   }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null

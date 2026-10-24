@@ -26,6 +26,7 @@ import { join } from 'node:path'
 import { stateDir } from '@lingtai/env'
 
 import { git } from './git.ts'
+import { hunkTextsOf } from './hunk-text.ts'
 
 /** `<home>/repos/<project>.git`. The bare clone the conductor cuts worktrees from. */
 export function mirrorPathFor(project: string, home = stateDir()): string {
@@ -137,6 +138,8 @@ export interface ConflictedPath {
   hunks: number
   /** One-based conflict marker lines in the written tree, or line 1 when it has no readable markers. */
   hunkLines: number[]
+  /** The marker-to-marker text of each hunk, parallel to `hunkLines`; empty strings where the file has no readable markers. */
+  hunkTexts?: string[]
 }
 
 /**
@@ -204,6 +207,7 @@ export async function conflictedPathsAt(
       theirs: await readBlob(theirsOid),
       hunks: hunkLines.length,
       hunkLines,
+      hunkTexts: markerLines.length === 0 ? [''] : hunkTextsOf(merged ?? ''),
     })
   }
   return paths
