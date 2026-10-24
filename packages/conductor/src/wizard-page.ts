@@ -35,7 +35,7 @@
  */
 import { RuntimeId } from '@lingtai/domain'
 import type { StepAction, Recipe, RecipeChange } from '@lingtai/recipe'
-import { parseDuration } from '@lingtai/recipe/duration'
+import { UNBOUNDED, formatTurns, parseDuration, type TurnLimit } from '@lingtai/recipe/duration'
 import { baseOf, ceilingOf, excludeOf, kindsOf, submodulesOf } from '@lingtai/recipe/settings'
 
 import { passCeiling } from './ceiling.ts'
@@ -165,7 +165,7 @@ export interface Check {
 }
 
 export interface Limits {
-  turns: number
+  turns: TurnLimit
   wall: string
   rounds: number
   restarts: number
@@ -567,8 +567,12 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
   if (wallMs <= 0) return { ok: false, refusal: `wall must be longer than nothing, not ${limits.wall}` }
   for (const key of ['turns', 'rounds', 'restarts'] as const) {
     const n = limits[key]
-    if (!Number.isInteger(n) || n < (key === 'turns' ? 1 : 0)) {
-      return { ok: false, refusal: `${key} must be a whole number${key === 'turns' ? ' above 0' : ''}, not ${n}` }
+    if (key === 'turns' && n === UNBOUNDED) continue
+    if (!Number.isInteger(n) || (n as number) < (key === 'turns' ? 1 : 0)) {
+      return {
+        ok: false,
+        refusal: `${key} must be a whole number${key === 'turns' ? ` above 0, or ${UNBOUNDED}` : ''}, not ${n}`,
+      }
     }
   }
   return { ok: true, sentence: passCeiling({ ...limits, wallMs }) }
@@ -629,7 +633,7 @@ export function fastLine(draft: Draft, row: FastRowId): string {
 export function settledLine(draft: Draft, decision: DecisionId): string {
   if (decision === 'steps.merge') return draft.personApproves ? 'a person approves' : 'nobody approves'
   const { turns, wall, rounds, restarts } = draft.limits
-  return `${turns} turns · ${wall} · ${rounds} rounds · ${restarts} restarts`
+  return `${formatTurns(turns)} · ${wall} · ${rounds} rounds · ${restarts} restarts`
 }
 
 /**

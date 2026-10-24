@@ -173,6 +173,7 @@ import {
   baseDivergence,
   baseOf,
   ceilingOf,
+  numericTurns,
   parseDuration,
   queueOf,
   submodulesOf,
@@ -715,7 +716,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * that rule is stated.
      */
     const spendFor = (own?: { readonly turns?: number; readonly wall?: string }) => ({
-      turns: own?.turns ?? ceiling.turns,
+      // `unbounded` is a request with no `turns` (#547), as `usd` is.
+      turns: numericTurns(own?.turns ?? ceiling.turns),
       wallMs: parseDuration(own?.wall ?? ceiling.wall),
       // The ceiling's own, unchanged: a dispatch's `limits:` is a
       // `strictObject` that refuses `usd` by name, so there is nothing a step
@@ -2836,7 +2838,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
           // holds the action (`#314`).
           limits: {
-            turns: ceiling.turns,
+            turns: numericTurns(ceiling.turns),
             wallMs: parseDuration(ceiling.wall),
             diffBytes: recipe.runtime.budget.diff,
             // The pass's own, unnarrowable here for the reason `spendFor`

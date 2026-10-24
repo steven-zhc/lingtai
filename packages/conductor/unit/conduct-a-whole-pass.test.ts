@@ -2134,7 +2134,7 @@ runtime:
   it("dispatches the runtime a step named, with that step's own model and bound", async () => {
     const store = memoryStore()
     const did: string[] = []
-    const asked: { id: string; model: string | undefined; turns: number }[] = []
+    const asked: { id: string; model: string | undefined; turns: number | undefined }[] = []
     const recording = (id: 'claude-code' | 'codex'): Runtime => ({
       capabilities: { ...runtime.capabilities, id },
       run: async (request) => {

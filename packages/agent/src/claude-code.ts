@@ -280,8 +280,9 @@ function argsFor(
     // and it stops by *ending the session*, so the run still prints a receipt
     // with its cost. A SIGTERM from here would record exactly the runs that
     // overspent as costing nothing.
-    '--max-turns',
-    String(request.limits.turns),
+    // Absent when the recipe chose `turns: unbounded` (#547): a choice to have
+    // no turn ceiling, and the flag is omitted rather than invented.
+    ...(request.limits.turns === undefined ? [] : ['--max-turns', String(request.limits.turns)]),
     // The dollar twin of `--max-turns`, applied the same way: the binary
     // stops the session itself and still prints a receipt, this time with
     // `subtype: "error_max_budget_usd"` (`#370`). Absent unless the recipe
@@ -346,14 +347,17 @@ export interface ClaudeClosed {
 export function claudeClose(
   parsed: ClaudeResult | null,
   closed: ClaudeClosed,
-  limits: { turns: number; usd?: number },
+  limits: { turns?: number; usd?: number },
 ): { kind: RunFailureKind; detail: string } | null {
   const turns = parsed?.num_turns ?? 0
   const costUsd = parsed?.total_cost_usd ?? null
   const cost = costUsd === null ? 'cost unrecorded' : `$${costUsd.toFixed(2)}`
 
   if (parsed?.subtype === 'error_max_turns') {
-    return { kind: 'out-of-turns', detail: `${turns} turns, and the recipe allows ${limits.turns} · ${cost}` }
+    return {
+      kind: 'out-of-turns',
+      detail: `${turns} turns, and the recipe allows ${limits.turns ?? 'no limit'} · ${cost}`,
+    }
   }
 
   // The dollar twin of the branch above, and here for the same reason it is:

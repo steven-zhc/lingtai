@@ -19,7 +19,7 @@
 import { STEPS, type Step, type ProjectState } from '@lingtai/domain'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, type GitHubClient } from '@lingtai/github'
-import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe } from '@lingtai/recipe'
+import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe, type TurnLimit } from '@lingtai/recipe'
 import {
   assigneeOf,
   backoffOf,
@@ -145,7 +145,7 @@ export type ProjectFilter =
       limits: {
         rounds: number
         restarts: number
-        turns: number
+        turns: TurnLimit
         wall: string
         wallMs: number
         usd?: number

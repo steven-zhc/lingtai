@@ -42,3 +42,35 @@ export function formatDuration(ms: number): string {
   }
   return `${ms}ms`
 }
+
+/**
+ * The spelling of *no turn ceiling*, for a runtime that cannot hold one (#547).
+ *
+ * A word and not an absence: `turns` has a schema default, so an absent key is
+ * `300` and a bare `turns:` is YAML `null` — neither is somebody having chosen.
+ * `lingtai doctor` checks promises, and this is the one way to say a run
+ * promises nothing about turns.
+ */
+export const UNBOUNDED = 'unbounded'
+
+/** What `runtime.limits.turns` holds: a count, or the choice to have none. */
+export type TurnLimit = number | typeof UNBOUNDED
+
+/**
+ * A turn ceiling as a sentence part. A number prints exactly as it always did
+ * (`150 turns`); `unbounded` prints no number, so no surface invents a cap.
+ */
+export function formatTurns(turns: TurnLimit): string {
+  return turns === UNBOUNDED ? 'no turn limit' : `${turns} turns`
+}
+
+/** The larger of two turn ceilings, `unbounded` being larger than any count. */
+export function maxTurns(a: TurnLimit, b: TurnLimit): TurnLimit {
+  if (a === UNBOUNDED || b === UNBOUNDED) return UNBOUNDED
+  return Math.max(a, b)
+}
+
+/** A turn ceiling as a runtime request carries it: a count, or absent for `unbounded`. */
+export function numericTurns(turns: TurnLimit): number | undefined {
+  return turns === UNBOUNDED ? undefined : turns
+}

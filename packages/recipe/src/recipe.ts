@@ -19,7 +19,7 @@ import { PREFIX } from '@lingtai/env'
  */
 import { z } from 'zod'
 
-import { formatDuration, parseDuration } from './duration.ts'
+import { UNBOUNDED, formatDuration, parseDuration } from './duration.ts'
 import {
   type Plugin,
   type PluginFields,
@@ -32,6 +32,19 @@ import {
   readFields,
   servesStep,
 } from './plugin.ts'
+
+/**
+ * `runtime.limits.turns`: a count, or the word `unbounded` (#547).
+ *
+ * The refusal names the word because the three spellings somebody reaches for
+ * (`null` from a bare `turns:`, `0`, `none`) each mean *no ceiling* to a person
+ * and none of them is a choice the file states: the first is a deleted number,
+ * the second is already refused, the third is a string.
+ */
+const TurnLimitSchema = z.custom<number | typeof UNBOUNDED>(
+  (value) => value === UNBOUNDED || (typeof value === 'number' && Number.isInteger(value) && value > 0),
+  { error: () => `must be a whole number above 0, or \`${UNBOUNDED}\` for no turn ceiling` },
+)
 
 /**
  * The names an **extension** may read, declared beside the extension itself
@@ -3264,7 +3277,7 @@ export const Recipe = z
        */
       limits: z
         .strictObject({
-          turns: z.number().int().positive().default(300),
+          turns: TurnLimitSchema.default(300),
           /**
            * A duration, checked here for the reason `source.backoff` is checked
            * where it is written: `parseDuration` throws, and a throw out of the
@@ -3349,9 +3362,9 @@ export const Recipe = z
            * (`#370`).
            *
            * **No default, unlike the other four.** `turns`'s schema default of
-           * `300` is why Codex reads red forever on that limit
-           * (`apps/cli/src/doctor.ts`'s `limitsRow`) — a default present on every
-           * recipe, whether anyone wrote it or not. `usd` must not do the same
+           * `300` is why a Codex project reads red on that limit until it writes
+           * `turns: unbounded` (`apps/cli/src/doctor.ts`'s `limitsRow`) — a
+           * default present on every recipe, whether anyone wrote it or not. `usd` must not do the same
            * thing on a second axis: absent means "no dollar ceiling", said out
            * loud, never assumed.
            */
@@ -3488,7 +3501,7 @@ export const Recipe = z
         }
         if (!('limits' in action) || action.limits === undefined) continue
         const { turns, wall } = action.limits
-        if (turns !== undefined && turns > ceiling.turns) {
+        if (turns !== undefined && ceiling.turns !== UNBOUNDED && turns > ceiling.turns) {
           refuse(
             `steps.${step}'s "${action.name}" asks for ${turns} turns; runtime.limits.turns is ` +
               `${ceiling.turns}, and a step may only narrow it (0070 §5)`,
@@ -3509,7 +3522,15 @@ export const Recipe = z
   })
 export type Recipe = z.infer<typeof Recipe>
 
-export { formatDuration, parseDuration } from './duration.ts'
+export {
+  UNBOUNDED,
+  formatDuration,
+  formatTurns,
+  maxTurns,
+  numericTurns,
+  parseDuration,
+  type TurnLimit,
+} from './duration.ts'
 
 /**
  * What a recipe that says nothing about limits gets.
