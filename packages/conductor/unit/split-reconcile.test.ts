@@ -265,6 +265,54 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     expect(open.filter((i) => i.body.includes(splitMarker(PARENT, waitId, 'a')))).toHaveLength(1)
   })
 
+  it('does not take a sub-issue from another repository with the same number for the child', async () => {
+    const github = fakeGitHub()
+    const real = github.port.subIssues
+    // Numbers are per repository: this one is #600 over there, with an id of its own.
+    github.port.subIssues = async (parent) => [...(await real(parent)), { number: 600, id: 42 as Issue['id'] }]
+    const { split } = await blockedOnFirstWait(github)
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    expect(github.issues[0]!.number).toBe(600)
+    expect(github.subs.get(PARENT)).toContain(600)
+    expect(github.calls.sub).toBe(3)
+  })
+
+  it('keeps retrying a duplicate withdrawal that failed, and is not complete while one is open', async () => {
+    const github = fakeGitHub()
+    const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+    const create = github.port.createIssue
+    let raced = false
+    github.port.createIssue = async (input) => {
+      if (!raced) {
+        raced = true
+        await create(input)
+      }
+      return create(input)
+    }
+    const close = github.port.closeIssue
+    let closes = 0
+    github.port.closeIssue = async (n, reason) => {
+      if (closes++ === 0) throw new Error('close timed out')
+      return close(n, reason)
+    }
+    expect(await split()).toMatchObject({ reason: 'split-partial' })
+    // The failed close stopped the writing: the child and its open duplicate.
+    expect(github.issues.filter((i) => i.state === 'open')).toHaveLength(2)
+    expect(splitProgressOf(await store.read(ticketId), waitId)!.failure).toContain('close timed out')
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    expect(github.issues.filter((i) => i.state === 'open')).toHaveLength(3)
+  })
+
+  it('a duplicate that only becomes visible after a retry is withdrawn on the next attempt', async () => {
+    const github = fakeGitHub()
+    const { split } = await blockedOnFirstWait(github)
+    await split()
+    const [a] = github.issues
+    github.issues.push({ ...a!, number: 700, id: 700_007 as Issue['id'], createdAt: 700 })
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    expect(github.issues.find((i) => i.number === 700)!.state).toBe('closed')
+  })
+
   describe('a plan change', () => {
     const other = { ...PLAN, children: [child('x'), child('y')], blockedBy: [] }
 

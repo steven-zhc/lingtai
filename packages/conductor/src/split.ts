@@ -70,28 +70,48 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   const { port, plan, parent, waitId } = options
   const since = new Date(options.startedAt.getTime() - SKEW_MS)
 
-  /** Each child's issue, found by marker — the oldest match is the child's. */
-  async function findChildren(): Promise<Map<string, { number: number; id: IssueId }>> {
+  /**
+   * Each child's issue, found by marker — the oldest match is the child's —
+   * and the newer open ones, which are duplicates still to be withdrawn.
+   */
+  async function findChildren(): Promise<{
+    found: Map<string, { number: number; id: IssueId }>
+    duplicates: { number: number; of: number }[]
+  }> {
     const issues = await port.listIssuesSince(since)
     const found = new Map<string, { number: number; id: IssueId }>()
+    const duplicates: { number: number; of: number }[] = []
     for (const child of plan.children) {
       const marker = splitMarker(parent, waitId, child.key)
-      const oldest = issues.filter((i) => i.body.includes(marker)).sort((a, b) => a.number - b.number)[0]
-      if (oldest !== undefined) found.set(child.key, { number: oldest.number, id: oldest.id })
+      const [oldest, ...rest] = issues.filter((i) => i.body.includes(marker)).sort((a, b) => a.number - b.number)
+      if (oldest === undefined) continue
+      found.set(child.key, { number: oldest.number, id: oldest.id })
+      for (const extra of rest) if (extra.state === 'open') duplicates.push({ number: extra.number, of: oldest.number })
     }
-    return found
+    return { found, duplicates }
+  }
+
+  /** Withdraws a newer duplicate in favour of the older issue that is the child. */
+  async function withdraw(duplicate: number, kept: number): Promise<void> {
+    await port.comment(
+      duplicate,
+      `Duplicate of #${kept} — two reconciles of the same split opened this child at once, and the older one is kept.`,
+    )
+    await port.closeIssue(duplicate, 'not_planned')
   }
 
   /** Reads everything, recording each part only once its GET has returned. */
   async function readBack(into: SplitObserved): Promise<void> {
-    const found = await findChildren()
+    const { found } = await findChildren()
     into.children = plan.children.flatMap((c) => {
       const at = found.get(c.key)
       return at === undefined ? [] : [{ key: c.key, number: at.number, id: at.id }]
     })
 
-    const attached = new Set((await port.subIssues(parent)).map((i) => i.number))
-    into.subIssues = into.children.filter((c) => attached.has(c.number)).map((c) => c.key)
+    // By id: an issue number is only unique within its repository, and a
+    // sub-issue from another one may carry the same number as a child.
+    const attached = new Set((await port.subIssues(parent)).map((i) => i.id as number))
+    into.subIssues = into.children.filter((c) => attached.has(c.id)).map((c) => c.key)
 
     const idOf = new Map(into.children.map((c) => [c.key, c.id as number]))
     const edges: SplitObserved['blockedBy'] = []
@@ -121,6 +141,10 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   // 2. Write what is missing; the first throw stops it.
   if (readable) {
     try {
+      // A duplicate left by an earlier attempt — a create that timed out and
+      // became visible after a retry made another — is withdrawn first, so a
+      // withdrawal that failed is tried again rather than forgotten.
+      for (const d of (await findChildren()).duplicates) await withdraw(d.number, d.of)
       for (const child of plan.children) {
         if (issues.has(child.key)) continue
         const marker = splitMarker(parent, waitId, child.key)
@@ -131,13 +155,9 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
         })
         // Look again: a call that raced this one may have opened its own. The
         // older issue is the child, so the newer withdraws.
-        const first = (await findChildren()).get(child.key)
+        const first = (await findChildren()).found.get(child.key)
         if (first !== undefined && first.number < opened.number) {
-          await port.comment(
-            opened.number,
-            `Duplicate of #${first.number} — two reconciles of the same split opened this child at once, and the older one is kept.`,
-          )
-          await port.closeIssue(opened.number, 'not_planned')
+          await withdraw(opened.number, first.number)
           issues.set(child.key, first)
         } else {
           issues.set(child.key, { number: opened.number, id: opened.id })
@@ -165,6 +185,10 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   const observed: SplitObserved = { children: [], subIssues: [], blockedBy: [] }
   try {
     await readBack(observed)
+    // A duplicate still open is a split that is not whole, whatever else was seen.
+    const open = (await findChildren()).duplicates
+    if (open.length > 0)
+      failure = `${failure === null ? '' : `${failure}; `}duplicate children still open: ${open.map((d) => `#${d.number}`).join(', ')}`
   } catch (err) {
     failure = `${failure === null ? '' : `${failure}; `}read-back failed: ${messageOf(err)}`
   }
