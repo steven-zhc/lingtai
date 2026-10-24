@@ -23,11 +23,12 @@ describe('hunkTextsOf', () => {
     ])
   })
 
-  it('bounds a long hunk and says how much was cut', () => {
-    const long = ['<<<<<<< ours', ...Array.from({ length: 10 }, (_, i) => `l${i}`), '>>>>>>> theirs'].join('\n')
-    const [text] = hunkTextsOf(long, 4)
-    expect(text!.split('\n')).toHaveLength(5)
-    expect(text).toMatch(/\[8 more lines not shown\]$/)
+  it('keeps both sides of a long hunk whole', () => {
+    const first = Array.from({ length: 100 }, (_, i) => `l${i}`)
+    const long = ['<<<<<<< ours', ...first, '=======', 'other', '>>>>>>> theirs'].join('\n')
+    const [text] = hunkTextsOf(long)
+    expect(text!.split('\n')).toHaveLength(104)
+    expect(text).toContain('=======\nother\n>>>>>>> theirs')
   })
 
   it('runs an unclosed marker to the end of the file and finds none without markers', () => {

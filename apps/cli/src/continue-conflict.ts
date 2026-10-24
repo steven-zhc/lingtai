@@ -61,6 +61,31 @@ export function parseChoices(raw: unknown): Record<string, ConflictChoice> | str
   return out
 }
 
+/** What in the supplied choices disagrees with the hunks an earlier confirmation recorded, or `null`. */
+function contradicts(
+  resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
+  choices: Record<string, ConflictChoice>,
+  acceptRecommended: boolean,
+): string | null {
+  const recorded = new Map(resolution.hunks.map((h) => [conflictRowKey(h), h]))
+  for (const [key, choice] of Object.entries(choices)) {
+    const h = recorded.get(key)
+    if (h === undefined) return `${key} is not one of its hunks`
+    const same =
+      choice._tag === 'Mechanical'
+        ? h._tag === 'Mechanical'
+        : choice._tag === 'Answer'
+          ? h._tag === 'Divergent' && h.adopted?.answerId === choice.answerId
+          : h._tag === 'Divergent' && h.behavior === choice.text.trim()
+    if (!same) return `${key} differs`
+  }
+  if (acceptRecommended)
+    for (const [key, h] of recorded)
+      if (h._tag === 'Divergent' && h.adopted === null && choices[key] === undefined)
+        return `${key} was written by hand, not recommended`
+  return null
+}
+
 /**
  * `lingtai continue-conflict`: with no confirmation flags it prints the
  * conflict exactly as the board draws it and appends nothing; with
@@ -102,7 +127,37 @@ async function continueConflict(
       log(`${ticketId} was approved, but not as a conflict continuation`)
       return 1
     }
-    return submit(options, log, deps, ticketId, state, lifecycle.waitId, recorded.resolution)
+    const resolution = recorded.resolution as Extract<Resolution, { _tag: 'ContinueConflict' }>
+    const submitting = options.ifBase !== undefined || options.ifHead !== undefined
+    if (!submitting) {
+      log(`${ticketId} was already confirmed; the continuation was not scheduled.`)
+      log(
+        `To ask again: lingtai continue-conflict ${options.project} --issue ${options.issue} ` +
+          `--if-base ${resolution.baseSha} --if-head ${resolution.headSha}`,
+      )
+      return 0
+    }
+    if (options.ifBase !== resolution.baseSha || options.ifHead !== resolution.headSha) {
+      log(
+        `${ticketId} was confirmed against base ${resolution.baseSha}, head ${resolution.headSha}, not the ones you gave; nothing was asked again.`,
+      )
+      return 1
+    }
+    let choices: Record<string, ConflictChoice> = {}
+    if (options.choices !== undefined) {
+      const parsed = parseChoices(options.choices)
+      if (typeof parsed === 'string') {
+        log(parsed)
+        return 2
+      }
+      choices = parsed
+    }
+    const differs = contradicts(resolution, choices, options.acceptRecommended === true)
+    if (differs !== null) {
+      log(`${ticketId} was already confirmed with other behavior (${differs}); nothing was changed or asked again.`)
+      return 1
+    }
+    return submit(options, log, deps, ticketId, state, lifecycle.waitId, resolution)
   }
 
   if (
@@ -190,6 +245,12 @@ async function continueConflict(
       return 2
     }
     choices = parsed
+    const known = new Set(work.rows.map(conflictRowKey))
+    const unknown = Object.keys(choices).filter((key) => !known.has(key))
+    if (unknown.length > 0) {
+      log(`--choices names no such hunk: ${unknown.join(', ')}; nothing was confirmed. Hunks: ${[...known].join(', ')}`)
+      return 2
+    }
   }
   if (options.choices === undefined && !options.acceptRecommended) {
     log('confirming needs --accept-recommended or --choices <file.json>')
