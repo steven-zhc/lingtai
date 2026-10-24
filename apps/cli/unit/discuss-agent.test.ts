@@ -17,10 +17,22 @@ import { DiscussAgent } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 describe('DiscussAgent', () => {
-  it('names exactly the runtimes that can be held to tools: none', () => {
+  it('names exactly the runtimes with a supported tools: none route', () => {
     const toolless = RuntimeId.options.filter((id) => {
       try {
-        createRuntime(id, { tools: 'none' })
+        createRuntime(id, {
+          tools: 'none',
+          codexText: {
+            config: {
+              apiKey: 'test-only',
+              model: 'test-model',
+              maxOutputTokens: 32,
+              maxUsd: 1,
+              inputUsdPerMillion: 1,
+              outputUsdPerMillion: 1,
+            },
+          },
+        })
         return true
       } catch (err) {
         if (err instanceof ToolsCannotBeDenied) return false
@@ -28,5 +40,6 @@ describe('DiscussAgent', () => {
       }
     })
     expect([...DiscussAgent.options].sort()).toEqual(toolless.sort())
+    expect(() => createRuntime('codex', { tools: 'none' })).toThrow(ToolsCannotBeDenied)
   })
 })

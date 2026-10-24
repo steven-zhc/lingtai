@@ -2841,7 +2841,7 @@ const Version = z
  * given no tools is a test failure there rather than a schema this file
  * forgot to widen.
  */
-export const DiscussAgent = z.enum(['claude-code'])
+export const DiscussAgent = z.enum(['claude-code', 'codex'])
 export type DiscussAgent = z.infer<typeof DiscussAgent>
 
 /**

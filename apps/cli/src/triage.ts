@@ -708,7 +708,10 @@ export async function waitTriage(
             result = { _tag: 'TriageFailed', why: clip(`could not record spend: ${spendProblem}`) }
             break
           }
-          if (outcome.costUsd !== null) costSpent += outcome.costUsd
+          // The Responses route reports tokens but no dollars. Reserve its
+          // conservative preflight bound before a later read round can run.
+          if (outcome.spendBoundUsd !== undefined) costSpent += outcome.spendBoundUsd
+          else if (outcome.costUsd !== null) costSpent += outcome.costUsd
           turnsSpent += outcome.turns
         }
 

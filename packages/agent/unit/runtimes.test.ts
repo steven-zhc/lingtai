@@ -110,6 +110,21 @@ describe('what a caller may ask of any runtime', () => {
     expect(createRuntime('claude-code', { tools: 'none' }).capabilities.id).toBe('claude-code')
     expect(() => createRuntime('codex', { tools: 'none' })).toThrow(ToolsCannotBeDenied)
     expect(() => createRuntime('codex', { tools: 'none' })).toThrow(/read-only/)
+    expect(
+      createRuntime('codex', {
+        tools: 'none',
+        codexText: {
+          config: {
+            apiKey: 'test',
+            model: 'test-model',
+            maxOutputTokens: 32,
+            maxUsd: 1,
+            inputUsdPerMillion: 1,
+            outputUsdPerMillion: 1,
+          },
+        },
+      }).capabilities.enforces,
+    ).toEqual(['turns', 'wall', 'usd'])
     // `full` is unaffected: a Codex *implementer* is what the sandbox is for.
     expect(createRuntime('codex', { tools: 'full' }).capabilities.id).toBe('codex')
     expect(createRuntime('codex').capabilities.id).toBe('codex')

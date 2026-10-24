@@ -14,8 +14,10 @@
  * the third-runtime claim: one enum value, one row, and nothing else to find.
  */
 import type { RuntimeId } from '@lingtai/domain'
+import { codexTextConfig } from '@lingtai/env'
 
 import { createClaudeCodeRuntime } from './claude-code.ts'
+import { createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
 import { createCodexRuntime } from './codex.ts'
 import type { Runtime } from './runtime.ts'
 
@@ -34,6 +36,8 @@ import type { Runtime } from './runtime.ts'
 export interface RuntimeOptions {
   /** The executable. Overridable so a test can use a stand-in. */
   binary?: string
+  /** Explicit model-only API configuration; production reads @lingtai/env's two sources. */
+  codexText?: CodexTextOptions
   /**
    * Whether this agent may act, or only read and answer.
    *
@@ -74,10 +78,9 @@ export class ToolsCannotBeDenied extends Error {
   readonly id: RuntimeId
   constructor(id: RuntimeId) {
     super(
-      `${id} has no way to be given no tools, and a discussion has no other containment: ` +
-        'measured on codex-cli 0.155.1, `-s read-only` forbids writes and forbids nothing ' +
-        'else — the agent keeps a shell and read access to the whole machine, ~/.ssh ' +
-        "included. Claude Code's tool-deny list is not a file Codex reads (0033 §1).",
+      `${id} cannot be given no tools with the current configuration: ` +
+        'Codex CLI read-only retains shell and host-file reads. The separate model-only API route ' +
+        'requires explicit approval, API credentials, model and conservative pricing in codex_text.',
     )
     this.id = id
   }
@@ -109,7 +112,19 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
      * did not restrict reads under `-s` when tried, and `enabled_tools` /
      * `disabled_tools` are MCP server keys and not the built-in shell.
      */
-    if (options.tools === 'none') throw new ToolsCannotBeDenied('codex')
+    if (options.tools === 'none') {
+      let configured: CodexTextOptions | undefined = options.codexText
+      if (!configured) {
+        try {
+          const config = codexTextConfig()
+          if (config) configured = { config }
+        } catch {
+          throw new ToolsCannotBeDenied('codex')
+        }
+      }
+      if (!configured) throw new ToolsCannotBeDenied('codex')
+      return createCodexTextRuntime(configured)
+    }
     return createCodexRuntime({
       ...(options.binary === undefined ? {} : { binary: options.binary }),
       sandbox: 'workspace-write',

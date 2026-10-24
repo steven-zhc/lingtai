@@ -160,6 +160,8 @@ export interface RunOutcome {
   turns: number
   durationMs: number
   costUsd: number | null
+  /** Conservative preflight reservation for a model-only API call (#565). */
+  spendBoundUsd?: number
   /**
    * Set when the run did not complete normally. **Never null and silent** — the
    * old loop's failures produced no event at all, which is the thing this type
