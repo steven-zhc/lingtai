@@ -19,7 +19,7 @@ import { PREFIX } from '@lingtai/env'
  */
 import { z } from 'zod'
 
-import { UNBOUNDED, formatDuration, parseDuration } from './duration.ts'
+import { UNBOUNDED, parseDuration } from './duration.ts'
 import {
   type Plugin,
   type PluginFields,
