@@ -1,7 +1,7 @@
 'use client'
 
 import type { ConflictWork } from '@lingtai/conductor/conflict-work'
-import type { TriageQuestion, WaitId } from '@lingtai/domain'
+import type { WaitId } from '@lingtai/domain'
 import { confirmHunks, conflictRowKey, type ConflictChoice, type ConflictRow } from '@lingtai/domain/wait'
 import { useState, useTransition } from 'react'
 
@@ -34,7 +34,6 @@ export function ContinueConflict({
   issue,
   waitId,
   work,
-  triageQuestions,
   triageKeys,
   primary,
 }: {
@@ -42,9 +41,7 @@ export function ContinueConflict({
   issue: number
   waitId: WaitId
   work: Rows
-  /** The questions the triage band draws, in its order, so a pick there is read here. */
-  triageQuestions: readonly TriageQuestion[]
-  /** The `path:line` each of `triageQuestions` belongs to, in the same order. */
+  /** The `path:line` of each question the triage band draws, in its order, so a pick there is read here. */
   triageKeys: readonly string[]
   primary: boolean
 }) {

@@ -974,7 +974,6 @@ export function Standing({
                             issue={issue}
                             waitId={waitId}
                             work={standing.conflictWork}
-                            triageQuestions={triageQuestions}
                             triageKeys={triageKeys}
                             primary={recommended === 'ContinueConflict'}
                           />
