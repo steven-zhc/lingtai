@@ -14,8 +14,9 @@
  * byte-identical.
  */
 
-/** Files one turn may ask for. Enough to follow a call site into its callee. */
-export const READS_PER_TURN = 6
+import { READS_PER_TURN } from '@lingtai/domain'
+
+export { READS_PER_TURN }
 
 /**
  * How many times one question may ask for files before it has to answer.
