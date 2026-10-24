@@ -1,10 +1,9 @@
 'use client'
 
+import type { ConflictWork } from '@lingtai/conductor/conflict-work'
 import type { WaitId } from '@lingtai/domain'
 import { confirmHunks, conflictRowKey, type ConflictChoice } from '@lingtai/domain/wait'
 import { useState, useTransition } from 'react'
-
-import type { ConflictWork } from '@/lib/conflict-work'
 
 import { continueConflictCard } from './actions.ts'
 

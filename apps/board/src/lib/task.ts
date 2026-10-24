@@ -1,3 +1,4 @@
+import { conflictWorkOf, type ConflictWork } from '@lingtai/conductor/conflict-work'
 import { continueConflictPorts } from '@lingtai/conductor/continue-conflict-ports'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
@@ -72,7 +73,6 @@ import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
 import { issueUrl, type PassLimitsView } from './board.ts'
-import { conflictWorkOf, type ConflictWork } from './conflict-work.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
