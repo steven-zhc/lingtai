@@ -34,7 +34,13 @@ import {
   type ToAppend,
   type WaitId,
 } from '@lingtai/domain'
-import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  describeSplitProblem,
+  splitPlanProblems,
+  type Resolution,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -128,6 +134,11 @@ export interface ResolveWaitOptions {
    * to reach; the sha-vs-run check below still runs either way.
    */
   client?: { refSha(ref: string): Promise<string | null> }
+  /**
+   * The recipe's `source.kinds` — read only for `Split`, whose children each
+   * need one of them or the queue never sees the child.
+   */
+  kinds?: readonly string[]
   store?: EventStore
 }
 
@@ -214,6 +225,34 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
       ticketId,
       reason: 'not-offered',
       detail: `${options.resolution._tag} is not offered for ${describeReason(reason)} — nothing was resolved.`,
+    }
+  }
+
+  // **A split is checked, and then not built, until the effects exist (#561,
+  // #562).** Appending `WaitResolved{Split}` here would record a completed
+  // choice with no child opened, and 0118 §11 says a partial split cannot
+  // resolve the wait. Both refusals return before any append.
+  if (options.resolution._tag === 'Split') {
+    if (options.kinds === undefined)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-kinds',
+        detail: "a split needs the recipe's kinds to check each child is visible to the queue — nothing was resolved.",
+      }
+    const problems = splitPlanProblems(options.resolution, { kinds: options.kinds })
+    if (problems.length > 0)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'invalid-split',
+        detail: `the split plan is refused — nothing was created or resolved: ${problems.map(describeSplitProblem).join('; ')}.`,
+      }
+    return {
+      ok: false,
+      ticketId,
+      reason: 'split-not-built',
+      detail: 'the split plan is sound, but creating its children is not built yet — nothing was created or resolved.',
     }
   }
 

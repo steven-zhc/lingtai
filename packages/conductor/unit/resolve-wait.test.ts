@@ -59,6 +59,71 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
   await store.append(streamId, (await store.read(streamId)).length, events)
 }
 
+describe('resolveWaitHolding, Split (#560)', () => {
+  const child = (key: string, kind = 'feature') => ({ key, title: key, body: `work on ${key}`, kind })
+  const sound = {
+    _tag: 'Split' as const,
+    children: [child('a'), child('b')],
+    blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
+  }
+
+  async function blockedOnFirstWait() {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 560)
+    const item = makeStream(ticketId)
+    const run = aRun('pass-560')
+    const waitId = aWaitId()
+    await seed(store, ticketId, [
+      ...aClaim(item, run.runId),
+      ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
+    ])
+    const split = (resolution: unknown, kinds?: readonly string[]) =>
+      resolveWaitHolding(
+        { ticketId, waitId, resolution: resolution as never, by: 'human:steven', kinds, store },
+        ticketId,
+      )
+    return { store, ticketId, waitId, split }
+  }
+
+  it('refuses an invalid plan by name and appends nothing', async () => {
+    const { store, ticketId, split } = await blockedOnFirstWait()
+    const before = (await store.read(ticketId)).length
+    const cyclic = {
+      ...sound,
+      blockedBy: [
+        { ticket: 'a', blockedBy: 'b' },
+        { ticket: 'b', blockedBy: 'a' },
+      ],
+    }
+    expect(await split(cyclic, ['feature'])).toMatchObject({
+      ok: false,
+      reason: 'invalid-split',
+      detail: expect.stringContaining('cycle'),
+    })
+    expect(await split({ ...sound, children: [child('a'), child('b', 'chore')] }, ['feature'])).toMatchObject({
+      reason: 'invalid-split',
+      detail: expect.stringContaining('chore'),
+    })
+    expect((await store.read(ticketId)).length).toBe(before)
+  })
+
+  it('refuses a plan with no kinds to check against', async () => {
+    const { store, ticketId, split } = await blockedOnFirstWait()
+    const before = (await store.read(ticketId)).length
+    expect(await split(sound)).toMatchObject({ ok: false, reason: 'no-kinds' })
+    expect((await store.read(ticketId)).length).toBe(before)
+  })
+
+  it('refuses a sound plan as not built: the wait stays current and nothing is recorded', async () => {
+    const { store, ticketId, waitId, split } = await blockedOnFirstWait()
+    const before = (await store.read(ticketId)).length
+    expect(await split(sound, ['feature'])).toMatchObject({ ok: false, reason: 'split-not-built' })
+    expect((await store.read(ticketId)).length).toBe(before)
+    const lifecycle = reduceTicket(await store.read(ticketId)).lifecycle
+    expect(lifecycle).toMatchObject({ status: 'blocked', waitId })
+  })
+})
+
 describe('resolveWait', () => {
   it('refuses a WIP-only arm but grants the clean branch head beside a WIP arm', async () => {
     const store = createMemoryEventStore()

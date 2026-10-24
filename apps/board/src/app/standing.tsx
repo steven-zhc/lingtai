@@ -66,6 +66,10 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     title: 'Add to the ticket and start over',
     consequence: 'Append your text to the ticket body, then queue a new pass from main with that text.',
   },
+  Split: {
+    title: 'Split into smaller tickets',
+    consequence: 'Open the approved child tickets in the order given, then end this wait.',
+  },
   Close: {
     title: 'Close the ticket',
     consequence: 'End this ticket without another pass. A reason is required.',
@@ -554,8 +558,13 @@ export function Standing({
     standing.triageStatus.result._tag === 'TriageAdvised'
       ? standing.triageStatus.result.summary
       : null
+  // `Split` has no card until its editor exists (#563): a card with no action
+  // under it is worse than none. The triage band still carries the advice.
+  const drawable = allowed.filter((tag) => tag !== 'Split')
   const orderedResolutions =
-    recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
+    recommended === null
+      ? drawable
+      : [...drawable].sort((a, b) => Number(b === recommended) - Number(a === recommended))
   // Keep the keyed body editor mounted across Follow refreshes so an unsent
   // draft remains available after somebody else resolves the wait.
   const resolutionCards: Resolution['_tag'][] = acting

@@ -396,6 +396,28 @@ describe('parseTriage', () => {
     expect(reply.result.summary).toBe(answer['summary'])
   })
 
+  it('refuses a Split answer whose plan has a cycle', () => {
+    const child = (key: string) => ({ key, title: key, body: key, kind: 'feature' })
+    const reply = parseTriage(
+      JSON.stringify({
+        cause: {
+          _tag: 'TicketTooBig',
+          split: {
+            children: [child('a'), child('b')],
+            blockedBy: [
+              { ticket: 'a', blockedBy: 'b' },
+              { ticket: 'b', blockedBy: 'a' },
+            ],
+          },
+        },
+        resolution: 'Split',
+        summary: 'too big',
+        want: null,
+      }),
+    )
+    expect(reply.kind).toBe('refused')
+  })
+
   it('refuses an unknown cause, and says which', () => {
     const reply = parseTriage(
       JSON.stringify({ cause: { _tag: 'NotACause' }, resolution: 'Close', summary: 'x', want: null }),
