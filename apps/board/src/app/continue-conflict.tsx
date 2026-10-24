@@ -46,28 +46,50 @@ export function ContinueConflict({
   primary: boolean
 }) {
   const draft = useTriageDraft()
-  // Mechanical and written choices are kept with the triage pick they were made
-  // beside; a later pick in the band supersedes them, so the band and this form
-  // never name different behavior for one hunk.
-  const [own, setOwn] = useState<Record<string, { choice: ConflictChoice; pick: string | null } | undefined>>({})
+  // Mechanical and written choices stand until the person next picks in the
+  // band for that hunk; `seen` is the pick each row had when last rendered, so
+  // any change to it, including a return to an earlier answer, supersedes them.
+  const [own, setOwn] = useState<Record<string, ConflictChoice | undefined>>({})
+  const [seen, setSeen] = useState<Record<string, string | null>>({})
   const [grant, setGrant] = useState(false)
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [, startTransition] = useTransition()
 
-  const bandIndex = (row: ConflictRow) =>
-    row.question === null ? -1 : triageQuestions.findIndex((q) => q.id === row.question!.id)
+  // Each row takes the band question that is the same question (same id and
+  // content) and not already taken by an earlier row, so ids shared by two
+  // hunks still address two different picks.
+  const bandIndexes = new Map<string, number>()
+  const taken = new Set<number>()
+  for (const row of work.rows) {
+    if (row.question === null) continue
+    const wanted = JSON.stringify(row.question)
+    const index = triageQuestions.findIndex((q, i) => !taken.has(i) && JSON.stringify(q) === wanted)
+    const fallback = triageQuestions.findIndex((q, i) => !taken.has(i) && q.id === row.question!.id)
+    const found = index >= 0 ? index : fallback
+    if (found >= 0) {
+      taken.add(found)
+      bandIndexes.set(conflictRowKey(row), found)
+    }
+  }
+  const bandIndex = (row: ConflictRow) => bandIndexes.get(conflictRowKey(row)) ?? -1
   const picked = (row: ConflictRow): string | null => {
     const index = bandIndex(row)
     return row.question === null || index < 0 || draft === null ? null : draft.selected(index, row.question)
   }
+  const picks = work.rows.map((row) => [conflictRowKey(row), picked(row)] as const)
+  const changed = picks.filter(([key, pick]) => key in seen && seen[key] !== pick).map(([key]) => key)
+  if (picks.some(([key, pick]) => seen[key] !== pick)) {
+    // Adjusting state while rendering is React's own form of "reset on change": it re-renders before paint.
+    setSeen(Object.fromEntries(picks))
+    if (changed.length > 0)
+      setOwn((all) => Object.fromEntries(Object.entries(all).filter(([key]) => !changed.includes(key))))
+  }
   const choices: Record<string, ConflictChoice> = {}
-  for (const row of work.rows) {
-    const key = conflictRowKey(row)
-    const pick = picked(row)
-    const mine = own[key]
-    if (mine !== undefined && mine.pick === pick) choices[key] = mine.choice
+  for (const [key, pick] of picks) {
+    const mine = changed.includes(key) ? undefined : own[key]
+    if (mine !== undefined) choices[key] = mine
     else if (pick !== null) choices[key] = { _tag: 'Answer', answerId: pick }
   }
   const current = (key: string, suggested: ConflictChoice | null) => choices[key] ?? suggested
@@ -78,10 +100,7 @@ export function ContinueConflict({
   const set = (row: ConflictRow, choice: ConflictChoice) => {
     const index = bandIndex(row)
     if (choice._tag === 'Answer' && index >= 0) draft?.pick(index, choice.answerId)
-    setOwn((all) => ({
-      ...all,
-      [conflictRowKey(row)]: { choice, pick: choice._tag === 'Answer' ? choice.answerId : picked(row) },
-    }))
+    setOwn((all) => ({ ...all, [conflictRowKey(row)]: choice }))
   }
 
   return (
