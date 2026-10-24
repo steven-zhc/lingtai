@@ -134,6 +134,7 @@ describe('declaredEnvironment, a project with no owner', () => {
       'env: esctest extensions',
       'runtime: esctest limits',
       'runtime: esctest signed in',
+      'discuss: esctest signed in',
     ])
     for (const row of rows) expect(row.status, `${row.name}: ${row.detail}`).toBe('ok')
     // `currentRecipe` ignores its second argument (`projects.ts`), and this

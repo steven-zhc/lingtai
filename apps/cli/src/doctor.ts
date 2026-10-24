@@ -903,7 +903,7 @@ export interface DoctorReach {
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
-  codexText: () => CodexTextConfig | undefined
+  codexText?: () => CodexTextConfig | undefined
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -2045,8 +2045,9 @@ async function dispatchedAuthRow(
   // Found in the injected list rather than built with `createRuntime`, so a
   // test can hand in a fake `checkAuth` instead of spawning the real binary.
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
+  role: 'runtime' | 'discuss' | 'triage' = 'runtime',
 ): Promise<CheckResult> {
-  const name = `runtime: ${project} signed in`
+  const name = `${role}: ${project} signed in`
   if (!asked.has(agent)) {
     const runtime = runtimes.find((r) => r.capabilities.id === agent)
     // Exactly what a run gets. Not `process.env`.
@@ -2061,9 +2062,9 @@ async function dispatchedAuthRow(
     name,
     status: 'fail',
     detail:
-      `${agent} reports ${status.detail}, and ${project}'s recipe names it at runtime.agent — ` +
-      `so that is what the next pass constructs and spawns. Sign in, or name a runtime this ` +
-      `machine has at runtime.agent in ${recipePath(project)}. If you are signed in yourself, the run's environment ` +
+      `${agent} reports ${status.detail}, and ${project}'s recipe names it at ${role}.agent — ` +
+      `so that is what its next call constructs and spawns. Sign in, or name a runtime this ` +
+      `machine has at ${role}.agent in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
   }
 }
@@ -2176,6 +2177,8 @@ export async function declaredEnvironment(
           results.push(
             codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
           )
+        } else if (selected) {
+          results.push(await dispatchedAuthRow(project.project, selected.agent, asked, runtimes, role))
         }
       }
     } catch (err) {
