@@ -50,8 +50,13 @@ describe('discuss:, written', () => {
     await expect(resolve(`${BASE}discuss:\n  - agent: claude-code\n`)).rejects.toThrow(/discuss/)
   })
 
-  it('refuses a runtime that cannot be given no tools, by name, at resolve', async () => {
-    await expect(resolve(`${BASE}discuss:\n  agent: codex\n`)).rejects.toThrow(/discuss\.agent/)
+  it('accepts Codex for the configured model-only route', async () => {
+    const { recipe } = await resolve(`${BASE}discuss:\n  agent: codex\n`)
+    expect(recipe.discuss.agent).toBe('codex')
+  })
+
+  it('refuses an unknown discussion agent by name at resolve', async () => {
+    await expect(resolve(`${BASE}discuss:\n  agent: unknown\n`)).rejects.toThrow(/discuss\.agent/)
   })
 
   it('refuses an unrecognized field, by name', async () => {
