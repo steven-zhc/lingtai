@@ -115,7 +115,8 @@ async function continueConflict(
     return 1
   }
   const { waitId, reason } = lifecycle
-  const { baseSha, headSha } = reason.proposal
+  // the guard above holds `MergeConflict`, which destructuring `lifecycle` forgets
+  const { baseSha, headSha } = (reason as { proposal: { baseSha: string | null; headSha: string | null } }).proposal
   const ports = await deps.ports(state)
   const runEvents = lifecycle.runId === null ? [] : await deps.events(lifecycle.runId)
   const published = runEvents.findLast((e) => e.type === 'RunRefsPublished')?.data as

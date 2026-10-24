@@ -27,7 +27,7 @@ describe('hunkTextsOf', () => {
     const long = ['<<<<<<< ours', ...Array.from({ length: 10 }, (_, i) => `l${i}`), '>>>>>>> theirs'].join('\n')
     const [text] = hunkTextsOf(long, 4)
     expect(text!.split('\n')).toHaveLength(5)
-    expect(text).toMatch(/\[9 more lines not shown\]$/)
+    expect(text).toMatch(/\[8 more lines not shown\]$/)
   })
 
   it('runs an unclosed marker to the end of the file and finds none without markers', () => {
