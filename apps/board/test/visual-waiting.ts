@@ -1,6 +1,6 @@
-/** Deterministic presentation data, folded from the same wait events as the unit pins. */
+/** Deterministic presentation data, folded from local wait events. */
 import { STEPS, type Envelope, type Finding, type Step } from '@lingtai/domain'
-import { aClaim, aWait } from '@lingtai/domain/test/events'
+import { aClaim, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { TriageFacts, TriageResult, TriageStatus } from '@lingtai/domain/wait'
 import { triageStatus } from '@lingtai/domain/wait'
@@ -9,7 +9,16 @@ import { taskViewProjection } from '@lingtai/projector/task-view'
 
 import { toCard } from '@/lib/board'
 import { describeHeld } from '@/lib/progress'
-import { foldChat, foldRun, savedFixWork, standingOf, totalsOf, type Claim, type TaskDetail } from '@/lib/task'
+import {
+  foldChat,
+  foldRun,
+  savedFixWork,
+  standingOf,
+  totalsOf,
+  type Claim,
+  type StandingView,
+  type TaskDetail,
+} from '@/lib/task'
 
 import { WAIT_FIXTURES } from './waits.ts'
 
@@ -183,33 +192,44 @@ function fixableFixture(published: boolean) {
           ),
         ]
       : []),
-    run(
-      'StepEnded',
-      {
-        runId,
-        outcome: {
-          step: 'proposed',
-          round: 2,
-          actions: [
+    ...(published
+      ? [
+          run(
+            'StepEnded',
             {
-              plugin: 'conductor',
-              name: 'conductor:judge',
-              onSha: HEAD,
-              evidence: '',
-              yields: 'signoff',
-              result: { _tag: 'Completed', requested: { question: 'Merge agent/393 into main anyway?' } },
+              runId,
+              outcome: {
+                step: 'proposed',
+                round: 2,
+                actions: [
+                  {
+                    plugin: 'conductor',
+                    name: 'conductor:judge',
+                    onSha: HEAD,
+                    evidence: '',
+                    yields: 'signoff',
+                    result: { _tag: 'Completed', requested: { question: 'Merge agent/393 into main anyway?' } },
+                  },
+                ],
+              },
             },
-          ],
+            at(26),
+          ),
+        ]
+      : []),
+    item(
+      'WaitStarted',
+      {
+        waitId: aWaitId(),
+        reason: {
+          _tag: 'ProposedEscalated',
+          run: { runId },
+          proposal: { _tag: 'ReviewFindings', findings: FINDINGS },
+          because: { _tag: 'NotAsked' },
         },
       },
-      at(26),
+      at(27),
     ),
-    ...aWait(item, {
-      _tag: 'ProposedEscalated',
-      run: { runId },
-      proposal: { _tag: 'ReviewFindings', findings: FINDINGS },
-      because: { _tag: 'NotAsked' },
-    }),
     chat(
       'DiscussionAsked',
       {
@@ -373,7 +393,7 @@ export async function preview(name: CaseName) {
     return foldRun(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
-  const previewStanding =
+  const previewStanding: StandingView =
     'judgeWhy' in spec && standing.reason?._tag === 'ProposedEscalated'
       ? {
           ...standing,
