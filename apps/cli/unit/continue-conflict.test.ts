@@ -142,6 +142,67 @@ describe('continue-conflict', () => {
     expect(h.lines.join('\n')).toContain('requeue')
   })
 
+  it('refuses a choices key that names no counted hunk instead of falling back to a recommendation', async () => {
+    const h = harness()
+    const code = await continueConflictCommand(
+      {
+        project: 'p',
+        issue: 7,
+        ifBase: BASE,
+        ifHead: HEAD,
+        choices: { 'a.ts:4': 'mechanical' },
+        acceptRecommended: true,
+      },
+      h.log,
+      h.deps,
+    )
+    expect(code).toBe(2)
+    expect(h.lines.join('\n')).toContain('a.ts:4')
+    expect(h.deps.resolve).not.toHaveBeenCalled()
+  })
+
+  describe('an already confirmed, unscheduled continuation', () => {
+    const recorded = {
+      _tag: 'ContinueConflict',
+      baseSha: BASE,
+      headSha: HEAD,
+      ref: 'agent/7',
+      hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 3 }],
+      grantExtraRound: false,
+    }
+    const approved = [
+      ...own,
+      env(ticketId, 'WaitResolved', { waitId: 'w1', resolution: recorded }, 2),
+      env(ticketId, 'WaitApproved', { waitId: 'w1', grantRef: 'agent/7' }, 3),
+    ]
+    const go = async (opts: object) => {
+      const resolve = vi.fn(async () => ({ ok: true, ticketId, rescheduled: true })) as never
+      const h = harness(resolve)
+      h.deps.events = async (stream) => (stream === ticketId ? approved : run)
+      const code = await continueConflictCommand({ project: 'p', issue: 7, ...opts }, h.log, h.deps)
+      return { code, resolve: resolve as unknown as ReturnType<typeof vi.fn> }
+    }
+
+    it('dispatches nothing without confirmation flags', async () => {
+      const r = await go({})
+      expect(r.code).toBe(0)
+      expect(r.resolve).not.toHaveBeenCalled()
+    })
+
+    it('refuses a base or head other than the recorded one, and choices that differ', async () => {
+      expect((await go({ ifBase: 'c'.repeat(40), ifHead: HEAD })).resolve).not.toHaveBeenCalled()
+      const other = await go({ ifBase: BASE, ifHead: HEAD, choices: { 'a.ts:3': { behavior: 'x' } } })
+      expect(other.code).toBe(1)
+      expect(other.resolve).not.toHaveBeenCalled()
+    })
+
+    it('resends the recorded resolution when the caller agrees with it', async () => {
+      const r = await go({ ifBase: BASE, ifHead: HEAD, choices: { 'a.ts:3': 'mechanical' } })
+      expect(r.code).toBe(0)
+      expect(r.resolve).toHaveBeenCalledWith(expect.objectContaining({ resolution: recorded }))
+    })
+  })
+
   it('parses the choices file strictly', () => {
     expect(parseChoices({ 'a.ts:1': { answer: 'x' } })).toEqual({ 'a.ts:1': { _tag: 'Answer', answerId: 'x' } })
     expect(parseChoices({ 'a.ts:1': 3 })).toMatch(/must be/)
