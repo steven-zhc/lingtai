@@ -9,7 +9,7 @@ const harness = vi.hoisted(() => ({
   values: [] as unknown[],
   cursor: 0,
   submit: vi.fn(async () => ({ ok: true, detail: 'back in the queue' })),
-  triage: null as null | { waitId: WaitId; text: string; note: string },
+  triage: null as null | { waitId: WaitId; text: string },
 }))
 
 vi.mock('react', async (importOriginal) => {
@@ -126,17 +126,17 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
   harness.submit.mockClear()
   const first = aWaitId()
   const next = aWaitId()
-  harness.triage = { waitId: first, text: 'Which? — A', note: 'Triage answers:\nWhich? — A' }
+  harness.triage = { waitId: first, text: 'Which? — A' }
   const render = (waitId: WaitId) => {
     harness.cursor = 0
     return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: null })
   }
 
   expect(control(render(first), 'textarea').props.value).toBe('Which? — A')
-  harness.triage = { waitId: first, text: 'Which? — B', note: 'Triage answers:\nWhich? — B' }
+  harness.triage = { waitId: first, text: 'Which? — B' }
   expect(control(render(first), 'textarea').props.value).toBe('Which? — B')
   control(render(first), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
-  harness.triage = { waitId: first, text: 'Which? — A', note: 'Triage answers:\nWhich? — A' }
+  harness.triage = { waitId: first, text: 'Which? — A' }
   expect(control(render(first), 'textarea').props.value).toBe('My own answer')
   control(render(first), 'button').props.onClick?.()
   await vi.waitFor(() =>
@@ -145,11 +145,10 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
       issue: 112,
       waitId: first,
       text: 'My own answer',
-      note: 'Triage answers:\nWhich? — A',
     }),
   )
 
-  harness.triage = { waitId: next, text: 'Where? — Here', note: 'Triage answers:\nWhere? — Here' }
+  harness.triage = { waitId: next, text: 'Where? — Here' }
   expect(control(render(next), 'textarea').props.value).toBe('Where? — Here')
   harness.triage = null
 })

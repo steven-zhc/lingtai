@@ -11,7 +11,7 @@
  * result, whether `resolveWaitHolding` is called at all.
  */
 import { reduceTicket, ticketStream, type WaitId } from '@lingtai/domain'
-import { allowedResolutions } from '@lingtai/domain/wait'
+import { allowedResolutions, requeueNote } from '@lingtai/domain/wait'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 
 import { deciding } from './approve.ts'
@@ -214,7 +214,9 @@ export async function editBodyAndRequeueHolding(
       waitId: options.waitId,
       resolution: { _tag: 'EditBodyAndRequeue' },
       by: options.by,
-      note: options.note,
+      // A note the person typed wins; otherwise it is composed from the text
+      // just written, so it cannot go stale against an edited answer (0118 §6).
+      note: options.note?.trim() ? options.note : requeueNote(options.text),
       store,
     },
     ticketId,

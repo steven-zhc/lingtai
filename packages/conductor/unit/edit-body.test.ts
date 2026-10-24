@@ -7,6 +7,7 @@ import { parsePayload, reduceTicket, ticketStream, waitsOf, type Envelope, type 
  */
 import { aClaim, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
+import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -147,6 +148,10 @@ describe('editBodyAndRequeueHolding', () => {
     const events = await store.read(ticketId)
     expect(events.some((e) => e.type === 'WaitResolved')).toBe(true)
     expect(waitsOf(events).at(-1)?.resolution).toEqual({ _tag: 'EditBodyAndRequeue' })
+    // The reason is composed from the text written, not asked for (0118 §6).
+    expect(events.findLast((e) => e.type === 'WaitResolved')?.data).toMatchObject({
+      note: requeueNote('use the helper in foo.ts'),
+    })
     expect(reduceTicket(events).lifecycle.status).toBe('backlog')
 
     const issue = await tickets.getIssue(ISSUE)

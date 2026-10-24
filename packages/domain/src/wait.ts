@@ -625,7 +625,9 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  * At most one resolution to draw first and prefill. An advised resolution
  * (`status` is `Done` with `TriageAdvised`) is recommended exactly when
  * `allowedResolutions` offers it — a disallowed advice returns `null`, not
- * the default, because there was advice and it is simply not drawn. With no
+ * the default, because there was advice and it is simply not drawn. The same
+ * goes for an advice its own cause contradicts: `Approve` or `GrantFixRound`
+ * on a `WrongApproach`, and `Approve` on `FixableLines`. With no
  * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
  * `Done` with `TriageFailed`) the wait's own default stands, itself run back
  * through `allowedResolutions` so a default an `unpushed` run disallows is
@@ -641,7 +643,14 @@ export function recommendedResolution(reason: WaitReason, status: TriageStatus):
     case 'Done':
       if (status.result._tag === 'TriageAdvised') {
         const advised = status.result.resolution
-        return allowed.includes(advised) ? advised : null
+        if (!allowed.includes(advised)) return null
+        // An advice that contradicts its own diagnosis is dropped, not swapped
+        // for another: a wrong approach is not continued or waived, and a
+        // fixable line is repaired rather than waived (#529, #551).
+        const cause = status.result.cause._tag
+        if (cause === 'WrongApproach' && (advised === 'Approve' || advised === 'GrantFixRound')) return null
+        if (cause === 'FixableLines' && advised === 'Approve') return null
+        return advised
       }
       return toDefault()
     case 'NotNeeded':
@@ -651,6 +660,15 @@ export function recommendedResolution(reason: WaitReason, status: TriageStatus):
     case 'Interrupted':
       return toDefault()
   }
+}
+
+/**
+ * The reason an `EditBodyAndRequeue` is recorded with when the person gave
+ * none (0118 §6): composed from the text the resolution writes, so it is
+ * never stale against an edited answer and never asks them for one.
+ */
+export function requeueNote(text: string): string {
+  return `Added to the ticket body:\n${text.trim()}`
 }
 
 /**
