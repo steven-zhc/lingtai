@@ -480,6 +480,7 @@ export function Discussion({
   const echoed = echoing(discussions, echo)
   const context = discussionContext(reason, triageStatus)
   const compact = !expanded && question === '' && open === null && echoed === null && reason?._tag === 'SignoffRequired'
+  const entry = !compact && open === null && turnsIn(discussions) === 0 && echoed === null
 
   /**
    * The reply is at the bottom of its own scroller, and that is where the box
@@ -595,7 +596,11 @@ export function Discussion({
   }
 
   return (
-    <div ref={root} className={`chat${quiet ? ' quiet' : ''}${compact ? ' compact' : ''}`} data-context={context.state}>
+    <div
+      ref={root}
+      className={`chat${quiet ? ' quiet' : ''}${compact ? ' compact' : ''}${entry ? ' entry' : ''}`}
+      data-context={context.state}
+    >
       {compact ? (
         <button className="chatentry" type="button" onClick={() => setExpanded(true)}>
           <span aria-hidden="true">+</span> Discussion <small>· ask about this hold</small>
