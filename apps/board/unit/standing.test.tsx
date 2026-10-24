@@ -1327,14 +1327,15 @@ it('uses triage advice to recommend a choice without granting it', () => {
   expect(waiver).toContain('approval, which waives the refusal')
   expect(waiver).not.toContain('sresolution--recommended')
   expect(recommendedResolution(FIXABLE.reason!, advice({ _tag: 'FixableLines', fixes: [] }, 'Approve'))).toBeNull()
-  // No saved head: the card cannot run, so it is not the recommended one, and
-  // nothing else is recommended in its place.
+  // No saved head: the domain's answer is still drawn first, and the card
+  // itself says it cannot run; nothing else is recommended in its place.
   const headless = advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound')
   const noHeadHtml = render({ ...FIXABLE, fixWork: null, triageStatus: headless }, OUTGOING)
   const noHead = moves(noHeadHtml)
   expect(recommendedResolution(FIXABLE.reason!, headless)).toBe('GrantFixRound')
-  expect(noHead).not.toContain('sresolution--recommended')
-  expect(noHead).not.toContain('Triage recommended')
+  expect(noHead).toMatch(/class="sresolution sresolution--recommended" data-resolution="GrantFixRound"/)
+  expect(noHead).not.toMatch(/sresolution--recommended" data-resolution="Requeue"/)
+  expect(noHead).toContain('Triage recommended')
   expect(noHead).toContain('Cannot continue saved work')
 })
 
