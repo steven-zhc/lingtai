@@ -141,9 +141,9 @@ async function continueConflict(
     const resolution = recorded.resolution as Extract<Resolution, { _tag: 'ContinueConflict' }>
     const submitting = options.ifBase !== undefined || options.ifHead !== undefined
     if (!submitting) {
-      log(`${ticketId} was already confirmed; the continuation was not scheduled.`)
+      log(`${ticketId} was already confirmed; its continuation is requested and waits for the conductor to claim it.`)
       log(
-        `To ask again: lingtai continue-conflict ${options.project} --issue ${options.issue} ` +
+        `If nothing starts, ask again with the recorded confirmation: lingtai continue-conflict ${options.project} --issue ${options.issue} ` +
           `--if-base ${resolution.baseSha} --if-head ${resolution.headSha}`,
       )
       return 0
@@ -154,6 +154,11 @@ async function continueConflict(
       )
       return 1
     }
+    // With neither flag the recorded confirmation is sent back verbatim, so
+    // there is nothing to contradict; with either, it must equal the record.
+    if (options.choices === undefined && !options.acceptRecommended) {
+      return submit(options, log, deps, ticketId, state, lifecycle.waitId, resolution)
+    }
     let choices: Record<string, ConflictChoice> = {}
     if (options.choices !== undefined) {
       const parsed = parseChoices(options.choices)
@@ -162,10 +167,6 @@ async function continueConflict(
         return 2
       }
       choices = parsed
-    }
-    if (options.choices === undefined && !options.acceptRecommended) {
-      log('confirming needs --accept-recommended or --choices <file.json>')
-      return 2
     }
     const started = own
       .filter((e) => e.type === 'WaitStarted')

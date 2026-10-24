@@ -196,9 +196,14 @@ describe('continue-conflict', () => {
       expect(other.resolve).not.toHaveBeenCalled()
     })
 
-    it('refuses --accept-recommended when the recorded hunk is not what triage recommended, or nothing is asked for', async () => {
+    it('refuses --accept-recommended when the recorded hunk is not what triage recommended', async () => {
       expect((await go({ ifBase: BASE, ifHead: HEAD, acceptRecommended: true })).resolve).not.toHaveBeenCalled()
-      expect((await go({ ifBase: BASE, ifHead: HEAD })).resolve).not.toHaveBeenCalled()
+    })
+
+    it('the printed recovery command, with just the recorded base and head, resends the record', async () => {
+      const r = await go({ ifBase: BASE, ifHead: HEAD })
+      expect(r.code).toBe(0)
+      expect(r.resolve).toHaveBeenCalledWith(expect.objectContaining({ resolution: recorded }))
     })
 
     it('resends the recorded resolution when the caller agrees with it', async () => {
