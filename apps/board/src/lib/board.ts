@@ -146,7 +146,7 @@ export interface BoardCard {
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
   cause: (CausePresentation & { summary: string }) | null
   /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
-  triage: 'Queued' | 'Running' | 'Interrupted' | null
+  triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -511,7 +511,8 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
 
 /** What `triageStatus` reads besides the wait: the card and the page build it the same way. */
 export interface TriageContext {
-  declared: boolean
+  /** Null where the project registry could not be read: the card says it does not know (#583). */
+  declared: boolean | null
   daemonStartedAt: Date | null
 }
 
@@ -520,13 +521,29 @@ export interface TriageContext {
  * page cannot derive it from different ones (#576). `status` is the beacon's
  * row, read once per render; null where no daemon has ever run.
  */
-export function triageContextOf(declared: boolean, status: { startedAt: Date } | null): TriageContext {
+export function triageContextOf(
+  declared: boolean,
+  status: { startedAt: Date } | null,
+): TriageContext & { declared: boolean }
+export function triageContextOf(declared: boolean | null, status: { startedAt: Date } | null): TriageContext
+export function triageContextOf(declared: boolean | null, status: { startedAt: Date } | null): TriageContext {
   return { declared, daemonStartedAt: status?.startedAt ?? null }
 }
 
 /** The card's `TriageStatus`: the page's `currentTriageStatus` over the same wait gives the same answer. */
-export function cardTriageStatus(t: Pick<TaskCard, 'wait' | 'triage'>, context: TriageContext): TriageStatus | null {
-  return t.wait === null ? null : triageStatus(t.wait.reason, t.triage, context)
+export function cardTriageStatus(
+  t: Pick<TaskCard, 'wait' | 'triage'>,
+  context: TriageContext,
+): TriageStatus | 'Unknown' | null {
+  if (t.wait === null) return null
+  const { declared, daemonStartedAt } = context
+  if (declared !== null) return triageStatus(t.wait.reason, t.triage, { declared, daemonStartedAt })
+  // Only the last branch of 0118 §1 reads `declared`: where both answers agree
+  // the unread registry changes nothing, and where they differ the card does
+  // not know (#583).
+  const ifDeclared = triageStatus(t.wait.reason, t.triage, { declared: true, daemonStartedAt })
+  const ifNot = triageStatus(t.wait.reason, t.triage, { declared: false, daemonStartedAt })
+  return ifDeclared._tag === ifNot._tag ? ifDeclared : 'Unknown'
 }
 
 /**
@@ -596,11 +613,15 @@ export function toCard(
     costUsd,
     note: words?.line ?? t.note,
     cause:
-      status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
+      status !== 'Unknown' && status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
         ? { ...presentCause(status.result.cause), summary: status.result.summary }
         : null,
     triage:
-      status?._tag === 'Queued' || status?._tag === 'Running' || status?._tag === 'Interrupted' ? status._tag : null,
+      status === 'Unknown'
+        ? 'Unknown'
+        : status?._tag === 'Queued' || status?._tag === 'Running' || status?._tag === 'Interrupted'
+          ? status._tag
+          : null,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t, limits?.restarts ?? null),
@@ -969,10 +990,13 @@ export async function loadBoard(project?: string): Promise<Board> {
   // for their queue.
   const [tasks, all, onBoard] = await Promise.all([
     readTasks(project === undefined ? {} : { project }).catch(emptyIfUnbuilt),
-    loadAllProjects().catch(() => []),
+    // Null is not `[]`: the queue goes quiet on a failed read as it always
+    // did, but triage's status must not be derived from projects it was never
+    // told about (#583).
+    loadAllProjects().catch(() => null),
     onBoardProjects(),
   ])
-  const { registered, pending } = splitRegister(all)
+  const { registered, pending } = splitRegister(all ?? [])
   const names = registered.map((p) => p.project).filter((p): p is string => p !== null)
 
   // Before the fold, because the fold needs what it learned: a card the backoff
@@ -1002,7 +1026,9 @@ export async function loadBoard(project?: string): Promise<Board> {
     // Which projects declare `triage:`, read from the recipe as the page reads
     // it (`loadCurrentTriageStatus`) and not off the queue filter, whose GitHub
     // client can fail for a project whose recipe is perfectly readable.
-    declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
+    all === null
+      ? Promise.resolve(null)
+      : declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
@@ -1039,7 +1065,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
-      triageContextOf(triageDeclared.has(t.project), daemon),
+      triageContextOf(triageDeclared === null ? null : triageDeclared.has(t.project), daemon),
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so

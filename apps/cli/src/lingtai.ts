@@ -89,7 +89,13 @@ import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './servic
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
-import { catchUpChangedTriage, catchUpRegisteredTriage, daemonTriagePorts, onWaitStarted } from './triage.ts'
+import {
+  catchUpChangedTriage,
+  catchUpRegisteredTriage,
+  daemonTriagePorts,
+  memoDaemonStartedAt,
+  onWaitStarted,
+} from './triage.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -691,11 +697,9 @@ async function daemonCommand(
   // would read an attempt a previous conductor cut off as `Running` (#576). The
   // row's first beat is `fresh` and the lock is held, so the row it leaves is
   // this process's; where it cannot be read, or is another pid's because the
-  // beat failed, this host's clock is the best there is.
+  // beat failed, triage asks again rather than use this host's clock (#583).
   await beacon.say('starting')
-  const daemonStartedAt = await readStatus()
-    .then((row) => (row !== null && row.pid === process.pid ? row.startedAt : new Date()))
-    .catch(() => new Date())
+  const daemonStartedAt = memoDaemonStartedAt(readStatus)
   console.log(
     `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
       `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,
