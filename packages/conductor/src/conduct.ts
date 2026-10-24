@@ -991,10 +991,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const confirmed = resolved?._tag === 'ContinueConflict' ? resolved : null
       // 0118 §8: if the base moved while the continuation waited, the confirmation
       // is stale. Nothing is dispatched and no round is spent; the item is not
-      // claimed, and a person confirms again against the new base.
+      // claimed, and the conflict is put back to a person as a new wait against
+      // the new base — returning null alone would leave the lifecycle `approved`
+      // with its wait resolved, which every later claim declines at.
       if (confirmed !== null) {
         const tip = (await options.client.refSha?.(`heads/${base}`)?.catch(() => null)) ?? null
-        if (tip !== confirmed.baseSha) return null
+        if (tip !== confirmed.baseSha) {
+          if (tip !== null && reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'MergeConflict') {
+            await appendNow(ticketId, [
+              {
+                type: 'WaitStarted',
+                actor: 'conductor',
+                data: parsePayload('WaitStarted', {
+                  waitId: crypto.randomUUID(),
+                  reason: { ...reason, proposal: { ...reason.proposal, baseSha: tip } },
+                }),
+              },
+            ])
+          }
+          return null
+        }
       }
       const priorGrant = waitsOf(before).some(
         (wait) =>
