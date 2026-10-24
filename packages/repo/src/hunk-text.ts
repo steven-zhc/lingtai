@@ -16,7 +16,9 @@ export function hunkTextsOf(merged: string, max = HUNK_TEXT_MAX_LINES): string[]
     while (end < lines.length - 1 && !lines[end]!.startsWith('>>>>>>> ')) end++
     const body = lines.slice(i, end + 1)
     out.push(
-      body.length > max ? [...body.slice(0, max), `[${body.length - max} more lines not shown]`].join('\n') : body.join('\n'),
+      body.length > max
+        ? [...body.slice(0, max), `[${body.length - max} more lines not shown]`].join('\n')
+        : body.join('\n'),
     )
     i = end
   }
