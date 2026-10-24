@@ -934,9 +934,9 @@ describe('waitTriage', () => {
     const readAtCalls: { project: string; ref: string; path: string; limitBytes?: number }[] = []
 
     let call = 0
-    const { runtime } = stubRuntime(() => {
+    const { runtime, requests } = stubRuntime(() => {
       call += 1
-      return call === 1 ? outcomeOf({ text: JSON.stringify({ read: ['main:a.ts'] }) }) : ADVISED
+      return call === 1 ? outcomeOf({ text: JSON.stringify({ read: ['main:a.ts'] }), spendBoundUsd: 0.2 }) : ADVISED
     })
     const deps = fakeDeps(store, runtime, {
       mirror: fakeMirror({
@@ -952,6 +952,7 @@ describe('waitTriage', () => {
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
     expect(readAtCalls).toEqual([{ project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000 }])
+    expect(requests[1]?.limits.usd).toBeCloseTo(0.3)
 
     // Two runtime calls (the `read`, then the `advised` that follows it), so
     // two `RunSpent` rows — one per call, the invariant this suite is named
