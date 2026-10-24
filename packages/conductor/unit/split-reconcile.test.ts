@@ -337,6 +337,8 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     expect(replacement.state).toBe('closed')
     expect(github.subs.get(PARENT)).toEqual(new Set([original.number, b.number, c.number]))
     expect(github.blocks.get(b.number)).toEqual(new Set([original.id]))
+    // The withdrawn replacement was blocked by a too, and keeps nothing.
+    expect(github.blocks.get(replacement.number)?.size ?? 0).toBe(0)
     const last = types(await store.read(ticketId), 'SplitReconciled').at(-1)!.data as { failure: string | null }
     expect(last.failure).toBeNull()
     expect(splitProgressOf(await store.read(ticketId), waitId)!.owed.complete).toBe(true)

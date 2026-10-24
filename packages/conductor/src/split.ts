@@ -135,6 +135,13 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
       for (const b of await port.blockedBy(dependent.number))
         if (ids.has(b.id)) edges.push({ issue: dependent.number, blocker: b.id })
     }
+    // A duplicate that was itself made a dependent (replacement b blocked by a)
+    // keeps that blocker after it is closed. What blocks it is ours to remove
+    // when the blocker is one of this split's issues, kept or withdrawn.
+    const ours = new Set([...ids, ...[...found.values()].map((f) => f.id as number)])
+    for (const extra of extras)
+      for (const b of await port.blockedBy(extra.number))
+        if (ours.has(b.id)) edges.push({ issue: extra.number, blocker: b.id })
     return { subs, edges }
   }
 
