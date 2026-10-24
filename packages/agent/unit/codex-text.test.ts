@@ -77,4 +77,42 @@ describe('Codex model-only route', () => {
     expect(result.text).toBe('Plain answer')
     expect(result.failure).toBeNull()
   })
+
+  it('records a billed turn and usage from an incomplete response', async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 'resp_incomplete',
+            status: 'incomplete',
+            incomplete_details: { reason: 'max_output_tokens' },
+            output: [],
+            usage: { input_tokens: 10, output_tokens: 64 },
+          }),
+        ),
+    )
+    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    expect(result.failure).toEqual({ kind: 'crash', detail: 'Responses status: incomplete' })
+    expect(result.turns).toBe(1)
+    expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 10, output: 64 } }])
+    expect(result.spendBoundUsd).toBeGreaterThan(0)
+    expect(result.costUsd).toBeNull()
+  })
+
+  it('separates cached input from fresh input in a completed response', async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 'resp_cached',
+            status: 'completed',
+            output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Plain answer' }] }],
+            usage: { input_tokens: 10000, input_tokens_details: { cached_tokens: 8000 }, output_tokens: 3 },
+          }),
+        ),
+    )
+    const result = await createCodexTextRuntime({ config, transport }).run(request('x'.repeat(6000)))
+    expect(result.failure).toBeNull()
+    expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 2000, cacheRead: 8000, output: 3 } }])
+  })
 })

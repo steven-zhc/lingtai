@@ -77,6 +77,41 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
         const result: unknown = await response.json()
         if (!result || typeof result !== 'object') return failure('crash', 'invalid Responses receipt')
         const receipt = result as Record<string, unknown>
+        const usage = receipt.usage as Record<string, unknown> | undefined
+        const input = usage?.input_tokens
+        const produced = usage?.output_tokens
+        const cached = (usage?.input_tokens_details as Record<string, unknown> | undefined)?.cached_tokens
+        if (
+          !Number.isSafeInteger(input) ||
+          !Number.isSafeInteger(produced) ||
+          (input as number) < 0 ||
+          (produced as number) < 0 ||
+          (cached !== undefined &&
+            (!Number.isSafeInteger(cached) || (cached as number) < 0 || (cached as number) > (input as number)))
+        ) {
+          return failure('crash', 'Responses receipt has no usable token counts')
+        }
+        if (
+          (input as number) > Buffer.byteLength(request.prompt, 'utf8') + 4096 ||
+          (produced as number) > config.maxOutputTokens
+        ) {
+          return failure('crash', 'Responses receipt exceeded the preflight token bound')
+        }
+        const billed = {
+          turns: 1,
+          spendBoundUsd: bound,
+          usage: [
+            {
+              model: config.model,
+              tokens: {
+                fresh: (input as number) - ((cached as number | undefined) ?? 0),
+                ...(cached === undefined ? {} : { cacheRead: cached as number }),
+                output: produced as number,
+              },
+            },
+          ],
+        }
+        const receiptFailure = (detail: string): RunOutcome => ({ ...failure('crash', detail), ...billed })
         const output = receipt.output
         if (
           !Array.isArray(output) ||
@@ -88,9 +123,9 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
               (item.type === 'message' && item.role !== 'assistant'),
           )
         ) {
-          return failure('crash', 'Responses receipt contains a tool call or invalid output')
+          return receiptFailure('Responses receipt contains a tool call or invalid output')
         }
-        if (receipt.status !== 'completed') return failure('crash', `Responses status: ${String(receipt.status)}`)
+        if (receipt.status !== 'completed') return receiptFailure(`Responses status: ${String(receipt.status)}`)
         const contents = output
           .filter((item) => item.type === 'message')
           .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
@@ -99,37 +134,18 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
             (part) => !part || typeof part !== 'object' || part.type !== 'output_text' || typeof part.text !== 'string',
           )
         ) {
-          return failure('crash', 'Responses receipt contains non-text output')
-        }
-        const usage = receipt.usage as Record<string, unknown> | undefined
-        const input = usage?.input_tokens
-        const produced = usage?.output_tokens
-        if (
-          !Number.isSafeInteger(input) ||
-          !Number.isSafeInteger(produced) ||
-          (input as number) < 0 ||
-          (produced as number) < 0
-        ) {
-          return failure('crash', 'Responses receipt has no usable token counts')
-        }
-        if (
-          (input as number) > Buffer.byteLength(request.prompt, 'utf8') + 4096 ||
-          (produced as number) > config.maxOutputTokens
-        ) {
-          return failure('crash', 'Responses receipt exceeded the preflight token bound')
+          return receiptFailure('Responses receipt contains non-text output')
         }
         const text = contents.map((part) => part.text as string).join('')
         ;(request.log ?? NO_RUN_LOG).note('codex', text)
         return {
           exitCode: 0,
-          turns: 1,
+          ...billed,
           durationMs: Date.now() - started,
           costUsd: null,
-          spendBoundUsd: bound,
           text,
           sessionId: typeof receipt.id === 'string' ? receipt.id : '',
           failure: null,
-          usage: [{ model: config.model, tokens: { fresh: input as number, output: produced as number } }],
         }
       } catch (err) {
         if (controller.signal.aborted)
