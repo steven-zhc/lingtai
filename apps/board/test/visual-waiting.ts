@@ -1,5 +1,5 @@
 /** Deterministic presentation data, folded from local wait events. */
-import { STEPS, type Envelope, type Finding, type Step } from '@lingtai/domain'
+import { decideRoute, offerFor, STEPS, type Envelope, type Finding, type Proposal, type Step } from '@lingtai/domain'
 import { aClaim, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { TriageFacts, TriageResult, TriageStatus } from '@lingtai/domain/wait'
@@ -107,6 +107,11 @@ function fixableFixture(published: boolean) {
   const run = makeStream(runId)
   const chat = makeStream('chat-preview-393')
   const at = (minute: number) => ({ at: new Date(Date.parse('2026-08-31T13:00:00Z') + minute * 60_000) })
+  const routed = (proposal: Proposal, spent: number, minute: number) => {
+    const offer = offerFor(proposal, { rounds: 2, restarts: 1 }, { rounds: spent, restarts: 0 })
+    const reply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'Fix the recorded findings' }
+    return run('PassRouted', { runId, offer, reply, decision: decideRoute(offer, reply) }, at(minute))
+  }
   const step = (
     name: Step,
     round: number,
@@ -167,9 +172,11 @@ function fixableFixture(published: boolean) {
     ...step('prepared', 0, 'accepted', 6),
     ...step('implement', 0, 'accepted', 8),
     ...step('build', 0, 'refused', 10),
+    routed({ _tag: 'BuildRed', output: 'Build failed' }, 0, 11),
     ...step('implement', 1, 'accepted', 12),
     ...step('build', 1, 'accepted', 14),
     ...step('review', 1, 'refused', 16, FINDINGS),
+    routed({ _tag: 'ReviewFindings', findings: FINDINGS }, 1, 17),
     ...step('implement', 2, 'accepted', 18),
     ...step('build', 2, 'accepted', 20),
     ...step('review', 2, 'refused', 22, FINDINGS),
@@ -363,7 +370,7 @@ export async function preview(name: CaseName) {
   const projected = {
     ...row,
     issue: representative ? '393' : '533',
-    title: representative ? 'FixableLines: show the waiting outcome' : 'Review a paused pass before continuing',
+    title: representative ? 'Show the waiting outcome for review findings' : 'Review a paused pass before continuing',
     kind: 'feature',
     triage: facts,
   }
