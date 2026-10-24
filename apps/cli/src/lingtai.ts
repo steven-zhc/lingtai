@@ -677,6 +677,11 @@ async function daemonCommand(
   })
   if (!opened.ok) return opened.code
   const { started, code } = opened
+  // This process's own start, taken once the lock is held: nothing else can
+  // append a `TriageStarted` from here on, so an attempt dated before it was a
+  // previous conductor's and `triageStatus` reads it `Interrupted` (#576). It
+  // is known without asking the store, so it cannot fail to `null`.
+  const daemonStartedAt = new Date()
 
   // **Beating from here**, and not from after the reconcile below — which is
   // what `#144` was. The two lines that follow this one read a recipe per
@@ -918,8 +923,6 @@ async function daemonCommand(
   // that gap was below the watermark of the only daemon holding the lock — so
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
   const since = started.since
-  let daemonStartedAt: Date | null = null
-  let startTimeRead = false
   const triageHashes = new Map<string, string>()
   const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
     try {
@@ -980,10 +983,6 @@ async function daemonCommand(
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
         await noteStart(control)
-        if (!startTimeRead) {
-          startTimeRead = true
-          daemonStartedAt = (await startAfter(since).catch(() => null))?.at ?? null
-        }
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.

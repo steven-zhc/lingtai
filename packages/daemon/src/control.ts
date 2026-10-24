@@ -423,6 +423,8 @@ export async function createStatusTable(store?: DaemonStore): Promise<void> {
 export interface BeatOptions {
   /** The run this daemon is hosting, when it is hosting one. */
   currentRunId?: string | null
+  /** The first beat of this process, which begins the row again (`Beat.fresh`). */
+  fresh?: boolean
   /**
    * What code this process is running, read once at startup.
    *
@@ -443,7 +445,7 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null } = options
+  const { currentRunId = null, code = null, fresh = false } = options
   await withDaemonStore(options.store, {}, (store) =>
     store.beat({
       pid: process.pid,
@@ -452,6 +454,7 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
       currentRunId,
       codeSha: code?.sha ?? null,
       codeDirty: code?.dirty ?? false,
+      fresh,
     }),
   )
 }
@@ -517,11 +520,16 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
   /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
   let owed = 0
 
+  /** Only the process's first beat begins the row again; every later one is the same life. */
+  let first = true
+
   const write = (word: string): Promise<void> => {
+    const fresh = first
+    first = false
     owed += 1
     chain = chain.then(async () => {
       try {
-        await beat(word, beatOptions)
+        await beat(word, { ...beatOptions, fresh })
       } catch {
         // Every beat, the first one included — and that is a change. Startup
         // used to `await beat("starting")` uncaught, and the CLI's top-level

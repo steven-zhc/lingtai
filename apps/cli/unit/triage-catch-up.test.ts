@@ -96,6 +96,27 @@ describe('triage catch-up', () => {
     expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([first.waitId, interrupted.waitId])
   })
 
+  it('reads an attempt started before this daemon as interrupted and one started after it as running (#576)', async () => {
+    const f = fixture()
+    const before = f.add(4)
+    const after = f.add(5)
+    for (const [wait, at] of [
+      [before, old],
+      [after, new Date('2026-08-31T11:30:00Z')],
+    ] as const) {
+      wait.push(
+        wait.event(
+          'TriageStarted',
+          { waitId: wait.waitId, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+          { at },
+        ),
+      )
+    }
+    await catchUpTriage('lingtai', triage, f.deps)
+    await drained()
+    expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([before.waitId])
+  })
+
   it('finishes a second interrupted attempt once, preserving its by and recording no spend', async () => {
     const f = fixture()
     const wait = f.add(3)
