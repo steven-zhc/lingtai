@@ -148,7 +148,7 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
     })
 
-    it('MergeConflict: Requeue, EditBodyAndRequeue, Close — a conflict cannot be merged', () => {
+    it('MergeConflict with both shas: also ContinueConflict — a conflict cannot be merged', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -156,7 +156,7 @@ describe('allowedResolutions', () => {
         baseSha: 'abc',
         headSha: 'def',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'ContinueConflict'])
     })
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {

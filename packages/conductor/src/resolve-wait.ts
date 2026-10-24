@@ -217,6 +217,18 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
+  // The contract exists (#557) and the effect behind it does not (#558). A
+  // `WaitResolved{ContinueConflict}` appended now would leave a resolved wait
+  // that nothing continues, so it is refused before any append.
+  if (options.resolution._tag === 'ContinueConflict') {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-built',
+      detail: 'ContinueConflict is not runnable yet — no continuation runs, so nothing was resolved.',
+    }
+  }
+
   let resolution = options.resolution
   if (resolution._tag === 'GrantFixRound') {
     if (block.runId === null)

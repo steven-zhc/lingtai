@@ -54,6 +54,11 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     consequence:
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
+  ContinueConflict: {
+    title: 'Continue the conflict',
+    consequence:
+      'Continue the preserved conflict with the behavior you confirm for each divergent hunk. Not runnable yet.',
+  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
@@ -540,8 +545,14 @@ export function Standing({
         rawAdvice === 'Approve'
       ? null
       : rawAdvice
+  // No `ContinueConflict` card is drawn until it can be run (#559), so it is
+  // never the recommended one either.
   const recommended =
-    advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork) ? 'Requeue' : advised
+    advised === 'ContinueConflict'
+      ? null
+      : advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+        ? 'Requeue'
+        : advised
   const triageRecommended =
     standing.triageStatus?._tag === 'Done' &&
     standing.triageStatus.result._tag === 'TriageAdvised' &&
@@ -554,8 +565,11 @@ export function Standing({
     standing.triageStatus.result._tag === 'TriageAdvised'
       ? standing.triageStatus.result.summary
       : null
+  const drawable = allowed.filter((tag) => tag !== 'ContinueConflict')
   const orderedResolutions =
-    recommended === null ? allowed : [...allowed].sort((a, b) => Number(b === recommended) - Number(a === recommended))
+    recommended === null
+      ? drawable
+      : [...drawable].sort((a, b) => Number(b === recommended) - Number(a === recommended))
   // Keep the keyed body editor mounted across Follow refreshes so an unsent
   // draft remains available after somebody else resolves the wait.
   const resolutionCards: Resolution['_tag'][] = acting

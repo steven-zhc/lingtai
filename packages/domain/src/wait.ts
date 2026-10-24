@@ -27,6 +27,7 @@ import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation, type CandidateId } from './route.ts'
 import {
   Hunk,
+  ConfirmedHunk,
   MERGE_HUNKS_ONE_BY_ONE,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
@@ -204,6 +205,21 @@ export type WaitReason = z.infer<typeof WaitReason>
 const Approve = z.object({ _tag: z.literal('Approve'), onSha: z.string() })
 /** One human-authorized implement round on the saved remote ref. */
 const GrantFixRound = z.object({ _tag: z.literal('GrantFixRound'), onSha: z.string(), ref: z.string() })
+/**
+ * Continue a preserved conflict (0118 §1, §8): the exact `baseSha`/`headSha`
+ * the person looked at, the `ref` holding the preserved branch, and **every**
+ * counted hunk with the behavior they confirmed. A hunk left out is not
+ * "mechanical"; the command alone says what was confirmed.
+ */
+const ContinueConflict = z.object({
+  _tag: z.literal('ContinueConflict'),
+  baseSha: z.string(),
+  headSha: z.string(),
+  ref: z.string(),
+  hunks: z.array(ConfirmedHunk).min(1).max(MERGE_HUNKS_ONE_BY_ONE),
+  /** Whether one extra round beyond the ceiling was expressly granted. */
+  grantExtraRound: z.boolean(),
+})
 /** A new pass, from the base. */
 const Requeue = z.object({ _tag: z.literal('Requeue') })
 /** Write into the body, then requeue. */
@@ -217,6 +233,7 @@ const Close = z.object({ _tag: z.literal('Close') })
 export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
   GrantFixRound,
+  ContinueConflict,
   Requeue,
   EditBodyAndRequeue,
   AnswerQuestion,
@@ -228,11 +245,18 @@ export type Resolution = z.infer<typeof Resolution>
  * The resolutions triage may advise — `Resolution`'s tags less
  * `AnswerQuestion`: that choice is a person's own, on an `OwnQuestion` only,
  * and triage cannot make it for them. A bare tag, not a `Resolution`: the
- * only field one ever carries beyond its tag is `Approve`'s `onSha`, which is
- * the head at the moment a person approves, not something triage knows ahead
- * of them (0118 §1).
+ * fields a resolution carries beyond its tag (`Approve`'s `onSha`, a
+ * conflict's base and head and confirmed behavior) belong to the person at the
+ * moment they act, not to anything triage knows ahead of them (0118 §1).
  */
-export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+export const TriageAdvice = z.enum([
+  'Approve',
+  'GrantFixRound',
+  'ContinueConflict',
+  'Requeue',
+  'EditBodyAndRequeue',
+  'Close',
+])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
@@ -314,10 +338,55 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
       ? reason.proposal.findings.some((finding) => finding.failureScenario.trim().length > 0)
       : (reason.proposal._tag === 'BuildRed' || reason.proposal._tag === 'VerifyRed') &&
         reason.proposal.output.trim().length > 0)
+  // `MergeRefused` never qualifies, direct or proposed: its reason excludes
+  // `conflict`, whatever shas it carries. Null shas mean no conflict to name.
+  const continuable =
+    reason._tag === 'ProposedEscalated' &&
+    reason.proposal._tag === 'MergeConflict' &&
+    reason.proposal.baseSha != null &&
+    reason.proposal.headSha != null
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['GrantFixRound'] as const) : []),
+    ...(continuable && !unpushed ? (['ContinueConflict'] as const) : []),
   ]
+}
+
+/** Why a `ContinueConflict` is not acceptable for a wait. */
+export type ContinueConflictRefusal = 'NotOffered' | 'Stale' | 'TooManyHunks' | 'HunksMismatch'
+
+/**
+ * The pure half of validating a `ContinueConflict`: `null` or the refusal.
+ * `counted` is the caller's own count of the conflict's hunks (the mirror's,
+ * in the effect). It never takes a triage status, so the same command
+ * validates the same way whether triage was absent, failed or done. Whether
+ * the remote ref still exists is the effect's to check, not the domain's.
+ */
+export function continueConflictRefusal(
+  reason: WaitReason,
+  resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
+  counted: readonly { path: string; line: number | null }[],
+): ContinueConflictRefusal | null {
+  if (!allowedResolutions(reason).includes('ContinueConflict')) return 'NotOffered'
+  if (
+    reason._tag !== 'ProposedEscalated' ||
+    reason.proposal._tag !== 'MergeConflict' ||
+    reason.proposal.baseSha !== resolution.baseSha ||
+    reason.proposal.headSha !== resolution.headSha
+  )
+    return 'Stale'
+  if (counted.length > MERGE_HUNKS_ONE_BY_ONE) return 'TooManyHunks'
+  const key = (h: { path: string; line: number | null }) => `${h.path}\u0000${h.line}`
+  const confirmed = new Set(resolution.hunks.map(key))
+  const expected = new Set(counted.map(key))
+  if (
+    confirmed.size !== resolution.hunks.length ||
+    expected.size !== counted.length ||
+    confirmed.size !== expected.size ||
+    [...expected].some((k) => !confirmed.has(k))
+  )
+    return 'HunksMismatch'
+  return null
 }
 
 /** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */
@@ -591,13 +660,18 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
  * the card, and one more of what the ticket wants — `null` where the body
  * does not say (0118 §1).
  */
-const TriageAdvised = z.strictObject({
-  _tag: z.literal('TriageAdvised'),
-  cause: RootCause,
-  resolution: TriageAdvice,
-  summary: z.string().max(TRIAGE_SENTENCE_MAX),
-  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
-})
+const TriageAdvised = z
+  .strictObject({
+    _tag: z.literal('TriageAdvised'),
+    cause: RootCause,
+    resolution: TriageAdvice,
+    summary: z.string().max(TRIAGE_SENTENCE_MAX),
+    want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
+  })
+  .refine(
+    (a) => a.resolution !== 'ContinueConflict' || (a.cause._tag === 'ConflictingHunks' && a.cause.hunks.length > 0),
+    { message: 'ContinueConflict needs a concrete list of conflicting hunks', path: ['resolution'] },
+  )
 
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
 export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])
