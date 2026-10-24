@@ -68,16 +68,16 @@ import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCap
 /** What was seen of the run's descendants: pid to command, so a recycled pid is not mistaken for one. */
 type Seen = Map<number, string>
 
-function listProcesses(): { pid: number; ppid: number; command: string }[] {
-  const listing = execFileSync('ps', ['-Aww', '-o', 'pid=', '-o', 'ppid=', '-o', 'command='], {
+function listProcesses(): { pid: number; ppid: number; zombie: boolean; command: string }[] {
+  const listing = execFileSync('ps', ['-Aww', '-o', 'pid=', '-o', 'ppid=', '-o', 'stat=', '-o', 'command='], {
     encoding: 'utf8',
     timeout: 5_000,
     maxBuffer: 64 * 1024 * 1024,
   })
-  const rows: { pid: number; ppid: number; command: string }[] = []
+  const rows: { pid: number; ppid: number; zombie: boolean; command: string }[] = []
   for (const line of listing.split('\n')) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
-    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), command: m[3]! })
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), zombie: m[3]!.startsWith('Z'), command: m[4]! })
   }
   return rows
 }
@@ -136,8 +136,12 @@ async function stopRunProcesses(marker: string, seen: Seen): Promise<void> {
   if (process.platform === 'win32') return
   const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
   for (;;) {
-    const live = new Map(listProcesses().map((row) => [row.pid, row.command]))
-    const pids = new Set(processesWith(identity))
+    const rows = listProcesses()
+    // A zombie is already dead and SIGKILL cannot reap it (a PID 1 that does
+    // not wait() leaves it); counting it as live would loop here forever.
+    const zombies = new Set(rows.filter((row) => row.zombie).map((row) => row.pid))
+    const live = new Map(rows.filter((row) => !row.zombie).map((row) => [row.pid, row.command]))
+    const pids = new Set(processesWith(identity).filter((pid) => !zombies.has(pid)))
     for (const [pid, command] of seen) if (live.get(pid) === command) pids.add(pid)
     if (pids.size === 0) return
     for (const pid of pids) {

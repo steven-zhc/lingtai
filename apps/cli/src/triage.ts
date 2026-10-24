@@ -733,6 +733,8 @@ export async function waitTriage(
               }
             })
 
+          if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
+
           if (!threw) {
             // A call that was billed and cannot be recorded ends the triage —
             // never silently continues to spend more against an under-reporting
@@ -749,7 +751,6 @@ export async function waitTriage(
             turnsSpent += outcome.turns
           }
 
-          if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
           if (outcome.failure) {
             const kind = outcome.failure.kind
             const why = kind === 'timeout' || kind === 'aborted' ? kind : `${kind}: ${outcome.failure.detail}`
