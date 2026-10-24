@@ -168,6 +168,12 @@ export type ResolveWaitResult =
        * comment for what makes this never a reason to answer `ok: false`.
        */
       unscheduled?: string
+      /**
+       * Set only on the way out above: the decision was already recorded by an
+       * earlier call, so this one wrote no `WaitResolved` and asked again only
+       * for the continuation. A caller says "already confirmed", not "decided".
+       */
+      rescheduled?: true
     }
   | { ok: false; ticketId: string; reason: string; detail: string }
 
@@ -222,7 +228,9 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   ) {
     const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
-    return unscheduled === null ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+    return unscheduled === null
+      ? { ok: true, ticketId, rescheduled: true }
+      : { ok: true, ticketId, rescheduled: true, unscheduled }
   }
 
   if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
@@ -534,7 +542,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: 'head-moved',
       detail: `The saved work is ${saved.head} on ${saved.ref}, not the confirmed ${resolution.headSha} on ${resolution.ref}. Nothing was resolved — reload and read it again.`,
     }
   }
@@ -543,7 +551,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: remote === null ? 'ref-missing' : 'ref-moved',
       detail: `${resolution.ref} is ${remote ?? 'missing'}, not the confirmed ${resolution.headSha}. Nothing was resolved — restore that ref or requeue for a fresh pass.`,
     }
   }
@@ -552,7 +560,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: 'base-moved',
       detail: `${options.base} is ${base ?? 'missing'}, not the confirmed ${resolution.baseSha}: the base moved, so the confirmation grants nothing for it. Nothing was resolved — reload and read it again.`,
     }
   }

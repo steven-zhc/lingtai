@@ -8,10 +8,14 @@ import { MERGE_HUNKS_ONE_BY_ONE } from '../src/triage.ts'
 import {
   allowedResolutions,
   conflictRoundsExhausted,
+  conflictRows,
+  confirmHunks,
   continueConflictRefusal,
   Resolution as ResolutionSchema,
   TriageResult as TriageResultSchema,
+  type ConflictRow,
   type Resolution,
+  type TriageStatus,
   type WaitReason,
 } from '../src/wait.ts'
 import { WaitReason as WaitReasonSchema } from '../src/wait.ts'
@@ -233,5 +237,109 @@ describe('conflictRoundsExhausted', () => {
 
   it('takes the latest offer for the conflict', () => {
     expect(conflictRoundsExhausted([routed('head', [capped]), routed('head', [])], 'head')).toBe(false)
+  })
+})
+
+describe('conflictRows and confirmHunks (#559)', () => {
+  const question = {
+    id: 'q1',
+    text: 'Which timeout wins?',
+    answers: [
+      { id: 'a', text: 'keep base' },
+      { id: 'b', text: 'take the branch' },
+    ],
+    recommended: 'b',
+  }
+  const counted = [
+    { path: 'a.ts', line: 3 },
+    { path: 'b.ts', line: 9 },
+  ]
+  const advised = (hunks: unknown[], total = hunks.length): TriageStatus =>
+    ({
+      _tag: 'Done',
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'ConflictingHunks', hunks, total },
+        advice: 'ContinueConflict',
+        summary: 's',
+        want: null,
+      },
+    }) as unknown as TriageStatus
+
+  it('lays triage over the counted rows, recommending the advised answer and keeping mechanical as mechanical', () => {
+    const out = conflictRows(
+      counted,
+      advised([
+        { _tag: 'Divergent', path: 'a.ts', line: 3, question },
+        { _tag: 'Mechanical', path: 'b.ts', line: 9 },
+      ]),
+    )
+    expect('rows' in out && out.rows.map((r) => r.suggested)).toEqual([
+      { _tag: 'Answer', answerId: 'b' },
+      { _tag: 'Mechanical' },
+    ])
+  })
+
+  it.each([
+    ['NotDeclared', { _tag: 'NotDeclared' }],
+    ['Failed', { _tag: 'Done', result: { _tag: 'TriageFailed', why: 'no' } }],
+    ['absent', null],
+  ] as const)('leaves every row unset when triage is %s', (_name, status) => {
+    const out = conflictRows(counted, status as TriageStatus | null)
+    expect('rows' in out && out.rows.every((r) => r.suggested === null && r.question === null)).toBe(true)
+  })
+
+  it('leaves a row triage did not classify unset rather than mechanical', () => {
+    const out = conflictRows(counted, advised([{ _tag: 'Mechanical', path: 'a.ts', line: 3 }]))
+    expect('rows' in out && out.rows.map((r) => r.suggested)).toEqual([{ _tag: 'Mechanical' }, null])
+  })
+
+  it('draws no rows past the one-by-one bound, with or without triage, and never fabricates choices', () => {
+    const many = Array.from({ length: MERGE_HUNKS_ONE_BY_ONE + 1 }, (_, i) => ({ path: 'x.ts', line: i + 1 }))
+    expect(conflictRows(many, null)).toEqual({ tooMany: many.length })
+    expect(conflictRows(many, advised([], many.length))).toEqual({ tooMany: many.length })
+  })
+
+  it('records adopted only for an answer taken unchanged, and the answer text as the behavior', () => {
+    const out = conflictRows(
+      counted,
+      advised([
+        { _tag: 'Divergent', path: 'a.ts', line: 3, question },
+        { _tag: 'Mechanical', path: 'b.ts', line: 9 },
+      ]),
+    ) as { rows: ConflictRow[] }
+    expect(confirmHunks(out.rows, {})).toEqual({
+      hunks: [
+        {
+          _tag: 'Divergent',
+          path: 'a.ts',
+          line: 3,
+          behavior: 'take the branch',
+          adopted: { questionId: 'q1', answerId: 'b' },
+        },
+        { _tag: 'Mechanical', path: 'b.ts', line: 9 },
+      ],
+    })
+    expect(
+      confirmHunks(out.rows, {
+        'a.ts:3': { _tag: 'Behavior', text: '  take the branch but cap it  ' },
+        'b.ts:9': { _tag: 'Behavior', text: 'it is not mechanical' },
+      }),
+    ).toEqual({
+      hunks: [
+        { _tag: 'Divergent', path: 'a.ts', line: 3, behavior: 'take the branch but cap it', adopted: null },
+        { _tag: 'Divergent', path: 'b.ts', line: 9, behavior: 'it is not mechanical', adopted: null },
+      ],
+    })
+  })
+
+  it('returns the rows still unset, and a blank behavior is unset', () => {
+    const out = conflictRows(counted, null) as { rows: ConflictRow[] }
+    expect(confirmHunks(out.rows, { 'a.ts:3': { _tag: 'Mechanical' } })).toMatchObject({
+      unset: [{ path: 'b.ts', line: 9 }],
+    })
+    expect(
+      confirmHunks(out.rows, { 'a.ts:3': { _tag: 'Mechanical' }, 'b.ts:9': { _tag: 'Behavior', text: '  ' } }),
+    ).toMatchObject({ unset: [{ path: 'b.ts' }] })
   })
 })
