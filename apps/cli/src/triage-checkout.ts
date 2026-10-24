@@ -36,7 +36,9 @@ export async function prepareTriageCheckout(
       )
     }
     const env = { ...runnableEnv({}), HOME: home, CODEX_HOME: codexHome, GIT_CONFIG_NOSYSTEM: '1' }
-    await git(['clone', '--no-hardlinks', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd], { env })
+    await git(['clone', '--no-hardlinks', '--dissociate', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd], {
+      env,
+    })
     await git(['remote', 'remove', 'origin'], { cwd, env })
     await git(['config', 'core.hooksPath', '/dev/null'], { cwd, env })
     await git(['checkout', '--detach', sha], { cwd, env })
