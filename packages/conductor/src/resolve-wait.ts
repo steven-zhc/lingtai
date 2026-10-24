@@ -444,19 +444,23 @@ const CONTINUE_CONFLICT_REFUSED: Record<ContinueConflictRefusal, { reason: strin
   },
   Stale: {
     reason: 'stale',
-    detail: 'The conflict moved since it was read: its base or head is not the one confirmed. Nothing was resolved — reload and read it again.',
+    detail:
+      'The conflict moved since it was read: its base or head is not the one confirmed. Nothing was resolved — reload and read it again.',
   },
   TooManyHunks: {
     reason: 'too-many-hunks',
-    detail: 'The conflict has more hunks than can be confirmed one by one — nothing was resolved. Requeue for a fresh pass.',
+    detail:
+      'The conflict has more hunks than can be confirmed one by one — nothing was resolved. Requeue for a fresh pass.',
   },
   HunksMismatch: {
     reason: 'hunks-mismatch',
-    detail: "The confirmed hunks are not exactly the conflict's own — nothing was resolved. Reload and confirm every hunk once.",
+    detail:
+      "The confirmed hunks are not exactly the conflict's own — nothing was resolved. Reload and confirm every hunk once.",
   },
   GrantRequired: {
     reason: 'grant-required',
-    detail: 'The automatic fix rounds are spent, so continuing needs one extra round expressly granted — nothing was resolved.',
+    detail:
+      'The automatic fix rounds are spent, so continuing needs one extra round expressly granted — nothing was resolved.',
   },
   GrantNotNeeded: {
     reason: 'grant-not-needed',
@@ -483,7 +487,8 @@ async function checkContinueConflict(
       ok: false,
       ticketId,
       reason: 'no-base',
-      detail: "A conflict continuation needs the recipe's base branch to check it has not moved — nothing was resolved.",
+      detail:
+        "A conflict continuation needs the recipe's base branch to check it has not moved — nothing was resolved.",
     }
   if (options.conflicts === undefined)
     return {

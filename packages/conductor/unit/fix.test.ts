@@ -1451,6 +1451,52 @@ describe('what a person is shown when the restarts are over too', () => {
  * sentence for both was *the fixing agent committed nothing*, which describes a
  * crashed process as a judgement and a judgement as a crash.
  */
+describe('what a person confirmed is in the conflict brief (#558)', () => {
+  const sha = 'a'.repeat(40)
+  const confirmedBrief = fixBrief({
+    refusal: {
+      on: 'conflict',
+      base: sha,
+      paths: 'src/queue.ts',
+      confirmed: [
+        { _tag: 'Divergent', path: 'src/queue.ts', line: 12, behavior: 'keep the retry from main', adopted: null },
+        { _tag: 'Mechanical', path: 'src/queue.ts', line: 40 },
+      ],
+    },
+    round: 1,
+    of: 2,
+    action: 'merge',
+    diff: 'diff --git a/src/queue.ts b/src/queue.ts',
+    diffBytes: 400_000,
+    checks: ['pnpm typecheck && pnpm test'],
+  })
+
+  it('merges the confirmed sha and lists every hunk with its behavior word for word', () => {
+    expect(confirmedBrief).toContain(`git merge \`${sha}\``)
+    expect(confirmedBrief).toContain('## What a person confirmed')
+    expect(confirmedBrief).toContain('`src/queue.ts:12` — keep the retry from main')
+    expect(confirmedBrief).toMatch(/`src\/queue\.ts:40` — mechanical/)
+  })
+
+  it('names the confirmed behavior the authority, and an unlisted hunk as not covered', () => {
+    expect(confirmedBrief).toMatch(/confirmed behavior is the authority/i)
+    expect(confirmedBrief).toMatch(/not on this list is not covered/i)
+  })
+
+  it('adds no section to a conflict nobody confirmed', () => {
+    const plain = fixBrief({
+      refusal: { on: 'conflict', base: 'main', paths: 'src/queue.ts' },
+      round: 1,
+      of: 2,
+      action: 'merge',
+      diff: '',
+      diffBytes: 400_000,
+      checks: [],
+    })
+    expect(plain).not.toContain('What a person confirmed')
+  })
+})
+
 /**
  * The third shape, and the only one whose fix starts with a git command the
  * agent has to run.

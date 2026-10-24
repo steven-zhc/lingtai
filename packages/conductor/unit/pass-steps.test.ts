@@ -396,6 +396,7 @@ async function pass(
     answers?: Answers
     actions?: Record<string, readonly Action[]>
     ceilings?: PassOptions['ceilings']
+    from?: PassOptions['from']
   } = {},
 ): Promise<{ result: PassOver; asked: Asks; ports: PassPorts }> {
   const { ports, judge, asked, taking, working } = portsAnswering(options.answers)
@@ -494,6 +495,7 @@ async function pass(
     emit: () => {},
     bodies: bodiesFor(ports),
     ceilings: options.ceilings,
+    ...(options.from === undefined ? {} : { from: options.from }),
     judge,
     actionsAt: (step, actions) => {
       if (options.actions?.[step] !== undefined) return options.actions[step]
@@ -2520,5 +2522,54 @@ describe('end runs on every ending and cannot refuse', () => {
     expect(result.steps.at(-1)).toEqual({ step: 'end', ending: { ending: 'passed' }, results: [] })
     expect(asked.read).toEqual([])
     expect(asked.record).toEqual([])
+  })
+})
+
+// ------------------------------------------- a confirmed conflict (#558) ----
+
+describe('a conflict a person confirmed continues through the steps', () => {
+  const confirmed = {
+    why: 'A person confirmed the intended behavior of every conflicting hunk.',
+    asked: null,
+    printed: { step: 'merge' as const, detail: 'src/fix.ts' },
+  }
+  const from = {
+    step: 'implement' as const,
+    waive: [],
+    roundsSpent: 2,
+    roundLimit: 2,
+    grant: confirmed,
+    findings: [],
+  }
+
+  it('walks implement, build and review before the merge lane, and hands the brief to the first visit', async () => {
+    const { result, asked } = await pass({ from, ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 } })
+
+    const steps = walk(result)
+    expect(steps.slice(steps.indexOf('implement:passed'))).toEqual([
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
+    expect(asked.dispatch[0]?.again).toEqual(confirmed)
+  })
+
+  it('ends a second conflict at a new wait, with no fix round on offer', async () => {
+    const { result, asked } = await pass({
+      from,
+      answers: { land: () => ({ notMerged: { reason: 'conflict', detail: 'src/fix.ts again' } }) },
+      ceilings: { rounds: 9, restarts: 3, restartsSpent: 0 },
+    })
+
+    expect(result.routes).toMatchObject([{ from: 'merge', to: 'waiting' }])
+    expect(result.routes.some((route) => route.to === 'implement')).toBe(false)
+    expect(asked.dispatch).toHaveLength(1)
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'MergeConflict' } },
+    })
   })
 })

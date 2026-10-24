@@ -1023,7 +1023,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               grant: {
                 why: 'A person confirmed the intended behavior of every conflicting hunk.',
                 asked: null,
-                printed: { step: 'merge' as const, detail: [...new Set(confirmed.hunks.map((h) => h.path))].join('\n') },
+                printed: {
+                  step: 'merge' as const,
+                  detail: [...new Set(confirmed.hunks.map((h) => h.path))].join('\n'),
+                },
               },
               findings: [],
               conflict: { baseSha: confirmed.baseSha, hunks: confirmed.hunks },
