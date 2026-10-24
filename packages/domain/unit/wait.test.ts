@@ -510,8 +510,8 @@ describe('recommendedResolution', () => {
       _tag: 'Done',
       result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
     })
-    const wrong = { _tag: 'WrongApproach' } as const
-    const fixable = { _tag: 'FixableLines', fixes: [] } as const
+    const wrong: RootCause = { _tag: 'WrongApproach' }
+    const fixable: RootCause = { _tag: 'FixableLines', fixes: [] }
 
     it('WrongApproach advising Approve or GrantFixRound is null, not a substitute', () => {
       expect(allowedResolutions(reason)).toContain('Approve')

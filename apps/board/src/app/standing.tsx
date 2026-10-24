@@ -212,22 +212,20 @@ export function TriageBand({
           break
       }
       const readings = disagreement(reason, result)
+      const kept = recommendedResolution(reason, status) === result.resolution
       const triageReading = (
         <>
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
-            {cause._tag === 'WrongApproach' &&
-            (result.resolution === 'Requeue' ||
-              result.resolution === 'Approve' ||
-              result.resolution === 'GrantFixRound')
-              ? 'The approach is wrong; start over from base instead of continuing saved work.'
-              : cause._tag === 'FixableLines' && result.resolution === 'Approve'
-                ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
-                : `Recommends ${RESOLUTION_COPY[result.resolution].title}`}
-            {result.resolution === 'GrantFixRound' && cause._tag !== 'WrongApproach'
-              ? ' — only your click grants the paid round.'
-              : null}
+            {kept
+              ? `Recommends ${RESOLUTION_COPY[result.resolution].title}`
+              : cause._tag === 'WrongApproach'
+                ? 'The approach is wrong; start over from base instead of continuing saved work.'
+                : cause._tag === 'FixableLines' && result.resolution === 'Approve'
+                  ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
+                  : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
+            {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
           {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
@@ -532,46 +530,23 @@ export function Standing({
   const sendable =
     outgoing !== null && outgoing.problem === null && !allowed.includes('AnswerQuestion') ? outgoing.attempt : null
 
-  const rawAdvice =
+  // The only place a recommendation is decided is `recommendedResolution`
+  // (0118 §1); this page draws what it returns and orders by it (#572). A card
+  // that is not drawn cannot be the one drawn first.
+  const advice =
     standing.reason !== null && standing.triageStatus !== null
       ? recommendedResolution(standing.reason, standing.triageStatus)
       : null
-  const wrongApproachAdvice =
-    standing.triageStatus?._tag === 'Done' &&
-    standing.triageStatus.result._tag === 'TriageAdvised' &&
-    standing.triageStatus.result.cause._tag === 'WrongApproach'
-  const wrongApproachOverride = wrongApproachAdvice && (rawAdvice === 'Approve' || rawAdvice === 'GrantFixRound')
-  const advised = wrongApproachOverride
-    ? 'Requeue'
-    : standing.triageStatus?._tag === 'Done' &&
-        standing.triageStatus.result._tag === 'TriageAdvised' &&
-        standing.triageStatus.result.cause._tag === 'FixableLines' &&
-        rawAdvice === 'Approve'
-      ? null
-      : rawAdvice
-  // No `ContinueConflict` card is drawn until it can be run (#559), so it is
-  // never the recommended one either.
-  const recommended =
-    advised === 'ContinueConflict'
-      ? null
-      : advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
-        ? 'Requeue'
-        : advised
-  const triageRecommended =
-    standing.triageStatus?._tag === 'Done' &&
-    standing.triageStatus.result._tag === 'TriageAdvised' &&
-    advised === recommended
-      ? recommended
+  const triageAdvised =
+    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+      ? standing.triageStatus.result
       : null
-  const closePrefill =
-    triageRecommended === 'Close' &&
-    standing.triageStatus?._tag === 'Done' &&
-    standing.triageStatus.result._tag === 'TriageAdvised'
-      ? standing.triageStatus.result.summary
-      : null
+  const closePrefill = triageAdvised?.summary ?? null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
   const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
+  const recommended = drawable.find((tag) => tag === advice) ?? null
+  const triageRecommended = triageAdvised !== null ? recommended : null
   const orderedResolutions =
     recommended === null
       ? drawable
@@ -926,9 +901,7 @@ export function Standing({
                         <div className="sresolutionhead">
                           <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3>
                           {triageRecommended === tag ? (
-                            <span className="sresolutionbadge">
-                              {wrongApproachOverride ? 'Recommended for this diagnosis' : 'Triage recommended'}
-                            </span>
+                            <span className="sresolutionbadge">Triage recommended</span>
                           ) : null}
                         </div>
                         <p className="sresolutionconsequence">{consequence}</p>
