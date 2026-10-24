@@ -90,7 +90,7 @@ describe('allowedResolutions', () => {
 
     it('BuildRed: Requeue, EditBodyAndRequeue, Close — no Approve, a red build cannot be merged', () => {
       const reason = parseProposed({ _tag: 'BuildRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
     })
 
     it('ReviewFindings: Approve, Requeue, EditBodyAndRequeue, Close', () => {
@@ -106,7 +106,14 @@ describe('allowedResolutions', () => {
           },
         ],
       })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual([
+        'Approve',
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Split',
+        'Close',
+        'GrantFixRound',
+      ])
     })
 
     it('does not offer a grant without a recorded failure criterion', () => {
@@ -161,7 +168,7 @@ describe('allowedResolutions', () => {
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'VerifyRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
     })
 
     it('every Proposal tag is covered above', () => {
@@ -177,7 +184,7 @@ describe('allowedResolutions', () => {
 
   it('NothingProduced: EditBodyAndRequeue, Requeue, Close — no Approve, there is nothing on the branch', () => {
     const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
   })
 
   it('BudgetExhausted: EditBodyAndRequeue, Requeue, Close', () => {
@@ -187,7 +194,7 @@ describe('allowedResolutions', () => {
       cause: 'out-of-turns',
       detail: 'ran out of turns',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
   })
 
   it('AgentCrashed: EditBodyAndRequeue, Requeue, Close', () => {
@@ -198,7 +205,7 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
   })
 
   it('AnswerUnreadable: EditBodyAndRequeue, Requeue, Close', () => {
@@ -209,7 +216,7 @@ describe('allowedResolutions', () => {
       action: 'agent:review',
       raw: 'garbled',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
   })
 
   it('SetupRefused: Requeue, Close', () => {
@@ -242,7 +249,7 @@ describe('allowedResolutions', () => {
 
     it('NothingProduced: unchanged — Approve was never there to drop', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run: unpushedRun, said: null })
-      expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
     })
 
     /**
@@ -275,6 +282,43 @@ describe('allowedResolutions', () => {
 })
 
 describe('recommendedResolution', () => {
+  describe('Split (#560)', () => {
+    const plan = {
+      children: [
+        { key: 'a', title: 'a', body: 'a', kind: 'feature' },
+        { key: 'b', title: 'b', body: 'b', kind: 'feature' },
+      ],
+      blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
+    }
+    const advised: TriageResult = TriageResultSchema.parse({
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'TicketTooBig', split: plan },
+      resolution: 'Split',
+      summary: 'too big',
+      want: null,
+    })
+
+    it('is offered on a first wait whether or not triage is declared', () => {
+      const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
+      expect(allowedResolutions(reason)).toContain('Split')
+      expect(recommendedResolution(reason, notDeclared)).toBe(recommendedResolution(reason, queued))
+      expect(recommendedResolution(reason, notDeclared)).not.toBe('Split')
+    })
+
+    it('is recommended when triage advises it, and the offer does not change', () => {
+      const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
+      expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).toBe('Split')
+    })
+
+    it('is not offered where 0118 §1 gives it no row', () => {
+      for (const reason of [
+        parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
+        parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'X or Y?' }),
+        parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused' }),
+      ])
+        expect(allowedResolutions(reason)).not.toContain('Split')
+    })
+  })
   const notDeclared: TriageStatus = { _tag: 'NotDeclared' }
   const queued: TriageStatus = { _tag: 'Queued' }
   const running: TriageStatus = { _tag: 'Running' }

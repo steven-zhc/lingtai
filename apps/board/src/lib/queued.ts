@@ -34,6 +34,7 @@ import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
  * *no queue position*, and only the reason tells them apart (#76).
  */
 import { STEPS, type Envelope } from '@lingtai/domain'
+import type { TurnLimit } from '@lingtai/recipe/duration'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
 
 /** One of the ten steps, and what the recipe runs there. */
@@ -64,8 +65,8 @@ export interface PlannedStep {
 export interface PlanView {
   /** All ten, in pass order, including the ones nothing is configured at. */
   steps: PlannedStep[]
-  /** `runtime.limits.turns`. */
-  turns: number
+  /** `runtime.limits.turns`: a count, or `unbounded`. */
+  turns: TurnLimit
   /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
   wall: string
   /** `runtime.tier` — how contained the run must be (0007). */
@@ -175,7 +176,7 @@ export interface QueuedView {
 export function planOf(
   plan: StepPlan,
   runtime: {
-    limits: { turns: number; wall: string; rounds: number; restarts: number }
+    limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number }
     tier: string
   },
 ): PlanView {

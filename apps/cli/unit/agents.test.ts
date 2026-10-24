@@ -618,3 +618,30 @@ describe('askAgents', () => {
     })
   })
 })
+
+describe('a runtime that cannot hold a turn count (#547)', () => {
+  const ask = async (fixture: string, agent: 'claude-code' | 'codex') => {
+    const { world } = fakeWorld([])
+    const result = await askAgents(world, {
+      project: 'app',
+      runtimes: [runtime('claude-code'), runtime('codex')],
+      flags: { agent, reviewer: 'none', model: '' },
+      home: HOME,
+      files: mapFiles({ [PATH]: fixture }),
+    })
+    if ('refused' in result) throw new Error(result.refused)
+    return result.changes.filter((c) => c.path.join('.') === 'runtime.limits.turns')
+  }
+
+  it('writes turns: unbounded once for codex', async () => {
+    expect(await ask(FIXTURE, 'codex')).toEqual([{ path: ['runtime', 'limits', 'turns'], value: 'unbounded' }])
+  })
+
+  it('writes nothing where the file already declares turns', async () => {
+    expect(await ask(`${FIXTURE}runtime:\n  limits:\n    turns: 150\n`, 'codex')).toEqual([])
+  })
+
+  it('writes nothing for a runtime that enforces turns', async () => {
+    expect(await ask(FIXTURE, 'claude-code')).toEqual([])
+  })
+})

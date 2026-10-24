@@ -105,9 +105,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * `wall` is the `setTimeout` in `run`, which is ours. `turns` has no flag to
    * delegate to — `codex exec --help` at 0.155.1 offers none, and `strings` finds
    * no hidden one the way `claude --max-turns` was hidden — so a recipe's `turns`
-   * is a bound nothing applies, and `limitsRow` says so for every Codex project —
-   * **as a `fail`, and permanently**, because `runtime.limits.turns` has a schema
-   * default that is always present and no spelling for *unbounded*. Declaring it
+   * is a bound nothing applies, and `limitsRow` says so for every Codex project
+   * that promises one — **as a `fail`**. `runtime.limits.turns: unbounded` (#547)
+   * is the spelling for not promising it, and `lingtai init` writes it for a
+   * runtime whose `enforces` omits `turns`. Declaring it
    * honestly here is what makes that red true; softening the row instead put
    * `#89`'s own state past `lingtai restart`, which counts `fail` and not `warn`.
    * The wall still stops the run, and the row says so.

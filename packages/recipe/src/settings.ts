@@ -63,7 +63,7 @@
  */
 import { STEPS, type Step } from '@lingtai/domain'
 
-import { parseDuration } from './duration.ts'
+import { maxTurns, parseDuration, type TurnLimit } from './duration.ts'
 import { isBuiltInJudge } from './judges.ts'
 import type { QueueSettings, Recipe, StepAction, TicketSource } from './recipe.ts'
 
@@ -83,6 +83,26 @@ function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | n
   if ('agent' in action) return action.limits ?? null
   if ('judge' in action && !isBuiltInJudge(action.judge)) return action.limits ?? null
   return undefined
+}
+
+/**
+ * **Whether a dispatch that runs on `runtime` promises a turn count of its own**
+ * (`#547`).
+ *
+ * `lingtai doctor` reads the ceiling, and with `turns: unbounded` the ceiling
+ * promises nothing — but a step's `limits: { turns: 50 }` still does, and on a
+ * runtime that cannot hold turns it would read green while promising 50 that
+ * nothing stops. A dispatch is an `agent:` action, or a `judge:` naming a
+ * runtime; both are matched by the runtime they name, and a step that names a
+ * *different* runtime is that runtime's check.
+ */
+export function declaresTurnsOn(recipe: Recipe, runtime: string): boolean {
+  return STEPS.some((step) =>
+    recipe.steps[step].some((action) => {
+      const runs = 'agent' in action ? action.agent : 'judge' in action ? action.judge : undefined
+      return runs === runtime && dispatchedBy(action)?.turns !== undefined
+    }),
+  )
 }
 
 /**
@@ -120,7 +140,7 @@ function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | n
 export function limitsFor(recipe: Recipe, step: Step): Recipe['runtime']['limits'] {
   const ceiling = recipe.runtime.limits
   const ceilingWallMs = parseDuration(ceiling.wall)
-  let turns = 0
+  let turns: TurnLimit = 0
   let wall = ceiling.wall
   let wallMs = 0
   let dispatches = 0
@@ -128,7 +148,7 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe['runtime']['limits
     const own = dispatchedBy(action)
     if (own === undefined) continue
     dispatches += 1
-    turns = Math.max(turns, own?.turns ?? ceiling.turns)
+    turns = maxTurns(turns, own?.turns ?? ceiling.turns)
     const ms = own?.wall === undefined ? ceilingWallMs : parseDuration(own.wall)
     if (ms > wallMs) {
       wallMs = ms
@@ -161,7 +181,7 @@ export function ceilingOf(recipe: Recipe): Recipe['runtime']['limits'] {
 /** A step that dispatches, and what it may spend — `boundsBesides`' rows. */
 export interface StepBound {
   step: Step
-  turns: number
+  turns: TurnLimit
   wall: string
 }
 

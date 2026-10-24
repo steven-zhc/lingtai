@@ -21,9 +21,10 @@
  * into the file** (`write.ts`'s `widenStepsIfNeeded`). Showing that to a
  * person is the caller's line to print, not this module's.
  */
+import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
-import { isBuiltInJudge, readRecipeKey } from '@lingtai/recipe'
+import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
 
 import { question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound, RuntimeName } from './runtimes.ts'
@@ -294,6 +295,19 @@ export async function askAgents(
   // that leaves `runtime.agent` absent, or stale, with two runtimes signed
   // in — the refusal the ticket's Watch out names.
   const changes: RecipeChange[] = [{ path: ['runtime', 'agent'], value: writer }]
+  // A runtime that cannot hold a turn count (#547) is not asked to promise one:
+  // the schema's default of 300 is nobody's choice, and doctor would fail it
+  // for ever. Decided from `enforces` and not from the runtime's name, and only
+  // where the file does not already declare `turns` — a number somebody wrote
+  // stays a number, and stays red.
+  const writerCapabilities = everyRuntime().find((r) => r.capabilities.id === writer)?.capabilities
+  if (
+    writerCapabilities !== undefined &&
+    !writerCapabilities.enforces.includes('turns') &&
+    (await readRecipeKey(at.project, ['runtime', 'limits', 'turns'], readOpts)) === null
+  ) {
+    changes.push(unboundedTurnsChange())
+  }
   const modelChanges: RecipeChange[] = []
 
   if (implementAction) {

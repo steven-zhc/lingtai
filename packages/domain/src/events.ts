@@ -392,9 +392,11 @@ export const Invocation = z.object({
    * additive (`#370`) — absent on every event written before it, and absent
    * on one written after when the recipe declared no dollar ceiling. This is
    * the bound the recipe *stated*, never a computed price: 0110 §5 forbids
-   * folding money, not naming a ceiling someone wrote down.
+   * folding money, not naming a ceiling someone wrote down. `turns` is
+   * additive the same way (#547): every event already on the log carries a
+   * number, and one written for `turns: unbounded` carries none.
    */
-  limits: z.object({ turns: z.number().int(), wallMs: z.number().int(), usd: z.number().optional() }),
+  limits: z.object({ turns: z.number().int().optional(), wallMs: z.number().int(), usd: z.number().optional() }),
 })
 export type Invocation = z.infer<typeof Invocation>
 

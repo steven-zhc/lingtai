@@ -123,9 +123,11 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | `--defaults`                    | Accepts the remaining setup defaults.                              |
 
 If you already initialized Lingtai without these options, `init` will not
-reconfigure that project; see the [operating guide](operating.md). Codex may
-also cause `doctor` to report that its default turn limit is not enforced;
-the two-hour wall limit still applies.
+reconfigure that project; see the [operating guide](operating.md). With
+`--agent codex`, `init` writes `runtime.limits.turns: unbounded` into the
+recipe, because Codex has no turn limit to enforce; the two-hour wall limit
+still applies and `doctor` reports the limits as passing. A turn count you
+write yourself on Codex is a promise nothing keeps, and `doctor` fails it.
 
 </details>
 

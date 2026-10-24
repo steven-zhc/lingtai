@@ -214,3 +214,16 @@ describe("argsFor's --max-budget-usd", () => {
     expect(args[args.indexOf('--max-budget-usd') + 1]).toBe('12')
   })
 })
+
+describe('argsFor with turns unbounded (#547)', () => {
+  it('omits --max-turns where the request carries no turns', () => {
+    const { args } = createClaudeCodeRuntime().invocation!({
+      runId: 'pass-1',
+      cwd: '/tmp/tree',
+      settingsPath: '/state/runs/run-1/settings.json',
+      env: {},
+      limits: { wallMs: 3_600_000 },
+    })
+    expect(args).not.toContain('--max-turns')
+  })
+})

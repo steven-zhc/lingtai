@@ -119,12 +119,14 @@ on that path is paid for thousands of times per run.
    can narrow `turns` and `wall`.
 
 9. **The ceiling is stated once, and a dispatch may only narrow it.**
-   `runtime.limits` holds `turns` (default 300), `wall` (default `2h`),
+   `runtime.limits` holds `turns` (default 300, or the word `unbounded` — see
+   10), `wall` (default `2h`),
    `rounds` (default 2), `restarts` (default 0) and, since `#370`, `usd` — a
    dollar ceiling on one agent run, with **no default**. `turns`, `wall`,
    `rounds` and `restarts` all have schema defaults that are always present;
    `usd` does not, because a defaulted dollar ceiling would read Codex red
-   forever on a second axis the way a defaulted `turns` already does (see 10).
+   on a second axis the way a defaulted `turns` would for a runtime that cannot
+   hold it (see 10).
    Absent means no dollar ceiling, said in `lingtai doctor`'s row as
    `usd — none declared` rather than a number. A dispatch's `limits` may lower
    `turns` or `wall`; raising either is refused at resolve, and so is writing
@@ -141,7 +143,17 @@ on that path is paid for thousands of times per run.
 
 10. **A limit the runtime cannot enforce is reported, not pretended.** Codex
     does not enforce `turns`, so `lingtai doctor`'s limits row fails for a Codex
-    project and says that the wall still stops the run. Turns counted off the
+    project that **promises** a turn count and says that the wall still stops the
+    run. **`runtime.limits.turns: unbounded` is the way to promise none** (`#547`):
+    a choice and not a promise, so the row does not check it and reads
+    `turns — unbounded`. It is the only spelling — an absent key is the default
+    of 300, and `null`, `0` and `none` are refused by name — and `lingtai init`
+    writes it for a runtime whose `enforces` omits `turns`, when the recipe does
+    not already declare `turns`. A number on such a runtime stays `fail`, and so
+    does a step's own `limits.turns` on it, which an `unbounded` ceiling would
+    otherwise hide; an `unbounded` ceiling printed anywhere says *no turn limit*
+    and never a number. `wall` has no such spelling, since every runtime
+    enforces it. Turns counted off the
     stream go into the receipt and the never-started check. They never trigger
     a kill. **`usd` is reported the same way when one is declared, and not at
     all when it is not** (`#370`): a Codex project with no `runtime.limits.usd`
@@ -172,7 +184,8 @@ on that path is paid for thousands of times per run.
   run's wall time.
 - A recipe can mix runtimes per step. Mixing has a cost: Codex steps report no
   dollars (see [0110](0110-tokens-on-the-event-money-at-display.md)), and a
-  Codex project's doctor shows a permanent `turns` failure.
+  Codex project's doctor fails `turns` until the recipe says `turns: unbounded`,
+  which `init` writes.
 - A discussion can run only on a runtime that can be given no tools, which
   today means Claude Code alone.
 - Every limit or tier a runtime cannot honour shows up as a refusal before the
