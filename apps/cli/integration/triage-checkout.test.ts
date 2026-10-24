@@ -36,11 +36,11 @@ it('lets Codex CLI tools inspect the selected commit while its edits stay in a p
   await writeFile(
     standIn,
     `#!/usr/bin/env node
-const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const cwd = args[args.indexOf('--cd') + 1];
-const text = fs.readFileSync(cwd + '/answer.txt', 'utf8').trim();
-fs.writeFileSync(cwd + '/answer.txt', 'edited by tool\\n');
+const text = execFileSync('sh', ['-c', 'cat answer.txt'], { cwd, encoding: 'utf8' }).trim();
+execFileSync('sh', ['-c', "printf 'edited by tool\\n' > answer.txt"], { cwd });
 console.log(JSON.stringify({type:'thread.started',thread_id:'fixture'}));
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text}}));
 console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_tokens:2}}));
