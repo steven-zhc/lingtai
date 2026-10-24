@@ -917,7 +917,7 @@ export function Standing({
                 const consequence = fixUnavailable
                   ? 'The saved branch and head must be available before a fix round can be granted.'
                   : tag === 'Requeue' && sendable !== null
-                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds.`
+                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
                     : copy.consequence
                 return (
                   <article
