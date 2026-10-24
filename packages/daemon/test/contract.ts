@@ -95,6 +95,7 @@ function beating(over: Partial<Beat> = {}): Beat {
     codeSha: null,
     codeDirty: false,
     fresh: false,
+    startedAt: null,
     ...over,
   }
 }

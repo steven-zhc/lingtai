@@ -41,5 +41,20 @@ describe('startBeacon', () => {
     await beacon.stop('stopped')
 
     expect(beats.map((b) => b.fresh)).toEqual([true, true, false, false])
+    // The late first beat that lands still dates the row from the process, not from its write.
+    expect(new Set(beats.map((b) => b.startedAt?.getTime())).size).toBe(1)
+    expect(beats[0]!.startedAt).toBeInstanceOf(Date)
+  })
+
+  it('dates the row from the start it was given', async () => {
+    const beats: Beat[] = []
+    const store = {
+      beat: async (b: Beat) => void beats.push(b),
+      close: async () => {},
+    } as unknown as DaemonStore
+    const startedAt = new Date('2026-10-20T12:00:00Z')
+    const beacon = startBeacon('starting', { store, every: 3_600_000, startedAt })
+    await beacon.stop('stopped')
+    expect(beats.every((b) => b.startedAt === startedAt)).toBe(true)
   })
 })

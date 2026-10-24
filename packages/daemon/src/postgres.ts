@@ -101,7 +101,7 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
         await client.query(
           `insert into daemon_status
              (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-           values (1, $1, $2, now(), now(), $3, $4, $5, $6)
+           values (1, $1, $2, coalesce($8::timestamptz, now()), now(), $3, $4, $5, $6)
            on conflict (id) do update
              set pid = excluded.pid,
                  host = excluded.host,
@@ -111,7 +111,16 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
                  current_run_id = excluded.current_run_id,
                  code_sha = excluded.code_sha,
                  code_dirty = excluded.code_dirty`,
-          [beat.pid, beat.host, beat.state, beat.currentRunId, beat.codeSha, beat.codeDirty, beat.fresh],
+          [
+            beat.pid,
+            beat.host,
+            beat.state,
+            beat.currentRunId,
+            beat.codeSha,
+            beat.codeDirty,
+            beat.fresh,
+            beat.startedAt,
+          ],
         )
       } finally {
         await client.end()

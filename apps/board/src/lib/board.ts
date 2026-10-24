@@ -145,6 +145,8 @@ export interface BoardCard {
   note: string | null
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
   cause: (CausePresentation & { summary: string }) | null
+  /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
+  triage: 'Queued' | 'Running' | 'Interrupted' | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -593,6 +595,8 @@ export function toCard(
       status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
         ? { ...presentCause(status.result.cause), summary: status.result.summary }
         : null,
+    triage:
+      status?._tag === 'Queued' || status?._tag === 'Running' || status?._tag === 'Interrupted' ? status._tag : null,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t, limits?.restarts ?? null),
@@ -826,6 +830,7 @@ export async function queuedCards(
         costUsd: emptyBill(),
         note: null,
         cause: null,
+        triage: null,
         attempts: 0,
         // Nothing has run, so no approach has been abandoned.
         arm: null,

@@ -76,6 +76,17 @@ describe('a wait’s triage status', () => {
     expect(card).toEqual(page)
   })
 
+  it('shows Queued and Interrupted on the card toCard builds, as the page does', () => {
+    const read = (card: TaskCard) =>
+      toCard(card, null, null, null, null, undefined, undefined, triageContextOf(true, daemon))
+    expect(read(waiting({ started: null, result: null })).triage).toBe('Queued')
+    const started = { attempt: 1, at: new Date('2026-10-20T11:00:00Z') }
+    expect(read(waiting({ started, result: null })).triage).toBe('Interrupted')
+    const running = { attempt: 1, at: new Date('2026-10-20T13:00:00Z') }
+    expect(read(waiting({ started: running, result: null })).triage).toBe('Running')
+    expect(toCard(waiting({ started: null, result: null }), null, null, null, null).triage).toBeNull()
+  })
+
   it('is read by toCard, which shows a Done result however the beacon read', () => {
     // The card exposes only what a `Done` status carries (`cause`), and `Done`
     // does not depend on the context: this holds that toCard takes the context

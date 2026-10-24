@@ -425,6 +425,8 @@ export interface BeatOptions {
   currentRunId?: string | null
   /** The first beat of this process, which begins the row again (`Beat.fresh`). */
   fresh?: boolean
+  /** When this process began, for a `fresh` beat to date the row from (`Beat.startedAt`). */
+  startedAt?: Date | null
   /**
    * What code this process is running, read once at startup.
    *
@@ -445,7 +447,7 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null, fresh = false } = options
+  const { currentRunId = null, code = null, fresh = false, startedAt = null } = options
   await withDaemonStore(options.store, {}, (store) =>
     store.beat({
       pid: process.pid,
@@ -455,6 +457,7 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
       codeSha: code?.sha ?? null,
       codeDirty: code?.dirty ?? false,
       fresh,
+      startedAt,
     }),
   )
 }
@@ -512,7 +515,7 @@ export interface BeaconOptions extends BeatOptions {
 }
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, ...beatOptions } = options
+  const { every = HEARTBEAT_MS, startedAt = new Date(), ...beatOptions } = options
   let current = state
   let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
@@ -532,7 +535,7 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
     chain = chain.then(async () => {
       try {
         const fresh = !begun
-        await beat(word, { ...beatOptions, fresh })
+        await beat(word, { ...beatOptions, fresh, startedAt })
         begun = true
       } catch {
         // Every beat, the first one included — and that is a change. Startup

@@ -83,6 +83,13 @@ export const dynamic = 'force-dynamic'
  * any run started (`#405`) — the note is the release's reason or the
  * refusal's, and the next claim clears it either way.
  */
+/** The same sentences the task page's band uses for a triage that has not finished. */
+const TRIAGE_WORDS = {
+  Queued: 'triage is waiting to run',
+  Running: 'triage is running',
+  Interrupted: 'the daemon stopped during triage; it will be tried again on the next start',
+} as const
+
 function accent(card: BoardCard): string {
   if (card.failed > 0) return 'a-fail'
   if (card.column === 'queued' && card.note) return 'a-hold'
@@ -174,6 +181,8 @@ export function Card({
             <span className={`waiting-cause-label cause-chip cause-chip--${card.cause.chip}`}>{card.cause.label}</span>
             <span className="waiting-cause-summary">{card.cause.summary}</span>
           </p>
+        ) : card.triage ? (
+          <p className="question waiting-fallback">{TRIAGE_WORDS[card.triage]}</p>
         ) : fallback ? (
           <p className="question waiting-fallback">{fallback}</p>
         ) : null}

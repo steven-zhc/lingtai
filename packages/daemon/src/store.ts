@@ -99,6 +99,12 @@ export interface Beat {
   codeDirty: boolean
   /** The first beat of this process: the row begins again, whoever wrote it before. */
   fresh: boolean
+  /**
+   * This process's own start, when the caller knows it: what a `fresh` beat
+   * begins the row at, so a first beat that failed and landed late does not
+   * date the daemon from its write. Null leaves the store's clock to say.
+   */
+  startedAt: Date | null
 }
 
 /**

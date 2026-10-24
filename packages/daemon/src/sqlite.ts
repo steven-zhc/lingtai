@@ -126,7 +126,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
       db.prepare(
         `INSERT INTO daemon_status
            (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-         VALUES (1, ?, ?, ${NOW}, ${NOW}, ?, ?, ?, ?)
+         VALUES (1, ?, ?, coalesce(?, ${NOW}), ${NOW}, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE
            SET pid = excluded.pid,
                host = excluded.host,
@@ -139,6 +139,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
       ).run(
         beat.pid,
         beat.host,
+        beat.startedAt?.toISOString() ?? null,
         beat.state,
         beat.currentRunId,
         beat.codeSha,

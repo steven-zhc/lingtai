@@ -691,7 +691,7 @@ async function daemonCommand(
   // daemon whose lock it printed on the next line. `startBeacon` keeps one
   // timer for the whole life of the process, so there is no stretch of it
   // during which nothing says "still here".
-  const beacon = startBeacon('starting', { code })
+  const beacon = startBeacon('starting', { code, startedAt: daemonStartedAt })
   console.log(
     `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
       `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,
