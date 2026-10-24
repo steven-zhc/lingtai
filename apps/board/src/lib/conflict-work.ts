@@ -51,7 +51,9 @@ export async function conflictWorkOf(input: {
   try {
     const remote = await ports.client.refSha(`heads/${saved.ref}`)
     if (remote === null)
-      return { refusal: `The preserved ref ${saved.ref} is missing. Restore it at ${saved.head.slice(0, 7)} or start over from base.` }
+      return {
+        refusal: `The preserved ref ${saved.ref} is missing. Restore it at ${saved.head.slice(0, 7)} or start over from base.`,
+      }
     if (remote !== saved.head)
       return {
         refusal: `The preserved ref ${saved.ref} moved to ${remote.slice(0, 7)}, not the saved ${saved.head.slice(0, 7)}. Restore it or start over from base.`,

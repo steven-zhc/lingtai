@@ -1,5 +1,5 @@
-import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { continueConflictPorts } from '@lingtai/conductor/continue-conflict-ports'
+import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readStatus } from '@lingtai/daemon/control'
@@ -841,7 +841,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
             ...(continued
               ? {
                   ref: (move.resolution as { ref?: string }).ref,
-                  head: (move.resolution as { onSha?: string; headSha?: string }).headSha ?? (move.resolution as { onSha?: string }).onSha,
+                  head:
+                    (move.resolution as { onSha?: string; headSha?: string }).headSha ??
+                    (move.resolution as { onSha?: string }).onSha,
                 }
               : {}),
           }

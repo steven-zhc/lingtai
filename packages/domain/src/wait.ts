@@ -518,9 +518,7 @@ export function conflictRows(
 ): { tooMany: number } | { rows: ConflictRow[] } {
   if (counted.length > MERGE_HUNKS_ONE_BY_ONE) return { tooMany: counted.length }
   const advised =
-    status?._tag === 'Done' &&
-    status.result._tag === 'TriageAdvised' &&
-    status.result.cause._tag === 'ConflictingHunks'
+    status?._tag === 'Done' && status.result._tag === 'TriageAdvised' && status.result.cause._tag === 'ConflictingHunks'
       ? status.result.cause.hunks
       : []
   const byKey = new Map(advised.map((h) => [conflictRowKey(h), h]))

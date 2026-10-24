@@ -24,6 +24,7 @@ import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 import { presentCause } from '@/lib/triage-cause'
 
+import { ContinueConflict } from './continue-conflict.tsx'
 import {
   Close,
   ContinueFixing,
@@ -58,9 +59,9 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
   ContinueConflict: {
-    title: 'Continue the conflict',
+    title: 'Confirm behavior and continue',
     consequence:
-      'Continue the preserved conflict with the behavior you confirm for each divergent hunk. Not runnable yet.',
+      'AI merges the latest base into the preserved branch, resolves each hunk as you confirm it, and commits. Build and review run again before anything can land.',
   },
   AnswerQuestion: {
     title: 'Answer the question',
@@ -554,12 +555,10 @@ export function Standing({
         rawAdvice === 'Approve'
       ? null
       : rawAdvice
-  // No `ContinueConflict` card is drawn until it can be run (#559), so it is
-  // never the recommended one either.
   const recommended =
-    advised === 'ContinueConflict'
-      ? null
-      : advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+    advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+      ? 'Requeue'
+      : advised === 'ContinueConflict' && !(standing.conflictWork && 'rows' in standing.conflictWork)
         ? 'Requeue'
         : advised
   const triageRecommended =
@@ -576,7 +575,7 @@ export function Standing({
       : null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
-  const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
+  const drawable = allowed.filter((tag) => tag !== 'Split')
   const orderedResolutions =
     recommended === null
       ? drawable
@@ -962,6 +961,29 @@ export function Standing({
                           primary={recommended === 'GrantFixRound'}
                         />
                       ) : null}
+                      {visible && tag === 'ContinueConflict' && waitId !== null ? (
+                        standing.conflictWork && 'rows' in standing.conflictWork ? (
+                          <ContinueConflict
+                            key={waitId}
+                            project={project}
+                            issue={issue}
+                            waitId={waitId}
+                            work={standing.conflictWork}
+                            primary={recommended === 'ContinueConflict'}
+                          />
+                        ) : standing.conflictWork && 'tooMany' in standing.conflictWork ? (
+                          <p className="refusal">
+                            {standing.conflictWork.tooMany} hunks — past one-by-one; no behavior can be confirmed for
+                            each. Start over from the new base.
+                          </p>
+                        ) : (
+                          <p className="refusal">
+                            {standing.conflictWork && 'refusal' in standing.conflictWork
+                              ? standing.conflictWork.refusal
+                              : 'The conflict could not be read; reload this wait before continuing.'}
+                          </p>
+                        )
+                      ) : null}
                       {visible && tag === 'GrantFixRound' && (!standing.fixWork || 'refusal' in standing.fixWork) ? (
                         <p className="refusal">
                           {standing.fixWork && 'refusal' in standing.fixWork
@@ -1059,7 +1081,10 @@ export function Standing({
                 issue={issue}
                 onSha={standing.approvedSha}
                 waitId={standing.waitId}
-                grant={standing.afterMove?.resolution === 'GrantFixRound'}
+                grant={
+                  standing.afterMove?.resolution === 'GrantFixRound' ||
+                  standing.afterMove?.resolution === 'ContinueConflict'
+                }
               />
             </div>
           ) : null}
