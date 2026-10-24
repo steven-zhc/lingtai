@@ -529,16 +529,15 @@ export function cardTriageStatus(t: Pick<TaskCard, 'wait' | 'triage'>, context: 
   return t.wait === null ? null : triageStatus(t.wait.reason, t.triage, context)
 }
 
-/** The projects whose current recipe declares `triage:`, read the way the task page reads it. */
+/**
+ * The projects whose current recipe declares `triage:`, read the way the task
+ * page reads it — and failing the way it fails: an unreadable recipe rejects
+ * and reaches the board as an error, as it reaches the page. Answering `false`
+ * for it would let the page, whose own read may succeed, say `Queued` about a
+ * wait the card said nothing of.
+ */
 async function declaredTriage(projects: ProjectState[]): Promise<Set<string>> {
-  const declared = await Promise.all(
-    projects.map((p) =>
-      currentRecipe(p).then(
-        (r) => r.recipe.triage !== undefined,
-        () => false,
-      ),
-    ),
-  )
+  const declared = await Promise.all(projects.map((p) => currentRecipe(p).then((r) => r.recipe.triage !== undefined)))
   return new Set(projects.flatMap((p, i) => (declared[i] && p.project !== null ? [p.project] : [])))
 }
 

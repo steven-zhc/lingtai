@@ -677,12 +677,6 @@ async function daemonCommand(
   })
   if (!opened.ok) return opened.code
   const { started, code } = opened
-  // This process's own start, taken once the lock is held: nothing else can
-  // append a `TriageStarted` from here on, so an attempt dated before it was a
-  // previous conductor's and `triageStatus` reads it `Interrupted` (#576). It
-  // is known without asking the store, so it cannot fail to `null`.
-  const daemonStartedAt = new Date()
-
   // **Beating from here**, and not from after the reconcile below — which is
   // what `#144` was. The two lines that follow this one read a recipe per
   // project over the network, and the reconcile after them writes GitHub
@@ -691,7 +685,17 @@ async function daemonCommand(
   // daemon whose lock it printed on the next line. `startBeacon` keeps one
   // timer for the whole life of the process, so there is no stretch of it
   // during which nothing says "still here".
-  const beacon = startBeacon('starting', { code, startedAt: daemonStartedAt })
+  const beacon = startBeacon('starting', { code })
+  // This process's own start, dated by the store's clock and not this host's:
+  // `TriageStarted` is dated by the store, and a database ahead of this host
+  // would read an attempt a previous conductor cut off as `Running` (#576). The
+  // row's first beat is `fresh` and the lock is held, so the row it leaves is
+  // this process's; where it cannot be read, or is another pid's because the
+  // beat failed, this host's clock is the best there is.
+  await beacon.say('starting')
+  const daemonStartedAt = await readStatus()
+    .then((row) => (row !== null && row.pid === process.pid ? row.startedAt : new Date()))
+    .catch(() => new Date())
   console.log(
     `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
       `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,

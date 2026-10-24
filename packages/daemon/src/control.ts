@@ -515,7 +515,7 @@ export interface BeaconOptions extends BeatOptions {
 }
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, startedAt = new Date(), ...beatOptions } = options
+  const { every = HEARTBEAT_MS, startedAt = null, ...beatOptions } = options
   let current = state
   let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
