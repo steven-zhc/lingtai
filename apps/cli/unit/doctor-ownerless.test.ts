@@ -83,6 +83,41 @@ steps: {}
 `
 
 describe('declaredEnvironment, a project with no owner', () => {
+  it('reports each selected Codex role without exposing credentials or starting a paid call', async () => {
+    const recipe = recipeOf(
+      `${RECIPE_OK}\ndiscuss: { agent: codex, model: priced-model }\ntriage: { agent: codex, model: other-model }\n`,
+    )
+    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+    const configured = {
+      apiKey: 'private-test-key',
+      model: 'priced-model',
+      maxOutputTokens: 32,
+      maxUsd: 1,
+      inputUsdPerMillion: 1,
+      outputUsdPerMillion: 1,
+    }
+    const rows = await declaredEnvironment({}, async () => [state], {
+      recipe,
+      agentEnv: agentEnvStub,
+      runtimes: runtimesStub,
+      codexText: () => configured,
+    })
+    expect(rows.find((row) => row.name === 'discuss: esctest codex ready')?.status).toBe('ok')
+    expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toMatchObject({
+      status: 'fail',
+      detail: 'triage.model differs from codex_text.model and its configured prices',
+    })
+    expect(JSON.stringify(rows)).not.toContain(configured.apiKey)
+
+    const missing = await declaredEnvironment({}, async () => [state], {
+      recipe,
+      agentEnv: agentEnvStub,
+      runtimes: runtimesStub,
+      codexText: () => undefined,
+    })
+    expect(missing.filter((row) => row.name.endsWith('codex ready')).map((row) => row.status)).toEqual(['fail', 'fail'])
+  })
+
   it('gives every row ok, by name, and builds no GitHub client', async () => {
     const recipe = recipeOf(RECIPE_OK)
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
@@ -99,6 +134,7 @@ describe('declaredEnvironment, a project with no owner', () => {
       'env: esctest extensions',
       'runtime: esctest limits',
       'runtime: esctest signed in',
+      'discuss: esctest signed in',
     ])
     for (const row of rows) expect(row.status, `${row.name}: ${row.detail}`).toBe('ok')
     // `currentRecipe` ignores its second argument (`projects.ts`), and this

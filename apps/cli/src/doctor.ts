@@ -6,6 +6,7 @@ import { isSea } from 'node:sea'
 
 import {
   RUN_LIMITS,
+  ToolsCannotBeDenied,
   type AuthStatus,
   type Runtime,
   type RuntimeCapabilities,
@@ -73,6 +74,8 @@ import {
   githubAppValues,
   hasGitHubApp,
   machineDatabaseUrl,
+  codexTextConfig,
+  type CodexTextConfig,
   postgresUrlIfSet,
   repoRoot,
   storeChoice,
@@ -899,6 +902,8 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
+  codexText?: () => CodexTextConfig | undefined
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -2040,8 +2045,9 @@ async function dispatchedAuthRow(
   // Found in the injected list rather than built with `createRuntime`, so a
   // test can hand in a fake `checkAuth` instead of spawning the real binary.
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
+  role: 'runtime' | 'discuss' | 'triage' = 'runtime',
 ): Promise<CheckResult> {
-  const name = `runtime: ${project} signed in`
+  const name = `${role}: ${project} signed in`
   if (!asked.has(agent)) {
     const runtime = runtimes.find((r) => r.capabilities.id === agent)
     // Exactly what a run gets. Not `process.env`.
@@ -2056,10 +2062,32 @@ async function dispatchedAuthRow(
     name,
     status: 'fail',
     detail:
-      `${agent} reports ${status.detail}, and ${project}'s recipe names it at runtime.agent — ` +
-      `so that is what the next pass constructs and spawns. Sign in, or name a runtime this ` +
-      `machine has at runtime.agent in ${recipePath(project)}. If you are signed in yourself, the run's environment ` +
+      `${agent} reports ${status.detail}, and ${project}'s recipe names it at ${role}.agent — ` +
+      `so that is what its next call constructs and spawns. Sign in, or name a runtime this ` +
+      `machine has at ${role}.agent in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
+  }
+}
+
+/** Check the separately billed, tool-free route named by a recipe role. */
+function codexRoleRow(
+  project: string,
+  role: 'discuss' | 'triage',
+  model: string | undefined,
+  configured: () => CodexTextConfig | undefined,
+): CheckResult {
+  const name = `${role}: ${project} codex ready`
+  try {
+    const config = configured()
+    if (!config) throw new ToolsCannotBeDenied('codex')
+    // The same factory used at dispatch; never probe the Codex CLI as a substitute.
+    createRuntime('codex', { tools: 'none', codexText: { config } })
+    if (model && model !== config.model) {
+      return { name, status: 'fail', detail: `${role}.model differs from codex_text.model and its configured prices` }
+    }
+    return { name, status: 'ok', detail: `model-only API route ready for ${role}; separately billed` }
+  } catch (err) {
+    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}` }
   }
 }
 
@@ -2143,6 +2171,16 @@ export async function declaredEnvironment(
       // question from whether its declared limits bind, and the one nothing
       // asked between `runtimeAuth` becoming per-machine and this row.
       results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
+      for (const role of ['discuss', 'triage'] as const) {
+        const selected = resolved.recipe[role]
+        if (selected?.agent === 'codex') {
+          results.push(
+            codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
+          )
+        } else if (selected) {
+          results.push(await dispatchedAuthRow(project.project, selected.agent, asked, runtimes, role))
+        }
+      }
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.
