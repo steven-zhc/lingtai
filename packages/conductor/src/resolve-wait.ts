@@ -191,6 +191,14 @@ export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveW
   )
 }
 
+/** JSON with object keys sorted, so two equal resolutions compare equal whatever order they were built in. */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  )
+
 /**
  * **Exported for the unit half alone**, the same reason `approveHolding` was
  * (`#487`): `resolveWait()` above takes `createFileLocker()`, which is the
@@ -226,6 +234,22 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
           (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
         : item.lifecycle.onSha === options.resolution.onSha)
   ) {
+    // A matching ref and head is not the same confirmation: another person's
+    // behavior, or a base this caller never read, must not be reported as the
+    // caller's own success.
+    if (options.resolution._tag === 'ContinueConflict') {
+      const recorded = (await store.read(ticketId))
+        .filter((e) => e.type === 'WaitResolved')
+        .map((e) => e.data as { waitId: string; resolution: { _tag: string } })
+        .findLast((d) => d.waitId === options.waitId && d.resolution._tag === 'ContinueConflict')?.resolution
+      if (canonical(recorded) !== canonical(options.resolution))
+        return {
+          ok: false,
+          ticketId,
+          reason: 'already-confirmed',
+          detail: `${ticketId} was already confirmed with a different base, head or behavior than the one submitted. Nothing was recorded or asked again — reload and read it again.`,
+        }
+    }
     const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
     return unscheduled === null

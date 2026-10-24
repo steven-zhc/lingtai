@@ -524,6 +524,18 @@ describe('resolveWait', () => {
       expect(await requests()).toHaveLength(2)
     })
 
+    it("does not report another person's confirmation as a different caller's success", async () => {
+      const b = await blocked()
+      expect(await continued(b)).toMatchObject({ ok: true })
+      const requests = async () => (await b.store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')
+      const before = (await b.store.read(b.ticketId)).length
+      const other = await continued(b, { hunks: [{ ...hunks[0]!, _tag: 'Divergent', behavior: 'x', adopted: null }] })
+      expect(other).toMatchObject({ ok: false, reason: 'already-confirmed' })
+      expect(await continued(b, { baseSha: 'c'.repeat(40) })).toMatchObject({ ok: false, reason: 'already-confirmed' })
+      expect((await b.store.read(b.ticketId)).length).toBe(before)
+      expect(await requests()).toHaveLength(1)
+    })
+
     it('refuses a moved base', async () => {
       const b = await blocked()
       const client = { refSha: async (ref: string) => (ref === 'heads/main' ? 'c'.repeat(40) : SHA2) }
