@@ -28,7 +28,7 @@ import type { Runtime } from '@lingtai/agent'
  */
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
@@ -92,7 +92,11 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
     async append(streamId: string, expectedVersion: number, events: readonly ToAppend[]) {
       const held = streams.get(streamId) ?? []
       if (held.length !== expectedVersion) {
-        throw new Error(`stale: ${streamId} is at ${held.length}, expected ${expectedVersion}`)
+        throw new ConcurrencyError(
+          streamId,
+          expectedVersion,
+          events.map((_, i) => expectedVersion + i),
+        )
       }
       const written = events.map((e, i) => {
         seq += 1n

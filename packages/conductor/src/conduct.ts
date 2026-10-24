@@ -56,7 +56,7 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -998,16 +998,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const tip = (await options.client.refSha?.(`heads/${base}`)?.catch(() => null)) ?? null
         if (tip !== confirmed.baseSha) {
           if (tip !== null && reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'MergeConflict') {
-            await appendNow(ticketId, [
-              {
-                type: 'WaitStarted',
-                actor: 'conductor',
-                data: parsePayload('WaitStarted', {
-                  waitId: crypto.randomUUID(),
-                  reason: { ...reason, proposal: { ...reason.proposal, baseSha: tip } },
-                }),
-              },
-            ])
+            // At the version this decision was read at, not a fresh one: a
+            // person may have closed (or otherwise decided) the ticket while the
+            // base was being read, and `WaitStarted` would fold it back to
+            // blocked over that. A refused append means someone else decided,
+            // so nothing is reopened.
+            try {
+              await store.append(ticketId, before.length, [
+                {
+                  type: 'WaitStarted',
+                  actor: 'conductor',
+                  data: parsePayload('WaitStarted', {
+                    waitId: crypto.randomUUID(),
+                    reason: { ...reason, proposal: { ...reason.proposal, baseSha: tip } },
+                  }),
+                },
+              ])
+            } catch (err) {
+              if (!(err instanceof ConcurrencyError)) throw err
+            }
           }
           return null
         }
