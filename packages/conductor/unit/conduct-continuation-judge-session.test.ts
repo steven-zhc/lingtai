@@ -102,8 +102,10 @@ describe('a judge asked in a continuation has a session of its own', () => {
         const next = await once(args({ runId }), ports)
         if (next.ok === false) throw new Error(`stopped at ${next.stage}: ${next.detail}`)
         const asked = judgesOf().slice(before)
-        // Each continuation's first judge is `…:1` again; the wait it resumes is what differs.
-        expect(asked.length).toBeGreaterThan(0)
+        // A granted continuation buys no judge at all since #570: its rounds and its restarts
+        // are both capped, so only a person is left on offer. Were one ever asked, its id
+        // would still carry the wait it resumes (#580).
+        expect(asked).toHaveLength(0)
         for (const id of asked) expect(id).toContain(`:judge:findings:${wait.waitId}:`)
         if (next.ok !== 'held') break
         runId = next.runId
