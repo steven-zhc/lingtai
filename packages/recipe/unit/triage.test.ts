@@ -72,18 +72,15 @@ describe('triage:, written', () => {
     await expect(resolve(`${BASE}triage:\n  agent: claude-code\n  rounds: 3\n`)).rejects.toThrow(/rounds/)
   })
 
-  it('refuses a wall at the ten-minute bound, naming the bound', async () => {
-    await expect(resolve(`${BASE}triage:\n  limits: { wall: 10m }\n`)).rejects.toThrow(/triage\.limits\.wall/)
-    await expect(resolve(`${BASE}triage:\n  limits: { wall: 10m }\n`)).rejects.toThrow(/under 8m/)
+  it('accepts a wall of any positive length', async () => {
+    const { recipe } = await resolve(`${BASE}triage:\n  limits: { wall: 15m }\n`)
+    expect(recipe.triage?.limits.wall).toBe('15m')
   })
 
-  it('refuses a wall past the ten-minute bound', async () => {
-    await expect(resolve(`${BASE}triage:\n  limits: { wall: 8m }\n`)).rejects.toThrow(/triage\.limits\.wall/)
-  })
-
-  it('accepts a wall under the bound', async () => {
-    const { recipe } = await resolve(`${BASE}triage:\n  limits: { wall: 7m }\n`)
-    expect(recipe.triage?.limits.wall).toBe('7m')
+  it('refuses a wall that is not a positive duration', async () => {
+    const refused = resolve(`${BASE}triage:\n  limits: { wall: 0m }\n`)
+    await expect(refused).rejects.toThrow(/triage\.limits\.wall/)
+    await expect(refused).rejects.toThrow(/positive duration/)
   })
 })
 

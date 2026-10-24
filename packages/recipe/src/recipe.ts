@@ -19,7 +19,7 @@ import { PREFIX } from '@lingtai/env'
  */
 import { z } from 'zod'
 
-import { UNBOUNDED, formatDuration, parseDuration } from './duration.ts'
+import { UNBOUNDED, parseDuration } from './duration.ts'
 import {
   type Plugin,
   type PluginFields,
@@ -2944,22 +2944,6 @@ export function callFor(discuss: Discuss): { model?: string; turns: number; wall
 }
 
 /**
- * How long the daemon's subscriber waits for anything it was told about
- * before giving up — `SUBSCRIBER_TIMEOUT_MS` in
- * `packages/daemon/src/work-loop.ts:135`, ten minutes, in milliseconds rather
- * than a duration string so it can be compared against with `<` instead of
- * parsed a second time.
- *
- * **Triage's own wall must stay under it, not merely under ten minutes.** The
- * subscriber that will eventually run a triage agent (#388) is the same one
- * `SUBSCRIBER_TIMEOUT_MS` bounds end to end, so a `triage.limits.wall` at or
- * past that number would leave the subscriber no time of its own to start up,
- * read the hold and append the result once the agent returns. #413 pins that
- * the two stay in this order.
- */
-export const TRIAGE_WALL_MAX = 8 * 60_000
-
-/**
  * `triage:`, a top-level node beside `discuss:` (0118 §3, `#411`), shaped like
  * it for the same reason: one agent, one model, one optional prompt, one
  * `limits` block bounding what a single run may spend. Where `discuss:` is a
@@ -2984,12 +2968,7 @@ export const Triage = z.strictObject({
       wall: z
         .string()
         .default('5m')
-        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' })
-        // The shape check runs first so `parseDuration` never throws here on
-        // text this refine would refuse anyway for a different reason.
-        .refine((text) => !positiveDuration(text) || parseDuration(text) < TRIAGE_WALL_MAX, {
-          message: `must be under ${formatDuration(TRIAGE_WALL_MAX)} — the daemon gives a subscriber 10m`,
-        }),
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' }),
       /**
        * A dollar ceiling, defaulted — unlike `runtime.limits.usd`, which is
        * absent on purpose so that "no ceiling" is never assumed. Here, writing
