@@ -7,11 +7,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { StepOutcome, WaitId } from '../src/action.ts'
-import type { Proposal } from '../src/proposal.ts'
+import { Proposal as ProposalSchema, type Proposal } from '../src/proposal.ts'
 import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
 import {
   allowedResolutions,
   continuationOf,
+  grantCriterion,
   recommendedResolution,
   triageStatus,
   waivedActionsAt,
@@ -62,7 +63,7 @@ describe('allowedResolutions', () => {
     expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
   })
 
-  it('CheckRefused: Approve, Requeue, EditBodyAndRequeue, Close', () => {
+  it('CheckRefused with evidence: also GrantFixRound', () => {
     const reason = parseReason({
       _tag: 'CheckRefused',
       run,
@@ -71,12 +72,63 @@ describe('allowedResolutions', () => {
       evidence: 'the check failed',
       findings: [],
     })
+    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+  })
+
+  it('CheckRefused with no evidence and no finding: no GrantFixRound', () => {
+    const reason = parseReason({
+      _tag: 'CheckRefused',
+      run,
+      step: 'proposed',
+      action: 'watch:ci',
+      evidence: '  ',
+      findings: [],
+    })
     expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
   })
 
-  it('FixerDisagrees: Approve, Requeue, EditBodyAndRequeue, Close', () => {
+  it('CheckRefused unpushed: neither Approve nor GrantFixRound', () => {
+    const reason = parseReason({
+      _tag: 'CheckRefused',
+      run: unpushedRun,
+      step: 'proposed',
+      action: 'watch:ci',
+      evidence: 'the check failed',
+      findings: [],
+    })
+    expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+  })
+
+  it('FixerDisagrees with a last word: also GrantFixRound', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+  })
+
+  it('FixerDisagrees with nothing said, or unpushed: no GrantFixRound', () => {
+    expect(allowedResolutions(parseReason({ _tag: 'FixerDisagrees', run, said: null }))).toEqual([
+      'Approve',
+      'Requeue',
+      'EditBodyAndRequeue',
+      'Close',
+    ])
+    expect(allowedResolutions(parseReason({ _tag: 'FixerDisagrees', run: unpushedRun, said: 'no' }))).toEqual([
+      'Requeue',
+      'EditBodyAndRequeue',
+      'Close',
+    ])
+  })
+
+  it('grantCriterion: a check refused at merge never briefs step merge (fixRound reads that as a conflict)', () => {
+    const criterion = grantCriterion(
+      parseReason({
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'CheckRefused', from: 'merge', output: 'lint failed', action: 'run:lint' },
+        because: { _tag: 'NotAsked' },
+      }),
+    )
+    expect(criterion?.printed.step).not.toBe('merge')
+    expect(criterion?.printed.detail).toContain('lint failed')
   })
 
   describe('ProposedEscalated, by Proposal tag', () => {
@@ -171,8 +223,76 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
     })
 
+    it('CheckRefused: Approve, Requeue, EditBodyAndRequeue, Close, and a grant when it has output', () => {
+      const proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'lint failed', action: 'run:lint' } as const
+      expect(allowedResolutions(parseProposed(proposal))).toEqual([
+        'Approve',
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Close',
+        'GrantFixRound',
+      ])
+      expect(allowedResolutions(parseProposed({ ...proposal, output: ' ' }))).toEqual([
+        'Approve',
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Close',
+      ])
+      const unpushed = parseReason({ _tag: 'ProposedEscalated', run: unpushedRun, proposal, because })
+      expect(allowedResolutions(unpushed)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+    })
+
+    it('FixerDisagrees: Approve, Requeue, EditBodyAndRequeue, Close, and a grant when it said something', () => {
+      const proposal = { _tag: 'FixerDisagrees', said: 'the finding is wrong' } as const
+      expect(allowedResolutions(parseProposed(proposal))).toEqual([
+        'Approve',
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Close',
+        'GrantFixRound',
+      ])
+      expect(allowedResolutions(parseProposed({ _tag: 'FixerDisagrees', said: null }))).toEqual([
+        'Approve',
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Close',
+      ])
+      const unpushed = parseReason({ _tag: 'ProposedEscalated', run: unpushedRun, proposal, because })
+      expect(allowedResolutions(unpushed)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+    })
+
+    it('MergeRefused: Approve, Requeue, Close', () => {
+      const reason = parseProposed({ _tag: 'MergeRefused', reason: 'dirty-base', output: 'refused' })
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
+    })
+
+    it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Split, Close', () => {
+      const expected = ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
+      expect(allowedResolutions(parseProposed({ _tag: 'NothingProduced', said: null }))).toEqual(expected)
+      expect(
+        allowedResolutions(
+          parseProposed({
+            _tag: 'BudgetExhausted',
+            from: 'implement',
+            kind: 'out-of-turns',
+            turns: null,
+            costUsd: null,
+            detail: 'ran out',
+          }),
+        ),
+      ).toEqual(expected)
+      expect(allowedResolutions(parseProposed({ _tag: 'AnswerUnreadable', from: 'review', raw: 'garbled' }))).toEqual(
+        expected,
+      )
+    })
+
+    it('SetupRefused: Requeue, Close', () => {
+      const reason = parseProposed({ _tag: 'SetupRefused', from: 'prepared', output: 'no network' })
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+    })
+
     it('every Proposal tag is covered above', () => {
-      const tags = ['BuildRed', 'ReviewFindings', 'ReviewEmpty', 'InputNeeded', 'MergeConflict', 'VerifyRed']
+      const tags = ProposalSchema.options.map((option) => option.shape._tag.value)
       expect(new Set(tags)).toEqual(proposalTags)
     })
   })

@@ -330,6 +330,59 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 }
 
 /**
+ * What a granted fix round would be told to fix, or `null` when there is no
+ * criterion for a fixer (0118 §1: "No branch to fix or no criterion for a
+ * fixer means no grant"). One function for both the offer (`allowedResolutions`)
+ * and the brief (`conduct.ts`), so they cannot drift apart.
+ */
+export function grantCriterion(
+  reason: WaitReason,
+): { printed: { step: Step; detail: string }; findings: Finding[] } | null {
+  const text = (value: string | null | undefined) => (value != null && value.trim().length > 0 ? value : null)
+  const checkBrief = (from: Step, action: string | null | undefined, output: string) => ({
+    // `proposed`, never the step the check ran at: `fixRound` reads a printed
+    // `merge` as a conflict and treats the detail as its paths.
+    step: 'proposed' as const,
+    detail: `the ${action ?? 'declared'} check at ${from} refused:\n\n${output}`,
+  })
+  if (reason._tag === 'CheckRefused') {
+    const findings = reason.findings.filter((finding) => finding.failureScenario.trim().length > 0)
+    if (text(reason.evidence) === null && findings.length === 0) return null
+    return { printed: checkBrief(reason.step, reason.action, reason.evidence), findings }
+  }
+  if (reason._tag === 'FixerDisagrees') {
+    const said = text(reason.said)
+    return said === null ? null : { printed: { step: 'review', detail: said }, findings: [] }
+  }
+  if (reason._tag !== 'ProposedEscalated') return null
+  const proposal = reason.proposal
+  switch (proposal._tag) {
+    case 'ReviewFindings':
+      return proposal.findings.some((finding) => finding.failureScenario.trim().length > 0)
+        ? { printed: { step: 'review', detail: 'Fix the recorded review findings.' }, findings: proposal.findings }
+        : null
+    case 'BuildRed':
+      return text(proposal.output) === null
+        ? null
+        : { printed: { step: 'build', detail: proposal.output }, findings: [] }
+    case 'VerifyRed':
+      return text(proposal.output) === null
+        ? null
+        : { printed: { step: 'build', detail: `merge verification failed: ${proposal.output}` }, findings: [] }
+    case 'CheckRefused':
+      return text(proposal.output) === null
+        ? null
+        : { printed: checkBrief(proposal.from, proposal.action, proposal.output), findings: [] }
+    case 'FixerDisagrees': {
+      const said = text(proposal.said)
+      return said === null ? null : { printed: { step: 'review', detail: said }, findings: [] }
+    }
+    default:
+      return null
+  }
+}
+
+/**
  * `tableResolutions` plus one rule 0118 §1's table is silent on, applied
  * uniformly to every variant — before #502, `moves.ts`'s `allowedMoves` only
  * applied it to `Routed`/`CheckRed`/`MergeRefused`: if the run is `unpushed`,
@@ -342,12 +395,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
-  const fixable =
-    reason._tag === 'ProposedEscalated' &&
-    (reason.proposal._tag === 'ReviewFindings'
-      ? reason.proposal.findings.some((finding) => finding.failureScenario.trim().length > 0)
-      : (reason.proposal._tag === 'BuildRed' || reason.proposal._tag === 'VerifyRed') &&
-        reason.proposal.output.trim().length > 0)
+  const fixable = grantCriterion(reason) !== null
   // `MergeRefused` never qualifies, direct or proposed: its reason excludes
   // `conflict`, whatever shas it carries. Null shas mean no conflict to name.
   const continuable =
