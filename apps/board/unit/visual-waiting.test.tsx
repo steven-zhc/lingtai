@@ -42,7 +42,7 @@ describe('waiting visual previews', () => {
     expect(task.runs[0]?.progress?.steps).toHaveLength(10)
     expect(task.runs[0]?.progress?.rounds.spent).toBe(2)
     expect(task.held).toContain('2 of 2 rounds')
-    expect(task.discussions[0]?.turns[0]?.answer?.text).toContain('saved branch')
+    expect(task.discussions[0]?.turns[0]?.answer?.text).toContain(available ? 'saved branch' : 'no published head')
     expect(task.totals.discussions).toBe(1)
     expect(task.totals.byPurpose.Work.unknown).toBe(1)
     expect(card.progress).toBe(task.runs[0]?.progress)

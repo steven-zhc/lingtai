@@ -237,14 +237,19 @@ function fixableFixture(published: boolean) {
         attempt: 1,
         by: 'human:steven',
         question: 'Can these findings be handled on the current branch?',
-        reading: ['agent/393: saved review head', 'Five review findings remain after two rounds'],
+        reading: [
+          published ? 'agent/393: saved review head' : 'agent/393: no published head recorded',
+          'Five review findings remain after two rounds',
+        ],
       },
       at(28),
     ),
     chat(
       'DiscussionAnswered',
       {
-        text: 'The findings are local to the saved branch. Keep its published head and rerun build and review after editing.',
+        text: published
+          ? 'The findings are local to the saved branch. Keep its published head and rerun build and review after editing.'
+          : 'The findings are local, but no published head is recorded. Publish or recover the branch before continuing saved work.',
         read: ['apps/board/src/lib/task.ts', 'apps/board/src/app/standing.tsx'],
         cannot: ['Whether the remote ref has moved since this snapshot'],
         proposal: null,
