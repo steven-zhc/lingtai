@@ -50,7 +50,8 @@
  *   lane runs git outside the sandbox. `$HOME` stays refused. Measured every way;
  *   see that function.
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -63,6 +64,33 @@ import { codexAuth } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
+
+/** Detached shell tools can leave Codex's process group. Identify them by an inherited per-run environment value. */
+async function stopRunProcesses(marker: string): Promise<void> {
+  if (process.platform === 'win32') return
+  const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
+  for (;;) {
+    const listing = execFileSync('ps', ['-Aeww', '-o', 'pid=', '-o', 'command='], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      maxBuffer: 64 * 1024 * 1024,
+    })
+    const pids = listing
+      .split('\n')
+      .filter((line) => line.includes(identity))
+      .map((line) => Number.parseInt(line.trim(), 10))
+      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+    if (pids.length === 0) return
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: 'codex',
@@ -1080,10 +1108,11 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       })
 
       return new Promise<RunOutcome>((resolve) => {
+        const processMarker = randomUUID()
         const child = spawn(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited (0007).
-          env: request.env as NodeJS.ProcessEnv,
+          env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker },
           // **`"ignore"` on stdin is load-bearing**, not tidiness: `codex exec`
           // reads stdin even when a prompt was given as an argument — *"if stdin
           // is piped and a prompt is also provided, stdin is appended as a
@@ -1166,6 +1195,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           resolve(outcome)
         }
 
+        let reaping = false
+        const finishStopped = async () => {
+          if (!closed || hard !== null || stopped === null || reaping) return
+          reaping = true
+          await stopRunProcesses(processMarker)
+          finish(stopped)
+        }
+
         const signalGroup = (signal: NodeJS.Signals) => {
           try {
             // Codex is spawned detached. Its shell tools inherit this group;
@@ -1205,7 +1242,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           hard = setTimeout(() => {
             signalGroup('SIGKILL')
             hard = null
-            if (closed) finish(stopped!)
+            void finishStopped()
           }, 5_000)
         }
 
@@ -1231,15 +1268,16 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           }),
         )
 
-        child.on('close', (code) => {
+        child.on('close', async (code) => {
           closed = true
           if (stopped !== null) {
-            if (hard === null) finish(stopped)
+            await finishStopped()
             return
           }
           // A CLI that exited while a tool left a same-group subprocess behind
           // must not hand its checkout back with that subprocess still running.
           signalGroup('SIGKILL')
+          await stopRunProcesses(processMarker)
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()
