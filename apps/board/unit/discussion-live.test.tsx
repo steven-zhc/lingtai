@@ -151,6 +151,7 @@ describe('the six Discussion reference contexts', () => {
       expect(html).toContain('class="chatentry"')
       expect(html).not.toContain('class="chatask"')
     } else {
+      expect(html).toContain('class="chat entry"')
       expect(html).toContain('class="chatask"')
     }
   })
@@ -161,6 +162,7 @@ describe('the six Discussion reference contexts', () => {
     )
     expect(html).toContain('class="chatscroll"')
     expect(html).not.toContain('class="chatentry"')
+    expect(html).not.toContain('class="chat entry"')
   })
 
   it('follows the conversation when expanding a compact entry', () => {
@@ -523,8 +525,9 @@ describe("the pair's height", () => {
   })
 
   it('takes the room as a ceiling and not a target, so a tall window holds the content and not the viewport', () => {
-    // The row is the content's, floored — never the room itself (#192).
-    expect(css).toMatch(/\.spair\s*\{[^}]*grid-auto-rows:\s*minmax\(24rem, auto\)/)
+    // The row is the taller pane's content; each active pane has its own floor.
+    expect(css).toMatch(/\.spair > \.plan\s*\{[^}]*min-height:\s*24rem;/)
+    expect(css).not.toMatch(/grid-auto-rows:\s*minmax\(24rem, auto\)/)
     expect(css).not.toMatch(/grid-auto-rows:\s*max\(/)
     // 1440×2387, the pair at 528px: 328px of prompt was an 1843px box.
     expect(room(2387, 528)).toBe(1843)
@@ -562,15 +565,15 @@ describe("the pair's height", () => {
     expect(decls.filter(([name]) => name === 'align-self').map(([, v]) => v)).toEqual(['start'])
     expect(decls.filter(([name]) => name === 'height')).toEqual([])
     expect(decls.filter(([name]) => name === 'min-height').map(([, v]) => v)).toEqual(['24rem', '0'])
-    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
+    expect(css).toMatch(/\.spair > \.chat\.compact,\s*\.spair > \.chat\.entry\s*\{\s*min-height:\s*0;\s*\}/)
     for (const [name, value] of decls) {
       if (/pair-top|vh|%/.test(value)) expect(name).toBe('max-height')
     }
   })
 
-  it('lets a compact discussion occupy only its content height on narrow screens', () => {
-    expect(css).toMatch(/@media \(max-width: 63\.999rem\)\s*\{\s*\.spair\s*\{\s*grid-auto-rows:\s*auto;/)
-    expect(css).toMatch(/\.spair > \.chat\.compact\s*\{\s*min-height:\s*0;\s*\}/)
+  it('lets compact and empty entry discussions occupy only their content height at every width', () => {
+    expect(css).not.toMatch(/grid-auto-rows:\s*minmax\(24rem, auto\)/)
+    expect(css).toMatch(/\.spair > \.chat\.compact,\s*\.spair > \.chat\.entry\s*\{\s*min-height:\s*0;\s*\}/)
   })
 
   it('keeps long context scrollable while the grown Ask form remains visible', () => {
