@@ -52,7 +52,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -65,22 +65,81 @@ import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-co
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
 
-/** Detached shell tools can leave Codex's process group. Identify them by an inherited per-run environment value. */
-async function stopRunProcesses(marker: string): Promise<void> {
+/** What was seen of the run's descendants: pid to command, so a recycled pid is not mistaken for one. */
+type Seen = Map<number, string>
+
+function listProcesses(): { pid: number; ppid: number; command: string }[] {
+  const listing = execFileSync('ps', ['-Aww', '-o', 'pid=', '-o', 'ppid=', '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  const rows: { pid: number; ppid: number; command: string }[] = []
+  for (const line of listing.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), command: m[3]! })
+  }
+  return rows
+}
+
+/** Record every live descendant of `root`, so a tool that later detaches and is orphaned is still known. */
+function noteDescendants(root: number | undefined, seen: Seen): void {
+  if (process.platform === 'win32' || root === undefined) return
+  const rows = listProcesses()
+  const family = new Set<number>([root, ...seen.keys()])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const row of rows) {
+      if (family.has(row.ppid) && !family.has(row.pid)) {
+        family.add(row.pid)
+        grew = true
+      }
+    }
+  }
+  for (const row of rows)
+    if (family.has(row.pid) && row.pid !== root && row.pid !== process.pid) seen.set(row.pid, row.command)
+}
+
+/** Pids whose environment carries `identity`. Linux reads `/proc`: procps `-e` selects processes and never appends their environments. */
+function processesWith(identity: string): number[] {
+  if (process.platform === 'linux') {
+    const pids: number[] = []
+    for (const entry of readdirSync('/proc')) {
+      const pid = Number.parseInt(entry, 10)
+      if (!/^\d+$/.test(entry) || pid === process.pid) continue
+      try {
+        if (readFileSync(`/proc/${entry}/environ`, 'latin1').split('\0').includes(identity)) pids.push(pid)
+      } catch {
+        // Exited, or not ours to read.
+      }
+    }
+    return pids
+  }
+  const listing = execFileSync('ps', ['-Aeww', '-o', 'pid=', '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  return listing
+    .split('\n')
+    .filter((line) => line.includes(identity))
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+}
+
+/**
+ * Detached shell tools can leave Codex's process group. They are found by an
+ * inherited per-run environment value where the host shows one, and by having
+ * been seen as the CLI's descendants where it does not.
+ */
+async function stopRunProcesses(marker: string, seen: Seen): Promise<void> {
   if (process.platform === 'win32') return
   const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
   for (;;) {
-    const listing = execFileSync('ps', ['-Aeww', '-o', 'pid=', '-o', 'command='], {
-      encoding: 'utf8',
-      timeout: 5_000,
-      maxBuffer: 64 * 1024 * 1024,
-    })
-    const pids = listing
-      .split('\n')
-      .filter((line) => line.includes(identity))
-      .map((line) => Number.parseInt(line.trim(), 10))
-      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
-    if (pids.length === 0) return
+    const live = new Map(listProcesses().map((row) => [row.pid, row.command]))
+    const pids = new Set(processesWith(identity))
+    for (const [pid, command] of seen) if (live.get(pid) === command) pids.add(pid)
+    if (pids.size === 0) return
     for (const pid of pids) {
       try {
         process.kill(pid, 'SIGKILL')
@@ -1109,6 +1168,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
 
       return new Promise<RunOutcome>((resolve) => {
         const processMarker = randomUUID()
+        const seen: Seen = new Map()
         const child = spawn(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited (0007).
@@ -1141,11 +1201,19 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
          * `claude-code.ts`'s and is true there, where `parseResult` looks for one
          * final `result` object.
          */
+        const note = () => {
+          try {
+            noteDescendants(child.pid, seen)
+          } catch {
+            // A missed sample is covered by the next one and the final scan.
+          }
+        }
+        const tracker = setInterval(note, 200)
+        tracker.unref?.()
         let stdoutTail = ''
         let stderr = ''
         let settled = false
         let stopped: RunOutcome | null = null
-        let closed = false
         let hard: ReturnType<typeof setTimeout> | null = null
 
         // Whole lines only: a chunk boundary falls anywhere, and half a JSON
@@ -1178,6 +1246,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           settled = true
           clearTimeout(wall)
           if (hard !== null) clearTimeout(hard)
+          clearInterval(tracker)
           request.signal?.removeEventListener('abort', onAbort)
           // On every ending, not only a clean close (`#369`): a kill or a
           // spawn error leaves the file written just as surely as a receipt
@@ -1193,14 +1262,6 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             }
           }
           resolve(outcome)
-        }
-
-        let reaping = false
-        const finishStopped = async () => {
-          if (!closed || hard !== null || stopped === null || reaping) return
-          reaping = true
-          await stopRunProcesses(processMarker)
-          finish(stopped)
         }
 
         const signalGroup = (signal: NodeJS.Signals) => {
@@ -1235,14 +1296,18 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             sessionId: account.receipt.sessionId,
             usage: codexUsage(account.receipt.tokens, request.model),
           }
+          note()
           signalGroup('SIGTERM')
-          // A direct child may close before its shell tools do. Finish only
-          // after the entire process group has received the hard stop and the
-          // CLI's pipes have closed, so callers may safely remove a checkout.
+          // Finish only after the group has had the hard stop and every process
+          // still carrying the run's marker is gone. A detached tool may hold
+          // the CLI's pipes open, so `close` is not waited for.
           hard = setTimeout(() => {
             signalGroup('SIGKILL')
             hard = null
-            void finishStopped()
+            stopRunProcesses(processMarker, seen).then(
+              () => finish(stopped!),
+              () => finish(stopped!),
+            )
           }, 5_000)
         }
 
@@ -1268,16 +1333,21 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           }),
         )
 
+        // `close` waits for every holder of the pipes, so a detached tool that
+        // inherited them would keep it from ever firing: reap on `exit`, which
+        // releases the pipes.
+        child.on('exit', () => {
+          if (stopped !== null || settled) return
+          signalGroup('SIGKILL')
+          stopRunProcesses(processMarker, seen).catch(() => {})
+        })
+
         child.on('close', async (code) => {
-          closed = true
-          if (stopped !== null) {
-            await finishStopped()
-            return
-          }
+          if (stopped !== null) return
           // A CLI that exited while a tool left a same-group subprocess behind
           // must not hand its checkout back with that subprocess still running.
           signalGroup('SIGKILL')
-          await stopRunProcesses(processMarker)
+          await stopRunProcesses(processMarker, seen)
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()

@@ -876,7 +876,7 @@ const { spawn } = require('node:child_process');
 const { writeFileSync } = require('node:fs');
 const tool = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
   detached: true,
-  stdio: 'ignore',
+  stdio: ['ignore', 'inherit', 'inherit'],
 });
 writeFileSync(process.env.TOOL_PID_FILE, String(tool.pid));
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fixture' }));
