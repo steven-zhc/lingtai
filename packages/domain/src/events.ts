@@ -703,9 +703,20 @@ export const RunFailed = z.object({
  * together find the `RunSpent` for one action — there is no call id — which
  * holds only while an action's `name` is unique within its step; `actionsAt`
  * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
+ *
+ * `Action.grant` names the person's decision that paid for the round — the
+ * `waitId` of the `WaitResolved{GrantFixRound}` (or the confirmed
+ * `ContinueConflict`) it spent. It is absent on every automatic round, and
+ * optional so a payload written before it existed still parses.
  */
 export const SpentFor = z.discriminatedUnion('_tag', [
-  z.object({ _tag: z.literal('Action'), step: Step, name: z.string(), round: z.number().int().nonnegative() }),
+  z.object({
+    _tag: z.literal('Action'),
+    step: Step,
+    name: z.string(),
+    round: z.number().int().nonnegative(),
+    grant: WaitId.optional(),
+  }),
   z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),

@@ -568,6 +568,7 @@ export function toCard(
         ? null
         : describeHeld({
             spent: progress.rounds.spent,
+            granted: progress.granted,
             roundsOf: progress.rounds.of ?? limits?.rounds ?? null,
             restarts: t.restarts,
             restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? null),

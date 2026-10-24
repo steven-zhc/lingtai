@@ -1943,6 +1943,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       ? null
       : describeHeld({
           spent: named.rounds.spent,
+          granted: named.granted,
           roundsOf: named.rounds.of ?? limits?.rounds ?? null,
           restarts: standing.restarts,
           restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? null),
