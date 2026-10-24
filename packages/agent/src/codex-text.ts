@@ -80,12 +80,20 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
         const output = receipt.output
         if (
           !Array.isArray(output) ||
-          output.some((item) => !item || typeof item !== 'object' || item.type !== 'message')
+          output.some(
+            (item) =>
+              !item ||
+              typeof item !== 'object' ||
+              (item.type !== 'message' && item.type !== 'reasoning') ||
+              (item.type === 'message' && item.role !== 'assistant'),
+          )
         ) {
           return failure('crash', 'Responses receipt contains a tool call or invalid output')
         }
         if (receipt.status !== 'completed') return failure('crash', `Responses status: ${String(receipt.status)}`)
-        const contents = output.flatMap((item) => (Array.isArray(item.content) ? item.content : []))
+        const contents = output
+          .filter((item) => item.type === 'message')
+          .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
         if (
           contents.some(
             (part) => !part || typeof part !== 'object' || part.type !== 'output_text' || typeof part.text !== 'string',

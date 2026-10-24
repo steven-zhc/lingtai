@@ -21,7 +21,9 @@ const request = (prompt: string): RunRequest => ({
   limits: { turns: 1, wallMs: 1000, usd: 1 },
 })
 
-const receipt = (output: unknown = [{ type: 'message', content: [{ type: 'output_text', text: 'Plain answer' }] }]) =>
+const receipt = (
+  output: unknown = [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Plain answer' }] }],
+) =>
   new Response(
     JSON.stringify({ id: 'resp_1', status: 'completed', output, usage: { input_tokens: 10, output_tokens: 3 } }),
     {
@@ -62,5 +64,17 @@ describe('Codex model-only route', () => {
     tooSmall.limits.usd = 0.000001
     expect((await runtime.run(tooSmall)).failure?.kind).toBe('out-of-usd')
     expect(transport).toHaveBeenCalledOnce()
+  })
+
+  it('accepts nonexecutable reasoning alongside the text message', async () => {
+    const transport = vi.fn(async () =>
+      receipt([
+        { type: 'reasoning', summary: [] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Plain answer' }] },
+      ]),
+    )
+    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    expect(result.text).toBe('Plain answer')
+    expect(result.failure).toBeNull()
   })
 })
