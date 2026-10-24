@@ -138,7 +138,7 @@ export interface ConflictedPath {
   hunks: number
   /** One-based conflict marker lines in the written tree, or line 1 when it has no readable markers. */
   hunkLines: number[]
-  /** The marker-to-marker text of each hunk, parallel to `hunkLines`; empty strings where the file has no readable markers. */
+  /** The marker-to-marker text of each hunk, parallel to `hunkLines`; where the file has no readable markers, the one entry is each stage's content (`stagesText`). */
   hunkTexts?: string[]
 }
 

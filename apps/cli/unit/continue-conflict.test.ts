@@ -196,6 +196,11 @@ describe('continue-conflict', () => {
       expect(other.resolve).not.toHaveBeenCalled()
     })
 
+    it('refuses --accept-recommended when the recorded hunk is not what triage recommended, or nothing is asked for', async () => {
+      expect((await go({ ifBase: BASE, ifHead: HEAD, acceptRecommended: true })).resolve).not.toHaveBeenCalled()
+      expect((await go({ ifBase: BASE, ifHead: HEAD })).resolve).not.toHaveBeenCalled()
+    })
+
     it('resends the recorded resolution when the caller agrees with it', async () => {
       const r = await go({ ifBase: BASE, ifHead: HEAD, choices: { 'a.ts:3': 'mechanical' } })
       expect(r.code).toBe(0)
