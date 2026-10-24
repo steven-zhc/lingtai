@@ -16,7 +16,7 @@ import {
   waitsOf,
   ticketStream,
 } from '@lingtai/domain'
-import { aClaim, aRelease, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aRoute, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -402,47 +402,183 @@ describe('resolveWait', () => {
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })
 
-  describe('ContinueConflict is not built yet (#557, #558)', () => {
-    it('refuses an eligible one by name before any append', async () => {
+  describe('ContinueConflict (#558)', () => {
+    const REF = 'agent/558'
+    const hunks = [
+      { _tag: 'Divergent' as const, path: 'a.ts', line: 1, behavior: 'keep new', adopted: null },
+      { _tag: 'Mechanical' as const, path: 'b.ts', line: 4 },
+    ]
+    const counts = async () => [
+      { path: 'a.ts', hunkLines: [1] },
+      { path: 'b.ts', hunkLines: [4] },
+    ]
+
+    /** Blocked on a conflict between base `SHA` and the preserved head `SHA2`. */
+    async function blocked(opts: { exhausted?: boolean; wip?: boolean } = {}) {
       const store = createMemoryEventStore()
-      const ticketId = ticketStream(PROJECT, 31)
+      const ticketId = ticketStream(PROJECT, 558)
       const item = makeStream(ticketId)
+      const run = aRun('pass-558')
       const waitId = aWaitId()
+      const proposal = {
+        _tag: 'MergeConflict' as const,
+        output: 'conflict',
+        paths: ['a.ts'],
+        baseSha: SHA,
+        headSha: SHA2,
+      }
       await seed(store, ticketId, [
-        ...aClaim(item, 'pass-31'),
+        ...aClaim(item, run.runId),
         ...aWait(
           item,
-          {
-            _tag: 'ProposedEscalated',
-            run: aRunRef('pass-31'),
-            proposal: { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: SHA, headSha: SHA2 },
-            because: { _tag: 'NotAsked' },
-          },
+          { _tag: 'ProposedEscalated', run: aRunRef(run.runId), proposal, because: { _tag: 'NotAsked' } },
           waitId,
         ),
       ])
-      const before = (await store.read(ticketId)).length
+      await seed(store, run.runId, [
+        run.event('RunRefsPublished', {
+          branch: REF,
+          arm: `${REF}-attempt-1`,
+          headSha: SHA2,
+          armSha: opts.wip ? SHA : null,
+          branchCarries: !opts.wip,
+          outcome: opts.wip ? 'arm-only' : 'published',
+          detail: null,
+        }),
+        ...aRoute(run, {
+          offer: {
+            proposal,
+            available: opts.exhausted ? [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }] : [],
+            unavailable: opts.exhausted
+              ? [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }]
+              : [],
+          },
+          reply: { _tag: 'NotAsked' },
+          decision: { _tag: 'Escalated', because: { _tag: 'NotAsked' } },
+        }),
+      ])
+      return { store, ticketId, waitId, run }
+    }
 
-      const result = await resolveWaitHolding(
+    const continued = (
+      b: { store: EventStore; ticketId: string; waitId: ReturnType<typeof aWaitId> },
+      over: Record<string, unknown> = {},
+      options: Record<string, unknown> = {},
+    ) =>
+      resolveWaitHolding(
         {
-          ticketId,
-          issue: 31,
-          waitId,
+          ticketId: b.ticketId,
+          issue: 558,
+          waitId: b.waitId,
           resolution: {
             _tag: 'ContinueConflict',
             baseSha: SHA,
             headSha: SHA2,
-            ref: 'agent/31',
+            ref: REF,
             grantExtraRound: false,
-            hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 1, behavior: 'keep new', adopted: null }],
-          },
+            hunks,
+            ...over,
+          } as never,
           by: 'human:steven',
-          store,
+          base: 'main',
+          conflicts: counts,
+          client: {
+            refSha: async (ref: string) => (ref === 'heads/main' ? SHA : ref === `heads/${REF}` ? SHA2 : null),
+          },
+          store: b.store,
+          ...options,
         },
-        ticketId,
+        b.ticketId,
       )
-      expect(result).toMatchObject({ ok: false, reason: 'not-built' })
-      expect((await store.read(ticketId)).length).toBe(before)
+
+    /** The refusal appended nothing: not to the ticket, and no continuation was requested. */
+    async function expectRefused(
+      b: Awaited<ReturnType<typeof blocked>>,
+      result: Awaited<ReturnType<typeof continued>>,
+      reason: string,
+    ) {
+      const before = (await b.store.read(b.ticketId)).length
+      expect(result).toMatchObject({ ok: false, reason })
+      expect((await b.store.read(b.ticketId)).length).toBe(before)
+      expect((await b.store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(0)
+      expect(waitsOf(await b.store.read(b.ticketId)).at(-1)?.resolution).toBeNull()
+    }
+
+    it('appends one WaitResolved and one ContinueRequested, and a second call adds no second WaitResolved but re-asks for the row', async () => {
+      const b = await blocked()
+      expect(await continued(b)).toMatchObject({ ok: true })
+      const resolved = (await b.store.read(b.ticketId)).filter((e) => e.type === 'WaitResolved')
+      expect(resolved).toHaveLength(1)
+      expect(reduceTicket(await b.store.read(b.ticketId)).lifecycle).toMatchObject({
+        status: 'approved',
+        onSha: SHA2,
+        grantRef: REF,
+      })
+      const requests = async () => (await b.store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')
+      expect(await requests()).toHaveLength(1)
+
+      // The way out of an unscheduled continuation: no second resolution, but the
+      // request is owed again, so it is appended again.
+      expect(await continued(b)).toMatchObject({ ok: true })
+      expect((await b.store.read(b.ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
+      expect(await requests()).toHaveLength(2)
+    })
+
+    it('refuses a moved base', async () => {
+      const b = await blocked()
+      const client = { refSha: async (ref: string) => (ref === 'heads/main' ? 'c'.repeat(40) : SHA2) }
+      await expectRefused(b, await continued(b, {}, { client }), 'stale')
+    })
+
+    it('refuses a moved head, and a command naming another one', async () => {
+      const b = await blocked()
+      const client = { refSha: async (ref: string) => (ref === 'heads/main' ? SHA : 'c'.repeat(40)) }
+      await expectRefused(b, await continued(b, {}, { client }), 'stale')
+      await expectRefused(b, await continued(b, { headSha: 'c'.repeat(40) }), 'stale')
+    })
+
+    it('refuses a missing or other preserved ref', async () => {
+      const b = await blocked()
+      const client = { refSha: async (ref: string) => (ref === 'heads/main' ? SHA : null) }
+      await expectRefused(b, await continued(b, {}, { client }), 'stale')
+      await expectRefused(b, await continued(b, { ref: 'agent/other' }), 'stale')
+    })
+
+    it('refuses saved work that is a WIP arm', async () => {
+      const b = await blocked({ wip: true })
+      await expectRefused(b, await continued(b), 'unrecorded-wip')
+    })
+
+    it('refuses hunks that are not the mirror count', async () => {
+      const b = await blocked()
+      await expectRefused(b, await continued(b, { hunks: hunks.slice(0, 1) }), 'hunks-mismatch')
+    })
+
+    it('refuses when the mirror throws, never counting zero hunks', async () => {
+      const b = await blocked()
+      const conflicts = async () => {
+        throw new Error('no git')
+      }
+      await expectRefused(b, await continued(b, {}, { conflicts }), 'conflicts-unreadable')
+    })
+
+    it('refuses by name what it was not handed', async () => {
+      const b = await blocked()
+      await expectRefused(b, await continued(b, {}, { base: undefined }), 'no-base')
+      await expectRefused(b, await continued(b, {}, { conflicts: undefined }), 'no-conflicts')
+      await expectRefused(b, await continued(b, {}, { client: undefined }), 'no-client')
+    })
+
+    it('needs the extra round granted once the automatic rounds are spent', async () => {
+      const b = await blocked({ exhausted: true })
+      await expectRefused(b, await continued(b), 'grant-required')
+      expect(await continued(b, { grantExtraRound: true })).toMatchObject({ ok: true })
+      expect(waitsOf(await b.store.read(b.ticketId)).at(-1)?.resolution).toMatchObject({ grantExtraRound: true })
+    })
+
+    it('refuses a grant nobody needed', async () => {
+      const b = await blocked()
+      await expectRefused(b, await continued(b, { grantExtraRound: true }), 'grant-not-needed')
     })
   })
 

@@ -353,7 +353,14 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       // not a fresh claim, and `block.runId` is never null here:
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
-      if ((d.resolution._tag === 'Approve' || d.resolution._tag === 'GrantFixRound') && block !== null) {
+      // `ContinueConflict` is a conflict-flavoured `GrantFixRound` (#558): it
+      // continues on the preserved head at `headSha`, on `ref`.
+      if (
+        (d.resolution._tag === 'Approve' ||
+          d.resolution._tag === 'GrantFixRound' ||
+          d.resolution._tag === 'ContinueConflict') &&
+        block !== null
+      ) {
         return {
           ...state,
           ...at,
@@ -361,8 +368,10 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
             status: 'approved',
             runId: block.runId!,
             waitId: block.waitId,
-            onSha: d.resolution.onSha,
-            ...(d.resolution._tag === 'GrantFixRound' ? { grantRef: d.resolution.ref } : {}),
+            onSha: d.resolution._tag === 'ContinueConflict' ? d.resolution.headSha : d.resolution.onSha,
+            ...(d.resolution._tag === 'GrantFixRound' || d.resolution._tag === 'ContinueConflict'
+              ? { grantRef: d.resolution.ref }
+              : {}),
           },
         }
       }

@@ -36,8 +36,11 @@ import {
 } from '@lingtai/domain'
 import {
   allowedResolutions,
+  conflictRoundsExhausted,
+  continueConflictRefusal,
   describeSplitProblem,
   splitPlanProblems,
+  type ContinueConflictRefusal,
   type Resolution,
   type WaitReason,
 } from '@lingtai/domain/wait'
@@ -139,6 +142,17 @@ export interface ResolveWaitOptions {
    * need one of them or the queue never sees the child.
    */
   kinds?: readonly string[]
+  /**
+   * The recipe's base branch — read only for `ContinueConflict`, whose
+   * confirmed `baseSha` must still be that branch's tip (0118 §8).
+   */
+  base?: string
+  /**
+   * The mirror's own hunk count for a merge of `headSha` into `baseSha` —
+   * `conflictedPathsAt` in production (the count triage makes). Read only for
+   * `ContinueConflict`; injected because it is git.
+   */
+  conflicts?: (baseSha: string, headSha: string) => Promise<readonly { path: string; hunkLines: readonly number[] }[]>
   store?: EventStore
 }
 
@@ -194,13 +208,17 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // `resolve-wait.test.ts`'s own check holds to — and asks only for the
   // row the first one was owed.
   if (
-    (options.resolution._tag === 'Approve' || options.resolution._tag === 'GrantFixRound') &&
+    (options.resolution._tag === 'Approve' ||
+      options.resolution._tag === 'GrantFixRound' ||
+      options.resolution._tag === 'ContinueConflict') &&
     item.lifecycle.status === 'approved' &&
     item.lifecycle.waitId === options.waitId &&
-    (options.resolution._tag === 'GrantFixRound'
-      ? item.lifecycle.grantRef !== undefined &&
-        (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
-      : item.lifecycle.onSha === options.resolution.onSha)
+    (options.resolution._tag === 'ContinueConflict'
+      ? item.lifecycle.grantRef === options.resolution.ref && item.lifecycle.onSha === options.resolution.headSha
+      : options.resolution._tag === 'GrantFixRound'
+        ? item.lifecycle.grantRef !== undefined &&
+          (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
+        : item.lifecycle.onSha === options.resolution.onSha)
   ) {
     const parsed = parseTicketStream(ticketId)!
     const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
@@ -228,16 +246,12 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
-  // The contract exists (#557) and the effect behind it does not (#558). A
-  // `WaitResolved{ContinueConflict}` appended now would leave a resolved wait
-  // that nothing continues, so it is refused before any append.
+  // **A conflict continued is a fix round with the person's choices in its
+  // brief** (#558, 0118 §8, §11). Every check below returns before the append,
+  // so a refusal resolves nothing and spends no round.
   if (options.resolution._tag === 'ContinueConflict') {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-built',
-      detail: 'ContinueConflict is not runnable yet — no continuation runs, so nothing was resolved.',
-    }
+    const refused = await checkContinueConflict(options, store, ticketId, block, options.resolution)
+    if (refused !== null) return refused
   }
 
   // **A split is checked, and then not built, until the effects exist (#561,
@@ -270,51 +284,9 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
 
   let resolution = options.resolution
   if (resolution._tag === 'GrantFixRound') {
-    if (block.runId === null)
-      return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
-    const events = await store.read(block.runId)
-    const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
-    const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
-    // A WIP commit on the arm does not taint the clean head already published
-    // on the issue branch. Continue that head; never cut from the WIP arm.
-    const cleanBranch =
-      saved !== undefined &&
-      (saved.outcome === 'published' || saved.outcome === 'already-published') &&
-      saved.branchCarries !== false
-    if (saved?.armSha != null && !cleanBranch) {
-      const recorded = events.some(
-        (e) =>
-          e.type === 'RunKeptUncommitted' &&
-          (e.data as PayloadOf<'RunKeptUncommitted'>).sha === saved.armSha &&
-          (e.data as PayloadOf<'RunKeptUncommitted'>).arm === saved.arm,
-      )
-      return {
-        ok: false,
-        ticketId,
-        reason: recorded ? 'wip-head' : 'unrecorded-wip',
-        detail: recorded
-          ? `Run ${block.runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
-          : `Run ${block.runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
-      }
-    }
-    if (saved?.outcome === 'arm-only') {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'branch-diverged',
-        detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
-      }
-    }
-    const head = cleanBranch ? saved.headSha : null
-    const ref = cleanBranch ? saved.branch : null
-    if (!head || !ref) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'no-saved-head',
-        detail: `Run ${block.runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
-      }
-    }
+    const saved = await savedHead(store, ticketId, block.runId)
+    if (!saved.ok) return saved
+    const { head, ref } = saved
     if (resolution.onSha && resolution.onSha !== head) {
       return {
         ok: false,
@@ -395,7 +367,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
   // a reason to say the approval itself did not happen.
   let unscheduled: string | undefined
-  if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') {
+  if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound' || resolution._tag === 'ContinueConflict') {
     const parsed = parseTicketStream(ticketId)
     if (parsed !== null) {
       unscheduled =
@@ -404,6 +376,187 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   }
 
   return unscheduled === undefined ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+}
+
+type Refused = { ok: false; ticketId: string; reason: string; detail: string }
+
+/**
+ * The clean head a held run published and a fix can continue from — shared by
+ * `GrantFixRound` and `ContinueConflict` so the two cannot drift on what
+ * counts as saved work.
+ */
+async function savedHead(
+  store: EventStore,
+  ticketId: string,
+  runId: string | null,
+): Promise<Refused | { ok: true; head: string; ref: string }> {
+  if (runId === null) return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
+  const events = await store.read(runId)
+  const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
+  const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
+  // A WIP commit on the arm does not taint the clean head already published
+  // on the issue branch. Continue that head; never cut from the WIP arm.
+  const cleanBranch =
+    saved !== undefined &&
+    (saved.outcome === 'published' || saved.outcome === 'already-published') &&
+    saved.branchCarries !== false
+  if (saved?.armSha != null && !cleanBranch) {
+    const recorded = events.some(
+      (e) =>
+        e.type === 'RunKeptUncommitted' &&
+        (e.data as PayloadOf<'RunKeptUncommitted'>).sha === saved.armSha &&
+        (e.data as PayloadOf<'RunKeptUncommitted'>).arm === saved.arm,
+    )
+    return {
+      ok: false,
+      ticketId,
+      reason: recorded ? 'wip-head' : 'unrecorded-wip',
+      detail: recorded
+        ? `Run ${runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
+        : `Run ${runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
+    }
+  }
+  if (saved?.outcome === 'arm-only') {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'branch-diverged',
+      detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
+    }
+  }
+  const head = cleanBranch ? saved.headSha : null
+  const ref = cleanBranch ? saved.branch : null
+  if (!head || !ref) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-saved-head',
+      detail: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+    }
+  }
+  return { ok: true, head, ref }
+}
+
+const CONTINUE_CONFLICT_REFUSED: Record<ContinueConflictRefusal, { reason: string; detail: string }> = {
+  NotOffered: {
+    reason: 'not-offered',
+    detail: 'ContinueConflict is not offered for this wait — nothing was resolved.',
+  },
+  Stale: {
+    reason: 'stale',
+    detail:
+      'The conflict moved since it was read: its base or head is not the one confirmed. Nothing was resolved — reload and read it again.',
+  },
+  TooManyHunks: {
+    reason: 'too-many-hunks',
+    detail:
+      'The conflict has more hunks than can be confirmed one by one — nothing was resolved. Requeue for a fresh pass.',
+  },
+  HunksMismatch: {
+    reason: 'hunks-mismatch',
+    detail:
+      "The confirmed hunks are not exactly the conflict's own — nothing was resolved. Reload and confirm every hunk once.",
+  },
+  GrantRequired: {
+    reason: 'grant-required',
+    detail:
+      'The automatic fix rounds are spent, so continuing needs one extra round expressly granted — nothing was resolved.',
+  },
+  GrantNotNeeded: {
+    reason: 'grant-not-needed',
+    detail: 'An automatic round is still available, so no extra round is granted — nothing was resolved.',
+  },
+}
+
+/**
+ * Every check a `ContinueConflict` must pass before `WaitResolved` is written
+ * (0118 §8, §11): the wait offers it, the person's base/head and hunks are the
+ * conflict's own, the preserved branch still holds the saved head, the base is
+ * still the tip that was confirmed, and an extra round is granted exactly when
+ * one is needed. A port that throws is a refusal, never zero hunks.
+ */
+async function checkContinueConflict(
+  options: ResolveWaitOptions,
+  store: EventStore,
+  ticketId: string,
+  block: Extract<ReturnType<typeof reduceTicket>['lifecycle'], { status: 'blocked' }>,
+  resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
+): Promise<Refused | null> {
+  if (options.base === undefined)
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-base',
+      detail:
+        "A conflict continuation needs the recipe's base branch to check it has not moved — nothing was resolved.",
+    }
+  if (options.conflicts === undefined)
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-conflicts',
+      detail: "A conflict continuation needs the mirror's own hunk count — nothing was resolved.",
+    }
+  if (options.client === undefined)
+    return {
+      ok: false,
+      ticketId,
+      reason: 'no-client',
+      detail: 'A remote ref check is required before continuing a conflict — nothing was resolved.',
+    }
+  if (block.runId === null)
+    return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
+
+  let counted: { path: string; line: number | null }[]
+  try {
+    const paths = await options.conflicts(resolution.baseSha, resolution.headSha)
+    counted = paths.flatMap((p) => p.hunkLines.map((line) => ({ path: p.path, line })))
+  } catch (err) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'conflicts-unreadable',
+      detail: `The mirror could not count the conflict's hunks (${err instanceof Error ? err.message : String(err)}) — nothing was resolved.`,
+    }
+  }
+  const runEvents = await store.read(block.runId)
+  const refusal = continueConflictRefusal(
+    block.reason,
+    resolution,
+    counted,
+    conflictRoundsExhausted(runEvents, resolution.headSha),
+  )
+  if (refusal !== null) return { ok: false, ticketId, ...CONTINUE_CONFLICT_REFUSED[refusal] }
+
+  const saved = await savedHead(store, ticketId, block.runId)
+  if (!saved.ok) return saved
+  if (saved.head !== resolution.headSha || saved.ref !== resolution.ref) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail: `The saved work is ${saved.head} on ${saved.ref}, not the confirmed ${resolution.headSha} on ${resolution.ref}. Nothing was resolved — reload and read it again.`,
+    }
+  }
+  const remote = await options.client.refSha(`heads/${resolution.ref}`).catch(() => null)
+  if (remote !== resolution.headSha) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail: `${resolution.ref} is ${remote ?? 'missing'}, not the confirmed ${resolution.headSha}. Nothing was resolved — restore that ref or requeue for a fresh pass.`,
+    }
+  }
+  const base = await options.client.refSha(`heads/${options.base}`).catch(() => null)
+  if (base !== resolution.baseSha) {
+    return {
+      ok: false,
+      ticketId,
+      reason: 'stale',
+      detail: `${options.base} is ${base ?? 'missing'}, not the confirmed ${resolution.baseSha}: the base moved, so the confirmation grants nothing for it. Nothing was resolved — reload and read it again.`,
+    }
+  }
+  return null
 }
 
 /**
