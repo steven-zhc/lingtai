@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
+import { ResolutionCard, TriagePicks } from '../src/app/triage-picks.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   currentTriageStatus,
@@ -1468,7 +1469,7 @@ it('keeps the completed current triage with the head its attempt read', () => {
   })
 })
 
-it('shows both readings only when judge and triage disagree, without changing the resolutions', () => {
+it('shows both readings only when judge and triage disagree, and recommends neither until one is picked', () => {
   const reason = {
     ...HELD.reason!,
     because: { _tag: 'JudgeHandedOver' as const, why: 'needs a person' },
@@ -1502,7 +1503,32 @@ it('shows both readings only when judge and triage disagree, without changing th
   expect(agreeing).toContain('class="triage-cause cause-chip cause-chip--oversized">Ticket too big</p>')
   expect(agreeing).not.toContain('TicketTooBig')
   expect(agreeing).toContain('triage advice')
-  expect(moves(disagreeing)).toBe(moves(agreeing))
+  expect(moves(agreeing)).toContain('sresolution--recommended')
+  expect(moves(disagreeing)).not.toContain('sresolution--recommended')
+  expect(moves(disagreeing)).not.toContain('sresolutionbadge')
+  expect(disagreeing).toContain('The judge is right')
+  expect(disagreeing).toContain('Triage is right')
+  expect(disagreeing).toContain('Neither')
+  expect(disagreeing.match(/name="triage-reading"/g)).toHaveLength(3)
+  expect(disagreeing).not.toMatch(/name="triage-reading"[^>]*checked=""[^>]*value="(judge|triage)"/)
+  expect(disagreeing).toContain('Recommends Close')
+})
+
+it('a picked reading draws its resolution first, and the card badge names whose it is', () => {
+  const by = { none: false, judge: true, triage: false }
+  const html = (reading: 'judge' | 'triage' | null) =>
+    renderToStaticMarkup(
+      <TriagePicks waitId={null} questions={[]} initialReading={reading}>
+        <ResolutionCard by={by} disagreed className="sresolution" head={<h3>Requeue</h3>}>
+          body
+        </ResolutionCard>
+      </TriagePicks>,
+    )
+  expect(html(null)).not.toContain('sresolution--recommended')
+  expect(html('triage')).not.toContain('sresolution--recommended')
+  expect(html('judge')).toContain('sresolution--recommended')
+  expect(html('judge')).toContain('Judge’s reading')
+  expect(html('judge')).toContain('order:-1')
 })
 
 describe('the moves the column ends in', () => {

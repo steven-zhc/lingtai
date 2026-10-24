@@ -12,7 +12,9 @@ import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
 import {
   allowedResolutions,
   continuationOf,
+  disagreement,
   grantCriterion,
+  judgeResolution,
   recommendedResolution,
   triageStatus,
   waivedActionsAt,
@@ -402,6 +404,85 @@ describe('allowedResolutions', () => {
 })
 
 describe('recommendedResolution', () => {
+  describe('a judge and triage disagreement (#575)', () => {
+    const escalated = (because: unknown) =>
+      parseReason({
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'CheckRefused', from: 'proposed', output: 'red', action: 'run:test' },
+        because,
+      })
+    const fixable: TriageResult = {
+      _tag: 'TriageAdvised',
+      cause: { _tag: 'FixableLines', fixes: [] },
+      resolution: 'Close',
+      summary: 'triage advice',
+      want: null,
+    }
+    const done: TriageStatus = { _tag: 'Done', result: fixable }
+    const unavailable = escalated({
+      _tag: 'CandidateUnavailable',
+      excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+    })
+    const handedOver = escalated({ _tag: 'JudgeHandedOver', why: 'needs a person' })
+
+    it('recommends nothing until a reading is picked', () => {
+      const open = disagreement(handedOver, fixable)
+      expect(open).not.toBeNull()
+      expect(recommendedResolution(handedOver, done)).toBe('Close')
+      expect(recommendedResolution(handedOver, done, { disagreement: open })).toBeNull()
+      expect(recommendedResolution(handedOver, done, { disagreement: open, picked: null })).toBeNull()
+    })
+
+    it('draws triage’s resolution when triage is picked, as with no disagreement', () => {
+      const open = disagreement(handedOver, fixable)
+      expect(recommendedResolution(handedOver, done, { disagreement: open, picked: 'triage' })).toBe(
+        recommendedResolution(handedOver, done),
+      )
+    })
+
+    it('draws the judge’s resolution when the judge is picked, if it is offered', () => {
+      const open = disagreement(unavailable, fixable)
+      expect(open?.judge.chose).toBe('restart')
+      expect(allowedResolutions(unavailable)).toContain('Requeue')
+      expect(recommendedResolution(unavailable, done, { disagreement: open, picked: 'judge' })).toBe('Requeue')
+    })
+
+    it('draws nothing when the judge handed the wait to a person', () => {
+      const open = disagreement(handedOver, fixable)
+      expect(recommendedResolution(handedOver, done, { disagreement: open, picked: 'judge' })).toBeNull()
+    })
+
+    it('ignores a pick where there is no disagreement', () => {
+      expect(recommendedResolution(handedOver, done, { disagreement: null, picked: 'judge' })).toBe('Close')
+    })
+
+    it('judgeResolution reads the candidate id alone', () => {
+      expect(judgeResolution('fix-lines')).toBe('GrantFixRound')
+      expect(judgeResolution('restart')).toBe('Requeue')
+      expect(judgeResolution('state-assumption')).toBe('EditBodyAndRequeue')
+      expect(judgeResolution('hand-to-person')).toBeNull()
+      expect(judgeResolution('something-else')).toBeNull()
+    })
+
+    it('does not draw GrantFixRound for the judge without a saved head', () => {
+      const lines = escalated({
+        _tag: 'CandidateUnavailable',
+        excluded: { id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } },
+      })
+      const wrong: TriageResult = { ...fixable, cause: { _tag: 'WrongApproach' } }
+      const open = disagreement(lines, wrong)
+      expect(open).not.toBeNull()
+      expect(
+        recommendedResolution(
+          lines,
+          { _tag: 'Done', result: wrong },
+          { disagreement: open, picked: 'judge', savedHead: false },
+        ),
+      ).toBeNull()
+    })
+  })
+
   describe('Split (#560)', () => {
     const plan = {
       children: [

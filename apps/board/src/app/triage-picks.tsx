@@ -3,10 +3,14 @@
 import type { TriageQuestion, WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
-type Picks = { waitId: WaitId | null; answers: Record<number, string> }
+export type Reading = 'judge' | 'triage'
+type Picks = { waitId: WaitId | null; answers: Record<number, string>; reading: Reading | null }
 type TriageDraft = {
   waitId: WaitId | null
   text: string
+  /** Which of a judge/triage disagreement's readings the person chose — page state, never an event (0118 §6). */
+  reading: Reading | null
+  pickReading: (reading: Reading | null) => void
   selected: (index: number, question: TriageQuestion) => string
   pick: (index: number, answerId: string) => void
 }
@@ -17,14 +21,18 @@ const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
 export function TriagePicks({
   waitId,
   questions,
+  initialReading = null,
   children,
 }: {
   waitId: WaitId | null
   questions: readonly TriageQuestion[]
+  /** For a static render, which has no click to make the pick with. */
+  initialReading?: Reading | null
   children: ReactNode
 }) {
-  const [picks, setPicks] = useState<Picks>({ waitId, answers: {} })
+  const [picks, setPicks] = useState<Picks>({ waitId, answers: {}, reading: initialReading })
   const answers = picks.waitId === waitId ? picks.answers : {}
+  const reading = picks.waitId === waitId ? picks.reading : null
   const selected = (index: number, question: TriageQuestion) => answers[index] ?? question.recommended
   const text = questions
     .map((question, index) => {
@@ -36,9 +44,16 @@ export function TriagePicks({
     setPicks((current) => ({
       waitId,
       answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
+      reading: current.waitId === waitId ? current.reading : null,
+    }))
+  const pickReading = (next: Reading | null) =>
+    setPicks((current) => ({
+      waitId,
+      answers: current.waitId === waitId ? current.answers : {},
+      reading: next,
     }))
 
-  return <Context.Provider value={{ waitId, text, selected, pick }}>{children}</Context.Provider>
+  return <Context.Provider value={{ waitId, text, reading, pickReading, selected, pick }}>{children}</Context.Provider>
 }
 
 export function useTriageDraft(): TriageDraft | null {
@@ -74,5 +89,97 @@ export function TriageChoices({ question, index }: { question: TriageQuestion; i
         ))}
       </div>
     </fieldset>
+  )
+}
+
+/**
+ * Which reading of a judge/triage disagreement is right (0118 §5). Choosing
+ * only decides which resolution is drawn first; it resolves nothing and
+ * writes nothing.
+ */
+export function ReadingChoice({ judgeDrawsNothing }: { judgeDrawsNothing: boolean }) {
+  const draft = useTriageDraft()
+  const reading = draft?.reading ?? null
+  const options: { value: Reading | null; label: string; note: string | null }[] = [
+    {
+      value: 'judge',
+      label: 'The judge is right',
+      note: judgeDrawsNothing ? 'The judge handed this wait to you, so no resolution is drawn first.' : null,
+    },
+    { value: 'triage', label: 'Triage is right', note: null },
+    { value: null, label: 'Neither', note: 'No resolution is drawn first.' },
+  ]
+  return (
+    <fieldset className="triage-choices">
+      <legend className="triage-choices-question">Which reading is right?</legend>
+      <div className="triage-choices-grid">
+        {options.map((option) => (
+          <label
+            key={option.value ?? 'neither'}
+            className={`triage-choice${reading === option.value ? ' triage-choice--selected' : ''}`}
+          >
+            <span className="triage-choice-main">
+              <input
+                type="radio"
+                name="triage-reading"
+                value={option.value ?? ''}
+                checked={reading === option.value}
+                onChange={() => draft?.pickReading(option.value)}
+              />
+              <span className="triage-choice-text">
+                {option.label}
+                {option.note !== null ? ` — ${option.note}` : ''}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+/**
+ * One resolution card. `by` says whether it is the recommended one under each
+ * reading, as `recommendedResolution` answered it on the server; the person's
+ * pick selects among those answers here. Order is CSS `order`, so the keyed
+ * body editor stays mounted.
+ */
+export function ResolutionCard({
+  by,
+  disagreed,
+  className,
+  head,
+  children,
+  ...rest
+}: {
+  by: { none: boolean; judge: boolean; triage: boolean }
+  disagreed: boolean
+  className: string
+  head: ReactNode
+  children: ReactNode
+  'data-resolution'?: string
+  hidden?: boolean
+}) {
+  const reading = useTriageDraft()?.reading ?? null
+  const recommended = by[reading ?? 'none']
+  const badge = recommended ? (
+    <span className="sresolutionbadge">
+      {disagreed && reading === 'judge' ? 'Judge’s reading' : 'Triage recommended'}
+    </span>
+  ) : null
+  return (
+    <article
+      className={`${className}${recommended ? ' sresolution--recommended' : ''}`}
+      style={disagreed ? { order: recommended ? -1 : 0 } : undefined}
+      {...rest}
+    >
+      {head !== null ? (
+        <div className="sresolutionhead">
+          {head}
+          {badge}
+        </div>
+      ) : null}
+      {children}
+    </article>
   )
 }
