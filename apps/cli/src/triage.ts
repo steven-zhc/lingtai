@@ -552,7 +552,13 @@ export async function waitTriage(
     try {
       const gathered = await gatherEvidence(deps, request, before)
       const evidence = gathered.evidence
-      evidence.conflicts = conflictPaths
+      // The hunk texts are for the board's form, whole; triage never saw them and its prompt bounds each file side.
+      evidence.conflicts =
+        conflictPaths?.map((path) => {
+          const bounded = { ...path }
+          delete bounded.hunkTexts
+          return bounded
+        }) ?? null
       baseSha = gathered.baseSha
       headSha = gathered.headSha
 

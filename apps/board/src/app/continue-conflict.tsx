@@ -50,7 +50,7 @@ export function ContinueConflict({
   // band for that hunk; `seen` is the pick each row had when last rendered, so
   // any change to it, including a return to an earlier answer, supersedes them.
   const [own, setOwn] = useState<Record<string, ConflictChoice | undefined>>({})
-  const [seen, setSeen] = useState<Record<string, string | null>>({})
+  const [seen, setSeen] = useState<Record<string, string>>({})
   const [grant, setGrant] = useState(false)
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
@@ -70,11 +70,17 @@ export function ContinueConflict({
     const index = bandIndex(row)
     return row.question === null || index < 0 || draft === null ? null : draft.selected(index, row.question)
   }
+  // The stamp also counts every action on the band's radios, so re-clicking the answer already checked there supersedes a written override too.
+  const stamp = (row: ConflictRow) => {
+    const index = bandIndex(row)
+    return `${picked(row)}#${index < 0 || draft === null ? 0 : draft.touched(index)}`
+  }
   const picks = work.rows.map((row) => [conflictRowKey(row), picked(row)] as const)
-  const changed = picks.filter(([key, pick]) => key in seen && seen[key] !== pick).map(([key]) => key)
-  if (picks.some(([key, pick]) => seen[key] !== pick)) {
+  const stamps = work.rows.map((row) => [conflictRowKey(row), stamp(row)] as const)
+  const changed = stamps.filter(([key, mark]) => key in seen && seen[key] !== mark).map(([key]) => key)
+  if (stamps.some(([key, mark]) => seen[key] !== mark)) {
     // Adjusting state while rendering is React's own form of "reset on change": it re-renders before paint.
-    setSeen(Object.fromEntries(picks))
+    setSeen(Object.fromEntries(stamps))
     if (changed.length > 0)
       setOwn((all) => Object.fromEntries(Object.entries(all).filter(([key]) => !changed.includes(key))))
   }
