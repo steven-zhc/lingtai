@@ -6,6 +6,8 @@ import {
   type RunOutcome,
   type RunRequest,
 } from '@lingtai/agent'
+import { holdDiscussion } from '@lingtai/conductor/discuss'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
 /**
  * `discussionAsk`: what a round's `call` — the recipe's `discuss.limits` and
@@ -47,6 +49,80 @@ function stubRuntime(): { runtime: Runtime; requests: RunRequest[] } {
 }
 
 describe('discussionAsk', () => {
+  it('answers through the tool-free Codex adapter and records its usage on RunSpent', async () => {
+    const store = createMemoryEventStore()
+    const requests: RequestInit[] = []
+    const runtime = createRuntime('codex', {
+      tools: 'none',
+      codexText: {
+        config: {
+          apiKey: 'test-only',
+          model: 'priced-model',
+          maxOutputTokens: 64,
+          maxUsd: 1,
+          inputUsdPerMillion: 1,
+          outputUsdPerMillion: 1,
+        },
+        transport: async (_url, init) => {
+          requests.push(init)
+          return Response.json({
+            id: 'response-1',
+            status: 'completed',
+            usage: { input_tokens: 10, output_tokens: 12 },
+            output: [
+              {
+                type: 'message',
+                role: 'assistant',
+                content: [{ type: 'output_text', text: '{"answer":"Codex answered","cannot":[],"proposal":null}' }],
+              },
+            ],
+          })
+        },
+      },
+    })
+    const held = await holdDiscussion(
+      {
+        store,
+        serve: async () => null,
+        ask: discussionAsk(runtime, {
+          runId: async () => 'chat-codex:0:0',
+          cwd: '/tmp/chat-codex',
+          settingsPath: '/tmp/no-tools',
+          log: NO_RUN_LOG,
+        }),
+      },
+      {
+        chatId: 'codex',
+        question: 'Why?',
+        by: 'human:test',
+        runtime: 'codex',
+        call: { model: 'priced-model', turns: 2, wallMs: 1000 },
+        evidence: {
+          ticketId: 'ticket-lingtai-1',
+          attempt: null,
+          ticket: { ref: '1', title: 'test', body: 'test' },
+          ticketProblem: null,
+          triage: null,
+          log: [],
+          reading: [],
+          refs: [],
+        },
+      },
+    )
+    expect(held.answered).toBe(true)
+    expect(requests).toHaveLength(1)
+    expect(JSON.parse(requests[0]!.body as string)).toMatchObject({
+      model: 'priced-model',
+      tools: [],
+      tool_choice: 'none',
+      max_output_tokens: 64,
+    })
+    const events = await store.read('chat-codex')
+    expect(events.map((event) => event.type)).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
+    expect(events[1]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
+    expect(events[2]?.data).toMatchObject({ text: 'Codex answered', failure: null })
+  })
+
   it("carries the recipe's turns and wall onto the runtime's limits", async () => {
     const { runtime, requests } = stubRuntime()
     const ask = discussionAsk(runtime, {

@@ -6,6 +6,7 @@ import { isSea } from 'node:sea'
 
 import {
   RUN_LIMITS,
+  ToolsCannotBeDenied,
   type AuthStatus,
   type Runtime,
   type RuntimeCapabilities,
@@ -73,6 +74,8 @@ import {
   githubAppValues,
   hasGitHubApp,
   machineDatabaseUrl,
+  codexTextConfig,
+  type CodexTextConfig,
   postgresUrlIfSet,
   repoRoot,
   storeChoice,
@@ -899,6 +902,8 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
+  codexText: () => CodexTextConfig | undefined
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -2063,6 +2068,28 @@ async function dispatchedAuthRow(
   }
 }
 
+/** Check the separately billed, tool-free route named by a recipe role. */
+function codexRoleRow(
+  project: string,
+  role: 'discuss' | 'triage',
+  model: string | undefined,
+  configured: () => CodexTextConfig | undefined,
+): CheckResult {
+  const name = `${role}: ${project} codex ready`
+  try {
+    const config = configured()
+    if (!config) throw new ToolsCannotBeDenied('codex')
+    // The same factory used at dispatch; never probe the Codex CLI as a substitute.
+    createRuntime('codex', { tools: 'none', codexText: { config } })
+    if (model && model !== config.model) {
+      return { name, status: 'fail', detail: `${role}.model differs from codex_text.model and its configured prices` }
+    }
+    return { name, status: 'ok', detail: `model-only API route ready for ${role}; separately billed` }
+  } catch (err) {
+    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}` }
+  }
+}
+
 export async function declaredEnvironment(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
@@ -2143,6 +2170,14 @@ export async function declaredEnvironment(
       // question from whether its declared limits bind, and the one nothing
       // asked between `runtimeAuth` becoming per-machine and this row.
       results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
+      for (const role of ['discuss', 'triage'] as const) {
+        const selected = resolved.recipe[role]
+        if (selected?.agent === 'codex') {
+          results.push(
+            codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
+          )
+        }
+      }
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.

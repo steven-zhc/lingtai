@@ -1,4 +1,4 @@
-import type { Runtime, RunOutcome, RunRequest } from '@lingtai/agent'
+import { createRuntime, type Runtime, type RunOutcome, type RunRequest } from '@lingtai/agent'
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
 import { aRunRef, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -245,6 +245,48 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
 }
 
 describe('waitTriage', () => {
+  it('records Codex advice and usage from an eligible wait without granting tools', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 81)
+    const sent: RequestInit[] = []
+    const runtime = createRuntime('codex', {
+      tools: 'none',
+      codexText: {
+        config: {
+          apiKey: 'test-only',
+          model: 'priced-model',
+          maxOutputTokens: 128,
+          maxUsd: 1,
+          inputUsdPerMillion: 1,
+          outputUsdPerMillion: 1,
+        },
+        transport: async (_url, init) => {
+          sent.push(init)
+          return Response.json({
+            id: 'response-1',
+            status: 'completed',
+            usage: { input_tokens: 10, output_tokens: 20 },
+            output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: ADVICE_TEXT }] }],
+          })
+        },
+      },
+    })
+    const triage = Triage.parse({ agent: 'codex', model: 'priced-model', limits: { turns: 2, wall: '30s', usd: 0.5 } })
+    const factory = vi.fn(() => runtime)
+    const held = await waitTriage(
+      fakeDeps(store, runtime, { runtime: factory }),
+      requestOn(ticketId, aWaitId(), { triage }),
+    )
+    expect(held.result._tag).toBe('TriageAdvised')
+    expect(factory).toHaveBeenCalledWith('codex', { tools: 'none' })
+    expect(sent).toHaveLength(1)
+    expect(JSON.parse(sent[0]!.body as string)).toMatchObject({ tools: [], tool_choice: 'none' })
+    const events = await store.read(ticketId)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(events[1]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
+    expect(events[2]?.data).toMatchObject({ result: { _tag: 'TriageAdvised' } })
+  })
+
   it('answers over twenty hunks mechanically without creating a runtime or recording spend', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 414)

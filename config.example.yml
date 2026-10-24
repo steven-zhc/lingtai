@@ -76,14 +76,25 @@ board:
 # Set all fields together here or as LINGTAI_CODEX_TEXT_* exported variables.
 # Prices must be conservative upper bounds in USD per million tokens for the
 # exact model. Without this complete block, Codex discussions refuse dispatch.
+# A bounded recipe.yml example for the same model:
+#   discuss:
+#     agent: codex
+#     model: gpt-5.1-codex
+#     limits: { turns: 2, wall: 30s }
+#   triage:
+#     agent: codex
+#     model: gpt-5.1-codex
+#     limits: { turns: 2, wall: 30s, usd: 0.25 }
+# Discussion may make up to five calls per question. Verify the model's current
+# prices and set conservative upper bounds; API billing is separate from Codex login.
 # codex_text:
 #   approved: 'true'
 #   api_key: <separately billed OpenAI API key>
-#   model: <Responses API model id>
+#   model: gpt-5.1-codex
 #   max_output_tokens: 1024
-#   max_usd: 0.10
-#   input_usd_per_million: <upper bound for input tokens>
-#   output_usd_per_million: <upper bound for output tokens>
+#   max_usd: 0.25
+#   input_usd_per_million: 10
+#   output_usd_per_million: 30
 
 # --- the tests --------------------------------------------------------------
 # Nothing here, on purpose. A test never reads this file: it is exactly the
