@@ -996,6 +996,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
+        // The wait this continuation resumes: a fresh UUID per wait, so it is
+        // what tells one continuation's judge from the next one's (#580).
+        resumedWaitId: approvedWaitId,
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
@@ -1403,6 +1406,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * arrivals that may share a commit — a `needs-input` and the `findings`
        * after it — so the commit is not the thing that differs, and the number of
        * times this pass has paid for a judgement is.
+       *
+       * **Within one `conduct` call only** (#580): a continuation of the same run
+       * starts it at zero again, so its first judgement would repeat the
+       * previous continuation's. The id also carries the wait the continuation
+       * resumes (`continuation.resumedWaitId`, `'start'` for a fresh claim),
+       * which differs between continuations by construction.
        */
       let judgements = 0
       /**
@@ -2445,8 +2454,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     // sessions: a judge asked whether it still agrees with itself
                     // is the warm-review failure `sessionIdFor` exists to avoid,
                     // and a session id reused is the refusal `#195` cost a run.
-                    // See `judgements`.
-                    runId: `${runId}:judge:${on.when}:${judgements}`,
+                    // The wait this continuation resumes is in it too, since the
+                    // count restarts in each one (#580). See `judgements`.
+                    runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
                     // The worktree where there is one, and the conductor's own
                     // directory where `admit` never cut one. Nothing is read from
                     // either — the prompt says so — but a process still needs a
