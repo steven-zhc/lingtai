@@ -1115,6 +1115,9 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         let stdoutTail = ''
         let stderr = ''
         let settled = false
+        let stopped: RunOutcome | null = null
+        let closed = false
+        let hard: ReturnType<typeof setTimeout> | null = null
 
         // Whole lines only: a chunk boundary falls anywhere, and half a JSON
         // object traced as prose would be both unreadable and a lie.
@@ -1145,6 +1148,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           if (settled) return
           settled = true
           clearTimeout(wall)
+          if (hard !== null) clearTimeout(hard)
           request.signal?.removeEventListener('abort', onAbort)
           // On every ending, not only a clean close (`#369`): a kill or a
           // spawn error leaves the file written just as surely as a receipt
@@ -1162,11 +1166,21 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           resolve(outcome)
         }
 
+        const signalGroup = (signal: NodeJS.Signals) => {
+          try {
+            // Codex is spawned detached. Its shell tools inherit this group;
+            // signalling only the CLI leaves them running in the checkout.
+            if (process.platform === 'win32' || child.pid === undefined) child.kill(signal)
+            else process.kill(-child.pid, signal)
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+          }
+        }
+
         const kill = (kind: 'timeout' | 'aborted', detail: string) => {
-          child.kill('SIGTERM')
-          const hard = setTimeout(() => child.kill('SIGKILL'), 5_000)
-          hard.unref?.()
-          finish({
+          if (stopped !== null || settled) return
+          clearTimeout(wall)
+          stopped = {
             exitCode: null,
             // **What the stream counted, not zero.** A run stopped at the wall
             // spent every turn it had taken, and `RunFinished.turns` is what
@@ -1183,7 +1197,16 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             failure: { kind, detail },
             sessionId: account.receipt.sessionId,
             usage: codexUsage(account.receipt.tokens, request.model),
-          })
+          }
+          signalGroup('SIGTERM')
+          // A direct child may close before its shell tools do. Finish only
+          // after the entire process group has received the hard stop and the
+          // CLI's pipes have closed, so callers may safely remove a checkout.
+          hard = setTimeout(() => {
+            signalGroup('SIGKILL')
+            hard = null
+            if (closed) finish(stopped!)
+          }, 5_000)
         }
 
         // Ours, and the only one of the recipe's two bounds anything applies.
@@ -1209,6 +1232,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         )
 
         child.on('close', (code) => {
+          closed = true
+          if (stopped !== null) {
+            if (hard === null) finish(stopped)
+            return
+          }
+          // A CLI that exited while a tool left a same-group subprocess behind
+          // must not hand its checkout back with that subprocess still running.
+          signalGroup('SIGKILL')
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()

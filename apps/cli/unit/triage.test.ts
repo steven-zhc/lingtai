@@ -311,6 +311,38 @@ describe('waitTriage', () => {
     expect(requests).toEqual([])
   })
 
+  it('refuses a failed run-stream read instead of selecting the base', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 570)
+    const runId = 'pass-570'
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const prepareCheckout = vi.fn()
+    const deps = fakeDeps(
+      {
+        ...store,
+        read: async (streamId) => {
+          if (streamId === runId) throw new Error('run stream unavailable')
+          return store.read(streamId)
+        },
+      },
+      runtime,
+      {
+        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+        prepareCheckout,
+      },
+    )
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, aWaitId(), {
+        reason: reasonOn(runId),
+        triage: Triage.parse({ agent: 'codex', tools: 'full' }),
+      }),
+    )
+    expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'crashed: run stream unavailable' })
+    expect(prepareCheckout).not.toHaveBeenCalled()
+    expect(requests).toEqual([])
+  })
+
   it('does not publish Codex advice after its wait resolves, but records the call and cleans up', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 568)

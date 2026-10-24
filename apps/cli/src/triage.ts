@@ -380,13 +380,13 @@ async function gatherEvidence(
   let published: PayloadOf<'RunRefsPublished'> | null = null
   let head: string | null = null
   if (runId !== null) {
-    const runEvents = await deps.store.read(runId).catch((): Envelope[] => [])
+    // An unreadable run stream is not evidence that the attempt has no head.
+    const runEvents = await deps.store.read(runId)
     for (const e of runEvents) {
       if (e.type === 'PassRouted') routed = e.data as PayloadOf<'PassRouted'>
       if (e.type === 'RunRefsPublished') published = e.data as PayloadOf<'RunRefsPublished'>
     }
-    const produced = runEvents.findLast((e) => e.type === 'RunProducedDiff')
-    head = produced === undefined ? null : (produced.data as PayloadOf<'RunProducedDiff'>).headSha
+    head = headOf(runEvents)
   }
 
   const baseSha = await deps.mirror.refSha({ project, ref: base }).catch(() => null)
