@@ -1187,7 +1187,7 @@ const OUTGOING: OutgoingView = {
 }
 
 /** Just the resolutions: the Ask button inside the discussion is amber too. */
-const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
+const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('data-rank="pair"'))
 
 /**
  * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
@@ -1791,9 +1791,11 @@ describe('what the refusal means for the decision', () => {
     expect(html).not.toMatch(/class="(needs|did|rec)"/)
     expect(html).not.toContain('fix-and-recheck')
     expect(html).not.toContain('And no second approach')
-    // Between rank 3 and the moves there is nothing but the end of the body.
-    const after = html.slice(html.indexOf('data-rank="so-what"'), html.indexOf('data-rank="moves"'))
-    expect(after.match(/<p\b/g) ?? []).toHaveLength(0)
+    const sentence = html.match(/<p class="sowhat" data-rank="so-what">([^<]*)<\/p>/g) ?? []
+    expect(sentence).toHaveLength(1)
+    expect(sentence[0]).toBe(
+      `<p class="sowhat" data-rank="so-what">${soWhat(diagnosed({ action: 'requeue', why: LONG_WHY }))}</p>`,
+    )
   })
 })
 

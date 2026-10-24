@@ -421,10 +421,10 @@ describe('a blocked task', () => {
     expect(arrangement(page(blocked()))).toMatchSnapshot()
   })
 
-  it('puts the ranks in order: coordinates, state, why, so what, moves, pair, record', () => {
+  it('puts Discussion between so what and the moves on a blocked page', () => {
     const html = page(blocked())
     const at = (rank: string) => html.indexOf(`data-rank="${rank}"`)
-    const order = ['coords', 'state', 'why', 'so-what', 'moves', 'pair', 'record'].map(at)
+    const order = ['coords', 'state', 'why', 'so-what', 'discussion', 'moves', 'pair', 'record'].map(at)
     expect(order.every((i) => i > -1)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })

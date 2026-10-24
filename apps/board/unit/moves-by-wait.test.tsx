@@ -75,7 +75,7 @@ const render = (fx: WaitFixture, outgoing: OutgoingView | null) =>
   )
 
 /** Just the row of moves. */
-const movesOf = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('class="spair"'))
+const movesOf = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('data-rank="pair"'))
 const cardsOf = (html: string) =>
   [...html.matchAll(/<article([^>]*)>(.*?)<\/article>/gs)]
     .map((match) => ({ attrs: match[1] ?? '', body: match[2] ?? '' }))
