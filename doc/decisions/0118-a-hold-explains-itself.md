@@ -109,12 +109,11 @@ which kind a wait was got inferred again in each place that needed it, from
          run: RunRef
          cause: 'out-of-turns' | 'out-of-usd'
          detail: string
-         call: CallId | null
        }
      | {
          _tag: 'AgentCrashed'
          run: RunRef
-         step: 'design' | 'implement' | 'review' | 'proposed' | 'merge'
+         step: 'admit' | 'prepared' | 'design' | 'implement' | 'build' | 'review' | 'proposed' | 'merge' // all but `claim`, `end`
          cause: 'crash' | 'timeout' | 'aborted'
          detail: string
        }
@@ -132,6 +131,12 @@ which kind a wait was got inferred again in each place that needed it, from
      | { _tag: 'JudgeHandedOver'; why: string }
    ```
 
+   - **No pass builds the seven direct variants.** `FixerDisagrees`,
+     `NothingProduced`, `CheckRefused`, `MergeRefused`, `BudgetExhausted`,
+     `SetupRefused` and `AnswerUnreadable` reach a person only inside
+     `ProposedEscalated` over a `Proposal` (`pass-next.ts`). They stay in the
+     union, with their rows in `allowedResolutions` and their words in
+     `waitWords`, so that a `WaitStarted` carrying one still parses and reads.
    - **The name is the page's.** The lane is _Waiting on you_ and its id is
      `waiting`, so the card is `Waiting`, the union is `WaitReason`, and the
      events are `WaitStarted`, `WaitResolved` and `WaitTriaged`. _You_ stays on
@@ -247,7 +252,7 @@ which kind a wait was got inferred again in each place that needed it, from
      advises and never moves the item. The whole table, with where an approval
      continues (§11):
 
-     | `WaitReason`                                                             | Allowed                                                                                        | `Approve` continues at         |
+     | `WaitReason`                                                             | Allowed (`GrantFixRound` only on its criterion, below)                                         | `Approve` continues at         |
      | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------ |
      | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                                           | —                              |
      | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                                       | —                              |
@@ -266,6 +271,11 @@ which kind a wait was got inferred again in each place that needed it, from
        sides with the reviewer.
      - `NothingProduced` has no `Approve`: there is nothing on the branch to
        merge.
+     - **Unpushed work drops `Approve`, `GrantFixRound` and `ContinueConflict`**
+       for every variant that has a `run`: when `run.unpushed` is set the branch
+       never reached origin and the worktree that held it is gone, so an
+       `Approve{onSha}` would name a sha that exists nowhere and there is
+       nothing to continue.
      - `ProposedEscalated` carries the proposal the work fell short with
        (0120): over `CheckRefused`, `FixerDisagrees` or `MergeRefused` it is
        allowed what that variant's own row allows; over `NothingProduced`,
@@ -280,7 +290,13 @@ which kind a wait was got inferred again in each place that needed it, from
        `wall` and declared `usd` limits. It changes no recipe limit and waives no
        refusal. The ref must still exist at the recorded head sha when the
        grant is used; a missing or moved ref refuses it. No branch to fix or no
-       criterion for a fixer means no grant. The grant and the round's spend
+       criterion for a fixer means no grant. **The criterion is one function**,
+       `grantCriterion`, "for both the offer (`allowedResolutions`) and the
+       brief (`conduct.ts`), so they cannot drift apart": `CheckRefused` needs
+       non-empty `evidence` or a finding with a non-empty `failureScenario`;
+       `FixerDisagrees` a non-empty `said`; `ReviewFindings` some finding with a
+       non-empty `failureScenario`; `BuildRed` and `VerifyRed` non-empty
+       `output`. A reason with no criterion is never offered it. The grant and the round's spend
        are logged separately; another round needs another decision. The result
        visits `build`, `review` and `proposed` again before merge (§11).
      - `Split` is offered on waits where an oversized ticket may be the cause.
@@ -386,6 +402,13 @@ which kind a wait was got inferred again in each place that needed it, from
      before this daemon did and never finished was interrupted, and is tried
      again, at most twice in all. A second interruption appends a failed
      `WaitTriaged` and is left to the person.
+   - **A failed triage is final.** Any failure of the triage call, whether a
+     crash, a timeout, an abort or a usage limit, running out of turns, spend
+     that cannot be recorded, or an answer past the schema's bounds, appends a
+     failed `WaitTriaged` and stops. Nothing triages that wait again: catch-up
+     re-runs only an attempt that was interrupted, and a finished attempt is
+     final whatever it answered. A person who wants another reading opens
+     Discussion.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
@@ -534,8 +557,13 @@ which kind a wait was got inferred again in each place that needed it, from
       `WaitResolved` records
       the completed choice; a partial split cannot resolve the wait.
     - **An approval continues the same run** with
-      `runPass({…, from: {step, approved: waitId}})`, at the step in §1's
-      table. At that step the action this wait asked about, the refusing
+      `runPass({…, from: {step, waive, roundsSpent, …}})`, at the step in §1's
+      table. `waive` is a list of `{name, waitId}`: every `Approve` this item
+      recorded for that step, not only the latest, so two stopping actions in
+      one step's list can both be got past; it applies on the step's first
+      visit only, and is empty for `FixerDisagrees`, `MergeRefused` and their
+      `ProposedEscalated` kin, because the router or the lane runs again
+      unwaived. `roundsSpent` keeps the round budget from starting over. At that step the action this wait asked about, the refusing
       check or the signoff, is recorded `Waived{waitId}` and counts as
       cleared, and everything after it runs; otherwise the same check refuses
       the same sha again and the approval loops. Continuing at `proposed`, the
