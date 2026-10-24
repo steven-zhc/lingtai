@@ -59,7 +59,7 @@
  */
 import type { ActionFinding } from '@lingtai/actions'
 import { SEVERITIES, type Severity } from '@lingtai/domain'
-import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
+import type { BlockDiagnosis, ConfirmedHunk, RunFailureKind } from '@lingtai/domain'
 
 import { checksBrief } from './prompt.ts'
 
@@ -471,7 +471,7 @@ export function fixBrief(input: {
   refusal:
     | { on: 'findings'; findings: readonly ActionFinding[] }
     | { on: 'output'; output: string }
-    | { on: 'conflict'; base: string; paths: string }
+    | { on: 'conflict'; base: string; paths: string; confirmed?: readonly ConfirmedHunk[] }
   round: number
   of: number
   /** The refusing action's name, so the prompt can say who refused. */
@@ -497,7 +497,7 @@ export function fixBrief(input: {
     input.refusal.on === 'findings'
       ? findingsHalf(input.refusal.findings, input.action)
       : input.refusal.on === 'conflict'
-        ? conflictHalf(input.refusal.base, input.refusal.paths)
+        ? conflictHalf(input.refusal.base, input.refusal.paths, input.refusal.confirmed)
         : outputHalf(input.refusal.output, input.action)
 
   return `# The ${input.action} action refused this change, and you are the fix
@@ -632,7 +632,11 @@ So:
  * Resolving a conflict by taking one side wholesale passes the first and is
  * exactly what the second is there to catch.
  */
-function conflictHalf(base: string, paths: string): { evidence: string; criterion: string } {
+function conflictHalf(
+  base: string,
+  paths: string,
+  confirmed: readonly ConfirmedHunk[] = [],
+): { evidence: string; criterion: string } {
   const files = paths.trim()
   return {
     evidence: `\`${base}\` moved while this change was being worked on, and this branch does
@@ -652,7 +656,7 @@ and resolve what it gives you.
 
 \`\`\`
 ${files === '' ? `(git named no files; run git merge \`${base}\` first, then \`git status\` and \`git diff --diff-filter=U\` name what it leaves)` : files}
-\`\`\``,
+\`\`\`${confirmedSection(confirmed)}`,
     criterion: `## What counts as done
 
 Run git merge \`${base}\`, resolve what it gives you, and commit the merge.
@@ -675,6 +679,31 @@ So:
 The base can move again while you work. If it does, this comes back around —
 that is ordinary, and it is bounded by the rounds above.`,
   }
+}
+
+/**
+ * What a person confirmed for each conflicting hunk (#558, 0118 §8). The
+ * confirmed behavior is the authority over both sides, and a hunk git produces
+ * that is not listed was never confirmed — it is reported, not guessed.
+ */
+function confirmedSection(confirmed: readonly ConfirmedHunk[]): string {
+  if (confirmed.length === 0) return ''
+  const lines = confirmed.map((hunk) =>
+    hunk._tag === 'Divergent'
+      ? `- \`${hunk.path}:${hunk.line ?? 1}\` — ${hunk.behavior}`
+      : `- \`${hunk.path}:${hunk.line ?? 1}\` — mechanical: no behavior to choose, keep both changes`,
+  )
+  return `
+
+## What a person confirmed
+
+A person read every conflicting hunk and confirmed the behavior it must end up with.
+That confirmed behavior is the authority — over the other change and over yours.
+
+${lines.join('\n')}
+
+A hunk git produces that is not on this list is not covered by the confirmation.
+Do not guess at it: say so and commit nothing for it.`
 }
 
 function outputHalf(output: string, action: string): { evidence: string; criterion: string } {

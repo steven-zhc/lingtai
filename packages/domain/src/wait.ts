@@ -25,6 +25,7 @@ import { z } from 'zod'
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation, type CandidateId } from './route.ts'
+import type { RouteOffer } from './routing.ts'
 import { SplitProposal, SplitResolution } from './split.ts'
 import {
   Hunk,
@@ -411,7 +412,37 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
 }
 
 /** Why a `ContinueConflict` is not acceptable for a wait. */
-export type ContinueConflictRefusal = 'NotOffered' | 'Stale' | 'TooManyHunks' | 'HunksMismatch'
+export type ContinueConflictRefusal =
+  | 'NotOffered'
+  | 'Stale'
+  | 'TooManyHunks'
+  | 'HunksMismatch'
+  | 'GrantRequired'
+  | 'GrantNotNeeded'
+
+/**
+ * Whether the automatic rounds were already spent on this conflict: the last
+ * `PassRouted` whose proposal is this `MergeConflict` (same `headSha`) offered
+ * no `fix-lines`, for want of room under the rounds ceiling. Read off the
+ * run's own stream because `resolveWait` holds no recipe. A prior human grant
+ * caps `roundLimit` at the rounds spent, and the router records that cap as the
+ * same `CeilingReached`, so this one read covers both ways of running out.
+ */
+export function conflictRoundsExhausted(
+  runEvents: readonly { type: string; data: unknown }[],
+  headSha: string,
+): boolean {
+  const offer = runEvents
+    .filter((e) => e.type === 'PassRouted')
+    .map((e) => (e.data as { offer: RouteOffer }).offer)
+    .filter((o) => o.proposal._tag === 'MergeConflict' && o.proposal.headSha === headSha)
+    .at(-1)
+  return (
+    offer?.unavailable.some(
+      (x) => x.id === 'fix-lines' && x.because._tag === 'CeilingReached' && x.because.ceiling === 'rounds',
+    ) ?? false
+  )
+}
 
 /**
  * The pure half of validating a `ContinueConflict`: `null` or the refusal.
@@ -419,11 +450,16 @@ export type ContinueConflictRefusal = 'NotOffered' | 'Stale' | 'TooManyHunks' | 
  * in the effect). It never takes a triage status, so the same command
  * validates the same way whether triage was absent, failed or done. Whether
  * the remote ref still exists is the effect's to check, not the domain's.
+ *
+ * `roundsExhausted` is {@link conflictRoundsExhausted}: an extra round is
+ * granted exactly when it is needed, so a grant nobody needed is refused as
+ * firmly as a missing one.
  */
 export function continueConflictRefusal(
   reason: WaitReason,
   resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
   counted: readonly { path: string; line: number | null }[],
+  roundsExhausted: boolean,
 ): ContinueConflictRefusal | null {
   if (!allowedResolutions(reason).includes('ContinueConflict')) return 'NotOffered'
   if (
@@ -444,6 +480,8 @@ export function continueConflictRefusal(
     [...expected].some((k) => !confirmed.has(k))
   )
     return 'HunksMismatch'
+  if (roundsExhausted && !resolution.grantExtraRound) return 'GrantRequired'
+  if (!roundsExhausted && resolution.grantExtraRound) return 'GrantNotNeeded'
   return null
 }
 

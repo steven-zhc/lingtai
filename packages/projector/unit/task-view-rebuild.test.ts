@@ -238,6 +238,38 @@ const afterApprovalRequested = events.length
 events.push(...aResolution(approvalStream, approvalWaitId, { _tag: 'Approve', onSha: SHA }))
 const afterApprovalGranted = events.length
 
+// ---- row 14b: a conflict continued by a person (#558) ----------------------
+// Clears the hold exactly as `Approve` does, or the board keeps drawing a
+// resolved wait.
+const conflictStream = makeStream('ticket-pin-conflict')
+const conflictRun = aRun('pass-pin-conflict')
+const conflictWaitId = aWaitId()
+events.push(...aClaim(conflictStream, conflictRun.runId))
+events.push(
+  ...aWait(
+    conflictStream,
+    {
+      _tag: 'ProposedEscalated',
+      run: aRunRef(conflictRun.runId),
+      proposal: { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: SHA, headSha: 'b'.repeat(40) },
+      because: { _tag: 'NotAsked' },
+    },
+    conflictWaitId,
+  ),
+)
+const afterConflictWait = events.length
+events.push(
+  ...aResolution(conflictStream, conflictWaitId, {
+    _tag: 'ContinueConflict',
+    baseSha: SHA,
+    headSha: 'b'.repeat(40),
+    ref: 'agent/558',
+    grantExtraRound: false,
+    hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 1, behavior: 'keep new', adopted: null }],
+  }),
+)
+const afterConflictContinued = events.length
+
 // ---- row 15: a fix round opened, round 1 then round 2 ---------------------
 // `FixRequested`'s `of` denominator is gone with the event itself (#502):
 // a round is folded off `PassRouted`'s stored offer/reply/decision now, and
@@ -528,6 +560,18 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     expect(taskOf(granted.tasks, 'ticket-pin-approval')).toMatchObject({
       awaiting_sha: null,
       state: 'approved',
+    })
+  })
+
+  it('folds a ContinueConflict to approved, clearing the wait (#558)', async () => {
+    const waiting = await fold(afterConflictWait)
+    expect(taskOf(waiting.tasks, 'ticket-pin-conflict')).toMatchObject({ state: 'waiting', wait_id: conflictWaitId })
+
+    const continued = await fold(afterConflictContinued)
+    expect(taskOf(continued.tasks, 'ticket-pin-conflict')).toMatchObject({
+      state: 'approved',
+      wait_id: null,
+      wait_reason: null,
     })
   })
 

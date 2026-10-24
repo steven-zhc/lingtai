@@ -978,9 +978,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const granted = folded.lifecycle.grantRef !== undefined
+      // A person's confirmed conflict is a grant too (#558): it authorizes one
+      // round for these hunks, and the cap below is what stops it authorizing
+      // a later conflict.
+      const resolved = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.resolution
+      const confirmed = resolved?._tag === 'ContinueConflict' ? resolved : null
       const priorGrant = waitsOf(before).some(
         (wait) =>
-          wait.resolution?._tag === 'GrantFixRound' &&
+          (wait.resolution?._tag === 'GrantFixRound' || wait.resolution?._tag === 'ContinueConflict') &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
@@ -1009,6 +1014,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
+        ...(confirmed !== null
+          ? {
+              // Not `grantCriterion`: that is `null` for `MergeConflict` on
+              // purpose, since offering `GrantFixRound` on a conflict is not
+              // 0118 §1's table. `fixRound` reads a printed `merge` as a
+              // conflict and its detail as the paths.
+              grant: {
+                why: 'A person confirmed the intended behavior of every conflicting hunk.',
+                asked: null,
+                printed: { step: 'merge' as const, detail: [...new Set(confirmed.hunks.map((h) => h.path))].join('\n') },
+              },
+              findings: [],
+              conflict: { baseSha: confirmed.baseSha, hunks: confirmed.hunks },
+            }
+          : {}),
         ...(granted && grantCriterion(reason) !== null
           ? {
               grant: {
@@ -3479,7 +3499,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           findings.length > 0
             ? ({ on: 'findings', findings } as const)
             : from === 'merge'
-              ? ({ on: 'conflict', base, paths: said } as const)
+              ? ({
+                  on: 'conflict',
+                  // The confirmed sha, not the branch name: the agent edits exactly
+                  // the conflict the person read, and a base that moved since is met
+                  // by the merge lane afterwards (a new wait, a new confirmation).
+                  base: continuation?.conflict?.baseSha ?? base,
+                  paths: said,
+                  ...(continuation?.conflict ? { confirmed: continuation.conflict.hunks } : {}),
+                } as const)
               : ({ on: 'output', output: said } as const)
 
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)

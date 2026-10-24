@@ -595,7 +595,7 @@ export const taskViewProjection: Projection = {
                 break
 
               case 'WaitResolved':
-                if (fact.resolution._tag === 'Approve') {
+                if (fact.resolution._tag === 'Approve' || fact.resolution._tag === 'ContinueConflict') {
                   // **Clears the hold rather than narrowly clearing `awaiting_sha`**
                   // (#465). 0118's own work-item fold used to leave the
                   // lifecycle alone on an Approve because what actually moved
