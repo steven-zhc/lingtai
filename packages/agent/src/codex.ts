@@ -1270,8 +1270,10 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             // signalling only the CLI leaves them running in the checkout.
             if (process.platform === 'win32' || child.pid === undefined) child.kill(signal)
             else process.kill(-child.pid, signal)
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+          } catch {
+            // Gone already, or not ours to signal: the process scan that
+            // follows decides whether anything is still alive, and a throw
+            // here would escape the event handlers that call this.
           }
         }
 

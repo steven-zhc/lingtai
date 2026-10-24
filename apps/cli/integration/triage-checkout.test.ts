@@ -76,7 +76,7 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_t
   }
 })
 
-it('hands a login Codex refreshed in the private home back to the original', async () => {
+it('lets Codex refresh its login where the original will read it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'triage-auth-'))
   roots.push(root)
   const source = join(root, 'source')
@@ -94,22 +94,20 @@ it('hands a login Codex refreshed in the private home back to the original', asy
   await mkdir(join(home, '.codex'), { recursive: true })
   const auth = join(home, '.codex', 'auth.json')
   await writeFile(auth, '{"refresh":"old"}')
-  const saved = process.env['HOME']
+  const saved = { HOME: process.env['HOME'], CODEX_HOME: process.env['CODEX_HOME'] }
   process.env['HOME'] = home
+  delete process.env['CODEX_HOME']
   try {
     const checkout = await prepareTriageCheckout('project', sha, root)
-    expect(await readFile(join(checkout.env['CODEX_HOME']!, 'auth.json'), 'utf8')).toBe('{"refresh":"old"}')
+    expect(checkout.env['CODEX_HOME']).toBe(join(home, '.codex'))
+    expect(checkout.env['HOME']).not.toBe(home)
     await writeFile(join(checkout.env['CODEX_HOME']!, 'auth.json'), '{"refresh":"new"}')
     await checkout.cleanup()
     expect(await readFile(auth, 'utf8')).toBe('{"refresh":"new"}')
-
-    const second = await prepareTriageCheckout('project', sha, root)
-    await writeFile(join(second.env['CODEX_HOME']!, 'auth.json'), '{"refresh":"stale"}')
-    await writeFile(auth, '{"refresh":"newer"}')
-    await second.cleanup()
-    expect(await readFile(auth, 'utf8')).toBe('{"refresh":"newer"}')
   } finally {
-    if (saved === undefined) delete process.env['HOME']
-    else process.env['HOME'] = saved
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
   }
 })

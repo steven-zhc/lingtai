@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -20,40 +20,22 @@ export async function prepareTriageCheckout(
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`invalid triage commit SHA: ${sha}`)
   const root = await mkdtemp(join(tmpdir(), 'lingtai-triage-'))
   const originalHome = process.env['HOME']
-  const originalAuth = originalHome ? join(originalHome, '.codex', 'auth.json') : null
-  let copied: string | null = null
-  const privateAuth = join(root, 'home', '.codex', 'auth.json')
+  // Codex rotates its refresh token in place, so a run must refresh the login
+  // where the daemon's next pass will read it: a copy discarded at cleanup
+  // leaves the original holding a spent token. The login directory itself is
+  // shared; everything else about the home is private.
+  const sharedCodexHome = process.env['CODEX_HOME'] ?? (originalHome ? join(originalHome, '.codex') : null)
   const cleanup = async () => {
-    // Codex rotates its refresh token in place. If this run was the one to
-    // refresh, the spent token is all the original still holds: hand the new
-    // login back, unless somebody else has already replaced the original.
-    try {
-      if (originalAuth !== null && copied !== null) {
-        const now = await readFile(privateAuth, 'utf8').catch(() => null)
-        if (now !== null && now !== copied && (await readFile(originalAuth, 'utf8').catch(() => null)) === copied) {
-          const staged = `${originalAuth}.${process.pid}.tmp`
-          await writeFile(staged, now, { mode: 0o600 })
-          await rename(staged, originalAuth)
-        }
-      }
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
+    await rm(root, { recursive: true, force: true })
   }
   try {
     const cwd = join(root, 'checkout')
     const home = join(root, 'home')
-    const codexHome = join(home, '.codex')
-    await mkdir(codexHome, { recursive: true, mode: 0o700 })
-    // Only Codex's login receipt crosses into this home. No daemon config,
-    // GitHub token, remote, or user Git configuration is inherited.
-    if (originalAuth !== null) {
-      copied = await readFile(originalAuth, 'utf8').catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error
-        return null
-      })
-      if (copied !== null) await writeFile(privateAuth, copied, { mode: 0o600 })
-    }
+    await mkdir(home, { recursive: true, mode: 0o700 })
+    const codexHome = sharedCodexHome ?? join(home, '.codex')
+    if (sharedCodexHome === null) await mkdir(codexHome, { recursive: true, mode: 0o700 })
+    // No daemon config, GitHub token, remote, or user Git configuration is
+    // inherited; only Codex's own login directory is shared.
     const env = { ...runnableEnv({}), HOME: home, CODEX_HOME: codexHome, GIT_CONFIG_NOSYSTEM: '1' }
     await git(['clone', '--no-hardlinks', '--dissociate', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd], {
       env,

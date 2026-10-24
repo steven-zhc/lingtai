@@ -583,6 +583,9 @@ export async function waitTriage(
             selectedSha!,
           )
         : null
+      // A run whose process scan did not finish may have a tool still alive in
+      // the checkout; leaving the directory is safer than deleting it underneath.
+      let toolsMayRemain = false
       try {
         const { cwd, settingsPath } = checkout ?? (await deps.prepare(chatId))
         const runtime = deps.runtime(request.triage.agent, { tools: full ? 'full' : 'none' })
@@ -746,6 +749,7 @@ export async function waitTriage(
             turnsSpent += outcome.turns
           }
 
+          if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
           if (outcome.failure) {
             const kind = outcome.failure.kind
             const why = kind === 'timeout' || kind === 'aborted' ? kind : `${kind}: ${outcome.failure.detail}`
@@ -808,7 +812,9 @@ export async function waitTriage(
         // Unreachable: the loop above always sets `result` before it exits.
         final = result ?? { _tag: 'TriageFailed', why: 'triage did not run' }
       } finally {
-        if (checkout)
+        if (checkout && toolsMayRemain) {
+          log(`triage ${request.waitId}: checkout kept — a tool process may still be running in it`)
+        } else if (checkout)
           await checkout.cleanup().catch((error: unknown) => {
             log(`triage ${request.waitId}: cleanup failed — ${(error as Error).message}`)
             final = { _tag: 'TriageFailed', why: clip(`cleanup failed: ${(error as Error).message}`) }

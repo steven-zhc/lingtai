@@ -375,6 +375,26 @@ describe('waitTriage', () => {
     expect(cleanup).toHaveBeenCalledOnce()
   })
 
+  it('keeps the checkout when the runtime could not confirm its tools stopped', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 571)
+    const cleanup = vi.fn(async () => {})
+    const { runtime } = stubRuntime((): RunOutcome => ({
+      ...ADVISED,
+      failure: { kind: 'crash', detail: 'stopped; process cleanup incomplete: ps timed out' },
+    }))
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+      prepareCheckout: async () => ({ cwd: '/tmp/c', settingsPath: '/tmp/s', env: {}, cleanup }),
+    })
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, aWaitId(), { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
+    )
+    expect(held.result._tag).toBe('TriageFailed')
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
   it('records Codex advice and usage from an eligible wait without granting tools', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 81)
