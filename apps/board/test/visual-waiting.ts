@@ -401,6 +401,8 @@ export async function preview(name: CaseName) {
         }
       : standing
   if (representative && standing.runId !== null) {
+    // This inert preview uses its recorded published ref/head as the remote
+    // answer; loadTask checks that ref again before offering a live move.
     previewStanding.fixWork = savedFixWork(standing.runId, runs.get(standing.runId) ?? [])
   }
   const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
