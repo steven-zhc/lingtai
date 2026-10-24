@@ -811,6 +811,7 @@ export async function waitTriage(
         if (checkout)
           await checkout.cleanup().catch((error: unknown) => {
             log(`triage ${request.waitId}: cleanup failed — ${(error as Error).message}`)
+            final = { _tag: 'TriageFailed', why: clip(`cleanup failed: ${(error as Error).message}`) }
           })
       }
     } catch (err) {
