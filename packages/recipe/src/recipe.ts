@@ -41,9 +41,10 @@ import {
  * and none of them is a choice the file states: the first is a deleted number,
  * the second is already refused, the third is a string.
  */
-const TurnLimitSchema = z.union([z.number().int().positive(), z.literal(UNBOUNDED)], {
-  error: () => `must be a whole number above 0, or \`${UNBOUNDED}\` for no turn ceiling`,
-})
+const TurnLimitSchema = z.custom<number | typeof UNBOUNDED>(
+  (value) => value === UNBOUNDED || (typeof value === 'number' && Number.isInteger(value) && value > 0),
+  { error: () => `must be a whole number above 0, or \`${UNBOUNDED}\` for no turn ceiling` },
+)
 
 /**
  * The names an **extension** may read, declared beside the extension itself
