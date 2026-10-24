@@ -686,6 +686,7 @@ export function Standing({
                 <TicketContext opening={opening} body={body} />
               </div>
             ) : null}
+            {progress !== null ? <Rail progress={progress} live={false} held={budget} /> : null}
           </header>
         ) : subject !== null ? (
           <div className="sticket">
@@ -746,7 +747,9 @@ export function Standing({
           <h2 className="ssectiontitle">Where it is</h2>
           {waiting ? null : stateReadout}
 
-          {(standing.state === 'running' || standing.state === 'blocked' || standing.afterMove) && progress !== null ? (
+          {!waiting &&
+          (standing.state === 'running' || standing.state === 'blocked' || standing.afterMove) &&
+          progress !== null ? (
             <Rail progress={progress} live={standing.state === 'running'} held={budget} />
           ) : null}
 

@@ -1174,7 +1174,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .triage-readings > div { min-width: 0; }
 
-/* Waiting and completed moves share the ticket and progress reading frame. */
+/* Waiting opens on the canvas; completed moves keep their reading frames. */
 .detail--waiting {
   background-image: linear-gradient(var(--canvas-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px);
@@ -1200,7 +1200,22 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border: 1px solid var(--rule);
 }
 :is(.detail--waiting, .detail--resolved) .sticket { gap: 0.85rem; margin: 0; }
-.detail--waiting .swaiting-head { display: grid; gap: 0.9rem; min-width: 0; }
+.detail--waiting .swaiting-head { display: grid; gap: 0.75rem; min-width: 0; }
+.detail--waiting .sticket,
+.detail--waiting .swhere {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.detail--waiting .sticket { gap: 0.5rem; }
+.detail--waiting .topening { padding: 0; border: 0; }
+.detail--waiting .topening > p,
+.detail--waiting .tcontext { margin-bottom: 0; }
+.detail--waiting .swaiting-head .segs { margin: 0; }
+.detail--waiting .swaiting-head .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
+.detail--waiting .swaiting-head .sbar { height: 6px; }
+.detail--waiting .swaiting-head .snow { font-size: 0.75rem; }
+.detail--waiting .swhere { padding-top: 0.75rem; border-top: 1px solid var(--rule); }
 .detail--waiting .swaiting-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1236,7 +1251,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   letter-spacing: 0;
 }
 .detail--waiting .swaiting-meta .sage::before { content: "· "; }
-.detail--waiting .sticket { min-height: 4rem; }
 :is(.detail--waiting, .detail--resolved) .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
 :is(.detail--waiting, .detail--resolved) .sref { font-size: 0.78rem; }
 :is(.detail--waiting, .detail--resolved) .stitle {
@@ -1492,7 +1506,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   .detail--waiting .triage-hunk { grid-template-columns: 2rem minmax(0, 1fr); gap: 0.35rem 0.7rem; }
   .detail--waiting .triage-fixes li > span:last-child,
   .detail--waiting .triage-hunk > :last-child { grid-column: 2; }
-  .detail--waiting .swhere .segs {
+  .detail--waiting .swaiting-head .segs {
     grid-template-columns: repeat(10, minmax(3.5rem, 1fr));
     overflow-x: auto;
     padding-bottom: 0.35rem;
