@@ -59,8 +59,13 @@ describe('triage:, written', () => {
     })
   })
 
-  it('refuses a runtime that cannot be given no tools, by name, at resolve', async () => {
-    await expect(resolve(`${BASE}triage:\n  agent: codex\n`)).rejects.toThrow(/triage\.agent/)
+  it('accepts Codex for the configured model-only route', async () => {
+    const { recipe } = await resolve(`${BASE}triage:\n  agent: codex\n`)
+    expect(recipe.triage?.agent).toBe('codex')
+  })
+
+  it('refuses an unknown triage agent by name at resolve', async () => {
+    await expect(resolve(`${BASE}triage:\n  agent: unknown\n`)).rejects.toThrow(/triage\.agent/)
   })
 
   it('refuses an unrecognized field, by name', async () => {

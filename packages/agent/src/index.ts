@@ -54,6 +54,7 @@ export {
   type CodexSandbox,
 } from './codex.ts'
 export { RUNTIMES, ToolsCannotBeDenied, createRuntime, everyRuntime, type RuntimeOptions } from './runtimes.ts'
+export { codexTextSpendBound, createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
 export {
   AgentHostFailed,
   CLAUDE_ONLY_HOOKS,

@@ -70,6 +70,21 @@ board:
   # ephemeral ports.
   port: 17820
 
+# --- optional Codex model-only calls ---------------------------------------
+# Requires a person's approval for separate OpenAI API billing before use.
+# This API key is distinct from `codex login`; no key is passed to an agent.
+# Set all fields together here or as LINGTAI_CODEX_TEXT_* exported variables.
+# Prices must be conservative upper bounds in USD per million tokens for the
+# exact model. Without this complete block, Codex discussions refuse dispatch.
+# codex_text:
+#   approved: 'true'
+#   api_key: <separately billed OpenAI API key>
+#   model: <Responses API model id>
+#   max_output_tokens: 1024
+#   max_usd: 0.10
+#   input_usd_per_million: <upper bound for input tokens>
+#   output_usd_per_million: <upper bound for output tokens>
+
 # --- the tests --------------------------------------------------------------
 # Nothing here, on purpose. A test never reads this file: it is exactly the
 # operator's log and App. The integration half runs on a SQLite file of its own;

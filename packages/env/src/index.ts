@@ -173,6 +173,58 @@ function stringAt(provider: ConfigProvider.ConfigProvider, ...path: [string, ...
   })
 }
 
+/** Explicit, separately billed model-only route for Codex discussions (#565). */
+export interface CodexTextConfig {
+  apiKey: string
+  model: string
+  maxOutputTokens: number
+  maxUsd: number
+  inputUsdPerMillion: number
+  outputUsdPerMillion: number
+}
+
+/** No partial configuration is usable; tests never read the operator's file. */
+export function codexTextConfig(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): CodexTextConfig | undefined {
+  if (file.unreadable !== undefined) throw new Error(file.unreadable)
+  const value = (key: string) =>
+    stringAt(environmentProvider(from), 'codex_text', key) ?? stringAt(file.provider, 'codex_text', key)
+  const fields = [
+    'approved',
+    'api_key',
+    'model',
+    'max_output_tokens',
+    'max_usd',
+    'input_usd_per_million',
+    'output_usd_per_million',
+  ] as const
+  const entries = Object.fromEntries(fields.map((field) => [field, value(field)])) as Record<
+    (typeof fields)[number],
+    string | undefined
+  >
+  if (fields.every((field) => entries[field] === undefined)) return undefined
+  if (entries.approved !== 'true' || fields.some((field) => entries[field] === undefined)) {
+    throw new Error('codex_text requires explicit approval and all API, model, token and price fields')
+  }
+  const positive = (field: 'max_output_tokens' | 'max_usd' | 'input_usd_per_million' | 'output_usd_per_million') => {
+    const n = Number(entries[field])
+    if (!Number.isFinite(n) || n <= 0 || (field === 'max_output_tokens' && !Number.isSafeInteger(n))) {
+      throw new Error(`codex_text.${field} must be positive`)
+    }
+    return n
+  }
+  return {
+    apiKey: entries.api_key!,
+    model: entries.model!,
+    maxOutputTokens: positive('max_output_tokens'),
+    maxUsd: positive('max_usd'),
+    inputUsdPerMillion: positive('input_usd_per_million'),
+    outputUsdPerMillion: positive('output_usd_per_million'),
+  }
+}
+
 /**
  * The Postgres connection a caller that must have Postgres may use, which is
  * never the operator's.

@@ -254,11 +254,12 @@ function bySeq(a: Envelope, b: Envelope): number {
  * `undefined` would not say the same way to every runtime adapter.
  */
 export function discussionAsk(
-  runtime: Runtime,
+  runtime: Runtime | (() => Runtime),
   fixed: { runId: (round: number) => Promise<string>; cwd: string; settingsPath: string; log: RunTrace },
 ): DiscussionPorts['ask'] {
-  return async (prompt, round, call) =>
-    runtime.run({
+  return async (prompt, round, call) => {
+    const selected = typeof runtime === 'function' ? runtime() : runtime
+    return selected.run({
       runId: await fixed.runId(round),
       cwd: fixed.cwd,
       prompt,
@@ -273,6 +274,7 @@ export function discussionAsk(
       // makes the box on the board move.
       log: fixed.log,
     })
+  }
 }
 
 /**
@@ -312,14 +314,10 @@ export async function answerDiscussion(
    * The three layers above are what a discussion has instead of a hook and the
    * steps a run passes, and the first two are a Claude Code settings file. So
    * `tools: "none"` is not a preference here, it is the containment: a runtime
-   * that cannot be given it must not be handed this prompt. `discuss.agent`'s
-   * schema is `@lingtai/recipe`'s `DiscussAgent` — the subset of `RuntimeId`
-   * that can be held to `tools: "none"` — so this call cannot throw
-   * `ToolsCannotBeDenied`: a recipe naming a runtime that cannot be contained
-   * this way was already refused when it resolved, before a worktree, before
-   * an agent, before any money.
+   * that cannot be given it must not be handed this prompt. Construction
+   * happens inside the async ask port so an unconfigured Codex route is
+   * recorded as a failed answer instead of leaving this question outstanding.
    */
-  const runtime: Runtime = createRuntime(discuss.agent, { tools: 'none' })
   const call = callFor(discuss)
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
@@ -389,7 +387,7 @@ export async function answerDiscussion(
           if (sha === undefined) return null
           return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES })
         },
-        ask: discussionAsk(runtime, {
+        ask: discussionAsk(() => createRuntime(discuss.agent, { tools: 'none' }), {
           // Its own id per round, so nothing resumes a session. `sessionIdFor`
           // is a function of the run id, and reusing one would make a second
           // question a continuation of the first one's transcript rather than a

@@ -84,10 +84,16 @@ on that path is paid for thousands of times per run.
    pass `RuntimeOptions.tools: "full" | "none"`, and each row of `RUNTIMES`
    translates that value for its runtime. For Claude Code, `none` is
    `--permission-mode default` plus a settings file that denies every tool.
-   Codex throws `ToolsCannotBeDenied`, because `-s read-only` forbids writes but
-   still leaves a shell able to read the whole machine. For that reason
-   `DiscussAgent` in `packages/recipe/src/recipe.ts` accepts only `claude-code`,
-   and `apps/cli/unit/discuss-agent.test.ts` pins the two lists to each other.
+   Codex CLI's `-s read-only` still leaves a shell able to read the whole
+   machine, so it never implements `none`. Codex uses a separate model-only
+   Responses API call with `tools: []` and `tool_choice: "none"` only after a
+   person approves separately billed API use and configures `codex_text` with
+   an API key, model, output ceiling, and conservative token prices and USD
+   ceiling. Without complete configuration it throws `ToolsCannotBeDenied`
+   before dispatch. Each call reserves its full preflight spend bound; Waiting
+   triage debits that reservation across read rounds while preserving unknown
+   reported dollars as `costUsd: null`. `DiscussAgent` accepts `claude-code`
+   and `codex`; its parity test uses explicit test-only API configuration.
 
 7. **The recipe chooses the runtime per step, and a choice is binding.**
    `runtime.agent`, written in the recipe beside `steps:`, is the default for a
