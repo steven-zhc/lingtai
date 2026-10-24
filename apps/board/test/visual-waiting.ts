@@ -173,6 +173,7 @@ function fixableFixture(published: boolean) {
     ...step('implement', 2, 'accepted', 18),
     ...step('build', 2, 'accepted', 20),
     ...step('review', 2, 'refused', 22, FINDINGS),
+    run('RunProducedDiff', { branch: 'agent/393', headSha: HEAD, files: 3, insertions: 42, deletions: 16 }, at(24)),
     run('RunProposedCompletion', { headSha: HEAD }, at(24)),
     run('RunFinished', { exitCode: 0, turns: 67, durationMs: 24 * 60_000 }, at(24)),
     ...(published
