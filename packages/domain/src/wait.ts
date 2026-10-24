@@ -25,6 +25,7 @@ import { z } from 'zod'
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation, type CandidateId } from './route.ts'
+import { SplitProposal, SplitResolution } from './split.ts'
 import {
   Hunk,
   MERGE_HUNKS_ONE_BY_ONE,
@@ -35,6 +36,8 @@ import {
   TriageQuestion,
 } from './triage.ts'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
+
+export { describeSplitProblem, splitPlanProblems, SplitPlan, type SplitProblem } from './split.ts'
 
 /**
  * Where a refused push's commits are now (#421). `Mirror` is
@@ -220,6 +223,8 @@ export const Resolution = z.discriminatedUnion('_tag', [
   Requeue,
   EditBodyAndRequeue,
   AnswerQuestion,
+  // the person's approved plan (0118 §12); a structural fault never parses, so never reaches the log
+  SplitResolution,
   Close,
 ])
 export type Resolution = z.infer<typeof Resolution>
@@ -232,7 +237,7 @@ export type Resolution = z.infer<typeof Resolution>
  * the head at the moment a person approves, not something triage knows ahead
  * of them (0118 §1).
  */
-export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
@@ -260,10 +265,12 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
     case 'ProposedEscalated':
       switch (reason.proposal._tag) {
         case 'ReviewFindings':
+          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
         case 'ReviewEmpty':
           return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
         case 'BuildRed':
         case 'VerifyRed':
+          return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
         case 'MergeConflict':
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
@@ -279,7 +286,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'NothingProduced':
         case 'BudgetExhausted':
         case 'AnswerUnreadable':
-          return ['EditBodyAndRequeue', 'Requeue', 'Close']
+          return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
         case 'SetupRefused':
           return ['Requeue', 'Close']
       }
@@ -289,7 +296,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
     case 'BudgetExhausted':
     case 'AgentCrashed':
     case 'AnswerUnreadable':
-      return ['EditBodyAndRequeue', 'Requeue', 'Close']
+      return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
     case 'SetupRefused':
       return ['Requeue', 'Close']
   }
@@ -567,7 +574,7 @@ const ConflictingHunks = z
   })
 
 /** The run did not finish, and either the body can save the next one what it spent its turns on, or the ticket is split. */
-const TicketTooBig = z.strictObject({ _tag: z.literal('TicketTooBig') })
+const TicketTooBig = z.strictObject({ _tag: z.literal('TicketTooBig'), split: SplitProposal.optional() })
 
 /** The repository or the machine refused before or around any agent's work — no edit to the ticket can help. */
 const SetupBroken = z.strictObject({ _tag: z.literal('SetupBroken') })
@@ -591,13 +598,22 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
  * the card, and one more of what the ticket wants — `null` where the body
  * does not say (0118 §1).
  */
-const TriageAdvised = z.strictObject({
-  _tag: z.literal('TriageAdvised'),
-  cause: RootCause,
-  resolution: TriageAdvice,
-  summary: z.string().max(TRIAGE_SENTENCE_MAX),
-  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
-})
+const TriageAdvised = z
+  .strictObject({
+    _tag: z.literal('TriageAdvised'),
+    cause: RootCause,
+    resolution: TriageAdvice,
+    summary: z.string().max(TRIAGE_SENTENCE_MAX),
+    want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
+  })
+  .superRefine((advice, ctx) => {
+    if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Split is advised only with TicketTooBig carrying its split plan',
+        path: ['resolution'],
+      })
+  })
 
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
 export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])

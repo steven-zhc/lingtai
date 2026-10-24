@@ -32,6 +32,10 @@ export const TRIAGE_FIXES_MAX = 20
 export const TRIAGE_TEXT_MAX = 500
 /** `sentence` and `want`, the two fields built for the card. */
 export const TRIAGE_SENTENCE_MAX = 200
+/** At most 8 children a triaged `Split` proposal may suggest (0118 §12). */
+export const TRIAGE_SPLIT_CHILDREN_MAX = 8
+/** A child's body is a ticket's prompt, so it needs more room than `TRIAGE_TEXT_MAX`. */
+export const TRIAGE_SPLIT_BODY_MAX = 4000
 
 /**
  * A question only a person can answer, shared by `RootCause.UndecidedQuestion`

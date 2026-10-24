@@ -27,6 +27,7 @@
 import {
   MERGE_HUNKS_ONE_BY_ONE,
   TRIAGE_ANSWERS_MAX,
+  TRIAGE_SPLIT_CHILDREN_MAX,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
   TRIAGE_SENTENCE_MAX,
@@ -124,11 +125,16 @@ never repeated beside it:
   equal \`total\`. Past that bound, send \`"hunks": []\` with \`total\` the real
   count; listing more than ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that
   does not match \`total\` at or below it, is refused.
-- \`TicketTooBig\` — *try it again, narrower*: the run did not finish
+- \`TicketTooBig\` — *try it again, narrower*: the run did not finish. When
+  smaller tickets would serve better, add \`split\`: \`{"children": [{"key": "parser",
+  "title": "…", "body": "…", "kind": "feature"}], "blockedBy": [{"ticket": "wire",
+  "blockedBy": "parser"}]}\` — at least two children, at most ${TRIAGE_SPLIT_CHILDREN_MAX}, each
+  \`key\` unique (lower case letters, digits, hyphens), every \`blockedBy\` entry naming two
+  keys, and no cycle.
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
 \`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
-\`"Close"\` — the tag alone, never an object, and never \`"AnswerQuestion"\`: that
+\`"Split"\`, \`"Close"\` — the tag alone, never an object, and never \`"AnswerQuestion"\`: that
 choice belongs to a person's own question, a wait you are not reading.`
 
 const RULES = `## The rules
@@ -141,6 +147,8 @@ const RULES = `## The rules
   about the pass, not a reason the approach is wrong or the lines need fixing —
   name the actual cause underneath it, if there is one, or say the run did not
   finish (\`TicketTooBig\`).
+- **\`Split\` only with \`TicketTooBig\`, and only with its \`split\` plan.** The plan is
+  advice a person edits; nothing is opened until they approve it.
 - **Where the body does not say what the ticket wants**, answer \`"want": null\`
   and ask for it as an \`UndecidedQuestion\` (0118 §2, §3) — do not guess.`
 

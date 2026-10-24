@@ -118,7 +118,8 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
     it(`${fx.tag} — ${fx.name}`, () => {
       const standing = standingFor(fx)
       expect(standing.reason).not.toBeNull()
-      const allowed = allowedResolutions(standing.reason!)
+      // no card for Split until #563 draws its editor
+      const allowed = allowedResolutions(standing.reason!).filter((tag) => tag !== 'Split')
       const html = render(fx, null)
       const row = movesOf(html)
       const buttons = buttonsOf(row)
