@@ -144,7 +144,7 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     expect(await split()).toMatchObject({ ok: false, reason: 'split-not-resolved' })
 
     expect(github.issues.map((i) => i.labels.map((l) => l.name))).toEqual(Array(3).fill(['feature', 'agent:hold']))
-    expect(github.issues[0]!.body).toContain(splitMarker(PARENT, waitId, 'a'))
+    expect(github.issues[0]!.body).toContain(splitMarker(PARENT, waitId, PLAN, 'a'))
     const [a, b, c] = github.issues
     expect(github.subs.get(PARENT)).toEqual(new Set([a!.number, b!.number, c!.number]))
     expect(github.blocks.get(b!.number)).toEqual(new Set([a!.id]))
@@ -194,7 +194,7 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
 
         // One issue per key.
         for (const c of PLAN.children)
-          expect(github.issues.filter((i) => i.body.includes(splitMarker(PARENT, waitId, c.key)))).toHaveLength(1)
+          expect(github.issues.filter((i) => i.body.includes(splitMarker(PARENT, waitId, PLAN, c.key)))).toHaveLength(1)
         expect(github.issues).toHaveLength(3)
         const byKey = new Map(PLAN.children.map((c, i) => [c.key, github.issues[i]!]))
         // Every edge exists on the dependent child and names the blocker's id.
@@ -262,7 +262,7 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     const open = github.issues.filter((i) => i.state === 'open')
     expect(open).toHaveLength(3)
     expect(github.issues.filter((i) => i.state === 'closed')).toHaveLength(1)
-    expect(open.filter((i) => i.body.includes(splitMarker(PARENT, waitId, 'a')))).toHaveLength(1)
+    expect(open.filter((i) => i.body.includes(splitMarker(PARENT, waitId, PLAN, 'a')))).toHaveLength(1)
   })
 
   it('does not take a sub-issue from another repository with the same number for the child', async () => {
@@ -324,6 +324,27 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       expect(result).toMatchObject({ ok: false, reason: 'split-in-progress', detail: expect.stringContaining('#600') })
       expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(1)
       expect(github.issues).toHaveLength(1)
+    })
+
+    it('never adopts a child of the superseded plan that only became visible after the plan changed', async () => {
+      const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      // The create landed but the listing does not show it yet.
+      const listed = github.port.listIssuesSince
+      github.port.listIssuesSince = async () => []
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const edited = {
+        ...PLAN,
+        children: [{ ...child('a'), title: 'changed', body: 'new work' }, child('b'), child('c')],
+      }
+      await split(edited)
+      github.port.listIssuesSince = listed
+      expect(await split(edited)).toMatchObject({ reason: 'split-not-resolved' })
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      const a = progress.observed.children.find((c) => c.key === 'a')!
+      const issue = github.issues.find((i) => i.number === a.number)!
+      expect(issue.title).toBe('changed')
+      expect(issue.body).toContain('new work')
     })
 
     it('is accepted while no child exists, and the new plan is the one reconciled', async () => {

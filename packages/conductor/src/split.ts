@@ -15,6 +15,8 @@
  * are `WaitResolved{Split}`'s (#562). Children left behind by an abandoned
  * split stay held, and nothing here cleans them up.
  */
+import { createHash } from 'node:crypto'
+
 import { type PayloadOf, type ToAppend, type WaitId } from '@lingtai/domain'
 import { type SplitObserved, type SplitOwed, type SplitPlan, splitOwed } from '@lingtai/domain/wait'
 import { type EventStore } from '@lingtai/event-store'
@@ -36,9 +38,23 @@ export type SplitPort = Pick<
   | 'addBlockedBy'
 >
 
-/** How a GitHub issue says which child of which split it is. Invisible when rendered. */
-export function splitMarker(parent: number, waitId: string, key: string): string {
-  return `<!-- lingtai:split ${parent} ${waitId} ${key} -->`
+/**
+ * Which plan a marker belongs to: a hash of the keys, titles, bodies, kinds and
+ * edges. A child made under a superseded plan (a create that timed out and only
+ * became visible later) carries the old hash, so a replacement plan never
+ * adopts it as its own child — it is left behind, held, like any abandoned one.
+ */
+export function splitPlanHash(plan: SplitPlan): string {
+  const canonical = JSON.stringify([
+    plan.children.map((c) => [c.key, c.title, c.body, c.kind]),
+    plan.blockedBy.map((d) => [d.ticket, d.blockedBy]),
+  ])
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 12)
+}
+
+/** How a GitHub issue says which child of which plan of which split it is. Invisible when rendered. */
+export function splitMarker(parent: number, waitId: string, plan: SplitPlan, key: string): string {
+  return `<!-- lingtai:split ${parent} ${waitId} ${splitPlanHash(plan)} ${key} -->`
 }
 
 /** Clocks disagree; see `ticket-store.ts`'s `SKEW_MS`, which this is the same hour as. */
@@ -82,7 +98,7 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     const found = new Map<string, { number: number; id: IssueId }>()
     const duplicates: { number: number; of: number }[] = []
     for (const child of plan.children) {
-      const marker = splitMarker(parent, waitId, child.key)
+      const marker = splitMarker(parent, waitId, plan, child.key)
       const [oldest, ...rest] = issues.filter((i) => i.body.includes(marker)).sort((a, b) => a.number - b.number)
       if (oldest === undefined) continue
       found.set(child.key, { number: oldest.number, id: oldest.id })
@@ -147,7 +163,7 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
       for (const d of (await findChildren()).duplicates) await withdraw(d.number, d.of)
       for (const child of plan.children) {
         if (issues.has(child.key)) continue
-        const marker = splitMarker(parent, waitId, child.key)
+        const marker = splitMarker(parent, waitId, plan, child.key)
         const opened = await port.createIssue({
           title: child.title,
           body: `${child.body.trimEnd()}\n\n${marker}\n`,
