@@ -425,6 +425,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
 export const issue: Issue = {
   number: 7,
+  id: 7007 as Issue['id'],
   title: 'a race in the importer',
   body: 'fix it',
   labels: [{ name: 'bug', color: '#d73a4a' }],

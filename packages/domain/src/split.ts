@@ -178,3 +178,59 @@ export const SplitProposal = z
   })
   .superRefine(refuseProblems)
 export type SplitProposal = z.infer<typeof SplitProposal>
+
+// ------------------------------------------------------------ reconciling ----
+
+/** A child found on GitHub: its plan key, issue number and GitHub's internal id — never one for the other. */
+export const ObservedChild = z.strictObject({ key: z.string(), number: z.number().int(), id: z.number().int() })
+export type ObservedChild = z.infer<typeof ObservedChild>
+
+/**
+ * What a read-back from GitHub actually returned (#561) — never what a write
+ * was told. A write that returned 2xx, or threw, is not in here until a GET
+ * has seen it.
+ */
+export const SplitObserved = z.strictObject({
+  children: z.array(ObservedChild),
+  /** Keys of the children found under the parent as sub-issues. */
+  subIssues: z.array(z.string()),
+  /** Edges found on the dependent child. */
+  blockedBy: z.array(Dependency),
+})
+export type SplitObserved = z.infer<typeof SplitObserved>
+
+export const NOTHING_OBSERVED: SplitObserved = { children: [], subIssues: [], blockedBy: [] }
+
+export interface SplitOwed {
+  /** Keys of the children not yet seen on GitHub. */
+  readonly children: readonly string[]
+  /** Keys of the children not yet seen as sub-issues of the parent. */
+  readonly subIssues: readonly string[]
+  /** Edges not yet seen on the dependent child. */
+  readonly blockedBy: readonly Dependency[]
+  /** True only when all three are empty. */
+  readonly complete: boolean
+}
+
+/** What `plan` still owes, given what was observed. Derived, never stored. */
+export function splitOwed(plan: SplitPlanShape, observed: SplitObserved): SplitOwed {
+  const seen = new Set(observed.children.map((c) => c.key))
+  const attached = new Set(observed.subIssues)
+  const edges = new Set(observed.blockedBy.map((d) => JSON.stringify([d.ticket, d.blockedBy])))
+  const children = plan.children.filter((c) => !seen.has(c.key)).map((c) => c.key)
+  const subIssues = plan.children.filter((c) => !attached.has(c.key)).map((c) => c.key)
+  const blockedBy = plan.blockedBy.filter((d) => !edges.has(JSON.stringify([d.ticket, d.blockedBy])))
+  return { children, subIssues, blockedBy, complete: children.length + subIssues.length + blockedBy.length === 0 }
+}
+
+/** Two plans are the same when keys, titles, bodies, kinds and edges all are. */
+export function sameSplitPlan(a: SplitPlanShape, b: SplitPlanShape): boolean {
+  return JSON.stringify(canonicalPlan(a)) === JSON.stringify(canonicalPlan(b))
+}
+
+function canonicalPlan(plan: SplitPlanShape): unknown {
+  return {
+    children: plan.children.map((c) => [c.key, c.title, c.body, c.kind]),
+    blockedBy: plan.blockedBy.map((d) => [d.ticket, d.blockedBy]),
+  }
+}

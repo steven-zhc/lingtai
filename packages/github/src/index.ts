@@ -37,6 +37,8 @@ export {
   type Dependencies,
   type GitHubClient,
   type Issue,
+  type IssueId,
   type Label,
+  type LinkedIssue,
 } from './client.ts'
 export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'

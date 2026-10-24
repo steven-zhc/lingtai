@@ -106,6 +106,7 @@ function fakeGitHub(hooks: { beforeCreate?: () => Promise<void>; afterCreate?: (
       if (before) await before()
       const issue: Issue = {
         number: 212 + issues.length,
+        id: ((212 + issues.length) * 1000 + 7) as Issue['id'],
         title: input.title,
         body: input.body,
         labels: input.labels.map((name) => ({ name, color: null })),

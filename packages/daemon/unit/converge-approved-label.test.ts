@@ -43,6 +43,7 @@ function fakeClient(labels: readonly string[]) {
   return {
     getIssue: async (n: number) => ({
       number: n,
+      id: (n * 1000 + 7) as never,
       title: 'a ticket',
       body: '',
       labels: labels.map((name) => ({ name, color: null })),

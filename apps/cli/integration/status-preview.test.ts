@@ -39,6 +39,7 @@ runtime:
 `
 
 const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?: (string | Label)[] }): Issue => ({
+  id: (over.number * 1000 + 7) as Issue['id'],
   title: `issue ${over.number}`,
   body: '',
   state: 'open',
@@ -73,6 +74,14 @@ const github: GitHubClient = {
   fileAt: async () => YAML,
   refSha: async () => '0'.repeat(40),
   matchingRefs: async () => [],
+  subIssues: async () => [],
+  addSubIssue: async () => {
+    throw new Error('no writes in this test')
+  },
+  blockedBy: async () => [],
+  addBlockedBy: async () => {
+    throw new Error('no writes in this test')
+  },
   deleteRef: async () => {
     throw new Error('no writes in this test')
   },

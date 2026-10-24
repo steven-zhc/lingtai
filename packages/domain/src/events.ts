@@ -21,6 +21,7 @@ import { StepOutcome, WaitId } from './action.ts'
 import { JudgeWhen } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
+import { SplitObserved, SplitPlan } from './split.ts'
 import {
   Finding,
   RefusalReason,
@@ -1892,6 +1893,25 @@ export const WaitTriaged = z.strictObject({
   by: TriageBy,
 })
 
+/**
+ * A person's approved split plan, recorded once before the first write (#561).
+ * A retry reconciles *this* plan, not the one in the new command: children may
+ * already exist under its keys.
+ */
+export const SplitStarted = z.strictObject({ waitId: WaitId, by: z.string(), plan: SplitPlan })
+
+/**
+ * One reconcile attempt's read-back, appended whether or not a write failed.
+ * `observed` is only what a GET returned; `failure` is the first error that
+ * stopped writing, or that a read-back itself hit. What is owed is
+ * `splitOwed(plan, observed)` — derived, never stored.
+ */
+export const SplitReconciled = z.strictObject({
+  waitId: WaitId,
+  observed: SplitObserved,
+  failure: z.string().nullable(),
+})
+
 // ------------------------------------------------------------- extension ----
 
 /**
@@ -1993,6 +2013,8 @@ export const EVENTS = {
   GitHubAppCreated,
   TriageStarted,
   WaitTriaged,
+  SplitStarted,
+  SplitReconciled,
   PluginFailed,
 } as const
 
