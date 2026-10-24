@@ -87,19 +87,15 @@ describe('a wait’s triage status', () => {
     expect(toCard(waiting({ started: null, result: null }), null, null, null, null).triage).toBeNull()
   })
 
-  it('is read by toCard, which shows a Done result however the beacon read', () => {
-    // The card exposes only what a `Done` status carries (`cause`), and `Done`
-    // does not depend on the context: this holds that toCard takes the context
-    // (or null for an unreadable beacon) and builds the card from the status.
+  it('shows a Done result on the card whatever the daemon start', () => {
     const result = {
       _tag: 'TriageAdvised',
       summary: 'a summary',
       cause: { _tag: 'Unknown' },
     } as unknown as NonNullable<TaskCard['triage']['result']>
     const card = waiting({ started: null, result })
-    const read = (context: Parameters<typeof toCard>[7]) =>
-      toCard(card, null, null, null, null, undefined, undefined, context)
-    expect(read(triageContextOf(true, daemon)).cause?.summary).toBe('a summary')
-    expect(read(null).cause?.summary).toBe('a summary')
+    const read = toCard(card, null, null, null, null, undefined, undefined, triageContextOf(true, daemon))
+    expect(read.cause?.summary).toBe('a summary')
+    expect(read.triage).toBeNull()
   })
 })

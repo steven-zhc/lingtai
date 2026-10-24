@@ -1,7 +1,7 @@
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { passCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
-import { loadAllProjects } from '@lingtai/conductor/projects'
+import { currentRecipe, loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readStatus } from '@lingtai/daemon/control'
 import {
@@ -525,16 +525,21 @@ export function triageContextOf(declared: boolean, status: { startedAt: Date } |
 }
 
 /** The card's `TriageStatus`: the page's `currentTriageStatus` over the same wait gives the same answer. */
-export function cardTriageStatus(
-  t: Pick<TaskCard, 'wait' | 'triage'>,
-  context: TriageContext | null,
-): TriageStatus | null {
-  if (t.wait === null) return null
-  if (context !== null) return triageStatus(t.wait.reason, t.triage, context)
-  // A beacon that could not be read: a finished triage does not depend on it, and
-  // nothing else is claimed, since `Running` would be a guess about the daemon.
-  const status = triageStatus(t.wait.reason, t.triage, { declared: false, daemonStartedAt: null })
-  return status._tag === 'Done' ? status : null
+export function cardTriageStatus(t: Pick<TaskCard, 'wait' | 'triage'>, context: TriageContext): TriageStatus | null {
+  return t.wait === null ? null : triageStatus(t.wait.reason, t.triage, context)
+}
+
+/** The projects whose current recipe declares `triage:`, read the way the task page reads it. */
+async function declaredTriage(projects: ProjectState[]): Promise<Set<string>> {
+  const declared = await Promise.all(
+    projects.map((p) =>
+      currentRecipe(p).then(
+        (r) => r.recipe.triage !== undefined,
+        () => false,
+      ),
+    ),
+  )
+  return new Set(projects.flatMap((p, i) => (declared[i] && p.project !== null ? [p.project] : [])))
 }
 
 /**
@@ -566,7 +571,7 @@ export function toCard(
    * What `triageStatus` reads besides the wait. The queued-card stub has no
    * wait, so it never reaches `triageStatus` and the default is never used.
    */
-  triage: TriageContext | null = triageContextOf(false, null),
+  triage: TriageContext = triageContextOf(false, null),
 ): BoardCard {
   const words =
     t.wait === null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
@@ -730,8 +735,6 @@ export async function queuedCards(
   plans: Map<string, StepPlan>
   /** Where each project's tickets live, for the reference `loadBoard` carries onto `Board`. */
   ticketSources: Map<string, TicketSource>
-  /** Projects whose recipe declares `triage:`; one that could not be read is absent, as it is on the page. */
-  triageDeclared: Set<string>
   /**
    * What each project's repository calls each kind's colour, keyed by project
    * and then by kind. Off the issues `runnableNow` has already read, for the
@@ -752,7 +755,6 @@ export async function queuedCards(
   const backoffMs = new Map<string, number>()
   const plans = new Map<string, StepPlan>()
   const ticketSources = new Map<string, TicketSource>()
-  const triageDeclared = new Set<string>()
   const kindColors = new Map<string, Record<string, string>>()
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
@@ -787,7 +789,6 @@ export async function queuedCards(
     backoffMs.set(filter.project, filter.backoffMs)
     plans.set(filter.project, filter.plan)
     ticketSources.set(filter.project, ticketSourceOf(filter.recipe))
-    if (filter.recipe.triage !== undefined) triageDeclared.add(filter.project)
     for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
     if (answer.state === 'unanswered') {
       problems.push({ project: filter.project, reason: answer.problem })
@@ -859,7 +860,7 @@ export async function queuedCards(
       })
     }
   }
-  return { cards, problems, notes, limits, backoffMs, plans, ticketSources, triageDeclared, kindColors, kindOrder }
+  return { cards, problems, notes, limits, backoffMs, plans, ticketSources, kindColors, kindOrder }
 }
 
 /**
@@ -984,7 +985,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // `currentSpend` folds it to the head first, the way `currentBacklog` does,
   // because the board holds no projector of its own and a bare `lingtai run`
   // is the only thing that does on the terminal path (`#498`'s review).
-  const [queued, spend, daemon] = await Promise.all([
+  const [queued, spend, daemon, triageDeclared] = await Promise.all([
     queuedCards(registered.filter((p) => project === undefined || p.project === project)),
     // Not measured, so not claimed: a skipped fold has no lag to report, and
     // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
@@ -994,13 +995,14 @@ export async function loadBoard(project?: string): Promise<Board> {
     tasks.length === 0
       ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
       : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
-    // The beacon's row, once for the board: the page reads the same one.
-    // A beacon that cannot be read costs the cards their triage status, not the
-    // board: `unreadable` says so, where a null row would say no daemon has run.
-    readStatus().then(
-      (row) => ({ row }),
-      () => 'unreadable' as const,
-    ),
+    // The beacon's row, once for the board: the page reads the same one, and
+    // a failed read reaches the board as an error there as it does on the page,
+    // rather than leaving the cards to say less than the page will.
+    readStatus(),
+    // Which projects declare `triage:`, read from the recipe as the page reads
+    // it (`loadCurrentTriageStatus`) and not off the queue filter, whose GitHub
+    // client can fail for a project whose recipe is perfectly readable.
+    declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
@@ -1037,7 +1039,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
-      daemon === 'unreadable' ? null : triageContextOf(queued.triageDeclared.has(t.project), daemon.row),
+      triageContextOf(triageDeclared.has(t.project), daemon),
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so
