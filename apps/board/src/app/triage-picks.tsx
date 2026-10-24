@@ -7,7 +7,6 @@ type Picks = { waitId: WaitId | null; answers: Record<number, string> }
 type TriageDraft = {
   waitId: WaitId | null
   text: string
-  note: string | null
   selected: (index: number, question: TriageQuestion) => string
   pick: (index: number, answerId: string) => void
 }
@@ -39,11 +38,7 @@ export function TriagePicks({
       answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
     }))
 
-  return (
-    <Context.Provider value={{ waitId, text, note: text === '' ? null : `Triage answers:\n${text}`, selected, pick }}>
-      {children}
-    </Context.Provider>
-  )
+  return <Context.Provider value={{ waitId, text, selected, pick }}>{children}</Context.Provider>
 }
 
 export function useTriageDraft(): TriageDraft | null {

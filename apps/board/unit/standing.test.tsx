@@ -1,5 +1,6 @@
 import type { Action, Envelope, Finding, Step } from '@lingtai/domain'
 import { aWaitId } from '@lingtai/domain/test/events'
+import { recommendedResolution } from '@lingtai/domain/wait'
 import { Children, isValidElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
@@ -1288,16 +1289,16 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
   expect(wrong.indexOf('data-resolution="Requeue"')).toBeLessThan(wrong.indexOf('data-resolution="GrantFixRound"'))
   expect(wrong).toContain('Start over from base')
-  const conflicting = render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'GrantFixRound') }, OUTGOING)
+  // The board draws what `recommendedResolution` returns and nothing else
+  // (#572): a diagnosis-contradicted advice is dropped, not swapped for Requeue.
+  const contradicted = advice({ _tag: 'WrongApproach' }, 'GrantFixRound')
+  expect(recommendedResolution(FIXABLE.reason!, contradicted)).toBeNull()
+  const conflicting = render({ ...FIXABLE, triageStatus: contradicted }, OUTGOING)
   const conflictingMoves = moves(conflicting)
   expect(conflicting).toContain('The approach is wrong; start over from base instead of continuing saved work.')
   expect(conflicting).not.toContain('only your click grants the paid round')
-  expect(conflictingMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
-    conflictingMoves.indexOf('data-resolution="GrantFixRound"'),
-  )
-  expect(conflictingMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
-  expect(conflictingMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="GrantFixRound"/)
-  expect(conflictingMoves).toContain('Recommended for this diagnosis')
+  expect(conflictingMoves).not.toContain('sresolution--recommended')
+  expect(conflictingMoves).not.toContain('Triage recommended')
   const reviewFindings = render(
     {
       ...FIXABLE,
@@ -1319,16 +1320,22 @@ it('uses triage advice to recommend a choice without granting it', () => {
   )
   const reviewMoves = moves(reviewFindings)
   expect(reviewFindings).toContain('The approach is wrong; start over from base instead of continuing saved work.')
-  expect(reviewMoves.indexOf('data-resolution="Requeue"')).toBeLessThan(
-    reviewMoves.indexOf('data-resolution="Approve"'),
-  )
-  expect(reviewMoves).toMatch(/class="sresolution sresolution--recommended" data-resolution="Requeue"/)
-  expect(reviewMoves).not.toMatch(/class="sresolution sresolution--recommended" data-resolution="Approve"/)
+  expect(reviewMoves).not.toContain('sresolution--recommended')
   expect(reviewMoves).toContain('Send attempt 3 from base')
   expect(reviewMoves).not.toContain('class="btn pri">Approve and continue')
   const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
   expect(waiver).toContain('approval, which waives the refusal')
   expect(waiver).not.toContain('sresolution--recommended')
+  expect(recommendedResolution(FIXABLE.reason!, advice({ _tag: 'FixableLines', fixes: [] }, 'Approve'))).toBeNull()
+  // No saved head: the domain does not recommend GrantFixRound, so nothing is
+  // drawn first and nothing else is recommended in its place.
+  const headless = advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound')
+  const noHeadHtml = render({ ...FIXABLE, fixWork: null, triageStatus: headless }, OUTGOING)
+  const noHead = moves(noHeadHtml)
+  expect(recommendedResolution(FIXABLE.reason!, headless, { savedHead: false })).toBeNull()
+  expect(noHead).not.toContain('sresolution--recommended')
+  expect(noHead).not.toContain('Triage recommended')
+  expect(noHead).toContain('Cannot continue saved work')
 })
 
 function closeOn(standing: StandingView): { key: string | null; prefill: string | null | undefined } {
@@ -1602,6 +1609,23 @@ describe('the moves the column ends in', () => {
     expect(running.prefill).toBeNull()
     expect(advised.prefill).toBe('stop this approach')
     expect(advised.key).not.toBe(running.key)
+  })
+
+  it('starts the close box with triage summary whatever triage recommended (#572)', () => {
+    const advised = closeOn({
+      ...HELD,
+      triageStatus: {
+        _tag: 'Done',
+        result: {
+          _tag: 'TriageAdvised',
+          cause: { _tag: 'WrongApproach' },
+          resolution: 'Requeue',
+          summary: 'start over, the approach is wrong',
+          want: null,
+        },
+      },
+    })
+    expect(advised.prefill).toBe('start over, the approach is wrong')
   })
 
   it('leaves the existing order and no primary for disallowed advice', () => {

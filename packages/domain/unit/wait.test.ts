@@ -24,7 +24,7 @@ import {
   type TriageStatus,
   type WaitReason,
 } from '../src/wait.ts'
-import { WaitReason as WaitReasonSchema } from '../src/wait.ts'
+import { WaitReason as WaitReasonSchema, type RootCause } from '../src/wait.ts'
 
 const run: RunRef = { runId: 'pass-1' }
 const unpushedRun: RunRef = { runId: 'pass-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
@@ -496,12 +496,61 @@ describe('recommendedResolution', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
     const advised: TriageResult = {
       _tag: 'TriageAdvised',
-      cause: { _tag: 'WrongApproach' },
+      cause: { _tag: 'SetupBroken' },
       resolution: 'Approve',
       summary: 'the fixer and the reviewer disagree',
       want: null,
     }
     expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).toBe('Approve')
+  })
+
+  describe('an advice its own cause contradicts (#572)', () => {
+    const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
+    const advise = (cause: RootCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
+      _tag: 'Done',
+      result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
+    })
+    const wrong: RootCause = { _tag: 'WrongApproach' }
+    const fixable: RootCause = { _tag: 'FixableLines', fixes: [] }
+
+    it('WrongApproach advising Approve or GrantFixRound is null, not a substitute', () => {
+      expect(allowedResolutions(reason)).toContain('Approve')
+      expect(recommendedResolution(reason, advise(wrong, 'Approve'))).toBeNull()
+      expect(recommendedResolution(reason, advise(wrong, 'GrantFixRound'))).toBeNull()
+    })
+
+    it('WrongApproach advising Requeue is kept', () => {
+      expect(recommendedResolution(reason, advise(wrong, 'Requeue'))).toBe('Requeue')
+    })
+
+    it('FixableLines advising Approve is null', () => {
+      expect(recommendedResolution(reason, advise(fixable, 'Approve'))).toBeNull()
+    })
+
+    it('GrantFixRound with no saved head is null whatever the cause', () => {
+      const check = parseReason({
+        _tag: 'CheckRefused',
+        run,
+        step: 'proposed',
+        action: 'watch:ci',
+        evidence: 'the check failed',
+        findings: [],
+      })
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'), { savedHead: false })).toBeNull()
+    })
+
+    it('FixableLines advising GrantFixRound is kept where it is allowed', () => {
+      const check = parseReason({
+        _tag: 'CheckRefused',
+        run,
+        step: 'proposed',
+        action: 'watch:ci',
+        evidence: 'the check failed',
+        findings: [],
+      })
+      expect(allowedResolutions(check)).toContain('GrantFixRound')
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'))).toBe('GrantFixRound')
+    })
   })
 
   /**

@@ -1,6 +1,7 @@
 import { reduceTicket, ticketStream, type Envelope, type ProjectState } from '@lingtai/domain'
 import { aClaim, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
+import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -52,6 +53,7 @@ describe('requeue command', () => {
     expect((await store.read(ticketId)).find((e) => e.type === 'WaitResolved')?.data).toMatchObject({
       waitId,
       resolution: { _tag: 'EditBodyAndRequeue' },
+      note: requeueNote('Use the small helper'),
     })
   })
 

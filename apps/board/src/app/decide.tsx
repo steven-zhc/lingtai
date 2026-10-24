@@ -368,7 +368,6 @@ export function EditBodyAndRequeue({
                 issue,
                 waitId,
                 text: currentText,
-                ...(triage?.waitId === waitId && triage.note !== null ? { note: triage.note } : {}),
               })
               setPending(false)
               setDoneWaitId(result.ok ? waitId : null)
