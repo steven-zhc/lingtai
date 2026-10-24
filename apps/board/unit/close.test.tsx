@@ -55,6 +55,14 @@ describe('Close', () => {
     // thing a person learns about the control.
     expect(close).toMatch(/disabled=\{!reason\.trim\(\) \|\| pending\}/)
   })
+
+  it('prefills triage’s sentence under a disagreement only once triage’s reading is picked (#575)', () => {
+    const source = read('../src/app/decide.tsx')
+    const close = source.slice(source.indexOf('export function Close'))
+
+    expect(close).toMatch(/disagreed && picked !== 'triage' \? ''/)
+    expect(read('../src/app/standing.tsx')).toContain('disagreed={readings !== null}')
+  })
 })
 
 describe('the row of moves', () => {

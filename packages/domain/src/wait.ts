@@ -677,12 +677,22 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
 export function recommendedResolution(
   reason: WaitReason,
   status: TriageStatus,
-  options: { savedHead?: boolean } = {},
+  options: { savedHead?: boolean; disagreement?: Disagreement | null; picked?: 'judge' | 'triage' | null } = {},
 ): Resolution['_tag'] | null {
+  // A judge/triage disagreement is the person's decision (0118 §5): nothing is
+  // recommended until they pick a reading, and then that reading's resolution
+  // is. The caller passes the disagreement in; this reads neither `why` nor
+  // the reason's judge.
+  const open = options.disagreement ?? null
+  if (open !== null && (options.picked ?? null) === null) return null
   const allowed = allowedResolutions(reason).filter((tag) => tag !== 'GrantFixRound' || options.savedHead !== false)
   const toDefault = () => {
     const fallback = defaultResolution(reason)
     return fallback !== null && allowed.includes(fallback) ? fallback : null
+  }
+  if (open !== null && options.picked === 'judge') {
+    const chosen = judgeResolution(open.judge.chose)
+    return chosen !== null && allowed.includes(chosen) ? chosen : null
   }
   switch (status._tag) {
     case 'Done':
@@ -864,14 +874,32 @@ export function judgeReadingOf(reason: WaitReason): { chose: CandidateId; why: s
   }
 }
 
-/** Both readings of this wait when triage disagrees with the judge (0118 §5). */
-export function disagreement(
-  reason: WaitReason,
-  result: TriageResult,
-): {
+/**
+ * The resolution the judge's choice stands for, read off the candidate id
+ * alone — where `destinationOf` (`proposed-route.ts`) sends each. `null` where
+ * the judge's reading is "a person decides", or the id is not one it knows.
+ */
+export function judgeResolution(chose: CandidateId): Resolution['_tag'] | null {
+  switch (chose) {
+    case 'fix-lines':
+      return 'GrantFixRound'
+    case 'restart':
+      return 'Requeue'
+    case 'state-assumption':
+      return 'EditBodyAndRequeue'
+    default:
+      return null
+  }
+}
+
+/** Both readings of a wait the judge and triage read differently. */
+export type Disagreement = {
   judge: NonNullable<ReturnType<typeof judgeReadingOf>>
   triage: Extract<TriageResult, { _tag: 'TriageAdvised' }>
-} | null {
+}
+
+/** Both readings of this wait when triage disagrees with the judge (0118 §5). */
+export function disagreement(reason: WaitReason, result: TriageResult): Disagreement | null {
   const judge = judgeReadingOf(reason)
   if (judge === null || result._tag === 'TriageFailed') return null
   switch (result.cause._tag) {
