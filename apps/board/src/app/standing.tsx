@@ -545,7 +545,12 @@ export function Standing({
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
   const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
-  const recommended = drawable.find((tag) => tag === advice) ?? null
+  // `GrantFixRound` with no saved head cannot run: its card says so, and it is
+  // dropped from the recommendation rather than swapped for another (#572).
+  const recommended =
+    drawable.find(
+      (tag) => tag === advice && (tag !== 'GrantFixRound' || (standing.fixWork && 'head' in standing.fixWork)),
+    ) ?? null
   const triageRecommended = triageAdvised !== null ? recommended : null
   const orderedResolutions =
     recommended === null
