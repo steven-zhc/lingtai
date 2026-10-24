@@ -527,6 +527,18 @@ describe('recommendedResolution', () => {
       expect(recommendedResolution(reason, advise(fixable, 'Approve'))).toBeNull()
     })
 
+    it('GrantFixRound with no saved head is null whatever the cause', () => {
+      const check = parseReason({
+        _tag: 'CheckRefused',
+        run,
+        step: 'proposed',
+        action: 'watch:ci',
+        evidence: 'the check failed',
+        findings: [],
+      })
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'), { savedHead: false })).toBeNull()
+    })
+
     it('FixableLines advising GrantFixRound is kept where it is allowed', () => {
       const check = parseReason({
         _tag: 'CheckRefused',

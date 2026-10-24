@@ -631,10 +631,16 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
  * `Done` with `TriageFailed`) the wait's own default stands, itself run back
  * through `allowedResolutions` so a default an `unpushed` run disallows is
- * `null` too.
+ * `null` too. `savedHead: false` is a fact the caller knows and a pure
+ * function cannot (the board's read of the saved ref): no published head means
+ * `GrantFixRound` has nothing to continue, so it is not offered here either.
  */
-export function recommendedResolution(reason: WaitReason, status: TriageStatus): Resolution['_tag'] | null {
-  const allowed = allowedResolutions(reason)
+export function recommendedResolution(
+  reason: WaitReason,
+  status: TriageStatus,
+  options: { savedHead?: boolean } = {},
+): Resolution['_tag'] | null {
+  const allowed = allowedResolutions(reason).filter((tag) => tag !== 'GrantFixRound' || options.savedHead !== false)
   const toDefault = () => {
     const fallback = defaultResolution(reason)
     return fallback !== null && allowed.includes(fallback) ? fallback : null

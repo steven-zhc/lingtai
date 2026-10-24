@@ -88,12 +88,14 @@ export function TriageBand({
   headLine,
   raw,
   said,
+  savedHead,
 }: {
   reason: WaitReason
   status: TriageStatus
   headLine?: string | null
   raw?: string | null
   said?: string | null
+  savedHead?: boolean
 }) {
   switch (status._tag) {
     case 'NotNeeded':
@@ -212,7 +214,7 @@ export function TriageBand({
           break
       }
       const readings = disagreement(reason, result)
-      const kept = recommendedResolution(reason, status) === result.resolution
+      const kept = recommendedResolution(reason, status, { savedHead }) === result.resolution
       const triageReading = (
         <>
           <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
@@ -533,9 +535,10 @@ export function Standing({
   // The only place a recommendation is decided is `recommendedResolution`
   // (0118 §1); this page draws what it returns and orders by it (#572). A card
   // that is not drawn cannot be the one drawn first.
+  const savedHead = Boolean(standing.fixWork && 'head' in standing.fixWork)
   const advice =
     standing.reason !== null && standing.triageStatus !== null
-      ? recommendedResolution(standing.reason, standing.triageStatus)
+      ? recommendedResolution(standing.reason, standing.triageStatus, { savedHead })
       : null
   const triageAdvised =
     standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
@@ -545,8 +548,8 @@ export function Standing({
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
   const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
-  // Whatever `recommendedResolution` returned is drawn first, even a
-  // `GrantFixRound` with no saved head: that card says it cannot run (#572).
+  // Whatever `recommendedResolution` returned is drawn first; with no saved
+  // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
   const recommended = drawable.find((tag) => tag === advice) ?? null
   const triageRecommended = triageAdvised !== null ? recommended : null
   const orderedResolutions =
@@ -859,6 +862,7 @@ export function Standing({
                 headLine={standing.triageHeadLine}
                 raw={raw}
                 said={said}
+                savedHead={savedHead}
               />
             ) : null}
             <div className="spair" data-rank="discussion">
