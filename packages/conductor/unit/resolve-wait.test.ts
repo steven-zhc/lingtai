@@ -340,6 +340,50 @@ describe('resolveWait', () => {
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })
 
+  describe('ContinueConflict is not built yet (#557, #558)', () => {
+    it('refuses an eligible one by name before any append', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream(PROJECT, 31)
+      const item = makeStream(ticketId)
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, 'pass-31'),
+        ...aWait(
+          item,
+          {
+            _tag: 'ProposedEscalated',
+            run: aRunRef('pass-31'),
+            proposal: { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: SHA, headSha: SHA2 },
+            because: { _tag: 'NotAsked' },
+          },
+          waitId,
+        ),
+      ])
+      const before = (await store.read(ticketId)).length
+
+      const result = await resolveWaitHolding(
+        {
+          ticketId,
+          issue: 31,
+          waitId,
+          resolution: {
+            _tag: 'ContinueConflict',
+            baseSha: SHA,
+            headSha: SHA2,
+            ref: 'agent/31',
+            grantExtraRound: false,
+            hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 1, behavior: 'keep new', adopted: null }],
+          },
+          by: 'human:steven',
+          store,
+        },
+        ticketId,
+      )
+      expect(result).toMatchObject({ ok: false, reason: 'not-built' })
+      expect((await store.read(ticketId)).length).toBe(before)
+    })
+  })
+
   describe('refuses a disallowed resolution by name', () => {
     it('AnswerQuestion is not offered for AgentQuestion', async () => {
       const store = createMemoryEventStore()

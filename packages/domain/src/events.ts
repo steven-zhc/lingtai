@@ -302,8 +302,8 @@ export const WaitStarted = z.strictObject({
  * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
  *
- * `resolution` is 0118 §1's own `Resolution` — `Approve`, `Requeue`,
- * `EditBodyAndRequeue`, `AnswerQuestion` or `Close` — so which move a person
+ * `resolution` is 0118 §1's own `Resolution` — `Approve`, `GrantFixRound`,
+ * `ContinueConflict`, `Requeue`, `EditBodyAndRequeue`, `AnswerQuestion` or `Close` — so which move a person
  * made is a value rather than re-derived from which other event followed.
  */
 export const WaitResolved = z.object({

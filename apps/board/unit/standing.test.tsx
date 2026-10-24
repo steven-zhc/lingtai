@@ -619,13 +619,13 @@ const HELD: StandingView = {
   restarts: 0,
   restartsOf: 0,
   waitId: aWaitId(),
-  // A merge conflict: `allowedResolutions` offers no `Approve` for it
-  // (`wait.ts`'s `MergeConflict` row), which is what keeps `awaitingSha: null`
+  // A red build: `allowedResolutions` offers no `Approve` for it
+  // (`wait.ts`'s `BuildRed` row), which is what keeps `awaitingSha: null`
   // above from ever being asked to back a button (#442).
   reason: {
     _tag: 'ProposedEscalated',
     run: { runId: RUN_2 },
-    proposal: { _tag: 'MergeConflict', output: 'apps/web/page.tsx', paths: null, baseSha: null, headSha: null },
+    proposal: { _tag: 'BuildRed', output: 'apps/web/page.tsx' },
     because: { _tag: 'NotAsked' },
   },
   unpushed: null,
@@ -1192,7 +1192,7 @@ const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"
 /**
  * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
  * 'EditBodyAndRequeue', 'Close']` (`wait.ts`'s `SignoffRequired` row) — so
- * tests below that want Approve on the row swap `HELD`'s own `MergeConflict`
+ * tests below that want Approve on the row swap `HELD`'s own `BuildRed`
  * reason (which never offers it) for this one, alongside `awaitingSha` (#442:
  * the two now have to agree, where before only `awaitingSha` was read).
  */

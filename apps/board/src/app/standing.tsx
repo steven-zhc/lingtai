@@ -54,6 +54,11 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     consequence:
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
+  ContinueConflict: {
+    title: 'Continue the conflict',
+    consequence:
+      'Continue the preserved conflict with the behavior you confirm for each divergent hunk. Not runnable yet.',
+  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
@@ -544,8 +549,14 @@ export function Standing({
         rawAdvice === 'Approve'
       ? null
       : rawAdvice
+  // No `ContinueConflict` card is drawn until it can be run (#559), so it is
+  // never the recommended one either.
   const recommended =
-    advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork) ? 'Requeue' : advised
+    advised === 'ContinueConflict'
+      ? null
+      : advised === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+        ? 'Requeue'
+        : advised
   const triageRecommended =
     standing.triageStatus?._tag === 'Done' &&
     standing.triageStatus.result._tag === 'TriageAdvised' &&
@@ -560,7 +571,7 @@ export function Standing({
       : null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
-  const drawable = allowed.filter((tag) => tag !== 'Split')
+  const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
   const orderedResolutions =
     recommended === null
       ? drawable
