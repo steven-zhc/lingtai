@@ -10,6 +10,7 @@ import {
   catchUpChangedTriage,
   catchUpRegisteredTriage,
   catchUpTriage,
+  memoDaemonStartedAt,
   onWaitStarted,
   type CatchUpTriagePorts,
   type TriageTriggerPorts,
@@ -47,7 +48,7 @@ function fixture() {
     store: { read: async (stream) => streams.get(stream) ?? [], append },
     readTasks: async () => cards,
     baseSha: async () => 'base-sha',
-    daemonStartedAt: startedAt,
+    daemonStartedAt: async () => startedAt,
     run,
   }
   function add(issue: number, waitReason: WaitReason = reason) {
@@ -115,6 +116,65 @@ describe('triage catch-up', () => {
     await catchUpTriage('lingtai', triage, f.deps)
     await drained()
     expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([before.waitId])
+  })
+
+  it('fails the scan while the start time is unread and recognises the interrupted attempt once it is (#583)', async () => {
+    const f = fixture()
+    const interrupted = f.add(2)
+    interrupted.push(
+      interrupted.event(
+        'TriageStarted',
+        { waitId: interrupted.waitId, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+        { at: old },
+      ),
+    )
+    f.deps.daemonStartedAt = vi
+      .fn<() => Promise<Date>>()
+      .mockRejectedValueOnce(new Error('status unreadable'))
+      .mockResolvedValue(startedAt)
+    const hashes = new Map<string, string>()
+    await expect(catchUpChangedTriage('lingtai', triage, hashes, f.deps)).rejects.toThrow('status unreadable')
+    expect(hashes.has('lingtai')).toBe(false)
+    expect(f.run).not.toHaveBeenCalled()
+    await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
+    await drained()
+    expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([interrupted.waitId])
+  })
+
+  it('queues nothing live while the start time is unread', async () => {
+    const f = fixture()
+    const wait = f.add(3)
+    const live: TriageTriggerPorts = {
+      store: f.deps.store,
+      triageFor: async () => triage,
+      daemonStartedAt: async () => {
+        throw new Error('status unreadable')
+      },
+      run: f.run,
+      log: () => {},
+    }
+    await onWaitStarted(wait.wait, live)
+    await drained()
+    expect(f.run).not.toHaveBeenCalled()
+  })
+
+  describe('memoDaemonStartedAt', () => {
+    const row = { pid: 7, startedAt }
+    it('rejects for another pid’s row and for a failed read, then resolves and stops reading', async () => {
+      const read = vi
+        .fn<() => Promise<{ pid: number; startedAt: Date } | null>>()
+        .mockResolvedValueOnce({ pid: 8, startedAt: old })
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error('down'))
+        .mockResolvedValue(row)
+      const at = memoDaemonStartedAt(read, 7)
+      await expect(at()).rejects.toThrow()
+      await expect(at()).rejects.toThrow()
+      await expect(at()).rejects.toThrow('down')
+      await expect(at()).resolves.toBe(startedAt)
+      await expect(at()).resolves.toBe(startedAt)
+      expect(read).toHaveBeenCalledTimes(4)
+    })
   })
 
   it('finishes a second interrupted attempt once, preserving its by and recording no spend', async () => {
@@ -205,7 +265,7 @@ describe('triage catch-up', () => {
     const live: TriageTriggerPorts = {
       store: f.deps.store,
       triageFor: async () => triage,
-      daemonStartedAt: startedAt,
+      daemonStartedAt: async () => startedAt,
       run: f.deps.run,
     }
     await onWaitStarted(wait.wait, live)
@@ -226,7 +286,7 @@ describe('triage catch-up', () => {
     const live: TriageTriggerPorts = {
       store: f.deps.store,
       triageFor: async () => triage,
-      daemonStartedAt: startedAt,
+      daemonStartedAt: async () => startedAt,
       run: f.deps.run,
     }
 

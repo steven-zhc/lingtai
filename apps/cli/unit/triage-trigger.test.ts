@@ -30,7 +30,7 @@ function fixture(reason: WaitReason, declared = true) {
   const deps: TriageTriggerPorts = {
     store: { read: async () => events },
     triageFor: async () => (declared ? triage : null),
-    daemonStartedAt: new Date('2026-08-31T11:00:00Z'),
+    daemonStartedAt: async () => new Date('2026-08-31T11:00:00Z'),
     run: dispatched,
   }
   return {

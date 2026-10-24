@@ -88,7 +88,8 @@ export function enqueueTriage(
 export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
   triageFor(project: string): Promise<Triage | null>
-  daemonStartedAt: Date
+  /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
+  daemonStartedAt: () => Promise<Date>
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
@@ -97,7 +98,8 @@ export interface CatchUpTriagePorts {
   store: Pick<EventStore, 'read' | 'append'>
   readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
   baseSha(project: string): Promise<string | null>
-  daemonStartedAt: Date
+  /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
+  daemonStartedAt: () => Promise<Date>
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
 }
@@ -105,22 +107,25 @@ export interface CatchUpTriagePorts {
 /** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
 export async function catchUpTriage(project: string, triage: Triage | null, deps: CatchUpTriagePorts): Promise<void> {
   if (triage === null) return
+  // Before any scan, so a start time that cannot be read fails the scan and the
+  // recipe hash stays unpinned: the next pass asks again (#583).
+  const startedAt = await deps.daemonStartedAt()
   for (const card of await deps.readTasks(project)) {
     if (card.state !== 'waiting') continue
     // The stream name comes from the domain helper, not the board's row key.
     const stream = ticketStream(project, card.issue)
-    await catchUpWait(stream, triage, deps)
+    await catchUpWait(stream, triage, deps, startedAt)
   }
 }
 
-async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriagePorts): Promise<void> {
+async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriagePorts, startedAt: Date): Promise<void> {
   const events = await deps.store.read(ticketId)
   const lifecycle = reduceTicket(events).lifecycle
   if (lifecycle.status !== 'blocked') return
   const { waitId, reason } = lifecycle
   const status = triageStatus(reason, triageFactsOf(events, waitId), {
     declared: true,
-    daemonStartedAt: deps.daemonStartedAt,
+    daemonStartedAt: startedAt,
   })
   if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
   await queueTriage(
@@ -131,12 +136,12 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
       const current = reduceTicket(latest).lifecycle
       if (current.status !== 'blocked' || current.waitId !== waitId) return
       const facts = triageFactsOf(latest, waitId)
-      const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: deps.daemonStartedAt })
+      const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
       if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
         const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
         if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
       } else if (next._tag === 'Interrupted') {
-        await finishInterrupted(ticketId, waitId, deps)
+        await finishInterrupted(ticketId, waitId, deps, startedAt)
       }
     },
     deps.log ?? console.error,
@@ -144,7 +149,12 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
 }
 
 /** Finish the second interrupted attempt only while it is still the latest unfinished attempt. */
-async function finishInterrupted(ticketId: string, waitId: WaitId, deps: CatchUpTriagePorts): Promise<void> {
+async function finishInterrupted(
+  ticketId: string,
+  waitId: WaitId,
+  deps: CatchUpTriagePorts,
+  startedAt: Date,
+): Promise<void> {
   for (let tries = 0; tries < 5; tries += 1) {
     const events = await deps.store.read(ticketId)
     const lifecycle = reduceTicket(events).lifecycle
@@ -153,8 +163,7 @@ async function finishInterrupted(ticketId: string, waitId: WaitId, deps: CatchUp
     if (
       facts.started === null ||
       facts.started.attempt < 2 ||
-      triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: deps.daemonStartedAt })._tag !==
-        'Interrupted'
+      triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: startedAt })._tag !== 'Interrupted'
     )
       return
     const started = events.findLast(
@@ -232,7 +241,15 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
   const events = await deps.store.read(event.streamId)
   const { waitId, reason } = event.data as PayloadOf<'WaitStarted'>
   if (!currentWait(events, waitId)) return
-  const context = { declared: triage !== null, daemonStartedAt: deps.daemonStartedAt }
+  // A first beat that failed dates `started_at` after attempts this daemon
+  // starts, so with no start time read nothing is queued here: the catch-up
+  // finds the wait `Queued` on a later pass (#583).
+  const daemonStartedAt = await deps.daemonStartedAt().catch((err: Error) => {
+    deps.log?.(`triage ${waitId}: daemon start time unread, left to catch-up: ${err.message}`)
+    return null
+  })
+  if (daemonStartedAt === null) return
+  const context = { declared: triage !== null, daemonStartedAt }
   if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
   enqueueTriage(
     { ticketId: event.streamId, waitId },
@@ -247,9 +264,31 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
   )
 }
 
+/**
+ * This process's start, as the store's clock dates it: `TriageStarted` is dated
+ * by the store, and a database ahead of this host would read an attempt a
+ * previous conductor cut off as `Running` (#576). The first success is kept;
+ * a failed read, or a row that is another pid's because the first beat failed,
+ * rejects and is read again on the next ask — the host's clock is never put in
+ * its place (#583).
+ */
+export function memoDaemonStartedAt(
+  read: () => Promise<{ pid: number; startedAt: Date } | null>,
+  pid: number = process.pid,
+): () => Promise<Date> {
+  let resolved: Date | null = null
+  return async () => {
+    if (resolved !== null) return resolved
+    const row = await read()
+    if (row === null || row.pid !== pid) throw new Error('the daemon start time has not been recorded yet')
+    resolved = row.startedAt
+    return resolved
+  }
+}
+
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
-  daemonStartedAt: Date,
+  daemonStartedAt: () => Promise<Date>,
   log: (line: string) => void,
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {

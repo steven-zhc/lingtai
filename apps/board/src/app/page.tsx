@@ -88,6 +88,7 @@ const TRIAGE_WORDS = {
   Queued: 'triage is waiting to run',
   Running: 'triage is running',
   Interrupted: 'the daemon stopped during triage; it will be tried again on the next start',
+  Unknown: 'triage status unknown — the project list could not be read',
 } as const
 
 function accent(card: BoardCard): string {

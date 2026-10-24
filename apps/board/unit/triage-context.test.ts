@@ -98,4 +98,22 @@ describe('a wait’s triage status', () => {
     expect(read.cause?.summary).toBe('a summary')
     expect(read.triage).toBeNull()
   })
+
+  it('says Unknown, never NotDeclared, where the registry could not be read (#583)', () => {
+    const unread = triageContextOf(null, daemon)
+    const read = (card: TaskCard) => toCard(card, null, null, null, null, undefined, undefined, unread)
+    expect(read(waiting({ started: null, result: null })).triage).toBe('Unknown')
+    const started = { attempt: 1, at: new Date('2026-10-20T11:00:00Z') }
+    expect(read(waiting({ started, result: null })).triage).toBe('Interrupted')
+    const running = { attempt: 1, at: new Date('2026-10-20T13:00:00Z') }
+    expect(read(waiting({ started: running, result: null })).triage).toBe('Running')
+    const result = {
+      _tag: 'TriageAdvised',
+      summary: 'a summary',
+      cause: { _tag: 'Unknown' },
+    } as unknown as NonNullable<TaskCard['triage']['result']>
+    const done = read(waiting({ started: null, result }))
+    expect(done.cause?.summary).toBe('a summary')
+    expect(done.triage).toBeNull()
+  })
 })
