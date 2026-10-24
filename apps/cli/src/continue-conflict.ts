@@ -8,9 +8,12 @@ import {
   allowedResolutions,
   confirmHunks,
   conflictRowKey,
+  conflictRows,
   triageStatus,
   type ConflictChoice,
   type Resolution,
+  type TriageStatus,
+  type WaitReason,
 } from '@lingtai/domain/wait'
 import { eventStore } from '@lingtai/event-store'
 
@@ -61,29 +64,37 @@ export function parseChoices(raw: unknown): Record<string, ConflictChoice> | str
   return out
 }
 
-/** What in the supplied choices disagrees with the hunks an earlier confirmation recorded, or `null`. */
+/** Object keys sorted, so two equal hunks compare equal whatever order they were built in. */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  )
+
+/**
+ * What in the caller's own request disagrees with the hunks an earlier
+ * confirmation recorded, or `null`. The request is built exactly as a fresh
+ * confirmation builds it — triage's recommendation only when asked for, laid
+ * under the supplied choices — and the result must be the recorded hunks.
+ */
 function contradicts(
   resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
   choices: Record<string, ConflictChoice>,
   acceptRecommended: boolean,
+  status: TriageStatus | null,
 ): string | null {
-  const recorded = new Map(resolution.hunks.map((h) => [conflictRowKey(h), h]))
-  for (const [key, choice] of Object.entries(choices)) {
-    const h = recorded.get(key)
-    if (h === undefined) return `${key} is not one of its hunks`
-    const same =
-      choice._tag === 'Mechanical'
-        ? h._tag === 'Mechanical'
-        : choice._tag === 'Answer'
-          ? h._tag === 'Divergent' && h.adopted?.answerId === choice.answerId
-          : h._tag === 'Divergent' && h.behavior === choice.text.trim()
-    if (!same) return `${key} differs`
-  }
-  if (acceptRecommended)
-    for (const [key, h] of recorded)
-      if (h._tag === 'Divergent' && h.adopted === null && choices[key] === undefined)
-        return `${key} was written by hand, not recommended`
-  return null
+  const known = new Set(resolution.hunks.map(conflictRowKey))
+  const unknown = Object.keys(choices).filter((key) => !known.has(key))
+  if (unknown.length > 0) return `${unknown.join(', ')} is not one of its hunks`
+  const built = conflictRows(resolution.hunks, status)
+  if ('tooMany' in built) return 'it has too many hunks'
+  const rows = built.rows.map((row) => (acceptRecommended ? row : { ...row, suggested: null }))
+  const confirmed = confirmHunks(rows, choices)
+  if ('unset' in confirmed) return `no choice for ${confirmed.unset.map(conflictRowKey).join(', ')}`
+  const recorded = new Map(resolution.hunks.map((h) => [conflictRowKey(h), canonical(h)]))
+  const differs = confirmed.hunks.filter((h) => recorded.get(conflictRowKey(h)) !== canonical(h))
+  return differs.length > 0 ? `${differs.map(conflictRowKey).join(', ')} differs` : null
 }
 
 /**
@@ -152,7 +163,18 @@ async function continueConflict(
       }
       choices = parsed
     }
-    const differs = contradicts(resolution, choices, options.acceptRecommended === true)
+    if (options.choices === undefined && !options.acceptRecommended) {
+      log('confirming needs --accept-recommended or --choices <file.json>')
+      return 2
+    }
+    const started = own
+      .filter((e) => e.type === 'WaitStarted')
+      .map((e) => e.data as { waitId: string; reason: WaitReason })
+      .findLast((d) => d.waitId === lifecycle.waitId)
+    const status = started
+      ? triageStatus(started.reason, triageFactsOf(own, lifecycle.waitId), { declared: true, daemonStartedAt: null })
+      : null
+    const differs = contradicts(resolution, choices, options.acceptRecommended === true, status)
     if (differs !== null) {
       log(`${ticketId} was already confirmed with other behavior (${differs}); nothing was changed or asked again.`)
       return 1
