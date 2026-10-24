@@ -2173,7 +2173,9 @@ export async function declaredEnvironment(
       results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
       for (const role of ['discuss', 'triage'] as const) {
         const selected = resolved.recipe[role]
-        if (selected?.agent === 'codex') {
+        if (role === 'triage' && selected?.agent === 'codex' && selected.tools === 'full') {
+          results.push(await dispatchedAuthRow(project.project, 'codex', asked, runtimes, role))
+        } else if (selected?.agent === 'codex') {
           results.push(
             codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
           )

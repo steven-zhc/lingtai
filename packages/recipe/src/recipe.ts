@@ -2960,6 +2960,8 @@ export const TRIAGE_WALL_MAX = 8 * 60_000
 export const Triage = z.strictObject({
   /** Which runtime answers. `DiscussAgent`, not a second enum — see its doc. */
   agent: DiscussAgent.default('claude-code'),
+  /** Codex CLI can inspect a private disposable checkout when explicitly selected. */
+  tools: z.enum(['none', 'full']).default('none'),
   /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
   model: DISPATCH.model,
   /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
