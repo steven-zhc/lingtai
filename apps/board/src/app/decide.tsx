@@ -559,6 +559,7 @@ export function Close({
   issue,
   waitId,
   prefill,
+  disagreed = false,
   primary = false,
 }: {
   project: string
@@ -573,14 +574,19 @@ export function Close({
   waitId: WaitId | null
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
+  /** Judge and triage disagree: triage's sentence is prefilled only once the person picks triage's reading (0118 §5). */
+  disagreed?: boolean
   primary?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
-  const [reason, setReason] = useState(prefill ?? '')
+  const [typed, setTyped] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const picked = useTriageDraft()?.reading ?? null
+  const reason = typed ?? (disagreed && picked !== 'triage' ? '' : (prefill ?? ''))
+  const setReason = setTyped
 
   if (done) return <p className="decided">{done}</p>
 

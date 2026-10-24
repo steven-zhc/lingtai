@@ -57,6 +57,6 @@ describe('Close', () => {
     // later edit that decouples the input from `reason` (a second variable,
     // or `value={prefill ?? ''}` read straight off the prop) fails this
     // rather than passing on an unrelated match.
-    expect(close).toMatch(/const \[reason, setReason\] = useState\(prefill \?\? ''\)[\s\S]*?value=\{reason\}/)
+    expect(close).toMatch(/const reason = typed \?\? \([^\n]*\(prefill \?\? ''\)\)[\s\S]*?value=\{reason\}/)
   })
 })

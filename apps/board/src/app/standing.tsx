@@ -1017,6 +1017,7 @@ export function Standing({
                           waitId={waitId}
                           primary={recommended === 'Close'}
                           prefill={closePrefill}
+                          disagreed={readings !== null}
                         />
                       ) : null}
                     </div>
