@@ -1,11 +1,12 @@
 'use client'
 
 import type { ConflictWork } from '@lingtai/conductor/conflict-work'
-import type { WaitId } from '@lingtai/domain'
-import { confirmHunks, conflictRowKey, type ConflictChoice } from '@lingtai/domain/wait'
+import type { TriageQuestion, WaitId } from '@lingtai/domain'
+import { confirmHunks, conflictRowKey, type ConflictChoice, type ConflictRow } from '@lingtai/domain/wait'
 import { useState, useTransition } from 'react'
 
 import { continueConflictCard } from './actions.ts'
+import { useTriageDraft } from './triage-picks.tsx'
 
 type Rows = Extract<ConflictWork, { rows: unknown }>
 
@@ -33,27 +34,55 @@ export function ContinueConflict({
   issue,
   waitId,
   work,
+  triageQuestions,
   primary,
 }: {
   project: string
   issue: number
   waitId: WaitId
   work: Rows
+  /** The questions the triage band draws, in its order, so a pick there is read here. */
+  triageQuestions: readonly TriageQuestion[]
   primary: boolean
 }) {
-  const [choices, setChoices] = useState<Record<string, ConflictChoice | undefined>>({})
+  const draft = useTriageDraft()
+  // Mechanical and written choices are kept with the triage pick they were made
+  // beside; a later pick in the band supersedes them, so the band and this form
+  // never name different behavior for one hunk.
+  const [own, setOwn] = useState<Record<string, { choice: ConflictChoice; pick: string | null } | undefined>>({})
   const [grant, setGrant] = useState(false)
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [, startTransition] = useTransition()
 
+  const bandIndex = (row: ConflictRow) =>
+    row.question === null ? -1 : triageQuestions.findIndex((q) => q.id === row.question!.id)
+  const picked = (row: ConflictRow): string | null => {
+    const index = bandIndex(row)
+    return row.question === null || index < 0 || draft === null ? null : draft.selected(index, row.question)
+  }
+  const choices: Record<string, ConflictChoice> = {}
+  for (const row of work.rows) {
+    const key = conflictRowKey(row)
+    const pick = picked(row)
+    const mine = own[key]
+    if (mine !== undefined && mine.pick === pick) choices[key] = mine.choice
+    else if (pick !== null) choices[key] = { _tag: 'Answer', answerId: pick }
+  }
   const current = (key: string, suggested: ConflictChoice | null) => choices[key] ?? suggested
   const confirmed = confirmHunks(work.rows, choices)
   const unset = 'unset' in confirmed ? confirmed.unset : []
   const needsGrant = work.roundsExhausted
   const ready = 'hunks' in confirmed && (!needsGrant || grant)
-  const set = (key: string, choice: ConflictChoice) => setChoices((all) => ({ ...all, [key]: choice }))
+  const set = (row: ConflictRow, choice: ConflictChoice) => {
+    const index = bandIndex(row)
+    if (choice._tag === 'Answer' && index >= 0) draft?.pick(index, choice.answerId)
+    setOwn((all) => ({
+      ...all,
+      [conflictRowKey(row)]: { choice, pick: choice._tag === 'Answer' ? choice.answerId : picked(row) },
+    }))
+  }
 
   return (
     <form
@@ -128,7 +157,7 @@ export function ContinueConflict({
                           type="radio"
                           name={name}
                           checked={chosen === `answer:${answer.id}`}
-                          onChange={() => set(key, { _tag: 'Answer', answerId: answer.id })}
+                          onChange={() => set(row, { _tag: 'Answer', answerId: answer.id })}
                         />
                         <span className="triage-choice-text">{answer.text}</span>
                       </span>
@@ -145,7 +174,7 @@ export function ContinueConflict({
                         type="radio"
                         name={name}
                         checked={chosen === 'mechanical'}
-                        onChange={() => set(key, { _tag: 'Mechanical' })}
+                        onChange={() => set(row, { _tag: 'Mechanical' })}
                       />
                       <span className="triage-choice-text">Mechanical — no behavior to decide</span>
                     </span>
@@ -156,7 +185,7 @@ export function ContinueConflict({
                         type="radio"
                         name={name}
                         checked={chosen === 'other'}
-                        onChange={() => set(key, { _tag: 'Behavior', text: '' })}
+                        onChange={() => set(row, { _tag: 'Behavior', text: '' })}
                       />
                       <span className="triage-choice-text">Other — write the behavior</span>
                     </span>
@@ -168,7 +197,7 @@ export function ContinueConflict({
                     aria-label={`Intended behavior for ${key}`}
                     rows={3}
                     value={choice.text}
-                    onChange={(event) => set(key, { _tag: 'Behavior', text: event.target.value })}
+                    onChange={(event) => set(row, { _tag: 'Behavior', text: event.target.value })}
                   />
                 ) : null}
               </fieldset>

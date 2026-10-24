@@ -969,6 +969,7 @@ export function Standing({
                             issue={issue}
                             waitId={waitId}
                             work={standing.conflictWork}
+                            triageQuestions={triageQuestions}
                             primary={recommended === 'ContinueConflict'}
                           />
                         ) : standing.conflictWork && 'tooMany' in standing.conflictWork ? (
