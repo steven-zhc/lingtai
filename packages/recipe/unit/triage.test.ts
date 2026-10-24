@@ -43,6 +43,7 @@ describe('triage:, written', () => {
     const { recipe } = await resolve(`${BASE}triage:\n  agent: claude-code\n`)
     expect(recipe.triage).toEqual({
       agent: 'claude-code',
+      tools: 'none',
       limits: { turns: 40, wall: '5m', usd: 0.5 },
     })
   })
@@ -53,6 +54,7 @@ describe('triage:, written', () => {
     )
     expect(recipe.triage).toEqual({
       agent: 'claude-code',
+      tools: 'none',
       model: 'haiku',
       prompt: 'Be terse.',
       limits: { turns: 7, wall: '90s', usd: 1.25 },

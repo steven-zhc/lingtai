@@ -2173,7 +2173,7 @@ export async function declaredEnvironment(
       results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
       for (const role of ['discuss', 'triage'] as const) {
         const selected = resolved.recipe[role]
-        if (role === 'triage' && selected?.agent === 'codex' && selected.tools === 'full') {
+        if (role === 'triage' && resolved.recipe.triage?.agent === 'codex' && resolved.recipe.triage.tools === 'full') {
           results.push(await dispatchedAuthRow(project.project, 'codex', asked, runtimes, role))
         } else if (selected?.agent === 'codex') {
           results.push(
