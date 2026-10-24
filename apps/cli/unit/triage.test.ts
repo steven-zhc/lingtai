@@ -2,7 +2,7 @@ import { createRuntime, type Runtime, type RunOutcome, type RunRequest } from '@
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
 import { aRunRef, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import type { WaitReason } from '@lingtai/domain/wait'
+import { TRIAGE_ANSWER_JSON_SCHEMA, type WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Triage, triageCallFor } from '@lingtai/recipe'
@@ -527,6 +527,59 @@ describe('waitTriage', () => {
     expect(held.result._tag).toBe('TriageFailed')
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  describe('the answer schema (#582)', () => {
+    const withSchema = (runtime: Runtime, accepts: boolean): Runtime => ({
+      ...runtime,
+      capabilities: { ...runtime.capabilities, acceptsOutputSchema: accepts },
+    })
+
+    it('sends the schema only where the runtime can carry it', async () => {
+      for (const accepts of [true, false]) {
+        const store = createMemoryEventStore()
+        const { runtime, requests } = stubRuntime(() => ADVISED)
+        await waitTriage(
+          fakeDeps(store, withSchema(runtime, accepts)),
+          requestOn(ticketStream('lingtai', 3), aWaitId()),
+        )
+        expect(requests[0]!.outputSchema).toEqual(accepts ? TRIAGE_ANSWER_JSON_SCHEMA : undefined)
+      }
+    })
+
+    it('reads a structured envelope: the answer advises, and a read serves files and goes round again', async () => {
+      const store = createMemoryEventStore()
+      const { runtime, requests } = stubRuntime((_, call) =>
+        outcomeOf({
+          structured:
+            call === 0 ? { read: ['main:a.ts'], answer: null } : { read: null, answer: JSON.parse(ADVICE_TEXT) },
+        }),
+      )
+      const held = await waitTriage(
+        fakeDeps(store, withSchema(runtime, true)),
+        requestOn(ticketStream('lingtai', 4), aWaitId()),
+      )
+      expect(requests).toHaveLength(2)
+      expect(held.result._tag).toBe('TriageAdvised')
+    })
+
+    it('still refuses an over-bound structured answer', async () => {
+      const store = createMemoryEventStore()
+      const fix = { path: 'a.ts', line: 1, what: 'x'.repeat(501) }
+      const { runtime } = stubRuntime(() =>
+        outcomeOf({
+          structured: {
+            read: null,
+            answer: { ...JSON.parse(ADVICE_TEXT), cause: { _tag: 'FixableLines', fixes: [fix] } },
+          },
+        }),
+      )
+      const held = await waitTriage(
+        fakeDeps(store, withSchema(runtime, true)),
+        requestOn(ticketStream('lingtai', 5), aWaitId()),
+      )
+      expect(held.result._tag).toBe('TriageFailed')
+    })
   })
 
   it('appends TriageStarted before the runtime is called, and a second call for the same wait uses attempt: 2', async () => {

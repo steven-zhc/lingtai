@@ -21,6 +21,7 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
   return {
     capabilities: {
       id: 'codex',
+      acceptsOutputSchema: false,
       hooks: [],
       canFailClosed: false,
       canRewriteToolCall: false,

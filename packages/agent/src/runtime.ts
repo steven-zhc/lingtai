@@ -39,6 +39,12 @@ export interface RuntimeCapabilities {
   /** The lifecycle hooks this runtime actually emits. */
   hooks: readonly string[]
   /**
+   * Whether `RunRequest.outputSchema` reaches the model. Claude Code's
+   * `--json-schema` and Codex CLI's `--output-schema` do; the model-only
+   * Responses route refuses any schema outright. Absent is false (#582).
+   */
+  acceptsOutputSchema?: boolean
+  /**
    * Whether a refusal from the `UserPromptSubmit` hook stops the run, so the
    * record can fail closed. That is the hook to check: `PreToolUse` is not wired
    * (`INTERSECTION_HOOKS`) and `PostToolUse` fires after the tool already ran, so
@@ -121,8 +127,8 @@ export interface RunRequest {
   env: Record<string, string>
   limits: { turns?: number; wallMs: number; usd?: number }
   /**
-   * The answer's shape, as JSON Schema — sent only by the cold reviewer and
-   * absent on every other run (`#369`). Each adapter hands it to the runtime
+   * The answer's shape, as JSON Schema — sent by the cold reviewer (`#369`) and
+   * by triage (`#582`), and absent on every other run. Each adapter hands it to the runtime
    * its own way: `claude-code.ts`'s `--json-schema <inline>`, `codex.ts`'s
    * `--output-schema <file>`. Absent is an ordinary, unconstrained run.
    */

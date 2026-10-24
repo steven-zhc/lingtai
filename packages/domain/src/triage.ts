@@ -19,6 +19,9 @@
  */
 import { z } from 'zod'
 
+/** Files one triage or discussion turn may ask for. Enough to follow a call site into its callee. */
+export const READS_PER_TURN = 6
+
 /** Past this many hunks, a conflict is triaged as a whole rather than one by one (0118 §8). */
 export const MERGE_HUNKS_ONE_BY_ONE = 20
 

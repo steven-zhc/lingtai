@@ -66,6 +66,7 @@ import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCap
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: 'codex',
+  acceptsOutputSchema: true,
   /**
    * The intersection, which is the contract — and the *reason* has changed
    * (`#313`).

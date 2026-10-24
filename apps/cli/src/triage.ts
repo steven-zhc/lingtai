@@ -36,7 +36,13 @@ import {
   type PayloadOf,
   type WaitId,
 } from '@lingtai/domain'
-import { triageStatus, type TriageResult, type WaitReason } from '@lingtai/domain/wait'
+import {
+  TRIAGE_ANSWER_JSON_SCHEMA,
+  triageStatus,
+  unwrapTriageEnvelope,
+  type TriageResult,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { ConcurrencyError, eventStore, type EventStore } from '@lingtai/event-store'
 import { readTasks, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
@@ -684,6 +690,10 @@ export async function waitTriage(
             settingsPath,
             env: runnableEnv({}),
             limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
+            // The runtime enforces the bounds before it answers; `parseTriage`
+            // below stays the last check, and the route that cannot carry a
+            // schema keeps the brief's own sentence (#582).
+            ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
             signal: request.signal,
           })
           .catch((err: unknown): RunOutcome => {
@@ -722,7 +732,9 @@ export async function waitTriage(
           break
         }
 
-        const reply = parseTriage(outcome.text)
+        const reply = parseTriage(
+          outcome.structured === undefined ? outcome.text : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
+        )
 
         if (reply.kind === 'read' && round < MAX_READ_ROUNDS) {
           for (const at of reply.paths) {

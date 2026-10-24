@@ -31,6 +31,7 @@ import {
   Hunk,
   ConfirmedHunk,
   MERGE_HUNKS_ONE_BY_ONE,
+  READS_PER_TURN,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
   TRIAGE_SENTENCE_MAX,
@@ -780,31 +781,69 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
  * the card, and one more of what the ticket wants — `null` where the body
  * does not say (0118 §1).
  */
-const TriageAdvised = z
-  .strictObject({
-    _tag: z.literal('TriageAdvised'),
-    cause: RootCause,
-    resolution: TriageAdvice,
-    summary: z.string().max(TRIAGE_SENTENCE_MAX),
-    want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
-  })
-  .superRefine((advice, ctx) => {
-    if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Split is advised only with TicketTooBig carrying its split plan',
-        path: ['resolution'],
-      })
-    if (
-      advice.resolution === 'ContinueConflict' &&
-      !(advice.cause._tag === 'ConflictingHunks' && advice.cause.hunks.length > 0)
-    )
-      ctx.addIssue({
-        code: 'custom',
-        message: 'ContinueConflict needs a concrete list of conflicting hunks',
-        path: ['resolution'],
-      })
-  })
+export const TriageAnswer = z.strictObject({
+  cause: RootCause,
+  resolution: TriageAdvice,
+  summary: z.string().max(TRIAGE_SENTENCE_MAX),
+  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
+})
+export type TriageAnswer = z.infer<typeof TriageAnswer>
+
+const TriageAdvised = TriageAnswer.extend({ _tag: z.literal('TriageAdvised') }).superRefine((advice, ctx) => {
+  if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Split is advised only with TicketTooBig carrying its split plan',
+      path: ['resolution'],
+    })
+  if (
+    advice.resolution === 'ContinueConflict' &&
+    !(advice.cause._tag === 'ConflictingHunks' && advice.cause.hunks.length > 0)
+  )
+    ctx.addIssue({
+      code: 'custom',
+      message: 'ContinueConflict needs a concrete list of conflicting hunks',
+      path: ['resolution'],
+    })
+})
+
+/**
+ * **What one triage round may answer, as the schema a runtime enforces** (#582).
+ *
+ * A round answers in one of two shapes — files to read, or the advice — and a
+ * forced tool call needs an object at the root, so this is an envelope with
+ * both keys required and nullable, the way `ReviewAnswer` does it: the model
+ * fills exactly one. `parseTriage` stays the final judge, since no schema can
+ * say that `recommended` names one of the answers, or which causes `Split` may
+ * go with.
+ */
+export const TriageEnvelope = z.strictObject({
+  read: z.array(z.string()).max(READS_PER_TURN).nullable().meta({
+    description: 'Files to read before advising, as `<ref>:<path>`. Fill this or `answer`, and null the other.',
+  }),
+  answer: TriageAnswer.nullable().meta({
+    description: 'The advice. Fill this or `read`, and null the other.',
+  }),
+})
+export type TriageEnvelope = z.infer<typeof TriageEnvelope>
+
+/** `TriageEnvelope` as JSON Schema, `$schema` stripped as `REVIEW_ANSWER_JSON_SCHEMA` does. */
+export const TRIAGE_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
+  const schema = z.toJSONSchema(TriageEnvelope) as Record<string, unknown>
+  delete schema.$schema
+  return schema
+})()
+
+/** The flat reply `parseTriage` reads, out of the envelope a runtime answered in. */
+export function unwrapTriageEnvelope(structured: unknown): unknown {
+  // Not validated here: an over-bound answer must reach `parseTriage` whole,
+  // so its refusal names the field rather than the envelope.
+  if (typeof structured !== 'object' || structured === null) return structured
+  const { read, answer } = structured as { read?: unknown; answer?: unknown }
+  if (read !== null && read !== undefined) return { read }
+  if (answer !== null && answer !== undefined) return answer
+  return structured
+}
 
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
 export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])

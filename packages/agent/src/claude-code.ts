@@ -51,6 +51,7 @@ import { neverStarted } from './runtime.ts'
 
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   id: 'claude-code',
+  acceptsOutputSchema: true,
   hooks: [
     // The intersection both runtimes have.
     'SessionStart',
