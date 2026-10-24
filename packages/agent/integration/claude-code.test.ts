@@ -891,7 +891,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
         cwd,
         prompt: 'start the tool',
         settingsPath: await settingsAt({}),
-        env: { ...process.env, TOOL_PID_FILE: pidFile },
+        env: { PATH: process.env.PATH ?? '', TOOL_PID_FILE: pidFile },
         limits: { turns: 3, wallMs: 10_000 },
       })
       pid = Number(await readFile(pidFile, 'utf8'))
