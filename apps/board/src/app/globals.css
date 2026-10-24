@@ -1138,10 +1138,39 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .triage-band--failed > p:last-child { color: var(--fail); }
 .triage-band details { min-width: 0; padding: 0.4rem 0; border-top: 1px solid var(--rule); }
 .triage-band details > summary { overflow-wrap: anywhere; cursor: pointer; }
-.triage-band fieldset { min-width: 0; margin: 0.5rem 0; border-color: var(--rule); }
-.triage-band legend { max-width: 100%; overflow-wrap: anywhere; }
-.triage-band label { display: flex; align-items: baseline; gap: 0.45rem; overflow-wrap: anywhere; }
-.triage-band label input { flex: none; }
+.triage-band .triage-choices { min-width: 0; margin: 0.5rem 0; padding: 0; border: 0; }
+.triage-band .triage-choices-question {
+  max-width: 100%;
+  margin-bottom: 0.7rem;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.triage-choices-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 0.65rem; min-width: 0; }
+.triage-band .triage-choice {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--rule-2);
+  background: var(--surface);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.triage-band .triage-choice--selected { border: 2px solid var(--accent); padding: calc(0.85rem - 1px) calc(1rem - 1px); }
+.triage-band .triage-choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.triage-choice-main { display: flex; align-items: flex-start; gap: 0.6rem; min-width: 0; }
+.triage-choice-main input { flex: none; margin: 0.25rem 0 0; accent-color: var(--accent); }
+.triage-choice-text { min-width: 0; color: var(--ink); font-size: 0.98rem; font-weight: 600; line-height: 1.45; }
+.triage-choice-badges { display: flex; flex-wrap: wrap; gap: 0.35rem 0.6rem; padding-left: 1.4rem; }
+.triage-choice-selected,
+.triage-choice-recommended { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.triage-choice-selected { color: var(--accent-ink); }
+.triage-choice-recommended { color: var(--ink-2); }
 .triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
 .triage-readings > div { min-width: 0; }
 

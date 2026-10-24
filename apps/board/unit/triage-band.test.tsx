@@ -57,13 +57,26 @@ describe('current wait triage band', () => {
     const html = draw(
       advised({
         _tag: 'UndecidedQuestion',
-        questions: [{ id: 'q', text: '<question>', answers: [{ id: 'a', text: '<answer>' }], recommended: 'a' }],
+        questions: [
+          {
+            id: 'q',
+            text: '<question>',
+            answers: [
+              { id: 'a', text: '<answer>' },
+              { id: 'b', text: '<other answer>' },
+            ],
+            recommended: 'a',
+          },
+        ],
       }),
     )
-    expect(html).toContain('&lt;question&gt;')
-    expect(html).toContain('&lt;answer&gt; (recommended)')
+    expect(html).toContain('<legend class="triage-choices-question">&lt;question&gt;</legend>')
+    expect(html).toContain('<span class="triage-choice-text">&lt;answer&gt;</span>')
+    expect(html).toContain('<span class="triage-choice-text">&lt;other answer&gt;</span>')
+    expect(html).toContain('<span class="triage-choice-selected">Selected</span>')
+    expect(html).toContain('<span class="triage-choice-recommended">Recommended</span>')
     expect(html).toContain('type="radio"')
-    expect(html).toContain('checked=""')
+    expect(html).toContain('checked="" value="a"')
     expect(html).toContain('&lt;plain summary&gt;')
   })
 
@@ -117,11 +130,12 @@ describe('current wait triage band', () => {
     expect(html).toContain('Mechanical · 1')
     expect(html).toContain('Divergent · 1 question')
     expect(html).toContain('src/a.ts:4</span><span>Mechanical</span>')
-    expect(html).toContain('src/b.ts:9</span><fieldset>')
+    expect(html).toContain('src/b.ts:9</span><fieldset class="triage-choices">')
     expect(html).not.toContain('<details')
     expect(html).toContain('&lt;which behavior?&gt;')
     expect(html).toContain('keep A')
-    expect(html).toContain('keep B (recommended)')
+    expect(html).toContain('<span class="triage-choice-text">keep B</span>')
+    expect(html).toContain('<span class="triage-choice-recommended">Recommended</span>')
     expect(html).toContain('checked="" value="b"')
   })
 

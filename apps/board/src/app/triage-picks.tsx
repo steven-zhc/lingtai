@@ -52,22 +52,32 @@ export function useTriageDraft(): TriageDraft | null {
 
 export function TriageChoices({ question, index }: { question: TriageQuestion; index: number }) {
   const draft = useTriageDraft()
+  const selected = draft?.selected(index, question) ?? question.recommended
   return (
-    <fieldset>
-      <legend>{question.text}</legend>
-      {question.answers.map((answer) => (
-        <label key={answer.id}>
-          <input
-            type="radio"
-            name={`triage-question-${index}`}
-            value={answer.id}
-            checked={(draft?.selected(index, question) ?? question.recommended) === answer.id}
-            onChange={() => draft?.pick(index, answer.id)}
-          />
-          {answer.text}
-          {answer.id === question.recommended ? ' (recommended)' : ''}
-        </label>
-      ))}
+    <fieldset className="triage-choices">
+      <legend className="triage-choices-question">{question.text}</legend>
+      <div className="triage-choices-grid">
+        {question.answers.map((answer) => (
+          <label key={answer.id} className={`triage-choice${selected === answer.id ? ' triage-choice--selected' : ''}`}>
+            <span className="triage-choice-main">
+              <input
+                type="radio"
+                name={`triage-question-${index}`}
+                value={answer.id}
+                checked={selected === answer.id}
+                onChange={() => draft?.pick(index, answer.id)}
+              />
+              <span className="triage-choice-text">{answer.text}</span>
+            </span>
+            <span className="triage-choice-badges">
+              {selected === answer.id ? <span className="triage-choice-selected">Selected</span> : null}
+              {answer.id === question.recommended ? (
+                <span className="triage-choice-recommended">Recommended</span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
     </fieldset>
   )
 }
