@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 220" role="img" aria-labelledby="title description">
 <title id="title">Step 4: approve the held change and confirm it landed</title>
-<desc id="description">At the landing hold, review the chapter and checks, approve on the Board or with the CLI, then Lingtai resumes the held pass, merges into your tutorial branch, and marks the ticket Landed.</desc>
+<desc id="description">At the landing hold, review the chapter and checks, approve on the Board or with the CLI, then Lingtai resumes the held pass, merges into main of the bare repository, and marks the ticket Landed.</desc>
 <style>
 :root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
 @media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
@@ -18,7 +18,7 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <rect class="accent" x="364" y="55" width="152" height="68" rx="7"/>
 <text class="name" x="440" y="80" text-anchor="middle">Approve</text><text class="detail" x="440" y="99" text-anchor="middle">Board or CLI</text>
 <rect class="box" x="538" y="55" width="152" height="68" rx="7"/>
-<text class="name" x="614" y="80" text-anchor="middle">Merge and end</text><text class="detail" x="614" y="99" text-anchor="middle">tutorial branch</text>
+<text class="name" x="614" y="80" text-anchor="middle">Merge and end</text><text class="detail" x="614" y="99" text-anchor="middle">main, bare repository</text>
 <rect class="accent" x="712" y="55" width="152" height="68" rx="7"/>
 <text class="name" x="788" y="80" text-anchor="middle">Landed</text><text class="detail" x="788" y="99" text-anchor="middle">confirm with status</text>
 <path class="arrow" d="M168 89H188"/><path class="arrow" d="M342 89H362"/><path class="arrow" d="M516 89H536"/><path class="arrow" d="M690 89H710"/>

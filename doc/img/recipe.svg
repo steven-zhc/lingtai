@@ -42,7 +42,7 @@
 <text class="code" x="43" y="180">tickets: db</text>
 <text class="code" x="43" y="204">kinds: [bug, feature, documentation]</text>
 <text class="code heading" x="28" y="228">repo:</text>
-<text class="code" x="43" y="252">base: tutorial-steven-20261022141656</text>
+<text class="code" x="43" y="252">base: main</text>
 <text class="code heading" x="28" y="276">steps:</text>
 <text class="code heading" x="43" y="300">prepared:</text>
 <text class="code" x="58" y="324">- run: npm ci</text>
