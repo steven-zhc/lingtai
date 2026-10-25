@@ -1171,8 +1171,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .triage-choice-recommended { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .triage-choice-selected { color: var(--accent-ink); }
 .triage-choice-recommended { color: var(--ink-2); }
-.triage-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
-.triage-readings > div { min-width: 0; }
 
 /* Waiting opens on the canvas; completed moves keep their reading frames. */
 .detail--waiting {
@@ -1354,8 +1352,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border: 1px solid var(--rule);
   background: var(--accent-soft);
 }
-.detail--waiting .triage-label,
-.detail--waiting .triage-reading-label {
+.detail--waiting .triage-label {
   color: var(--accent-ink);
   font-size: 0.72rem;
   font-weight: 700;
@@ -1364,7 +1361,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .detail--waiting .triage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; min-width: 0; }
 .detail--waiting .triage-head .triage-cause { margin: 0; }
-.detail--waiting .triage-head-note { color: var(--accent-ink); font-size: 0.88rem; }
 .detail--waiting .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
@@ -1372,8 +1368,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   max-width: 100%;
   overflow-wrap: anywhere;
 }
-.detail--waiting .triage-summary,
-.detail--waiting .triage-disagreement {
+.detail--waiting .triage-summary {
   max-width: 55ch;
   color: var(--ink);
   font-family: var(--serif);
@@ -1411,19 +1406,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .triage-hunk--divergent { border-left: 3px solid var(--signal); }
 .detail--waiting .triage-hunk--divergent fieldset { margin: 0; padding: 0; border: 0; }
 .detail--waiting .triage-hunk--divergent legend { margin-bottom: 0.55rem; font-family: var(--serif); font-size: 1.12rem; line-height: 1.4; }
-.detail--waiting .triage-readings > div {
-  min-width: 0;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--rule);
-  background: var(--surface);
-}
 .detail--waiting .triage-evidence > details { overflow-wrap: anywhere; }
-.detail--waiting .triage-readings > div > p { margin: 0 0 0.45rem; }
-.detail--waiting .triage-readings .triage-reading-choice,
-.detail--waiting .triage-readings .triage-summary { font-family: var(--serif); font-size: clamp(1.05rem, 1.7vw, 1.25rem); line-height: 1.45; }
-.detail--waiting .triage-readings .triage-reading-choice { color: var(--ink); }
-.detail--waiting .triage-readings .triage-reading-why { color: var(--ink-2); line-height: 1.5; }
-.detail--waiting .triage-readings > div { display: flex; flex-direction: column; gap: 0.45rem; }
 .detail--waiting .triage-band--failed { border-left: 4px solid var(--fail); }
 .detail--waiting .triage-band--failed .triage-label { color: var(--fail); }
 .detail--waiting .triage-band--failed > p:last-child {
@@ -1462,7 +1445,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   display: grid;
   /* Three even columns, rows as tall as their tallest card, so five moves read
      as two tidy rows rather than four abreast with one left over (#596's page,
-     where a disagreement leaves nothing recommended yet). */
+     with nothing recommended). */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
   align-items: stretch;
@@ -1555,13 +1538,12 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
     overflow-x: auto;
     padding-bottom: 0.35rem;
   }
-  .detail--waiting .triage-readings { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 40rem) {
   .sresolution--recommended { grid-column: auto; }
 }
 
-/* Verbatim stopping evidence in Attempts and in a disagreement comparison.
+/* Verbatim stopping evidence in Attempts.
    It opens inside that destination and can be closed after reading. */
 .sreason {
   margin: 0.15rem 0 0;
@@ -2712,7 +2694,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mdask > summary:hover { color: var(--ink-2); }
 
 @media (max-width: 46rem) {
-  .triage-readings { grid-template-columns: minmax(0, 1fr); }
   /* Stacked, with the marker keeping its own column so the row still reads as
      something that opens. */
   .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }

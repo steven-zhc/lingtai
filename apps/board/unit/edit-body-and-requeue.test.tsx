@@ -44,7 +44,6 @@ import { EditBodyAndRequeue, Requeue } from '../src/app/decide.tsx'
 import { TriagePicks, appendTo, draftTarget } from '../src/app/triage-picks.tsx'
 
 type Tag = string | null
-type By = { none: Tag; judge: Tag; triage: Tag }
 const question = (text: string, picked: string) => ({
   id: text,
   text,
@@ -64,10 +63,10 @@ const question = (text: string, picked: string) => ({
 function mount<T>(
   waitId: WaitId | null,
   component: () => T,
-  { by = { none: null, judge: null, triage: null } as By, questions = [] as ReturnType<typeof question>[] } = {},
+  { by = null as Tag, questions = [] as ReturnType<typeof question>[] } = {},
 ): T {
   harness.cursor = 0
-  const provider = TriagePicks({ waitId, questions, recommendedBy: by, children: null }) as ReactElement<{
+  const provider = TriagePicks({ waitId, questions, recommended: by, children: null }) as ReactElement<{
     value: unknown
   }>
   harness.triage = provider.props.value
@@ -204,8 +203,8 @@ const resetAdd = () => {
   harness.conclude.mockClear()
 }
 const addToDraft = (text: string) => (harness.triage as { add: (text: string) => void }).add(text)
-const body: By = { none: 'EditBodyAndRequeue', judge: null, triage: null }
-const asked: By = { none: 'AnswerQuestion', judge: null, triage: null }
+const body: Tag = 'EditBodyAndRequeue'
+const asked: Tag = 'AnswerQuestion'
 
 it('adds a discussion answer under the picks, writes nothing, and stops following the picks', () => {
   resetAdd()
@@ -270,7 +269,7 @@ it('adds a discussion answer to the answer box, opening it, and the person still
 it('does not add when no text-writing resolution is the one drawn first', () => {
   resetAdd()
   const waitId = aWaitId()
-  const none: By = { none: 'Close', judge: 'EditBodyAndRequeue', triage: null }
+  const none: Tag = 'Close'
   const render = () => mount(waitId, () => editor(waitId), { by: none })
   render()
   expect((harness.triage as { target: unknown }).target).toBeNull()
@@ -279,15 +278,15 @@ it('does not add when no text-writing resolution is the one drawn first', () => 
   writesNothing()
 })
 
-it('appends under what is there, after a blank line, and names the target by reading', () => {
+it('appends under what is there, after a blank line, and names the target the recommendation is', () => {
   expect(appendTo('', 'a')).toBe('a')
   expect(appendTo('  \n', 'a')).toBe('a')
   expect(appendTo('x', 'a')).toBe('x\n\na')
-  const by = { none: null, judge: 'AnswerQuestion', triage: 'EditBodyAndRequeue' }
-  expect(draftTarget(by, null)).toBeNull()
-  expect(draftTarget(by, 'judge')).toBe('AnswerQuestion')
-  expect(draftTarget(by, 'triage')).toBe('EditBodyAndRequeue')
-  expect(draftTarget({ none: 'Close', judge: 'Approve', triage: 'Split' }, 'judge')).toBeNull()
+  expect(draftTarget(null)).toBeNull()
+  expect(draftTarget('AnswerQuestion')).toBe('AnswerQuestion')
+  expect(draftTarget('EditBodyAndRequeue')).toBe('EditBodyAndRequeue')
+  expect(draftTarget('Close')).toBeNull()
+  expect(draftTarget('Split')).toBeNull()
 })
 
 it.each([

@@ -405,7 +405,7 @@ export function EditBodyAndRequeue({
  *
  * **And it sits beside Approve, not in its place** (#150). It was the else of
  * *is there an approval open*, so it was missing exactly where a person reading
- * a disagreement agrees with the reviewer and wants the ticket run again.
+ * the findings agrees with the reviewer and wants the ticket run again.
  */
 export function Requeue({
   project,
@@ -578,7 +578,6 @@ export function Close({
   issue,
   waitId,
   prefill,
-  disagreed = false,
   primary = false,
 }: {
   project: string
@@ -593,8 +592,6 @@ export function Close({
   waitId: WaitId | null
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
-  /** Judge and triage disagree: triage's sentence is prefilled only once the person picks triage's reading (0118 §5). */
-  disagreed?: boolean
   primary?: boolean
 }) {
   const [pending, setPending] = useState(false)
@@ -603,8 +600,7 @@ export function Close({
   const [asking, setAsking] = useState(false)
   const [typed, setTyped] = useState<string | null>(null)
   const [, startTransition] = useTransition()
-  const picked = useTriageDraft()?.reading ?? null
-  const reason = typed ?? (disagreed && picked !== 'triage' ? '' : (prefill ?? ''))
+  const reason = typed ?? prefill ?? ''
   const setReason = setTyped
 
   if (done) return <p className="decided">{done}</p>

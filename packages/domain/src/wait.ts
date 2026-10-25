@@ -24,7 +24,7 @@ import { z } from 'zod'
 
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
-import { RouteEscalation, type CandidateId } from './route.ts'
+import { RouteEscalation } from './route.ts'
 import { SplitProposal, SplitResolution } from './split.ts'
 import {
   Hunk,
@@ -580,22 +580,16 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
 export function recommendedResolution(
   reason: WaitReason,
   status: TriageStatus,
-  options: { savedHead?: boolean; disagreement?: Disagreement | null; picked?: 'judge' | 'triage' | null } = {},
+  options: { savedHead?: boolean } = {},
 ): Resolution['_tag'] | null {
-  // A judge/triage disagreement is the person's decision (0118 §5): nothing is
-  // recommended until they pick a reading, and then that reading's resolution
-  // is. The caller passes the disagreement in; this reads neither `why` nor
-  // the reason's judge.
-  const open = options.disagreement ?? null
-  if (open !== null && (options.picked ?? null) === null) return null
+  // Triage's advice stands even where the judge routed the pass differently:
+  // the judge read only the findings, triage read the ticket, the diff and the
+  // code with the judge's routing in front of it, so the judge's routing is
+  // not drawn as a competing reading (decided 2026-10-25).
   const allowed = allowedResolutions(reason).filter((tag) => tag !== 'GrantFixRound' || options.savedHead !== false)
   const toDefault = () => {
     const fallback = defaultResolution(reason)
     return fallback !== null && allowed.includes(fallback) ? fallback : null
-  }
-  if (open !== null && options.picked === 'judge') {
-    const chosen = judgeResolution(open.judge.chose)
-    return chosen !== null && allowed.includes(chosen) ? chosen : null
   }
   switch (status._tag) {
     case 'Done':
@@ -752,62 +746,6 @@ export function unwrapTriageEnvelope(structured: unknown): unknown {
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
 export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])
 export type TriageResult = z.infer<typeof TriageResult>
-
-/** The judge's choice is recorded on a wait only when its route escalated. */
-export function judgeReadingOf(reason: WaitReason): { chose: CandidateId; why: string | null } | null {
-  if (reason._tag !== 'ProposedEscalated') return null
-  switch (reason.because._tag) {
-    case 'JudgeHandedOver':
-      return { chose: 'hand-to-person', why: reason.because.why }
-    case 'CandidateUnavailable':
-      return { chose: reason.because.excluded.id, why: null }
-    case 'NotAsked':
-    case 'UnreadableReply':
-    case 'UnknownCandidate':
-      return null
-  }
-}
-
-/**
- * The resolution the judge's choice stands for, read off the candidate id
- * alone — where `destinationOf` (`proposed-route.ts`) sends each. `null` where
- * the judge's reading is "a person decides", or the id is not one it knows.
- */
-export function judgeResolution(chose: CandidateId): Resolution['_tag'] | null {
-  switch (chose) {
-    case 'fix-lines':
-      return 'GrantFixRound'
-    case 'restart':
-      return 'Requeue'
-    case 'state-assumption':
-      return 'EditBodyAndRequeue'
-    default:
-      return null
-  }
-}
-
-/** Both readings of a wait the judge and triage read differently. */
-export type Disagreement = {
-  judge: NonNullable<ReturnType<typeof judgeReadingOf>>
-  triage: Extract<TriageResult, { _tag: 'TriageAdvised' }>
-}
-
-/** Both readings of this wait when triage disagrees with the judge (0118 §5). */
-export function disagreement(reason: WaitReason, result: TriageResult): Disagreement | null {
-  const judge = judgeReadingOf(reason)
-  if (judge === null || result._tag === 'TriageFailed') return null
-  switch (result.cause._tag) {
-    case 'FixableLines':
-      return judge.chose === 'fix-lines' ? null : { judge, triage: result }
-    case 'WrongApproach':
-      return judge.chose === 'state-assumption' || judge.chose === 'restart' ? null : { judge, triage: result }
-    case 'UndecidedQuestion':
-    case 'ConflictingHunks':
-    case 'TicketTooBig':
-    case 'SetupBroken':
-      return judge.chose === 'hand-to-person' ? null : { judge, triage: result }
-  }
-}
 
 /**
  * Derived on read and never stored (0118 §1, §10): four of these six —

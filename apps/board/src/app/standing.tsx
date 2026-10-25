@@ -5,8 +5,6 @@ import { MERGE_HUNKS_ONE_BY_ONE } from '@lingtai/domain'
 // which resolutions a wait allows.
 import {
   allowedResolutions,
-  disagreement,
-  judgeResolution,
   recommendedResolution,
   type Resolution,
   type TriageStatus,
@@ -42,7 +40,7 @@ import { Plan } from './plan.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 import { SplitPlan } from './split-plan.tsx'
-import { ReadingChoice, ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
+import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
 
@@ -88,15 +86,11 @@ export function TriageBand({
   reason,
   status,
   headLine,
-  raw,
-  said,
   savedHead,
 }: {
   reason: WaitReason
   status: TriageStatus
   headLine?: string | null
-  raw?: string | null
-  said?: string | null
   savedHead?: boolean
 }) {
   switch (status._tag) {
@@ -217,21 +211,17 @@ export function TriageBand({
         case 'SetupBroken':
           break
       }
-      const readings = disagreement(reason, result)
-      // The reading being described, picked or not: a disagreement recommends
-      // nothing until the person picks, which would make this say "does not offer".
-      const kept =
-        recommendedResolution(reason, status, { savedHead, disagreement: readings, picked: 'triage' }) ===
-        result.resolution
-      const chip = <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
-      const evidence = parts ? (
-        <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
-          {parts}
-        </div>
-      ) : null
-      const triageReading = (
-        <>
-          {readings === null ? null : chip}
+      // Triage's advice is the recommendation, whatever route the judge took:
+      // its routing is why this wait exists, and is not drawn as a competing
+      // reading (decided 2026-10-25).
+      const kept = recommendedResolution(reason, status, { savedHead }) === result.resolution
+      return (
+        <section className="triage-band triage-band--advised" data-rank="triage">
+          <div className="triage-head">
+            <span className="triage-label">Triage</span>
+            <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
+          </div>
+          {headLine ? <p>{headLine}</p> : null}
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
             {kept
@@ -243,49 +233,11 @@ export function TriageBand({
                   : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
             {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
-        </>
-      )
-      return (
-        <section className="triage-band triage-band--advised" data-rank="triage">
-          <div className="triage-head">
-            <span className="triage-label">Triage</span>
-            {readings === null ? (
-              chip
-            ) : (
-              <>
-                <p className="triage-cause cause-chip cause-chip--decision">A decision for you</p>
-                <span className="triage-head-note">
-                  the judge and triage read this differently — read both, then say which is right
-                </span>
-              </>
-            )}
-          </div>
-          {headLine ? <p>{headLine}</p> : null}
-          {readings === null ? (
-            <>
-              {triageReading}
-              {evidence}
-            </>
-          ) : (
-            <>
-              <div className="triage-readings">
-                <div>
-                  <p className="triage-reading-label">Judge</p>
-                  <p className="triage-reading-choice">Chose {readings.judge.chose}</p>
-                  {readings.judge.why !== null ? <p className="triage-reading-why">{readings.judge.why}</p> : null}
-                  {raw !== null && raw !== undefined && raw.trim() !== '' ? (
-                    <RawEvidence raw={raw} said={said ?? null} />
-                  ) : null}
-                </div>
-                <div>
-                  <p className="triage-reading-label">Triage</p>
-                  {triageReading}
-                </div>
-              </div>
-              {evidence}
-              <ReadingChoice judgeDrawsNothing={judgeResolution(readings.judge.chose) === null} />
-            </>
-          )}
+          {parts ? (
+            <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
+              {parts}
+            </div>
+          ) : null}
         </section>
       )
     }
@@ -614,16 +566,10 @@ export function Standing({
     standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
       ? standing.triageStatus.result
       : null
-  // A judge/triage disagreement recommends nothing until the person picks a
-  // reading (0118 §5), and that pick is page state — so the server asks
-  // `recommendedResolution` once per answer and the page chooses among them.
-  const readings =
-    standing.reason !== null && triageAdvised !== null ? disagreement(standing.reason, triageAdvised) : null
-  const adviceFor = (picked: 'judge' | 'triage' | null) =>
+  const advice =
     standing.reason !== null && standing.triageStatus !== null
-      ? recommendedResolution(standing.reason, standing.triageStatus, { savedHead, disagreement: readings, picked })
+      ? recommendedResolution(standing.reason, standing.triageStatus, { savedHead })
       : null
-  const advice = adviceFor(null)
   const closePrefill = triageAdvised?.summary ?? null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
@@ -631,12 +577,9 @@ export function Standing({
   // Whatever `recommendedResolution` returned is drawn first; with no saved
   // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
   const recommended = drawable.find((tag) => tag === advice) ?? null
+  // Badged only when triage advised it: a wait's own default orders the cards
+  // but is not called a recommendation.
   const triageRecommended = triageAdvised !== null ? recommended : null
-  const recommendedBy = {
-    none: triageRecommended,
-    judge: triageAdvised !== null ? adviceFor('judge') : null,
-    triage: triageAdvised !== null ? adviceFor('triage') : null,
-  }
   const orderedResolutions =
     recommended === null
       ? drawable
@@ -766,7 +709,7 @@ export function Standing({
     <TriagePicks
       waitId={standing.state === 'blocked' ? standing.waitId : null}
       questions={triageQuestions}
-      recommendedBy={recommendedBy}
+      recommended={triageRecommended}
     >
       <section className={`standing${mark}`}>
         {waiting ? (
@@ -964,8 +907,6 @@ export function Standing({
                 reason={standing.reason}
                 status={standing.triageStatus}
                 headLine={standing.triageHeadLine}
-                raw={raw}
-                said={said}
                 savedHead={savedHead}
               />
             ) : null}
@@ -1002,12 +943,7 @@ export function Standing({
                 return (
                   <ResolutionCard
                     key={tag}
-                    by={{
-                      none: recommendedBy.none === tag,
-                      judge: recommendedBy.judge === tag,
-                      triage: recommendedBy.triage === tag,
-                    }}
-                    disagreed={readings !== null}
+                    recommended={triageRecommended === tag}
                     className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
                     data-resolution={visible ? tag : undefined}
                     hidden={!visible && tag !== 'EditBodyAndRequeue'}
@@ -1100,7 +1036,6 @@ export function Standing({
                           waitId={waitId}
                           primary={recommended === 'Close'}
                           prefill={closePrefill}
-                          disagreed={readings !== null}
                         />
                       ) : null}
                     </div>
@@ -1388,7 +1323,7 @@ function Reason({
   return <RawEvidence raw={raw} said={said} />
 }
 
-/** Verbatim stopping evidence, shared by the record and a judge/triage disagreement. */
+/** Verbatim stopping evidence, as the record's Attempts tab shows it. */
 export function RawEvidence({ raw, said }: { raw: string; said: string | null }) {
   const lines = raw.split('\n').length
   return (

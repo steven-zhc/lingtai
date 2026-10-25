@@ -22,7 +22,6 @@ import { describe, expect, it } from 'vitest'
 
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
-import { ResolutionCard, TriagePicks } from '../src/app/triage-picks.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   currentTriageStatus,
@@ -1539,73 +1538,40 @@ it('keeps the completed current triage with the head its attempt read', () => {
   })
 })
 
-it('shows both readings only when judge and triage disagree, and recommends neither until one is picked', () => {
-  const reason = {
-    ...HELD.reason!,
-    because: { _tag: 'JudgeHandedOver' as const, why: 'needs a person' },
-  }
-  const withCause = (cause: 'FixableLines' | 'TicketTooBig'): StandingView => ({
-    ...HELD,
-    reason,
+it('draws triage’s advice as the recommendation where the judge handed the wait to a person', () => {
+  // Triage's advice stands; the judge's routing is not a reading to pick against it.
+  const handedOver: StandingView = {
+    ...FIXABLE,
+    reason: {
+      _tag: 'ProposedEscalated',
+      run: { runId: RUN_2 },
+      proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+      because: { _tag: 'JudgeHandedOver', why: 'needs a person' },
+    },
     triageStatus: {
       _tag: 'Done',
       result: {
         _tag: 'TriageAdvised',
-        cause: cause === 'FixableLines' ? { _tag: 'FixableLines', fixes: [] } : { _tag: 'TicketTooBig' },
-        resolution: 'Close',
+        cause: { _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'change this' }] },
+        resolution: 'GrantFixRound',
         summary: 'triage advice',
         want: null,
       },
     },
-  })
-  const disagreeing = render(withCause('FixableLines'), OUTGOING)
-  const agreeing = render(withCause('TicketTooBig'), OUTGOING)
+  }
+  const html = render(handedOver, OUTGOING)
+  const grid = moves(html)
 
-  expect(disagreeing).toContain('Which reading is right?')
-  expect(disagreeing).toContain('Chose hand-to-person')
-  expect(disagreeing).toContain('needs a person')
-  expect(disagreeing).toContain('class="triage-cause cause-chip cause-chip--lines">Lines to fix</p>')
-  expect(disagreeing).not.toContain('FixableLines')
-  expect(disagreeing).toContain('triage advice')
-  expect(disagreeing.indexOf('Judge</p>')).toBeLessThan(disagreeing.indexOf('Triage</p>'))
-  // With two readings the chip belongs to triage's, not to the band's head line.
-  expect(disagreeing).toContain(
-    '<div class="triage-head"><span class="triage-label">Triage</span><p class="triage-cause cause-chip cause-chip--decision">A decision for you</p>',
-  )
-  expect(disagreeing.indexOf('cause-chip--lines')).toBeGreaterThan(disagreeing.indexOf('Triage</p>'))
-  // Both readings first, then the question that asks which one is right.
-  expect(disagreeing.indexOf('Which reading is right?')).toBeGreaterThan(disagreeing.indexOf('triage-readings'))
-  expect(agreeing).not.toContain('Which reading is right?')
-  expect(agreeing).not.toContain('Chose hand-to-person')
-  expect(agreeing).toContain('class="triage-cause cause-chip cause-chip--oversized">Ticket too big</p>')
-  expect(agreeing).not.toContain('TicketTooBig')
-  expect(agreeing).toContain('triage advice')
-  expect(moves(agreeing)).toContain('sresolution--recommended')
-  expect(moves(disagreeing)).not.toContain('sresolution--recommended')
-  expect(moves(disagreeing)).not.toContain('sresolutionbadge')
-  expect(disagreeing).toContain('The judge is right')
-  expect(disagreeing).toContain('Triage is right')
-  expect(disagreeing).toContain('Neither')
-  expect(disagreeing.match(/name="triage-reading"/g)).toHaveLength(3)
-  expect(disagreeing).not.toMatch(/name="triage-reading"[^>]*checked=""[^>]*value="(judge|triage)"/)
-  expect(disagreeing).toContain('Recommends Close')
-})
-
-it('a picked reading draws its resolution first, and the card badge names whose it is', () => {
-  const by = { none: false, judge: true, triage: false }
-  const html = (reading: 'judge' | 'triage' | null) =>
-    renderToStaticMarkup(
-      <TriagePicks waitId={null} questions={[]} initialReading={reading}>
-        <ResolutionCard by={by} disagreed className="sresolution" head={<h3>Requeue</h3>}>
-          body
-        </ResolutionCard>
-      </TriagePicks>,
-    )
-  expect(html(null)).not.toContain('sresolution--recommended')
-  expect(html('triage')).not.toContain('sresolution--recommended')
-  expect(html('judge')).toContain('sresolution--recommended')
-  expect(html('judge')).toContain('Judge’s reading')
-  expect(html('judge')).toContain('order:-1')
+  expect(grid.indexOf('data-resolution="GrantFixRound"')).toBeLessThan(grid.indexOf('data-resolution="Requeue"'))
+  expect(grid).toMatch(/sresolution--recommended" data-resolution="GrantFixRound"/)
+  expect(grid).toContain('Continue fixing current work')
+  expect(grid).toContain('Triage recommended')
+  expect(html).toContain('class="triage-cause cause-chip cause-chip--lines">Lines to fix</p>')
+  expect(html).toContain('Recommends Continue fixing current work')
+  expect(html).not.toContain('Which reading is right?')
+  expect(html).not.toContain('Chose hand-to-person')
+  expect(html).not.toContain('needs a person')
+  expect(html).not.toContain('triage-readings')
 })
 
 describe('the moves the column ends in', () => {

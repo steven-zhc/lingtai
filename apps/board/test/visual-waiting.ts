@@ -322,11 +322,6 @@ export const CASES = {
     fixture: 'fixerdisagrees',
     result: advised({ _tag: 'WrongApproach' }, 'Patching the current approach will not converge.'),
   },
-  disagreement: {
-    fixture: 'proposedescalated-reviewfindings',
-    result: advised({ _tag: 'WrongApproach' }, 'The approach needs to change before another pass.'),
-    judgeWhy: 'The judge read the recorded finding as a local fix.',
-  },
   'conflicting-hunks': {
     fixture: 'proposedescalated-mergeconflict',
     result: advised(
@@ -441,13 +436,7 @@ export async function preview(name: CaseName) {
     return foldRun(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
-  const previewStanding: StandingView =
-    'judgeWhy' in spec && standing.reason?._tag === 'ProposedEscalated'
-      ? {
-          ...standing,
-          reason: { ...standing.reason, because: { _tag: 'JudgeHandedOver' as const, why: spec.judgeWhy } },
-        }
-      : standing
+  const previewStanding: StandingView = { ...standing }
   if (representative && standing.runId !== null) {
     // This inert preview uses its recorded published ref/head as the remote
     // answer; loadTask checks that ref again before offering a live move.
