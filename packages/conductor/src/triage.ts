@@ -133,9 +133,8 @@ never repeated beside it:
   keys, and no cycle.
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
-\`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"ContinueConflict"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
-\`"Split"\`, \`"Close"\` — \`"ContinueConflict"\` only with \`ConflictingHunks\` listing at least one hunk, never past
-${MERGE_HUNKS_ONE_BY_ONE}; the tag alone, never an object, and never \`"AnswerQuestion"\`: that
+\`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
+\`"Split"\`, \`"Close"\`; the tag alone, never an object, and never \`"AnswerQuestion"\`: that
 choice belongs to a person's own question, a wait you are not reading.`
 
 const RULES = `## The rules

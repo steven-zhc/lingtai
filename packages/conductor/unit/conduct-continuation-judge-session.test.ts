@@ -11,8 +11,8 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1.
  */
 import type { Runtime } from '@lingtai/agent'
-import { parsePayload, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
-import { aResolution, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { waitsOf, ticketStream } from '@lingtai/domain'
+import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -115,93 +115,6 @@ describe('a judge asked in a continuation has a session of its own', () => {
       expect(new Set(all).size).toBe(all.length)
     })
   }
-})
-
-describe('a confirmed conflict whose base moved is put back to a person (#558)', () => {
-  it.each([false, true])(
-    'opens a new wait on the new tip rather than stranding the ticket approved (closed meanwhile: %s)',
-    async (closedMeanwhile) => {
-      const store = memoryStore()
-      const ticketId = ticketStream(PROJECT, 7)
-      const ports = fakePorts([], store)
-      let closed = false
-      const args = (continuing?: { runId: string }) => ({
-        project,
-        client: {
-          ...fakeGitHub([], MANY_ROUNDS),
-          refSha: async () => {
-            // A person closes the ticket while the base is being read.
-            if (closedMeanwhile && !closed) {
-              closed = true
-              await store.append(ticketId, (await store.read(ticketId)).length, [
-                {
-                  type: 'TicketClosed',
-                  actor: 'human:steven',
-                  data: parsePayload('TicketClosed', { by: 'human:steven', reason: 'no' }),
-                },
-              ])
-            }
-            return 'c'.repeat(40)
-          },
-        },
-        runtime: judging([]),
-        issue: 7,
-        hookBinary: '/tmp/fake/lingtai-hook',
-        prompt: 'fix {{issue}}',
-        merge: false,
-        home: '/tmp/fake-home',
-        store,
-        ...(continuing === undefined ? {} : { continuing }),
-      })
-      const first = await once(args(), ports)
-      if (first.ok !== 'held') throw new Error(`the first pass did not hold: ${JSON.stringify(first)}`)
-
-      // A conflict wait on that run, confirmed against a base that has since moved.
-      const stream = makeStream(ticketId)
-      const proposal = {
-        _tag: 'MergeConflict' as const,
-        output: 'conflict',
-        paths: ['a.ts'],
-        baseSha: 'a'.repeat(40),
-        headSha: 'b'.repeat(40),
-      }
-      const waitId = aWaitId()
-      await store.append(ticketId, (await store.read(ticketId)).length, [
-        ...aWait(
-          stream,
-          { _tag: 'ProposedEscalated', run: aRunRef(first.runId), proposal, because: { _tag: 'NotAsked' } },
-          waitId,
-        ),
-        ...aResolution(
-          stream,
-          waitId,
-          {
-            _tag: 'ContinueConflict',
-            baseSha: proposal.baseSha,
-            headSha: proposal.headSha,
-            ref: 'agent/7',
-            grantExtraRound: false,
-            hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 1, behavior: 'keep new', adopted: null }],
-          },
-          'human:steven',
-        ),
-      ])
-      expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('approved')
-
-      await once(args({ runId: first.runId }), ports)
-
-      const after = reduceTicket(await store.read(ticketId)).lifecycle
-      if (closedMeanwhile) {
-        expect(after.status).toBe('closed')
-        return
-      }
-      expect(after.status).toBe('blocked')
-      expect(waitsOf(await store.read(ticketId)).at(-1)).toMatchObject({
-        resolution: null,
-        reason: { proposal: { _tag: 'MergeConflict', baseSha: 'c'.repeat(40), headSha: proposal.headSha } },
-      })
-    },
-  )
 })
 
 describe('a granted round names the grant it spent (#573)', () => {

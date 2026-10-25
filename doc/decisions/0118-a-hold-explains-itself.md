@@ -189,7 +189,7 @@ which kind a wait was got inferred again in each place that needed it, from
      type TriageResult =
        | { _tag: 'TriageFailed'; why: string }
        | { _tag: 'TriageAdvised'; cause: RootCause; resolution: TriageAdvice; summary: string; want: string | null }
-     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' | 'GrantFixRound' | 'ContinueConflict' | 'Split' // a Resolution's tag, never AnswerQuestion
+     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' | 'GrantFixRound' | 'Split' // a Resolution's tag, never AnswerQuestion
      type TriageStatus =
        // derived on read, never stored
        | { _tag: 'NotNeeded' }
@@ -229,7 +229,6 @@ which kind a wait was got inferred again in each place that needed it, from
        | { _tag: 'Requeue' } // a new pass from the base
        | { _tag: 'EditBodyAndRequeue' } // write into the body, then requeue
        | { _tag: 'GrantFixRound'; onSha: string; ref: string } // one human-granted round on a recorded remote ref
-       | { _tag: 'ContinueConflict'; baseSha: string; headSha: string; grantExtraRound: boolean }
        | { _tag: 'Split'; children: ChildTicket[]; blockedBy: Dependency[] } // approved tickets and chain
        | { _tag: 'AnswerQuestion'; choice: string } // an OwnQuestion only
        | { _tag: 'Close' }
@@ -243,8 +242,8 @@ which kind a wait was got inferred again in each place that needed it, from
 
      `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
      the board's buttons. `GrantFixRound` is a person's separately logged grant
-     under [0108](0108-a-refusal-buys-a-round.md) §8; `ContinueConflict` is
-     confirmation of proposed behavior, not approval of a merge; `Split`
+     under [0108](0108-a-refusal-buys-a-round.md) §8, and it is how a conflict is
+     answered; `Split`
      approves concrete child tickets and their dependency chain. The child and
      dependency values here describe the person's approved plan, not a claim
      that these contracts are implemented.
@@ -265,7 +264,7 @@ which kind a wait was got inferred again in each place that needed it, from
      | `ProposedEscalated` over `ReviewFindings`                                 | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                 | `proposed`                     |
      | `ProposedEscalated` over `ReviewEmpty`                                    | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                          | `proposed`                     |
      | `ProposedEscalated` over `BuildRed` or `VerifyRed`                        | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                            | —                              |
-     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `ContinueConflict`, `Requeue`, `Close`                                      | —                              |
+     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `Requeue`, `Close`                                                       | —                              |
      | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                                     | —                              |
      | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
      | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                                              | —                              |
@@ -274,7 +273,7 @@ which kind a wait was got inferred again in each place that needed it, from
        sides with the reviewer.
      - `NothingProduced` has no `Approve`: there is nothing on the branch to
        merge.
-     - **Unpushed work drops `Approve`, `GrantFixRound` and `ContinueConflict`**
+     - **Unpushed work drops `Approve` and `GrantFixRound`**
        for every variant that has a `run`: when `run.unpushed` is set the branch
        never reached origin and the worktree that held it is gone, so an
        `Approve{onSha}` would name a sha that exists nowhere and there is
@@ -320,9 +319,9 @@ which kind a wait was got inferred again in each place that needed it, from
      words still shown. With no advice (not needed, not declared, queued,
      running, interrupted or failed) the wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
      `BudgetExhausted` and `AgentCrashed`, nothing elsewhere. `TicketTooBig`
-     may advise `Split` at the first wait; `ConflictingHunks` may advise
-     `ContinueConflict` when it can show a behavioral proposal. The person
-     chooses and confirms the details before either action runs.
+     may advise `Split` at the first wait; `ConflictingHunks` shows its hunks
+     and advises nothing past `GrantFixRound`. The person chooses before either
+     action runs.
 
 2. **The page is in this order:** the ticket, where it is, triage, the resolutions,
    the record.
@@ -533,23 +532,19 @@ which kind a wait was got inferred again in each place that needed it, from
      on the two sides. The question is carried by the hunk it is about. The
      page lists every hunk with its status and opens only the ones that need
      the person.
-   - **A granted round may edit the conflict unconfirmed; `ContinueConflict` is
-     the confirmed path.** `GrantFixRound` on a conflict gives the agent the
-     conflict brief, with an instruction to stop and ask when the two sides'
+   - **A conflict is answered by `GrantFixRound` with the conflict brief.**
+     The agent merges the latest base into the preserved branch, resolves the
+     hunks and commits, with an instruction to stop and ask when the two sides'
      behaviours contradict and the ticket does not settle which wins. What
      catches a wrong choice is `build`, `review` and that question, not a
-     confirmation form. With a person's confirmation, `ContinueConflict` is tied to the shown `baseSha` and `headSha`; it may
-     include one explicit extra-round grant when the automatic ceiling is
-     exhausted (0108 §8). AI then merges the latest base into the preserved
-     branch, resolves the hunks and commits. The changed branch runs through
-     `build` and `review` before `proposed` and the merge lane. This is not an
-     `Approve` or a waiver of either gate. If the base or head moves before
-     continuation, the confirmation is stale; if the base moves again and
-     produces another conflict, the old confirmation grants nothing for it.
-     The new conflict needs a new proposal and confirmation.
+     confirmation form; the page links to GitHub's compare view for a person
+     who wants to read the hunks first. The changed branch runs through `build`
+     and `review` before `proposed` and the merge lane. This is not an
+     `Approve` or a waiver of either gate. If the base moves again and
+     produces another conflict, a new wait is held for it.
    - Past 20 hunks it does not resolve them one by one. The hunks are counted
      from the mirror before any agent is called, and past 20 none is: the
-     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. `ContinueConflict` still requires a concrete behavioral proposal and the person's confirmation; this mechanical answer supplies neither.
+     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. The answer is the same `GrantFixRound`; there is no per-hunk confirmation to supply.
 
 9. **Triage belongs to the wait it explains.** `WaitTriaged` names the
    wait it answers (its `waitId`) and the head it read. The page and the card

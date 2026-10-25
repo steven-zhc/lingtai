@@ -58,11 +58,6 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
     consequence:
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
-  ContinueConflict: {
-    title: 'Continue the conflict',
-    consequence:
-      'Continue the preserved conflict with the behavior you confirm for each divergent hunk. Not runnable yet.',
-  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
@@ -563,7 +558,7 @@ export function Standing({
   const closePrefill = triageAdvised?.summary ?? null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
-  const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
+  const drawable = allowed.filter((tag) => tag !== 'Split')
   // Whatever `recommendedResolution` returned is drawn first; with no saved
   // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
   const recommended = drawable.find((tag) => tag === advice) ?? null

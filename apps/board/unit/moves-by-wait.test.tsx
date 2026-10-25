@@ -123,9 +123,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const html = render(fx, null)
       const row = movesOf(html)
       const buttons = buttonsOf(row)
-      // `ContinueConflict` is offered by the domain (#557) but has no card until
-      // the effect behind it lands (#559); a card the server refuses is worse.
-      expect(cardsOf(row)).toEqual(allowed.filter((tag) => tag !== 'ContinueConflict'))
+      expect(cardsOf(row)).toEqual(allowed)
 
       const approveBtn = allowed.includes('Approve') && standing.awaitingSha !== null
       const approveSentence = allowed.includes('Approve') && standing.awaitingSha === null

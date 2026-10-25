@@ -189,6 +189,34 @@ describe('parseStoredPayload', () => {
 })
 
 /**
+ * `ContinueConflict` left `TriageAdvice` (#591), and triage had been invited to
+ * advise it, so a stored `WaitTriaged` may still carry it.
+ */
+describe('WaitTriaged', () => {
+  const WAITED = { waitId: 'w1', attempt: 1, headSha: 'a'.repeat(40), by: { _tag: 'Mechanical' } }
+  const advised = (resolution: string) => ({
+    ...WAITED,
+    result: { _tag: 'TriageAdvised', cause: { _tag: 'WrongApproach' }, resolution, summary: 's', want: null },
+  })
+
+  it('reads a retired ContinueConflict advice as GrantFixRound', () => {
+    const read = parseStoredPayload('WaitTriaged', 1, advised('ContinueConflict')) as {
+      result: { resolution: string }
+    }
+    expect(read.result.resolution).toBe('GrantFixRound')
+  })
+
+  it('leaves every other advice unchanged', () => {
+    expect(parseStoredPayload('WaitTriaged', 1, advised('Requeue'))).toEqual(advised('Requeue'))
+  })
+
+  it('leaves a TriageFailed unchanged', () => {
+    const failed = { ...WAITED, result: { _tag: 'TriageFailed', why: 'no' } }
+    expect(parseStoredPayload('WaitTriaged', 1, failed)).toEqual(failed)
+  })
+})
+
+/**
  * **The rename that made this file earn its keep, and the reset that spent it.**
  *
  * ADR 0018's `diff` point became `proposed`, nine types carried a `Step` when
@@ -335,6 +363,7 @@ describe("doc/reference.md's upcaster counts", () => {
   /** The document spells its counts, so the test has to read them that way. */
   const SPELLED: Record<string, number> = {
     six: 6,
+    seven: 7,
     nine: 9,
     ten: 10,
     eleven: 11,
