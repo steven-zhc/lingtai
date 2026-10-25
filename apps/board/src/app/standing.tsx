@@ -246,7 +246,16 @@ export function TriageBand({
         <section className="triage-band triage-band--advised" data-rank="triage">
           <div className="triage-head">
             <span className="triage-label">Triage</span>
-            {readings === null ? chip : null}
+            {readings === null ? (
+              chip
+            ) : (
+              <>
+                <p className="triage-cause cause-chip cause-chip--decision">A decision for you</p>
+                <span className="triage-head-note">
+                  the judge and triage read this differently — read both, then say which is right
+                </span>
+              </>
+            )}
           </div>
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
@@ -256,7 +265,6 @@ export function TriageBand({
             </>
           ) : (
             <>
-              <ReadingChoice judgeDrawsNothing={judgeResolution(readings.judge.chose) === null} />
               <div className="triage-readings">
                 <div>
                   <p className="triage-reading-label">Judge</p>
@@ -272,6 +280,7 @@ export function TriageBand({
                 </div>
               </div>
               {evidence}
+              <ReadingChoice judgeDrawsNothing={judgeResolution(readings.judge.chose) === null} />
             </>
           )}
         </section>
@@ -318,9 +327,7 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className="topening">
-      {opening === null ? (
-        <p>The ticket’s context is in the complete issue.</p>
-      ) : (
+      {opening === null ? null : (
         <div className="tcontext">
           {(
             [
@@ -744,6 +751,13 @@ export function Standing({
     />
   )
   const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+  // Once triage has advised a wait, its panel says what stopped and why, in the
+  // judge's words and triage's. Saying it a second time above that panel, as a
+  // section of its own, was the heaviest thing on the page and the least read
+  // (0118's Hold has the rail, then triage): the heading, the conductor's
+  // sentence and the so-what step back, and anything else this section holds
+  // — a conflict's paths, an unknown ticket, a log — still draws.
+  const quiet = waiting && advisedSurface
 
   return (
     <TriagePicks
@@ -826,8 +840,8 @@ export function Standing({
         {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
-        <section className="swhere" aria-label="Where it is" data-rank="where">
-          <h2 className="ssectiontitle">Where it is</h2>
+        <section className={`swhere${quiet ? ' swhere--quiet' : ''}`} aria-label="Where it is" data-rank="where">
+          {quiet ? null : <h2 className="ssectiontitle">Where it is</h2>}
           {waiting ? null : stateReadout}
 
           {!waiting &&
@@ -905,11 +919,11 @@ export function Standing({
                 {/* Verbatim, and only where nothing better was written down — see
               `question` above. It is what the conductor wrote, and a page that
               paraphrases it is a second version of the question. */}
-                {question !== null ? <p className="squestion">{question}</p> : null}
+                {question !== null && !quiet ? <p className="squestion">{question}</p> : null}
 
                 {/* What happened, in the diagnosis' own sentence. Absent until #83
               writes one, which is every block written before it. */}
-                {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
+                {what !== null && !quiet ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
 
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
@@ -932,9 +946,11 @@ export function Standing({
             no path by which a second paragraph lands here; a sentence a later
             ticket wants on this page goes to rank 2 or to the record, and the
             snapshots in `task-page.test.tsx` make it say which (#152). */}
-            <p className="sowhat" data-rank="so-what">
-              {soWhat(standing)}
-            </p>
+            {quiet ? null : (
+              <p className="sowhat" data-rank="so-what">
+                {soWhat(standing)}
+              </p>
+            )}
           </div>
         </section>
 

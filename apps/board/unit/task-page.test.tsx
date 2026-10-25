@@ -708,7 +708,7 @@ describe('the rail on the task page', () => {
     expect(withContext.indexOf('>Watch out</h2>')).toBeLessThan(withContext.indexOf('class="seq"'))
 
     const generic = opening(page(blocked()))
-    expect(generic).toContain('The ticket’s context is in the complete issue.')
+    expect(generic).not.toContain('The ticket’s context is in the complete issue.')
     expect(generic).toContain('href="#record-ticket"')
     expect(generic).not.toContain('class="tcontext"')
     expect(generic.indexOf('href="#record-ticket"')).toBeLessThan(generic.indexOf('class="seq"'))

@@ -1216,6 +1216,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .swaiting-head .sbar { height: 6px; }
 .detail--waiting .swaiting-head .snow { font-size: 0.75rem; }
 .detail--waiting .swhere { padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+.detail--waiting .swhere--quiet { padding-top: 0; border-top: 0; }
+.detail--waiting .swhere--quiet .sbody { padding-top: 0; }
+.detail--waiting .swhere--quiet:not(:has(.sbody :is(p, div, details, ul) )) { display: none; }
 .detail--waiting .swaiting-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1361,6 +1364,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .detail--waiting .triage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; min-width: 0; }
 .detail--waiting .triage-head .triage-cause { margin: 0; }
+.detail--waiting .triage-head-note { color: var(--accent-ink); font-size: 0.88rem; }
 .detail--waiting .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
