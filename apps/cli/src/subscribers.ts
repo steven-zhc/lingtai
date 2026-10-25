@@ -17,15 +17,15 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  * hears about that repository and nothing else — that is what makes "a project
  * with no `subscribers:` gets no notifications" true rather than approximately
  * true. The old subscription was `{ project: "*" }` and never had to answer
- * this; a per-recipe one does, and **three of the four kinds Lingtai's own
- * recipe names cannot answer it from their own bytes**:
+ * this; a per-recipe one does, and **a kind on a run stream cannot answer it
+ * from its own bytes** (Lingtai's own recipe names `RunAwaitingInput` and
+ * `RunFailed` among its kinds):
  *
  *   `WaitStarted`          `ticket-lingtai-123`      the stream says it
  *   `IntegrationRefused`   `int-lingtai-main`    `data.ticketId` says it
- *   `StepEnded`            `pass-<uuid>`          neither: only `runId`
- *   `RunAwaitingInput`     `pass-<uuid>`          neither
+ *   `RunAwaitingInput`     `pass-<uuid>`          neither: only `runId`
  *
- * So the last two are answered by the log: a run stream opens with
+ * So the last is answered by the log: a run stream opens with
  * `RunStarted`, which carries `ticketId`, and `runSubject` reads it. That is
  * a query and not a cache on purpose — a daemon restarted mid-run has no memory
  * of a `RunStarted` it never saw, and the approval that follows is exactly the

@@ -666,7 +666,7 @@ function reviewAnswer(outcome: RunOutcome): ActionResult {
      * On the `failed` verdict because that is the only thing there is to
      * classify: a review that passed refused nothing, so an `about` it
      * volunteered anyway is about a change that is going ahead, and
-     * `StepPassed` has no field for it. `#223`'s question is *of the reviews
+     * an accepted `Assessment` has no field for it. `#223`'s question is *of the reviews
      * that stopped a change, how many said the approach was wrong*, and a
      * denominator with passes in it does not answer it.
      *
