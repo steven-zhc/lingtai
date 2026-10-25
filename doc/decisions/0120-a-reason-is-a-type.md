@@ -114,7 +114,8 @@ type Design = { document: string; locator?: string } // both from the same actio
 type Integration =
   | { _tag: 'Integrated'; mergeSha: string }
   | { _tag: 'Conflicted'; paths: string[] | null; baseSha: string | null; headSha: string | null } // null where the action's own result carried none (#466)
-  | { _tag: 'IntegrationRefused'; reason: Exclude<RefusalReason, 'conflict'> }
+  | { _tag: 'BaseMoved'; paths: string[] | null; fromSha: string | null; toSha: string | null } // the base moved on files the branch also changed, and the trial merge was clean (#593); null where the result carried none
+  | { _tag: 'IntegrationRefused'; reason: Exclude<RefusalReason, 'conflict' | 'base-moved'> }
 
 type NeverStarted = { _tag: 'NeverStarted'; scope: 'conductor' | 'work-item' } // an account wall, an unmet environment
 type NotReached = { _tag: 'NotReached' } // an earlier action fell short, so this one did not run
@@ -269,13 +270,14 @@ type Proposal =
   | { _tag: 'ReviewEmpty'; said: string; findings: Finding[] } // refused, and no finding carries a failure scenario
   | { _tag: 'InputNeeded'; from: 'design' | 'implement'; question: string }
   | { _tag: 'MergeConflict'; output: string; paths: string[] | null; baseSha: string | null; headSha: string | null } // output is the lane's own text; the three path fields are null where the action's result carried none (#466)
+  | { _tag: 'BaseMoved'; paths: string[] | null; fromSha: string | null; toSha: string | null } // the base moved on files the branch also changed (#593); a null toSha leaves nothing to merge
   | { _tag: 'VerifyRed'; output: string } // the base moved, and the re-verify on it went red
   | { _tag: 'SetupRefused'; from: Step; output: string } // prepared refused, or a non-verdict action did not finish
   | { _tag: 'CheckRefused'; from: 'proposed' | 'merge'; output: string } // a declared check at proposed or before the lane at merge refused
   | { _tag: 'AnswerUnreadable'; from: 'design' | 'review' | 'proposed' | 'merge'; raw: string } // the agent answered and the machine could not read it
   | { _tag: 'NothingProduced'; said: string | null } // implement at round 0 cleared and committed nothing
   | { _tag: 'FixerDisagrees'; said: string | null } // implement in a fix round cleared and committed nothing
-  | { _tag: 'MergeRefused'; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'>; output: string } // the lane refused for one of the seven (§4)
+  | { _tag: 'MergeRefused'; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed' | 'base-moved'>; output: string } // the lane refused for one of the seven (§4)
   | {
       _tag: 'BudgetExhausted'
       from: Step
@@ -307,6 +309,7 @@ read off the deciding action by step and yield, never by plugin:
 | design                          | `design` `Asked`                                                  | `InputNeeded{question}` (the draft stays on the `StepEnded`)     |
 | implement                       | `commit` `Completed` with a `question`                            | `InputNeeded{question}` (a commit beside it stays on the branch) |
 | merge                           | `merge` `Completed{Conflicted}`                                   | `MergeConflict{output: evidence, ...Conflicted}`                 |
+| merge                           | `merge` `Completed{BaseMoved}`                                    | `BaseMoved{...BaseMoved}` — the lane's refusal `base-moved` (#593) |
 | merge                           | `merge` `Completed{IntegrationRefused{verify-failed}}`            | `VerifyRed{output: evidence}`                                    |
 | merge                           | `merge` `Completed{IntegrationRefused}`, the other seven reasons  | `MergeRefused{reason, output: evidence}`                         |
 | prepared                        | `verdict` `Completed{refused}` (a timeout is a refusal)           | `SetupRefused{from: 'prepared', output: evidence}`               |
@@ -351,6 +354,7 @@ type CandidateId = string // 'fix-lines', 'restart', 'hand-to-person', …
 
 type CandidateNext =
   | Extract<PassNext, { _tag: 'FixRound' }>
+  | Extract<PassNext, { _tag: 'MergeBase' }> // { toSha, merge }: the system merges the base in and the walk resumes at build (#593)
   | { _tag: 'Requeued'; cause: Extract<RequeueCause, { _tag: 'Restart' }> }
   | { _tag: 'HandToPerson' } // a placeholder: the offer is built before there is a reason to hand over
 
@@ -358,7 +362,7 @@ type RouteCandidate = { id: CandidateId; next: CandidateNext } // next already c
 type ExcludedCandidate = {
   id: CandidateId
   because:
-    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' } // pass.ts:973-974
+    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' | 'base-merges' } // pass.ts:973-974
     | { _tag: 'NoCriterion' } // nothing to hold an agent to (0038 §2)
 }
 type RouteOffer = { proposal: Proposal; available: RouteCandidate[]; unavailable: ExcludedCandidate[] }
@@ -395,7 +399,22 @@ const routeNext: (
   including a conflict or a red re-verify at `merge`, for the agent to fix on
   the new base; a restart from the base, for `ReviewFindings` only; a person,
   always.
-- **No candidate sends `merge` back to `build`.** `onOffer` offers it today
+- **`merge-base` is the one candidate that sends `merge` back to `build`, and
+  it spends no round** (#593). A `BaseMoved` is offered `merge-base`
+  (`MergeBase{toSha, merge}`) and a person. Choosing it merges `toSha` into
+  the pass's own branch **with no agent** — the lane's trial merge just proved
+  it clean — moves `onSha` to the merge commit (the third mover of it, after
+  `admit` and `implement`), and resumes at `build`, so `build`, `review`,
+  `proposed` and `merge` run again on the merged code. It is bounded by a
+  constant, not a recipe knob: at most **2** per pass (`BASE_MERGES_LIMIT`),
+  after which `merge-base` is `unavailable{CeilingReached{base-merges}}` and
+  only a person is left. `Approve` over that hold continues at `merge` as a
+  new pass with the count at zero. Its built-in judge is `merge-the-base`,
+  and `judge: merge-the-base` at any other `when:` is refused when the recipe
+  resolves. The lane raises `base-moved` only when the textual trial merge is
+  clean and the base's new commits touch a file the branch also changed — a
+  conflict is `conflict` first.
+- **No other candidate sends `merge` back to `build`.** `onOffer` offers it today
   for "a conflict an agent resolved" (`pass.ts:930`), and nothing resolves
   conflicts: an unchanged branch goes green again and meets the same conflict.
   A conflict-resolving plugin can add it back (principle 8).

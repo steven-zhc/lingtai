@@ -103,7 +103,7 @@ which kind a wait was got inferred again in each place that needed it, from
          findings: Finding[]
        }
      // the machine fell short, and nobody decided it
-     | { _tag: 'MergeRefused'; run: RunRef; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed'>; raw: string }
+     | { _tag: 'MergeRefused'; run: RunRef; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed' | 'base-moved'>; raw: string }
      | {
          _tag: 'BudgetExhausted'
          run: RunRef
@@ -266,8 +266,13 @@ which kind a wait was got inferred again in each place that needed it, from
      | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `Requeue`, `Close`                                                       | —                              |
      | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                                     | —                              |
      | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
+     | `ProposedEscalated` over `BaseMoved`                                     | `Approve` (keep merging the base in), `Requeue`, `Close`                                       | `merge`                        |
      | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                                              | —                              |
      | `SetupRefused`                                                           | `Requeue`, `Close`                                                                             | —                              |
+     - `BaseMoved` is held only after the system's own two merges of the base
+       are spent (0120 §3, #593); `Approve` continues at `merge` as a new pass
+       whose count is zero, so it reads as *keep merging the base in*, and no
+       fix round is granted — there is nothing wrong with the lines.
      - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
        sides with the reviewer.
      - `NothingProduced` has no `Approve`: there is nothing on the branch to

@@ -101,7 +101,12 @@ fixes the bounds and the endings that router works inside.
    listing, `lingtai doctor`). Since `#370`, the same block may hold `usd` — a
    dollar ceiling on one run, with no default — and where it is declared the
    automatic ceiling gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
-   printed beside the time figure rather than in place of it. Absent, the
+   printed beside the time figure rather than in place of it. **A third bound
+   is free and is not a knob** (#593): when the base moved on files the branch
+   also changed, the system merges it in itself and the pass builds and reviews
+   again — no agent runs for the merge and no `round` is spent — at most twice
+   per pass (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
+   ceiling above beyond the `build` and `review` it reruns. Absent, the
    sentence is unchanged, character for character. A person's `GrantFixRound`
    ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
    one additional `implement` round on saved work when the wait has a fixable
