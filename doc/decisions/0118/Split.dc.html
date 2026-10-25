@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Split a ticket</title>
+<script src="./dc-lite.js"></script>
+<!-- The graph is React Flow (@xyflow/react) laid out by dagre: the number of
+     children and the shape of their blocked-by links are triage's to choose
+     (at most 8, 0118 §12), so nothing here is placed by hand. The board would
+     take both from npm; this page takes them from a CDN so it opens as a file. -->
+<link rel="stylesheet" href="https://esm.sh/@xyflow/react@12.3.6/dist/style.css">
+<script type="module">
+import React from 'https://esm.sh/react@18.3.1'
+import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client'
+import { ReactFlow, Background, Handle, Position, MarkerType } from 'https://esm.sh/@xyflow/react@12.3.6?deps=react@18.3.1,react-dom@18.3.1'
+import dagre from 'https://esm.sh/@dagrejs/dagre@1.1.4'
+
+const h = React.createElement
+const ICON = { planned: '', writing: '', created: '✓', failed: '!', off: '–', parent: '', closed: '✓' }
+
+/** Cards left to right, one band per wave, square-cornered arrows (chosen 2026-10-25 over three other looks). */
+const L = { W: 236, H: 66, dir: 'LR', nodesep: 16, ranksep: 64, edge: 'smoothstep' }
+
+const cls = (d, base) => base + ' ' + d.state + (d.sel ? ' sel' : '') + (d.faded ? ' faded' : '')
+const handles = (dir) => [
+  h(Handle, { key: 'a', type: 'target', position: dir === 'TB' ? Position.Top : Position.Left, className: 'hd' }),
+  h(Handle, { key: 'b', type: 'source', position: dir === 'TB' ? Position.Bottom : Position.Right, className: 'hd' })
+]
+
+/** The parent: its number on a dark pill, ahead of the first wave. */
+function Ticket({ data }) {
+  return h('div', { className: cls(data, 'tn') }, ...handles(data.dir), h('span', { className: 'ic' }, ICON[data.state]), h('span', { className: 'nm' }, data.label))
+}
+/** A card that also says what the ticket is, for when a number is not enough. */
+function Card({ data }) {
+  return h('div', { className: cls(data, 'cd') }, ...handles(data.dir),
+    h('div', { className: 'top' }, h('span', { className: 'ic' }, ICON[data.state]), h('span', { className: 'nm' }, data.label), h('span', { className: 'kd' }, data.kind)),
+    h('div', { className: 'tt' }, data.title))
+}
+function Band({ data }) { return h('div', { className: 'band' }, h('span', null, data.label)) }
+const nodeTypes = { t: Ticket, card: Card, band: Band }
+
+let root = null
+window.__drawFlow = (el, model, onPick) => {
+  if (root) root.unmount()
+  const { W, H } = L
+  const g = new dagre.graphlib.Graph()
+  g.setGraph({ rankdir: L.dir, nodesep: L.nodesep, ranksep: L.ranksep, marginx: 8, marginy: 8 })
+  g.setDefaultEdgeLabel(() => ({}))
+  model.nodes.forEach((n) => g.setNode(n.id, { width: W, height: H }))
+  model.edges.forEach((e) => g.setEdge(e.source, e.target, { minlen: 1, weight: 1 }))
+  // Pin every child to its wave: a heavy, invisible tie from the parent, as long as the wave.
+  // dagre then reserves a lane for an arrow that skips a wave, so it does not run through a ticket.
+  model.nodes.forEach((n) => { if (n.id !== 'p') g.setEdge('p', n.id, { minlen: n.wave, weight: 20 }) })
+  dagre.layout(g)
+
+  // What touches the selected ticket stays lit and the rest steps back; with nothing selected, all of it is lit.
+  const sel = model.sel
+  const near = new Set([sel, 'p'])
+  model.edges.forEach((e) => { if (e.source === sel) near.add(e.target); if (e.target === sel) near.add(e.source) })
+  const faded = (id) => sel !== null && !near.has(id)
+
+  const placed = model.nodes.map((n) => {
+    const p = g.node(n.id)
+    return { id: n.id, type: n.id === 'p' ? 't' : 'card', position: { x: p.x - W / 2, y: p.y - H / 2 },
+      data: { ...n, dir: L.dir, faded: faded(n.id) }, draggable: false, selectable: false, zIndex: 2 }
+  })
+  const box = (list) => {
+    const xs = list.map((n) => n.position.x), ys = list.map((n) => n.position.y)
+    return { x0: Math.min(...xs), x1: Math.max(...xs) + W, y0: Math.min(...ys), y1: Math.max(...ys) + H }
+  }
+  const under = []
+  const kidNodes = placed.filter((n) => n.id !== 'p')
+  {
+    const b = box(kidNodes)
+    const cols = [...new Set(kidNodes.map((n) => Math.round(n.position.x)))].sort((a, c) => a - c)
+    cols.forEach((x, i) => under.push({ id: 'band' + i, type: 'band', position: { x: x - 12, y: b.y0 - 34 }, draggable: false, selectable: false, zIndex: 0,
+      style: { width: W + 24, height: b.y1 - b.y0 + 48 }, data: { label: i === 0 ? 'wave 1 · starts first' : 'wave ' + (i + 1) } }))
+  }
+
+  const lit = (e) => e.source === sel || e.target === sel
+  const edges = model.edges.map((e) => {
+    if (e.kind === 'split') return { id: e.id, source: e.source, target: e.target, type: L.edge, pathOptions: { borderRadius: 14 }, style: { stroke: '#b9d9da', strokeWidth: 1.5, strokeDasharray: '3 5' }, zIndex: 1 }
+    // Nothing selected: every arrow at full strength, so the whole plan reads at once.
+    const color = e.animated ? '#9c5a08' : sel === null || lit(e) ? '#0b6a70' : '#c3cfd1'
+    const width = lit(e) || e.animated ? 2.2 : 1.6
+    return { id: e.id, source: e.source, target: e.target, type: L.edge, pathOptions: { borderRadius: 14 }, animated: e.animated, zIndex: 1,
+      style: { stroke: color, strokeWidth: width, strokeLinecap: 'round' },
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } }
+  })
+
+  root = createRoot(el)
+  root.render(h(ReactFlow, {
+    nodes: [...under, ...placed], edges, nodeTypes,
+    fitView: true, fitViewOptions: { padding: 0.12, maxZoom: 1.1 },
+    nodesConnectable: false, panOnDrag: false, zoomOnScroll: false, zoomOnPinch: false,
+    zoomOnDoubleClick: false, preventScrolling: false,
+    onNodeClick: (_, n) => { if (n.id.startsWith('c')) onPick(n.id) },
+    onPaneClick: () => onPick(null)
+  }, h(Background, { gap: 18, size: 1, color: '#d8e0e1' })))
+}
+window.dispatchEvent(new Event('flow-ready'))
+</script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+a{color:#075056}a:hover{color:#0b6a70}
+code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
+.k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+.m{font-family:'IBM Plex Mono',monospace}
+.ctx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:#fff;border:1px solid #d8e0e1}
+.ctx>div{padding:14px 18px;display:flex;flex-direction:column;gap:4px}
+.ctx>div+div{border-left:1px solid #e9eeee}
+.ctx p{margin:0;font-size:13.5px}
+.mv{background:#fff;border:1px solid #d8e0e1;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.mv h3{margin:0;font-size:16px;font-weight:600}
+.mv p{margin:0;font-size:13px;color:#3a4a50}
+.btn{min-height:44px;padding:0 18px;border:1px solid #c3cfd1;background:transparent;color:#0f181c;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.btn[disabled]{color:#87999f;cursor:not-allowed}
+.btnp{min-height:44px;padding:0 18px;border:0;background:#0b6a70;color:#fff;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.btnp[disabled]{background:#87999f;cursor:not-allowed}
+.new{font-size:12px;color:#9c5a08;background:#f7ead6;padding:6px 10px}
+.stage{min-height:34px;padding:0 14px;font:500 12.5px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.row{display:grid;grid-template-columns:28px 200px minmax(0,1fr) 120px;gap:12px;align-items:baseline;padding:7px 14px;background:#fff}
+.row+.row{border-top:1px solid #e9eeee}
+.dep{min-height:30px;padding:0 10px;font:500 12px 'IBM Plex Mono',monospace;cursor:pointer}
+.key{display:flex;align-items:center;gap:6px;font-size:12px;color:#075056}
+.key i{display:inline-block;width:12px;height:12px;border-radius:50%}
+.busy{display:flex;align-items:center;gap:10px;background:#ffffff;border-left:3px solid #9c5a08;padding:10px 14px;font-size:13.5px}
+details>summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:10px;padding:12px 16px;background:#fff;border:1px solid #d8e0e1}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:'▸';color:#5e6e74;font-size:12px}
+details[open]>summary::before{content:'▾'}
+details[open]>summary{border-bottom:0}
+textarea{width:100%;box-sizing:border-box;min-height:300px;padding:12px 14px;border:1px solid #c3cfd1;background:#f8fafa;font:12.5px/1.65 'IBM Plex Mono',monospace;resize:vertical}
+input[type=text]{width:100%;box-sizing:border-box;min-height:40px;padding:0 12px;border:1px solid #c3cfd1;font:14px 'IBM Plex Sans',sans-serif}
+/* the graph's own nodes: a status icon and a number, nothing else */
+.tn{position:relative;box-sizing:border-box;width:128px;height:48px;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;background:#fff;border:1px solid #d8e0e1;border-radius:12px;font:600 13.5px 'IBM Plex Mono',monospace;color:#0f181c;cursor:pointer;box-shadow:inset 4px 0 0 #0b6a70,0 1px 2px rgba(15,24,28,.06),0 6px 16px rgba(15,24,28,.06);transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease}
+.tn:hover{transform:translateY(-2px);box-shadow:inset 4px 0 0 #0b6a70,0 2px 4px rgba(15,24,28,.08),0 12px 24px rgba(15,24,28,.12)}
+.tn .ic{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 12px 'IBM Plex Sans',sans-serif;border:1.5px solid #0b6a70;background:#fff;color:#0b6a70;flex:none;box-sizing:border-box}
+.tn .sb{margin-left:auto;font:500 10px 'IBM Plex Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#87999f}
+.tn.parent{background:#0f181c;border-color:#0f181c;color:#fff;cursor:default;box-shadow:0 0 0 4px #e9eeee,0 8px 20px rgba(15,24,28,.18)}
+.tn.parent:hover{transform:none}
+.tn.parent .ic{border:0;background:#3a4a50;border-radius:5px;width:18px;height:18px;transform:rotate(45deg)}
+.tn.parent .sb{color:#87999f}
+.tn.created,.tn.closed{box-shadow:inset 4px 0 0 #2c7a4c,0 1px 2px rgba(15,24,28,.06),0 6px 16px rgba(15,24,28,.06)}
+.tn.created .ic,.tn.closed .ic{background:#2c7a4c;border-color:#2c7a4c;color:#fff}
+.tn.closed{background:#dfeee4}
+.tn.failed{border-color:#e8c3be;background:#f6e1de;box-shadow:inset 4px 0 0 #a33029,0 6px 16px rgba(163,48,41,.12)}
+.tn.failed .ic{background:#a33029;border-color:#a33029;color:#fff}
+.tn.off{border:1.5px dashed #c3cfd1;background:#f1f4f4;color:#87999f;box-shadow:none}
+.tn.off .ic{border-color:#c3cfd1;color:#87999f}
+.tn.writing{box-shadow:inset 4px 0 0 #9c5a08,0 6px 16px rgba(156,90,8,.14)}
+.tn.writing .ic{border:2px solid #f7ead6;border-top-color:#9c5a08;animation:spin .8s linear infinite}
+.tn.sel{border-color:#0b6a70;box-shadow:inset 4px 0 0 #0b6a70,0 0 0 4px rgba(11,106,112,.18),0 12px 24px rgba(15,24,28,.12)}
+.tn.created.sel,.tn.closed.sel{box-shadow:inset 4px 0 0 #2c7a4c,0 0 0 4px rgba(11,106,112,.18),0 12px 24px rgba(15,24,28,.12)}
+.tn.failed.sel{box-shadow:inset 4px 0 0 #a33029,0 0 0 4px rgba(163,48,41,.18),0 12px 24px rgba(15,24,28,.12)}
+.tn.faded{opacity:.42}
+.band{width:100%;height:100%;box-sizing:border-box;border-radius:14px;background:linear-gradient(180deg,rgba(220,237,237,.55),rgba(220,237,237,.15));pointer-events:none}
+.band span{display:block;padding:8px 12px 0;font:600 10px 'IBM Plex Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#075056}
+.hd{opacity:0;pointer-events:none}
+/* cards: the number and what the ticket is */
+.cd{box-sizing:border-box;width:236px;height:66px;padding:9px 12px 0 16px;background:#fff;border:1px solid #d8e0e1;border-radius:12px;cursor:pointer;box-shadow:inset 4px 0 0 #0b6a70,0 1px 2px rgba(15,24,28,.06),0 6px 16px rgba(15,24,28,.06);transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease}
+.cd:hover{transform:translateY(-2px)}
+.cd .top{display:flex;align-items:center;gap:8px}
+.cd .ic{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 10px 'IBM Plex Sans',sans-serif;border:1.5px solid #0b6a70;color:#0b6a70;box-sizing:border-box}
+.cd .nm{font:600 13px 'IBM Plex Mono',monospace}
+.cd .kd{margin-left:auto;font:600 9.5px 'IBM Plex Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:#87999f}
+.cd .tt{margin-top:5px;font:400 12.5px/1.35 'IBM Plex Sans',sans-serif;color:#3a4a50;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd.created,.cd.closed{box-shadow:inset 4px 0 0 #2c7a4c,0 6px 16px rgba(15,24,28,.06)}.cd.created .ic,.cd.closed .ic{background:#2c7a4c;border-color:#2c7a4c;color:#fff}
+.cd.failed{background:#f6e1de;border-color:#e8c3be;box-shadow:inset 4px 0 0 #a33029}.cd.failed .ic{background:#a33029;border-color:#a33029;color:#fff}
+.cd.off{border:1.5px dashed #c3cfd1;background:#f1f4f4;box-shadow:none;opacity:.7}
+.cd.writing{box-shadow:inset 4px 0 0 #9c5a08}.cd.writing .ic{border:2px solid #f7ead6;border-top-color:#9c5a08;animation:spin .8s linear infinite}
+.cd.sel{border-color:#0b6a70;box-shadow:inset 4px 0 0 #0b6a70,0 0 0 4px rgba(11,106,112,.18),0 12px 24px rgba(15,24,28,.12)}
+.cd.faded{opacity:.45}
+.react-flow__node{cursor:default}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<div style="width: 1200px; min-height: 1500px; box-sizing: border-box; padding: 32px 48px 64px; background-color: #f1f4f4; background-image: linear-gradient(#e4eaea 1px, transparent 1px), linear-gradient(90deg, #e4eaea 1px, transparent 1px); background-size: 32px 32px; color: #0f181c; font: 14px/1.55 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 32px">
+
+<!-- ============ the mockup's own control: which moment to draw ============ -->
+<div style="display: flex; align-items: center; gap: 8px">
+<span class="k" style="color: #5e6e74; margin-right: 8px">Moment</span>
+<sc-for list="{{stages}}" as="s" hint-placeholder-count="5"><button type="button" class="stage" onClick="{{s.pick}}" style="{{s.style}}">{{s.label}}</button></sc-for>
+<span style="margin-left: auto; font-size: 12px; color: #5e6e74">Ticket numbers after #561 and every cost are illustrative.</span>
+</div>
+
+<!-- ============ the ticket ============ -->
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #5e6e74">
+<a href="https://github.com/steven-zhc/lingtai/issues/561" style="text-decoration: none">#561 ↗</a><span>feature</span><span>4 rounds · $21.40</span>
+<span style="margin-left: auto; color: {{head.color}}">{{head.status}}</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">Split reconciles child issues and native dependencies after partial writes</h1>
+<div class="ctx">
+<div><span class="k" style="color: #5e6e74">Problem</span><p>GitHub may accept some child issues or links and fail on the next call; a blind retry duplicates work.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>An approved plan becomes exactly one set of child issues and native blocked-by links.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>Issue numbers and internal ids differ; never infer success from a timed-out call.</p></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
+<span class="m" style="font-size: 12px; color: #3a4a50">{{railNote}}</span>
+</header>
+
+<!-- ============ triage, and the plan it wrote, on triage's own panel ============ -->
+<section style="background: #dceded; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Triage</span><span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #7a3e6e; padding: 2px 10px">Too big — split it</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">claude-code · read 9 files · $0.84</span></div>
+<sc-if value="{{showTriage}}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0; font: 400 20px/1.45 'IBM Plex Serif', Georgia, serif; max-width: 960px">This is five tickets. Four rounds each patched the same reconcile window, because the client calls, the writer, the page and the parent's ending were being built at once and every fix moved the hole.</p>
+</sc-if>
+<sc-if value="{{busy}}" hint-placeholder-val="{{ false }}">
+<div class="busy"><b>{{busy}}</b><span style="color: #3a4a50">The page is locked until every write has been read back. Closing the tab undoes nothing; reopening it reads GitHub and shows where it got to.</span></div>
+</sc-if>
+
+<!-- the graph: icons and arrows only -->
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 18px">
+<span class="k" style="color: #075056">{{graphTitle}}</span>
+<span class="key"><i style="background: #dceded; border: 1.5px solid #0b6a70"></i>planned</span>
+<span class="key"><i style="border: 2px solid #f7ead6; border-top-color: #9c5a08"></i>writing</span>
+<span class="key"><i style="background: #2c7a4c"></i>created</span>
+<span class="key"><i style="background: #a33029"></i>failed</span>
+<span class="key"><i style="background: #e9eeee; border: 1px dashed #87999f"></i>left out</span>
+<span class="key"><span class="m">──▶</span>blocks</span>
+<span style="margin-left: auto; font-size: 12px; color: #075056">click a ticket to read it below</span>
+<button type="button" class="btnp" onClick="{{primary.go}}" disabled="{{primary.off}}" style="min-height: 34px; padding: 0 14px; font-size: 13px">{{primary.btn}}</button>
+</div>
+<div id="graph" style="height: 280px; background: #ffffff; border: 1px solid #b9d9da"></div>
+</div>
+
+<!-- the selected child, full width under the graph -->
+<sc-if value="{{noSel}}" hint-placeholder-val="{{ false }}">
+<div class="mv" style="border-color: #b9d9da; border-style: dashed; align-items: center; padding: 28px; color: #5e6e74; font-size: 13.5px">Click a ticket in the graph to read and edit it here. Click it again, or the empty canvas, to see the whole plan lit.</div>
+</sc-if>
+<sc-if value="{{hasSel}}" hint-placeholder-val="{{ true }}">
+<article class="mv" style="border-color: #b9d9da; gap: 14px">
+<div style="display: flex; align-items: baseline; gap: 12px">
+<h3 class="m" style="font-size: 15px">{{sel.label}}</h3>
+<span class="k" style="color: #5e6e74">{{sel.kind}}</span>
+<span class="m" style="font-size: 12px; color: {{sel.color}}">{{sel.state}}</span>
+<label style="margin-left: auto; font-size: 13px; display: flex; gap: 6px; align-items: center"><input type="checkbox" checked="{{sel.on}}" onChange="{{sel.toggle}}" disabled="{{locked}}"> include this ticket</label>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+<span class="k" style="color: #5e6e74; margin-right: 4px">Blocked by</span>
+<sc-for list="{{sel.deps}}" as="d" hint-placeholder-count="4"><button type="button" class="dep" onClick="{{d.toggle}}" disabled="{{locked}}" style="{{d.style}}">{{d.label}}</button></sc-for>
+<span style="font-size: 12px; color: #5e6e74; margin-left: 8px">{{sel.blocks}}</span>
+</div>
+<label for="t" class="k" style="color: #5e6e74">Title</label>
+<input id="t" type="text" value="{{sel.title}}" disabled="{{locked}}">
+<label for="b" class="k" style="color: #5e6e74">Body · becomes the agent's prompt</label>
+<textarea id="b" disabled="{{locked}}" value="{{sel.body}}"></textarea>
+</article>
+</sc-if>
+</section>
+
+<!-- ============ the moves, straight under the plan they act on ============ -->
+<section style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+<article class="mv" style="border: 2px solid #0b6a70">
+<div style="display: flex; align-items: baseline; gap: 10px"><h3>{{primary.title}}</h3><span class="k" style="margin-left: auto; color: #ffffff; background: #0b6a70; padding: 2px 9px">Recommended</span></div>
+<p>{{primary.text}}</p>
+<sc-if value="{{primary.isNew}}" hint-placeholder-val="{{ true }}"><span class="new">New move. Today a split is done by hand with gh.</span></sc-if>
+<button type="button" class="btnp" onClick="{{primary.go}}" disabled="{{primary.off}}" style="margin-top: auto; align-self: flex-start">{{primary.btn}}</button>
+</article>
+<article class="mv">
+<h3>Try once more anyway</h3>
+<p>Write a narrower body and start a new pass from the base.</p>
+<button type="button" class="btn" disabled="{{otherOff}}" style="margin-top: auto; align-self: flex-start">Edit the body &amp; requeue</button>
+</article>
+<article class="mv">
+<h3>Close it</h3>
+<p>Children already created stay open; close them on GitHub if they are not wanted.</p>
+<button type="button" class="btn" disabled="{{otherOff}}" style="margin-top: auto; align-self: flex-start">Close</button>
+</article>
+</div>
+
+<!-- the writes: folded unless something failed, since the graph already shows progress -->
+<details open="{{writesOpen}}">
+<summary><span class="k" style="color: #5e6e74">What Create all writes</span><span class="m" style="font-size: 12px; color: {{writesColor}}">{{writesSummary}}</span><span style="margin-left: auto; font-size: 12px; color: #5e6e74">each write is read back from GitHub before the next</span></summary>
+<div style="border: 1px solid #d8e0e1; border-top: 0">
+<sc-for list="{{steps}}" as="w" hint-placeholder-count="13">
+<div class="row">
+<span class="m" style="font-size: 12px; color: #5e6e74">{{w.n}}</span>
+<span class="m" style="font-size: 12px">{{w.what}}</span>
+<span style="font-size: 13px; color: #3a4a50">{{w.detail}}</span>
+<span class="m" style="font-size: 12px; text-align: right; color: {{w.color}}">{{w.mark}}</span>
+</div>
+</sc-for>
+</div>
+</details>
+</section>
+
+<!-- ============ the parent after the split ============ -->
+<section style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px">
+<div class="mv">
+<span class="k" style="color: #5e6e74">#561's body, after the split</span>
+<p>The ticket's own <i>Done when</i> is replaced; everything above it is kept. A line under it says which split wrote it.</p>
+<pre class="m" style="margin: 0; padding: 12px 14px; background: #f8fafa; font-size: 12px; line-height: 1.7; white-space: pre-wrap">{{doneWhen}}</pre>
+</div>
+<div class="mv">
+<span class="k" style="color: #5e6e74">How #561 ends</span>
+<ol style="margin: 0; padding-left: 18px; font-size: 13px; color: #3a4a50; display: flex; flex-direction: column; gap: 6px">
+<li>The split ends the wait as a requeue. #561 is not labelled <code>epic</code>; it is held by a blocked-by link to every child, so the queue passes over it as <code>blocked-by</code>.</li>
+<li>The children land in the order their own links allow.</li>
+<li>When the last one closes, #561 is eligible again on the next pass.</li>
+<li>At claim the conductor reads #561's <code>TicketSplit</code>, asks GitHub about exactly those children, and when every one is closed <b>closes #561 without starting an agent</b>, saying why.</li>
+</ol>
+<span class="new">The event is what step 4 reads, not the body or GitHub's sub-issue list: a person may edit the body, and may attach sub-issues by hand that Lingtai never planned. Step 4 is a new rule. Without it the next pass would hand #561 to an agent with nothing left to change, and it would come back as "nothing produced" for a person.</span>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props)
+    this.state = {
+      stage: 'plan',
+      sel: null, // nothing selected at first: the whole plan lit
+      off: {},
+      // child index → the indexes it is blocked by; triage's proposal, editable while planning
+      deps: { 0: [], 1: [0], 2: [], 3: [1, 2], 4: [0] }
+    }
+    window.addEventListener('flow-ready', () => this.forceUpdate())
+  }
+
+  /** The graph is React's, not dc-lite's: drawn again after every render, into the fresh #graph. */
+  drawGraph(model) {
+    const el = document.getElementById('graph')
+    if (!el || !window.__drawFlow) return
+    window.__drawFlow(el, model, (id) => {
+      const n = id === null ? null : Number(id.slice(1))
+      // Clicking the selected ticket again, or the empty canvas, lights the whole plan.
+      this.setState({ sel: n === this.state.sel ? null : n })
+    })
+  }
+
+  renderVals() {
+    const st = this.state.stage
+    const STAGES = [
+      ['plan', 'Plan'],
+      ['creating', 'Creating'],
+      ['partial', 'Partly written'],
+      ['done', 'Written'],
+      ['closed', 'Children closed']
+    ]
+    const stages = STAGES.map(([k, label]) => ({
+      label,
+      pick: () => this.setState({ stage: k }),
+      style: k === st ? 'border: 2px solid #0b6a70; background: #fff; color: #075056' : 'border: 1px solid #c3cfd1; background: transparent; color: #3a4a50'
+    }))
+
+    // The same rail as every other 0118 page: one bar per step of the pass.
+    const steps10 = ['claim', 'admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge', 'end']
+    const codes = { plan: 'ppppppfynn', creating: 'ppppppfynn', partial: 'ppppppfynn', done: 'nnnnnnnnnn', closed: 'pnnnnnnnnp' }[st]
+    const C = { p: '#2c7a4c', f: '#a33029', y: '#9c5a08', n: '#d8e0e1' }
+    const rail = steps10.map((step, i) => {
+      const k = codes[i]
+      return { step, bar: 'height: 8px; background: ' + C[k], lbl: 'font-family: \'IBM Plex Mono\', monospace; font-size: 11px; color: ' + (k === 'n' ? '#87999f' : k === 'p' ? '#3a4a50' : C[k]) + (k === 'f' || k === 'y' ? '; font-weight: 600' : '') }
+    })
+    const railNote = {
+      plan: 'review refused ×4 · 3/3 rounds · the judge sent it to you · held at proposed',
+      creating: 'review refused ×4 · 3/3 rounds · held at proposed · splitting',
+      partial: 'review refused ×4 · 3/3 rounds · held at proposed · split half written',
+      done: 'requeued · blocked by 5 children · no pass until they close',
+      closed: 'claimed · every child closed · closed by the conductor, no agent'
+    }[st]
+
+    const plan = [
+      { num: '#601', kind: 'feature', title: 'The GitHub client adds sub-issues and blocked-by, and lists both',
+        body: '| | |\n|---|---|\n| **Problem** | The client can create an issue but cannot attach it to a parent, add a blocked-by link, or read either back. |\n| **Want** | addSubIssue, addBlockedBy, listSubIssues and listBlockedBy, each taking the internal id where GitHub wants it. |\n| **Fix** | Four methods in packages/github/src/client.ts, number → id resolved inside. |\n| **Watch out** | A 403 names the missing App permission; it is never an empty list. |\n\n---\n\n## Done when\n\n- [ ] Each method has a unit test over a recorded response.\n- [ ] pnpm typecheck and pnpm test are green.' },
+      { num: '#602', kind: 'feature', title: 'Create all writes a split plan in order and reads each write back',
+        body: '| | |\n|---|---|\n| **Problem** | Nothing turns an approved plan into issues and links. |\n| **Want** | One server-side function: create, attach, chain, hold the parent, end the wait, each write read back. |\n| **Fix** | Before writing, read the parent\'s sub-issues and skip what exists. |\n| **Watch out** | A retry creates only what is missing. |' },
+      { num: '#603', kind: 'feature', title: 'The waiting page draws the split plan as a graph with a ticket panel',
+        body: '| | |\n|---|---|\n| **Problem** | A split advice can only be read as text. |\n| **Want** | The plan as icons and arrows; clicking one shows that ticket in full below, editable. |\n| **Fix** | React Flow on the board, laid out left to right by dagre. |\n| **Watch out** | Up to 8 children; nothing is written until Create all. |' },
+      { num: '#604', kind: 'feature', title: 'Create all locks the page and reports every write',
+        body: '| | |\n|---|---|\n| **Problem** | The page and the writer are not connected. |\n| **Want** | Pressing Create all locks the page, shows each write on the graph as it is read back, and offers Retry what is missing on a failure. |\n| **Fix** | Wire the button to the writer. |\n| **Watch out** | Reopening the page reads GitHub and shows where it got to. |' },
+      { num: '#605', kind: 'feature', title: 'A split parent closes itself once every child is closed',
+        body: '| | |\n|---|---|\n| **Problem** | A split parent that comes back to the queue would be given to an agent with nothing to do. |\n| **Want** | At claim, a parent with a recorded split and every child closed is closed with no agent. |\n| **Fix** | A check before the claim spends anything. |\n| **Watch out** | A child closed as not planned still counts as closed; say which in the closing note. |' }
+    ]
+
+    const written = st === 'done' || st === 'closed'
+    const made = (i) => !this.state.off[i] && (written || (st === 'creating' && i < 2) || (st === 'partial' && i < 3))
+    const stateOf = (i) => {
+      if (this.state.off[i]) return 'off'
+      if (st === 'creating' && i === 2) return 'writing'
+      if (st === 'partial' && i === 3) return 'failed'
+      if (st === 'closed') return 'closed'
+      return made(i) ? 'created' : 'planned'
+    }
+    const WORD = {
+      off: ['left out', '#87999f'],
+      writing: ['writing…', '#9c5a08'],
+      failed: ['✗ not created · GitHub answered 502', '#a33029'],
+      created: ['✓ created', '#2c7a4c'],
+      closed: ['✓ closed', '#2c7a4c'],
+      planned: [st === 'creating' ? 'waiting' : 'planned', '#5e6e74']
+    }
+    const labelOf = (i) => (made(i) ? plan[i].num : String(i + 1))
+
+    // A child's wave is one more than its latest blocker's; a child nothing blocks is wave 1.
+    const waveOf = (i, seen = []) => seen.includes(i) ? 1 : 1 + Math.max(0, ...this.state.deps[i].map((b) => waveOf(b, seen.concat(i))))
+    const model = { sel: this.state.sel === null ? null : 'c' + this.state.sel, nodes: [{ id: 'p', label: '#561', state: 'parent', wave: 0, kind: 'parent', title: 'split into ' + plan.filter((_, j) => !this.state.off[j]).length + ' tickets' }], edges: [] }
+    plan.forEach((c, i) => {
+      model.nodes.push({ id: 'c' + i, label: labelOf(i), state: stateOf(i), sel: this.state.sel === i, wave: waveOf(i), kind: c.kind, title: c.title })
+      const blockers = this.state.deps[i]
+      // The parent points at the children nothing else blocks; the rest hang off their blockers.
+      if (blockers.length === 0) model.edges.push({ id: 'p' + i, source: 'p', target: 'c' + i, kind: 'split' })
+      blockers.forEach((b) => model.edges.push({ id: 'e' + b + '-' + i, source: 'c' + b, target: 'c' + i, kind: 'blocks', animated: stateOf(i) === 'writing' }))
+    })
+    setTimeout(() => this.drawGraph(model), 0)
+
+    const hasSel = this.state.sel !== null
+    const i = hasSel ? this.state.sel : 0
+    const s = plan[i]
+    // Partly written: what GitHub already has is fixed; what it does not have can be edited before the retry.
+    const locked = !(st === 'plan' || (st === 'partial' && !made(i)))
+    const otherOff = st === 'creating' || written
+    const blocks = plan.map((_, j) => j).filter((j) => this.state.deps[j].includes(i)).map(labelOf)
+    const deps = plan.map((_, j) => j).filter((j) => j !== i).map((j) => {
+      const on = this.state.deps[i].includes(j)
+      return {
+        label: labelOf(j),
+        style: on ? 'border: 2px solid #0b6a70; background: #ffffff; color: #075056' : 'border: 1px solid #c3cfd1; background: transparent; color: #87999f',
+        toggle: () => {
+          const now = this.state.deps[i]
+          this.setState({ deps: Object.assign({}, this.state.deps, { [i]: on ? now.filter((x) => x !== j) : now.concat(j) }) })
+        }
+      }
+    })
+    const [stateWord, stateColor] = WORD[stateOf(i)]
+
+    const live = plan.map((_, j) => j).filter((j) => !this.state.off[j])
+    const mark = (k) => ({ done: ['✓ read back', '#2c7a4c'], doing: ['writing…', '#9c5a08'], fail: ['✗ 502', '#a33029'], todo: ['—', '#87999f'] })[k]
+    const rows = []
+    live.forEach((j) => {
+      rows.push(['create child ' + (j + 1), 'new issue with its body and kind label'])
+      rows.push(['attach child ' + (j + 1), 'sub-issue of #561'])
+    })
+    rows.push(['chain children', 'every blocked-by link in the graph'])
+    rows.push(['hold the parent', '#561 blocked by each child; its Done when replaced'])
+    rows.push(['record the split', 'TicketSplit on #561: each child\u2019s key, number and id, and the links'])
+    rows.push(['end the wait', 'WaitResolved{Split}, then a requeue of #561'])
+    const failAt = 6 // create child 4
+    const steps = rows.map(([what, detail], n) => {
+      let k = 'todo'
+      if (written) k = 'done'
+      else if (st === 'creating') k = n < 4 ? 'done' : n === 4 ? 'doing' : 'todo'
+      else if (st === 'partial') k = n < failAt ? 'done' : n === failAt ? 'fail' : 'todo'
+      const [m, color] = mark(k)
+      return { n: String(n + 1), what, detail, mark: m, color }
+    })
+    const doneCount = steps.filter((w) => w.mark.startsWith('✓')).length
+    const writesSummary = st === 'plan' ? rows.length + ' writes, none yet'
+      : st === 'partial' ? doneCount + ' of ' + rows.length + ' · stopped at “create child 4”'
+      : doneCount + ' of ' + rows.length + ' read back'
+    const writesColor = st === 'partial' ? '#a33029' : st === 'plan' ? '#5e6e74' : '#2c7a4c'
+
+    const count = live.length
+    const primary = {
+      plan: { title: 'Split it into ' + count + ' tickets', text: 'Creates the children on GitHub, links them as drawn, holds #561 behind them and requeues it. The page stays locked until it is done.', btn: 'Create all (' + count + ')', off: false, isNew: true, go: () => this.setState({ stage: 'creating' }) },
+      creating: { title: 'Creating…', text: 'Every write is read back before the next; the graph fills in as it goes.', btn: 'Creating ' + count + ' tickets…', off: true, isNew: false, go: null },
+      partial: { title: 'Three of five created', text: 'GitHub refused child 4. Its title and body can still be edited, or it can be left out. Retrying reads #561’s sub-issues first and writes only what is missing, so #601–#603 are not created twice.', btn: 'Retry what is missing', off: false, isNew: false, go: () => this.setState({ stage: 'done' }) },
+      done: { title: 'Split into ' + count + ' tickets', text: 'The wait is over. #561 is blocked by its children and comes back by itself when the last one closes.', btn: 'Open #601', off: false, isNew: false, go: null },
+      closed: { title: '#561 closed', text: 'Every child closed; the conductor closed #561 without starting an agent.', btn: 'Open #561 on GitHub', off: false, isNew: false, go: null }
+    }[st]
+
+    const head = st === 'closed' ? { status: 'closed · split into ' + count, color: '#2c7a4c' }
+      : written ? { status: 'blocked by ' + count + ' children', color: '#9c5a08' }
+      : { status: 'waiting on you · 3h 10m', color: '#9c5a08' }
+
+    const doneWhen = '## Done when\n\n' + live.map((j) => '- [' + (st === 'closed' ? 'x' : ' ') + '] ' + plan[j].num + ' is closed').join('\n') +
+      '\n\nSplit on 2026-10-25 by the operator; #561 is\nblocked by each of them and closes when they do.'
+
+    return {
+      stages, rail, railNote, steps, primary, head, locked, doneWhen,
+      writesSummary, writesColor,
+      writesOpen: st === 'partial',
+      otherOff,
+      busy: st === 'creating' ? 'Creating ' + count + ' tickets on GitHub…' : false,
+      showTriage: !written,
+      hasSel, noSel: !hasSel,
+      graphTitle: written ? 'The split, as GitHub has it' : 'Triage’s plan',
+      sel: {
+        label: made(i) ? s.num : 'Child ' + (i + 1),
+        kind: s.kind, title: s.title, body: s.body,
+        state: stateWord, color: stateColor,
+        on: !this.state.off[i],
+        deps,
+        blocks: blocks.length ? 'blocks ' + blocks.join(', ') : 'blocks nothing',
+        toggle: () => this.setState({ off: Object.assign({}, this.state.off, { [i]: !this.state.off[i] }) })
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>
