@@ -181,7 +181,7 @@ card moves to **Landed**: the checked change reached `main` of the bare
 repository. Run `git pull` in your Chapter Garden checkout
 (`~/workspace/chapter-garden` unless you changed it) to see the new chapter. If
 it stopped for another reason, the [operating guide](operating.md) explains the
-next action. To put work on GitHub, continue with Part 2.
+next action. To watch a check refuse once, continue with the optional step below; to put work on GitHub, go to Part 2.
 
 From a terminal instead:
 
@@ -194,6 +194,29 @@ lingtai approve chapter-garden --issue <ticket-number>
 number from Step 2.
 
 ![Step 4 reviews and approves the landing hold, then Lingtai merges the change and marks the ticket Landed.](img/waiting.svg)
+
+## Optional — Watch a check refuse
+
+This ticket asks for a mistake on purpose, so you can watch a check catch it. With `lingtai start` and the Board still running, run `lingtai ticket new --project chapter-garden` and paste this, with a different story from Step 2's:
+
+```text
+Add the next chapter to <a different story title>
+labels: feature
+
+Write one new chapter that continues the story. In its front matter write
+order as a quoted string, for example order: "2".
+Do not run npm run check or npm run build yourself; Lingtai runs them.
+If Lingtai reports that a check refused this change, fix what the check
+names. The check wins over this ticket.
+```
+
+Chapter Garden requires `order` to be a number, so the first build is refused. Lingtai buys one fix round inside the same attempt and sends the refusal back to the agent. On the ticket's task page:
+
+- **History**: the failed `build` row names the field; open the row for the build's full output. Then `round 1` and `implement` running again. There is one attempt, not two.
+- **Attempts**: turns, duration and cost.
+- **Run log**: inside the attempt row, or `lingtai attach <runId>` with the run id printed under it.
+
+Read all three **before** you press Approve: a run's log is deleted when it lands. Then approve as in Step 4.
 
 ## Part 2 — Move the project to GitHub
 

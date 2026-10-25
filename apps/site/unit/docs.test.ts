@@ -106,8 +106,16 @@ describe('the tutorial stays a first-run path', () => {
     // turned red the day Part 2 arrived, while the beginner path had room.
     const part2 = body.indexOf('\n## Part 2')
     expect(part2, 'Part 2 starts the GitHub half').toBeGreaterThan(0)
+    // The optional refusal step (#611) is its own slice with its own cap, for
+    // the same reason: it must not eat the first-run path's room.
+    const optional = body.indexOf('\n## Optional')
+    expect(optional, 'the optional step sits between Step 4 and Part 2').toBeGreaterThan(0)
+    expect(optional).toBeLessThan(part2)
     const words = body.trim().split(/\s+/).length
-    expect(proseOf(body.slice(0, part2)), 'the first-run path has become a reference manual again').toBeLessThan(1100)
+    expect(proseOf(body.slice(0, optional)), 'the first-run path has become a reference manual again').toBeLessThan(
+      1100,
+    )
+    expect(proseOf(body.slice(optional, part2)), 'the optional step has become a manual').toBeLessThan(350)
     expect(proseOf(body.slice(part2)), 'the GitHub half has become a reference manual').toBeLessThan(600)
     expect(words, 'the tutorial has too many command variants').toBeLessThan(2000)
     expect(
@@ -120,6 +128,7 @@ describe('the tutorial stays a first-run path', () => {
       'Step 2 — Open one ticket',
       'Step 3 — Run the agent and checks',
       'Step 4 — Approve and confirm',
+      'Optional — Watch a check refuse',
       'Part 2 — Move the project to GitHub',
     ])
   })
