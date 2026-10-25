@@ -373,7 +373,8 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       if (
         d.resolution._tag !== 'Requeue' &&
         d.resolution._tag !== 'EditBodyAndRequeue' &&
-        d.resolution._tag !== 'AnswerQuestion'
+        d.resolution._tag !== 'AnswerQuestion' &&
+        d.resolution._tag !== 'Split'
       ) {
         return { ...state, ...at }
       }

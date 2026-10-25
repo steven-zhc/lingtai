@@ -139,6 +139,13 @@ export interface ResolveWaitOptions {
    * need one of them or the queue never sees the child.
    */
   kinds?: readonly string[]
+  /**
+   * Only read for `Split`: the `TicketSplit` payload `splitTicket` built once
+   * every GitHub write was read back. It is appended in the same transaction,
+   * ahead of `WaitResolved` (0118 §12), so a split with no children written
+   * cannot resolve the wait.
+   */
+  split?: unknown
   store?: EventStore
 }
 
@@ -248,12 +255,19 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
         reason: 'invalid-split',
         detail: `the split plan is refused — nothing was created or resolved: ${problems.map(describeSplitProblem).join('; ')}.`,
       }
-    return {
-      ok: false,
-      ticketId,
-      reason: 'split-not-built',
-      detail: 'the split plan is sound, but creating its children is not built yet — nothing was created or resolved.',
+    let written: PayloadOf<'TicketSplit'> | null = null
+    try {
+      written = parsePayload('TicketSplit', options.split)
+    } catch {
+      // Not a split payload at all — refused below, the same as none.
     }
+    if (written === null || written.waitId !== options.waitId)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'split-not-written',
+        detail: "the split's children have not been written to GitHub — nothing was resolved.",
+      }
   }
 
   let resolution = options.resolution
@@ -295,6 +309,9 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
 
   try {
     await store.append(ticketId, item.version, [
+      ...(resolution._tag === 'Split'
+        ? [{ type: 'TicketSplit', actor: options.by, data: parsePayload('TicketSplit', options.split) }]
+        : []),
       {
         type: 'WaitResolved',
         actor: options.by,
@@ -553,8 +570,14 @@ async function checkApprove(
  */
 function releaseOf(options: { waitId: WaitId; by: string }, resolution: Resolution, runId: string | null): ToAppend[] {
   if (runId === null) return []
-  if (resolution._tag !== 'Requeue' && resolution._tag !== 'EditBodyAndRequeue') return []
-  const how = resolution._tag === 'EditBodyAndRequeue' ? ' with an edited body' : ''
+  if (resolution._tag !== 'Requeue' && resolution._tag !== 'EditBodyAndRequeue' && resolution._tag !== 'Split')
+    return []
+  const how =
+    resolution._tag === 'EditBodyAndRequeue'
+      ? ' with an edited body'
+      : resolution._tag === 'Split'
+        ? ' after a split'
+        : ''
   return [
     {
       type: 'TicketReleased',

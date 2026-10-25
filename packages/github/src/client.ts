@@ -62,8 +62,13 @@ export class PermissionDenied extends GitHubError {
   }
 }
 
-/** An issue another issue is linked to, and the repository it lives in (links may cross repositories). */
-export type LinkedIssue = Issue & { repository: string }
+/**
+ * An issue another issue is linked to, the repository it lives in (links may
+ * cross repositories) and GitHub's REST `id` — a different integer from its
+ * `number`. The id is here and not on `Issue` because only a link listing
+ * needs it: the split writer records it on `TicketSplit`.
+ */
+export type LinkedIssue = Issue & { repository: string; id: number }
 
 /**
  * A label as GitHub holds it: the name a recipe matches on, and the colour the
@@ -477,13 +482,13 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
           )
         }
         // A 404 is not an empty list either: it is the issue or the repository.
-        const raw = await request<(Parameters<typeof toIssue>[0] & { repository_url?: string })[]>(
+        const raw = await request<(Parameters<typeof toIssue>[0] & { id: number; repository_url?: string })[]>(
           'GET',
           `${path}?per_page=100&page=${page}`,
         )
         for (const each of raw) {
           const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
-          out.push({ ...toIssue(each), repository })
+          out.push({ ...toIssue(each), repository, id: each.id })
         }
         if (raw.length < 100) break
       }

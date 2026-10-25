@@ -30,6 +30,8 @@
     "./ticket-store": "./src/ticket-store.ts",
     "./body-section": "./src/body-section.ts",
     "./edit-body": "./src/edit-body.ts",
+    "./split-ticket": "./src/split-ticket.ts",
+    "./split-body": "./src/split-body.ts",
     "./ownerless": "./src/ownerless.ts",
     "./memory-tickets": "./test/memory-tickets.ts",
     "./db-tickets": "./src/db-tickets.ts",
