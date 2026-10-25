@@ -22,6 +22,7 @@ interface StoredTicket {
   body: string
   labels: string[]
   state: 'open' | 'closed'
+  reason?: 'completed' | 'not_planned'
   createdAt: Date
   comments: string[]
 }
@@ -69,7 +70,7 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets
   }
 
   function toTicket(t: StoredTicket): Ticket {
-    return { ...toListing(t), body: t.body, url: null }
+    return { ...toListing(t), body: t.body, url: null, stateReason: t.state === 'closed' ? (t.reason ?? null) : null }
   }
 
   return {
@@ -115,8 +116,10 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets
       require(number).labels = [...labels]
     },
 
-    async closeIssue(number) {
-      require(number).state = 'closed'
+    async closeIssue(number, reason) {
+      const t = require(number)
+      t.state = 'closed'
+      if (reason !== undefined) t.reason = reason
     },
 
     async updateBody(number, body, opts) {
