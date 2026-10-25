@@ -238,8 +238,8 @@ The CLI uses your current tutorial branch and asks for the PR title and descript
 
 ## Part 2 — Move the project to GitHub
 
-A GitHub repository needs a GitHub App, and **the App is yours**: there is no
-shared Lingtai App. [GitHub](github.md) says why an App, not a token.
+A GitHub repository needs a GitHub App, and **the App is yours**; there is no
+shared one. [GitHub](github.md) says why.
 
 **Part 2 is a second start.** Local tickets stay in the database and `add`
 does not migrate them. **Stop Step 3's board first** (ctrl-c): `init` and `add`
@@ -255,7 +255,7 @@ lingtai init --store sqlite --project github --github-app skip
 ```
 
 Use your own fork, `<you>/chapter-garden`; installing an App needs admin on it.
-Use another terminal, with the same `LINGTAI_HOME`, from here on.
+Use another terminal, same `LINGTAI_HOME`, from here on.
 
 ### Create the App
 
@@ -278,7 +278,7 @@ You never choose the permissions; the manifest carries them:
 | `pull_requests` | write | opening and reading pull requests                       |
 | `metadata`      | read  | required by GitHub for any App                          |
 
-GitHub hands over the private key once; back it up. It is a file at
+GitHub hands over the private key once. It is a file at
 the path the board names (default `~/.ssh/lingtai-agent.private-key.pem`);
 `$LINGTAI_HOME/config.yml` (`~/.lingtai-github-tutorial/config.yml`) holds that path, the App id and the webhook secret.
 
@@ -308,4 +308,4 @@ proves the installation by printing
 permission is listed instead.
 
 Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
-Steps 2–4 then apply.
+Steps 2–4 then apply; skip Step 3's `lingtai board`, as `init` left one running.
