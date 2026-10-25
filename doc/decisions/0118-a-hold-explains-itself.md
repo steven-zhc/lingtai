@@ -334,15 +334,19 @@ which kind a wait was got inferred again in each place that needed it, from
      wants when there is one, and a bounded reading of the issue's opening
      table when it follows this repository's Problem, Want, Fix and optional
      Watch out style. Problem, Want and Watch out appear in that order before
-     the rail. An unrecognized table gets a generic invitation to read the
-     complete issue; no fields are inferred. The complete body is one click
+     the rail. An unrecognized table gets only the link to the complete issue;
+     no fields are inferred. The complete body is one click
      away in the Ticket record. Triage's sentence is labelled as its reading,
      never as the ticket's words, and is plain text. Where triage could not say
      what the ticket wants, that is itself the wait's question.
    - **Where it is** is the ten-step rail the board already draws, and one line
      under it: what refused, the automatic rounds spent, any human-granted
      rounds and their spend, and the restarts left. It is put together from the
-     log every time it is drawn, and never generated.
+     log every time it is drawn, and never generated. Once triage has advised,
+     the stopping step's own sentence is not repeated above it — triage's panel
+     says what stopped and why — and the rail and its line are the whole of
+     where it is. Evidence a person needs and triage does not carry, such as a
+     conflict's paths, still shows.
    - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
    - **The card** on the board carries only the number, the title, the rail and
      its line, and triage's cause with one sentence. Everything else, resolutions
@@ -463,10 +467,18 @@ which kind a wait was got inferred again in each place that needed it, from
    - Advice that will not parse into a cause and its parts is recorded as a
      failed triage, never shown as advice.
 
-5. **When the judge and triage disagree, both are recorded and the person
-   decides.** The page shows the two readings side by side and asks which is
-   right, so the wait becomes _a decision for you_. Neither one is hidden, and
-   the log keeps both: the judge's on `PassRouted`, triage's on `WaitTriaged`.
+5. **When the judge and triage disagree, triage's advice stands.** The page
+   shows triage's reading and recommends what triage recommends; the judge's
+   routing is not drawn as a second reading, and the person is not asked to
+   pick between them.
+   - The judge's decision has already happened: it is why the pass stopped and
+     the person is on this page. Shown again, it only competes for attention
+     with the advice the person came to act on.
+   - Triage knows more. The judge reads the reviewer's findings and the step's
+     output, and nothing else — no ticket, no diff, no files. Triage reads the
+     ticket, the diff and the code, with the judge's routing in front of it.
+   - The log still keeps both: the judge's on `PassRouted`, triage's on
+     `WaitTriaged`. The judge's words remain in the record.
 
 6. **An answer is written into the body.**
    - _Write it into the body & requeue_ is one resolution. It writes a section to
@@ -643,8 +655,7 @@ which kind a wait was got inferred again in each place that needed it, from
 - **Triage never delays the queue.** It runs beside the next pass, not inside
   this one.
 - **The stopping step's own text becomes evidence**: the judge's `why`, git's words
-  and the step's raw output. It sits in the record and in the side-by-side when
-  there is a disagreement. It is no longer the message.
+  and the step's raw output. It sits in the record. It is no longer the message.
 - **On GitHub, an edit made in the instant between the body's read and its
   write is lost.** GitHub's issue PATCH takes no precondition, so the write
   compares and then writes; the read-back after it narrows the window and
@@ -675,7 +686,8 @@ the board's Waiting column, #390's page, and one page for each other cause,
 the merge conflict, the questions, and what follows a resolution. They open directly
 in a browser. `dc-lite.js` beside them is all they run. They illustrate the
 decision and do not extend it: where a mockup and this text differ, this text
-is the decision.
+is the decision. In particular, _Outcomes_' "the judge and triage disagree"
+draws the side-by-side and the pick that §5 no longer has.
 
 ---
 
