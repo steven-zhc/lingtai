@@ -272,6 +272,10 @@ export function conductWork(
       if (c.project !== name) continue
       const ticket = reduceTicket(await store.read(ticketStream(name, Number(c.issue))))
       if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
+      // A row names the approval it was asked for (#559), so a first wait's
+      // request does not start a second wait on the same run. `null` is a v1
+      // row, which keeps matching on the run alone.
+      if (c.waitId !== null && ticket.lifecycle.waitId !== c.waitId) continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
       const result: RunOnceResult = await Effect.runPromise(
         world

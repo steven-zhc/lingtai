@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import type { WaitId } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import type { Resolution, WaitReason } from '@lingtai/domain/wait'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
@@ -23,6 +23,7 @@ import {
   answerCard,
   approveCard,
   closeCard,
+  continueConflictCard,
   continueFixingCard,
   editBodyAndRequeueCard,
   requeueCard,
@@ -207,6 +208,12 @@ export function Decide({
  * already under way and change nothing, which is still safe and still
  * costs nothing to ask again, but it can no longer land on a different
  * approval than the one the card rendered.
+ *
+ * **Where it is drawn** is read from the log on the conflict path only (#559):
+ * `standing.conflictContinuation` says whether a `ContinueRequested` is on the
+ * stream, and a `Requested` one draws no button. The `Approve` and
+ * `GrantFixRound` paths still infer it from the `approved` lifecycle (#465,
+ * #508), which is a separate ticket.
  */
 export function ScheduleContinuation({
   project,
@@ -214,6 +221,7 @@ export function ScheduleContinuation({
   onSha,
   waitId,
   grant = false,
+  conflict,
 }: {
   project: string
   issue: number
@@ -223,6 +231,8 @@ export function ScheduleContinuation({
   waitId: WaitId
   /** A recorded fix grant must be retried as that same resolution. */
   grant?: boolean
+  /** The `ContinueConflict` the wait recorded, resent verbatim — never rebuilt from the page. */
+  conflict?: Resolution
 }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
@@ -241,9 +251,11 @@ export function ScheduleContinuation({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = grant
-                ? await continueFixingCard({ project, issue, onSha, waitId })
-                : await approveCard({ project, issue, onSha, waitId, note: '' })
+              const result = conflict
+                ? await continueConflictCard({ project, issue, waitId, resolution: conflict })
+                : grant
+                  ? await continueFixingCard({ project, issue, onSha, waitId })
+                  : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -253,7 +265,13 @@ export function ScheduleContinuation({
             })
           }}
         >
-          {pending ? 'asking…' : grant ? 'Schedule saved-work fix round' : 'Schedule it'}
+          {pending
+            ? 'asking…'
+            : conflict
+              ? 'Ask for the continuation'
+              : grant
+                ? 'Schedule saved-work fix round'
+                : 'Schedule it'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}

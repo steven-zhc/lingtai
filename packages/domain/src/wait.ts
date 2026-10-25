@@ -23,6 +23,7 @@
 import { z } from 'zod'
 
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
+import type { Envelope } from './envelope.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation, type CandidateId } from './route.ts'
 import type { RouteOffer } from './routing.ts'
@@ -484,6 +485,143 @@ export function continueConflictRefusal(
   if (roundsExhausted && !resolution.grantExtraRound) return 'GrantRequired'
   if (!roundsExhausted && resolution.grantExtraRound) return 'GrantNotNeeded'
   return null
+}
+
+/** What a person chose for one counted hunk of a `ContinueConflict`. */
+export type ConflictChoice =
+  | { _tag: 'Mechanical' }
+  | { _tag: 'Answer'; answerId: string }
+  | { _tag: 'Behavior'; text: string }
+
+/** One counted hunk, with what triage said about it, if anything. */
+export interface ConflictRow {
+  readonly path: string
+  readonly line: number | null
+  /** Triage's question for this hunk, or `null` where triage classified it Mechanical or said nothing. */
+  readonly question: TriageQuestion | null
+  /** Where the choice starts: triage's recommendation, or `null` where the person's own intent is required. */
+  readonly suggested: ConflictChoice | null
+}
+
+/** The identity a hunk is confirmed by, the same `(path, line)` the schema and the refusal use. */
+export const conflictRowKey = (row: { path: string; line: number | null }): string => `${row.path}:${row.line}`
+
+/**
+ * The rows of a `ContinueConflict` form. They come from the mirror's own
+ * `counted` hunks — the set `resolveWait` checks the submission against —
+ * and triage is laid over them by `(path, line)`; it never supplies a row.
+ * Past `MERGE_HUNKS_ONE_BY_ONE` there is no form at all, whatever triage
+ * said, and a row triage did not classify starts unset rather than assumed
+ * mechanical.
+ */
+export function conflictRows(
+  counted: readonly { path: string; line: number | null }[],
+  status: TriageStatus | null,
+): { tooMany: number } | { rows: ConflictRow[] } {
+  if (counted.length > MERGE_HUNKS_ONE_BY_ONE) return { tooMany: counted.length }
+  const advised =
+    status?._tag === 'Done' && status.result._tag === 'TriageAdvised' && status.result.cause._tag === 'ConflictingHunks'
+      ? status.result.cause.hunks
+      : []
+  const byKey = new Map(advised.map((h) => [conflictRowKey(h), h]))
+  return {
+    rows: counted.map((hunk): ConflictRow => {
+      const said = byKey.get(conflictRowKey(hunk))
+      if (said?._tag === 'Divergent')
+        return {
+          ...hunk,
+          question: said.question,
+          suggested: { _tag: 'Answer', answerId: said.question.recommended },
+        }
+      return { ...hunk, question: null, suggested: said?._tag === 'Mechanical' ? { _tag: 'Mechanical' } : null }
+    }),
+  }
+}
+
+/**
+ * The `hunks` of a `ContinueConflict` from the person's `choices` laid over
+ * each row's suggestion, or the rows still unset. `behavior` is the chosen
+ * answer's text word for word; `adopted` is set only when that text was taken
+ * unchanged.
+ */
+export function confirmHunks(
+  rows: readonly ConflictRow[],
+  choices: Readonly<Record<string, ConflictChoice | undefined>>,
+): { hunks: ConfirmedHunk[] } | { unset: ConflictRow[] } {
+  const hunks: ConfirmedHunk[] = []
+  const unset: ConflictRow[] = []
+  for (const row of rows) {
+    const choice = choices[conflictRowKey(row)] ?? row.suggested
+    const { path, line } = row
+    if (choice?._tag === 'Mechanical') hunks.push({ _tag: 'Mechanical', path, line })
+    else if (choice?._tag === 'Behavior' && choice.text.trim() !== '')
+      hunks.push({ _tag: 'Divergent', path, line, behavior: choice.text.trim(), adopted: null })
+    else if (choice?._tag === 'Answer') {
+      const answer = row.question?.answers.find((a) => a.id === choice.answerId)
+      if (answer === undefined || row.question === null) unset.push(row)
+      else
+        hunks.push({
+          _tag: 'Divergent',
+          path,
+          line,
+          behavior: answer.text,
+          adopted: { questionId: row.question.id, answerId: answer.id },
+        })
+    } else unset.push(row)
+  }
+  return unset.length > 0 ? { unset } : { hunks }
+}
+
+/**
+ * What the log says about the continuation a confirmed conflict is owed (#559).
+ * `Requested` only when a `ContinueRequested` row **naming this wait** is on
+ * the stream; the `approved` lifecycle is left in place whether or not the row
+ * ever landed, so it proves the confirmation and nothing about the scheduling.
+ * `LegacyRunRequest` is a row made before requests named their wait: it names
+ * the run only, and the conductor may still start this run on it. `Unreadable`
+ * is a control stream that could not be read — never read as `NotRequested`.
+ */
+type Confirmed = { waitId: WaitId; resolution: Extract<Resolution, { _tag: 'ContinueConflict' }> }
+export type ConflictContinuation =
+  | { _tag: 'NotAConflict' }
+  | ({ _tag: 'Requested'; by: string; at: Date } & Confirmed)
+  | ({ _tag: 'LegacyRunRequest'; by: string; at: Date } & Confirmed)
+  | ({ _tag: 'NotRequested' } & Confirmed)
+  | ({ _tag: 'Unreadable' } & Confirmed)
+
+/**
+ * Whether the continuation of an approved conflict wait was requested, read
+ * from the log. `ContinueRequested` is on the control stream and names the
+ * wait it was asked for, so the row counts for wait `waitId` when it carries
+ * that id; `control` is `'unreadable'` where the stream could not be read.
+ */
+export function conflictContinuationOf(input: {
+  project: string
+  issue: string
+  runId: string
+  waitId: WaitId
+  own: readonly Envelope[]
+  control: readonly Envelope[] | 'unreadable'
+}): ConflictContinuation {
+  const resolved = input.own.findLast(
+    (e) => e.type === 'WaitResolved' && (e.data as { waitId?: string }).waitId === input.waitId,
+  )
+  const resolution = (resolved?.data as { resolution?: Resolution } | undefined)?.resolution
+  if (resolution?._tag !== 'ContinueConflict') return { _tag: 'NotAConflict' }
+  const confirmed = { waitId: input.waitId, resolution }
+  if (input.control === 'unreadable') return { _tag: 'Unreadable', ...confirmed }
+  const rows = input.control.filter((e) => {
+    if (e.type !== 'ContinueRequested') return false
+    const d = e.data as { project?: string; issue?: string; runId?: string }
+    return d.project === input.project && d.issue === input.issue && d.runId === input.runId
+  })
+  const named = rows.findLast((e) => (e.data as { waitId?: string | null }).waitId === input.waitId)
+  if (named !== undefined)
+    return { _tag: 'Requested', ...confirmed, by: (named.data as { by: string }).by, at: named.at }
+  const legacy = rows.findLast((e) => ((e.data as { waitId?: string | null }).waitId ?? null) === null)
+  return legacy === undefined
+    ? { _tag: 'NotRequested', ...confirmed }
+    : { _tag: 'LegacyRunRequest', ...confirmed, by: (legacy.data as { by: string }).by, at: legacy.at }
 }
 
 /** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */

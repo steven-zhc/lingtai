@@ -1492,6 +1492,14 @@ export const ContinueRequested = z.object({
   issue: z.string(),
   runId: z.string(),
   by: z.string(),
+  /**
+   * The wait whose approval this asks a continuation for (#559). A second wait
+   * on the same run — a moved base reopens a conflict as a new wait — must not
+   * be started by the first one's row, and the inspection can only say
+   * *scheduled* for a wait if the row names it. `null` is a v1 row, made
+   * before requests named their wait.
+   */
+  waitId: z.string().nullable(),
 })
 
 /**
@@ -2031,6 +2039,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   PromptEdited: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
+  // 2: added `waitId`, so a request names the approval it was asked for (#559).
+  ContinueRequested: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

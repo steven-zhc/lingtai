@@ -85,7 +85,7 @@ export interface ControlState {
    * stops being `approved`, which `continueTicket` does, a stale row here
    * simply matches nothing and is dropped rather than tracked.
    */
-  continuing: { project: string; issue: string; runId: string; by: string }[]
+  continuing: { project: string; issue: string; runId: string; by: string; waitId: string | null }[]
   /**
    * Questions asked of the discussion assistant, oldest first — every one of
    * them, answered or not.
@@ -207,6 +207,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
           issue: str('issue') ?? '',
           runId: str('runId') ?? '',
           by: str('by') ?? '',
+          waitId: str('waitId') ?? null,
         })
         break
       case 'DiscussionRequested': {

@@ -11,7 +11,7 @@
  * `process.env` for a connection string directly.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { hostname } from 'node:os'
 
@@ -66,6 +66,7 @@ import {
 } from './board.ts'
 import { closeCommand } from './close.ts'
 import { conductorPass } from './conduct.ts'
+import { continueConflictCommand } from './continue-conflict.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
 import { endReplay } from './end.ts'
@@ -181,6 +182,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
   lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]
                                 run one more implementation round on saved work,
                                 then repeat the checks without waiving a refusal
+  lingtai continue-conflict <project> --issue <n>
+                                show a waiting conflict's base, head, hunks and
+                                triage's advice; confirms and appends nothing
+  lingtai continue-conflict <project> --issue <n> --if-base <sha> --if-head <sha>
+      (--accept-recommended | --choices <file.json>) [--grant-extra-round]
+                                confirm what each hunk should do, then ask an AI
+                                to continue the preserved branch; build and
+                                review run again before anything can land
   lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
                                 end the wait with a new run instead: a blocked
                                 item goes back to the queue — held for approval
@@ -1298,6 +1307,34 @@ async function main(argv: string[]): Promise<number> {
         return 2
       }
       return grantFixRoundCommand({ project: positional[0], issue, ifHead: flags['if-head'] })
+    }
+    case 'continue-conflict': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
+      if (!positional[0] || !Number.isInteger(issue)) {
+        console.error(
+          'lingtai continue-conflict <project> --issue <n> [--if-base <sha> --if-head <sha> (--accept-recommended | --choices <file.json>) [--grant-extra-round]]',
+        )
+        return 2
+      }
+      let choices: unknown
+      if ('choices' in flags) {
+        try {
+          choices = JSON.parse(readFileSync(flags['choices']!, 'utf8'))
+        } catch (err) {
+          console.error(`--choices: ${(err as Error).message}`)
+          return 2
+        }
+      }
+      return continueConflictCommand({
+        project: positional[0],
+        issue,
+        ...(flags['if-base'] === undefined ? {} : { ifBase: flags['if-base'] }),
+        ...(flags['if-head'] === undefined ? {} : { ifHead: flags['if-head'] }),
+        ...('accept-recommended' in flags ? { acceptRecommended: true } : {}),
+        ...(choices === undefined ? {} : { choices }),
+        ...('grant-extra-round' in flags ? { grantExtraRound: true } : {}),
+      })
     }
     case 'approve': {
       const { positional, flags } = parseFlags(rest)

@@ -78,6 +78,7 @@ async function approvedTicket(store: ReturnType<typeof createMemoryEventStore>, 
     ),
     ...aResolution(item, waitId, { _tag: 'Approve', onSha: SHA }, 'human:steven'),
   ])
+  return waitId
 }
 
 async function alreadyLandedTicket(store: ReturnType<typeof createMemoryEventStore>, issue: number, runId: string) {
@@ -136,7 +137,9 @@ describe('conductWork: a continuing row that has gone stale', () => {
       {
         hookBinary: '/dev/null',
         prompt: 'go',
-        control: controlWith([{ project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' }]),
+        control: controlWith([
+          { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven', waitId: null },
+        ]),
         outcome,
         log: () => {},
         store,
@@ -189,7 +192,9 @@ describe('conductWork: a continuing row declined at claim', () => {
       {
         hookBinary: '/dev/null',
         prompt: 'go',
-        control: controlWith([{ project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' }]),
+        control: controlWith([
+          { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven', waitId: null },
+        ]),
         outcome,
         log: () => {},
         store,
@@ -236,8 +241,8 @@ describe('conductWork: two continuing rows for the same project', () => {
         hookBinary: '/dev/null',
         prompt: 'go',
         control: controlWith([
-          { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
-          { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
+          { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven', waitId: null },
+          { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven', waitId: null },
         ]),
         outcome,
         log: () => {},
@@ -255,5 +260,56 @@ describe('conductWork: two continuing rows for the same project', () => {
 
     expect(runOnceCalls).toEqual([{ issue: 470, continuing: { runId: 'pass-470' }, merge: false }])
     expect(outcome.ran).toBe(1)
+  })
+})
+
+describe('conductWork: a continuing row names the approval it was asked for (#559)', () => {
+  const run = async (rowWait: (current: string) => string | null) => {
+    const store = createMemoryEventStore()
+    const current = await approvedTicket(store, 480, 'pass-480')
+    const { resolved, tickets } = await worldFor()
+    const runOnceCalls: number[] = []
+    const world: ConductWorld = {
+      createGitHubClient: () => {
+        throw new Error('not reached — no owner')
+      },
+      currentRecipe: async () => resolved,
+      ticketsFor: async () => tickets,
+      selectRunnable: async ({ offered }) =>
+        offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
+      runOnce: (options) => {
+        runOnceCalls.push(options.issue!)
+        return Effect.succeed({ ok: 'held', ticketId: 't-480', runId: 'pass-480', headSha: SHA, step: 'merge' })
+      },
+      runQueue: () => Effect.succeed({ ran: [], stopped: 'empty', attempted: [] }),
+    }
+    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([
+          { project: 'lingtai', issue: '480', runId: 'pass-480', by: 'human:steven', waitId: rowWait(current) },
+        ]),
+        outcome,
+        log: () => {},
+        store,
+      },
+      world,
+    )
+    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    return runOnceCalls
+  }
+
+  it("does not start a second wait on the same run from the first wait's row", async () => {
+    expect(await run(() => 'an-earlier-wait')).toEqual([])
+  })
+
+  it('starts the wait the row names', async () => {
+    expect(await run((current) => current)).toEqual([480])
+  })
+
+  it('keeps a request made before requests named their wait matching on the run alone', async () => {
+    expect(await run(() => null)).toEqual([480])
   })
 })

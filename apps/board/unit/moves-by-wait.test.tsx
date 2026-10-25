@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Standing } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { foldRun, standingOf, type Claim } from '../src/lib/task.ts'
+import { foldRun, standingOf, type Claim, type StandingView } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
 
 const OUTGOING: OutgoingView = {
@@ -60,11 +60,11 @@ function standingFor(fx: WaitFixture) {
   return standingOf(own, folded)
 }
 
-const render = (fx: WaitFixture, outgoing: OutgoingView | null) =>
+const render = (fx: WaitFixture, outgoing: OutgoingView | null, extra: Partial<StandingView> = {}) =>
   renderToStaticMarkup(
     <Standing
       subject={null}
-      standing={standingFor(fx)}
+      standing={{ ...standingFor(fx), ...extra }}
       project="lingtai"
       issue={1}
       taskId={fx.taskId}
@@ -123,9 +123,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const html = render(fx, null)
       const row = movesOf(html)
       const buttons = buttonsOf(row)
-      // `ContinueConflict` is offered by the domain (#557) but has no card until
-      // the effect behind it lands (#559); a card the server refuses is worse.
-      expect(cardsOf(row)).toEqual(allowed.filter((tag) => tag !== 'ContinueConflict'))
+      expect(cardsOf(row)).toEqual(allowed)
 
       const approveBtn = allowed.includes('Approve') && standing.awaitingSha !== null
       const approveSentence = allowed.includes('Approve') && standing.awaitingSha === null
@@ -205,5 +203,53 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
     const html = movesOf(render(unpushed, null))
     expect(buttonsOf(html)).not.toContain('Approve')
     expect(html).not.toContain(SENTENCE)
+  })
+
+  describe('ContinueConflict (#559)', () => {
+    const fx = WAIT_FIXTURES.find((f) => f.name === 'proposedescalated-mergeconflict')!
+    const where = { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), ref: 'agent/1', baseBranch: 'main' }
+    const row = (line: number) => ({
+      path: 'a.ts',
+      line,
+      question: null,
+      suggested: null,
+      text: '<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs',
+    })
+    const moves = (extra: Partial<StandingView>) => movesOf(render(fx, null, extra))
+
+    it('draws the form with base, head and one fieldset per counted hunk, and never a merge button', () => {
+      const html = moves({
+        conflictWork: { ...where, paths: ['a.ts'], rows: [row(3), row(9)], roundsExhausted: false },
+      })
+      expect(buttonsOf(html)).toContain('Confirm and continue the conflict')
+      expect(buttonsOf(html).join(' ')).not.toMatch(/merge/i)
+      expect(html).toContain('a.ts:3')
+      expect(html).toContain('a.ts:9')
+      expect(html).toContain('No advice for this hunk')
+      expect(html).toContain('uses one of the run’s remaining automatic rounds')
+      expect(html).toContain('Start over from base')
+    })
+
+    it('asks for an expressly granted extra round when the rounds are spent', () => {
+      const html = moves({
+        conflictWork: { ...where, paths: ['a.ts'], rows: [row(3)], roundsExhausted: true },
+      })
+      expect(html).toContain('Grant one')
+      expect(html).toContain('extra paid round')
+    })
+
+    it('draws a refusal in place of the form, with requeue and close still there', () => {
+      const html = moves({ conflictWork: { refusal: 'The base moved since this conflict was recorded' } })
+      expect(html).toContain('The base moved since this conflict was recorded')
+      expect(buttonsOf(html)).not.toContain('Confirm and continue the conflict')
+      expect(buttonsOf(html)).toContain('Close')
+    })
+
+    it('draws no form for a conflict past one-by-one', () => {
+      const html = moves({ conflictWork: { ...where, tooMany: 41 } })
+      expect(html).toContain('41 hunks')
+      expect(buttonsOf(html)).not.toContain('Confirm and continue the conflict')
+      expect(buttonsOf(html)).toContain('Close')
+    })
   })
 })

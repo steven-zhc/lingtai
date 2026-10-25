@@ -70,6 +70,14 @@ export const UPCASTERS: UpcastRegistry = {
      */
     2: (data) => ({ ...(data as object), base: null }),
   },
+  ContinueRequested: {
+    /**
+     * 1 → 2: `waitId` was added so a request names the approval it was asked
+     * for (#559). A v1 row did not, and null says so: it is a request for the
+     * run, and the conductor keeps matching it on the run alone.
+     */
+    1: (data) => ({ ...(data as object), waitId: null }),
+  },
   Reconciled: {
     /**
      * 1 → 2: each finding gained `action`. Nothing had appended one of these

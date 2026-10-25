@@ -168,6 +168,12 @@ export type ResolveWaitResult =
        * comment for what makes this never a reason to answer `ok: false`.
        */
       unscheduled?: string
+      /**
+       * Set only on the way out above: the decision was already recorded by an
+       * earlier call, so this one wrote no `WaitResolved` and asked again only
+       * for the continuation. A caller says "already confirmed", not "decided".
+       */
+      rescheduled?: true
     }
   | { ok: false; ticketId: string; reason: string; detail: string }
 
@@ -184,6 +190,14 @@ export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveW
     () => resolveWaitHolding(options, ticketId),
   )
 }
+
+/** JSON with object keys sorted, so two equal resolutions compare equal whatever order they were built in. */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  )
 
 /**
  * **Exported for the unit half alone**, the same reason `approveHolding` was
@@ -220,9 +234,34 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
           (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
         : item.lifecycle.onSha === options.resolution.onSha)
   ) {
+    // A matching ref and head is not the same confirmation: another person's
+    // behavior, or a base this caller never read, must not be reported as the
+    // caller's own success.
+    if (options.resolution._tag === 'ContinueConflict') {
+      const recorded = (await store.read(ticketId))
+        .filter((e) => e.type === 'WaitResolved')
+        .map((e) => e.data as { waitId: string; resolution: { _tag: string } })
+        .findLast((d) => d.waitId === options.waitId && d.resolution._tag === 'ContinueConflict')?.resolution
+      if (canonical(recorded) !== canonical(options.resolution))
+        return {
+          ok: false,
+          ticketId,
+          reason: 'already-confirmed',
+          detail: `${ticketId} was already confirmed with a different base, head or behavior than the one submitted. Nothing was recorded or asked again — reload and read it again.`,
+        }
+    }
     const parsed = parseTicketStream(ticketId)!
-    const unscheduled = await requestContinuation(store, options.by, parsed.project, parsed.issue, item.lifecycle.runId)
-    return unscheduled === null ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+    const unscheduled = await requestContinuation(
+      store,
+      options.by,
+      parsed.project,
+      parsed.issue,
+      item.lifecycle.runId,
+      options.waitId,
+    )
+    return unscheduled === null
+      ? { ok: true, ticketId, rescheduled: true }
+      : { ok: true, ticketId, rescheduled: true, unscheduled }
   }
 
   if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
@@ -371,7 +410,8 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     const parsed = parseTicketStream(ticketId)
     if (parsed !== null) {
       unscheduled =
-        (await requestContinuation(store, options.by, parsed.project, parsed.issue, block.runId!)) ?? undefined
+        (await requestContinuation(store, options.by, parsed.project, parsed.issue, block.runId!, options.waitId)) ??
+        undefined
     }
   }
 
@@ -534,7 +574,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: 'head-moved',
       detail: `The saved work is ${saved.head} on ${saved.ref}, not the confirmed ${resolution.headSha} on ${resolution.ref}. Nothing was resolved — reload and read it again.`,
     }
   }
@@ -543,7 +583,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: remote === null ? 'ref-missing' : 'ref-moved',
       detail: `${resolution.ref} is ${remote ?? 'missing'}, not the confirmed ${resolution.headSha}. Nothing was resolved — restore that ref or requeue for a fresh pass.`,
     }
   }
@@ -552,7 +592,7 @@ async function checkContinueConflict(
     return {
       ok: false,
       ticketId,
-      reason: 'stale',
+      reason: 'base-moved',
       detail: `${options.base} is ${base ?? 'missing'}, not the confirmed ${resolution.baseSha}: the base moved, so the confirmation grants nothing for it. Nothing was resolved — reload and read it again.`,
     }
   }
@@ -571,6 +611,7 @@ async function requestContinuation(
   project: string,
   issue: string,
   runId: string,
+  waitId: WaitId,
 ): Promise<string | null> {
   let lastError: unknown = null
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -580,7 +621,7 @@ async function requestContinuation(
         {
           type: 'ContinueRequested',
           actor: by,
-          data: parsePayload('ContinueRequested', { project, issue, runId, by }),
+          data: parsePayload('ContinueRequested', { project, issue, runId, by, waitId }),
         },
       ])
       return null
@@ -588,7 +629,9 @@ async function requestContinuation(
       lastError = err
     }
   }
-  return lastError instanceof Error ? lastError.message : String(lastError)
+  // Never empty: a caller tests the answer with `!== undefined`, and a blank one reads as nothing wrong.
+  const message = lastError instanceof Error ? lastError.message : String(lastError)
+  return message === '' ? 'the append was refused' : message
 }
 
 /**
