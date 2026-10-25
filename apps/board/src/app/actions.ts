@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { answer } from '@lingtai/conductor/ask'
 import { acceptFinding, declineFinding } from '@lingtai/conductor/backlog'
 import { close } from '@lingtai/conductor/close'
+import { continueConflictPorts } from '@lingtai/conductor/continue-conflict-ports'
 /**
  * What a person can do from the board.
  *
@@ -57,7 +58,7 @@ import {
   ticketStream,
 } from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
-import { allowedResolutions } from '@lingtai/domain/wait'
+import { allowedResolutions, Resolution } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
@@ -194,6 +195,56 @@ export async function continueFixingCard(input: {
             : 'fix round granted on saved work',
         }
       : { ok: false, detail: result.detail }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * Confirm what each divergent hunk should do and continue the preserved
+ * conflict (#559). The payload is parsed with the same `Resolution` schema
+ * the command line uses; `resolveWait` checks it against the mirror and the
+ * remote under the decision lock, so a stale confirmation is a refusal and
+ * never a success. Nothing lands from here: build and review run again.
+ */
+export async function continueConflictCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  resolution: unknown
+}): Promise<ActionResult> {
+  try {
+    const parsed = Resolution.safeParse(input.resolution)
+    if (!input.waitId || !parsed.success || parsed.data._tag !== 'ContinueConflict')
+      return { ok: false, detail: 'stale: reload this wait before confirming the conflict' }
+    const state = await loadProject(input.project)
+    if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
+    const ports = await continueConflictPorts(state)
+    if (!ports.ok) return { ok: false, detail: ports.detail }
+    const result = await resolveWait({
+      ticketId: ticketStream(input.project, input.issue),
+      issue: input.issue,
+      waitId: input.waitId,
+      resolution: parsed.data,
+      by: actor(),
+      client: ports.client,
+      base: ports.base,
+      conflicts: ports.conflicts,
+    })
+    revalidatePath(`/task/${result.ticketId}`)
+    revalidatePath('/')
+    if (!result.ok) return { ok: false, detail: `${result.reason}: ${result.detail}` }
+    if (result.unscheduled)
+      return {
+        ok: true,
+        detail: `confirmed — but the continuation was not scheduled (${result.unscheduled}); use Schedule it to ask again`,
+      }
+    return {
+      ok: true,
+      detail: result.rescheduled
+        ? 'already confirmed — asked again for the continuation'
+        : 'confirmed — the AI will continue the preserved branch; build and review run again before anything can land',
+    }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

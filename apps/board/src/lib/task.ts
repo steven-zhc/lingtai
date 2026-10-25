@@ -1,3 +1,5 @@
+import { conflictWorkOf, type ConflictWork } from '@lingtai/conductor/conflict-work'
+import { continueConflictPorts } from '@lingtai/conductor/continue-conflict-ports'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
@@ -11,6 +13,7 @@ import {
   reduceControl,
   CONTROL_STREAM,
   parseTicketStream,
+  reduceTicket,
   triageFactsOf,
   waitWords,
   WAIT_EVENTS,
@@ -21,7 +24,15 @@ import {
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
-import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  conflictContinuation,
+  triageStatus,
+  type ConflictContinuation,
+  type RunRef,
+  type TriageStatus,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { hasGitHubApp } from '@lingtai/env'
 /**
  * One task, folded from its streams on demand.
@@ -396,6 +407,8 @@ export interface StandingView {
   } | null
   /** Render-time check only; resolveWait checks the remote again under the decision lock. */
   fixWork?: { head: string; ref: string } | { refusal: string } | null
+  /** Render-time reading of a `ContinueConflict` card: its rows, or why it has none. `resolveWait` checks it all again. */
+  conflictWork?: ConflictWork | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
@@ -538,6 +551,14 @@ export interface StandingView {
    * state: there is no approval on record for them to have a sha.
    */
   approvedSha: string | null
+  /**
+   * For an `approved` conflict confirmation: whether a `ContinueRequested` for
+   * this wait is on the control stream (#559). `approved` is left in place
+   * whether or not the request landed, so the lifecycle cannot answer this and
+   * the log does. Unset on every other state, and where the board did not read
+   * the control stream.
+   */
+  conflictContinuation?: ConflictContinuation
 }
 
 /**
@@ -805,7 +826,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     currentMove &&
     latestLifecycle === lastMove &&
     life.status === 'approved' &&
-    move?.resolution._tag === 'GrantFixRound'
+    (move?.resolution._tag === 'GrantFixRound' || move?.resolution._tag === 'ContinueConflict')
   const bodyEvent = [...own]
     .reverse()
     .find(
@@ -826,7 +847,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
             note: move.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? 'Continued saved work for one additional fix round; build and review run again.'
+              ? move.resolution._tag === 'ContinueConflict'
+                ? 'Continuing the preserved conflict with the confirmed behavior; build and review run again.'
+                : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'The wait was resolved; a new pass starts from base.'
                 : released
@@ -835,7 +858,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
             ...(continued
               ? {
                   ref: (move.resolution as { ref?: string }).ref,
-                  head: (move.resolution as { onSha?: string }).onSha,
+                  head:
+                    (move.resolution as { onSha?: string; headSha?: string }).headSha ??
+                    (move.resolution as { onSha?: string }).onSha,
                 }
               : {}),
           }
@@ -1844,6 +1869,16 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
         )
       : null
   const standing: StandingView = { ...foldedStanding, triageStatus: status, triageHeadLine: triageHeadLineText }
+  const approvedLife = reduceTicket(own).lifecycle
+  const ticketRef = parseTicketStream(taskId)
+  if (approvedLife.status === 'approved' && ticketRef !== null)
+    standing.conflictContinuation = conflictContinuation({
+      ...ticketRef,
+      runId: approvedLife.runId,
+      waitId: approvedLife.waitId,
+      own,
+      control,
+    })
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&
@@ -1875,6 +1910,33 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       } catch (err) {
         standing.fixWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
       }
+    }
+  }
+  if (
+    standing.state === 'blocked' &&
+    standing.reason !== null &&
+    standing.reason._tag === 'ProposedEscalated' &&
+    standing.reason.proposal._tag === 'MergeConflict' &&
+    allowedResolutions(standing.reason).includes('ContinueConflict') &&
+    standing.runId !== null &&
+    ticket !== null
+  ) {
+    const { baseSha, headSha } = standing.reason.proposal
+    const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
+    const runEvents = streams[runIndex] ?? []
+    try {
+      const state = await loadProject(ticket.project)
+      if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
+      const ports = await continueConflictPorts(state)
+      standing.conflictWork = await conflictWorkOf({
+        proposal: { baseSha: baseSha!, headSha: headSha! },
+        saved: savedFixWork(standing.runId, runEvents),
+        runEvents,
+        status,
+        ports: ports.ok ? ports : { refusal: ports.detail },
+      })
+    } catch (err) {
+      standing.conflictWork = { refusal: `The conflict could not be checked: ${(err as Error).message}` }
     }
   }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null

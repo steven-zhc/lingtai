@@ -4,7 +4,12 @@ import type { TriageQuestion, WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
 export type Reading = 'judge' | 'triage'
-type Picks = { waitId: WaitId | null; answers: Record<number, string>; reading: Reading | null }
+type Picks = {
+  waitId: WaitId | null
+  answers: Record<number, string>
+  touched: Record<number, number>
+  reading: Reading | null
+}
 /** A text the person has made their own, with the wait it was written under. */
 type Draft = { waitId: WaitId | null; text: string }
 type AnswerDraft = Draft & { open: boolean }
@@ -28,6 +33,8 @@ type TriageDraft = {
   reading: Reading | null
   pickReading: (reading: Reading | null) => void
   selected: (index: number, question: TriageQuestion) => string
+  /** How many times the person has acted on this question's radios, including re-clicking the checked one. */
+  touched: (index: number) => number
   pick: (index: number, answerId: string) => void
 }
 
@@ -65,14 +72,16 @@ export function TriagePicks({
   initialReading?: Reading | null
   children: ReactNode
 }) {
-  const [picks, setPicks] = useState<Picks>({ waitId, answers: {}, reading: initialReading })
+  const [picks, setPicks] = useState<Picks>({ waitId, answers: {}, touched: {}, reading: initialReading })
   const answers = picks.waitId === waitId ? picks.answers : {}
+  const touches = picks.waitId === waitId ? picks.touched : {}
   const reading = picks.waitId === waitId ? picks.reading : null
   const [drafts, setDrafts] = useState<{ body: Draft | null; answer: AnswerDraft | null }>({
     body: null,
     answer: null,
   })
   const selected = (index: number, question: TriageQuestion) => answers[index] ?? question.recommended
+  const touched = (index: number) => touches[index] ?? 0
   const text = questions
     .map((question, index) => {
       const answer = question.answers.find((item) => item.id === selected(index, question))
@@ -83,12 +92,17 @@ export function TriagePicks({
     setPicks((current) => ({
       waitId,
       answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
+      touched: {
+        ...(current.waitId === waitId ? current.touched : {}),
+        [index]: (current.waitId === waitId ? (current.touched[index] ?? 0) : 0) + 1,
+      },
       reading: current.waitId === waitId ? current.reading : null,
     }))
   const pickReading = (next: Reading | null) =>
     setPicks((current) => ({
       waitId,
       answers: current.waitId === waitId ? current.answers : {},
+      touched: current.waitId === waitId ? current.touched : {},
       reading: next,
     }))
 
@@ -140,6 +154,7 @@ export function TriagePicks({
         reading,
         pickReading,
         selected,
+        touched,
         pick,
       }}
     >
@@ -168,6 +183,7 @@ export function TriageChoices({ question, index }: { question: TriageQuestion; i
                 value={answer.id}
                 checked={selected === answer.id}
                 onChange={() => draft?.pick(index, answer.id)}
+                onClick={() => draft?.pick(index, answer.id)}
               />
               <span className="triage-choice-text">{answer.text}</span>
             </span>

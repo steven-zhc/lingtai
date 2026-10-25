@@ -25,6 +25,7 @@ import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 import { presentCause } from '@/lib/triage-cause'
 
+import { ContinueConflict } from './continue-conflict.tsx'
 import {
   Close,
   ContinueFixing,
@@ -59,9 +60,9 @@ const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: 
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
   ContinueConflict: {
-    title: 'Continue the conflict',
+    title: 'Confirm behavior and continue',
     consequence:
-      'Continue the preserved conflict with the behavior you confirm for each divergent hunk. Not runnable yet.',
+      'AI merges the latest base into the preserved branch, resolves each hunk as you confirm it, and commits. Build and review run again before anything can land.',
   },
   AnswerQuestion: {
     title: 'Answer the question',
@@ -563,10 +564,14 @@ export function Standing({
   const closePrefill = triageAdvised?.summary ?? null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
-  const drawable = allowed.filter((tag) => tag !== 'Split' && tag !== 'ContinueConflict')
+  const drawable = allowed.filter((tag) => tag !== 'Split')
   // Whatever `recommendedResolution` returned is drawn first; with no saved
   // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
-  const recommended = drawable.find((tag) => tag === advice) ?? null
+  // A `ContinueConflict` the page cannot read hunk by hunk is not the answer
+  // to put first: the card says why, and `Requeue` is the way out (#559).
+  const conflictReadable = Boolean(standing.conflictWork && 'rows' in standing.conflictWork)
+  const settled = advice === 'ContinueConflict' && !conflictReadable ? 'Requeue' : advice
+  const recommended = drawable.find((tag) => tag === settled) ?? null
   const triageRecommended = triageAdvised !== null ? recommended : null
   const recommendedBy = {
     none: triageRecommended,
@@ -644,6 +649,11 @@ export function Standing({
       : cause?._tag === 'ConflictingHunks'
         ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
         : []
+  // The hunk each divergent question belongs to, parallel to `triageQuestions`.
+  const triageKeys =
+    cause?._tag === 'ConflictingHunks'
+      ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [`${hunk.path}:${hunk.line}`] : []))
+      : []
   const waiting = standing.state === 'blocked'
   const subjectRef =
     subject === null ? null : subject.url !== null ? (
@@ -962,6 +972,30 @@ export function Standing({
                           primary={recommended === 'GrantFixRound'}
                         />
                       ) : null}
+                      {visible && tag === 'ContinueConflict' && waitId !== null ? (
+                        standing.conflictWork && 'rows' in standing.conflictWork ? (
+                          <ContinueConflict
+                            key={waitId}
+                            project={project}
+                            issue={issue}
+                            waitId={waitId}
+                            work={standing.conflictWork}
+                            triageKeys={triageKeys}
+                            primary={recommended === 'ContinueConflict'}
+                          />
+                        ) : standing.conflictWork && 'tooMany' in standing.conflictWork ? (
+                          <p className="refusal">
+                            {standing.conflictWork.tooMany} hunks — past one-by-one; no behavior can be confirmed for
+                            each. Start over from the new base.
+                          </p>
+                        ) : (
+                          <p className="refusal">
+                            {standing.conflictWork && 'refusal' in standing.conflictWork
+                              ? standing.conflictWork.refusal
+                              : 'The conflict could not be read; reload this wait before continuing.'}
+                          </p>
+                        )
+                      ) : null}
                       {visible && tag === 'GrantFixRound' && (!standing.fixWork || 'refusal' in standing.fixWork) ? (
                         <p className="refusal">
                           {standing.fixWork && 'refusal' in standing.fixWork
@@ -1054,15 +1088,27 @@ export function Standing({
           `ScheduleContinuation`'s own comment for what the click now sends
           and why that is what makes it safe (#508). */}
           {acting && standing.state === 'approved' && standing.waitId !== null && standing.approvedSha !== null ? (
-            <div className="btnrow smoves" data-rank="moves">
-              <ScheduleContinuation
-                project={project}
-                issue={issue}
-                onSha={standing.approvedSha}
-                waitId={standing.waitId}
-                grant={standing.afterMove?.resolution === 'GrantFixRound'}
-              />
-            </div>
+            standing.conflictContinuation?._tag === 'Requested' ? (
+              <p className="decided">
+                Confirmed by {standing.conflictContinuation.by}; the continuation was requested and the conductor takes
+                it on its next pass.
+              </p>
+            ) : (
+              <div className="btnrow smoves" data-rank="moves">
+                <ScheduleContinuation
+                  project={project}
+                  issue={issue}
+                  onSha={standing.approvedSha}
+                  waitId={standing.waitId}
+                  grant={standing.afterMove?.resolution === 'GrantFixRound'}
+                  conflict={
+                    standing.conflictContinuation?._tag === 'Unscheduled'
+                      ? standing.conflictContinuation.resolution
+                      : undefined
+                  }
+                />
+              </div>
+            )
           ) : null}
 
           {/* ---- rank 5: the outgoing prompt and nonblocked discussion ---------- */}

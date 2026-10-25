@@ -247,7 +247,7 @@ describe('resolveWait', () => {
         ticketId,
       ),
     ).toMatchObject({ ok: false, reason: 'not-blocked' })
-    expect(await grant(SHA)).toEqual({ ok: true, ticketId })
+    expect(await grant(SHA)).toEqual({ ok: true, ticketId, rescheduled: true })
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
     expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
   })
@@ -519,29 +519,41 @@ describe('resolveWait', () => {
 
       // The way out of an unscheduled continuation: no second resolution, but the
       // request is owed again, so it is appended again.
-      expect(await continued(b)).toMatchObject({ ok: true })
+      expect(await continued(b)).toMatchObject({ ok: true, rescheduled: true })
       expect((await b.store.read(b.ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
       expect(await requests()).toHaveLength(2)
+    })
+
+    it("does not report another person's confirmation as a different caller's success", async () => {
+      const b = await blocked()
+      expect(await continued(b)).toMatchObject({ ok: true })
+      const requests = async () => (await b.store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')
+      const before = (await b.store.read(b.ticketId)).length
+      const other = await continued(b, { hunks: [{ ...hunks[0]!, _tag: 'Divergent', behavior: 'x', adopted: null }] })
+      expect(other).toMatchObject({ ok: false, reason: 'already-confirmed' })
+      expect(await continued(b, { baseSha: 'c'.repeat(40) })).toMatchObject({ ok: false, reason: 'already-confirmed' })
+      expect((await b.store.read(b.ticketId)).length).toBe(before)
+      expect(await requests()).toHaveLength(1)
     })
 
     it('refuses a moved base', async () => {
       const b = await blocked()
       const client = { refSha: async (ref: string) => (ref === 'heads/main' ? 'c'.repeat(40) : SHA2) }
-      await expectRefused(b, await continued(b, {}, { client }), 'stale')
+      await expectRefused(b, await continued(b, {}, { client }), 'base-moved')
     })
 
     it('refuses a moved head, and a command naming another one', async () => {
       const b = await blocked()
       const client = { refSha: async (ref: string) => (ref === 'heads/main' ? SHA : 'c'.repeat(40)) }
-      await expectRefused(b, await continued(b, {}, { client }), 'stale')
+      await expectRefused(b, await continued(b, {}, { client }), 'ref-moved')
       await expectRefused(b, await continued(b, { headSha: 'c'.repeat(40) }), 'stale')
     })
 
     it('refuses a missing or other preserved ref', async () => {
       const b = await blocked()
       const client = { refSha: async (ref: string) => (ref === 'heads/main' ? SHA : null) }
-      await expectRefused(b, await continued(b, {}, { client }), 'stale')
-      await expectRefused(b, await continued(b, { ref: 'agent/other' }), 'stale')
+      await expectRefused(b, await continued(b, {}, { client }), 'ref-missing')
+      await expectRefused(b, await continued(b, { ref: 'agent/other' }), 'head-moved')
     })
 
     it('refuses saved work that is a WIP arm', async () => {
@@ -1199,7 +1211,7 @@ describe('resolveWait', () => {
         },
         ticketId,
       )
-      expect(second).toEqual({ ok: true, ticketId })
+      expect(second).toEqual({ ok: true, ticketId, rescheduled: true })
 
       const control = await store.read(CONTROL_STREAM)
       expect(control.map((e) => e.type)).toEqual(['ContinueRequested'])

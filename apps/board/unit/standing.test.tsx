@@ -1736,6 +1736,40 @@ describe('the moves the column ends in', () => {
     expect(html).not.toContain('Approve')
   })
 
+  it('draws no Schedule button for a conflict confirmation whose request is on the log (#559)', () => {
+    const conflict = {
+      _tag: 'ContinueConflict' as const,
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      ref: 'agent/7',
+      hunks: [],
+      grantExtraRound: false,
+    }
+    const approved = { ...HELD, state: 'approved' as const, onYou: false, approvedSha: SHA }
+    const requested = render(
+      {
+        ...approved,
+        conflictContinuation: {
+          _tag: 'Requested',
+          waitId: HELD.waitId!,
+          resolution: conflict,
+          by: 'human:x',
+          at: new Date(0),
+        },
+      },
+      OUTGOING,
+    )
+    expect(requested).toContain('the continuation was requested')
+    expect(requested).not.toContain('Ask for the continuation')
+    expect(requested).not.toContain('Schedule it')
+
+    const unscheduled = render(
+      { ...approved, conflictContinuation: { _tag: 'Unscheduled', waitId: HELD.waitId!, resolution: conflict } },
+      OUTGOING,
+    )
+    expect(unscheduled).toContain('Ask for the continuation')
+  })
+
   it('puts advised evidence and Discussion before the resolution cards and outgoing prompt', () => {
     const html = render(
       {
