@@ -91,6 +91,18 @@ const github: GitHubClient = {
   createIssue: async () => {
     throw new Error('no writes in this test')
   },
+  addSubIssue: async () => {
+    throw new Error('not used')
+  },
+  listSubIssues: async () => {
+    throw new Error('not used')
+  },
+  addBlockedBy: async () => {
+    throw new Error('not used')
+  },
+  listBlockedBy: async () => {
+    throw new Error('not used')
+  },
   closeIssue: async () => {
     throw new Error('no writes in this test')
   },

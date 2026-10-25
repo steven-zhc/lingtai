@@ -126,6 +126,18 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
       throw new Error('the wizard wrote to GitHub: deleteRef')
     },
     listOpenIssues: async () => issues,
+    addSubIssue: async () => {
+      throw new Error('not used')
+    },
+    listSubIssues: async () => {
+      throw new Error('not used')
+    },
+    addBlockedBy: async () => {
+      throw new Error('not used')
+    },
+    listBlockedBy: async () => {
+      throw new Error('not used')
+    },
     listIssuesSince: async () => issues,
     getIssue: async (n) => issues.find((i) => i.number === n) ?? issue({ number: n }),
     comment: async () => {
