@@ -169,6 +169,8 @@ export interface SplitProgress {
   readonly failure: string | null
   /** False until a `SplitReconciled` has landed after the latest start. */
   readonly reconciled: boolean
+  /** True when the latest attempt's closing listing succeeded (`SplitReconciled.listed`). */
+  readonly listed: boolean
   readonly owed: SplitOwed
 }
 
@@ -207,6 +209,7 @@ export function splitProgressOf(events: readonly Envelope[], waitId: WaitId): Sp
     strays,
     failure: read?.failure ?? null,
     reconciled: read !== null,
+    listed: read?.listed === true,
     owed: splitOwed(plan, identities, observed, strays),
   }
 }

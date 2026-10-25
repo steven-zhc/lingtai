@@ -413,19 +413,12 @@ async function splitOnce(
   let progress = splitProgressOf(events, options.waitId)
   const unchanged = progress !== null && sameSplitPlan(progress.plan, asked)
   // **An empty identity log is not proof that nothing exists.** A create that
-  // landed and whose read-back also failed records no identity, and its marker
-  // belongs to the old plan hash; replacing the plan then abandons that child.
-  // So a different plan is accepted only after attempts that all read cleanly.
-  const untouched =
-    progress !== null &&
-    progress.identities.length === 0 &&
-    progress.reconciled &&
-    !events.some(
-      (e) =>
-        e.type === 'SplitReconciled' &&
-        (e.data as PayloadOf<'SplitReconciled'>).waitId === options.waitId &&
-        (e.data as PayloadOf<'SplitReconciled'>).failure !== null,
-    )
+  // landed and whose read-back listing failed records no identity, and its
+  // marker belongs to the old plan hash; replacing the plan then abandons that
+  // child. So a different plan is accepted only when the latest attempt's
+  // closing listing succeeded and still found no child — an earlier failure
+  // that wrote nothing does not stand in the way.
+  const untouched = progress !== null && progress.identities.length === 0 && progress.listed
 
   if (progress === null || (!unchanged && untouched)) {
     const plan = { children: asked.children.map((c) => ({ ...c })), blockedBy: asked.blockedBy.map((d) => ({ ...d })) }

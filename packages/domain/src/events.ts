@@ -1925,6 +1925,12 @@ export const SplitReconciled = z.strictObject({
   observed: SplitObserved,
   strays: z.array(SplitStray),
   failure: z.string().nullable(),
+  /**
+   * True when this attempt's closing listing succeeded, after every write: no
+   * issue carrying the plan's markers exists beyond `children`, so a plan with
+   * no child recorded may still be replaced.
+   */
+  listed: z.boolean().optional(),
 })
 
 // ------------------------------------------------------------- extension ----

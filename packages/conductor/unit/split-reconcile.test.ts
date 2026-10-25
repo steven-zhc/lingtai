@@ -360,6 +360,23 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
   })
 
   describe('the plan is fixed once anything exists', () => {
+    it('accepts a corrected plan after a failed first read that wrote nothing', async () => {
+      const github = fakeGitHub()
+      const real = github.port.listIssuesSince
+      let lists = 0
+      github.port.listIssuesSince = async (since) => {
+        if (++lists === 1) throw new Error('listing timed out')
+        return real(since)
+      }
+      const { store, ticketId, split } = await blockedOnFirstWait(github)
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(github.calls).toEqual({ create: 0, sub: 0, edge: 0 })
+      const other = { ...PLAN, children: [{ ...child('a'), title: 'revised' }, child('b'), child('c')] }
+      expect(await split(other)).toMatchObject({ reason: 'split-not-resolved' })
+      expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(2)
+      expect(github.issues.map((i) => i.title)).toEqual(['revised', 'child b', 'child c'])
+    })
+
     it('refuses a different plan once an attempt failed, even with no child recorded', async () => {
       const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
       const real = github.port.listIssuesSince

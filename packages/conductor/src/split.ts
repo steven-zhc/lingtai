@@ -203,9 +203,11 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
 
   // 3. Read everything again, also after a throw. Anything unread is owed.
   let strays: SplitStray[] = []
+  let listed = false
   try {
     // A create that timed out but landed is taken up here, so it is recorded.
     strays = await scan()
+    listed = true
   } catch (err) {
     fail(`listing issues: ${messageOf(err)}`)
   }
@@ -218,7 +220,7 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   const event: ToAppend<PayloadOf<'SplitReconciled'>> = {
     type: 'SplitReconciled',
     actor: options.by,
-    data: { waitId, children: identities, observed, strays, failure },
+    data: { waitId, children: identities, observed, strays, failure, listed },
   }
   // 4. Record it. The decide lock is held, but the projector may append beside us.
   for (let tries = 0; ; tries++) {
