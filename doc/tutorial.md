@@ -239,14 +239,12 @@ The CLI uses your current tutorial branch and asks for the PR title and descript
 ## Part 2 — Move the project to GitHub
 
 Steps 1–4 ran locally. A GitHub repository needs a GitHub App, and
-**the App is yours**: there is no shared Lingtai App, and Lingtai creates yours
-through GitHub's manifest flow. [GitHub](github.md) explains why an App rather
-than a token.
+**the App is yours**: there is no shared Lingtai App. [GitHub](github.md)
+explains why an App rather than a token.
 
 Use your own fork, `<you>/chapter-garden`: installing an App needs admin on the
-repository. Keep the `lingtai board` from Step 3 running; `lingtai add` starts
-none of its own and refuses with `no board is running here to create the GitHub
-App on`.
+repository. Keep the `lingtai board` from Step 3 running; `add` starts none and
+refuses with `no board is running here to create the GitHub App on`.
 
 ### Create the App
 
@@ -254,14 +252,13 @@ App on`.
 lingtai add <you>/chapter-garden --github-app create
 ```
 
-`add` asks its recipe questions (pass `--agent`, `--install`, `--build` and `--land` as in Step 1), then opens the board's `/setup/github-app` page and
-waits ten minutes. Fill `App name` and `Organisation` (blank for a personal
-account). Leave `Webhook URL` blank: that declares the hook inactive and nothing
-degrades, because discovery runs on the daemon's sweep. Press
+`add` asks its recipe questions (pass Step 1's flags), then opens the board's
+`/setup/github-app` page and waits ten minutes. Fill `App name` and `Organisation` (blank for a personal
+account). Leave `Webhook URL` blank: discovery runs on the daemon's sweep. Press
 `Create the App on GitHub`, then **Create GitHub App** on GitHub's own next
 screen.
 
-The manifest carries the permissions, so you never choose them:
+You never choose the permissions; the manifest carries them:
 
 | Permission      | Level | Why                                                     |
 | --------------- | ----- | ------------------------------------------------------- |
@@ -270,18 +267,17 @@ The manifest carries the permissions, so you never choose them:
 | `pull_requests` | write | opening and reading pull requests                       |
 | `metadata`      | read  | required by GitHub for any App                          |
 
-GitHub hands a private key over exactly once, so back it up. It is a file at the
-path the board names (by default `~/.ssh/lingtai-agent.private-key.pem`, mode
-`0600`); `~/.lingtai/config.yml` holds that path, the App id and the webhook
-secret.
+GitHub hands a private key over exactly once, so back it up. It is a file at
+the path the board names (default `~/.ssh/lingtai-agent.private-key.pem`);
+`~/.lingtai/config.yml` holds that path, the App id and the webhook secret.
 
 When the terminal prints `app          <slug>, owned by <owner> — it answered`,
 the same `add` stops with `The App is not installed on <owner>, so it cannot see
-<slug>.` That is expected: **creating is not installing**.
+<slug>.` Expected: **creating is not installing**.
 
 ### Install it and add the repository
 
-Open `https://github.com/apps/<slug>/installations/new` and install the App on
+Open `https://github.com/apps/<slug>/installations/new` and install it on
 `<you>/chapter-garden` only. Then run `add` again **without** `--github-app`,
 which is refused once an App exists:
 
@@ -295,15 +291,12 @@ lingtai add <you>/chapter-garden
 lingtai doctor
 ```
 
-`github: app credentials` should be `ok` (`skip` means no App). The installation
-is proved by the second `add`:
+`github: app credentials` should be `ok` (`skip` means no App). The second `add`
+proves the installation by printing
 `permissions: issues, contents, pull requests write; metadata read`; a missing
-permission is listed and ends `Fix them in the App's settings, then re-run.`
+permission is listed instead.
 
 A ticket on a GitHub project is a GitHub issue with a kind label, not
-`lingtai ticket new`. **But only if the log has no tickets for this project
-yet.** If you completed Steps 2–4, `add` prints `tickets       db — kept: the log
-already has work items for this project` and keeps polling database tickets, so
-a GitHub issue is never taken. To take issues from GitHub, run Part 2 on a store
-with no work items for the project: before creating a ticket, or from a fresh
-`LINGTAI_HOME`. Then Steps 2–4 apply.
+`lingtai ticket new` — **if the log has no tickets for it yet.** After Steps 2–4, `add` prints `tickets       db — kept: the log already has
+work items for this project` and never takes a GitHub issue. For that, run Part 2
+before creating a ticket, or from a fresh `LINGTAI_HOME`.
