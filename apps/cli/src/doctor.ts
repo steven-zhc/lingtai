@@ -2746,7 +2746,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Machine', ['node', 'packages load under Node', 'release']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections']],
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers']],
-  ['Projects', ['recipe', 'env', 'base', 'triage', 'steps']],
+  ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
   ['Runtimes', ['runtime']],
 ]

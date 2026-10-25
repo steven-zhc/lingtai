@@ -126,11 +126,12 @@ describe('doctorJson', () => {
 })
 
 describe('renderDoctor', () => {
-  const keep = { no: process.env['NO_COLOR'], force: process.env['FORCE_COLOR'] }
+  const keep = { no: process.env['NO_COLOR'], force: process.env['FORCE_COLOR'], term: process.env['TERM'] }
   afterEach(() => {
     for (const [name, value] of [
       ['NO_COLOR', keep.no],
       ['FORCE_COLOR', keep.force],
+      ['TERM', keep.term],
     ] as const) {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
@@ -189,6 +190,8 @@ describe('renderDoctor', () => {
     delete process.env['FORCE_COLOR']
     expect(formatReport(report)).not.toContain('\u001b')
     delete process.env['NO_COLOR']
+    // `TERM=dumb` suppresses colour whatever FORCE_COLOR says.
+    delete process.env['TERM']
     process.env['FORCE_COLOR'] = '1'
     const coloured = renderDoctor(report)
     expect(coloured.find((l) => l.includes('✗') && l.includes('environment'))).toContain('\u001b')

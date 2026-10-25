@@ -380,4 +380,10 @@ describe('lingtai doctor — every check has a section', () => {
     const other = names.filter((r) => areaOf({ ...r, detail: '' }) === 'Other').map((r) => r.name)
     expect(other).toEqual([])
   })
+
+  it('puts the discuss and triage rows of a loaded project under Projects', () => {
+    for (const name of ['discuss: p signed in', 'discuss: p codex ready', 'triage: p codex ready']) {
+      expect(areaOf({ name, status: 'ok', detail: '' })).toBe('Projects')
+    }
+  })
 })
