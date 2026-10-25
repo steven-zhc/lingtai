@@ -12,6 +12,8 @@ another Git project with its own install and build commands.
 | Lingtai        | Git; Codex installed and signed in                                                                                                                                                     | Lingtai creates worktrees and uses Codex in this tutorial.        |
 | Chapter Garden | Node.js and npm; [GitHub SSH access](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account); permission to push a branch | You will build the site and give Lingtai a branch it can push to. |
 
+Everything else Lingtai needs, and when, is on [requirements](requirements.md).
+
 Install Lingtai. This downloads the CLI; setup is the next step.
 
 ```sh

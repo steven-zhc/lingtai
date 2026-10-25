@@ -180,6 +180,7 @@ from the log on demand.
 |---|---|
 | [`doc/architecture.html`](doc/architecture.html) | **Start here.** Six diagrams answering *which process am I in* — who appends, who is told, where state lives, how GitHub is brought back into line. Also in [中文](doc/architecture.zh.html). |
 | [`doc/tutorial.md`](doc/tutorial.md) | The shortest path from nothing to an issue merged unattended. |
+| [`doc/requirements.md`](doc/requirements.md) | Everything Lingtai needs outside itself — programs, services and accounts — and which choice makes each one required. |
 | [`doc/operating.md`](doc/operating.md) | Everything you actually type: setup, the GitHub App, onboarding a repository, running work, and what every refusal means. |
 | [`doc/README.md`](doc/README.md) | The decision log — one file per decision, append-only in spirit — and what is still open. |
 | [`doc/reference.md`](doc/reference.md) | Every term, and everything currently in it: 57 event types, 5 gate points, 4 action kinds. |
