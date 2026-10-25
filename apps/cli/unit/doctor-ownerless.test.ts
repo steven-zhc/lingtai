@@ -83,6 +83,33 @@ steps: {}
 `
 
 describe('declaredEnvironment, a project with no owner', () => {
+  it('asks the Codex CLI route about the CODEX_HOME a triage run is given', async () => {
+    const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
+    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+    const seen: Array<string | undefined> = []
+    const saved = process.env['CODEX_HOME']
+    process.env['CODEX_HOME'] = '/profile/codex'
+    try {
+      await declaredEnvironment({}, async () => [state], {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: (() => [
+          {
+            capabilities: { id: 'codex', enforces: ['wall'] },
+            checkAuth: async (env: Record<string, string>) => {
+              seen.push(env['CODEX_HOME'])
+              return { loggedIn: true, method: null, detail: 'ok' }
+            },
+          },
+        ]) as unknown as DoctorReach['runtimes'],
+      })
+    } finally {
+      if (saved === undefined) delete process.env['CODEX_HOME']
+      else process.env['CODEX_HOME'] = saved
+    }
+    expect(seen).toEqual(['/profile/codex'])
+  })
+
   it('names the Codex CLI route for triage.tools: full, without reading codex_text', async () => {
     const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState

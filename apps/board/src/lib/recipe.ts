@@ -471,7 +471,7 @@ export async function projectRecipe(
     at,
     configHash: resolved.configHash,
     ref: resolved.ref,
-    rows: await withTriageReadiness(readRecipe(resolved.recipe), resolved.recipe, codexLogin),
+    rows: await readRecipeWithReadiness(resolved.recipe, codexLogin),
     provenance: resolved.provenance ?? {},
   }
 }
@@ -486,6 +486,14 @@ export function codexProbeEnv(
 ): Record<string, string> {
   const codexHome = processEnv['CODEX_HOME']
   return { ...runnableEnv({}), ...(codexHome ? { CODEX_HOME: codexHome } : {}) }
+}
+
+/** `readRecipe` plus the CLI route's readiness — what every page that shows a recipe's reading says. */
+export async function readRecipeWithReadiness(
+  recipe: Recipe,
+  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }> = () => codexAuth('codex', codexProbeEnv()),
+): Promise<Reading[]> {
+  return withTriageReadiness(readRecipe(recipe), recipe, codexLogin)
 }
 
 /**
