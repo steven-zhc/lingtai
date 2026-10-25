@@ -19,7 +19,7 @@ import type { GitHubClient, Issue, Label } from '@lingtai/github'
 import { type ResolvedRecipe, resolveRecipe } from '@lingtai/recipe'
 import { beforeAll, expect, it } from 'vitest'
 
-import { status } from '../src/status.ts'
+import { readStatus, renderStatus } from '../src/status.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const OWNER = 'steven-zhc'
@@ -135,29 +135,31 @@ beforeAll(async () => {
 it('shows the queue lingtai status will print, in the same order and the same words', async () => {
   const preview = await firstPass({ client: github, recipe: resolved.recipe })
 
-  const said: string[] = []
-  const code = await status({ project: PROJECT }, (line: string) => said.push(line), {
-    clientFor: async () => github,
-    recipeFor: async () => resolved,
-  })
-  expect(code).toBe(0)
+  const report = await readStatus(
+    { project: PROJECT },
+    {
+      clientFor: async () => github,
+      recipeFor: async () => resolved,
+    },
+  )
+  const mine = report.projects[0]!
 
   // The order: the rows `lingtai status` lists are the rows the preview lists,
   // and #4100 after #412 is the tiebreak that says it is one sort and not two.
-  const listed = said.filter((l) => /^ {4}#\d/.test(l)).map((l) => l.trim().split(/\s+/)[0]!.slice(1))
+  const listed = mine.runnable.map((r) => r.ref)
   expect(listed).toEqual(preview.taking.map((r) => r.issue))
   expect(listed).toEqual(['398', '412', '4100', '7'])
 
-  // The count. `queue: N runnable` is the line an operator reads an hour later,
+  // The count. `Queue  N runnable` is the heading an operator reads an hour later,
   // and the preview's `line` starts with the same number and the same word.
-  const queue = said.find((l) => l.includes('queue:'))!
-  expect(queue).toContain(`${preview.taking.length} runnable`)
+  expect(mine.runnable.length).toBe(preview.taking.length)
   expect(preview.line.startsWith(`${preview.taking.length} runnable`)).toBe(true)
+  expect(renderStatus(report).join('\n')).toContain(`Queue  ${preview.taking.length} runnable`)
 
   // The words. `passedOver`'s sentence is one string in one place, so the clause
   // the command prints is the clause the screen prints, character for character.
-  const fromGitHub = said.find((l) => l.includes('from GitHub:'))!
   expect(preview.passedOver).not.toBeNull()
-  expect(fromGitHub).toContain(preview.passedOver!)
+  expect(mine.passedOverLine).toBe(preview.passedOver)
+  expect(renderStatus(report).join('\n')).toContain(`from GitHub: ${mine.eligible} eligible, ${preview.passedOver}`)
   expect(preview.line).toContain(preview.passedOver!)
 })
