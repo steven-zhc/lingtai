@@ -111,7 +111,15 @@ export interface AgentActionDeps {
   issue: () => Promise<{ ref: string; title: string; body: string }>
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
-  diff: () => Promise<string>
+  diff: (from?: string) => Promise<string>
+  /** What `fromSha..toSha` changed on each of `paths`, one entry per path (#594).
+   *  Asked only of a review that follows a `base-moved` merge. A diff that could
+   *  not be read is that path's `diff`, as text — it must not kill the review. */
+  landed?: (moved: {
+    paths: readonly string[]
+    fromSha: string
+    toSha: string
+  }) => Promise<{ path: string; diff: string }[]>
   /** Rendered outside the worktree, like the implementer's. */
   settingsPath: string
   /**
@@ -264,12 +272,58 @@ Then review the diff as it now stands for anything else, exactly as you would
 have without this section. The fix is part of the diff and is not above review.`
 }
 
+/** How many lines of what landed on the base the review is shown (#594). */
+export const LANDED_DIFF_LINES = 400
+
+/**
+ * The section a review after a `base-moved` merge is shown (#594): every
+ * overlapping path up front, then their diffs up to `capLines` lines, the path
+ * the cap landed in marked cut and every path after it named as left out.
+ */
+export function landedOnBaseBlock(
+  moved: { paths: readonly string[]; fromSha: string; toSha: string },
+  per: readonly { path: string; diff: string }[],
+  capLines: number = LANDED_DIFF_LINES,
+): string {
+  let left = capLines
+  const shown: string[] = []
+  const cut: string[] = []
+  const omitted: string[] = []
+  for (const { path, diff } of per) {
+    if (left <= 0) {
+      omitted.push(path)
+      continue
+    }
+    const lines = diff.replace(/\n$/, '').split('\n')
+    const take = lines.slice(0, left)
+    left -= take.length
+    if (take.length < lines.length) cut.push(path)
+    shown.push(`### ${path}\n\n\`\`\`diff\n${take.join('\n')}\n\`\`\``)
+  }
+  const notes = [
+    cut.length > 0 ? `Cut at ${capLines} lines: ${cut.join(', ')}.` : '',
+    omitted.length > 0 ? `Left out, past the ${capLines}-line cap: ${omitted.join(', ')}.` : '',
+  ].filter(Boolean)
+  return `## What landed on the base
+
+While this change was being built the base moved, and it has been merged in. These
+paths were changed on both sides: ${moved.paths.join(', ')}.
+
+What the base did to them, \`${moved.fromSha.slice(0, 7)}..${moved.toSha.slice(0, 7)}\` (the diff above is this
+change against the base it was merged with, so none of this is in it):
+
+${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}
+
+Does what landed on the base change the behaviour this change relies on or alters? Name the line on each side. Report what you find through the findings below.`
+}
+
 export function buildReviewPrompt(
   spec: AgentActionSpec,
   issue: ReviewIssue,
   diff: string,
   limitBytes: number,
   recheck: readonly ActionFinding[] = [],
+  landed = '',
 ): string {
   const clipped =
     diff.length > limitBytes ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : diff
@@ -298,7 +352,7 @@ ${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ''}## The diff
 ${clipped}
 \`\`\`
 
-## How to report
+${landed ? `${landed}\n\n` : ''}## How to report
 ${CONTRACT}
 `
 }
@@ -456,7 +510,11 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
     yields: 'verdict',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const diff = await deps.diff()
+      const moved = context.landedOnBase
+      // After a base merge the original cut is still the merge-base, so the
+      // branch's own change is `toSha...HEAD`; otherwise the base's changes would
+      // be in it twice.
+      const diff = await (moved === undefined ? deps.diff() : deps.diff(moved.toSha))
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is
         // cheaper than an agent call that reads an empty diff.
@@ -492,15 +550,18 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // committed), so the commit is what makes each round's review a
       // different reviewer.
       const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
+      const landedBlock =
+        moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, await deps.landed(moved))
       context.log?.note(
         'review',
         `${reviewId} · ${diff.length} bytes of diff` +
-          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : ''),
+          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : '') +
+          (moved === undefined ? '' : ` · base moved on ${moved.paths.length} paths`),
       )
       const outcome = await deps.runtime.run({
         runId: reviewId,
         cwd: context.cwd,
-        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck),
+        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock),
         // The cold reviewer's own flag (`#369`): the only action that sends one.
         // Each adapter turns it into the runtime's own way of forcing the shape
         // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.

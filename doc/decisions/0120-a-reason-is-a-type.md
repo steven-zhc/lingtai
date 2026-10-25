@@ -413,7 +413,10 @@ const routeNext: (
   and `judge: merge-the-base` at any other `when:` is refused when the recipe
   resolves. The lane raises `base-moved` only when the textual trial merge is
   clean and the base's new commits touch a file the branch also changed — a
-  conflict is `conflict` first.
+  conflict is `conflict` first. The `review` after it is shown what landed on
+  the overlapping paths (`fromSha..toSha`, capped at 400 lines, with the cut and
+  left-out paths named) and its own diff is taken against `toSha` (#594); the
+  next fix round drops that section.
 - **No other candidate sends `merge` back to `build`.** `onOffer` offers it today
   for "a conflict an agent resolved" (`pass.ts:930`), and nothing resolves
   conflicts: an unchanged branch goes green again and meets the same conflict.

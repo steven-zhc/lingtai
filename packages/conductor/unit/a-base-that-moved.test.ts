@@ -44,6 +44,7 @@ const moved = (toSha: string): ActionResult => ({
  */
 async function walk(answers: readonly ActionResult[], mergeBase: PassOptions['mergeBase']) {
   const events: PassEvent[] = []
+  const reviewSaw: ActionContext[] = []
   const landedOn: string[] = []
   const rounds: (number | undefined)[] = []
   let calls = 0
@@ -63,6 +64,18 @@ async function walk(answers: readonly ActionResult[], mergeBase: PassOptions['me
       return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
     if (step === 'implement')
       return [{ name: 'write', kind: 'agent', yields: 'commit', run: async () => ({ ...PASSED, head: 'c0ffee0' }) }]
+    if (step === 'review')
+      return [
+        {
+          name: 'cold',
+          kind: 'agent',
+          yields: 'verdict',
+          run: async (ctx) => {
+            reviewSaw.push(ctx)
+            return PASSED
+          },
+        },
+      ]
     return actions.map((a) => ({ name: a.name, kind: 'run', yields: 'verdict', run: async () => PASSED }) as Action)
   }
   const result = await runPass({
@@ -75,7 +88,7 @@ async function walk(answers: readonly ActionResult[], mergeBase: PassOptions['me
     mergeBase,
   })
   const started = events.flatMap((e) => (e.type === 'StepStarted' ? [e.data] : []))
-  return { result, events, landedOn, rounds, started }
+  return { result, events, landedOn, rounds, started, reviewSaw }
 }
 
 describe('a base that moved on the branch’s own files', () => {
@@ -96,6 +109,14 @@ describe('a base that moved on the branch’s own files', () => {
     expect(started.every((s) => s.round === 0)).toBe(true)
     expect(result.end).toMatchObject({ _tag: 'Landed' })
     expect(result.routes[0]).toMatchObject({ from: 'merge', to: 'build', ceiling: null })
+  })
+
+  it('shows the review what landed, and only the review after the merge (#594)', async () => {
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }))
+
+    expect(reviewSaw).toHaveLength(2)
+    expect('landedOnBase' in reviewSaw[0]!).toBe(false)
+    expect(reviewSaw[1]?.landedOnBase).toEqual({ paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha: 'base-1' })
   })
 
   it('reaches a person on the third arrival, the port having been called exactly twice', async () => {

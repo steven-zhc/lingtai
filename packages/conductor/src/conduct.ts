@@ -2878,7 +2878,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
-          diff: () => gitOrDie(['diff', `${baseShaOr('HEAD')}...HEAD`]),
+          diff: (from?: string) => gitOrDie(['diff', `${from ?? baseShaOr('HEAD')}...HEAD`]),
+          // One call per path, so no `diff --git` header has to be parsed back
+          // into paths. A diff that cannot be read is text, not a dead review.
+          landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
+            Promise.all(
+              paths.map(async (path) => {
+                const got = await gitAsked(['diff', fromSha, toSha, '--', path])
+                return { path, diff: Either.isLeft(got) ? `[could not read this diff: ${got.left.detail}]` : got.right }
+              }),
+            ),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always
