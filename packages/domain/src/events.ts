@@ -329,8 +329,10 @@ export type SplitChild = z.infer<typeof SplitChild>
 
 /**
  * A split was written: which children exist, and the blocked-by links between
- * them as written. It records what **was** done, after the fact — there is no
- * `SplitStarted`. `waitId` names the `WaitResolved{Split}` that carries the
+ * them as written. It is the terminal record — `SplitStarted`,
+ * `SplitChildWritten` and `SplitLinkWritten` lead up to it (#608), and it is
+ * the only list a close rule may read, since a person can edit sub-issues after
+ * the fact. `waitId` names the `WaitResolved{Split}` that carries the
  * approved plan, so a reader joins to it rather than reading a second copy.
  *
  * Appended before that `WaitResolved` (0118 §12). `blockedBy` holds
@@ -360,6 +362,41 @@ export const TicketSplit = z
       }
     })
   })
+
+/**
+ * A split write began (#608). `plan` is the plan as the person edited it, and
+ * `instance` is the id of the board process writing it — made once per
+ * process, so a later reader tells a writer still running from one that is
+ * gone. *Interrupted* is derived from that, never written. Every progress event
+ * carries `waitId` because a parent can wait again and plan keys repeat.
+ */
+export const SplitStarted = z.strictObject({
+  waitId: WaitId,
+  plan: z.strictObject({ children: z.array(ChildTicket), blockedBy: z.array(Dependency) }),
+  instance: z.string().min(1),
+})
+
+/** A child exists, carries the approved body and kind, and hangs under the parent — read back. */
+export const SplitChildWritten = z.strictObject({
+  waitId: WaitId,
+  key: SplitChild.shape.key,
+  number: SplitChild.shape.number,
+  id: SplitChild.shape.id,
+})
+
+/** A child-to-child blocked-by link exists, read back. The parent's own holds are not rows. */
+export const SplitLinkWritten = z.strictObject({
+  waitId: WaitId,
+  ticket: Dependency.shape.ticket,
+  blockedBy: Dependency.shape.blockedBy,
+})
+
+/** A split write stopped at `step` (a name from the writer's steps, or `read GitHub`) for `detail`. */
+export const SplitFailed = z.strictObject({
+  waitId: WaitId,
+  step: z.string(),
+  detail: z.string(),
+})
 
 /**
  * The two event types that mean a work item is waiting on somebody — a block
@@ -2001,6 +2038,10 @@ export const EVENTS = {
   WaitStarted,
   WaitResolved,
   TicketSplit,
+  SplitStarted,
+  SplitChildWritten,
+  SplitLinkWritten,
+  SplitFailed,
   TicketLinked,
   TicketLanded,
   TicketClosed,

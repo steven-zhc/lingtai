@@ -1,9 +1,10 @@
 /**
- * `splitTicketHolding` (#601): writes in order, each read back, nothing on the
- * log until all of them landed, and a retry that writes only what is missing.
+ * `splitTicketHolding` (#601): writes in order, each read back, `TicketSplit` on
+ * the log only once all of them landed (progress events lead up to it, #608),
+ * and a retry that writes only what is missing.
  * A hand-written in-memory GitHub over `createMemoryEventStore()` (0060 §1).
  */
-import { reduceTicket, ticketStream } from '@lingtai/domain'
+import { reduceTicket, splitProgressOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait, aWaitId, aRun, aRunRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -144,6 +145,7 @@ async function setup(body = PARENT_BODY) {
         kinds: ['bug', 'feature'],
         repository: REPO,
         by: 'human:steven',
+        instance: 'board-1',
         github: gh.client,
         store,
       },
@@ -183,8 +185,24 @@ describe('splitTicketHolding', () => {
     ])
 
     const added = (await store.read(ticketId)).slice(before)
-    expect(added.map((e) => e.type)).toEqual(['TicketSplit', 'WaitResolved', 'TicketReleased'])
+    expect(added.map((e) => e.type)).toEqual([
+      'SplitStarted',
+      'SplitChildWritten',
+      'SplitChildWritten',
+      'SplitChildWritten',
+      'SplitLinkWritten',
+      'SplitLinkWritten',
+      'TicketSplit',
+      'WaitResolved',
+      'TicketReleased',
+    ])
     expect(added[0]!.data).toMatchObject({
+      instance: 'board-1',
+      plan: { children: [{ key: 'a' }, { key: 'b' }, { key: 'c' }] },
+    })
+    expect(added[1]!.data).toMatchObject({ key: 'a', number: 700, id: 700 * 1_000_003 })
+    expect(added[4]!.data).toMatchObject({ ticket: 'b', blockedBy: 'a' })
+    expect(added[6]!.data).toMatchObject({
       children: [
         { key: 'a', number: 700, id: 700 * 1_000_003 },
         { key: 'b', number: 701, id: 701 * 1_000_003 },
@@ -215,13 +233,14 @@ describe('splitTicketHolding', () => {
       'listSubIssues',
       'getIssue',
     ]) {
-      it(`a failure ${mode} ${call} leaves no event, and a retry writes only what is missing`, async () => {
+      it(`a failure ${mode} ${call} leaves no TicketSplit, and a retry writes only what is missing`, async () => {
         const { store, ticketId, gh, go } = await setup()
         const before = (await store.read(ticketId)).length
         gh.fail = { call, mode, times: 1 }
         const first = await go()
         // A lost response is read back as landed; a refused write is a stop.
-        if (!first.ok) expect((await store.read(ticketId)).length).toBe(before)
+        if (!first.ok)
+          expect((await store.read(ticketId)).slice(before).some((e) => e.type === 'TicketSplit')).toBe(false)
         gh.fail = null
         // A lost response is read back as landed, so the first call may have finished.
         if (!first.ok) expect((await go()).ok).toBe(true)
@@ -233,7 +252,10 @@ describe('splitTicketHolding', () => {
         ).toEqual(['part a', 'part b', 'part c'])
         expect(gh.subs.size).toBe(3)
         expect(gh.blocks.size).toBe(5)
-        const types = (await store.read(ticketId)).slice(before).map((e) => e.type)
+        const types = (await store.read(ticketId))
+          .slice(before)
+          .map((e) => e.type)
+          .filter((t) => !t.startsWith('Split'))
         expect(types).toEqual(['TicketSplit', 'WaitResolved', 'TicketReleased'])
       })
     }
@@ -285,11 +307,120 @@ describe('splitTicketHolding', () => {
     ).toEqual(['agent:hold', 'feature'])
   })
 
+  it('a failure on chain appends SplitFailed, and the retry appends a fresh SplitStarted and only the missing link', async () => {
+    const { store, ticketId, waitId, gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    const first = await go()
+    expect(first.ok).toBe(false)
+    const afterFirst = await store.read(ticketId)
+    const failed = afterFirst.at(-1)!
+    expect(failed.type).toBe('SplitFailed')
+    expect(failed.data).toMatchObject({ waitId, step: 'chain c←b' })
+    expect(splitProgressOf(afterFirst, { waitId, instance: 'board-1' }).state).toBe('failed')
+
+    gh.fail = null
+    expect((await go()).ok).toBe(true)
+    const retried = (await store.read(ticketId)).slice(afterFirst.length)
+    expect(retried.map((e) => e.type)).toEqual([
+      'SplitStarted',
+      'SplitLinkWritten',
+      'TicketSplit',
+      'WaitResolved',
+      'TicketReleased',
+    ])
+    const progress = splitProgressOf(await store.read(ticketId), { waitId, instance: 'board-1' })
+    expect(progress.state).toBe('done')
+  })
+
+  it('a retry that adds a missing link appends only that link', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    await go()
+    const afterFirst = await store.read(ticketId)
+    expect(afterFirst.filter((e) => e.type === 'SplitChildWritten')).toHaveLength(3)
+    expect(afterFirst.filter((e) => e.type === 'SplitLinkWritten')).toHaveLength(1)
+    gh.fail = null
+    await go()
+    const all = await store.read(ticketId)
+    expect(all.filter((e) => e.type === 'SplitChildWritten')).toHaveLength(3)
+    expect(all.filter((e) => e.type === 'SplitLinkWritten')).toHaveLength(2)
+  })
+
+  it('a retry whose titles swap the children records the new mapping, and the fold agrees with TicketSplit', async () => {
+    const { store, ticketId, waitId, gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    await go()
+    gh.fail = null
+    const [a, b, ...rest] = plan.children
+    const swapped = { ...plan, children: [{ ...a!, title: b!.title }, { ...b!, title: a!.title }, ...rest] }
+    const result = await splitTicketHolding(
+      {
+        project: PROJECT,
+        issue: PARENT,
+        waitId,
+        plan: swapped,
+        kinds: ['bug', 'feature'],
+        repository: REPO,
+        by: 'human:h',
+        instance: 'board-1',
+        github: gh.client,
+        store,
+      },
+      store,
+      ticketId,
+    )
+    expect(result.ok).toBe(true)
+    const events = await store.read(ticketId)
+    const progress = splitProgressOf(events, { waitId, instance: 'board-1' })
+    const split = events.find((e) => e.type === 'TicketSplit')!.data as {
+      children: { key: string; number: number; id: number }[]
+      blockedBy: { ticket: string; blockedBy: string }[]
+    }
+    if (progress.state !== 'done') throw new Error(`expected done, got ${progress.state}`)
+    expect(progress.children).toEqual(split.children)
+    expect(progress.links).toEqual(split.blockedBy)
+    expect(split.children.find((c) => c.key === 'a')!.number).toBe(701)
+  })
+
+  it('a refusal before writing appends nothing', async () => {
+    const { store, ticketId, gh } = await setup()
+    const dup = await splitTicketHolding(
+      {
+        project: PROJECT,
+        issue: PARENT,
+        waitId: aWaitId(),
+        plan,
+        kinds: ['bug', 'feature'],
+        repository: REPO,
+        by: 'human:h',
+        instance: 'board-1',
+        github: gh.client,
+        store,
+      },
+      store,
+      ticketId,
+    )
+    expect(dup.ok).toBe(false)
+    expect((await store.read(ticketId)).some((e) => e.type.startsWith('Split'))).toBe(false)
+  })
+
+  it('a child adopted with no prior event gets its SplitChildWritten', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: [] })
+    await gh.client.addSubIssue(PARENT, a.number)
+    expect((await go()).ok).toBe(true)
+    const written = (await store.read(ticketId)).filter((e) => e.type === 'SplitChildWritten')
+    expect(written.map((e) => e.data)).toContainEqual(
+      expect.objectContaining({ key: 'a', number: a.number, id: a.number * 1_000_003 }),
+    )
+  })
+
   it('marks record the split done only once the append lands', async () => {
     const { store, ticketId, go } = await setup()
     const real = store.append.bind(store)
-    store.append = async () => {
-      throw new Error('append refused')
+    store.append = async (id, version, events) => {
+      if (events.some((e) => e.type === 'TicketSplit')) throw new Error('append refused')
+      return real(id, version, events)
     }
     const failed = await go()
     expect(failed.ok).toBe(false)
@@ -315,7 +446,8 @@ describe('splitTicketHolding', () => {
         plan: dup,
         kinds: ['bug', 'feature'],
         repository: REPO,
-        by: 'h',
+        by: 'human:h',
+        instance: 'board-1',
         github: gh.client,
         store,
       },
