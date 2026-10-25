@@ -10,6 +10,7 @@ import {
   emptyTicket,
   reduceControl,
   CONTROL_STREAM,
+  isTicketStream,
   parseTicketStream,
   triageFactsOf,
   waitWords,
@@ -776,15 +777,15 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   const run = named ?? runs.at(-1) ?? null
   const blocked = life.status === 'blocked'
   const approved = life.status === 'approved'
+  // The stream id names the issue whenever no event recorded it (a ticket
+  // first seen before `externalRef` was folded), so the sentence opens on
+  // `agent/<n>` rather than on nothing.
+  const issue =
+    item.externalRef ??
+    (own[0] !== undefined && isTicketStream(own[0].streamId) ? parseTicketStream(own[0].streamId)?.issue : undefined)
   const words = blocked
     ? waitWords(life.reason, {
-        // The stream id names the issue whenever no event recorded it (a ticket
-        // first seen before `externalRef` was folded), so the sentence opens on
-        // `agent/<n>` rather than on nothing.
-        branch: (() => {
-          const issue = item.externalRef ?? (own[0] ? parseTicketStream(own[0].streamId)?.issue : undefined)
-          return issue === undefined ? '' : agentBranchOf(issue)
-        })(),
+        branch: issue === undefined ? '' : agentBranchOf(issue),
         base: '',
         findings: [],
       })

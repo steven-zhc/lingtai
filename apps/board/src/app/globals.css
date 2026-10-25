@@ -1312,7 +1312,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   :is(.detail--waiting, .detail--resolved) .tcontext { grid-template-columns: minmax(0, 1fr); }
   :is(.detail--waiting, .detail--resolved) .tcontext-field + .tcontext-field {
     border-left: 0;
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--surface-2);
   }
 }
 :is(.detail--waiting, .detail--resolved) .swhere { gap: 1rem; }
@@ -1387,7 +1387,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .triage-hunk-group { min-width: 0; border: 1px solid var(--rule); background: var(--surface); }
 .detail--waiting .triage-evidence > div:not(.triage-hunk-group) { min-width: 0; padding: 0.85rem 1rem; border: 1px solid var(--rule); background: var(--surface); }
 .detail--waiting .triage-fixes li { display: grid; grid-template-columns: 2rem minmax(10rem, 22rem) minmax(0, 1fr); gap: 0.8rem; align-items: baseline; padding: 0.7rem 1rem; }
-.detail--waiting .triage-fixes .triage-location { overflow: hidden; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; }
+.detail--waiting .triage-fixes .triage-location { display: flex; min-width: 0; overflow-wrap: normal; white-space: nowrap; }
+.detail--waiting .triage-fixes .triage-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.detail--waiting .triage-fixes .triage-line { flex: none; }
 @media (max-width: 46rem) {
   .detail--waiting .triage-fixes li { grid-template-columns: 2rem minmax(0, 1fr); }
   .detail--waiting .triage-fixes li > span:last-child { grid-column: 2; }
@@ -1473,14 +1475,14 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sresolution[data-resolution='EditBodyAndRequeue']:has(.sresolutionaction:empty) { display: none; }
 .sresolution--draft:has(.sresolutionaction:empty) { display: none; }
 .sresolution--recommended { grid-column: span 2; border: 2px solid var(--accent); }
-.sresolutiongrid:has(> .sresolution--recommended) {
-  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+.sresolutiongrid:has(> .sresolution--recommended:not([hidden])) {
+  grid-template-columns: minmax(0, 2fr) repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   grid-auto-flow: row dense;
 }
-.sresolutiongrid:has(> .sresolution--recommended) > .sresolution--recommended { grid-column: 1; grid-row: span 2; }
-@media (max-width: 52rem) {
-  .sresolutiongrid:has(> .sresolution--recommended) { grid-template-columns: minmax(0, 1fr); }
-  .sresolutiongrid:has(> .sresolution--recommended) > .sresolution--recommended { grid-row: auto; }
+.sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-column: 1; grid-row: span 2; }
+@media (max-width: 60rem) {
+  .sresolutiongrid:has(> .sresolution--recommended:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+  .sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-row: auto; }
 }
 .sresolutionhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
 .sresolutionhead h3 { margin: 0; font-size: 1.05rem; line-height: 1.35; }
@@ -2111,6 +2113,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .chatask .btn { min-height: 2.5rem; padding-inline: 1rem; }
 .detail--waiting .chatask .btn.pri { background: transparent; border-color: var(--accent); color: var(--accent-ink); }
 .detail--waiting .chatask .btn.pri:hover:not(:disabled) { background: var(--accent); color: #fff; }
+@media (max-width: 30rem) {
+  .detail--waiting .chatask { grid-template-columns: minmax(0, 1fr); }
+}
 .chatask, .chatask textarea, .chatprop, .chattrace { min-width: 0; }
 .chatprop .btnrow { flex-wrap: wrap; }
 /* Grows with what is typed (`Discussion` sets the height), to a bound, and then

@@ -152,8 +152,8 @@ export function TriageBand({
                   <li key={index}>
                     <span className="triage-number">{index + 1}</span>
                     <span className="triage-location" title={fix.line === null ? fix.path : `${fix.path}:${fix.line}`}>
-                      {fix.path}
-                      {fix.line === null ? '' : `:${fix.line}`}
+                      <span className="triage-path">{fix.path}</span>
+                      {fix.line === null ? null : <span className="triage-line">:{fix.line}</span>}
                     </span>
                     <span>{fix.what}</span>
                   </li>
@@ -221,7 +221,11 @@ export function TriageBand({
         recommendedResolution(reason, status, { savedHead, disagreement: readings, picked: 'triage' }) ===
         result.resolution
       const chip = <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
-      const evidence = parts ? <div className="triage-evidence">{parts}</div> : null
+      const evidence = parts ? (
+        <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
+          {parts}
+        </div>
+      ) : null
       const triageReading = (
         <>
           {readings === null ? null : chip}

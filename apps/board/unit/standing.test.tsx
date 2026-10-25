@@ -1568,6 +1568,9 @@ it('shows both readings only when judge and triage disagree, and recommends neit
   expect(disagreeing).not.toContain('FixableLines')
   expect(disagreeing).toContain('triage advice')
   expect(disagreeing.indexOf('Judge</p>')).toBeLessThan(disagreeing.indexOf('Triage</p>'))
+  // With two readings the chip belongs to triage's, not to the band's head line.
+  expect(disagreeing).toContain('<div class="triage-head"><span class="triage-label">Triage</span></div>')
+  expect(disagreeing.indexOf('cause-chip--lines')).toBeGreaterThan(disagreeing.indexOf('Triage</p>'))
   expect(agreeing).not.toContain('Which reading is right?')
   expect(agreeing).not.toContain('Chose hand-to-person')
   expect(agreeing).toContain('class="triage-cause cause-chip cause-chip--oversized">Ticket too big</p>')

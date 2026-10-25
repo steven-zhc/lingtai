@@ -91,9 +91,18 @@ describe('current wait triage band', () => {
       }),
     )
     expect(html).toContain('<ol class="triage-fixes">')
-    expect(html).toContain('src/a.ts:8</span><span>change this</span>')
-    expect(html).toContain('src/b.ts</span><span>check that</span>')
+    expect(html).toContain(
+      '<span class="triage-path">src/a.ts</span><span class="triage-line">:8</span></span><span>change this</span>',
+    )
+    expect(html).toContain('<span class="triage-path">src/b.ts</span></span><span>check that</span>')
+    expect(html).toContain('title="src/a.ts:8"')
     expect(html).not.toContain('src/b.ts:?')
+  })
+
+  it('puts the cause chip on the head line, and the evidence once', () => {
+    const html = draw(advised({ _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'change this' }] }))
+    expect(html).toMatch(/<div class="triage-head"><span class="triage-label">Triage<\/span><p class="triage-cause /)
+    expect(html.match(/class="triage-evidence"/g)).toHaveLength(1)
   })
 
   it('draws a conflict count and the new-base recommendation past 20', () => {
