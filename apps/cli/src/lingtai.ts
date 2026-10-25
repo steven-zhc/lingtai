@@ -88,7 +88,6 @@ import {
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
-import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
 import {
@@ -1209,10 +1208,6 @@ async function main(argv: string[]): Promise<number> {
       }
       return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld())
     }
-    case 'status': {
-      const { positional, flags } = parseFlags(rest)
-      return status({ project: positional[0], all: 'all' in flags })
-    }
     case 'doctor':
       return doctor()
     // Positional throughout, and not through `parseFlags`: a value is an
@@ -1315,6 +1310,11 @@ async function main(argv: string[]): Promise<number> {
       console.error(
         'lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai',
       )
+      return 2
+    // `status` is `@effect/cli`'s since #618 and `entry.ts` routes it there; it is named
+    // here only because the command list is exhaustive.
+    case 'status':
+      console.error('lingtai status runs from the entry — pnpm lingtai status, or the installed lingtai')
       return 2
     // The same: `entry.ts` answers these before the log is loaded (`install.ts`).
     case 'upgrade':

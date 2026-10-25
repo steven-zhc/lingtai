@@ -7,9 +7,19 @@
  * pulled out of it for exactly that reason, the way `status.ts`'s own design
  * note asks for.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { offerFailedLine, offerLine } from '../src/status.ts'
+import { stripColour } from '../src/output.ts'
+import {
+  offerFailedLine,
+  offerLine,
+  renderStatus,
+  statusJson,
+  type StatusFilter,
+  type StatusReport,
+  type StatusRow,
+  type StatusWait,
+} from '../src/status.ts'
 
 describe('offerLine', () => {
   it('names GitHub for a github project', () => {
@@ -36,5 +46,331 @@ describe('offerFailedLine', () => {
     const line = offerFailedLine('the ticket table', new Error('no such table'))
     expect(line).toBe('  (the ticket table unavailable: no such table — the queue cannot be listed)')
     expect(line).not.toContain('GitHub')
+  })
+})
+
+// --- #618: the sections, and `--json` ----------------------------------------------------------
+
+const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): StatusRow => ({
+  kind: 'bug',
+  title: `title of ${over.ref}`,
+  state: 'queued',
+  restarts: 0,
+  arm: null,
+  held: null,
+  unoffered: false,
+  wait: null,
+  ...over,
+})
+
+const asked: StatusWait = {
+  reason: 'OwnQuestion',
+  line: 'which   approach\nshould I take?',
+  needs: 'judgement',
+  words: 'waiting for your answer',
+  detail: ['your judgement is needed'],
+  raw: true,
+}
+
+const fixture: StatusReport = {
+  message: null,
+  projects: [
+    {
+      project: 'lingtai',
+      base: 'main',
+      filter: {
+        ok: true,
+        facts: [
+          ['recipe', '3f2a91c9d04e from main'],
+          ['picks up', 'bug > tech-debt   (in priority order)'],
+          ['excludes', 'nothing'],
+          ['assignee', 'any issue, whoever it is assigned to'],
+          ['a pass', '1h'],
+          ['retries', 'after 1h, unless a repair is pending'],
+        ],
+        recipe: '3f2a91c9d04e0000',
+        ref: 'main',
+        kinds: ['bug', 'tech-debt'],
+        exclude: [],
+      },
+      source: 'GitHub',
+      eligible: 3,
+      offerError: null,
+      passedOver: [{ ref: 9, reason: 'agent:hold' }],
+      passedOverLine: '1 passed over — agent:hold 1',
+      dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
+      runnable: [
+        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({ taskId: 't613', ref: '613', kind: 'tech-debt', unoffered: true }),
+      ],
+      known: [
+        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({ taskId: 't609', ref: '609', state: 'waiting', wait: asked }),
+        row({
+          taskId: 't610',
+          ref: '610',
+          state: 'waiting',
+          wait: {
+            reason: 'Refused',
+            line: 'the gate refused',
+            needs: 'acknowledgement',
+            words: null,
+            detail: [],
+            raw: false,
+          },
+        }),
+        row({ taskId: 't611', ref: '611', state: 'verifying' }),
+        row({ taskId: 't600', ref: '600', state: 'landed' }),
+      ],
+    },
+    {
+      project: 'broken',
+      base: null,
+      filter: {
+        ok: false,
+        facts: [
+          ['recipe', 'INVALID — not valid'],
+          ['', 'nothing will be taken from this project'],
+        ],
+        problem: 'not valid',
+      },
+      source: null,
+      eligible: null,
+      offerError: null,
+      passedOver: [],
+      passedOverLine: null,
+      dependenciesUnread: null,
+      runnable: [],
+      known: [],
+    },
+    {
+      project: 'down',
+      base: 'main',
+      filter: fixture0Ok(),
+      source: 'the ticket table',
+      eligible: null,
+      offerError: 'no such table',
+      passedOver: [],
+      passedOverLine: null,
+      dependenciesUnread: null,
+      runnable: [],
+      known: [],
+    },
+  ],
+}
+
+function fixture0Ok(): Extract<StatusFilter, { ok: true }> {
+  return { ok: true, facts: [['recipe', 'abc from main']], recipe: 'abc', ref: 'main', kinds: ['bug'], exclude: ['x'] }
+}
+
+describe('statusJson', () => {
+  it('pins the whole shape', () => {
+    const r = (ref: string, kind = 'bug') => ({ taskId: `t${ref}`, ref, kind, title: `title of ${ref}` })
+    expect(statusJson(fixture)).toEqual({
+      projects: [
+        {
+          project: 'lingtai',
+          base: 'main',
+          filter: { ok: true, recipe: '3f2a91c9d04e0000', ref: 'main', kinds: ['bug', 'tech-debt'], exclude: [] },
+          source: 'GitHub',
+          eligible: 3,
+          offerError: null,
+          passedOver: [{ ref: 9, reason: 'agent:hold' }],
+          dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
+          runnable: [
+            { ...r('612'), restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+            { ...r('613', 'tech-debt'), restarts: 0, held: null, arm: null },
+          ],
+          byState: {
+            queued: [r('612')],
+            waiting: [r('609'), r('610')],
+            verifying: [r('611')],
+            landed: [r('600')],
+          },
+          waiting: [
+            { taskId: 't609', ref: '609', reason: 'OwnQuestion', line: asked.line, needs: 'judgement', asked: true },
+            {
+              taskId: 't610',
+              ref: '610',
+              reason: 'Refused',
+              line: 'the gate refused',
+              needs: 'acknowledgement',
+              asked: false,
+            },
+          ],
+        },
+        {
+          project: 'broken',
+          base: null,
+          filter: { ok: false, problem: 'not valid' },
+          source: null,
+          eligible: null,
+          offerError: null,
+          passedOver: [],
+          dependenciesUnread: null,
+          runnable: [],
+          byState: {},
+          waiting: [],
+        },
+        {
+          project: 'down',
+          base: 'main',
+          filter: { ok: true, recipe: 'abc', ref: 'main', kinds: ['bug'], exclude: ['x'] },
+          source: 'the ticket table',
+          eligible: null,
+          offerError: 'no such table',
+          passedOver: [],
+          dependenciesUnread: null,
+          runnable: [],
+          byState: {},
+          waiting: [],
+        },
+      ],
+    })
+  })
+})
+
+describe('renderStatus keeps every fact the old output printed', () => {
+  const plain = renderStatus(fixture, { all: false }).join('\n')
+
+  it.each([
+    'lingtai', // the project's name
+    'base',
+    'main',
+    '(unrecorded)', // base, and unrecorded
+    '3f2a91c9d04e from main', // the recipe's hash and ref
+    'bug > tech-debt   (in priority order)',
+    'any issue, whoever it is assigned to',
+    'after 1h, unless a repair is pending',
+    'RECIPE INVALID'.replace('RECIPE ', ''), // an unresolvable recipe says so
+    'nothing will be taken from this project',
+    'from GitHub: 3 eligible, 1 passed over — agent:hold 1', // eligible, and what was passed over
+    '(GitHub reported no issue dependencies for this repository)',
+    '(the ticket table unavailable: no such table — the queue cannot be listed)',
+    'Queue  2 runnable — 1 running, 1 landed', // `runnable` and `elsewhere`, the waits not counted twice
+    '#612',
+    'backing off — runnable in 32m',
+    'restart 1 of 3', // the clock and the arm
+    '[not offered]',
+    'Waiting on you',
+    '#609',
+    'waiting for your answer: which approach should I take?', // one line, whitespace folded
+    'the gate refused',
+    'next: lingtai answer lingtai --issue 609 "<choice>"',
+  ])('prints %s', (fact) => {
+    expect(plain).toContain(fact)
+  })
+
+  it('does not count a wait as "N waiting on you"', () => {
+    expect(plain).not.toMatch(/\d+ waiting on you/)
+  })
+
+  it('adds the diagnosis under --all, and says the raw failure is on the log', () => {
+    const all = renderStatus(fixture, { all: true }).join('\n')
+    expect(all).toContain('your judgement is needed')
+    expect(all).toContain('(the failure itself is on the log, and on the card)')
+    expect(all).toContain('#609')
+    expect(all).toContain('[waiting for your answer]')
+    expect(plain).not.toContain('your judgement is needed')
+  })
+
+  it('says the one-line answer when there is nothing to report', () => {
+    expect(renderStatus({ projects: [], message: 'no projects registered — run lingtai add <owner>/<repo>' })).toEqual([
+      'no projects registered — run lingtai add <owner>/<repo>',
+    ])
+  })
+
+  it('is plain with NO_COLOR and coloured under FORCE_COLOR, with the same visible text', () => {
+    const keep = { no: process.env['NO_COLOR'], force: process.env['FORCE_COLOR'] }
+    try {
+      delete process.env['NO_COLOR']
+      process.env['FORCE_COLOR'] = '1'
+      const coloured = renderStatus(fixture, { all: true })
+      expect(coloured.join('\n')).toContain('\u001b[')
+      delete process.env['FORCE_COLOR']
+      process.env['NO_COLOR'] = '1'
+      const bare = renderStatus(fixture, { all: true })
+      expect(bare.join('\n')).not.toContain('\u001b')
+      expect(coloured.map(stripColour)).toEqual(bare)
+    } finally {
+      for (const [name, value] of [
+        ['NO_COLOR', keep.no],
+        ['FORCE_COLOR', keep.force],
+      ] as const) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
+
+  it('aligns the table columns', () => {
+    const lines = renderStatus(fixture, { all: false })
+    const header = lines.findIndex((l) => l.includes('ID') && l.includes('STATE'))
+    const states = lines[header]!.indexOf('STATE')
+    expect(lines[header + 1]!.indexOf('[backing off')).toBe(states)
+    expect(lines[header + 2]!.indexOf('[not offered]')).toBe(states)
+  })
+})
+
+describe('lingtai status through @effect/cli', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.doUnmock('../src/status.ts')
+  })
+
+  async function run(
+    argv: string[],
+    read: (o: unknown) => Promise<StatusReport>,
+  ): Promise<{ code: number; out: string }> {
+    vi.resetModules()
+    vi.doMock('../src/status.ts', async (orig) => ({
+      ...(await orig<typeof import('../src/status.ts')>()),
+      readStatus: read,
+    }))
+    const { runCli } = await import('../src/cli.ts')
+    let out = ''
+    vi.spyOn(process.stdout, 'write').mockImplementation((t: unknown) => ((out += String(t)), true))
+    vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void (out += `${a.join(' ')}\n`))
+    vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void (out += `${a.join(' ')}\n`))
+    const code = await runCli(['node', 'lingtai', ...argv])
+    return { code, out }
+  }
+
+  it.each([
+    ['status', 'lingtai', '--all'],
+    ['status', '--all', 'lingtai'],
+  ])('parses %j', async (...argv) => {
+    const seen: unknown[] = []
+    const { code } = await run(argv, async (o) => (seen.push(o), { projects: [], message: 'none' }))
+    expect(code).toBe(0)
+    expect(seen).toEqual([{ project: 'lingtai', all: true }])
+  })
+
+  it('prints the one document under --json', async () => {
+    const { code, out } = await run(['status', '--json'], async () => fixture)
+    expect(code).toBe(0)
+    expect(JSON.parse(out)).toMatchObject({ version: 1, command: 'status', projects: [{ project: 'lingtai' }, {}, {}] })
+  })
+
+  it('reports a runtime failure as unavailable, not usage, and exits 1', async () => {
+    const failing = async (): Promise<StatusReport> => {
+      throw new Error('no store configured')
+    }
+    const json = await run(['status', '--json'], failing)
+    expect(json.code).toBe(1)
+    expect(JSON.parse(json.out)).toEqual({
+      version: 1,
+      command: 'status',
+      error: { code: 'unavailable', message: 'no store configured' },
+    })
+    const text = await run(['status'], failing)
+    expect(text.code).toBe(1)
+    expect(text.out).toContain('no store configured')
+  })
+
+  it('refuses a flag it does not know, as a usage error', async () => {
+    const { code, out } = await run(['status', '--refresh', '--json'], async () => fixture)
+    expect(code).toBe(1)
+    expect(JSON.parse(out).error.code).toBe('usage')
   })
 })

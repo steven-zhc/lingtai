@@ -4,7 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { routeOf } from '../src/migrated.ts'
 
 describe('routeOf', () => {
-  it.each([[['version']], [['version', '--json']], [['version', '--help']]])('sends %j to @effect/cli', (argv) => {
+  it.each([
+    [['version']],
+    [['version', '--json']],
+    [['version', '--help']],
+    [['status']],
+    [['status', 'lingtai', '--json']],
+    [['status', '--all', 'lingtai']],
+  ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
 
@@ -21,7 +28,6 @@ describe('routeOf', () => {
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'lingtai'],
     [['--version'], 'lingtai'],
-    [['status'], 'lingtai'],
     [['daemon', '--no-conduct'], 'lingtai'],
     [['init'], 'init'],
     [['upgrade'], 'install'],

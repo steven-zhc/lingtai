@@ -96,9 +96,10 @@ export const COMMANDS = [
     task: 'what is runnable, and what is holding the rest',
     effect: 'reads',
     usage: [
-      'lingtai status [<project>] [--all]',
+      'lingtai status [<project>] [--all] [--json] [--no-color]',
       '  Takes nothing and claims nothing.',
       '  --all   include items that have left the queue, and why',
+      '  --json  one document instead of the sections',
     ],
     examples: ['lingtai status', 'lingtai status lingtai --all'],
   }),
