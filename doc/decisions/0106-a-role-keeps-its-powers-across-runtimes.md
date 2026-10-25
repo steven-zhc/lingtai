@@ -85,7 +85,9 @@ on that path is paid for thousands of times per run.
    translates that value for its runtime. For Claude Code, `none` is
    `--permission-mode default` plus a settings file that denies every tool.
    Codex CLI's `-s read-only` still leaves a shell able to read the whole
-   machine, so it never implements `none`. Codex uses a separate model-only
+   machine, so it never implements `none`. Triage alone may select
+   `tools: full`, which runs the CLI under [0118](0118-a-hold-explains-itself.md)
+   §3's boundary; Discussion has no such key. Otherwise Codex uses a separate model-only
    Responses API call with `tools: []` and `tool_choice: "none"` only after a
    person approves separately billed API use and configures `codex_text` with
    an API key, model, output ceiling, and conservative token prices and USD
