@@ -208,7 +208,8 @@ lingtai approve chapter-garden --issue <ticket-number>
 
 Run `lingtai status chapter-garden --all` again until the ticket says
 **Landed**. That means the checked change reached `main` of the bare repository; run
-`git -C "$CHAPTER_GARDEN_DIR" pull` to see the new chapter in your checkout. If it
+`git pull` in your Chapter Garden checkout (`~/workspace/chapter-garden` unless
+you changed it) to see the new chapter. If it
 stopped for another reason, the [operating guide](operating.md) explains the
 next action. To put work on GitHub, continue with Part 2.
 
