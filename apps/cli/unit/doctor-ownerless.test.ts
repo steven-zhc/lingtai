@@ -86,23 +86,33 @@ describe('declaredEnvironment, a project with no owner', () => {
   it('names the Codex CLI route for triage.tools: full, without reading codex_text', async () => {
     const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
-    const asked: string[] = []
+    let probes = 0
+    let textReads = 0
     const rows = await declaredEnvironment({}, async () => [state], {
       recipe,
       agentEnv: agentEnvStub,
-      runtimes: (() => {
-        asked.push('codex')
-        return [
-          {
-            capabilities: { id: 'codex', enforces: ['wall'] },
-            checkAuth: async () => ({ loggedIn: true, detail: 'signed in' }),
+      runtimes: (() => [
+        {
+          capabilities: { id: 'codex', enforces: ['wall'] },
+          checkAuth: async () => {
+            probes += 1
+            return { loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
           },
-        ]
-      }) as unknown as DoctorReach['runtimes'],
-      codexText: () => undefined,
+        },
+      ]) as unknown as DoctorReach['runtimes'],
+      codexText: () => {
+        textReads += 1
+        return undefined
+      },
     })
     expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toBeUndefined()
-    expect(rows.find((row) => row.name.startsWith('triage: esctest') && row.name.endsWith('signed in'))).toBeDefined()
+    const signedIn = rows.find((row) => row.name === 'triage: esctest signed in')
+    expect(signedIn?.status).toBe('ok')
+    expect(signedIn?.detail).toContain('Codex CLI with tools in a disposable checkout')
+    expect(signedIn?.detail).toContain('codex_text is not read')
+    expect(signedIn?.detail).toContain('Logged in using ChatGPT')
+    expect(probes).toBe(1)
+    expect(textReads).toBe(0)
     const limits = rows.find((row) => row.name === 'triage: esctest limits')
     expect(limits?.status).toBe('warn')
     expect(limits?.detail).toContain('wall is enforced')

@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lingtai/agent": "workspace:*",
+    "@lingtai/agent-env": "workspace:*",
     "@lingtai/conductor": "workspace:*",
     "@lingtai/daemon": "workspace:*",
     "@lingtai/domain": "workspace:*",
