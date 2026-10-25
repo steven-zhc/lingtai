@@ -14,7 +14,10 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * throws under `--project unit` (`lockDir()`, `packages/env/src/index.ts`),
  * so by 0060 §1 the whole of either locked function cannot run here —
  * `approveHolding`/`requeueHolding` are the functions underneath the lock,
- * exported for exactly this (`#487`). `answer()` and `close()` take the decide lock and are called directly.
+ * exported for exactly this (`#487`). `answer()`/`close()` get the same treatment through `answerHolding`/
+ * `closeHolding` (`answerUnlocked`/`closeUnlocked` below); only the
+ * empty-input cases call `answer()`/`close()` themselves, since they refuse
+ * before the lock is reached.
  *
  * **Not a reduced copy of `wait-handlers-answer-as-today.test.ts`.** Most
  * cases below land on the same assertions as that file's, because most of

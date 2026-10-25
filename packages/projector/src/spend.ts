@@ -3,7 +3,7 @@
  * §11, `#497`).
  *
  * **It is a fold and nothing else, and it reads `RunSpent` and no other spend
- * source.** `RunFinished`, `FixApplied`, `DiscussionAnswered` and
+ * source.** `RunFinished`, `DiscussionAnswered` and
  * `DiscussionHeld` are the old places a cost briefly lived or still lives for
  * another reason — `task_view` and `finding_backlog` must keep not reading
  * `RunSpent` (0110 §13), and this fold must keep not reading them. `TriageAgent`

@@ -784,8 +784,8 @@ async function upsert(
            triage_result = case when $10::int > 0 then null else task_view.triage_result end,
            triage_head_sha = case when $10::int > 0 then null else task_view.triage_head_sha end,
            -- The claim is what consumes a pending repair: this run *is* the
-           -- repair, and naming it here is what lets its spend be counted apart
-           -- from the work's. Only a retired RepairRequested sets one (#143), so
+           -- repair, and this records which run it was. Nothing reads it today:
+           -- spend comes from the spend table, rounds 1 and up. Only a retired RepairRequested sets one (#143), so
            -- on a new ticket both lines leave the row as it was.
            repair_run_id = case when $10::int > 0 and task_view.repair_pending
                                 then excluded.run_id else task_view.repair_run_id end,
@@ -994,7 +994,7 @@ export function waitOf(taskId: string, state: TaskState, waitId: unknown, reason
 }
 
 /**
- * One sentence of a hold, and which of the four it is.
+ * One sentence of a wait, and which of the four it is.
  *
  * Typed parts rather than formatted lines, so the card and `lingtai status` can
  * render the same sentences differently without keeping their own copies of the
@@ -1008,7 +1008,7 @@ export interface WaitLine {
 }
 
 /**
- * What is known about a hold, in the order an operator uses it.
+ * What is known about a wait, in the order an operator uses it.
  *
  * Empty for a block that carries only a question — every block written before
  * #83 — which is what makes those render exactly as they did: the question is

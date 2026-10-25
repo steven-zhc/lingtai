@@ -81,12 +81,12 @@ export type VerifyRed = z.infer<typeof VerifyRed>
  * `prepared` refused, or a non-`verdict` action did not finish — #471's
  * seven, added beside the original six with no caller yet (#472).
  *
- * **Not exported individually, unlike the six above.** `wait.ts` already
- * exports a `SetupRefused` and a `MergeRefused`, and `action.ts` an
- * `AnswerUnreadable`; both are re-exported at the package root (`index.ts`'s
+ * **Not exported individually, unlike the six above.** `action.ts` exports an
+ * `AnswerUnreadable` and is re-exported at the package root (`index.ts`'s
  * `export *`), so a second top-level binding of the same name would make the
- * name ambiguous there (TS2308) the moment anything imported it — the same
- * reason `wait.ts`'s own seven stay unexported (`wait.ts`'s header). Nothing
+ * name ambiguous there (TS2308) the moment anything imported it. `wait.ts`'s
+ * `SetupRefused` and `MergeRefused` could not collide: its variants are
+ * unexported, and the file is a subpath rather than part of the root. Nothing
  * outside this file imports any of the original six by name either (checked
  * before writing these), so leaving all seven of #471's variants unexported
  * costs no caller anything.
@@ -150,7 +150,7 @@ type MergeRefused = z.infer<typeof MergeRefused>
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
   from: Step,
-  // The same two values `CeilingKind` extracts, written out
+  // The same two values `wait.ts` extracts from `RUN_FAILURE_KINDS`, written out
   // rather than imported (`wait.ts`'s own ESM-cycle reason).
   kind: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
   turns: z.number().nullable(),

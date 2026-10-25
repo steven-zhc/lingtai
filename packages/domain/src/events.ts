@@ -685,8 +685,8 @@ export const RunFinished = z.object({
  * every payload a previous build wrote still parses against this.
  *
  * Moved to `vocabulary.ts` by #445, for the same reason `Step` was —
- * `proposal.ts`'s `CeilingKind` is built from this list and cannot
- * import `events.ts` without a cycle. Re-exported above under the same name.
+ * `proposal.ts` and `wait.ts` extract their ceiling pair from this list
+ * (`RUN_FAILURE_KINDS`) and cannot import `events.ts` without a cycle. Re-exported above under the same name.
  */
 
 export const RunFailed = z.object({
@@ -923,7 +923,7 @@ export const StepStarted = z.object({
  * `packages/recipe/src/recipe.ts` is this array again.
  *
  * Moved to `vocabulary.ts` by #445, along with `Finding` below, for the same
- * reason `Step` was — `proposal.ts`'s `Routed` carries `Finding[]`. Re-exported
+ * reason `Step` was — `proposal.ts`'s `ReviewFindings` and `ReviewEmpty` carry `Finding[]`. Re-exported
  * above under the same names.
  */
 

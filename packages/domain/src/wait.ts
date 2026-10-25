@@ -132,8 +132,8 @@ const CheckRefused = z.object({
 const MergeRefused = z.object({
   _tag: z.literal('MergeRefused'),
   run: RunRef,
-  // `moves.ts:16-19` explains the omitted `default`: a reason `RefusalReason`
-  // gains tomorrow fails this at the type level rather than slipping past.
+  // `.exclude` rather than a hand-written list: a reason `RefusalReason` gains
+  // tomorrow fails this at the type level rather than slipping past.
   reason: RefusalReason.exclude(['conflict', 'verify-failed']),
   raw: z.string(),
   paths: z.array(z.string()).nullable().optional(),
@@ -145,7 +145,7 @@ const MergeRefused = z.object({
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
   run: RunRef,
-  // The same two values `CeilingKind` extracts, written out
+  // The same two values `proposal.ts` extracts from `RUN_FAILURE_KINDS`, written out
   // rather than imported: a leaf here cannot import that file
   // (see this file's own header) without closing the ESM cycle it avoids.
   cause: z.enum(RUN_FAILURE_KINDS).extract(['out-of-turns', 'out-of-usd']),
