@@ -234,10 +234,22 @@ async function continueConflict(
     lifecycle.reason.proposal._tag !== 'MergeConflict' ||
     !allowedResolutions(lifecycle.reason).includes('ContinueConflict')
   ) {
-    // A confirmation whose continuation was taken: a claim follows it on the
-    // item's own stream. Leaving `approved` proves nothing — a close does too.
+    // A confirmation whose continuation was taken: the confirmed wait's own run
+    // is claimed again on the item's stream (`continueTicket` appends the claim
+    // under the run it continues). Leaving `approved` proves nothing — a close
+    // does too — and a claim under any other run is a fresh start from base.
     const confirmedAt = own.findLastIndex((e) => isContinueConflictResolved(e))
-    if (confirmedAt >= 0 && own.slice(confirmedAt + 1).some((e) => e.type === 'TicketClaimed')) {
+    const confirmedWait = confirmedAt >= 0 ? (own[confirmedAt]!.data as { waitId?: string }).waitId : undefined
+    const confirmedRun = own
+      .filter((e) => e.type === 'WaitStarted')
+      .map((e) => e.data as { waitId: string; runId: string | null })
+      .findLast((d) => d.waitId === confirmedWait)?.runId
+    if (
+      confirmedRun != null &&
+      own
+        .slice(confirmedAt + 1)
+        .some((e) => e.type === 'TicketClaimed' && (e.data as { runId?: string }).runId === confirmedRun)
+    ) {
       log(
         `${ticketId} had a conflict continuation confirmed and it was taken up; it is now ${lifecycle.status}${
           lifecycle.status === 'blocked' ? ' on a newer wait' : ''

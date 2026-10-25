@@ -270,11 +270,28 @@ describe('continue-conflict', () => {
         2,
       ),
       env(ticketId, 'WaitApproved', { waitId: 'w1', grantRef: 'agent/7' }, 3),
-      env(ticketId, 'TicketClaimed', { runId: 'run-2', title: null, kind: null }, 4),
+      env(ticketId, 'TicketClaimed', { runId: 'run-1', title: null, kind: null }, 4),
     ]
     expect(await continueConflictCommand({ project: 'p', issue: 7 }, h.log, h.deps)).toBe(0)
     expect(h.lines.join('\n')).toContain('was taken up')
     expect(h.lines.join('\n')).not.toContain('not waiting')
+  })
+
+  it('does not call a confirmation taken up when a fresh run was claimed from base instead', async () => {
+    const h = harness()
+    h.deps.events = async () => [
+      ...own,
+      env(
+        ticketId,
+        'WaitResolved',
+        { waitId: 'w1', resolution: { _tag: 'ContinueConflict', baseSha: BASE, headSha: HEAD, ref: 'agent/7' } },
+        2,
+      ),
+      env(ticketId, 'WaitApproved', { waitId: 'w1', grantRef: 'agent/7' }, 3),
+      env(ticketId, 'TicketClaimed', { runId: 'run-2', title: null, kind: null }, 4),
+    ]
+    expect(await continueConflictCommand({ project: 'p', issue: 7 }, h.log, h.deps)).toBe(1)
+    expect(h.lines.join('\n')).not.toContain('was taken up')
   })
 
   it('does not call a confirmation taken up when the approved ticket was closed before any claim', async () => {
