@@ -87,6 +87,8 @@ export type ClaimRefusal =
   | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
   /** A recorded child is still open, so the ticket should not have been eligible. Nothing was appended. */
   | { reason: 'split-open'; open: number[] }
+  /** A recorded child could not be read. Nothing was appended, so nothing is held. */
+  | { reason: 'split-unreadable'; detail: string }
 
 export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal }
 
@@ -129,10 +131,19 @@ export async function claimTicket(ticketId: string, options: ClaimOptions): Prom
   if (state.split !== null && options.children !== undefined) {
     // Exactly the numbers the split recorded — never the body, never GitHub's
     // sub-issue list, which a person may have added to by hand. A read that
-    // throws leaves the claim unmade and escapes like any store failure: a
-    // partial read must not pass for *all closed*.
+    // throws is a refusal, not an exception: nothing was appended, so the caller
+    // must not treat the ticket as possibly held — and a partial read must not
+    // pass for *all closed*.
     const asked = state.split.children.map((c) => c.number)
-    const read = await Promise.all(asked.map((n) => options.children!.getIssue(n)))
+    let read
+    try {
+      read = await Promise.all(asked.map((n) => options.children!.getIssue(n)))
+    } catch (error) {
+      return {
+        ok: false,
+        refusal: { reason: 'split-unreadable', detail: error instanceof Error ? error.message : String(error) },
+      }
+    }
     const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
     if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
     return {

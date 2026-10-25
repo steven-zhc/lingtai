@@ -80,7 +80,10 @@ describe('claimTicket on a split parent', () => {
         throw new Error('GitHub is down')
       },
     }
-    await expect(claimTicket(ticketId, { runId: 'r1', store, children })).rejects.toThrow('GitHub is down')
+    const before = (await store.read(ticketId)).length
+    const result = await claimTicket(ticketId, { runId: 'r1', store, children })
+    expect(result).toEqual({ ok: false, refusal: { reason: 'split-unreadable', detail: 'GitHub is down' } })
+    expect(await store.read(ticketId)).toHaveLength(before)
   })
 
   it('claims exactly as before when no children source is given', async () => {
