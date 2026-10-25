@@ -11,8 +11,8 @@ Two things are **not** on this page:
   `packages/conductor/src/conduct.ts:490`), and whatever those call — `npm`,
   `pnpm`, a compiler — is the managed project's requirement, not Lingtai's. The
   tutorial's Node.js and npm are Chapter Garden's.
-- **What building Lingtai needs.** `bun`, `pnpm exec next build` and
-  `node --build-sea` (`apps/release/src/build.ts`,
+- **What building a release needs.** `bun` (also needed on a checkout, in the
+  table below), `pnpm exec next build` and `node --build-sea` (`apps/release/src/build.ts`,
   `apps/release/src/binary.ts`) produce a release. Installing and running one
   needs none of them.
 
@@ -26,6 +26,7 @@ Where this page says "any recent", the code does not check a version.
 | `claude` | The runtime is `claude-code` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/claude-code.ts:402`, `:431` |
 | `codex` | The runtime is `codex` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/codex.ts:1107`, `:1181` |
 | Node.js | A source checkout only. An installed copy carries the Node it was built with | 26 or later | Runs the CLI, the conductor and the board from source | `node: at or above the floor` | `package.json:8`, `.node-version`, `apps/cli/src/doctor.ts:2489` |
+| `bun` | A source checkout only, to build the hook binary a run refuses to start without (`pnpm --filter @lingtai/hook build`) | Any recent | Compiles `packages/hook/bin/lingtai-hook`, which is not committed | None | `apps/cli/src/run.ts:354`, `packages/hook/package.json:10` |
 | `pnpm` | A source checkout only | The version `packageManager` pins, `11.9.0`; nothing checks it | Installs and runs the workspace | None | `package.json:7` |
 | `ps` | Always | Any recent | Finds an agent left running by an earlier run, and checks whether a recorded process is still the one Lingtai started | None | `packages/agent/src/codex.ts:72`, `:118`, `packages/daemon/src/reconcile.ts:565` |
 | `launchctl` (macOS) or `systemctl --user` (Linux) | You run `lingtai service`. Not needed for a daemon started in a terminal | Any recent | Keeps the conductor and the board running and restarts them | `daemon: liveness` reports whether the daemon is up, not whether the supervisor exists | `apps/cli/src/service.ts:430`, `:457`, `:467`, `:717` |
@@ -60,14 +61,17 @@ it.
 | Codex | The runtime is `codex` | Same, with `codex login status` | `runtime: signed in` and `runtime: <project> signed in` |
 | A GitHub App you create and install on the repository | The project is a GitHub one. A `--local` project needs none | Lingtai acts on GitHub as the App, not as you | None. `lingtai add` checks the App's permissions before it records a repository |
 | GitHub access for `git` | You run `git` against the repository yourself, and for a remote that is not served by the App | A run's own push and fetch use an installation token of the App (`packages/repo/src/git.ts:47`), so they need no personal key; your own clone and any push you make use your SSH key or credentials, which Lingtai does not store | None |
-| A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Set the `codex_text` block in `config.example.yml` | None |
+| A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Put the `codex_text` block from `config.example.yml` in `~/.lingtai/config.yml` (the example file itself is never read), or export it as `LINGTAI_CODEX_TEXT_*` variables (`packages/env/src/index.ts:187`) | `discuss: <project> codex ready` and `triage: <project> codex ready` |
 | Postgres credentials | `database.url` is set | Part of the URL | `postgres: pooled connection` |
 | A Telegram bot | A `telegram` subscriber is in your recipe | To post as | None |
 
 `lingtai doctor` reports sign-in through `runtime: signed in` (any runtime) and
 `runtime: <project> signed in` (the runtime that project dispatches), both off
 the probes in `packages/agent/src/auth.ts:31` and `:95`
-(`apps/cli/src/doctor.ts:788`, `:2080`). `codex_text` is not checked.
+(`apps/cli/src/doctor.ts:788`, `:2080`). The `codex_text` block is checked per role by
+`discuss: <project> codex ready` and `triage: <project> codex ready`
+(`apps/cli/src/doctor.ts:2102`), which report a missing block or a `model`
+that differs from `codex_text.model`.
 
 ## Which choices decide what you need
 
@@ -78,4 +82,4 @@ the probes in `packages/agent/src/auth.ts:31` and `:95`
 - **`claude-code` or `codex`.** Only the one you choose has to be installed and
   signed in.
 - **Installed copy or source checkout.** An installed copy needs no Node and no
-  `pnpm`. A checkout needs both.
+  `pnpm`. A checkout needs both, and `bun` to build the hook.
