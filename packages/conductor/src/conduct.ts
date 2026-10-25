@@ -2257,13 +2257,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // The recipe's `end` may not close the issue (`end: []`, or a close
             // restricted to `when: landed`); a terminal event with the issue
             // still open would be announced and never finished.
-            await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
-            await tellGitHub({
-              store,
-              github: options.client,
-              ticketId,
-              change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-            })
+            const told = await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
+            // Said only once the issue is closed: a failed close is on the log as
+            // `IssueUpdateFailed`, and announcing it would claim what GitHub denies.
+            if (told.recorded === 'IssueUpdated') {
+              await tellGitHub({
+                store,
+                github: options.client,
+                ticketId,
+                change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+              })
+            }
           }
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
