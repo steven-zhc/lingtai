@@ -28,4 +28,26 @@ describe('lingtai version', () => {
     expect(r.out.endsWith('\n') && r.out.trim().split('\n').length === 1).toBe(true)
     expect(JSON.parse(r.out)).toEqual({ version: 1, command: 'version', ...versionFacts() })
   })
+
+  it('answers a usage error under --json with the one error document', async () => {
+    const r = await capture(['version', '--json', '--bogus'])
+    expect(r.code).toBe(1)
+    expect(r.err).toBe('')
+    const doc = JSON.parse(r.out)
+    expect(doc).toMatchObject({ version: 1, command: 'version', error: { code: 'usage' } })
+    expect(r.out.trim().split('\n')).toHaveLength(1)
+  })
+
+  it('prints help without escapes under --no-color', async () => {
+    const saved = process.env['NO_COLOR']
+    try {
+      const r = await capture(['version', '--help', '--no-color'])
+      expect(r.code).toBe(0)
+      expect(r.out).not.toContain(String.fromCharCode(27))
+      expect(r.out).toContain('version')
+    } finally {
+      if (saved === undefined) delete process.env['NO_COLOR']
+      else process.env['NO_COLOR'] = saved
+    }
+  })
 })

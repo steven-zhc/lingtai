@@ -10,9 +10,46 @@ import { paint } from '@lingtai/env/colour'
 
 const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
-/** Visible width: what a column measures, with any colour stripped. */
+/** The text with any colour removed. */
+export function stripColour(text: string): string {
+  return text.replace(SGR, '')
+}
+
+const graphemes = new Intl.Segmenter()
+
+/** East Asian Wide and Fullwidth blocks, and the emoji planes. */
+function isWide(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    (code >= 0x2e80 && code <= 0x303e) ||
+    (code >= 0x3041 && code <= 0x33ff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0x4e00 && code <= 0xa4cf) ||
+    (code >= 0xa960 && code <= 0xa97f) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x1f300 && code <= 0x1f64f) ||
+    (code >= 0x1f900 && code <= 0x1f9ff) ||
+    (code >= 0x20000 && code <= 0x3fffd)
+  )
+}
+
+const MARK = /^[\p{Mn}\p{Me}\p{Cf}\p{Cc}]+$/u
+
+/** Visible width in terminal columns: wide characters count two, combining marks and controls none. */
 export function width(text: string): number {
-  return [...text.replace(SGR, '')].length
+  let columns = 0
+  for (const { segment } of graphemes.segment(stripColour(text))) {
+    if (MARK.test(segment)) continue
+    const high = segment.charCodeAt(0)
+    const first =
+      high >= 0xd800 && high <= 0xdbff ? (high - 0xd800) * 0x400 + (segment.charCodeAt(1) - 0xdc00) + 0x10000 : high
+    columns += isWide(first) || segment.includes('\u{FE0F}') ? 2 : 1
+  }
+  return columns
 }
 
 function pad(text: string, to: number): string {

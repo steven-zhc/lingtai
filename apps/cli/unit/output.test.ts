@@ -79,6 +79,21 @@ describe('layout', () => {
     ])
   })
 
+  it('measures terminal columns, not code points', () => {
+    expect(width('中')).toBe(2)
+    expect(width('ab')).toBe(2)
+    expect(width('e\u0301')).toBe(1)
+    expect(
+      table(
+        ['a', 'b'],
+        [
+          ['中', 'x'],
+          ['ab', 'y'],
+        ],
+      ),
+    ).toEqual(['a   b', '中  x', 'ab  y'])
+  })
+
   it('never truncates a redirected stream', () => {
     expect(table(['id', 'state'], rows, { columns: undefined })).toHaveLength(3)
   })
