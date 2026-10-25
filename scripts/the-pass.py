@@ -178,10 +178,10 @@ EN = dict(
        "on the card, and on the log"),
       ("round", "One more go at the same worktree, carrying what refused it. "
        "<code>rounds</code> is how many you will pay for.",
-       "<code>implement:</code> in your recipe"),
+       "<code>runtime.limits.rounds</code> in your recipe"),
       ("restart", "The ticket is released back to the queue and started over "
        "from the base. Another ticket may be taken first.",
-       "<code>claim:</code> in your recipe"),
+       "<code>runtime.limits.restarts</code> in your recipe"),
       ("worktree", "The branch and working copy this pass owns. One per pass; "
        "the agent cannot see outside it.",
        "cut at <code>admit</code>, named on the card"),
@@ -254,7 +254,9 @@ EN = dict(
              "A missing or moved saved branch cannot continue this way. "
              "<b>Start over from base</b> requeues the ticket for a new pass "
              "with the recipe's rounds. It leaves the saved work behind and "
-             "neither spends nor refunds an automatic restart.",
+             "neither spends nor refunds an automatic restart. "
+             "Every move, by who makes it and what it spends, is in the "
+             "<a href=\"glossary.md#what-happens-next\">glossary</a>.",
 
     foot="Generated from scripts/the-pass.py · Lingtai",
     f1_alt="One pass from claim to end. Ten steps on a spine; four of them may "
@@ -345,9 +347,9 @@ ZH = dict(
        "好让 <code>proposed</code> 据它路由，也好让你事后读得懂。",
        "卡片上，以及日志上"),
       ("round 轮", "在同一棵工作树上再来一次，带着拒绝它的那些东西。"
-       "<code>rounds</code> 是你愿意为几轮付钱。", "recipe 里的 <code>implement:</code>"),
+       "<code>rounds</code> 是你愿意为几轮付钱。", "recipe 里的 <code>runtime.limits.rounds</code>"),
       ("restart 重来", "这张票被放回队列，从 base 重新开始。"
-       "队列可能会先拿走别的票。", "recipe 里的 <code>claim:</code>"),
+       "队列可能会先拿走别的票。", "recipe 里的 <code>runtime.limits.restarts</code>"),
       ("worktree 工作树", "这趟 pass 独占的分支和工作副本。一趟一棵；"
        "agent 看不到它之外的任何东西。", "在 <code>admit</code> 切出，卡片上有它的名字"),
       ("waiting on you", "一张票为了人而停下的唯一地方。"
@@ -406,7 +408,8 @@ ZH = dict(
              "结果还须重新经过 <code>build</code>、<code>review</code> 和 "
              "<code>proposed</code> 才能合并。保存的分支丢失或移动后，不能这样继续。"
              "<b>从 base 重新开始</b>则把票重新排队，从 base 开始一趟新 pass，"
-             "重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。",
+             "重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。"
+             "每一种做法由谁做、花什么，见<a href=\"glossary.md#what-happens-next\">术语表</a>。",
 
     foot="由 scripts/the-pass.py 生成 · 灵台",
     f1_alt="一趟 pass，从 claim 到 end。主干上十步，其中四步会拒绝 —— prepared、"
