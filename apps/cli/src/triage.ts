@@ -15,7 +15,7 @@
 import { createRuntime, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { projectClient } from '@lingtai/conductor/filter'
+import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import {
   MAX_READ_ROUNDS,
@@ -317,7 +317,9 @@ export function daemonTriagePorts(
             if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
             const state = await loadProject(parsed.project)
             if (state === null) throw new Error(`${parsed.project} is not registered`)
-            const { client } = await projectClient(state)
+            const { client } = await projectClient(state, {
+              clientFor: (project) => githubClientFor(project, signal),
+            })
             const live = await client.getIssue(Number(parsed.issue), signal)
             return { ref: String(live.number), title: live.title, body: live.body }
           },

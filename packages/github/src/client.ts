@@ -290,15 +290,17 @@ export interface CreateClientOptions {
   repo: string
   /** Skips the installation lookup when one has already been made. */
   installation?: Installation
+  /** Stops the installation lookup when it aborts; later requests take their own. */
+  signal?: AbortSignal
 }
 
 export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
   const { auth, owner, repo } = options
-  const installation = options.installation ?? (await installationForRepo(auth, owner, repo))
+  const installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
   const tokenFor = createTokenSource(auth, installation.id)
 
   async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-    const token = await tokenFor()
+    const token = await tokenFor(signal)
     const response = await fetch(`${GITHUB_API}${path}`, {
       method,
       headers: {
