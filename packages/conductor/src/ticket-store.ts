@@ -75,7 +75,7 @@ export interface Tickets {
   /** Every ticket, open or closed, created at or after `since` — oldest first. */
   listIssuesSince(since: Date): Promise<Ticket[]>
   /** Rejects when no ticket carries this number. */
-  getIssue(number: number): Promise<Ticket>
+  getIssue(number: number, signal?: AbortSignal): Promise<Ticket>
   createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Ticket>
   comment(issue: number, body: string): Promise<{ id: number }>
   /** Replaces the whole label set. */

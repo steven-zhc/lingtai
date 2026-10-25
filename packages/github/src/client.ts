@@ -194,7 +194,7 @@ export interface GitHubClient {
    * anybody commented on since.
    */
   listIssuesSince(since: Date): Promise<Issue[]>
-  getIssue(number: number): Promise<Issue>
+  getIssue(number: number, signal?: AbortSignal): Promise<Issue>
 
   /**
    * Posts a comment.
@@ -297,7 +297,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
   const installation = options.installation ?? (await installationForRepo(auth, owner, repo))
   const tokenFor = createTokenSource(auth, installation.id)
 
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const token = await tokenFor()
     const response = await fetch(`${GITHUB_API}${path}`, {
       method,
@@ -309,6 +309,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     })
 
     if (!response.ok) {
@@ -524,8 +525,15 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       return out.reverse()
     },
 
-    async getIssue(number) {
-      return toIssue(await request<Parameters<typeof toIssue>[0]>('GET', `/repos/${owner}/${repo}/issues/${number}`))
+    async getIssue(number, signal) {
+      return toIssue(
+        await request<Parameters<typeof toIssue>[0]>(
+          'GET',
+          `/repos/${owner}/${repo}/issues/${number}`,
+          undefined,
+          signal,
+        ),
+      )
     },
   }
 }

@@ -312,13 +312,13 @@ export function daemonTriagePorts(
           store: eventStore,
           runtime: createRuntime,
           mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
-          issue: async (ticketId) => {
+          issue: async (ticketId, signal) => {
             const parsed = parseTicketStream(ticketId)
             if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
             const state = await loadProject(parsed.project)
             if (state === null) throw new Error(`${parsed.project} is not registered`)
             const { client } = await projectClient(state)
-            const live = await client.getIssue(Number(parsed.issue))
+            const live = await client.getIssue(Number(parsed.issue), signal)
             return { ref: String(live.number), title: live.title, body: live.body }
           },
           base: async (ticketId) => {
@@ -326,7 +326,7 @@ export function daemonTriagePorts(
             return (await loadProject(project))?.base ?? 'main'
           },
           prepare,
-          prepareCheckout: prepareTriageCheckout,
+          prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
           now: Date.now,
           log,
         },
@@ -352,14 +352,29 @@ export interface TriagePorts {
   store: EventStore
   runtime(agent: DiscussAgent, options: { tools: 'none' | 'full' }): Runtime
   mirror: {
-    refSha(input: { project: string; ref: string }): Promise<string | null>
-    listAt(input: { project: string; ref: string }): Promise<{ paths: string[]; truncated: boolean }>
-    readAt(input: { project: string; ref: string; path: string; limitBytes?: number }): Promise<string | null>
-    diffStatAt(input: { project: string; base: string; head: string }): Promise<string | null>
-    conflictedPathsAt(input: { project: string; baseSha: string; headSha: string }): Promise<ConflictedPath[]>
+    refSha(input: { project: string; ref: string; signal?: AbortSignal }): Promise<string | null>
+    listAt(input: {
+      project: string
+      ref: string
+      signal?: AbortSignal
+    }): Promise<{ paths: string[]; truncated: boolean }>
+    readAt(input: {
+      project: string
+      ref: string
+      path: string
+      limitBytes?: number
+      signal?: AbortSignal
+    }): Promise<string | null>
+    diffStatAt(input: { project: string; base: string; head: string; signal?: AbortSignal }): Promise<string | null>
+    conflictedPathsAt(input: {
+      project: string
+      baseSha: string
+      headSha: string
+      signal?: AbortSignal
+    }): Promise<ConflictedPath[]>
   }
   /** The ticket, as GitHub has it now. Throws, or rejects, to say why it could not be read. */
-  issue(ticketId: string): Promise<{ ref: string; title: string; body: string }>
+  issue(ticketId: string, signal?: AbortSignal): Promise<{ ref: string; title: string; body: string }>
   /** The project's base branch. */
   base(ticketId: string): Promise<string>
   /** `apps/cli/src/discuss.ts`'s `prepare` in production — an empty directory and a settings file that denies every tool. */
@@ -367,6 +382,7 @@ export interface TriagePorts {
   prepareCheckout?(
     project: string,
     sha: string,
+    signal?: AbortSignal,
   ): Promise<{
     cwd: string
     settingsPath: string
@@ -397,13 +413,14 @@ async function gatherEvidence(
   request: WaitTriageRequest,
   before: readonly Envelope[],
   guard: <T>(work: Promise<T>) => Promise<T>,
+  signal: AbortSignal,
 ): Promise<{ evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null }> {
   const project = parseTicketStream(request.ticketId)?.project ?? ''
 
   let ticket: TriageEvidence['ticket'] = null
   let ticketProblem: string | null = null
   try {
-    ticket = await guard(deps.issue(request.ticketId))
+    ticket = await guard(deps.issue(request.ticketId, signal))
   } catch (err) {
     ticketProblem = (err as Error).message
   }
@@ -435,10 +452,10 @@ async function gatherEvidence(
     head = headOf(runEvents)
   }
 
-  const baseSha = await guard(deps.mirror.refSha({ project, ref: base })).catch(() => null)
+  const baseSha = await guard(deps.mirror.refSha({ project, ref: base, signal })).catch(() => null)
   const refs: ReadableRef[] = []
   if (baseSha !== null) {
-    const listed = await guard(deps.mirror.listAt({ project, ref: base })).catch(() => ({
+    const listed = await guard(deps.mirror.listAt({ project, ref: base, signal })).catch(() => ({
       paths: [],
       truncated: false,
     }))
@@ -446,9 +463,9 @@ async function gatherEvidence(
   }
   let headSha: string | null = null
   if (head !== null) {
-    headSha = await guard(deps.mirror.refSha({ project, ref: head })).catch(() => null)
+    headSha = await guard(deps.mirror.refSha({ project, ref: head, signal })).catch(() => null)
     if (headSha !== null) {
-      const listed = await guard(deps.mirror.listAt({ project, ref: headSha })).catch(() => ({
+      const listed = await guard(deps.mirror.listAt({ project, ref: headSha, signal })).catch(() => ({
         paths: [],
         truncated: false,
       }))
@@ -458,7 +475,7 @@ async function gatherEvidence(
 
   const diffStat =
     baseSha !== null && headSha !== null
-      ? await guard(deps.mirror.diffStatAt({ project, base: baseSha, head: headSha })).catch(() => null)
+      ? await guard(deps.mirror.diffStatAt({ project, base: baseSha, head: headSha, signal })).catch(() => null)
       : null
 
   return {
@@ -594,6 +611,7 @@ async function waitTriageWithin(
           project,
           baseSha: proposal.baseSha!,
           headSha: proposal.headSha!,
+          signal,
         }),
       )
       const total = conflictPaths.reduce((sum, path) => sum + path.hunks, 0)
@@ -675,7 +693,7 @@ async function waitTriageWithin(
     final = mechanical
   } else
     try {
-      const gathered = await gatherEvidence(deps, request, before, guard)
+      const gathered = await gatherEvidence(deps, request, before, guard, signal)
       if (signal.aborted) throw new WallReached()
       const evidence = gathered.evidence
       evidence.conflicts = conflictPaths
@@ -693,9 +711,10 @@ async function waitTriageWithin(
       }
       const checkout = full
         ? await guard(
-            (deps.prepareCheckout ?? prepareTriageCheckout)(
+            (deps.prepareCheckout ?? ((p, sha, sig) => prepareTriageCheckout(p, sha, undefined, sig)))(
               parseTicketStream(request.ticketId)?.project ?? '',
               selectedSha!,
+              signal,
             ).then((c) => {
               // A checkout that lands after the wall must not be left behind.
               if (signal.aborted) void c.cleanup().catch(() => {})
@@ -718,7 +737,9 @@ async function waitTriageWithin(
         const serve = (ref: string, path: string): Promise<string | null> => {
           const sha = shas.get(ref)
           if (sha === undefined) return Promise.resolve(null)
-          return guard(deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES })).catch(() => null)
+          return guard(deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES, signal })).catch(
+            () => null,
+          )
         }
 
         // `RunSpent`, retried on any error up to five attempts — the same bound
@@ -877,7 +898,14 @@ async function waitTriageWithin(
 
           if (outcome.failure) {
             const kind = outcome.failure.kind
-            const why = kind === 'timeout' || kind === 'aborted' ? kind : `${kind}: ${outcome.failure.detail}`
+            // The runtimes call any incoming signal's abort `aborted`; only the
+            // caller's own abort is that, and the recipe's wall is a `timeout`.
+            const why =
+              kind === 'timeout' || kind === 'aborted'
+                ? kind === 'aborted' && !callerSignal?.aborted
+                  ? 'timeout'
+                  : kind
+                : `${kind}: ${outcome.failure.detail}`
             result = { _tag: 'TriageFailed', why: clip(why) }
             break
           }

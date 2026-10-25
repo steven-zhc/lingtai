@@ -275,7 +275,7 @@ describe('waitTriage', () => {
     )
 
     expect(held.result._tag).toBe('TriageAdvised')
-    expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha)
+    expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha, expect.any(AbortSignal))
     expect(deps.runtime).toHaveBeenCalledWith('codex', { tools: 'full' })
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({ cwd: '/tmp/private-checkout', env: { HOME: '/tmp/private-home' } })
@@ -502,7 +502,12 @@ describe('waitTriage', () => {
     const mirrorCall = vi.fn(async () => [CONFLICT_PATH])
     const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: mirrorCall }) })
     await waitTriage(deps, requestOn(ticketStream('lingtai', 415), aWaitId(), { reason: conflictReason('a', 'b') }))
-    expect(mirrorCall).toHaveBeenCalledWith({ project: 'lingtai', baseSha: 'a', headSha: 'b' })
+    expect(mirrorCall).toHaveBeenCalledWith({
+      project: 'lingtai',
+      baseSha: 'a',
+      headSha: 'b',
+      signal: expect.any(AbortSignal),
+    })
     expect(prompt).toContain('"base": "before"')
     expect(prompt).toContain('"ours": "ours"')
     expect(prompt).toContain('"theirs": "theirs"')
@@ -1088,6 +1093,44 @@ describe('waitTriage', () => {
       expect((events[0]!.data as { by: { _tag: string } }).by._tag).toBe('Mechanical')
     })
 
+    it('hands the mirror a signal the wall aborts, so the work itself is stopped', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 12)
+      const { runtime } = stubRuntime(() => outcomeOf())
+      const seen: (AbortSignal | undefined)[] = []
+      const deps = fakeDeps(store, runtime, {
+        mirror: fakeMirror({
+          refSha: (input) => {
+            seen.push(input.signal)
+            return never()
+          },
+        }),
+      })
+
+      await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(seen[0]).toBeDefined()
+      expect(seen[0]?.aborted).toBe(true)
+    })
+
+    it("records the wall as 'timeout' when the runtime reports the wall's abort as 'aborted'", async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 13)
+      const { runtime } = stubRuntime(
+        (request) =>
+          new Promise<RunOutcome>((resolve) => {
+            request.signal?.addEventListener('abort', () =>
+              resolve(outcomeOf({ failure: { kind: 'aborted', detail: 'the signal aborted the run' } })),
+            )
+          }),
+      )
+      const deps = fakeDeps(store, runtime)
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+    })
+
     it('lets the next queued triage run once the first one hit its wall', async () => {
       const store = createMemoryEventStore()
       const first = aWaitId()
@@ -1262,7 +1305,9 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(readAtCalls).toEqual([{ project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000 }])
+    expect(readAtCalls).toEqual([
+      { project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000, signal: expect.any(AbortSignal) },
+    ])
     expect(requests[1]?.limits.usd).toBeCloseTo(0.3)
 
     // Two runtime calls (the `read`, then the `advised` that follows it), so

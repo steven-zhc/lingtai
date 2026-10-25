@@ -34,6 +34,7 @@ export async function prepareTriageCheckout(
   project: string,
   sha: string,
   mirrorHome = stateDir(),
+  signal?: AbortSignal,
 ): Promise<{
   cwd: string
   settingsPath: string
@@ -52,11 +53,12 @@ export async function prepareTriageCheckout(
     const env = triageCheckoutEnv(process.env, home)
     await git(['clone', '--no-hardlinks', '--dissociate', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd], {
       env,
+      signal,
     })
-    await git(['remote', 'remove', 'origin'], { cwd, env })
-    await git(['config', 'core.hooksPath', '/dev/null'], { cwd, env })
-    await git(['checkout', '--detach', sha], { cwd, env })
-    const actual = await git(['rev-parse', 'HEAD'], { cwd, env })
+    await git(['remote', 'remove', 'origin'], { cwd, env, signal })
+    await git(['config', 'core.hooksPath', '/dev/null'], { cwd, env, signal })
+    await git(['checkout', '--detach', sha], { cwd, env, signal })
+    const actual = await git(['rev-parse', 'HEAD'], { cwd, env, signal })
     if (actual !== sha) throw new Error(`triage checkout resolved ${actual}, expected ${sha}`)
     const settingsPath = join(root, 'settings.json')
     await writeFile(settingsPath, '{}\n', { mode: 0o600 })
