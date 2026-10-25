@@ -234,7 +234,7 @@ export async function continueConflictCard(input: {
     revalidatePath(`/task/${result.ticketId}`)
     revalidatePath('/')
     if (!result.ok) return { ok: false, detail: `${result.reason}: ${result.detail}` }
-    if (result.unscheduled)
+    if (result.unscheduled !== undefined)
       return {
         ok: false,
         detail: `confirmed — but the continuation was not scheduled (${result.unscheduled}); ask for the continuation again`,
