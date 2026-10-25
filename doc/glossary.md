@@ -28,4 +28,4 @@ disagree, the code is right and this is corrected.
   [0118](decisions/0118-a-hold-explains-itself.md) §1; the granted round is
   [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
   0120 §5.
-- [The pass](/doc/the-pass.html) shows where each of these arrives from.
+- [The pass](the-pass.html) shows where each of these arrives from.
