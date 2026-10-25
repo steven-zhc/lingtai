@@ -762,9 +762,16 @@ export function Discussion({
                               </div>
                             </div>
                           ) : null}
-                          {target?.target != null && !t.answer.proposal && t.answer.text ? (
+                          {/* A concluded discussion has no proposal block, and its answer
+                      is still the person's to add. */}
+                          {target?.target != null &&
+                          (t.answer.proposal ? d.held !== null : true) &&
+                          (t.answer.proposal?.text || t.answer.text) ? (
                             <div className="btnrow">
-                              <button className="btn" onClick={() => target.add(t.answer?.text ?? '')}>
+                              <button
+                                className="btn"
+                                onClick={() => target.add(t.answer?.proposal?.text || t.answer?.text || '')}
+                              >
                                 Add to this resolution
                               </button>
                             </div>

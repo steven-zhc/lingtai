@@ -11,12 +11,15 @@ import { Discussion } from '../src/app/discussion.tsx'
 import { TriagePicks } from '../src/app/triage-picks.tsx'
 import type { DiscussionView } from '../src/lib/task.ts'
 
-const turn = (proposal: { kind: 'prompt' | 'ticket'; text: string } | null): DiscussionView => ({
+const turn = (
+  proposal: { kind: 'prompt' | 'ticket'; text: string } | null,
+  held: DiscussionView['held'] = null,
+): DiscussionView => ({
   chatId: 'chat-1',
   attempt: 2,
   waiting: false,
   costUsd: null,
-  held: null,
+  held,
   turns: [
     {
       question: 'why?',
@@ -48,6 +51,12 @@ describe('add to this resolution', () => {
 
   it('offers it on an answer that proposed nothing', () => {
     expect(render(turn(null), 'EditBodyAndRequeue')).toContain('Add to this resolution')
+  })
+
+  it('still offers it on a proposal after the discussion is concluded for the next run', () => {
+    const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }, 'prompt'), 'EditBodyAndRequeue')
+    expect(html).toContain('Add to this resolution')
+    expect(html).not.toContain('Add to the ticket')
   })
 
   it.each([null, 'Close', 'Approve'])('keeps both buttons when the first resolution is %s', (tag) => {
