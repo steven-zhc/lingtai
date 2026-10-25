@@ -2202,3 +2202,33 @@ describe('the subject, at the top', () => {
     expect(html).not.toContain('data-rank="subject"')
   })
 })
+
+it('draws a split plan as cards in waves, and nothing where triage proposed none', () => {
+  const view = (split?: object): StandingView => ({
+    ...HELD,
+    triageStatus: {
+      _tag: 'Done',
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'TicketTooBig', ...(split ? { split } : {}) },
+        resolution: split ? 'Split' : 'Close',
+        summary: 'triage advice',
+        want: null,
+      } as never,
+    },
+  })
+  const plan = {
+    children: [
+      { key: 'first', title: 'Lay the groundwork', body: 'b', kind: 'feature' },
+      { key: 'second', title: 'Build on it', body: 'b', kind: 'feature' },
+    ],
+    blockedBy: [{ ticket: 'second', blockedBy: 'first' }],
+  }
+  const drawn = render(view(plan), OUTGOING)
+  expect(drawn).toContain('Lay the groundwork')
+  expect(drawn).toContain('Build on it')
+  expect(drawn).toContain('wave 2')
+  const bare = render(view(), OUTGOING)
+  expect(bare).not.toContain('Lay the groundwork')
+  expect(bare).not.toContain('wave 2')
+})
