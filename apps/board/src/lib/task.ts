@@ -11,6 +11,7 @@ import {
   reduceControl,
   CONTROL_STREAM,
   parseTicketStream,
+  splitProgressOf,
   triageFactsOf,
   waitWords,
   WAIT_EVENTS,
@@ -400,6 +401,8 @@ export interface StandingView {
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
   triageStatus: TriageStatus | null
+  /** A split's latest read-back on the current wait (#561): what exists and what is still owed. Null when none was started. */
+  split?: { children: string[]; owed: string[]; complete: boolean; failure: string | null } | null
   /** A comparison with the local mirror, only for a completed current triage. */
   triageHeadLine?: string | null
   /**
@@ -734,6 +737,25 @@ function whoWaits(life: TicketLifecycle): string {
   }
 }
 
+/** The current wait's split progress, worded for the page; nothing says complete unless `owed.complete`. */
+function splitView(own: readonly Envelope[], waitId: WaitId | null): StandingView['split'] {
+  const progress = waitId === null ? null : splitProgressOf(own, waitId)
+  if (progress === null) return null
+  const { owed, identities } = progress
+  return {
+    children: identities.map((c) => `#${c.number} (${c.key})`),
+    owed: [
+      ...owed.children.map((k) => `child ${k}`),
+      ...owed.unverified.map((c) => `unverified child #${c.number} (${c.key})`),
+      ...owed.subIssues.map((k) => `sub-issue ${k}`),
+      ...owed.blockedBy.map((d) => `${d.ticket} blocked by ${d.blockedBy}`),
+      ...owed.strays.map((s) => `close #${s.number}, a duplicate of ${s.key}`),
+    ],
+    complete: progress.reconciled && owed.complete && progress.failure === null,
+    failure: progress.failure,
+  }
+}
+
 /**
  * The state, since when, and which attempt produced it. See `StandingView`.
  *
@@ -851,6 +873,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
           }
         : null,
     triageStatus: null,
+    split: splitView(own, life.status === 'blocked' ? life.waitId : null),
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),

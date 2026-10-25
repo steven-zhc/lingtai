@@ -77,6 +77,7 @@ let recipe: Recipe
 let store: EventStore
 
 const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?: (string | Label)[] }): Issue => ({
+  id: (over.number * 1000 + 7) as Issue['id'],
   title: `issue ${over.number}`,
   body: '',
   state: 'open',
@@ -122,6 +123,14 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
     // Reading the refs is a read; deleting one is a write, and the wizard has
     // no business doing either.
     matchingRefs: async () => [],
+    subIssues: async () => [],
+    addSubIssue: async () => {
+      throw new Error('no writes in this test')
+    },
+    blockedBy: async () => [],
+    addBlockedBy: async () => {
+      throw new Error('no writes in this test')
+    },
     deleteRef: async () => {
       throw new Error('the wizard wrote to GitHub: deleteRef')
     },

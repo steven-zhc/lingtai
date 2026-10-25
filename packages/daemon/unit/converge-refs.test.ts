@@ -60,6 +60,7 @@ function fakeGitHub(refs: readonly string[], opts: { refuseFrom?: string } = {})
   const github = {
     getIssue: async (n: number) => ({
       number: n,
+      id: (n * 1000 + 7) as never,
       title: 'a ticket',
       body: '',
       labels: [],

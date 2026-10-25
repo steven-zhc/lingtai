@@ -749,6 +749,21 @@ export function Standing({
             <p>Result: {standing.afterMove.reason}</p>
           </section>
         ) : null}
+        {standing.split ? (
+          <section
+            className={`saftermove saftermove--${standing.split.complete ? 'partial' : 'failed'}`}
+            aria-label="Split progress"
+            data-rank="after-move"
+          >
+            <h2>Split progress</h2>
+            <p>
+              {standing.split.complete ? 'Every child and link is confirmed on GitHub.' : 'The split is not complete.'}
+            </p>
+            <p>Children: {standing.split.children.join(', ') || 'none recorded yet'}</p>
+            {standing.split.owed.length > 0 ? <p>Still owed: {standing.split.owed.join(', ')}</p> : null}
+            {standing.split.failure ? <p>Last failure: {standing.split.failure}</p> : null}
+          </section>
+        ) : null}
         {standing.bodyOutcome ? (
           <section
             className={`saftermove saftermove--${standing.bodyOutcome.result === 'failed' ? 'failed' : 'partial'}`}

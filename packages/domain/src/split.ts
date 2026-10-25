@@ -178,3 +178,100 @@ export const SplitProposal = z
   })
   .superRefine(refuseProblems)
 export type SplitProposal = z.infer<typeof SplitProposal>
+
+// ------------------------------------------------------------ reconciling ----
+
+/**
+ * A child's identity (#561): its plan key, issue number and GitHub's internal
+ * id — never one for the other. **Once a `SplitReconciled` has recorded it, it
+ * is the child**, whatever its body says; the marker in the body is only a hint
+ * for a key the log has nothing for. `via` says how this attempt learned it:
+ * `created` is a `createIssue` that returned, `adopted` a marker match.
+ */
+export const SplitIdentity = z.strictObject({
+  key: z.string(),
+  number: z.number().int(),
+  id: z.number().int(),
+  via: z.enum(['created', 'adopted']),
+})
+export type SplitIdentity = z.infer<typeof SplitIdentity>
+
+/**
+ * What one attempt's read-back actually returned (#561) — never what a write
+ * was told. A write that returned 2xx, or threw, is not in here until a GET
+ * has seen it. Per attempt, unlike an identity, which is sticky.
+ */
+export const SplitObserved = z.strictObject({
+  /** Keys of the recorded children a GET returned with the recorded id. */
+  children: z.array(z.string()),
+  /** Keys of the children found under the parent as sub-issues. */
+  subIssues: z.array(z.string()),
+  /** Edges found on the dependent child. */
+  blockedBy: z.array(Dependency),
+})
+export type SplitObserved = z.infer<typeof SplitObserved>
+
+/**
+ * An open issue carrying this plan's marker for a key, that is not that key's
+ * child (#561). Lingtai never closes or unlinks one: it is named, it keeps the
+ * split incomplete, and a person closes it.
+ */
+export const SplitStray = z.strictObject({ key: z.string(), number: z.number().int() })
+export type SplitStray = z.infer<typeof SplitStray>
+
+export const NOTHING_OBSERVED: SplitObserved = { children: [], subIssues: [], blockedBy: [] }
+
+export interface SplitOwed {
+  /** Keys with no identity at all: not created, and not found. */
+  readonly children: readonly string[]
+  /** Children with an identity the last read-back could not confirm. Never created again. */
+  readonly unverified: readonly { readonly key: string; readonly number: number }[]
+  /** Keys of the children not yet seen as sub-issues of the parent. */
+  readonly subIssues: readonly string[]
+  /** Edges not yet seen on the dependent child. */
+  readonly blockedBy: readonly Dependency[]
+  /** Duplicates of a key's child, still open. A person closes them. */
+  readonly strays: readonly SplitStray[]
+  /** True only when every part above is empty. */
+  readonly complete: boolean
+}
+
+/** What `plan` still owes, given the identities on the log and what was observed. Derived, never stored. */
+export function splitOwed(
+  plan: SplitPlanShape,
+  identities: readonly SplitIdentity[],
+  observed: SplitObserved,
+  strays: readonly SplitStray[],
+): SplitOwed {
+  const identified = new Map(identities.map((i) => [i.key, i]))
+  const verified = new Set(observed.children)
+  const attached = new Set(observed.subIssues)
+  const edges = new Set(observed.blockedBy.map((d) => JSON.stringify([d.ticket, d.blockedBy])))
+  const children = plan.children.filter((c) => !identified.has(c.key)).map((c) => c.key)
+  const unverified = plan.children.flatMap((c) => {
+    const at = identified.get(c.key)
+    return at === undefined || verified.has(c.key) ? [] : [{ key: c.key, number: at.number }]
+  })
+  const subIssues = plan.children.filter((c) => !attached.has(c.key)).map((c) => c.key)
+  const blockedBy = plan.blockedBy.filter((d) => !edges.has(JSON.stringify([d.ticket, d.blockedBy])))
+  return {
+    children,
+    unverified,
+    subIssues,
+    blockedBy,
+    strays,
+    complete: children.length + unverified.length + subIssues.length + blockedBy.length + strays.length === 0,
+  }
+}
+
+/** Two plans are the same when keys, titles, bodies, kinds and edges all are. */
+export function sameSplitPlan(a: SplitPlanShape, b: SplitPlanShape): boolean {
+  return JSON.stringify(canonicalPlan(a)) === JSON.stringify(canonicalPlan(b))
+}
+
+function canonicalPlan(plan: SplitPlanShape): unknown {
+  return {
+    children: plan.children.map((c) => [c.key, c.title, c.body, c.kind]),
+    blockedBy: plan.blockedBy.map((d) => [d.ticket, d.blockedBy]),
+  }
+}

@@ -115,10 +115,10 @@ describe('resolveWaitHolding, Split (#560)', () => {
     expect((await store.read(ticketId)).length).toBe(before)
   })
 
-  it('refuses a sound plan as not built: the wait stays current and nothing is recorded', async () => {
+  it('refuses a sound plan by name when the project has no GitHub links: the wait stays current and nothing is recorded', async () => {
     const { store, ticketId, waitId, split } = await blockedOnFirstWait()
     const before = (await store.read(ticketId)).length
-    expect(await split(sound, ['feature'])).toMatchObject({ ok: false, reason: 'split-not-built' })
+    expect(await split(sound, ['feature'])).toMatchObject({ ok: false, reason: 'split-unsupported' })
     expect((await store.read(ticketId)).length).toBe(before)
     const lifecycle = reduceTicket(await store.read(ticketId)).lifecycle
     expect(lifecycle).toMatchObject({ status: 'blocked', waitId })

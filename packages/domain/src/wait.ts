@@ -40,7 +40,19 @@ import {
 } from './triage.ts'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
-export { describeSplitProblem, splitPlanProblems, SplitPlan, type SplitProblem } from './split.ts'
+export {
+  describeSplitProblem,
+  NOTHING_OBSERVED,
+  sameSplitPlan,
+  SplitIdentity,
+  SplitObserved,
+  SplitStray,
+  splitOwed,
+  splitPlanProblems,
+  SplitPlan,
+  type SplitOwed,
+  type SplitProblem,
+} from './split.ts'
 
 /**
  * Where a refused push's commits are now (#421). `Mirror` is

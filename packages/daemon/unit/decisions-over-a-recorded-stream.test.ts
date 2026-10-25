@@ -122,6 +122,7 @@ function fakeClient(labelsByIssue: ReadonlyMap<number, readonly string[]>, calls
       calls.push(n)
       return {
         number: n,
+        id: (n * 1000 + 7) as never,
         title: 'a ticket',
         body: '',
         labels: (labelsByIssue.get(n) ?? []).map((name) => ({ name, color: '000000' })),

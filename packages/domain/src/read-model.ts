@@ -17,6 +17,15 @@ import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
+import {
+  NOTHING_OBSERVED,
+  type SplitIdentity,
+  type SplitObserved,
+  type SplitOwed,
+  type SplitPlan,
+  type SplitStray,
+  splitOwed,
+} from './split.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import { waitWords } from './wait-words.ts'
@@ -128,6 +137,78 @@ export function triageFactsOf(events: readonly Envelope[], waitId: WaitId): Tria
             (e.data as PayloadOf<'WaitTriaged'>).attempt === started.attempt,
         )
   return { started, result: triaged === undefined ? null : (triaged.data as PayloadOf<'WaitTriaged'>).result }
+}
+
+// ------------------------------------------------------- splitProgressOf ----
+
+/**
+ * The children a wait's split has an identity for (#561): every `SplitReconciled`
+ * for `waitId` after its latest `SplitStarted`, the first `{number, id}` ever
+ * recorded for a key winning and never dropped. A later attempt whose read-back
+ * failed, or that could not find the child, erases nothing — **the identity is
+ * the one the log recorded, not what a search for a marker finds today.**
+ */
+export function splitIdentitiesOf(events: readonly Envelope[], waitId: WaitId): SplitIdentity[] {
+  const identities = new Map<string, SplitIdentity>()
+  for (const e of events) {
+    if (e.type === 'SplitStarted' && (e.data as PayloadOf<'SplitStarted'>).waitId === waitId) identities.clear()
+    else if (e.type === 'SplitReconciled' && (e.data as PayloadOf<'SplitReconciled'>).waitId === waitId)
+      for (const child of (e.data as PayloadOf<'SplitReconciled'>).children)
+        if (!identities.has(child.key)) identities.set(child.key, child)
+  }
+  return [...identities.values()]
+}
+
+/** A split's progress on one wait (#561): the plan fixed at its first start, the identities, the latest read-back, and what is owed. */
+export interface SplitProgress {
+  readonly plan: SplitPlan
+  readonly by: string
+  readonly identities: readonly SplitIdentity[]
+  readonly observed: SplitObserved
+  readonly strays: readonly SplitStray[]
+  readonly failure: string | null
+  /** False until a `SplitReconciled` has landed after the latest start. */
+  readonly reconciled: boolean
+  readonly owed: SplitOwed
+}
+
+/**
+ * The latest `SplitStarted` for `waitId`, its identities, the latest
+ * `SplitReconciled` after it, and what the plan still owes of what that
+ * read-back saw. Null when no split was started on the wait. Nothing observed
+ * means everything is owed.
+ */
+export function splitProgressOf(events: readonly Envelope[], waitId: WaitId): SplitProgress | null {
+  let started: Envelope | null = null
+  let reconciled: Envelope | null = null
+  for (const e of events) {
+    if (e.type === 'SplitStarted' && (e.data as PayloadOf<'SplitStarted'>).waitId === waitId) {
+      started = e
+      reconciled = null
+    } else if (
+      started !== null &&
+      e.type === 'SplitReconciled' &&
+      (e.data as PayloadOf<'SplitReconciled'>).waitId === waitId
+    ) {
+      reconciled = e
+    }
+  }
+  if (started === null) return null
+  const { plan, by } = started.data as PayloadOf<'SplitStarted'>
+  const read = reconciled === null ? null : (reconciled.data as PayloadOf<'SplitReconciled'>)
+  const observed = read?.observed ?? NOTHING_OBSERVED
+  const strays = read?.strays ?? []
+  const identities = splitIdentitiesOf(events, waitId)
+  return {
+    plan,
+    by,
+    identities,
+    observed,
+    strays,
+    failure: read?.failure ?? null,
+    reconciled: read !== null,
+    owed: splitOwed(plan, identities, observed, strays),
+  }
 }
 
 // --------------------------------------------------------- releaseCauseOf ----
