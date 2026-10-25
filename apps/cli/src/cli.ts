@@ -46,11 +46,18 @@ function consoleFor(base: Console.Console, json: boolean, errors: string[]): Con
   }
 }
 
+/** `--json`, or `--json=true` and the other spellings of true `@effect/cli` accepts for a boolean. */
+function jsonOn(arg: string): boolean {
+  if (arg === '--json') return true
+  if (!arg.startsWith('--json=')) return false
+  return ['true', 'yes', 'y', 'on', '1'].includes(arg.slice('--json='.length).toLowerCase())
+}
+
 /** `argv` is the full `process.argv` shape; resolves to the exit code. */
 export async function runCli(argv: readonly string[]): Promise<number> {
   const args = argv.slice(2)
   if (args.includes('--no-color')) applyNoColor()
-  const json = args.includes('--json')
+  const json = args.some(jsonOn)
   const errors: string[] = []
   const code = await Effect.runPromise(
     Effect.flatMap(Effect.console, (base) => run(argv).pipe(Effect.withConsole(consoleFor(base, json, errors)))).pipe(

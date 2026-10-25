@@ -31,8 +31,10 @@ function isWide(code: number): boolean {
     (code >= 0xfe30 && code <= 0xfe6f) ||
     (code >= 0xff00 && code <= 0xff60) ||
     (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x1f1e6 && code <= 0x1f1ff) ||
     (code >= 0x1f300 && code <= 0x1f64f) ||
-    (code >= 0x1f900 && code <= 0x1f9ff) ||
+    (code >= 0x1f680 && code <= 0x1f6ff) ||
+    (code >= 0x1f900 && code <= 0x1faff) ||
     (code >= 0x20000 && code <= 0x3fffd)
   )
 }

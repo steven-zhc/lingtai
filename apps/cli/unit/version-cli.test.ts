@@ -38,6 +38,13 @@ describe('lingtai version', () => {
     expect(r.out.trim().split('\n')).toHaveLength(1)
   })
 
+  it('answers a usage error under --json=true with the one error document', async () => {
+    const r = await capture(['version', '--json=true', '--bogus'])
+    expect(r.code).toBe(1)
+    expect(r.err).toBe('')
+    expect(JSON.parse(r.out)).toMatchObject({ command: 'version', error: { code: 'usage' } })
+  })
+
   it('prints help without escapes under --no-color', async () => {
     const saved = process.env['NO_COLOR']
     try {

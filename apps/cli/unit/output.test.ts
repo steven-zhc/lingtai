@@ -83,6 +83,9 @@ describe('layout', () => {
     expect(width('中')).toBe(2)
     expect(width('ab')).toBe(2)
     expect(width('e\u0301')).toBe(1)
+    expect(width('🚀')).toBe(2)
+    expect(width('🫠')).toBe(2)
+    expect(width('🇯🇵')).toBe(2)
     expect(
       table(
         ['a', 'b'],
