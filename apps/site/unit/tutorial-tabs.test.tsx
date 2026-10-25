@@ -7,16 +7,10 @@ import { Document } from '../src/app/docs/document'
 
 describe('tutorial shell examples', () => {
   it('offers one selectable group on the site while preserving each command', () => {
-    const body = `**Bash**
+    const body = `**POSIX shell (bash, zsh)**
 
-\`\`\`bash
-echo bash
-\`\`\`
-
-**Zsh**
-
-\`\`\`zsh
-echo zsh
+\`\`\`sh
+echo posix
 \`\`\`
 
 **Fish**
@@ -27,14 +21,12 @@ echo fish
     const html = renderToStaticMarkup(<Document slug="tutorial" source="tutorial.md" body={body} published={[]} />)
 
     expect(html).toContain('type="radio"')
-    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="bash"/)
-    expect(html).toContain('value="zsh"')
+    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="posix"/)
     expect(html).toContain('value="fish"')
     const text = html.replace(/<[^>]*>/g, '')
-    expect(text).toContain('echo bash')
-    expect(text).toContain('echo zsh')
+    expect(text).toContain('echo posix')
     expect(text).toContain('echo fish')
-    expect(html).not.toContain('<p><strong>Bash</strong></p>')
+    expect(html).not.toContain('<p><strong>POSIX shell (bash, zsh)</strong></p>')
   })
 
   it('groups both shell examples in the published tutorial', () => {

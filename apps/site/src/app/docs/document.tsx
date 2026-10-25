@@ -32,7 +32,10 @@ const SANITIZE = {
   },
 }
 
-const SHELLS = ['bash', 'zsh', 'fish'] as const
+const SHELLS = [
+  { label: 'posix shell (bash, zsh)', lang: 'sh' },
+  { label: 'fish', lang: 'fish' },
+] as const
 type MarkdownNode = {
   type: string
   children?: MarkdownNode[]
@@ -66,13 +69,13 @@ function remarkTutorialDetails() {
   }
 }
 
-/** Group the tutorial's three labelled code fences for the site only. The
+/** Group the tutorial's two labelled code fences for the site only. The
  * Markdown source keeps every variant visible when read on GitHub. */
 function remarkShellTabs() {
   return (tree: { children: MarkdownNode[] }) => {
-    for (let i = 0; i <= tree.children.length - 6; i++) {
-      const group = tree.children.slice(i, i + 6)
-      const matches = SHELLS.every((shell, index) => {
+    for (let i = 0; i <= tree.children.length - 4; i++) {
+      const group = tree.children.slice(i, i + 4)
+      const matches = SHELLS.every(({ label: text, lang }, index) => {
         const label = group[index * 2]
         const code = group[index * 2 + 1]
         return (
@@ -81,16 +84,16 @@ function remarkShellTabs() {
           label.children[0]?.type === 'strong' &&
           label.children[0].children?.length === 1 &&
           label.children[0].children[0]?.type === 'text' &&
-          label.children[0].children[0].value?.toLowerCase() === shell &&
+          label.children[0].children[0].value?.toLowerCase() === text &&
           code?.type === 'code' &&
-          code.lang === shell
+          code.lang === lang
         )
       })
       if (!matches) continue
-      tree.children.splice(i, 6, {
+      tree.children.splice(i, 4, {
         type: 'shellTabs',
         data: { hName: 'div', hProperties: { className: ['shell-tabs'] } },
-        children: [group[1]!, group[3]!, group[5]!],
+        children: [group[1]!, group[3]!],
       })
     }
   }

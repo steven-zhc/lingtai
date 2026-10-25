@@ -47,12 +47,12 @@
 <text class="code heading" x="43" y="300">prepared:</text>
 <text class="code" x="58" y="324">- run: npm ci</text>
 <text class="code heading" x="43" y="348">implement:</text>
-<text class="code" x="58" y="372">- agent: codex</text>
+<text class="code" x="58" y="372">- agent: claude-code</text>
 <text class="code heading" x="43" y="396">build:</text>
 <text class="code" x="58" y="420">- run: npm run check</text>
 <text class="code" x="58" y="444">- run: npm run build</text>
 <text class="code heading" x="43" y="468">review:</text>
-<text class="code" x="58" y="492">- agent: codex</text>
+<text class="code" x="58" y="492">- agent: claude-code</text>
 <text class="code heading" x="43" y="516">proposed:</text>
 <text class="code" x="58" y="540">- human: Land this? …</text>
 <rect class="card" x="510" y="112" width="270" height="37" rx="5"/>
@@ -74,7 +74,7 @@
 <rect class="card" x="510" y="292" width="270" height="37" rx="5"/>
 <text class="num" x="521" y="307">05</text>
 <text class="card-title" x="550" y="308">implement</text>
-<text class="card-note" x="550" y="322">Codex writes</text>
+<text class="card-note" x="550" y="322">Claude Code writes</text>
 <rect class="card" x="510" y="337" width="270" height="37" rx="5"/>
 <text class="num" x="521" y="352">06</text>
 <text class="card-title" x="550" y="353">build</text>
@@ -82,7 +82,7 @@
 <rect class="card" x="510" y="382" width="270" height="37" rx="5"/>
 <text class="num" x="521" y="397">07</text>
 <text class="card-title" x="550" y="398">review</text>
-<text class="card-note" x="550" y="412">Codex reviews</text>
+<text class="card-note" x="550" y="412">Claude Code reviews</text>
 <rect class="card hold" x="510" y="427" width="270" height="37" rx="5"/>
 <text class="num" x="521" y="442">08</text>
 <text class="card-title" x="550" y="443">proposed</text>

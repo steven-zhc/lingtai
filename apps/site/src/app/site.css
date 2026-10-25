@@ -479,8 +479,7 @@ p { max-width: var(--measure); }
   position: absolute; opacity: 0; width: 1px; height: 1px;
 }
 .tutorial-prose .shell-panel { display: none; }
-.tutorial-prose .shell-tabs:has(input[value="bash"]:checked) > .shell-panel[data-shell="bash"],
-.tutorial-prose .shell-tabs:has(input[value="zsh"]:checked) > .shell-panel[data-shell="zsh"],
+.tutorial-prose .shell-tabs:has(input[value="posix"]:checked) > .shell-panel[data-shell="posix"],
 .tutorial-prose .shell-tabs:has(input[value="fish"]:checked) > .shell-panel[data-shell="fish"] { display: block; }
 .tutorial-prose .shell-tabs pre { margin: 0; border-top: 0; border-radius: 0 0 3px 3px; }
 .tutorial-prose ul, .tutorial-prose ol { padding-left: 24px; }
