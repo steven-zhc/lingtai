@@ -162,7 +162,9 @@ EN = dict(
        "worktree, a merge. Swap it and the step does something else.",
        "each entry under a step"),
       ("refuse", "A step's verdict that <i>this change is not right</i>. It "
-       "costs: it sends the work back to the agent and spends one round.",
+       "costs: it sends the work back to the agent and spends one round — "
+       "except a base that moved under it and merges in cleanly, which the "
+       "system merges in itself (section 4).",
        "the card says which step refused, and why"),
       ("did not finish", "The step stopped without judging, and there is nothing "
        "to answer — a reviewer crashed, a turn budget went. <b>Not a refusal, and "
@@ -219,6 +221,13 @@ EN = dict(
     s4p2="<b>Nothing here bounds what you are asked.</b> A step that did not "
          "finish — an agent that stopped to ask, a reviewer that crashed — buys "
          "no round, because it passed no judgement on your change.",
+    s4p2b="<b>A base that moved on your branch's files buys no round "
+          "either — if it merges in cleanly.</b> Lingtai merges it in itself and runs <code>build</code> "
+          "and <code>review</code> again, with the base's new changes in front "
+          "of the reviewer — at most twice a pass, then it waits for you. A base "
+          "that changed the same lines incompatibly is a conflict instead, and "
+          "is answered as one. A base that moved anywhere else lands after "
+          "<code>merge</code>'s verify.",
     s4p3="A person's extra fix-round grant pays for <b>one more</b> agent run on "
          "saved work. It does not raise the recipe's <code>rounds</code> limit; "
          "another round needs another decision. That run still has its own "
@@ -284,6 +293,7 @@ EN = dict(
     f1_fan2="refused, did not finish, or asked — carrying its reason",
     f1_ret1="and proposed answers",
     f1_ret_build="a conflict",
+    f1_ret_build2="a moved base",
     f1_ret_impl="× rounds",
     f1_ret_claim="× restarts",
     f1_wait="waiting on you",
@@ -336,7 +346,8 @@ ZH = dict(
       ("plugin 插件", "在某一步上跑的那个东西 —— 一条命令、一个 agent、一棵工作树、"
        "一次合并。换掉它，这一步就做别的事。", "某一步下面的每一条"),
       ("refuse 拒绝", "某一步给出的裁决：<i>这次改动不对</i>。它要花钱："
-       "把活打回 agent，并花掉一轮。", "卡片上会写是哪一步拒的、为什么"),
+       "把活打回 agent，并花掉一轮 —— 但能干净并入的 base 变动例外，"
+       "系统会自己把它并入（见第 4 节）。", "卡片上会写是哪一步拒的、为什么"),
       ("did not finish 没跑完", "这一步停了，没有做出裁决，而且没有什么可回答的 —— "
        "reviewer 崩了、轮次预算用完了。<b>这不是拒绝，它不买任何一轮。</b>"
        "这一趟就停在这里。",
@@ -383,6 +394,11 @@ ZH = dict(
     s4p2="<b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— "
          "agent 停下来问、reviewer 崩了 —— 不买任何一轮，"
          "因为它对你的改动没有做出任何裁决。",
+    s4p2b="<b>base 在你分支改过的文件上有了变动，同样不买任何一轮 —— 只要能干净并入。</b>"
+          "Lingtai 自己把它并进来，再跑一遍 <code>build</code> 和 "
+          "<code>review</code>，并把 base 带来的新改动摆在 reviewer 面前 —— "
+          "每趟 pass 最多两次，之后停下来等你。base 改了相同的行而无法兼容时，则是冲突，按冲突处理。base 只在别处有变动时，"
+          "则在 <code>merge</code> 的 verify 之后落地。",
     s4p3="人额外批准的一轮修复，是在保存的改动上再付费运行 <b>一次</b> agent。"
          "这不会提高 recipe 的 <code>rounds</code> 上限；再来一轮还须再决定。"
          "这次运行仍受自己的 <code>turns</code>、<code>wall</code> 以及已声明的"
@@ -436,6 +452,7 @@ ZH = dict(
     f1_fan2="被拒绝、没跑完，或者问了 —— 带着它的 reason",
     f1_ret1="然后由 proposed 作答",
     f1_ret_build="解掉的冲突",
+    f1_ret_build2="并进的 base",
     f1_ret_impl="× rounds",
     f1_ret_claim="× restarts",
     f1_wait="waiting on you",
@@ -523,6 +540,8 @@ def figure_one(T):
                           ("claim", 34, "f1_ret_claim")):
         a(txt(RET + 8, _y(idx[name]) + dy - 5, T[key], size=10.5, anchor="start",
               op=".62"))
+    a(txt(RET + 8, _y(idx["build"]) + 14 - 5 + 12, T["f1_ret_build2"], size=10.5,
+          anchor="start", op=".62"))
 
     # waiting on you — brass is only ever a person
     wy = _y(po) + BH + 16
@@ -637,6 +656,7 @@ def page(T, other):
     <p class="lede">{T['s4l']}</p>
     <p>{T['s4p']}</p>
     <p>{T['s4p2']}</p>
+    <p>{T['s4p2b']}</p>
     <p>{T['s4p3']}</p>
   </section>
 
