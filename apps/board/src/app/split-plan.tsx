@@ -23,10 +23,14 @@ const CARD_W = 236
 const CARD_H = 66
 const NODE_SEP = 16
 const RANK_SEP = 64
-const MARGIN = 8
+/** Room above the cards for the wave headings, and at the sides for the bands' padding. */
+const MARGIN_X = 20
+const MARGIN_Y = 48
 type SplitProposal = NonNullable<Extract<RootCause, { _tag: 'TicketTooBig' }>['split']>
 
 const PARENT = 'parent'
+/** Child nodes are prefixed so no child key can collide with the parent or a band. */
+const nodeId = (key: string) => `c:${key}`
 const FAR_LANE = 20
 
 interface CardData extends Record<string, unknown> {
@@ -89,17 +93,18 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
 
   const { nodes, edges, width, height } = useMemo(() => {
     const g = new Graph()
-    g.setGraph({ rankdir: 'LR', nodesep: NODE_SEP, ranksep: RANK_SEP, marginx: MARGIN, marginy: MARGIN })
+    g.setGraph({ rankdir: 'LR', nodesep: NODE_SEP, ranksep: RANK_SEP, marginx: MARGIN_X, marginy: MARGIN_Y })
     g.setDefaultEdgeLabel(() => ({}))
     g.setNode(PARENT, { width: CARD_W, height: CARD_H })
-    for (const child of children) g.setNode(child.key, { width: CARD_W, height: CARD_H })
+    for (const child of children) g.setNode(nodeId(child.key), { width: CARD_W, height: CARD_H })
     const real = links.filter((link) => wave.has(link.ticket) && wave.has(link.blockedBy))
-    for (const link of real) g.setEdge(link.blockedBy, link.ticket, { minlen: 1, weight: 1 })
+    for (const link of real) g.setEdge(nodeId(link.blockedBy), nodeId(link.ticket), { minlen: 1, weight: 1 })
     // Pin every child to its wave with a heavy, invisible tie from the parent as long as the wave, so an arrow that skips a wave gets a lane of its own.
-    for (const child of children) g.setEdge(PARENT, child.key, { minlen: wave.get(child.key) ?? 1, weight: FAR_LANE })
+    for (const child of children)
+      g.setEdge(PARENT, nodeId(child.key), { minlen: wave.get(child.key) ?? 1, weight: FAR_LANE })
     layout(g)
 
-    const near = new Set<string>(selected === null ? [] : [selected, PARENT])
+    const near = new Set<string>(selected === null ? [] : [selected])
     for (const link of real) {
       if (link.ticket === selected) near.add(link.blockedBy)
       if (link.blockedBy === selected) near.add(link.ticket)
@@ -107,7 +112,7 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
     const faded = (key: string) => selected !== null && !near.has(key)
 
     const place = (key: string) => {
-      const at = g.node(key)
+      const at = g.node(key === PARENT ? key : nodeId(key))
       return { x: at.x - CARD_W / 2, y: at.y - CARD_H / 2 }
     }
     const cards: Node[] = [
@@ -122,7 +127,7 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
         selectable: false,
       },
       ...children.map((child, index): Node => ({
-        id: child.key,
+        id: nodeId(child.key),
         type: 'card',
         position: place(child.key),
         width: CARD_W,
@@ -166,9 +171,9 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
     const arrows: Edge[] = real.map((link) => {
       const color = selected === null || lit(link) ? '#0b6a70' : '#c3cfd1'
       return {
-        id: `${link.blockedBy}>${link.ticket}`,
-        source: link.blockedBy,
-        target: link.ticket,
+        id: `${nodeId(link.blockedBy)}>${nodeId(link.ticket)}`,
+        source: nodeId(link.blockedBy),
+        target: nodeId(link.ticket),
         type: 'smoothstep',
         zIndex: 1,
         style: { stroke: color, strokeWidth: lit(link) ? 2.2 : 1.6 },
@@ -179,9 +184,9 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
     const starts: Edge[] = children
       .filter((child) => !blocked.has(child.key))
       .map((child) => ({
-        id: `${PARENT}>${child.key}`,
+        id: `${PARENT}>${nodeId(child.key)}`,
         source: PARENT,
-        target: child.key,
+        target: nodeId(child.key),
         type: 'smoothstep',
         zIndex: 1,
         style: { stroke: '#b9d9da', strokeWidth: 1.5, strokeDasharray: '3 5' },
@@ -203,30 +208,34 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
   return (
     <div className="split-plan">
       <div className="split-canvas">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          width={width}
-          height={height}
-          style={{ width, height }}
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          panOnDrag={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          preventScrolling={false}
-          onNodeClick={(_, node) => {
-            if (node.type !== 'card') return
-            setSelected((now) => (now === node.id ? null : node.id))
-          }}
-          onPaneClick={() => setSelected(null)}
-        >
-          <Background gap={18} size={1} color="#d8e0e1" />
-        </ReactFlow>
+        {/* React Flow sizes its own wrapper to 100% of this box, so the box carries the graph's size and the canvas scrolls inside its parent. */}
+        <div style={{ width, height }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={NODE_TYPES}
+            width={width}
+            height={height}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            panOnDrag={false}
+            zoomOnScroll={false}
+            zoomOnPinch={false}
+            zoomOnDoubleClick={false}
+            preventScrolling={false}
+            onNodeClick={(_, node) => {
+              if (node.type === 'band') setSelected(null)
+              if (node.type !== 'card') return
+              const key = node.id.slice('c:'.length)
+              setSelected((now) => (now === key ? null : key))
+            }}
+            onPaneClick={() => setSelected(null)}
+          >
+            <Background gap={18} size={1} color="#d8e0e1" />
+          </ReactFlow>
+        </div>
       </div>
       {current === undefined ? null : (
         <div className="split-panel" role="group" aria-label={`Edit ${current.key}`}>
