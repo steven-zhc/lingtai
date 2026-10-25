@@ -72,7 +72,7 @@ describe('a split parent whose children are all closed', () => {
     expect(bodies.join('\n')).toContain('#161 completed, #162 not planned')
   })
 
-  it('does not announce a close GitHub refused', async () => {
+  it('still says why when GitHub refused the close, so a later reconciled close is not silent', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
@@ -121,6 +121,6 @@ describe('a split parent whose children are all closed', () => {
     // Nothing provisioned or dispatched — the only entry is the pass tidying a path it never cut.
     expect(did.filter((d) => !d.startsWith('remove '))).toEqual([])
     expect(held.map((e) => e.type)).toContain('IssueUpdateFailed')
-    expect(bodies).toEqual([])
+    expect(bodies.join('\n')).toContain('#161 completed, #162 not planned')
   })
 })

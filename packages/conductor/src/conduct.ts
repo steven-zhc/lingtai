@@ -250,7 +250,7 @@ function splitChildrenWords(children: readonly SplitChildState[]): string {
 
 function splitClosedComment(waitId: string, children: readonly SplitChildState[]): string {
   return (
-    `**Lingtai closed this without running an agent.** It was split (${waitId}) and every child the split ` +
+    `**Lingtai is closing this without running an agent.** It was split (${waitId}) and every child the split ` +
     `recorded is closed: ${splitChildrenWords(children)}.\n\n` +
     `A child closed as not planned counts as closed. If work is still wanted, open a new ticket — a closed ticket stays closed.`
   )
@@ -2254,20 +2254,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ticketId,
           )
           if (closed.ok) {
+            // Said before the close, not after it: the comment has no record of
+            // its own to retry from, and a close that fails here is finished later
+            // by reconciliation — which would close the issue without ever
+            // having said why. A failed comment is `IssueUpdateFailed` on the log.
+            await tellGitHub({
+              store,
+              github: options.client,
+              ticketId,
+              change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+            })
             // The recipe's `end` may not close the issue (`end: []`, or a close
             // restricted to `when: landed`); a terminal event with the issue
             // still open would be announced and never finished.
-            const told = await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
-            // Said only once the issue is closed: a failed close is on the log as
-            // `IssueUpdateFailed`, and announcing it would claim what GitHub denies.
-            if (told.recorded === 'IssueUpdated') {
-              await tellGitHub({
-                store,
-                github: options.client,
-                ticketId,
-                change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-              })
-            }
+            await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
           }
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
