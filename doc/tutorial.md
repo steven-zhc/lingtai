@@ -238,25 +238,24 @@ The CLI uses your current tutorial branch and asks for the PR title and descript
 
 ## Part 2 — Move the project to GitHub
 
-Steps 1–4 ran locally. A GitHub repository needs a GitHub App, and
-**the App is yours**: there is no shared Lingtai App. [GitHub](github.md)
-explains why an App rather than a token.
+A GitHub repository needs a GitHub App, and **the App is yours**: there is no
+shared Lingtai App. [GitHub](github.md) says why an App, not a token.
 
-**Part 2 is a second start, not a continuation.** A project with tickets in the
-log keeps them in the database and `add` does not migrate them, so a GitHub
-issue would never be taken. Use a fresh `LINGTAI_HOME` in every terminal:
+**Part 2 is a second start.** Local tickets stay in the database and `add`
+does not migrate them. **Stop Step 3's board first** (ctrl-c): `init` and `add`
+would otherwise find it and create the App in the old home.
+
+In a new terminal, use a fresh `LINGTAI_HOME` and answer `init`'s App question
+with `skip`; `add` creates it below. `init` keeps this home's board running, so
+leave it:
 
 ```sh
 export LINGTAI_HOME="$HOME/.lingtai-github-tutorial"
-lingtai init --store sqlite
+lingtai init --store sqlite --project github --github-app skip
 ```
 
-Use your own fork, `<you>/chapter-garden`: installing an App needs admin on it.
-`add` starts no board, so run one in a second terminal and leave it running:
-
-```sh
-lingtai board
-```
+Use your own fork, `<you>/chapter-garden`; installing an App needs admin on it.
+Use another terminal, with the same `LINGTAI_HOME`, from here on.
 
 ### Create the App
 
@@ -279,9 +278,9 @@ You never choose the permissions; the manifest carries them:
 | `pull_requests` | write | opening and reading pull requests                       |
 | `metadata`      | read  | required by GitHub for any App                          |
 
-GitHub hands a private key over exactly once, so back it up. It is a file at
+GitHub hands over the private key once; back it up. It is a file at
 the path the board names (default `~/.ssh/lingtai-agent.private-key.pem`);
-`~/.lingtai/config.yml` holds that path, the App id and the webhook secret.
+`$LINGTAI_HOME/config.yml` (`~/.lingtai-github-tutorial/config.yml`) holds that path, the App id and the webhook secret.
 
 When the terminal prints `app          <slug>, owned by <owner> — it answered`,
 the same `add` stops with `The App is not installed on <owner>, so it cannot see
@@ -308,5 +307,5 @@ proves the installation by printing
 `permissions: issues, contents, pull requests write; metadata read`; a missing
 permission is listed instead.
 
-A ticket on a GitHub project is a GitHub issue with a kind label, not
-`lingtai ticket new`. Steps 2–4 then apply as written.
+Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
+Steps 2–4 then apply.
