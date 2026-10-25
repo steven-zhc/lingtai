@@ -46,6 +46,7 @@ async function walk(
   answers: readonly ActionResult[],
   mergeBase: PassOptions['mergeBase'],
   buildAnswers: readonly ActionResult[] = [],
+  from?: PassOptions['from'],
 ) {
   const events: PassEvent[] = []
   const reviewSaw: ActionContext[] = []
@@ -93,6 +94,7 @@ async function walk(
     actionsAt,
     ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
     mergeBase,
+    ...(from === undefined ? {} : { from }),
   })
   const started = events.flatMap((e) => (e.type === 'StepStarted' ? [e.data] : []))
   return { result, events, landedOn, rounds, started, reviewSaw }
@@ -136,6 +138,18 @@ describe('a base that moved on the branch’s own files', () => {
     expect(reviewSaw).toHaveLength(2)
     expect('landedOnBase' in reviewSaw[0]!).toBe(false)
     expect(reviewSaw[1]?.landedOnBase).toMatchObject({ fromSha: 'fork0001', toSha: 'base-1' })
+  })
+
+  it('owes a continuation’s first review the section too, the merge having been an earlier pass’s (#594)', async () => {
+    const landedOnBase = { paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha: 'base-1' }
+    const { reviewSaw } = await walk([], async () => ({ head: 'merged-1' }), [], {
+      step: 'build',
+      waive: [],
+      landedOnBase,
+    })
+
+    expect(reviewSaw[0]?.landedOnBase).toEqual(landedOnBase)
+    expect(reviewSaw[0]?.mergedOnto).toBe('base-1')
   })
 
   it('reaches a person on the third arrival, the port having been called exactly twice', async () => {

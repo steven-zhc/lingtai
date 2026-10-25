@@ -38,7 +38,7 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
-import { attemptFactOf, cardFactOf, headOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
+import { attemptFactOf, cardFactOf, headOf, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -267,6 +267,43 @@ export function armFor(
 export function diffBaseShaOf(runEvents: readonly Envelope[]): string | null {
   const admitOutcome = stepOutcomesOf(runEvents).find((o) => o.step === 'admit')
   return admitOutcome === undefined ? null : headOf(admitOutcome)
+}
+
+/**
+ * What a held run's last `base-moved` merge brought in, **while no review has
+ * seen it yet** (#594) — `null` once a review has run after it, or when the
+ * refusal was never merged (a person was reached instead of `merge-base`).
+ *
+ * A continuation is a fresh `runPass`, so the in-memory record of the merge is
+ * gone; the log keeps both halves: the lane's `BaseMoved` outcome (paths and
+ * fork point) and the `MergeBase` route that merged `toSha`.
+ */
+export function landedOnBaseOf(
+  runEvents: readonly Envelope[],
+): { paths: string[]; fromSha: string; toSha: string } | null {
+  const outcomes = stepOutcomesOf(runEvents)
+  const at = outcomes.findLastIndex((o) => o.step === 'merge' && movedIn(o) !== null)
+  if (at < 0) return null
+  if (outcomes.slice(at + 1).some((o) => o.step === 'review')) return null
+  const moved = movedIn(outcomes[at]!)!
+  const route = routesOf(runEvents).findLast((r) => r.next._tag === 'MergeBase')
+  if (route === undefined || route.next._tag !== 'MergeBase' || route.next.toSha !== moved.toSha) return null
+  return moved
+}
+
+function movedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
+  for (const action of outcome.actions) {
+    if (action.yields !== 'merge' || action.result._tag !== 'Completed') continue
+    const { integration } = action.result
+    if (
+      integration._tag === 'BaseMoved' &&
+      integration.paths !== null &&
+      integration.fromSha !== null &&
+      integration.toSha !== null
+    )
+      return { paths: integration.paths, fromSha: integration.fromSha, toSha: integration.toSha }
+  }
+  return null
 }
 
 /**

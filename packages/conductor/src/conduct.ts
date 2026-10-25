@@ -193,7 +193,7 @@ import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
-import { armFor, diffBaseShaOf, priorAttempts } from './attempts.ts'
+import { armFor, diffBaseShaOf, landedOnBaseOf, priorAttempts } from './attempts.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket } from './claim.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
@@ -1039,6 +1039,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * this replaced asserted a field only that dispatch fills.
          */
         diffBaseSha: diffBaseShaOf(runEvents),
+        landedOnBase: landedOnBaseOf(runEvents),
       }
     })
 
@@ -3876,6 +3877,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   step: continuation.step,
                   waive: continuation.waive,
                   roundsSpent: continuation.roundsSpent,
+                  ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                   ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                   ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 },
