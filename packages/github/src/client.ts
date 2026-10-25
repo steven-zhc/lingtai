@@ -40,6 +40,32 @@ export class BodyChanged extends Error {
 }
 
 /**
+ * A sub-issue or dependency call was refused for want of a permission.
+ *
+ * A `GitHubError` still, so an `instanceof GitHubError` check keeps catching it.
+ * Never an empty list: a caller reads *no links* as *nothing attached* and
+ * writes one again.
+ */
+export class PermissionDenied extends GitHubError {
+  readonly permission: string
+  readonly level: 'read' | 'write'
+
+  constructor(denied: GitHubError, permission: string, level: 'read' | 'write') {
+    super(
+      denied.status,
+      denied.path,
+      `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
+        `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
+    )
+    this.permission = permission
+    this.level = level
+  }
+}
+
+/** An issue another issue is linked to, and the repository it lives in (links may cross repositories). */
+export type LinkedIssue = Issue & { repository: string }
+
+/**
  * A label as GitHub holds it: the name a recipe matches on, and the colour the
  * repository's own team chose for it in GitHub's UI.
  *
@@ -266,6 +292,25 @@ export interface GitHubClient {
   createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
 
   /**
+   * Attaches `child` to `parent` as a sub-issue. Both are issue **numbers** in
+   * this repository; the internal id GitHub wants is looked up here.
+   *
+   * Thin on purpose, as `deleteRef` is: a link that already exists is GitHub's
+   * 422 and throws, and a caller that must be idempotent lists first. A child
+   * with a different parent fails too — `replace_parent` is never sent.
+   */
+  addSubIssue(parent: number, child: number): Promise<void>
+
+  /** Every sub-issue of `parent`, across all pages, or a throw — never a short list. */
+  listSubIssues(parent: number): Promise<LinkedIssue[]>
+
+  /** Records that `issue` is blocked by `blocker` (numbers). The same 422 rule as `addSubIssue`. */
+  addBlockedBy(issue: number, blocker: number): Promise<void>
+
+  /** Every issue blocking `issue`, open or closed, across all pages, or a throw. */
+  listBlockedBy(issue: number): Promise<LinkedIssue[]>
+
+  /**
    * The current installation token, refreshed if it is about to expire.
    *
    * Exposed because git needs it and this client is the only thing that has it.
@@ -283,6 +328,9 @@ export interface GitHubClient {
 
 /** How far `listIssuesSince` pages before it refuses to answer rather than answer short. */
 const LIST_SINCE_PAGES = 50
+
+/** How far a sub-issue or blocked-by listing pages before it refuses to answer short. */
+const LINK_PAGES = 20
 
 export interface CreateClientOptions {
   auth: AppAuth
@@ -396,6 +444,53 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     return { blockedBy: open, totalBlockedBy: total }
   }
 
+  /** The internal id of an issue in this repository. A 404 throws: there is no such issue to link. */
+  async function idOf(number: number): Promise<number> {
+    const raw = await request<{ id: number }>('GET', `/repos/${owner}/${repo}/issues/${number}`)
+    return raw.id
+  }
+
+  /**
+   * Runs a link call, turning a 403 that is a missing permission into
+   * `PermissionDenied`. A secondary rate limit is also a 403 and is rethrown
+   * unchanged: calling it a permission would send a person to the wrong page.
+   */
+  async function asLinkCall<T>(_path: string, level: 'read' | 'write', run: () => Promise<T>): Promise<T> {
+    try {
+      return await run()
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 403 && !/rate limit/i.test(err.message)) {
+        throw new PermissionDenied(err, 'issues', level)
+      }
+      throw err
+    }
+  }
+
+  async function listLinked(path: string): Promise<LinkedIssue[]> {
+    return asLinkCall(path, 'read', async () => {
+      const out: LinkedIssue[] = []
+      for (let page = 1; ; page++) {
+        if (page > LINK_PAGES) {
+          throw new Error(
+            `more than ${LINK_PAGES * 100} issues are linked at ${path} — the listing is incomplete, ` +
+              `so it cannot say a link is not there`,
+          )
+        }
+        // A 404 is not an empty list either: it is the issue or the repository.
+        const raw = await request<(Parameters<typeof toIssue>[0] & { repository_url?: string })[]>(
+          'GET',
+          `${path}?per_page=100&page=${page}`,
+        )
+        for (const each of raw) {
+          const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
+          out.push({ ...toIssue(each), repository })
+        }
+        if (raw.length < 100) break
+      }
+      return out
+    })
+  }
+
   function toIssue(raw: {
     number: number
     title: string
@@ -501,6 +596,28 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
           labels: [...input.labels],
         }),
       )
+    },
+
+    async addSubIssue(parent, child) {
+      const path = `/repos/${owner}/${repo}/issues/${parent}/sub_issues`
+      await asLinkCall(path, 'write', async () => {
+        await request<unknown>('POST', path, { sub_issue_id: await idOf(child) })
+      })
+    },
+
+    async listSubIssues(parent) {
+      return listLinked(`/repos/${owner}/${repo}/issues/${parent}/sub_issues`)
+    },
+
+    async addBlockedBy(issue, blocker) {
+      const path = `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`
+      await asLinkCall(path, 'write', async () => {
+        await request<unknown>('POST', path, { issue_id: await idOf(blocker) })
+      })
+    },
+
+    async listBlockedBy(issue) {
+      return listLinked(`/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`)
     },
 
     async listIssuesSince(since) {

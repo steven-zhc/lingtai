@@ -38,5 +38,7 @@ export {
   type GitHubClient,
   type Issue,
   type Label,
+  type LinkedIssue,
+  PermissionDenied,
 } from './client.ts'
 export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'
