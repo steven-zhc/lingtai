@@ -224,6 +224,7 @@ only needed after the contract changes.
 
 ```bash
 pnpm lingtai doctor                   # non-zero exit on any failure
+pnpm lingtai doctor --json | jq '.checks[] | select(.status == "fail")'
 pnpm lingtai projection lag           # how far each projection is behind the log
 ```
 
@@ -356,10 +357,11 @@ pnpm lingtai doctor
 ```
 
 ```
-  ok   github: app credentials
-       app 123456 from ~/.lingtai/config.yml, key from /home/you/.lingtai-app.pem · requires issues:write,
-       contents:write, pull_requests:write, metadata:read (verified per
-       repository by lingtai add)
+GitHub
+  ✓     github: app credentials
+        app 123456 from ~/.lingtai/config.yml, key from /home/you/.lingtai-app.pem · requires issues:write,
+        contents:write, pull_requests:write, metadata:read (verified per
+        repository by lingtai add)
 ```
 
 That check parses the key to prove it is a key rather than a path typo or a
@@ -1376,13 +1378,14 @@ pnpm lingtai doctor
 ```
 
 ```
-  ok   daemon: liveness
-         up, last beat 2s ago
- note   daemon: currency
-         running 8f3a1c2 — 3 commit(s) behind origin/main, which has not taken
-         effect in this process: 2b45637 fix(attempts): a second attempt is told
-         what ended the first; … Unbuilt removes the build, not the restart —
-         restart the daemon to take them
+Daemon
+  note  daemon: currency
+        running 8f3a1c2 — 3 commit(s) behind origin/main, which has not taken
+        effect in this process: 2b45637 fix(attempts): a second attempt is told
+        what ended the first; … Unbuilt removes the build, not the restart —
+        restart the daemon to take them
+  ✓     daemon: liveness
+        up, last beat 2s ago
 ```
 
 The board's bar says the same thing on its health dot. That used to be its own

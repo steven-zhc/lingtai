@@ -118,6 +118,7 @@ import {
 import { git } from '@lingtai/repo'
 import pg from 'pg'
 
+import { heading, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 
@@ -2666,15 +2667,7 @@ export async function runDoctor(
   results.push(await runtimeAuth(reach.runtimes))
   for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
 
-  return {
-    results,
-    ok: results.filter((r) => r.status === 'ok').length,
-    failed: results.filter((r) => r.status === 'fail').length,
-    skipped: results.filter((r) => r.status === 'skip').length,
-    deferred: results.filter((r) => r.status === 'skip' && r.deferred === true).length,
-    notChecked: results.filter((r) => r.status === 'skip' && r.deferred !== true).length,
-    warned: results.filter((r) => r.status === 'warn').length,
-  }
+  return { results, ...tally(results) }
 }
 
 /**
@@ -2721,22 +2714,68 @@ export function doctorEnvironment(from: NodeJS.ProcessEnv = process.env): NodeJS
 }
 
 /**
- * The four markers already carried the semantics; only the rendering was
- * missing (#107). Two failures in thirty lines and nothing drew the eye to
- * either, which is the whole of what a colour fixes here.
+ * The counts of a list of results, in one place: `runDoctor` counts its own, and
+ * `lingtai doctor` counts again once it has appended the release row (which is
+ * asked outside `runDoctor`, so a restart does not make the request).
  *
- * The tag is coloured and the name beside it is not: `--fail` on the marker is
- * what a reader scans down the left edge for, and colouring the sentence too
- * would spend the same attention twice. A `skip` — not implemented yet — is
- * dimmed rather than coloured, because it is not a verdict about this system.
+ * A `skip` that is not `deferred` is `notChecked` — a fact about this machine,
+ * on the half of the summary that says so (#214).
  */
-const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
-  ok: { text: '  ok  ', ink: paint.pass },
-  fail: { text: ' FAIL ', ink: paint.fail },
-  // `note` is amber, and it is the one thing amber is for: a check that passed
-  // but wants a person to look at it is a person being waited on.
-  warn: { text: ' note ', ink: paint.signal },
-  skip: { text: ' skip ', ink: paint.muted },
+export function tally(results: readonly CheckResult[]): Omit<DoctorReport, 'results'> {
+  const count = (keep: (r: CheckResult) => boolean): number => results.filter(keep).length
+  return {
+    ok: count((r) => r.status === 'ok'),
+    failed: count((r) => r.status === 'fail'),
+    skipped: count((r) => r.status === 'skip'),
+    deferred: count((r) => r.status === 'skip' && r.deferred === true),
+    notChecked: count((r) => r.status === 'skip' && r.deferred !== true),
+    warned: count((r) => r.status === 'warn'),
+  }
+}
+
+const NOT_IMPLEMENTED = 'Not implemented here'
+const OTHER = 'Other'
+
+/**
+ * Which section a check is in, by the text before the first `": "` of its name
+ * — every check already says which area it is about, so none carries a second
+ * field that could disagree. A name with no colon is matched whole. The order
+ * here is the order the sections are drawn in, within a tier (see `renderDoctor`).
+ */
+const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
+  ['Machine', ['node', 'packages load under Node', 'release']],
+  ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections']],
+  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers']],
+  ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
+  ['GitHub', ['github']],
+  ['Runtimes', ['runtime']],
+]
+
+/** The section of one check. A deferred row is *not implemented here* whatever its prefix; an unknown prefix is `Other`, never dropped. */
+export function areaOf(result: CheckResult): string {
+  if (result.deferred === true) return NOT_IMPLEMENTED
+  const colon = result.name.indexOf(': ')
+  const prefix = colon === -1 ? result.name : result.name.slice(0, colon)
+  return AREA_OF.find(([, prefixes]) => prefixes.includes(prefix))?.[0] ?? OTHER
+}
+
+/** Inside a section: what is wrong first, what is merely worth knowing next. */
+const STATUS_ORDER: readonly CheckStatus[] = ['fail', 'warn', 'ok', 'skip']
+
+function marker(status: CheckStatus): string {
+  const slot = (text: string, drawn: string): string => drawn + ' '.repeat(Math.max(0, 4 - width(text)))
+  switch (status) {
+    case 'ok':
+      return slot('✓', symbol.pass())
+    case 'fail':
+      return slot('✗', symbol.fail())
+    // `note` is not amber: amber is a person being waited on, and nothing else (0121 §2).
+    // A note is read because its section is drawn above the green ones.
+    case 'warn':
+      return slot('note', 'note')
+    case 'skip':
+      return slot('skip', paint.muted('skip'))
+  }
 }
 
 /**
@@ -2754,14 +2793,39 @@ const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
  * line: a reader who has been told `4 not checked here` once will look for the
  * number again, and its absence would read as *none* rather than as *this
  * build stopped saying*.
+ *
+ * The checks are grouped by area, sections with a failure first and then those
+ * with a note; each is the marker and the name, then what it found — which is
+ * where the remedy is — on the next line.
  */
-export function formatReport(report: DoctorReport): string {
+export function renderDoctor(report: DoctorReport): string[] {
+  const groups = new Map<string, CheckResult[]>()
+  for (const r of report.results) {
+    const area = areaOf(r)
+    groups.set(area, [...(groups.get(area) ?? []), r])
+  }
+  const known = [...AREA_OF.map(([area]) => area), OTHER, NOT_IMPLEMENTED]
+  const tier = (rs: readonly CheckResult[]): number =>
+    rs.some((r) => r.status === 'fail') ? 0 : rs.some((r) => r.status === 'warn') ? 1 : 2
+  const areas = known
+    .filter((area) => groups.has(area))
+    .map((area, order) => ({ area, order, rows: groups.get(area) ?? [] }))
+    .sort((x, y) => {
+      if (x.area === NOT_IMPLEMENTED || y.area === NOT_IMPLEMENTED) return x.area === NOT_IMPLEMENTED ? 1 : -1
+      return tier(x.rows) - tier(y.rows) || x.order - y.order
+    })
+
+  const lines = [heading('doctor'), '']
+  for (const { area, rows } of areas) {
+    const ordered = STATUS_ORDER.flatMap((status) => rows.filter((r) => r.status === status))
+    const checks = ordered.flatMap((r) => [
+      `${marker(r.status)}  ${r.name}`,
+      ...r.detail.split('\n').map((line) => `${' '.repeat(6)}${line}`),
+    ])
+    lines.push(...section(area, checks).split('\n'))
+  }
   const notes = report.warned > 0 ? `, ${report.warned} to note` : ''
   const here = `, ${report.notChecked} not checked here`
-  const lines = report.results.map((r) => {
-    const tag = TAG[r.status]
-    return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`
-  })
   lines.push('')
   lines.push(
     report.failed === 0
@@ -2770,5 +2834,36 @@ export function formatReport(report: DoctorReport): string {
           `${report.failed} check(s) FAILED — ${report.ok} ok${notes}${here}, ${report.deferred} not implemented yet`,
         ),
   )
-  return lines.join('\n')
+  return lines
+}
+
+/** The report as one string: what `lingtai init` shows after it has set up. */
+export function formatReport(report: DoctorReport): string {
+  return renderDoctor(report).join('\n')
+}
+
+/**
+ * The body of `lingtai doctor --json`. `checks` is in the order they ran and
+ * carries its `area`, so a script groups them itself; `status` is the
+ * `CheckStatus`, never a marker. `deferred` and `restartAnswers` are always
+ * present — the second is what `gatingFailures` reads, so a script can tell
+ * *red* from *red, and a restart fixes it*.
+ */
+export function doctorJson(report: DoctorReport): Record<string, unknown> {
+  return {
+    ok: report.ok,
+    failed: report.failed,
+    warned: report.warned,
+    skipped: report.skipped,
+    deferred: report.deferred,
+    notChecked: report.notChecked,
+    checks: report.results.map((r) => ({
+      area: areaOf(r),
+      name: r.name,
+      status: r.status,
+      detail: r.detail,
+      deferred: r.deferred === true,
+      restartAnswers: r.restartAnswers === true,
+    })),
+  }
 }

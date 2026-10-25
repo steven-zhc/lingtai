@@ -11,6 +11,8 @@ describe('routeOf', () => {
     [['status']],
     [['status', 'lingtai', '--json']],
     [['status', '--all', 'lingtai']],
+    [['doctor']],
+    [['doctor', '--json']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -23,6 +25,7 @@ describe('routeOf', () => {
     [['init', '--help'], 'help'],
     [['upgrade', '--help'], 'help'],
     [['status', '--help'], 'help'],
+    [['doctor', '--help'], 'help'],
     [['shutdown', '-h'], 'help'],
     [['board', 'start', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.

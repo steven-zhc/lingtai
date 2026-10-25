@@ -483,8 +483,13 @@ export const COMMANDS = [
     group: 'install and upkeep',
     task: 'check everything that can be checked',
     effect: 'reads',
-    usage: ['lingtai doctor', '  Exits non-zero on any failure.'],
-    examples: ['lingtai doctor'],
+    usage: [
+      'lingtai doctor [--json] [--no-color]',
+      '  Exits non-zero on any failure. Under --json a failing report is still the',
+      '  report document, on exit 1: test .error first (the report could not be',
+      '  produced), then .failed.',
+    ],
+    examples: ['lingtai doctor', 'lingtai doctor --json'],
   }),
   define({
     name: 'projection',

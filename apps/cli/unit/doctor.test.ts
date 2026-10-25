@@ -22,6 +22,7 @@ import type { Projection } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import {
+  areaOf,
   type DoctorReach,
   nodeRow,
   postgresOnlyRows,
@@ -359,5 +360,30 @@ describe('schemaChecks, a second events schema beside public', () => {
     expect(appendOnly?.status).toBe('fail')
     expect(appendOnly?.detail).toContain('lingtai_events_no_delete')
     expect(appendOnly?.detail).not.toContain('lingtai_events_no_update')
+  })
+})
+
+describe('lingtai doctor — every check has a section', () => {
+  it('uses Other for no row this machine produces, nor for a Postgres-only one', async () => {
+    const report = await runDoctor(
+      {},
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [],
+      reach,
+    )
+    const names = [
+      ...report.results,
+      ...postgresOnlyRows().map(({ name }) => ({ name, status: 'skip' as const, detail: '' })),
+    ]
+    const other = names.filter((r) => areaOf({ ...r, detail: '' }) === 'Other').map((r) => r.name)
+    expect(other).toEqual([])
+  })
+
+  it('puts the discuss and triage rows of a loaded project under Projects', () => {
+    for (const name of ['discuss: p signed in', 'discuss: p codex ready', 'triage: p codex ready']) {
+      expect(areaOf({ name, status: 'ok', detail: '' })).toBe('Projects')
+    }
   })
 })
