@@ -438,6 +438,54 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       expect(carrying(github)).toHaveLength(3)
     })
 
+    it('records a create that landed from the stray-link listing when the final adopt listing throws', async () => {
+      const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      const listed = github.port.listIssuesSince
+      let lists = 0
+      // Reads and the pre-write lookups are calls 0-2; call 3 is the final adopt listing.
+      github.port.listIssuesSince = async (since) => {
+        if (lists++ === 3) throw new Error('listing timed out')
+        return listed(since)
+      }
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.identities).toMatchObject([{ key: 'a', number: 600, via: 'adopted' }])
+      strip(github, waitId as never, 'a')
+      for (let i = 0; i < 4; i++) await split()
+      expect(carrying(github)).toHaveLength(3)
+    })
+
+    it('keeps the older issue as the child when the duplicate withdrawal lands and then throws', async () => {
+      const github = fakeGitHub()
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      const create = github.port.createIssue
+      let raced = false
+      github.port.createIssue = async (input) => {
+        if (!raced) {
+          raced = true
+          await create(input)
+        }
+        return create(input)
+      }
+      const close = github.port.closeIssue
+      let closes = 0
+      github.port.closeIssue = async (n, reason) => {
+        await close(n, reason)
+        if (closes++ === 0) throw new Error('close timed out after landing')
+      }
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(splitProgressOf(await store.read(ticketId), waitId)!.identities[0]).toMatchObject({
+        key: 'a',
+        number: 600,
+      })
+      let last = await split()
+      for (let i = 0; i < 3 && last.ok === false && last.reason !== 'split-not-resolved'; i++) last = await split()
+      expect(last).toMatchObject({ reason: 'split-not-resolved' })
+      expect(github.issues.find((i) => i.number === 600)!.state).toBe('open')
+      expect(github.issues.find((i) => i.number === 601)!.state).toBe('closed')
+    })
+
     it.each([
       ['is gone (404)', (g: ReturnType<typeof fakeGitHub>) => g.issues.splice(0, 1)],
       [

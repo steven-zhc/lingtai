@@ -160,7 +160,11 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     subs: IssueId[]
     edges: { issue: number; blocker: IssueId }[]
   }> {
-    const { extras } = await findChildren()
+    // Its listing is a listing like any other: a child it finds for a key the
+    // log has nothing for is taken up, so a failed earlier listing loses nothing.
+    const found = await findChildren()
+    adopt(found.adopt)
+    const { extras } = found
     if (extras.length === 0) return { subs: [], edges: [] }
     const ids = new Set(extras.map((e) => e.id as number))
     const subs = (await port.subIssues(parent)).filter((i) => ids.has(i.id)).map((i) => i.id)
@@ -282,8 +286,10 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
           identity.set(child.key, made)
         }
         if (first !== undefined && first.number < opened.number) {
-          await withdraw(opened.number, first.number)
+          // The older issue is the child before the withdrawal is tried: a close
+          // that lands and then throws must not leave the closed one recorded.
           identity.set(child.key, { key: child.key, number: first.number, id: first.id, via: 'adopted' })
+          await withdraw(opened.number, first.number)
         }
       }
 
