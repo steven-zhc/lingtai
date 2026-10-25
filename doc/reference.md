@@ -983,8 +983,8 @@ failure, not a number nobody was watching.
 | `apps/board/src/app/task/[id]/page.tsx` | `work-item` ×1 |
 | `apps/board/src/lib/prompt.ts` | `work-item` ×1 |
 | `apps/cli/src/attach.ts` | `work-item` ×1 |
+| `apps/cli/src/commands.ts` | `work-item` ×1 |
 | `apps/cli/src/doctor.ts` | `work-item` ×2 |
-| `apps/cli/src/lingtai.ts` | `work-item` ×1 |
 | `apps/cli/src/source.ts` | `work-items` ×2 |
 | `apps/site/src/app/snapshot-board.tsx` | `work-items` ×1 |
 | `packages/conductor/src/discuss.ts` | `work-item` ×2 |

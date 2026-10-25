@@ -1,6 +1,3 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-
 /**
  * `lingtai run` is a conductor, and a pause stops conductors (#166).
  *
@@ -17,11 +14,11 @@ import { join } from 'node:path'
  * held in `packages/conductor` (`unit/schedule-pause.test.ts`).
  */
 import { readControl } from '@lingtai/daemon/control'
-import { repoRoot } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { daemonLiveness } from '../src/doctor.ts'
+import { commandHelp } from '../src/help.ts'
 import { pauseCommand } from '../src/pause.ts'
 import { RUN_UNDER_A_PAUSE, run } from '../src/run.ts'
 
@@ -56,9 +53,7 @@ describe('lingtai run under a standing pause', () => {
   })
 
   it('is what --help says about lingtai run under lingtai pause', async () => {
-    // Read from the source: `lingtai.ts` runs `main` on import.
-    const source = await readFile(join(repoRoot(), 'apps/cli/src/lingtai.ts'), 'utf8')
-    const entry = source.slice(source.indexOf('  lingtai pause <why>'), source.indexOf('  lingtai resume'))
+    const entry = commandHelp('pause')
     expect(entry.replace(/\s+/g, ' ')).toContain(
       'lingtai run, which takes no ticket while a pause stands, daemon or none: one already working finishes the ticket in hand and takes no other',
     )

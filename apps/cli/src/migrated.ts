@@ -9,13 +9,17 @@
 export const MIGRATED_COMMANDS = ['version'] as const
 
 /** `upgrade`, `rollback`, `uninstall` — answered by `install.ts` before `lingtai.ts` is imported. */
-const INSTALL_ONLY = ['upgrade', 'rollback', 'uninstall'] as const
+export const INSTALL_ONLY = ['upgrade', 'rollback', 'uninstall'] as const
 
-export type Route = 'effect' | 'init' | 'install' | 'lingtai'
+export type Route = 'effect' | 'help' | 'init' | 'install' | 'lingtai'
 
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
   if ((MIGRATED_COMMANDS as readonly string[]).includes(first)) return 'effect'
+  // Help is a question, never an instruction (0121 §8): `--help` anywhere, as a whole
+  // argument, is answered from the definitions before any command sees it.
+  if (argv.length === 0 || ['help', '--help', '-h'].includes(first) || argv.some((a) => a === '--help' || a === '-h'))
+    return 'help'
   if (first === 'init') return 'init'
   if ((INSTALL_ONLY as readonly string[]).includes(first)) return 'install'
   return 'lingtai'

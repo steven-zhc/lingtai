@@ -18,6 +18,7 @@
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
+import { helpCommand } from './help.ts'
 import { installCommand } from './install.ts'
 import { routeOf } from './migrated.ts'
 // Neither reaches the log: `world.ts` loads `@lingtai/env` and nothing else.
@@ -34,6 +35,9 @@ if (route === 'effect') {
     .then((code) => {
       process.exitCode = code
     })
+} else if (route === 'help') {
+  // From the definitions alone (0121 §8): no project, no log, no network.
+  process.exitCode = helpCommand(argv)
 } else if (route === 'init') {
   // Only once asked: `init.ts` loads the board's server module, and no other command here needs it.
   import('./init.ts')

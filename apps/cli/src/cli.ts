@@ -8,6 +8,7 @@ import * as NodeContext from '@effect/platform-node/NodeContext'
 import { coloured } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
+import { definitionOf } from './commands.ts'
 import { applyNoColor, printJson, printJsonError, stripColour } from './output.ts'
 import { versionFacts, versionLine } from './version.ts'
 
@@ -21,7 +22,7 @@ const version = Command.make('version', { json, noColor }, (args) =>
     if (args.json) printJson('version', versionFacts())
     else process.stdout.write(`${versionLine()}\n`)
   }),
-)
+).pipe(Command.withDescription(definitionOf('version').task))
 
 const root = Command.make('lingtai').pipe(Command.withSubcommands([version]))
 
