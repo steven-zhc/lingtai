@@ -95,12 +95,19 @@ describe('the tutorial stays a first-run path', () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
     // Shell variants repeat commands a reader only needs to read once.
     // Bound the narrative separately, and still cap the whole page.
-    const prose = body
-      .replace(/```[\s\S]*?```/g, '')
-      .trim()
-      .split(/\s+/).length
+    const proseOf = (text: string) =>
+      text
+        .replace(/```[\s\S]*?```/g, '')
+        .trim()
+        .split(/\s+/).length
+    // Part 1 is the first-run path and Part 2 the move to GitHub that #596
+    // added on purpose, so each is held to its own length: one cap over both
+    // turned red the day Part 2 arrived, while the beginner path had room.
+    const part2 = body.indexOf('\n## Part 2')
+    expect(part2, 'Part 2 starts the GitHub half').toBeGreaterThan(0)
     const words = body.trim().split(/\s+/).length
-    expect(prose, 'the tutorial has become a reference manual again').toBeLessThan(1400)
+    expect(proseOf(body.slice(0, part2)), 'the first-run path has become a reference manual again').toBeLessThan(1100)
+    expect(proseOf(body.slice(part2)), 'the GitHub half has become a reference manual').toBeLessThan(600)
     expect(words, 'the tutorial has too many command variants').toBeLessThan(2000)
     expect(
       headingsOf(body)
