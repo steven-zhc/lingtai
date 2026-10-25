@@ -25,11 +25,9 @@ import { z } from 'zod'
 import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation, type CandidateId } from './route.ts'
-import type { RouteOffer } from './routing.ts'
 import { SplitProposal, SplitResolution } from './split.ts'
 import {
   Hunk,
-  ConfirmedHunk,
   MERGE_HUNKS_ONE_BY_ONE,
   READS_PER_TURN,
   TRIAGE_FIXES_MAX,
@@ -210,21 +208,6 @@ export type WaitReason = z.infer<typeof WaitReason>
 const Approve = z.object({ _tag: z.literal('Approve'), onSha: z.string() })
 /** One human-authorized implement round on the saved remote ref. */
 const GrantFixRound = z.object({ _tag: z.literal('GrantFixRound'), onSha: z.string(), ref: z.string() })
-/**
- * Continue a preserved conflict (0118 §1, §8): the exact `baseSha`/`headSha`
- * the person looked at, the `ref` holding the preserved branch, and **every**
- * counted hunk with the behavior they confirmed. A hunk left out is not
- * "mechanical"; the command alone says what was confirmed.
- */
-const ContinueConflict = z.object({
-  _tag: z.literal('ContinueConflict'),
-  baseSha: z.string(),
-  headSha: z.string(),
-  ref: z.string(),
-  hunks: z.array(ConfirmedHunk).min(1).max(MERGE_HUNKS_ONE_BY_ONE),
-  /** Whether one extra round beyond the ceiling was expressly granted. */
-  grantExtraRound: z.boolean(),
-})
 /** A new pass, from the base. */
 const Requeue = z.object({ _tag: z.literal('Requeue') })
 /** Write into the body, then requeue. */
@@ -238,7 +221,6 @@ const Close = z.object({ _tag: z.literal('Close') })
 export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
   GrantFixRound,
-  ContinueConflict,
   Requeue,
   EditBodyAndRequeue,
   AnswerQuestion,
@@ -253,18 +235,10 @@ export type Resolution = z.infer<typeof Resolution>
  * `AnswerQuestion`: that choice is a person's own, on an `OwnQuestion` only,
  * and triage cannot make it for them. A bare tag, not a `Resolution`: the
  * fields a resolution carries beyond its tag (`Approve`'s `onSha`, a
- * conflict's base and head and confirmed behavior) belong to the person at the
+ * conflict's base and head) belong to the person at the
  * moment they act, not to anything triage knows ahead of them (0118 §1).
  */
-export const TriageAdvice = z.enum([
-  'Approve',
-  'GrantFixRound',
-  'ContinueConflict',
-  'Requeue',
-  'EditBodyAndRequeue',
-  'Split',
-  'Close',
-])
+export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
@@ -299,8 +273,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'VerifyRed':
           return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
         case 'MergeConflict':
-          // 0118 §1: `GrantFixRound` and `ContinueConflict` are appended by
-          // `allowedResolutions`; this row is `Requeue`, `Close` — no body edit.
+          // 0118 §1: `GrantFixRound` is appended by `allowedResolutions`;
+          // this row is `Requeue`, `Close` — no body edit.
           return ['Requeue', 'Close']
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
@@ -383,7 +357,7 @@ export function grantCriterion(
     case 'MergeConflict':
       // A conflict always has a criterion: merge the base, resolve, commit.
       // `fixRound` reads a printed `merge` as a conflict and the detail as its
-      // paths (the same shape `ContinueConflict`'s continuation prints).
+      // paths.
       return { printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n') }, findings: [] }
     default:
       return null
@@ -404,92 +378,10 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
   const fixable = grantCriterion(reason) !== null
-  // `MergeRefused` never qualifies, direct or proposed: its reason excludes
-  // `conflict`, whatever shas it carries. Null shas mean no conflict to name.
-  const continuable =
-    reason._tag === 'ProposedEscalated' &&
-    reason.proposal._tag === 'MergeConflict' &&
-    reason.proposal.baseSha != null &&
-    reason.proposal.headSha != null
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['GrantFixRound'] as const) : []),
-    ...(continuable && !unpushed ? (['ContinueConflict'] as const) : []),
   ]
-}
-
-/** Why a `ContinueConflict` is not acceptable for a wait. */
-export type ContinueConflictRefusal =
-  | 'NotOffered'
-  | 'Stale'
-  | 'TooManyHunks'
-  | 'HunksMismatch'
-  | 'GrantRequired'
-  | 'GrantNotNeeded'
-
-/**
- * Whether the automatic rounds were already spent on this conflict: the last
- * `PassRouted` whose proposal is this `MergeConflict` (same `headSha`) offered
- * no `fix-lines`, for want of room under the rounds ceiling. Read off the
- * run's own stream because `resolveWait` holds no recipe. A prior human grant
- * caps `roundLimit` at the rounds spent, and the router records that cap as the
- * same `CeilingReached`, so this one read covers both ways of running out.
- */
-export function conflictRoundsExhausted(
-  runEvents: readonly { type: string; data: unknown }[],
-  headSha: string,
-): boolean {
-  const offer = runEvents
-    .filter((e) => e.type === 'PassRouted')
-    .map((e) => (e.data as { offer: RouteOffer }).offer)
-    .filter((o) => o.proposal._tag === 'MergeConflict' && o.proposal.headSha === headSha)
-    .at(-1)
-  return (
-    offer?.unavailable.some(
-      (x) => x.id === 'fix-lines' && x.because._tag === 'CeilingReached' && x.because.ceiling === 'rounds',
-    ) ?? false
-  )
-}
-
-/**
- * The pure half of validating a `ContinueConflict`: `null` or the refusal.
- * `counted` is the caller's own count of the conflict's hunks (the mirror's,
- * in the effect). It never takes a triage status, so the same command
- * validates the same way whether triage was absent, failed or done. Whether
- * the remote ref still exists is the effect's to check, not the domain's.
- *
- * `roundsExhausted` is {@link conflictRoundsExhausted}: an extra round is
- * granted exactly when it is needed, so a grant nobody needed is refused as
- * firmly as a missing one.
- */
-export function continueConflictRefusal(
-  reason: WaitReason,
-  resolution: Extract<Resolution, { _tag: 'ContinueConflict' }>,
-  counted: readonly { path: string; line: number | null }[],
-  roundsExhausted: boolean,
-): ContinueConflictRefusal | null {
-  if (!allowedResolutions(reason).includes('ContinueConflict')) return 'NotOffered'
-  if (
-    reason._tag !== 'ProposedEscalated' ||
-    reason.proposal._tag !== 'MergeConflict' ||
-    reason.proposal.baseSha !== resolution.baseSha ||
-    reason.proposal.headSha !== resolution.headSha
-  )
-    return 'Stale'
-  if (counted.length > MERGE_HUNKS_ONE_BY_ONE) return 'TooManyHunks'
-  const key = (h: { path: string; line: number | null }) => `${h.path}\u0000${h.line}`
-  const confirmed = new Set(resolution.hunks.map(key))
-  const expected = new Set(counted.map(key))
-  if (
-    confirmed.size !== resolution.hunks.length ||
-    expected.size !== counted.length ||
-    confirmed.size !== expected.size ||
-    [...expected].some((k) => !confirmed.has(k))
-  )
-    return 'HunksMismatch'
-  if (roundsExhausted && !resolution.grantExtraRound) return 'GrantRequired'
-  if (!roundsExhausted && resolution.grantExtraRound) return 'GrantNotNeeded'
-  return null
 }
 
 /** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */
@@ -810,15 +702,6 @@ const TriageAdvised = TriageAnswer.extend({ _tag: z.literal('TriageAdvised') }).
     ctx.addIssue({
       code: 'custom',
       message: 'Split is advised only with TicketTooBig carrying its split plan',
-      path: ['resolution'],
-    })
-  if (
-    advice.resolution === 'ContinueConflict' &&
-    !(advice.cause._tag === 'ConflictingHunks' && advice.cause.hunks.length > 0)
-  )
-    ctx.addIssue({
-      code: 'custom',
-      message: 'ContinueConflict needs a concrete list of conflicting hunks',
       path: ['resolution'],
     })
 })

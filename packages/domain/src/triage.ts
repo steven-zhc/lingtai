@@ -82,24 +82,3 @@ export type DivergentHunk = z.infer<typeof DivergentHunk>
 
 export const Hunk = z.discriminatedUnion('_tag', [MechanicalHunk, DivergentHunk])
 export type Hunk = z.infer<typeof Hunk>
-
-/**
- * A hunk as a person confirmed it for `ContinueConflict` (#557). Identity is
- * `(path, line)`, the same identity triage's own classification is accepted
- * by. `behavior` is the authority and is stored word for word; `adopted` only
- * records that the person took triage's answer unchanged, and is `null` when
- * they wrote or edited the text — and always `null` without a triage result.
- * Nothing resolves `adopted` back into an answer: a recommendation is not
- * authorization.
- */
-export const ConfirmedHunk = z.discriminatedUnion('_tag', [
-  MechanicalHunk,
-  z.strictObject({
-    _tag: z.literal('Divergent'),
-    path: z.string().max(TRIAGE_TEXT_MAX),
-    line: z.number().nullable(),
-    behavior: z.string().trim().min(1),
-    adopted: z.strictObject({ questionId: z.string(), answerId: z.string() }).nullable(),
-  }),
-])
-export type ConfirmedHunk = z.infer<typeof ConfirmedHunk>

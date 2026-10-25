@@ -705,8 +705,7 @@ export const RunFailed = z.object({
  * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
  *
  * `Action.grant` names the person's decision that paid for the round — the
- * `waitId` of the `WaitResolved{GrantFixRound}` (or the confirmed
- * `ContinueConflict`) it spent. It is absent on every automatic round, and
+ * `waitId` of the `WaitResolved{GrantFixRound}` it spent. It is absent on every automatic round, and
  * optional so a payload written before it existed still parses.
  */
 export const SpentFor = z.discriminatedUnion('_tag', [
@@ -2031,6 +2030,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   PromptEdited: 2,
   // 2: each finding gained `action`. See Reconciled above.
   Reconciled: 2,
+  // 2: a retired advice is rewritten on read (#591). See the upcaster.
+  WaitTriaged: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

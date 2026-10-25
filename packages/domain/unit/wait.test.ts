@@ -209,7 +209,7 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
     })
 
-    it('MergeConflict with both shas: also ContinueConflict — a conflict cannot be merged', () => {
+    it('MergeConflict with both shas: GrantFixRound — a conflict is a fix round', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -217,10 +217,10 @@ describe('allowedResolutions', () => {
         baseSha: 'abc',
         headSha: 'def',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound', 'ContinueConflict'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound'])
     })
 
-    it('MergeConflict with null shas: GrantFixRound but not ContinueConflict', () => {
+    it('MergeConflict with null shas: GrantFixRound too', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -231,7 +231,7 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound'])
     })
 
-    it('MergeConflict unpushed: neither GrantFixRound nor ContinueConflict', () => {
+    it('MergeConflict unpushed: no GrantFixRound', () => {
       const proposal = { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: 'abc', headSha: 'def' }
       const reason = parseReason({
         _tag: 'ProposedEscalated',
@@ -855,6 +855,12 @@ describe('TriageResult refuses what 0118 §1 rules out', () => {
     expect(TriageResultSchema.safeParse({ _tag: 'TriageAdvised', ...base, resolution: 'AnswerQuestion' }).success).toBe(
       false,
     )
+  })
+
+  it('refuses ContinueConflict as advice — a conflict is answered by a granted fix round (#591)', () => {
+    expect(
+      TriageResultSchema.safeParse({ _tag: 'TriageAdvised', ...base, resolution: 'ContinueConflict' }).success,
+    ).toBe(false)
   })
 
   it("refuses an Approve object as advice — onSha is the person's to supply, not triage's", () => {

@@ -56,7 +56,7 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore } from '@lingtai/event-store'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -372,8 +372,6 @@ export type PassClient = Tickets &
   RefChannel & {
     readonly owner: string | null
     readonly repo: string
-    /** Read only to see that a confirmed conflict's base has not moved (#558); absent, that cannot be seen. */
-    readonly refSha?: (ref: string) => Promise<string | null>
   }
 
 export interface RunOnceOptions {
@@ -984,46 +982,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const granted = folded.lifecycle.grantRef !== undefined
-      // A person's confirmed conflict is a grant too (#558): it authorizes one
-      // round for these hunks, and the cap below is what stops it authorizing
-      // a later conflict.
-      const resolved = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.resolution
-      const confirmed = resolved?._tag === 'ContinueConflict' ? resolved : null
-      // 0118 §8: if the base moved while the continuation waited, the confirmation
-      // is stale. Nothing is dispatched and no round is spent; the item is not
-      // claimed, and the conflict is put back to a person as a new wait against
-      // the new base — returning null alone would leave the lifecycle `approved`
-      // with its wait resolved, which every later claim declines at.
-      if (confirmed !== null) {
-        const tip = (await options.client.refSha?.(`heads/${base}`)?.catch(() => null)) ?? null
-        if (tip !== confirmed.baseSha) {
-          if (tip !== null && reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'MergeConflict') {
-            // At the version this decision was read at, not a fresh one: a
-            // person may have closed (or otherwise decided) the ticket while the
-            // base was being read, and `WaitStarted` would fold it back to
-            // blocked over that. A refused append means someone else decided,
-            // so nothing is reopened.
-            try {
-              await store.append(ticketId, before.length, [
-                {
-                  type: 'WaitStarted',
-                  actor: 'conductor',
-                  data: parsePayload('WaitStarted', {
-                    waitId: crypto.randomUUID(),
-                    reason: { ...reason, proposal: { ...reason.proposal, baseSha: tip } },
-                  }),
-                },
-              ])
-            } catch (err) {
-              if (!(err instanceof ConcurrencyError)) throw err
-            }
-          }
-          return null
-        }
-      }
       const priorGrant = waitsOf(before).some(
         (wait) =>
-          (wait.resolution?._tag === 'GrantFixRound' || wait.resolution?._tag === 'ContinueConflict') &&
+          wait.resolution?._tag === 'GrantFixRound' &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
@@ -1052,26 +1013,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
-        ...(confirmed !== null
-          ? {
-              // Not `grantCriterion`: that is the unconfirmed conflict brief,
-              // and this one carries what a person confirmed (and is spread
-              // first, so the guard below keeps the other from overwriting
-              // it). `fixRound` reads a printed `merge` as a conflict and its
-              // detail as the paths.
-              grant: {
-                why: 'A person confirmed the intended behavior of every conflicting hunk.',
-                asked: null,
-                printed: {
-                  step: 'merge' as const,
-                  detail: [...new Set(confirmed.hunks.map((h) => h.path))].join('\n'),
-                },
-              },
-              findings: [],
-              conflict: { baseSha: confirmed.baseSha, hunks: confirmed.hunks },
-            }
-          : {}),
-        ...(granted && confirmed === null && grantCriterion(reason) !== null
+        ...(granted && grantCriterion(reason) !== null
           ? {
               grant: {
                 why: 'A person granted one checked fix round.',
@@ -3543,12 +3485,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             : from === 'merge'
               ? ({
                   on: 'conflict',
-                  // The confirmed sha, not the branch name: the agent edits exactly
-                  // the conflict the person read, and a base that moved since is met
-                  // by the merge lane afterwards (a new wait, a new confirmation).
-                  base: continuation?.conflict?.baseSha ?? base,
+                  base,
                   paths: said,
-                  ...(continuation?.conflict ? { confirmed: continuation.conflict.hunks } : {}),
                 } as const)
               : ({ on: 'output', output: said } as const)
 
@@ -3665,10 +3603,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
           }
         }
-        // A confirmed conflict is never carried forward past a crash (#558): the
-        // fixer may have committed before it died, and that commit has not been
-        // finished, so it must not walk on to `build` and a landing.
-        if (!committed || (fixed.failure && continuation?.conflict)) {
+        if (!committed) {
           // A decline judged the findings or the refusal rather than being cut
           // off mid-run, so `interrupted` does not stand for it either; a
           // crash or a wall does, in the runtime's own word for it (`#468`).

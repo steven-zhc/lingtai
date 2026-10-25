@@ -59,7 +59,7 @@
  */
 import type { ActionFinding } from '@lingtai/actions'
 import { SEVERITIES, type Severity } from '@lingtai/domain'
-import type { BlockDiagnosis, ConfirmedHunk, RunFailureKind } from '@lingtai/domain'
+import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
 
 import { checksBrief } from './prompt.ts'
 
@@ -471,7 +471,7 @@ export function fixBrief(input: {
   refusal:
     | { on: 'findings'; findings: readonly ActionFinding[] }
     | { on: 'output'; output: string }
-    | { on: 'conflict'; base: string; paths: string; confirmed?: readonly ConfirmedHunk[] }
+    | { on: 'conflict'; base: string; paths: string }
   round: number
   of: number
   /** The refusing action's name, so the prompt can say who refused. */
@@ -497,7 +497,7 @@ export function fixBrief(input: {
     input.refusal.on === 'findings'
       ? findingsHalf(input.refusal.findings, input.action)
       : input.refusal.on === 'conflict'
-        ? conflictHalf(input.refusal.base, input.refusal.paths, input.refusal.confirmed)
+        ? conflictHalf(input.refusal.base, input.refusal.paths)
         : outputHalf(input.refusal.output, input.action)
 
   return `# The ${input.action} action refused this change, and you are the fix
@@ -632,19 +632,13 @@ So:
  * Resolving a conflict by taking one side wholesale passes the first and is
  * exactly what the second is there to catch.
  */
-// Left out when a person already confirmed the behaviour (`ContinueConflict`):
-// that confirmation is the answer this would send the agent back to ask for.
 const STOP_AND_ASK = `- If the two sides' behaviours contradict and the ticket does not settle which
   one wins, stop and ask rather than choose: do not commit the merge, and say
   in your final message which two behaviours contradict and why the ticket
   does not settle it.
 `
 
-function conflictHalf(
-  base: string,
-  paths: string,
-  confirmed: readonly ConfirmedHunk[] = [],
-): { evidence: string; criterion: string } {
+function conflictHalf(base: string, paths: string): { evidence: string; criterion: string } {
   const files = paths.trim()
   return {
     evidence: `\`${base}\` moved while this change was being worked on, and this branch does
@@ -664,7 +658,7 @@ and resolve what it gives you.
 
 \`\`\`
 ${files === '' ? `(git named no files; run git merge \`${base}\` first, then \`git status\` and \`git diff --diff-filter=U\` name what it leaves)` : files}
-\`\`\`${confirmedSection(confirmed)}`,
+\`\`\``,
     criterion: `## What counts as done
 
 Run git merge \`${base}\`, resolve what it gives you, and commit the merge.
@@ -681,37 +675,12 @@ So:
   deleting the conflicting hunk. Read what each side was doing.
 - \`git add\` the resolved files and \`git commit\` the merge. Do not
   \`git merge --abort\`: that throws away the merge you just ran.
-${confirmed.length > 0 ? '' : STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is about to be read
+${STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is about to be read
   again by a reviewer who last saw it without this merge in it.
 
 The base can move again while you work. If it does, this comes back around —
 that is ordinary, and it is bounded by the rounds above.`,
   }
-}
-
-/**
- * What a person confirmed for each conflicting hunk (#558, 0118 §8). The
- * confirmed behavior is the authority over both sides, and a hunk git produces
- * that is not listed was never confirmed — it is reported, not guessed.
- */
-function confirmedSection(confirmed: readonly ConfirmedHunk[]): string {
-  if (confirmed.length === 0) return ''
-  const lines = confirmed.map((hunk) =>
-    hunk._tag === 'Divergent'
-      ? `- \`${hunk.path}:${hunk.line ?? 1}\` — ${hunk.behavior}`
-      : `- \`${hunk.path}:${hunk.line ?? 1}\` — mechanical: no behavior to choose, keep both changes`,
-  )
-  return `
-
-## What a person confirmed
-
-A person read every conflicting hunk and confirmed the behavior it must end up with.
-That confirmed behavior is the authority — over the other change and over yours.
-
-${lines.join('\n')}
-
-A hunk git produces that is not on this list is not covered by the confirmation.
-Do not guess at it: say so and commit nothing for it.`
 }
 
 function outputHalf(output: string, action: string): { evidence: string; criterion: string } {

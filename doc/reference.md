@@ -147,7 +147,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 6 chains, 8 steps
+## upcaster — 7 chains, 9 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -161,10 +161,11 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `TicketClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
+| `WaitTriaged` | 1 → 2 | `ContinueConflict` left the advice (#591); a stored one reads as `GrantFixRound`, which is what a conflict is answered by now |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **six** chains below is its own row — a heading that is arithmetic on a
+of the **seven** chains below is its own row — a heading that is arithmetic on a
 number nobody re-derived is how a reader comes to believe a row is stale and
 deletable.
 

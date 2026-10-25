@@ -70,6 +70,21 @@ export const UPCASTERS: UpcastRegistry = {
      */
     2: (data) => ({ ...(data as object), base: null }),
   },
+  WaitTriaged: {
+    /**
+     * 1 → 2: `ContinueConflict` left `TriageAdvice` (#591), and triage had been
+     * invited to advise it since #557, so the log may hold it. A conflict is
+     * answered by a granted fix round now, so an old advice reads as that.
+     * `WaitResolved`'s `Resolution` needs no step: no caller could write the
+     * variant, so no row holds it.
+     */
+    1: (data) => {
+      const row = data as { result?: { resolution?: unknown } }
+      return row.result?.resolution === 'ContinueConflict'
+        ? { ...row, result: { ...row.result, resolution: 'GrantFixRound' } }
+        : data
+    },
+  },
   Reconciled: {
     /**
      * 1 → 2: each finding gained `action`. Nothing had appended one of these
