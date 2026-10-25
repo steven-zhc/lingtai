@@ -55,6 +55,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
         ? { waitId: aWaitId(), reason: { _tag: 'OwnQuestion', question: 'still relevant?', by: 'steven' } }
         : null,
     answer: null,
+    split: null,
     triage: { started: null, result: null },
     triageHeadSha: null,
     repairPending: false,

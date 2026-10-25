@@ -47,6 +47,7 @@ function requeued(): TaskCard {
     awaitingApproval: false,
     wait: null,
     answer: null,
+    split: null,
     triage: { started: null, result: null },
     triageHeadSha: null,
     repairPending: false,

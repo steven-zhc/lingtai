@@ -45,6 +45,7 @@ function blocked(): TaskCard {
       },
     },
     answer: null,
+    split: null,
     triage: { started: null, result: null },
     triageHeadSha: null,
     repairPending: false,

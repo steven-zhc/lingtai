@@ -21,6 +21,7 @@ import { StepOutcome, WaitId } from './action.ts'
 import { JudgeWhen } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
+import { ChildTicket, Dependency } from './split.ts'
 import {
   Finding,
   RefusalReason,
@@ -311,6 +312,54 @@ export const WaitResolved = z.object({
   resolution: Resolution,
   note: z.string(),
 })
+
+/**
+ * One child a split wrote: its plan `key`, the issue `number` a person reads
+ * (161) and GitHub's REST `id` (5466453198) — two different integers, never
+ * to be confused. **Strict, and not `ChildTicket`**: a writer that spreads
+ * `{ ...childTicket, number, id }` would copy the approved title, body and
+ * kind here, and the plan stays `WaitResolved{Split}`'s.
+ */
+export const SplitChild = z.strictObject({
+  key: ChildTicket.shape.key,
+  number: z.number().int().positive(),
+  id: z.number().int().positive(),
+})
+export type SplitChild = z.infer<typeof SplitChild>
+
+/**
+ * A split was written: which children exist, and the blocked-by links between
+ * them as written. It records what **was** done, after the fact — there is no
+ * `SplitStarted`. `waitId` names the `WaitResolved{Split}` that carries the
+ * approved plan, so a reader joins to it rather than reading a second copy.
+ *
+ * Appended before that `WaitResolved` (0118 §12). `blockedBy` holds
+ * child-to-child links in `Dependency`'s key form; the parent's own hold on
+ * each child follows from `children` and is not a row.
+ *
+ * The checks are consistency only — not `splitPlanProblems`, whose rules are
+ * the plan's.
+ */
+export const TicketSplit = z
+  .strictObject({
+    waitId: WaitId,
+    children: z.array(SplitChild).min(1),
+    blockedBy: z.array(Dependency),
+  })
+  .superRefine((split, ctx) => {
+    const keys = new Set(split.children.map((c) => c.key))
+    if (keys.size !== split.children.length) {
+      ctx.addIssue({ code: 'custom', path: ['children'], message: 'child keys must be unique' })
+    }
+    if (new Set(split.children.map((c) => c.number)).size !== split.children.length) {
+      ctx.addIssue({ code: 'custom', path: ['children'], message: 'child numbers must be unique' })
+    }
+    split.blockedBy.forEach((d, i) => {
+      if (!keys.has(d.ticket) || !keys.has(d.blockedBy)) {
+        ctx.addIssue({ code: 'custom', path: ['blockedBy', i], message: 'a link must name two children' })
+      }
+    })
+  })
 
 /**
  * The two event types that mean a work item is waiting on somebody — a block
@@ -1951,6 +2000,7 @@ export const EVENTS = {
   TicketReleased,
   WaitStarted,
   WaitResolved,
+  TicketSplit,
   TicketLinked,
   TicketLanded,
   TicketClosed,

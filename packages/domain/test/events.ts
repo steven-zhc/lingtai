@@ -79,6 +79,17 @@ export function aResolution(
   return [itemStream('WaitResolved', { waitId, by, resolution, note: written })]
 }
 
+/** `TicketSplit{waitId, children, blockedBy}` — what a split wrote. Each child's `id` differs from its `number`, as GitHub's do. */
+export function aSplit(
+  itemStream: ReturnType<typeof makeStream>,
+  waitId: WaitId,
+  numbers: readonly number[] = [161, 162],
+): Envelope[] {
+  const children = numbers.map((number, i) => ({ key: `child-${i + 1}`, number, id: 5_000_000_000 + number }))
+  const blockedBy = children.slice(1).map((c, i) => ({ ticket: c.key, blockedBy: children[i]!.key }))
+  return [itemStream('TicketSplit', { waitId, children, blockedBy })]
+}
+
 /** A withdrawn wait — a person taking back an `OwnQuestion` asked before any run claimed the item, by requeuing with no note. */
 export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, waitId: WaitId): Envelope[] {
   return [itemStream('WaitResolved', { waitId, by: 'steven', resolution: { _tag: 'Requeue' }, note: '' })]
