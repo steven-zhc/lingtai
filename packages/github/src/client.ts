@@ -129,6 +129,8 @@ export interface Issue {
   body: string
   labels: Label[]
   state: 'open' | 'closed'
+  /** Why it closed, when GitHub says; null for an open issue or an older close. */
+  stateReason?: 'completed' | 'not_planned' | null
   url: string
   /**
    * What blocks it, and **null when GitHub said nothing about dependencies** —
@@ -497,6 +499,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     body: string | null
     labels: ({ name?: string; color?: string | null } | string)[]
     state: string
+    state_reason?: string | null
     html_url: string
     issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
     assignees?: ({ login?: string } | null)[] | null
@@ -516,6 +519,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
         )
         .filter((l) => l.name !== ''),
       state: raw.state === 'closed' ? 'closed' : 'open',
+      stateReason: raw.state_reason === 'completed' || raw.state_reason === 'not_planned' ? raw.state_reason : null,
       url: raw.html_url,
     }
   }

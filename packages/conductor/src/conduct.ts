@@ -195,7 +195,8 @@ import { Effect, Either } from 'effect'
 import { armsOnOrigin } from './arms.ts'
 import { armFor, diffBaseShaOf, priorAttempts } from './attempts.ts'
 import { agentBranch } from './branches.ts'
-import { claimTicket, continueTicket, releaseTicket } from './claim.ts'
+import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
+import { closeHolding } from './close.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
@@ -234,8 +235,26 @@ import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
 import { restartReason } from './restart.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, tellGitHubAbout } from './tell.ts'
+import { type RefChannel, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
+
+/** `#161 completed, #162 not planned` — a null reason is said to be unreported, never read as completed. */
+function splitChildrenWords(children: readonly SplitChildState[]): string {
+  return children
+    .map(
+      (c) =>
+        `#${c.number} ${c.stateReason === 'completed' ? 'completed' : c.stateReason === 'not_planned' ? 'not planned' : 'closed (reason not reported)'}`,
+    )
+    .join(', ')
+}
+
+function splitClosedComment(waitId: string, children: readonly SplitChildState[]): string {
+  return (
+    `**Lingtai is closing this without running an agent.** It was split (${waitId}) and every child the split ` +
+    `recorded is closed: ${splitChildrenWords(children)}.\n\n` +
+    `A child closed as not planned counts as closed. If work is still wanted, open a new ticket — a closed ticket stays closed.`
+  )
+}
 
 export const changedFilesArgs = (baseSha: string): string[] => [
   'diff',
@@ -2206,6 +2225,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   store,
                   title: runnable.title,
                   kind: runnable.kind,
+                  children: options.client,
                 })
         } catch (error) {
           // The one decline that leaves a stream behind, and `end` resolves
@@ -2213,6 +2233,42 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // this run and somebody has to be told about it.
           onStream = ticketId
           return { mayHold: { ticketId, detail: whyOf(error) } }
+        }
+        if (!claim.ok && claim.refusal.reason === 'split-done') {
+          // #604: every child the split recorded is closed, so there is nothing
+          // left to change. Closed here, with no run — `end` is what resolves
+          // the issue, as it does for `lingtai close`.
+          const done = claim.refusal
+          const closed = await closeHolding(
+            {
+              project: options.project.project!,
+              issue: options.issue,
+              by: 'conductor',
+              reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
+              state: options.project,
+              client: options.client,
+              recipe: async () => resolved,
+              ifVersion: done.version,
+            },
+            store,
+            ticketId,
+          )
+          if (closed.ok) {
+            // Said before the close, not after it: the comment has no record of
+            // its own to retry from, and a close that fails here is finished later
+            // by reconciliation — which would close the issue without ever
+            // having said why. A failed comment is `IssueUpdateFailed` on the log.
+            await tellGitHub({
+              store,
+              github: options.client,
+              ticketId,
+              change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+            })
+            // The recipe's `end` may not close the issue (`end: []`, or a close
+            // restricted to `when: landed`); a terminal event with the issue
+            // still open would be announced and never finished.
+            await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
+          }
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
         // **Set on the line the append committed, and before anything that can

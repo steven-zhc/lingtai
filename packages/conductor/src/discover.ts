@@ -63,6 +63,8 @@ export interface TicketListing {
  */
 export interface TicketDetail extends TicketListing {
   body: string
+  /** Why a closed ticket closed; null or absent when the source does not say. */
+  stateReason?: 'completed' | 'not_planned' | null
 }
 
 /**

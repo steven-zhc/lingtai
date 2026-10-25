@@ -25,6 +25,8 @@ import { parsePayload, reduceTicket, type ReleaseCause } from '@lingtai/domain'
  */
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
+import type { Tickets } from './ticket-store.ts'
+
 export interface ClaimOptions {
   runId: string
   /**
@@ -46,6 +48,17 @@ export interface ClaimOptions {
   title?: string | null
   kind?: string | null
   store?: EventStore
+  /**
+   * Where a split's children are asked about (#604). Omitted, a recorded split
+   * is not looked at and the claim is what it always was.
+   */
+  children?: Pick<Tickets, 'getIssue'>
+}
+
+/** How one recorded child of a split stands on GitHub. `stateReason` null is *not reported*, never *completed*. */
+export interface SplitChildState {
+  number: number
+  stateReason: 'completed' | 'not_planned' | null
 }
 
 export interface Claim {
@@ -66,6 +79,16 @@ export type ClaimRefusal =
   | { reason: 'lost-race' }
   /** Not in a state that can be claimed — landed, or blocked on a person. */
   | { reason: 'not-claimable'; status: string }
+  /**
+   * The stream has a `TicketSplit` and every child it recorded is closed
+   * (#604): nothing is left for an agent to change. Nothing was appended; the
+   * caller closes the ticket.
+   */
+  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
+  /** A recorded child is still open, so the ticket should not have been eligible. Nothing was appended. */
+  | { reason: 'split-open'; open: number[] }
+  /** A recorded child could not be read. Nothing was appended, so nothing is held. */
+  | { reason: 'split-unreadable'; detail: string }
 
 export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal }
 
@@ -103,6 +126,35 @@ export async function claimTicket(ticketId: string, options: ClaimOptions): Prom
   }
   if (state.lifecycle.status !== 'backlog') {
     return { ok: false, refusal: { reason: 'not-claimable', status: state.lifecycle.status } }
+  }
+
+  if (state.split !== null && options.children !== undefined) {
+    // Exactly the numbers the split recorded — never the body, never GitHub's
+    // sub-issue list, which a person may have added to by hand. A read that
+    // throws is a refusal, not an exception: nothing was appended, so the caller
+    // must not treat the ticket as possibly held — and a partial read must not
+    // pass for *all closed*.
+    const asked = state.split.children.map((c) => c.number)
+    let read
+    try {
+      read = await Promise.all(asked.map((n) => options.children!.getIssue(n)))
+    } catch (error) {
+      return {
+        ok: false,
+        refusal: { reason: 'split-unreadable', detail: error instanceof Error ? error.message : String(error) },
+      }
+    }
+    const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
+    if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
+    return {
+      ok: false,
+      refusal: {
+        reason: 'split-done',
+        version: state.version,
+        waitId: state.split.waitId,
+        children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
+      },
+    }
   }
 
   try {

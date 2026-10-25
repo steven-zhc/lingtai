@@ -21,7 +21,7 @@
  */
 import type { WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
-import type { PayloadOf, Tier } from './events.ts'
+import type { PayloadOf, SplitChild, Tier } from './events.ts'
 import { agentBranchOf } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import type { WaitReason } from './wait.ts'
@@ -127,6 +127,14 @@ export interface TicketState {
   links: readonly WorkItemLink[]
 
   /**
+   * What the last `TicketSplit` recorded, or null. **The only list of a split's
+   * children** a close rule may read: the body and GitHub's sub-issue list can
+   * both be edited by a person after the fact (#604). Deliberately not a
+   * lifecycle event — `closed` absorbs exactly `LIFECYCLE_EVENTS`.
+   */
+  split: { waitId: WaitId; children: readonly SplitChild[] } | null
+
+  /**
    * Every dispatch the scheduler refused, kept rather than counted. A tier is
    * never silently downgraded, so the refusals are the record of what could not
    * run and why.
@@ -196,6 +204,7 @@ export const emptyTicket: TicketState = {
   kind: null,
   labels: [],
   links: [],
+  split: null,
   dispatchRefusals: [],
   runs: [],
   restarts: [],
@@ -398,6 +407,11 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
           },
         ],
       }
+    }
+
+    case 'TicketSplit': {
+      const d = event.data as PayloadOf<'TicketSplit'>
+      return { ...state, ...at, split: { waitId: d.waitId, children: d.children } }
     }
 
     case 'TicketLinked': {
