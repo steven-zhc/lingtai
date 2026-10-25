@@ -67,6 +67,8 @@ describe('a split parent whose children are all closed', () => {
     expect((closed!.data as { by: string }).by).toBe('conductor')
     // Nothing provisioned or dispatched — the only entry is the pass tidying a path it never cut.
     expect(did.filter((d) => !d.startsWith('remove '))).toEqual([])
+    // The issue itself is closed even though this recipe's `end` is empty.
+    expect(said).toContain('close #7')
     expect(bodies.join('\n')).toContain('#161 completed, #162 not planned')
   })
 })

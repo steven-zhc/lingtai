@@ -9,6 +9,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it, vi } from 'vitest'
 
 import { claimTicket } from '../src/claim.ts'
+import { closeHolding } from '../src/close.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
 async function splitParent() {
@@ -37,6 +38,7 @@ describe('claimTicket on a split parent', () => {
       ok: false,
       refusal: {
         reason: 'split-done',
+        version: before,
         waitId,
         children: [
           { number: a.number, stateReason: 'completed' },
@@ -85,5 +87,31 @@ describe('claimTicket on a split parent', () => {
     const { store, ticketId } = await splitParent()
     const result = await claimTicket(ticketId, { runId: 'r1', store })
     expect(result.ok).toBe(true)
+  })
+
+  it('is not closed over a stream that moved after the check', async () => {
+    const { store, tickets, ticketId, a, b } = await splitParent()
+    await tickets.closeIssue(a.number)
+    await tickets.closeIssue(b.number)
+    const result = await claimTicket(ticketId, { runId: 'r1', store, children: tickets })
+    const checked = result.ok === false && result.refusal.reason === 'split-done' ? result.refusal.version : -1
+    // Something else lands on the stream while the child reads were awaited.
+    const now = await store.read(ticketId)
+    await store.append(ticketId, now.length, aSplit(makeStream(ticketId), aWaitId(), [a.number]))
+
+    const closed = await closeHolding(
+      {
+        project: 'lingtai',
+        issue: Number(ticketId.split('-').pop()),
+        by: 'conductor',
+        reason: 'r',
+        ifVersion: checked,
+      },
+      store,
+      ticketId,
+    )
+
+    expect(closed.ok).toBe(false)
+    expect((await store.read(ticketId)).map((e) => e.type)).not.toContain('TicketClosed')
   })
 })

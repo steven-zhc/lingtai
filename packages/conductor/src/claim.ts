@@ -84,7 +84,7 @@ export type ClaimRefusal =
    * (#604): nothing is left for an agent to change. Nothing was appended; the
    * caller closes the ticket.
    */
-  | { reason: 'split-done'; waitId: string; children: SplitChildState[] }
+  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
   /** A recorded child is still open, so the ticket should not have been eligible. Nothing was appended. */
   | { reason: 'split-open'; open: number[] }
 
@@ -139,6 +139,7 @@ export async function claimTicket(ticketId: string, options: ClaimOptions): Prom
       ok: false,
       refusal: {
         reason: 'split-done',
+        version: state.version,
         waitId: state.split.waitId,
         children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
       },

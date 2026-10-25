@@ -37,6 +37,11 @@ export interface CloseOptions {
    * closes for `Approve`.
    */
   waitId?: WaitId | null
+  /**
+   * The stream version the caller's decision was made against (#604). When the
+   * stream has moved since — a person asked a question, say — nothing is closed.
+   */
+  ifVersion?: number
   store?: EventStore
 }
 
@@ -148,6 +153,10 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
     // Not an error a person needs to work around: it is done, and saying so is
     // more useful than appending a second ending over the first.
     return { ok: false, ticketId, detail: `${ticketId} landed — there is nothing to close` }
+  }
+
+  if (options.ifVersion !== undefined && item.version !== options.ifVersion) {
+    return { ok: false, ticketId, detail: `${ticketId} changed since it was checked — read it again` }
   }
 
   // Before the close is recorded, so an unreadable recipe refuses rather than

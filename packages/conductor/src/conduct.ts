@@ -2248,11 +2248,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               state: options.project,
               client: options.client,
               recipe: async () => resolved,
+              ifVersion: done.version,
             },
             store,
             ticketId,
           )
           if (closed.ok) {
+            // The recipe's `end` may not close the issue (`end: []`, or a close
+            // restricted to `when: landed`); a terminal event with the issue
+            // still open would be announced and never finished.
+            await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
             await tellGitHub({
               store,
               github: options.client,
