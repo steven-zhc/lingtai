@@ -239,6 +239,16 @@ describe('continue-conflict', () => {
     })
   })
 
+  it('reports a landed ticket as complete rather than as not continuable', async () => {
+    const h = harness()
+    h.deps.events = async () => [
+      ...own,
+      env(ticketId, 'TicketLanded', { mergeCommit: 'm'.repeat(40), base: 'main' }, 2),
+    ]
+    expect(await continueConflictCommand({ project: 'p', issue: 7 }, h.log, h.deps)).toBe(0)
+    expect(h.lines.join('\n')).toContain('landed')
+  })
+
   it('parses the choices file strictly', () => {
     expect(parseChoices({ 'a.ts:1': { answer: 'x' } })).toEqual({ 'a.ts:1': { _tag: 'Answer', answerId: 'x' } })
     expect(parseChoices({ 'a.ts:1': 3 })).toMatch(/must be/)

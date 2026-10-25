@@ -236,8 +236,8 @@ export async function continueConflictCard(input: {
     if (!result.ok) return { ok: false, detail: `${result.reason}: ${result.detail}` }
     if (result.unscheduled)
       return {
-        ok: true,
-        detail: `confirmed — but the continuation was not scheduled (${result.unscheduled}); use Schedule it to ask again`,
+        ok: false,
+        detail: `confirmed — but the continuation was not scheduled (${result.unscheduled}); ask for the continuation again`,
       }
     return {
       ok: true,

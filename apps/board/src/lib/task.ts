@@ -558,7 +558,7 @@ export interface StandingView {
    * the log does. Unset on every other state, and where the board did not read
    * the control stream.
    */
-  conflictContinuation?: ConflictContinuation
+  conflictContinuation?: ConflictContinuation | { _tag: 'Unreadable' }
 }
 
 /**
@@ -1825,10 +1825,14 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // head first, the way `loadBoard`'s card read does — a bare read left the
   // task page and the board reading two different currencies of the same
   // money (`#498`'s review).
+  let controlUnreadable = false
   const [streams, ticket, control, spendFold] = await Promise.all([
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
-    eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
+    eventStore.read(CONTROL_STREAM).catch(() => {
+      controlUnreadable = true
+      return [] as Envelope[]
+    }),
     currentSpend({ ticket: taskId }),
   ])
   const spend = spendFold.rows
@@ -1872,13 +1876,15 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const approvedLife = reduceTicket(own).lifecycle
   const ticketRef = parseTicketStream(taskId)
   if (approvedLife.status === 'approved' && ticketRef !== null)
-    standing.conflictContinuation = conflictContinuation({
-      ...ticketRef,
-      runId: approvedLife.runId,
-      waitId: approvedLife.waitId,
-      own,
-      control,
-    })
+    standing.conflictContinuation = controlUnreadable
+      ? { _tag: 'Unreadable' }
+      : conflictContinuation({
+          ...ticketRef,
+          runId: approvedLife.runId,
+          waitId: approvedLife.waitId,
+          own,
+          control,
+        })
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&

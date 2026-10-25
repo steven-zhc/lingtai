@@ -1093,6 +1093,11 @@ export function Standing({
                 Confirmed by {standing.conflictContinuation.by}; the continuation was requested and the conductor takes
                 it on its next pass.
               </p>
+            ) : standing.conflictContinuation?._tag === 'Unreadable' ? (
+              <p className="refusal">
+                The control stream could not be read, so whether the continuation was requested is not known. Reload
+                this page before asking again.
+              </p>
             ) : (
               <div className="btnrow smoves" data-rank="moves">
                 <ScheduleContinuation

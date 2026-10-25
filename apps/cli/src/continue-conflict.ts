@@ -163,7 +163,9 @@ async function continueConflict(
         log('If nothing starts, `lingtai doctor` says whether a conductor is up.')
         return 0
       }
-      log(`${ticketId} was confirmed, but no continuation request is on the log; nothing will start.`)
+      log(
+        `${ticketId} was confirmed, but no continuation request is on the log for this confirmation; an earlier request for the same run, if there is one, may still start it.`,
+      )
       log(
         `Ask for it with the recorded confirmation: lingtai continue-conflict ${options.project} --issue ${options.issue} ` +
           `--if-base ${resolution.baseSha} --if-head ${resolution.headSha}`,
@@ -205,6 +207,10 @@ async function continueConflict(
     return submit(options, log, deps, ticketId, state, lifecycle.waitId, resolution)
   }
 
+  if (lifecycle.status === 'landed') {
+    log(`${ticketId} landed at ${lifecycle.mergeCommit} on ${lifecycle.base}; there is nothing left to continue.`)
+    return 0
+  }
   if (
     lifecycle.status !== 'blocked' ||
     lifecycle.reason._tag !== 'ProposedEscalated' ||
