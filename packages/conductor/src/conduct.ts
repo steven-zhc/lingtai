@@ -2729,6 +2729,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * The base commit an earlier lap of a **held** run merged in, for a
+       * continuation's review (#594). The pass that merged it is over and its
+       * in-memory record with it, but the merge commit is in the branch: ours,
+       * subject `Merge <base> at <sha> into <branch>`, and its second parent is
+       * the `toSha`. Without it a human-granted fix round's review would diff
+       * against the original cut and show everything the base landed. `null` for
+       * a pass that is not a continuation, or whose branch holds no such merge.
+       */
+      const heldBaseMerge = async (): Promise<string | null> => {
+        if (continuation === null) return null
+        const log = await gitAsked([
+          'log',
+          '--first-parent',
+          '--merges',
+          '--fixed-strings',
+          `--grep=Merge ${base} at `,
+          '--format=%P%x09%s',
+        ])
+        if (Either.isLeft(log)) return null
+        for (const line of log.right.split('\n')) {
+          const [parents = '', subject = ''] = line.split('\t')
+          const second = parents.split(' ')[1]
+          if (second !== undefined && subject.startsWith(`Merge ${base} at `) && subject.endsWith(` into ${branch}`))
+            return second
+        }
+        return null
+      }
+
+      /**
        * `design` — the document into the worktree, and onto the branch (0066 §5,
        * `#300`).
        *
@@ -2878,7 +2907,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
-          diff: (from?: string) => gitOrDie(['diff', `${from ?? baseShaOr('HEAD')}...HEAD`]),
+          diff: async (from?: string) =>
+            gitOrDie(['diff', `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`]),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
           landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
