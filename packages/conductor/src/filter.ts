@@ -390,27 +390,44 @@ export function describeFilter(filter: ProjectFilter): string[] {
   if (!filter.ok) {
     return [`${name} RECIPE INVALID — ${filter.problem}`, `${gap} nothing will be taken from this project`]
   }
+  const [recipe, ...rest] = filterFacts(filter)
+  return [
+    `${name} ${recipe![0]} ${recipe![1]}`,
+    ...rest.map(([key, value]) => `  ${key.padEnd(FACT_KEY_WIDTH)}${value}`),
+  ]
+}
+
+const FACT_KEY_WIDTH = 13
+
+/**
+ * `describeFilter`'s content as key/value pairs, for a reader that lays it out
+ * itself (`lingtai status`, #618) — the same words, so the two cannot disagree (#76).
+ * An invalid recipe is one pair, `recipe`, and a second with no key.
+ */
+export function filterFacts(filter: ProjectFilter): readonly (readonly [string, string])[] {
+  if (!filter.ok) {
+    return [
+      ['recipe', `INVALID — ${filter.problem}`],
+      ['', 'nothing will be taken from this project'],
+    ]
+  }
   const order = filter.kinds.length > 1 ? '   (in priority order)' : ''
   return [
-    `${name} recipe ${filter.configHash.slice(0, 12)} from ${filter.ref}`,
-    `  picks up     ${filter.kinds.join(' > ')}${order}`,
-    `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(', ') : 'nothing'}`,
+    ['recipe', `${filter.configHash.slice(0, 12)} from ${filter.ref}`],
+    ['picks up', `${filter.kinds.join(' > ')}${order}`],
+    ['excludes', filter.exclude.length > 0 ? filter.exclude.join(', ') : 'nothing'],
     // With the login in it, because a wrong login is the mistake this setting
     // can have, and it should be readable before it hands over somebody else's
     // tickets rather than only after (0046 §2, #181).
-    `  assignee     ${describeAssignee(assigneeOf(filter.recipe))}`,
+    ['assignee', describeAssignee(assigneeOf(filter.recipe))],
     // Printed whether it buys anything or not, like a `skipped` gate point: a
     // default that only appears when it is doing something is a default nobody
-    // can audit, and this one spends money (0025 §2).
-    //
-    // **The product, not the three numbers**, because the product is the thing
-    // an operator is deciding about and the one nobody was computing (0039 §3).
-    `  a pass       ${passCeiling(filter.limits)}`,
-    // In the recipe's own words, for the same reason. The backoff decides when
-    // this project spends money again and it was in none of the four places
-    // that describe a project (#95) — a rule nobody can read is one nobody can
-    // change on purpose.
-    `  retries      after ${backoffOf(filter.recipe)}, unless a repair is pending`,
+    // can audit, and this one spends money (0025 §2). **The product, not the
+    // three numbers**, because the product is what an operator is deciding about (0039 §3).
+    ['a pass', passCeiling(filter.limits)],
+    // In the recipe's own words, for the same reason: the backoff decides when
+    // this project spends money again (#95).
+    ['retries', `after ${backoffOf(filter.recipe)}, unless a repair is pending`],
   ]
 }
 

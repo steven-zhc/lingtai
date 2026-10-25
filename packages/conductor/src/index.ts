@@ -29,6 +29,7 @@ export { ownerlessClient, type OwnerlessClient } from './ownerless.ts'
 export {
   describeFilter,
   describeFilters,
+  filterFacts,
   stepPlan,
   githubClientFor,
   ownerlessRefusal,

@@ -699,26 +699,52 @@ check).
 
 ```bash
 pnpm lingtai status nextloom-ai-admin              # what is runnable, and what is holding the rest
-pnpm lingtai status nextloom-ai-admin --refresh    # ask GitHub first
+pnpm lingtai status nextloom-ai-admin --all        # and everything that has left the queue, and why
+pnpm lingtai status --json                         # the same facts as one document
 ```
 
-Without `--refresh` this answers from the queue projection, which nothing writes
-to until a run or the daemon has taken a pass — so on a freshly registered
-project it says `queue: empty` however much work GitHub is offering. `--refresh`
-asks GitHub, writes the queue, and reports **what it passed over and why**:
+It asks GitHub every time, takes nothing, claims nothing and appends no event,
+and reports **what it passed over and why**:
 
 ```
-nextloom-ai-admin  base=develop
-  nextloom-ai-a  recipe 3f8a1c2b9d04 from develop
-    picks up     bug > enhancement   (in priority order)
-    excludes     blocked, needs-design
+nextloom-ai-admin
+
+Project
+  base      develop
+  recipe    3f8a1c2b9d04 from develop
+  picks up  bug > enhancement   (in priority order)
+  excludes  blocked, needs-design
+  ...
+
+Queue  9 runnable
   from GitHub: 9 eligible, 29 passed over — excluded-label 29
-  queue: 9 runnable
-    #154   bug         [Bug] The resolve-aliases destination search has no request sequencing…
-    #110   enhancement [Enhancement] /users still prints async job ids to copy…
+  ID     KIND         TITLE                                                           STATE
+  #154   bug          [Bug] The resolve-aliases destination search has no request…
+  #110   enhancement  [Enhancement] /users still prints async job ids to copy…
 ```
 
-The first three lines are **what this project will and will not take**, and
+A waiting ticket is its own section, one `●` line each, with the reason on the
+same line; `--all` adds what was diagnosed under each:
+
+```
+Waiting on you
+  ● #609  bug  Pick an approach — waiting for your answer: should the retry live in the queue or the lane?
+next: lingtai answer nextloom-ai-admin --issue 609 "<choice>"
+```
+
+**A monitor reads `--json`, not the text.** The old `queue: N runnable` line is
+now `runnable` in the document, one entry per ticket that could start next:
+
+```bash
+lingtai status --json | jq '.projects[] | {project, runnable: (.runnable | length)}'
+```
+
+`eligible`, `passedOver`, `byState` (the projection's own state names) and
+`waiting` are alongside it; `dependenciesUnread` is the sentence or `null`. A
+failure to read at all is `{"error": {"code": "unavailable", ...}}` and exit 1;
+`usage` is reserved for arguments that did not parse, and an unknown flag is one.
+
+The **Project** section is **what this project will and will not take**, and
 `lingtai start` prints the same block for every registered project at startup,
 from the same function, before it takes anything. A project whose recipe will
 not resolve gets that slot rather than being left out:

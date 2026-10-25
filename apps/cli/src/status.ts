@@ -8,7 +8,7 @@
  */
 import {
   backingOff,
-  describeFilter,
+  filterFacts,
   heldUntil,
   loadProjects,
   passedOver,
@@ -22,6 +22,8 @@ import { agentBranchOf, waitWords } from '@lingtai/domain'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+
+import { heading, keyValues, section, symbol, table } from './output.ts'
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -87,193 +89,183 @@ export interface StatusReading {
   recipeFor?: RecipeFor
 }
 
-export async function status(
-  options: StatusOptions = {},
-  log = console.log,
-  reading: StatusReading = {},
-): Promise<number> {
-  const projects = (await loadProjects()).filter((p) => !options.project || p.project === options.project)
+/** What a person is being waited on for, in the words the card and the board use (#147). */
+export interface StatusWait {
+  /** `WaitReason`'s `_tag`. */
+  reason: string
+  /** `waitWords`' sentence: the question itself for an `OwnQuestion`. */
+  line: string
+  needs: 'judgement' | 'acknowledgement'
+  /** `describeWait`'s phrase, where the wait is one a person can tell apart at a glance. */
+  words: 'waiting for your answer' | 'waiting for your review' | null
+  /** `describeWaitLines`' lines — what was diagnosed about it. */
+  detail: string[]
+  /** There is raw failure output, kept on the log and the card rather than printed. */
+  raw: boolean
+}
 
+export interface StatusRow {
+  taskId: string
+  ref: string
+  kind: string
+  title: string
+  /** The projection's own state value — `verifying` stays `verifying`. */
+  state: string
+  restarts: number
+  /** `describeArm`'s sentence, or null. */
+  arm: string | null
+  /** `backingOff`'s sentence while the retry window holds it. */
+  held: string | null
+  /** Queued, but the ticket source is not offering it — closed by hand, relabelled, excluded. */
+  unoffered: boolean
+  wait: StatusWait | null
+}
+
+/** `ProjectFilter` reduced to what a reader needs, so a report can be built by hand in a test. */
+export type StatusFilter =
+  | {
+      ok: true
+      /** `describeFilter`'s words, as key/value pairs (`filterFacts`). */
+      facts: (readonly [string, string])[]
+      recipe: string
+      ref: string
+      kinds: string[]
+      exclude: string[]
+    }
+  | { ok: false; facts: (readonly [string, string])[]; problem: string }
+
+export interface ProjectStatus {
+  project: string
+  base: string | null
+  filter: StatusFilter
+  /** `GitHub` or `the ticket table`. Null when the recipe would not resolve. */
+  source: string | null
+  /** How many the recipe's `kinds` and `exclude` will take. Null when the source was not asked. */
+  eligible: number | null
+  offerError: string | null
+  passedOver: { ref: number; reason: string }[]
+  /** `passedOver`'s one sentence, or null. */
+  passedOverLine: string | null
+  /** `discover.ts`'s sentence when GitHub sent no dependency summary, else null. */
+  dependenciesUnread: string | null
+  /** What could start next, in `selectRunnable`'s order. */
+  runnable: StatusRow[]
+  /** Every row the log has for this project. */
+  known: StatusRow[]
+}
+
+export interface StatusReport {
+  projects: ProjectStatus[]
+  /** The one-line answer when there is nothing to report on. */
+  message: string | null
+}
+
+/** `verifying` folds into `running`: from an operator's seat they are the same fact. */
+const NAMES: Record<string, string> = {
+  running: 'running',
+  verifying: 'running',
+  approved: 'approved, not yet taken up',
+  waiting: 'waiting on you',
+  landed: 'landed',
+}
+
+/**
+ * Everything `status` knows, and nothing printed. The reads are the same ones in
+ * the same order the command always made; the words are computed here so that
+ * `renderStatus` and `statusJson` are pure.
+ */
+export async function readStatus(options: StatusOptions = {}, reading: StatusReading = {}): Promise<StatusReport> {
+  const projects = (await loadProjects()).filter((p) => !options.project || p.project === options.project)
   if (projects.length === 0) {
-    log(
-      options.project
+    return {
+      projects: [],
+      message: options.project
         ? `no project named "${options.project}" — run lingtai add <owner>/<repo> first`
         : 'no projects registered — run lingtai add <owner>/<repo>',
-    )
-    return 0
+    }
   }
 
+  const out: ProjectStatus[] = []
   for (const project of projects) {
     const name = project.project!
-    log(`${name}  base=${project.base ?? '(unrecorded)'}`)
-
-    // What this project will and will not take, said before the numbers that
-    // depend on it — and said by the same function `lingtai daemon` prints at
-    // startup, so the two cannot disagree (#76). It names the recipe's hash and
-    // branch, its kinds in priority order, its excludes; or, when the recipe
-    // will not resolve, that and the reason, which is the case that used to
-    // render as a queue that was simply empty.
+    // Said before the numbers that depend on it, by the facts of the function
+    // `lingtai daemon` prints at startup, so the two cannot disagree (#76).
     const filter = await projectFilter(project, reading.clientFor, reading.recipeFor)
-    for (const line of describeFilter(filter)) log(`  ${line}`)
+    const view: StatusFilter = filter.ok
+      ? {
+          ok: true,
+          facts: [...filterFacts(filter)],
+          recipe: filter.configHash,
+          ref: filter.ref,
+          kinds: [...filter.kinds],
+          exclude: [...filter.exclude],
+        }
+      : { ok: false, facts: [...filterFacts(filter)], problem: filter.problem }
 
     // Priority order is the recipe's `kinds`, and the recipe lives in the
     // managed repository — so without GitHub the queue can still be listed, just
     // not prioritised.
     const kinds: readonly string[] = filter.ok ? filter.kinds : []
-    // What the ticket source is offering. Empty when it could not be asked,
-    // which is not the same as an empty queue and is said differently below.
+    // Empty when the ticket source could not be asked, which is not the same as
+    // an empty queue and is said differently.
     let offered: { ref: string; title: string; kind: string }[] = []
-    /** Whether the ticket source answered at all. An empty offer means nothing without it. */
     let asked = false
+    let source: string | null = null
+    let eligible: number | null = null
+    let offerError: string | null = null
+    let skipped: { ref: number; reason: string }[] = []
+    let passed: string | null = null
+    let unread: string | null = null
     if (filter.ok) {
-      // `GitHub` or `the ticket table`, after where this project's tickets
-      // actually live (`#389`) — the one line below that said `GitHub` for a
-      // `db` project regardless, on both the success and the failure wording.
-      const source = sourceName(ticketSourceOf(filter.recipe))
+      // After where this project's tickets actually live (#389).
+      source = sourceName(ticketSourceOf(filter.recipe))
       try {
         const { tickets, recipe } = filter
-
-        // Always, not behind a flag. There is nothing left to read the queue
-        // out of — 0022 deleted the table that used to hold it — so the choice
-        // is between asking the ticket source and having no answer. This takes
-        // nothing, claims nothing and appends no event. **`tickets`, not
-        // `client`** (`#382`): a `db` project's queue lives in `dbTickets`, not
-        // GitHub, same as `board.ts` and `queued.ts`.
+        // Always, never behind a flag; takes nothing, claims nothing, appends no
+        // event. **`tickets`, not `client`** (#382): a `db` project's queue lives
+        // in `dbTickets`, same as `board.ts` and `queued.ts`.
         const found = await runnableNow({ client: tickets, queue: queueOf(recipe) })
         offered = found.runnable
         asked = true
-        const passed = passedOver(found.skipped)
-        // **`eligible`, not `runnable`.** They are answers to different
-        // questions and this line used the other line's word for its own,
-        // which made "8 runnable / 0 runnable" read as a contradiction when
-        // both numbers were right (`#54`). This one is about the *recipe* —
-        // how many open issues its `kinds` and `exclude` will take. The line
-        // below is about *state* — how many can be claimed right now.
-        log(offerLine(source, found.runnable.length, passed))
-        // Once, beside the count it explains. A repository whose plan does not
-        // expose dependencies passes nothing over for one, and a `blocked-by`
-        // that is simply never printed reads as a repository with no chains in
-        // it (#131). The phrase is `discover.ts`'s, not this file's.
-        if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`)
+        // **`eligible`, not `runnable`** (#54): this is about the recipe, the queue line about state.
+        eligible = found.runnable.length
+        skipped = found.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
+        passed = passedOver(found.skipped)
+        unread = found.dependenciesUnread
       } catch (err) {
-        log(offerFailedLine(source, err as Error))
+        offerError = (err as Error).message
       }
     }
 
-    // What GitHub offers minus what the log says is claimed — including
-    // anything the backoff is still holding, which the listing below names.
-    //
-    // Zero when the recipe would not resolve, and it changes no answer: nothing
-    // was offered either, so there is nothing for a window to apply to. It is
-    // not a fallback for the recipe's value (0028) — there is no such thing.
+    // Zero when the recipe would not resolve: nothing was offered either.
     const backoffMs = filter.ok ? filter.backoffMs : 0
-    // The ceiling `describeArm` says `of` against — the recipe's own
-    // `limits.restarts`, the same field `board.ts:709` reads, and null where
-    // the recipe would not resolve (`#504`). `restarts_of` has had no writer
-    // since `#502`, so this is the only place the ceiling can come from.
+    // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
     const restartsOf = filter.ok ? filter.limits.restarts : null
     const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs })
-    const known = await readTasks({ project: name })
-    // **The arm comes from the row, because the offer cannot carry it.**
-    // `selectRunnable` answers *what could start next* out of GitHub's offer
-    // and the log's claims — `Runnable` is four fields and none of them is a
-    // restart. A restarted ticket is queued, so without `--all` it is listed
-    // from here and from nowhere else, and reading the arm off the projection
-    // is what stops `lingtai status` saying nothing about an approach the
-    // board's card names (#100). Zero for an issue Lingtai has never touched:
-    // it has no row, and no approach has been abandoned.
-    const rowOf = new Map(known.map((t) => [t.taskId, t]))
-    const queuedRows = runnable.map((r) => ({
-      ...r,
-      state: 'queued' as const,
-      restarts: rowOf.get(r.taskId)?.restarts ?? 0,
-    }))
-
-    // **Where the rest went**, in the same breath as the number. A reader who
-    // sees eight eligible and none runnable has to be told why, or the honest
-    // reading of the pair is "something is broken" (`#54`). `verifying` folds
-    // into `running`: from an operator's seat they are the same fact.
-    //
-    // **The key is the projection's value and not a word this file picked.** It
-    // is what `task-view.ts` writes and what `LABEL_STATES` holds, and it was
-    // `gates` until `#247` renamed all three together — a lookup renamed ahead
-    // of the value it reads matches nothing, and the `?? t.state` below then
-    // prints the stored word as a label of its own, which is how `1 running,
-    // 1 gates` came to be one fact under two labels.
-    const NAMES: Record<string, string> = {
-      running: 'running',
-      verifying: 'running',
-      approved: 'approved, not yet taken up',
-      waiting: 'waiting on you',
-      landed: 'landed',
-    }
-    const elsewhere = new Map<string, number>()
-    // **A question asked before any run is printed, not counted** (#147). It is
-    // the one hold whose whole content is a sentence a person has to read, and
-    // `1 waiting on you` would say there is a question without saying which.
-    const askedBefore = known.filter((t) => t.wait?.reason._tag === 'OwnQuestion')
-    for (const t of known) {
-      if (t.state === 'queued') continue
-      if (t.wait?.reason._tag === 'OwnQuestion') continue
-      const label = NAMES[t.state] ?? t.state
-      elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1)
-    }
-    const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(', ')
-
-    log(`  queue: ${runnable.length} runnable` + (elsewhereSays ? ` — ${elsewhereSays}` : ''))
-
-    // Under the number, and always rather than behind `--all`: the queue is
-    // passing these over, and the reason is a question only a person can
-    // answer. With `--all` they are rows below and say it there instead.
-    if (askedBefore.length > 0 && !options.all) {
-      log(`  asked, before any run — lingtai answer ${name} --issue <n> "<choice>":`)
-      for (const t of askedBefore) {
-        const words = waitWords(t.wait!.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
-        log(
-          `    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait({ waiting: true, asked: true, awaitingSha: t.awaitingSha, needs: words.needs })}]`)}`,
-        )
-        log(`             ${oneLine(words.line)}`)
-      }
-    }
-
-    // `--all` widens the listing to everything the project has a row for,
-    // which is how you see what is running, held or landed rather than only
-    // what could start next.
-    let rows: {
-      taskId: string
-      issue: string
-      kind: string
-      title: string
-      state: string
-      /** Only ever on a row the log wrote; an offer GitHub made carries neither. */
-      lastAttemptAt?: Date | null
-      repairPending?: boolean
-      /** The card's line: what it is waiting on, or why it stopped. */
-      note?: string | null
-      /** The wait on a projected row. Absent on a GitHub offer. */
-      wait?: TaskCard['wait']
-      /** The sha a review is about. Absent on a GitHub offer. */
-      awaitingSha?: string | null
-      /** Approaches abandoned. Absent on a GitHub offer. */
-      restarts?: number
-    }[] = queuedRows
-    if (options.all) {
-      const ids = new Set(known.map((t) => t.taskId))
-      // An issue GitHub offers that Lingtai has never touched has no row at
-      // all. Before 0022 the cache wrote it one; now it is only in the offer.
-      rows = [...known, ...queuedRows.filter((r) => !ids.has(r.taskId))]
-    }
-    if (rows.length === 0) continue
+    const tasks = await readTasks({ project: name })
+    // **The arm comes from the row, because the offer cannot carry it** (#100):
+    // a restarted ticket is queued, so it is listed from here and nowhere else.
+    const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
     const now = Date.now()
-    for (const t of rows) {
-      // **When, not whether** (`#95`). A task inside the backoff window is
-      // runnable-but-not-yet, and `[backing off]` on its own is a state a person
-      // can see and cannot act on: nothing said how long it lasted or what ended
-      // it. The arithmetic is the recipe's `source.backoff` from the last
-      // attempt, so it is said here rather than left to be looked up (0028) —
-      // and the sentence is `backingOff`'s rather than this file's, so the card
-      // that shows the same row shows it in the same words (#100).
-      const held =
+    const offeredKinds = kinds.length > 0 ? kinds : ['bug']
+    const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
+
+    const rowOf = (
+      t: {
+        taskId: string
+        issue: string
+        kind: string
+        title: string
+        state: string
+        lastAttemptAt?: Date | null
+        repairPending?: boolean
+        wait?: TaskCard['wait']
+        awaitingSha?: string | null
+      },
+      restarts: number,
+    ): StatusRow => {
+      // **When, not whether** (#95): the sentence is `backingOff`'s, so the card says it in the same words (#100).
+      const until =
         t.state === 'queued'
           ? heldUntil(
               { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
@@ -281,84 +273,213 @@ export async function status(
               now,
             )
           : null
-      // A queued row that is not runnable and not held is one GitHub is not
-      // offering — closed by hand, relabelled, excluded. That is not the clock
-      // and never was, and calling it `[backing off]` was the second thing this
-      // line got wrong. Said only when GitHub actually answered: with no answer
-      // every row looks unoffered, and the line above already says so.
-      const unoffered = t.state === 'queued' && asked && !runnable.some((r) => r.taskId === t.taskId)
-      // **The board's lanes, in the terminal's colours** (#107). `stateInk`
-      // holds the assignment so that this file and `globals.css` cannot drift:
-      // landed is the pass colour, running and gates the accent, waiting the
-      // one thing amber is for.
-      //
-      // The two queued suffixes are dim rather than coloured, and deliberately.
-      // `[backing off — runnable in 32m]` is a clock and `[not offered]` is an
-      // absence; neither is a verdict and neither is a person, so giving either
-      // a hue would be spending the vocabulary on decoration.
-      // Which wait, where it is one of the two a person can tell apart at a
-      // glance — the board's chip, in the same words (#147).
       const words =
         t.wait == null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
-      const wait = describeWait({
-        waiting: t.wait != null,
-        asked: t.wait?.reason._tag === 'OwnQuestion',
-        awaitingSha: t.awaitingSha ?? null,
-        needs: words?.needs ?? null,
-      })
-      const note =
-        t.state !== 'queued'
-          ? `  ${stateInk(t.state)(`[${wait ?? t.state}]`)}`
-          : held
-            ? `  ${paint.muted(`[${backingOff(held, now)}]`)}`
-            : unoffered
-              ? `  ${paint.muted('[not offered]')}`
-              : ''
-      log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`)
-
-      // **Which arm, on every row that has one** (0040 §3) — not only the
-      // blocked ones below, because the interesting moment is the arm that is
-      // *running*: a ticket on its second approach looks, in this listing,
-      // exactly like one on its first. `attempts` cannot say it, since a claim
-      // after a crash and a claim after an approach was thrown away are the same
-      // claim.
-      //
-      // The sentence is `describeArm`'s and not this file's, so the card and
-      // this command say it in the same words (#100) — fed the same ceiling
-      // the board reads, `filter.limits.restarts` above, rather than the
-      // row's own `restarts_of` (`#504`, no writer since `#502`). The depth
-      // half of the pair — `fixing round 2 of 3` — is the row's `note`, which
-      // this listing prints only where a person is holding a question
-      // (below); on the board it is on every card. So this line is the whole
-      // of what a terminal says about a running arm, which is why it is not
-      // inside that `if`.
-      const arm = armLine(t, restartsOf)
-      if (arm) log(`             ${paint.muted(arm)}`)
-
-      // **The same thing the card says.** This line used to stop at `[waiting]`:
-      // the question was on the board and nowhere else, so the two places an
-      // operator asks *why is this stuck* answered differently — which is the
-      // failure #83 is about. The question first, then whatever was diagnosed
-      // about it, in `describeWaitLines`'s words rather than this file's. A block
-      // that carries only a question prints one line, exactly as its card
-      // shows one.
-      //
-      // Only where a person is actually holding a question — `waiting`, not the
-      // state — for the reason the card's controls use the same test: the
-      // waiting lane also holds a refused dispatch and a run that asked
-      // something mid-flight.
-      if (words !== null) {
-        log(`             ${oneLine(words.line)}`)
-        for (const line of describeWaitLines(words)) {
-          log(`             ${oneLine(line.text)}`)
-        }
-        // The raw failure is not printed and is not lost: a hundred lines of git
-        // output would bury the listing it belongs to. Said rather than silently
-        // dropped, because a summary that hides the output has to admit there is
-        // output — the card puts it one disclosure away.
-        if (words.diagnosis?.raw) log('             (the failure itself is on the log, and on the card)')
+      return {
+        taskId: t.taskId,
+        ref: t.issue,
+        kind: t.kind,
+        title: t.title,
+        state: t.state,
+        restarts,
+        arm: armLine({ restarts }, restartsOf),
+        held: until ? backingOff(until, now) : null,
+        // Said only when the source actually answered: with no answer every row looks unoffered.
+        // Against the offer and not `runnable`, which the retry window has already thinned.
+        unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
+        wait:
+          t.wait == null || words === null
+            ? null
+            : {
+                reason: t.wait.reason._tag,
+                line: words.line,
+                needs: words.needs,
+                words: describeWait({
+                  waiting: true,
+                  asked: t.wait.reason._tag === 'OwnQuestion',
+                  awaitingSha: t.awaitingSha ?? null,
+                  needs: words.needs,
+                }),
+                detail: describeWaitLines(words).map((l) => l.text),
+                raw: Boolean(words.diagnosis?.raw),
+              },
       }
     }
+
+    out.push({
+      project: name,
+      base: project.base ?? null,
+      filter: view,
+      source,
+      eligible,
+      offerError,
+      passedOver: skipped,
+      passedOverLine: passed,
+      dependenciesUnread: unread,
+      runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
+      known: tasks.map((t) => rowOf(t, t.restarts ?? 0)),
+    })
   }
+  return { projects: out, message: null }
+}
+
+/** The state column: the wait's words, the clock, the absence — and the arm, muted. */
+function stateCell(row: StatusRow): string {
+  const parts: string[] = []
+  if (row.state !== 'queued') {
+    const said = row.wait?.words ?? row.state
+    // Amber is ● and nothing else (0121 §2): a wait is amber on its own line below.
+    parts.push(row.wait ? `[${said}]` : stateInk(row.state)(`[${said}]`))
+  } else if (row.held) parts.push(paint.muted(`[${row.held}]`))
+  else if (row.unoffered) parts.push(paint.muted('[not offered]'))
+  if (row.arm) parts.push(paint.muted(row.arm))
+  return parts.join('  ')
+}
+
+/**
+ * 0121's layout: the project block, the queue and the people being waited on,
+ * as separate sections. `columns` is the terminal's width, `undefined` when
+ * redirected, which is never truncated.
+ */
+export function renderStatus(
+  report: StatusReport,
+  options: { all?: boolean; columns?: number | undefined } = {},
+): string[] {
+  if (report.message !== null) return [report.message]
+  const blocks: string[] = []
+  for (const p of report.projects) {
+    const lines: string[] = [heading(p.project), '']
+    lines.push(
+      section(
+        'Project',
+        keyValues([['base', p.base ?? '(unrecorded)'], ...p.filter.facts.map(([k, v]) => [k, v] as const)]),
+      ),
+    )
+
+    // `verifying` folds into `running`. A row with a wait is in the Waiting section, not counted twice (#147).
+    const elsewhere = new Map<string, number>()
+    for (const t of p.known) {
+      if (t.state === 'queued' || t.wait !== null) continue
+      const label = NAMES[t.state] ?? t.state
+      elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1)
+    }
+    const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(', ')
+
+    const queue: string[] = []
+    if (p.source !== null) {
+      if (p.offerError !== null) queue.push(offerFailedLine(p.source, new Error(p.offerError)).trim())
+      else if (p.eligible !== null) queue.push(offerLine(p.source, p.eligible, p.passedOverLine).trim())
+    }
+    if (p.dependenciesUnread !== null) queue.push(`(${p.dependenciesUnread})`)
+    // `--all` widens the listing to everything the project has a row for.
+    const ids = new Set(p.known.map((t) => t.taskId))
+    const rows = options.all ? [...p.known, ...p.runnable.filter((r) => !ids.has(r.taskId))] : p.runnable
+    if (rows.length > 0) {
+      queue.push(
+        ...table(
+          ['ID', 'KIND', 'TITLE', 'STATE'],
+          rows.map((r) => [`#${r.ref}`, r.kind, r.title, stateCell(r)]),
+          { columns: options.columns },
+        ),
+      )
+    }
+    lines.push('', section(`Queue  ${p.runnable.length} runnable${elsewhereSays ? ` — ${elsewhereSays}` : ''}`, queue))
+
+    // Every wait, every time: the reason is a question only a person can answer.
+    const waiting = p.known.filter((t) => t.wait !== null)
+    if (waiting.length > 0) {
+      const lines2: string[] = []
+      for (const t of waiting) {
+        const w = t.wait!
+        lines2.push(
+          `${symbol.signal()} #${t.ref}  ${t.kind}  ${t.title} — ${w.words ? `${w.words}: ` : ''}${oneLine(w.line)}`,
+        )
+        if (options.all) {
+          for (const d of w.detail) lines2.push(`    ${oneLine(d)}`)
+          // The raw failure is not printed and is not lost: it is on the log and the card.
+          if (w.raw) lines2.push('    (the failure itself is on the log, and on the card)')
+        }
+      }
+      lines.push('', section('Waiting on you', lines2))
+      for (const t of waiting) {
+        if (t.wait!.reason === 'OwnQuestion')
+          lines.push(`next: lingtai answer ${p.project} --issue ${t.ref} "<choice>"`)
+      }
+    }
+    blocks.push(lines.join('\n'))
+  }
+  return blocks.join('\n\n').split('\n')
+}
+
+const rowJson = (r: StatusRow): Record<string, unknown> => ({
+  taskId: r.taskId,
+  ref: r.ref,
+  kind: r.kind,
+  title: r.title,
+})
+
+/** The body `--json` wraps in `{ version, command }` (0121 §5). */
+export function statusJson(report: StatusReport): Record<string, unknown> {
+  return {
+    projects: report.projects.map((p) => {
+      const byState: Record<string, unknown[]> = {}
+      for (const t of p.known)
+        (byState[t.state] ??= []).push({
+          ...rowJson(t),
+          restarts: t.restarts,
+          held: t.held,
+          arm: t.arm,
+          unoffered: t.unoffered,
+        })
+      return {
+        project: p.project,
+        base: p.base,
+        filter: p.filter.ok
+          ? {
+              ok: true,
+              recipe: p.filter.recipe,
+              ref: p.filter.ref,
+              kinds: p.filter.kinds,
+              exclude: p.filter.exclude,
+              facts: p.filter.facts.map(([key, value]) => ({ key, value })),
+            }
+          : { ok: false, problem: p.filter.problem, facts: p.filter.facts.map(([key, value]) => ({ key, value })) },
+        source: p.source,
+        eligible: p.eligible,
+        offerError: p.offerError,
+        passedOver: p.passedOver,
+        dependenciesUnread: p.dependenciesUnread,
+        runnable: p.runnable.map((r) => ({
+          ...rowJson(r),
+          restarts: r.restarts,
+          held: r.held,
+          arm: r.arm,
+        })),
+        byState,
+        waiting: p.known
+          .filter((t) => t.wait !== null)
+          .map((t) => ({
+            taskId: t.taskId,
+            ref: t.ref,
+            reason: t.wait!.reason,
+            line: t.wait!.line,
+            needs: t.wait!.needs,
+            asked: t.wait!.reason === 'OwnQuestion',
+            detail: t.wait!.detail,
+            raw: t.wait!.raw,
+          })),
+      }
+    }),
+  }
+}
+
+/** Reads and prints the text form — what the tests that drive the command with a `log` use. */
+export async function status(
+  options: StatusOptions = {},
+  log = console.log,
+  reading: StatusReading = {},
+): Promise<number> {
+  const report = await readStatus(options, reading)
+  for (const line of renderStatus(report, { all: options.all, columns: process.stdout.columns })) log(line)
   return 0
 }
