@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,7 +18,7 @@ import { WIP_COMMIT_PREFIX } from '@lingtai/domain'
 import { Either } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { commitWipExceptPlanted, type GitHere, keptRunPort } from '../src/kept-run-port.ts'
+import { commitWipExceptPlanted, type GitHere, keptRunPort, restoreAfterReview } from '../src/kept-run-port.ts'
 
 const exec = promisify(execFile)
 const PLANT = '.env.local'
@@ -124,5 +124,61 @@ describe('keptRunPort.keep, against a real git repository', () => {
     await writeFile(join(dir, PLANT), 'changed again\n')
     const second = await port.keep('format')
     expect(second).toEqual({ nothing: true })
+  })
+})
+
+describe('restoreAfterReview, against a real git repository (#587)', () => {
+  async function headOf(dir: string): Promise<string> {
+    const { stdout } = await exec('git', ['-C', dir, 'rev-parse', 'HEAD'])
+    return stdout.trim()
+  }
+  const statusOf = async (dir: string) => (await exec('git', ['-C', dir, 'status', '--porcelain'])).stdout.trim()
+
+  it('puts back a review that edited, added and committed, and spares the planted file', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    const onSha = await headOf(dir)
+    await writeFile(join(dir, PLANT), 's\n')
+    await writeFile(join(dir, 'README.md'), 'edited\n')
+    await exec('git', ['-C', dir, 'commit', '-q', '-am', 'the reviewer committed'])
+    await writeFile(join(dir, 'README.md'), 'edited again\n')
+    await writeFile(join(dir, 'scratch.md'), 'x\n')
+
+    const answer = await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)
+
+    expect(answer).toMatchObject({ restored: expect.stringContaining('scratch.md') })
+    expect(await headOf(dir)).toBe(onSha)
+    // The planted file is the one untracked line left, because this repository
+    // does not ignore it; everything the reviewer left is gone.
+    expect(await statusOf(dir)).toBe(`?? ${PLANT}`)
+    await expect(access(join(dir, PLANT))).resolves.toBeUndefined()
+  })
+
+  it('keeps a planted file the reviewer committed on a branch of its own', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    const onSha = await headOf(dir)
+    await exec('git', ['-C', dir, 'checkout', '-q', '-b', 'reviewer'])
+    await writeFile(join(dir, PLANT), 's\n')
+    await exec('git', ['-C', dir, 'add', '-A'])
+    await exec('git', ['-C', dir, 'commit', '-q', '-m', 'the reviewer committed the planted file'])
+
+    const answer = await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)
+
+    expect(answer).toMatchObject({ restored: expect.any(String) })
+    expect(await headOf(dir)).toBe(onSha)
+    expect(await statusOf(dir)).toBe(`?? ${PLANT}`)
+    await expect(access(join(dir, PLANT))).resolves.toBeUndefined()
+  })
+
+  it('does nothing to a tree the review left alone, planted file included', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    const onSha = await headOf(dir)
+    // The pass's worktree is cut detached; a branch here would read as moved.
+    await exec('git', ['-C', dir, 'checkout', '-q', '--detach'])
+    await writeFile(join(dir, PLANT), 's\n')
+
+    expect(await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)).toEqual({ untouched: true })
   })
 })

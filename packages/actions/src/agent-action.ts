@@ -104,6 +104,13 @@ export interface AgentActionSpec {
   model?: string
 }
 
+/**
+ * What the caller found in the worktree after a review, and did about it
+ * (`#587`): nothing, or it put the tree back and says what it found, or it
+ * could not. Plain text, for the run log and `evidence`.
+ */
+export type RestoreAnswer = { readonly untouched: true } | { readonly restored: string } | { readonly failed: string }
+
 export interface AgentActionDeps {
   runtime: Runtime
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
@@ -120,6 +127,14 @@ export interface AgentActionDeps {
     fromSha: string
     toSha: string
   }) => Promise<{ path: string; diff: string }[]>
+  /**
+   * Puts the development worktree back at `onSha`, clean, if the reviewer left
+   * it otherwise (`#587`). Supplied by the caller for `diff`'s reason: git is
+   * not this package's. **Required**, because an optional one that a path
+   * leaves out restores nothing, silently. `createAgentAction` calls it after
+   * every review; `createDraftAction` does not.
+   */
+  restore: (onSha: string) => Promise<RestoreAnswer>
   /** Rendered outside the worktree, like the implementer's. */
   settingsPath: string
   /**
@@ -498,6 +513,10 @@ function isRefusedAbout(value: unknown): value is RefusedAbout {
   return (REFUSED_ABOUT as readonly unknown[]).includes(value)
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function summarise(findings: readonly ActionFinding[]): string {
   if (findings.length === 0) return 'no findings'
   return findings.map((f) => `${f.severity} ${f.file}${f.line === null ? '' : `:${f.line}`} — ${f.claim}`).join('\n')
@@ -559,29 +578,67 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
           (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : '') +
           (moved === undefined ? '' : ` · base moved on ${moved.paths.length} paths`),
       )
-      const outcome = await deps.runtime.run({
-        runId: reviewId,
-        cwd: context.cwd,
-        prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock),
-        // The cold reviewer's own flag (`#369`): the only action that sends one.
-        // Each adapter turns it into the runtime's own way of forcing the shape
-        // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
-        outputSchema: REVIEW_ANSWER_JSON_SCHEMA,
-        // The recipe's, or the key is not sent at all — `RunRequest.model` is
-        // optional and the adapter omits `--model` without it, which is what
-        // "the runtime's own default" means in the one place it has to be true.
-        ...(spec.model === undefined ? {} : { model: spec.model }),
-        settingsPath: deps.settingsPath,
-        // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
-        // runs without the hook, so its tool calls are the stream's to write.
-        log: context.log,
-        traceTools: true,
-        env: context.env,
-        limits: deps.limits,
-        signal: context.signal,
-      })
+      let outcome: RunOutcome | undefined
+      let thrown: { error: unknown } | undefined
+      try {
+        outcome = await deps.runtime.run({
+          runId: reviewId,
+          cwd: context.cwd,
+          prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock),
+          // The cold reviewer's own flag (`#369`): the only action that sends one.
+          // Each adapter turns it into the runtime's own way of forcing the shape
+          // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
+          outputSchema: REVIEW_ANSWER_JSON_SCHEMA,
+          // The recipe's, or the key is not sent at all — `RunRequest.model` is
+          // optional and the adapter omits `--model` without it, which is what
+          // "the runtime's own default" means in the one place it has to be true.
+          ...(spec.model === undefined ? {} : { model: spec.model }),
+          settingsPath: deps.settingsPath,
+          // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
+          // runs without the hook, so its tool calls are the stream's to write.
+          log: context.log,
+          traceTools: true,
+          env: context.env,
+          limits: deps.limits,
+          signal: context.signal,
+        })
+      } catch (error) {
+        thrown = { error }
+      }
 
-      return { ...reviewAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
+      // **Whatever the outcome — passed, refused, or thrown — the worktree goes
+      // back** (`#587`). "Do not change it" is a sentence in the prompt; a
+      // reviewer that edited a file or moved `HEAD` would hand the next fix
+      // round a tree it did not leave, and the fixer's `git add -A` would
+      // commit the leftovers as its own. Steps run one after another, so this
+      // cannot overlap another step's use of the worktree.
+      const restored = await deps.restore(context.onSha)
+      let restoredNote: string | undefined
+      if ('restored' in restored) {
+        restoredNote = restored.restored
+        context.log?.note('review', restoredNote)
+      } else if ('failed' in restored) {
+        const failure = `the worktree could not be restored to ${context.onSha.slice(0, 7)} after the review: ${restored.failed}`
+        context.log?.note('review', failure)
+        throw new Error(
+          thrown === undefined ? failure : `${failure} (the review had also thrown: ${errorMessage(thrown.error)})`,
+        )
+      }
+      if (thrown !== undefined) {
+        // The error is all a throwing review leaves on the log, so the
+        // restoration rides on it; the original stays as the cause.
+        if (restoredNote === undefined) throw thrown.error
+        throw new Error(`${errorMessage(thrown.error)} (${restoredNote})`, { cause: thrown.error })
+      }
+      if (outcome === undefined) throw new Error('the review returned no outcome')
+
+      const result = { ...reviewAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
+      // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
+      // and `verdict`, `findings` and `because` are not touched: a reviewer
+      // that edited the tree has not refused the diff.
+      return restoredNote === undefined
+        ? result
+        : { ...result, evidence: boundedEvidence(`${result.evidence}\n${restoredNote}`) }
     },
   }
 }

@@ -1871,10 +1871,18 @@ runtime:
         return { settingsPath: '/tmp/fake/settings.json', socketPath: '/tmp/fake/sock', env: {} } as never
       })
     const inner = ports.repo.git
+    // The review's restore reads status again after its clean; the fix round's
+    // leftovers are what this scenario keeps, so only that one read is clean.
+    let justCleaned = false
     ports.repo.git = (args, o) => {
+      if (args[0] === 'clean') justCleaned = true
       if (args[0] === 'status') {
         return Effect.sync(() => {
           did.push('git status')
+          if (justCleaned) {
+            justCleaned = false
+            return ''
+          }
           return dirty ? ' M src/leftover.ts\n' : ''
         })
       }

@@ -164,6 +164,7 @@ const coldReviewerSaying = (text: string | null): Action =>
       },
       issue: async () => ({ ref: '269', title: 'T5d', body: 'the queue is a plugin at `claim`' }),
       diff: async () => 'diff --git a/x b/x\n+1',
+      restore: async () => ({ untouched: true as const }),
       settingsPath: '/nowhere/settings.json',
       limits: { turns: 80, wallMs: 3_600_000, diffBytes: 400_000 },
     },
@@ -463,6 +464,7 @@ async function pass(
         // Never asked for at this step, and that is the point of the action
         // being its own: the reviewer would have returned `passed` on it.
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/nowhere/settings.json',
         limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
       },

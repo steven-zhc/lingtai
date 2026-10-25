@@ -420,6 +420,7 @@ describe("what the drafter's own event still carries", () => {
         runtime: runtime(text),
         issue: async () => ({ ref: '300', title: 'a destination', body: 'keep the design' }),
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
       },

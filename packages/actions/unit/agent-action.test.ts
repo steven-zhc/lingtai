@@ -10,8 +10,16 @@ import { sessionIdFor } from '@lingtai/agent'
 import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, parsePayload } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
-import { NEEDS_INPUT, type Action, type ActionEvent, type ActionFinding, runActionPipeline } from '../src/action.ts'
 import {
+  NEEDS_INPUT,
+  type Action,
+  type ActionContext,
+  type ActionEvent,
+  type ActionFinding,
+  runActionPipeline,
+} from '../src/action.ts'
+import {
+  type AgentActionDeps,
   buildDesignPrompt,
   buildReviewPrompt,
   createAgentAction,
@@ -67,6 +75,7 @@ const actionWith = (reply: RunOutcome, diff = 'diff --git a/x b/x\n+1', prompt =
       runtime: reviewer(reply),
       issue: async () => ISSUE,
       diff: async () => diff,
+      restore: async () => ({ untouched: true as const }),
       settingsPath: '/tmp/settings.json',
       limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
     },
@@ -327,6 +336,7 @@ describe('asking the reviewer again after a fix', () => {
         runtime,
         issue: async () => ISSUE,
         diff: async () => 'a diff',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
@@ -387,6 +397,7 @@ describe('asking the reviewer again after a fix', () => {
         runtime,
         issue: async () => ISSUE,
         diff: async () => 'a diff',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
@@ -629,6 +640,7 @@ describe('the action', () => {
         runtime,
         issue: async () => ISSUE,
         diff: async () => 'a diff',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
@@ -660,6 +672,7 @@ describe('the action', () => {
       runtime,
       issue: async () => ISSUE,
       diff: async () => 'a diff',
+      restore: async () => ({ untouched: true as const }),
       settingsPath: '/tmp/s.json',
       limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
     })
@@ -695,6 +708,7 @@ describe('the action', () => {
         runtime,
         issue: async () => ISSUE,
         diff: async () => 'diff --git a/x b/x\n+1',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
@@ -1009,6 +1023,7 @@ describe('the action', () => {
         runtime: reply,
         issue: async () => ISSUE,
         diff: async () => 'diff --git a/x b/x\n+1',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
@@ -1060,6 +1075,7 @@ describe('the action', () => {
         runtime,
         issue: async () => ISSUE,
         diff: async () => '   \n  ',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/s.json',
         limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
@@ -1082,6 +1098,7 @@ describe('the action', () => {
           return ISSUE
         },
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/s.json',
         limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
@@ -1118,6 +1135,7 @@ describe("the drafting agent's answer", () => {
         runtime: reviewer(reply),
         issue: async () => ISSUE,
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
@@ -1396,6 +1414,7 @@ describe("an agent's evidence on the log", () => {
         runtime: reviewer(outcome({ text: document })),
         issue: async () => ISSUE,
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
@@ -1445,6 +1464,7 @@ describe("an agent's evidence on the log", () => {
         runtime: reviewer(outcome({ text: 'a short design document' })),
         issue: async () => ISSUE,
         diff: async () => '',
+        restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
@@ -1597,6 +1617,7 @@ describe('RunSpent, on every branch (#494)', () => {
           runtime: codex,
           issue: async () => ISSUE,
           diff: async () => 'diff --git a/x b/x\n+1',
+          restore: async () => ({ untouched: true as const }),
           settingsPath: '/tmp/settings.json',
           limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
         },
@@ -1654,6 +1675,7 @@ describe('RunSpent, on every branch (#494)', () => {
           runtime: rejecting,
           issue: async () => ISSUE,
           diff: async () => 'diff --git a/x b/x\n+1',
+          restore: async () => ({ untouched: true as const }),
           settingsPath: '/tmp/settings.json',
           limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
         },
@@ -1680,6 +1702,7 @@ describe('RunSpent, on every branch (#494)', () => {
           runtime: reviewer(reply),
           issue: async () => ISSUE,
           diff: async () => '',
+          restore: async () => ({ untouched: true as const }),
           settingsPath: '/tmp/settings.json',
           limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
         },
@@ -1818,6 +1841,7 @@ describe('a review after a base-moved merge (#594)', () => {
           diffFrom.push(from)
           return 'THE-DIFF'
         },
+        restore: async () => ({ untouched: true }),
         landed: async (moved) => {
           landedAsked.push(moved)
           return moved.paths.map((path) => ({ path, diff: `+changed ${path}` }))
@@ -1879,5 +1903,97 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(block).not.toContain('+c0')
     // The overlap is listed up front, even where its diff was cut.
     expect(block).toContain('a.ts, b.ts, c.ts')
+  })
+})
+
+describe('the worktree after a review (#587)', () => {
+  const sha = context.onSha
+  const throwing: Runtime = {
+    ...reviewer(outcome()),
+    async run() {
+      throw new Error('the runtime fell over')
+    },
+  }
+
+  function withRestore(restore: AgentActionDeps['restore'], runtime: Runtime, diff = 'diff --git a/x b/x\n+1') {
+    const calls: string[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => diff,
+        restore: async (onSha) => {
+          calls.push(onSha)
+          return restore(onSha)
+        },
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    return { action, calls }
+  }
+
+  const noted: string[] = []
+  const log = { note: (_tag: string, text: string) => void noted.push(text) } as unknown as ActionContext['log']
+
+  it('restores once, with onSha, after a passing review — and an untouched tree adds nothing', async () => {
+    const { action, calls } = withRestore(
+      async () => ({ untouched: true }),
+      reviewer(outcome({ text: '{"findings":[]}' })),
+    )
+    const plain = await actionWith(outcome({ text: '{"findings":[]}' })).run(context)
+    const result = await action.run(context)
+
+    expect(calls).toEqual([sha])
+    expect(result).toEqual(plain)
+  })
+
+  it('restores after a refusing review, and records what it found without changing the verdict', async () => {
+    noted.length = 0
+    const refusing = outcome({ text: JSON.stringify({ findings: [finding()] }) })
+    const { action, calls } = withRestore(
+      async () => ({ restored: 'the reviewer changed the worktree' }),
+      reviewer(refusing),
+    )
+    const plain = await actionWith(refusing).run(context)
+    const result = await action.run({ ...context, log })
+
+    expect(calls).toEqual([sha])
+    expect(result.verdict).toBe(plain.verdict)
+    expect(result.findings).toEqual(plain.findings)
+    expect(result.evidence).toBe(`${plain.evidence}\nthe reviewer changed the worktree`)
+    expect(noted).toContain('the reviewer changed the worktree')
+  })
+
+  it('restores after a throwing review and rethrows the original error', async () => {
+    const { action, calls } = withRestore(async () => ({ untouched: true }), throwing)
+
+    await expect(action.run(context)).rejects.toThrow('the runtime fell over')
+    expect(calls).toEqual([sha])
+  })
+
+  it('carries the restoration on the error a throwing review leaves', async () => {
+    const { action } = withRestore(async () => ({ restored: 'the reviewer changed the worktree' }), throwing)
+
+    await expect(action.run(context)).rejects.toThrow(/the runtime fell over.*the reviewer changed the worktree/)
+  })
+
+  it('throws when the restore fails, naming both failures when the review had thrown too', async () => {
+    const passing = withRestore(
+      async () => ({ failed: 'index.lock exists' }),
+      reviewer(outcome({ text: '{"findings":[]}' })),
+    )
+    await expect(passing.action.run(context)).rejects.toThrow(/could not be restored.*index\.lock exists/)
+
+    const both = withRestore(async () => ({ failed: 'index.lock exists' }), throwing)
+    await expect(both.action.run(context)).rejects.toThrow(/index\.lock exists.*the runtime fell over/)
+  })
+
+  it('does not restore when there was nothing to review', async () => {
+    const { action, calls } = withRestore(async () => ({ untouched: true }), reviewer(outcome()), '  ')
+
+    await action.run(context)
+    expect(calls).toEqual([])
   })
 })
