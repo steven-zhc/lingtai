@@ -242,17 +242,29 @@ Steps 1–4 ran locally. A GitHub repository needs a GitHub App, and
 **the App is yours**: there is no shared Lingtai App. [GitHub](github.md)
 explains why an App rather than a token.
 
-Use your own fork, `<you>/chapter-garden`: installing an App needs admin on the
-repository. Keep the `lingtai board` from Step 3 running; `add` starts none and
-refuses with `no board is running here to create the GitHub App on`.
+**Part 2 is a second start, not a continuation.** A project with tickets in the
+log keeps them in the database and `add` does not migrate them, so a GitHub
+issue would never be taken. Use a fresh `LINGTAI_HOME` in every terminal:
+
+```sh
+export LINGTAI_HOME="$HOME/.lingtai-github-tutorial"
+lingtai init --store sqlite
+```
+
+Use your own fork, `<you>/chapter-garden`: installing an App needs admin on it.
+`add` starts no board, so run one in a second terminal and leave it running:
+
+```sh
+lingtai board
+```
 
 ### Create the App
 
 ```sh
-lingtai add <you>/chapter-garden --github-app create
+lingtai add <you>/chapter-garden --base main --github-app create
 ```
 
-`add` asks its recipe questions (pass Step 1's flags), then opens the board's
+`add` asks its recipe questions (pass Step 1's flags; a fresh home needs `--base`), then opens the board's
 `/setup/github-app` page and waits ten minutes. Fill `App name` and `Organisation` (blank for a personal
 account). Leave `Webhook URL` blank: discovery runs on the daemon's sweep. Press
 `Create the App on GitHub`, then **Create GitHub App** on GitHub's own next
@@ -282,7 +294,7 @@ Open `https://github.com/apps/<slug>/installations/new` and install it on
 which is refused once an App exists:
 
 ```sh
-lingtai add <you>/chapter-garden
+lingtai add <you>/chapter-garden --base main
 ```
 
 ### Check it worked
@@ -297,6 +309,4 @@ proves the installation by printing
 permission is listed instead.
 
 A ticket on a GitHub project is a GitHub issue with a kind label, not
-`lingtai ticket new` — **if the log has no tickets for it yet.** After Steps 2–4, `add` prints `tickets       db — kept: the log already has
-work items for this project` and never takes a GitHub issue. For that, run Part 2
-before creating a ticket, or from a fresh `LINGTAI_HOME`.
+`lingtai ticket new`. Steps 2–4 then apply as written.
