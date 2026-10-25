@@ -8,9 +8,14 @@
  * `modelUsage` object a real receipt already carries, and `claudeClose` is
  * the close handler's decision, pulled out so a unit test can reach it.
  */
-import { describe, expect, it } from 'vitest'
+import type { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { claudeClose, createClaudeCodeRuntime, spawnEnvFor, usageFromModelUsage } from '../src/claude-code.ts'
+import type { RunOutcome } from '../src/runtime.ts'
 
 describe('usageFromModelUsage', () => {
   it('is absent where the receipt carried no modelUsage at all', () => {
@@ -225,5 +230,111 @@ describe('argsFor with turns unbounded (#547)', () => {
       limits: { wallMs: 3_600_000 },
     })
     expect(args).not.toContain('--max-turns')
+  })
+})
+
+describe('a stopped run signals its whole process group (#606)', () => {
+  const PID = 4242
+
+  const harness = () => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: PID,
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(),
+    })
+    const calls: Array<[number, NodeJS.Signals | 0]> = []
+    let groupGone = false
+    let esrchOn: NodeJS.Signals | 0 | undefined
+    const runtime = createClaudeCodeRuntime({
+      spawn: (() => child) as unknown as typeof spawn,
+      signal: (pid, sig) => {
+        calls.push([pid, sig])
+        if (groupGone || sig === esrchOn) throw Object.assign(new Error('no such process'), { code: 'ESRCH' })
+      },
+    })
+    const controller = new AbortController()
+    let outcome: RunOutcome | undefined
+    const started = runtime
+      .run({
+        runId: 'r1',
+        cwd: '/tmp',
+        prompt: 'p',
+        settingsPath: '/tmp/s.json',
+        env: {},
+        limits: { wallMs: 1_000 },
+        signal: controller.signal,
+      })
+      .then((o) => (outcome = o))
+    return {
+      child,
+      calls,
+      controller,
+      started,
+      outcome: () => outcome,
+      goneAfter: () => (groupGone = true),
+      esrchOn: (sig: NodeJS.Signals | 0) => (esrchOn = sig),
+    }
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('resolves only once the group is gone, though the CLI has closed', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(h.calls).toEqual([[-PID, 'SIGTERM']])
+
+    h.child.emit('exit', null, 'SIGTERM')
+    h.child.emit('close', null)
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(h.outcome()).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(h.calls).toContainEqual([-PID, 'SIGKILL'])
+    expect(h.outcome()).toBeUndefined()
+
+    h.goneAfter()
+    await vi.advanceTimersByTimeAsync(200)
+    await h.started
+    expect(h.outcome()?.failure?.kind).toBe('timeout')
+    expect(h.child.kill).not.toHaveBeenCalled()
+  })
+
+  it('treats ESRCH on the SIGTERM as already gone', async () => {
+    const h = harness()
+    h.esrchOn('SIGTERM')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await h.started
+    expect(h.calls).toEqual([[-PID, 'SIGTERM']])
+    expect(h.outcome()?.failure?.kind).toBe('timeout')
+  })
+
+  it('does the same for an abort', async () => {
+    const h = harness()
+    h.controller.abort()
+    expect(h.calls).toEqual([[-PID, 'SIGTERM']])
+    h.goneAfter()
+    await vi.advanceTimersByTimeAsync(100)
+    await h.started
+    expect(h.outcome()?.failure?.kind).toBe('aborted')
+  })
+
+  it('stops waiting after the hard kill and says the group survived', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(1_000 + 5_000 + 5_000)
+    await h.started
+    expect(h.outcome()?.failure?.detail).toContain('still alive after SIGKILL')
+  })
+
+  it('leaves a clean run alone', async () => {
+    const h = harness()
+    h.child.stdout.write(
+      JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', num_turns: 1 }) + '\n',
+    )
+    h.child.emit('close', 0)
+    await h.started
+    expect(h.calls).toEqual([])
+    expect(h.outcome()?.failure).toBeNull()
   })
 })
