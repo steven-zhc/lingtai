@@ -68,13 +68,12 @@ import { closeCommand } from './close.ts'
 import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
-import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
+import { daemonLiveness } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
 import { grantFixRoundCommand } from './grant-fix-round.ts'
 import { commandHelp, rootHelp } from './help.ts'
 import { configPath } from './init.ts'
-import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
 import { rebuildProjection } from './projection.ts'
 import { requeueCommand } from './requeue.ts'
@@ -108,30 +107,6 @@ import { WALL_LIMIT } from './wall-limit.ts'
  * added: here, visibly, or it does not exist.
  */
 const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
-
-async function doctor(): Promise<number> {
-  const report = await doctorReport()
-  // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
-  // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
-  // and a restart is neither.
-  const release = await releaseCheck({ fetch, env: process.env, self: import.meta.filename })
-  report.results.push(release)
-  if (release.status === 'ok') report.ok++
-  else if (release.status === 'warn') report.warned++
-  else {
-    // `notChecked` and not `deferred`: a release check that skipped did so
-    // because *this copy* is not an installed one, which is a fact about this
-    // machine and belongs on the half of the summary that says so (#214).
-    report.skipped++
-    report.notChecked++
-  }
-  console.log(formatReport(report))
-  // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
-  // does not refuse on the same number: a failure marked `restartAnswers` exits
-  // this 1 and lets a restart through, since the restart is its remedy — see
-  // `gatingFailures`. A deferred check is not a failure; a missing one would be.
-  return report.failed === 0 ? 0 : 1
-}
 
 /**
  * `lingtai add <owner>/<repo>`, or `lingtai add` with no positional — the
@@ -1208,8 +1183,6 @@ async function main(argv: string[]): Promise<number> {
       }
       return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld())
     }
-    case 'doctor':
-      return doctor()
     // Positional throughout, and not through `parseFlags`: a value is an
     // argument here, and `KEY=--anything` is a legitimate one.
     case 'env':
@@ -1311,10 +1284,11 @@ async function main(argv: string[]): Promise<number> {
         'lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai',
       )
       return 2
-    // `status` is `@effect/cli`'s since #618 and `entry.ts` routes it there; it is named
+    // `status` and `doctor` are `@effect/cli`'s (#618, #619) and `entry.ts` routes them there; they are named
     // here only because the command list is exhaustive.
     case 'status':
-      console.error('lingtai status runs from the entry — pnpm lingtai status, or the installed lingtai')
+    case 'doctor':
+      console.error(`lingtai ${command} runs from the entry — pnpm lingtai ${command}, or the installed lingtai`)
       return 2
     // The same: `entry.ts` answers these before the log is loaded (`install.ts`).
     case 'upgrade':

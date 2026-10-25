@@ -27,6 +27,16 @@ const version = Command.make('version', { json, noColor }, (args) =>
 /** What a handler sets when it fails on its own: `runCli` resolves to it, as the exit code. */
 let handlerCode = 0
 
+/** A handler that could not produce its report: the error document under `--json`, the message otherwise. Returns the exit code. */
+function failed(command: string, asJson: boolean, err: unknown): number {
+  const message = (err as Error).message || String(err)
+  if (asJson) return printJsonError(command, 'unavailable', message)
+  console.error(message)
+  if (process.env['LINGTAI_DEBUG']) console.error((err as Error).stack)
+  else console.error('(LINGTAI_DEBUG=1 for the stack)')
+  return 1
+}
+
 const status = Command.make(
   'status',
   { project: Args.text({ name: 'project' }).pipe(Args.optional), all: Options.boolean('all'), json, noColor },
@@ -43,19 +53,38 @@ const status = Command.make(
         else
           for (const line of renderStatus(report, { all: args.all, columns: process.stdout.columns })) console.log(line)
       } catch (err) {
-        const message = (err as Error).message || String(err)
-        if (args.json) handlerCode = printJsonError('status', 'unavailable', message)
-        else {
-          console.error(message)
-          if (process.env['LINGTAI_DEBUG']) console.error((err as Error).stack)
-          else console.error('(LINGTAI_DEBUG=1 for the stack)')
-          handlerCode = 1
-        }
+        handlerCode = failed('status', args.json, err)
       }
     }),
 ).pipe(Command.withDescription(definitionOf('status').task))
 
-const root = Command.make('lingtai').pipe(Command.withSubcommands([version, status]))
+const doctor = Command.make('doctor', { json, noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    try {
+      // Loaded here, for the reason `status` gives.
+      const { doctorReport, doctorJson, renderDoctor, tally } = await import('./doctor.ts')
+      const { releaseCheck } = await import('./install.ts')
+      const report = await doctorReport()
+      // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
+      // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
+      // and a restart is neither.
+      report.results.push(await releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
+      Object.assign(report, tally(report.results))
+      if (args.json) printJson('doctor', doctorJson(report))
+      else for (const line of renderDoctor(report)) console.log(line)
+      // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
+      // does not refuse on the same number: a failure marked `restartAnswers` exits
+      // this 1 and lets a restart through — see `gatingFailures`. A deferred check
+      // is not a failure; a missing one would be.
+      handlerCode = report.failed === 0 ? 0 : 1
+    } catch (err) {
+      handlerCode = failed('doctor', args.json, err)
+    }
+  }),
+).pipe(Command.withDescription(definitionOf('doctor').task))
+
+const root = Command.make('lingtai').pipe(Command.withSubcommands([version, status, doctor]))
 
 const run = Command.run(root, { name: 'lingtai', version: versionFacts().lingtai })
 
