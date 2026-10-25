@@ -322,7 +322,16 @@ export interface ClaudeCodeOptions {
   extraArgs?: readonly string[]
   /** Defaults to `bypassPermissions`. See `PermissionMode`. */
   permissionMode?: PermissionMode
+  /** Replaces `node:child_process`'s `spawn`: `pnpm test` runs no process. */
+  spawn?: typeof spawn
+  /** Replaces `process.kill`, so a test can stand in for a group that outlives the CLI. */
+  signal?: (pid: number, signal: NodeJS.Signals | 0) => void
 }
+
+const PROBE_MS = 100
+
+/** How long after the SIGKILL the group gets to show it is gone, before the run stops waiting. */
+const KILL_GRACE_MS = 100
 
 /** What a closed Claude Code process said, for `claudeClose` to read. */
 export interface ClaudeClosed {
@@ -401,6 +410,8 @@ export function claudeClose(
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime {
   const binary = options.binary ?? 'claude'
   const permissionMode: PermissionMode = options.permissionMode ?? 'bypassPermissions'
+  const spawnChild = options.spawn ?? spawn
+  const sendSignal = options.signal ?? ((pid, sig) => process.kill(pid, sig))
 
   return {
     capabilities: CLAUDE_CODE_CAPABILITIES,
@@ -428,7 +439,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
       const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode)
 
       return new Promise<RunOutcome>((resolve) => {
-        const child = spawn(binary, args, {
+        const child = spawnChild(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited. The agent gets what the recipe allows plus
           // the hook's wiring and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` set by
@@ -496,22 +507,51 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           errors(text)
         })
 
+        let hard: NodeJS.Timeout | undefined
+        let last: NodeJS.Timeout | undefined
+        let probe: NodeJS.Timeout | undefined
+
         const finish = (outcome: RunOutcome) => {
           if (settled) return
           settled = true
           clearTimeout(wall)
+          clearTimeout(hard)
+          clearTimeout(last)
+          clearInterval(probe)
           request.signal?.removeEventListener('abort', onAbort)
           resolve(outcome)
         }
 
-        // Set when the run was killed: the outcome waits for the process to be
-        // gone, because a caller that resolves on SIGTERM can restore the
+        // Set when the run was killed: the outcome waits for the process group
+        // to be gone, because a caller that resolves on SIGTERM can restore the
         // worktree (`#587`) while the agent is still writing to it.
         let killed: RunOutcome | undefined
 
+        // Whether there is a group to signal and probe. Not on Windows, and not
+        // before the spawn gave a pid; there `close` and the bound decide.
+        const grouped = process.platform !== 'win32' && child.pid !== undefined
+
+        // `true` once the group is known gone (`ESRCH`). Any other error is
+        // swallowed, as codex's is: a throw must not escape the timer or the
+        // abort handler that called this, and the probe or the bound decides.
+        const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
+          try {
+            // Claude Code is spawned detached. Its tools inherit this group;
+            // signalling only the CLI leaves them running in the checkout.
+            if (!grouped) {
+              if (signal !== 0) child.kill(signal)
+              return false
+            }
+            sendSignal(-child.pid!, signal)
+            return false
+          } catch (err) {
+            return (err as NodeJS.ErrnoException).code === 'ESRCH'
+          }
+        }
+
         const kill = (kind: 'timeout' | 'aborted', detail: string) => {
           if (killed !== undefined || settled) return
-          killed = {
+          const stopped: RunOutcome = {
             exitCode: null,
             turns: 0,
             durationMs: Date.now() - started,
@@ -520,16 +560,37 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             failure: { kind, detail },
             sessionId,
           }
-          child.kill('SIGTERM')
+          killed = stopped
+          if (signalGroup('SIGTERM')) return finish(stopped)
+          if (grouped) {
+            probe = setInterval(() => {
+              if (signalGroup(0)) finish(stopped)
+            }, PROBE_MS)
+          }
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
-          const hard = setTimeout(() => {
-            child.kill('SIGKILL')
-            // Not even SIGKILL produced a `close`: stop waiting.
-            const last = setTimeout(() => finish(killed!), 5_000)
-            last.unref?.()
+          // None of these timers is `unref`ed: once the CLI has closed they are
+          // all that keeps the process alive to send the SIGKILL and resolve,
+          // and `finish` clears every one of them.
+          hard = setTimeout(() => {
+            if (signalGroup('SIGKILL')) return finish(stopped)
+            // Not even SIGKILL ended the group (or produced a `close`): stop
+            // waiting, and say so when something in it is still alive.
+            last = setTimeout(() => {
+              const survived = grouped && !signalGroup(0)
+              finish(
+                survived
+                  ? {
+                      ...stopped,
+                      failure: {
+                        kind,
+                        detail: `${detail}; the process group was still alive after SIGKILL`,
+                      },
+                    }
+                  : stopped,
+              )
+            }, KILL_GRACE_MS)
           }, 5_000)
-          hard.unref?.()
         }
 
         const wall = setTimeout(
@@ -554,7 +615,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         )
 
         child.on('close', (code) => {
-          if (killed !== undefined) return finish(killed)
+          // `close` only shows the CLI is gone, not a tool in its group that
+          // holds other stdio: for a grouped run the probe decides.
+          if (killed !== undefined) return grouped ? undefined : finish(killed)
           const parsed = parseResult(stdout)
           const durationMs = parsed?.duration_ms ?? Date.now() - started
           const turns = parsed?.num_turns ?? 0
