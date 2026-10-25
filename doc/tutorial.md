@@ -238,16 +238,14 @@ The CLI uses your current tutorial branch and asks for the PR title and descript
 
 ## Part 2 — Move the project to GitHub
 
-Steps 1–4 ran on a local project. To have Lingtai work a GitHub repository, it
-needs a GitHub App, and **the App is yours**: Lingtai is self-hosted, there is
-no shared Lingtai App, and every installation creates its own. Lingtai creates
-it for you through GitHub's manifest flow. [GitHub](github.md) explains why an
-App rather than a token.
+Steps 1–4 ran locally. A GitHub repository needs a GitHub App, and
+**the App is yours**: there is no shared Lingtai App, and Lingtai creates yours
+through GitHub's manifest flow. [GitHub](github.md) explains why an App rather
+than a token.
 
-You need your own fork of Chapter Garden here, because installing an App needs
-admin on the repository; use `<you>/chapter-garden` below. Keep the
-`lingtai board` from Step 3 running: `lingtai add` starts no board of its own,
-and without one it refuses with `no board is running here to create the GitHub
+Use your own fork, `<you>/chapter-garden`: installing an App needs admin on the
+repository. Keep the `lingtai board` from Step 3 running; `lingtai add` starts
+none of its own and refuses with `no board is running here to create the GitHub
 App on`.
 
 ### Create the App
@@ -256,48 +254,36 @@ App on`.
 lingtai add <you>/chapter-garden --github-app create
 ```
 
-`add` asks its recipe questions first (you may pass `--agent`, `--install`,
-`--build` and `--land` as in Step 1), then the App question: `create the GitHub
-App now, or skip it for later`. The CLI opens the board's
-`/setup/github-app` page and prints
-`waiting for the App — press Create on that page, or any key here to skip`. It
-waits ten minutes.
+`add` asks its recipe questions (pass `--agent`, `--install`, `--build` and `--land` as in Step 1), then opens the board's `/setup/github-app` page and
+waits ten minutes. Fill `App name` and `Organisation` (blank for a personal
+account). Leave `Webhook URL` blank: that declares the hook inactive and nothing
+degrades, because discovery runs on the daemon's sweep. Press
+`Create the App on GitHub`, then **Create GitHub App** on GitHub's own next
+screen.
 
-On the page, fill `App name` and `Organisation` (leave `Organisation` for a
-personal account). Leave `Webhook URL` blank: that declares the hook inactive
-and nothing degrades, because discovery runs on the daemon's sweep. Press
-`Create the App on GitHub`. GitHub's own next screen needs you to press
-**Create GitHub App**.
+The manifest carries the permissions, so you never choose them:
 
-The permissions are in the manifest, so you never choose them and they cannot
-be chosen wrong:
-
-| Permission      | Level | Why                                                    |
-| --------------- | ----- | ------------------------------------------------------ |
+| Permission      | Level | Why                                                     |
+| --------------- | ----- | ------------------------------------------------------- |
 | `issues`        | write | reading work items, writing agent:* labels and comments |
-| `contents`      | write | cloning, pushing agent/*, merging into base            |
-| `pull_requests` | write | opening and reading pull requests                      |
-| `metadata`      | read  | required by GitHub for any App                         |
+| `contents`      | write | cloning, pushing agent/*, merging into base             |
+| `pull_requests` | write | opening and reading pull requests                       |
+| `metadata`      | read  | required by GitHub for any App                          |
 
-It also subscribes to the `issues` event.
+GitHub hands a private key over exactly once, so back it up. It is a file at the
+path the board names (by default `~/.ssh/lingtai-agent.private-key.pem`, mode
+`0600`); `~/.lingtai/config.yml` holds that path, the App id and the webhook
+secret.
 
-GitHub hands a private key over exactly once, so that one cannot be fetched
-again. Lingtai writes it to a file at the path the board names (by default
-`~/.ssh/lingtai-agent.private-key.pem`, mode `0600`), and
-`~/.lingtai/config.yml` holds that path, the App id and the webhook secret.
-Back the file up.
-
-When the App answers, the terminal prints `app          <slug>, owned by <owner>
-— it answered`. The same `add` then stops with `The App is not installed on
-<owner>, so it cannot see <slug>.` That is expected: **creating is not
-installing**.
+When the terminal prints `app          <slug>, owned by <owner> — it answered`,
+the same `add` stops with `The App is not installed on <owner>, so it cannot see
+<slug>.` That is expected: **creating is not installing**.
 
 ### Install it and add the repository
 
-The board page links `https://github.com/apps/<slug>/installations/new`. Install
-the App on `<you>/chapter-garden` only. Then run `add` again, **without**
-`--github-app`; with an App configured, `--github-app create` is refused
-(`a GitHub App is already configured here`).
+Open `https://github.com/apps/<slug>/installations/new` and install the App on
+`<you>/chapter-garden` only. Then run `add` again **without** `--github-app`,
+which is refused once an App exists:
 
 ```sh
 lingtai add <you>/chapter-garden
@@ -309,12 +295,10 @@ lingtai add <you>/chapter-garden
 lingtai doctor
 ```
 
-The `github: app credentials` row should be `ok`; with no App it is `skip`.
-`doctor` checks the credentials only. The installation is proved by the second
-`add`, which prints `installation <id> on <account> (<selection>)` and
-`permissions: issues, contents, pull requests write; metadata read`. If a
-permission is missing it lists the gap and ends `Fix them in the App's
-settings, then re-run.`
+`github: app credentials` should be `ok` (`skip` means no App). The installation
+is proved by the second `add`:
+`permissions: issues, contents, pull requests write; metadata read`; a missing
+permission is listed and ends `Fix them in the App's settings, then re-run.`
 
-From here Steps 2–4 apply, except that a ticket on a GitHub project is a GitHub
-issue carrying a kind label, not `lingtai ticket new`.
+Steps 2–4 apply from here, but a ticket is a GitHub issue with a kind label,
+not `lingtai ticket new`.

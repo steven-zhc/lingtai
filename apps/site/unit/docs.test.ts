@@ -113,6 +113,7 @@ describe('the tutorial stays a first-run path', () => {
       'Step 3 — Run the agent and checks',
       'Step 4 — Approve and confirm',
       'Optional Step 5 — Open a pull request',
+      'Part 2 — Move the project to GitHub',
     ])
   })
 })
