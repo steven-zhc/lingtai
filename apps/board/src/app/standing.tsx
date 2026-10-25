@@ -688,7 +688,11 @@ export function Standing({
   const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
 
   return (
-    <TriagePicks waitId={standing.state === 'blocked' ? standing.waitId : null} questions={triageQuestions}>
+    <TriagePicks
+      waitId={standing.state === 'blocked' ? standing.waitId : null}
+      questions={triageQuestions}
+      recommendedBy={recommendedBy}
+    >
       <section className={`standing${mark}`}>
         {waiting ? (
           <header className="swaiting-head">
