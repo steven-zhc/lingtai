@@ -187,6 +187,29 @@ describe('the state, and how long it has held', () => {
     expect(standing.question).toBe('the `proposed` step held: approve the diff for #89?')
   })
 
+  it('opens an escalated wait on its branch even when no event recorded the issue', () => {
+    // A ticket whose `TicketDiscovered` predates `externalRef` (or a log that
+    // starts after it) still has its issue in the stream id; the sentence
+    // reads "agent/89 is waiting on you", never "is waiting on you".
+    const standing = standingOf(
+      [
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-escalated',
+          reason: {
+            _tag: 'ProposedEscalated',
+            run: { runId: RUN_1 },
+            proposal: { _tag: 'BuildRed', output: 'apps/web/page.tsx' },
+            because: { _tag: 'NotAsked' },
+          },
+        }),
+      ],
+      [],
+    )
+
+    expect(standing.question).toMatch(/^agent\/89 is waiting on you\./)
+  })
+
   /**
    * #94's reading: the item was not stuck at all and would have returned on its
    * own. The absence of the word "blocked" was the only thing saying so, at the

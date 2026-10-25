@@ -151,7 +151,7 @@ export function TriageBand({
                 {cause.fixes.map((fix, index) => (
                   <li key={index}>
                     <span className="triage-number">{index + 1}</span>
-                    <span className="triage-location">
+                    <span className="triage-location" title={fix.line === null ? fix.path : `${fix.path}:${fix.line}`}>
                       {fix.path}
                       {fix.line === null ? '' : `:${fix.line}`}
                     </span>
@@ -220,9 +220,11 @@ export function TriageBand({
       const kept =
         recommendedResolution(reason, status, { savedHead, disagreement: readings, picked: 'triage' }) ===
         result.resolution
+      const chip = <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
+      const evidence = parts ? <div className="triage-evidence">{parts}</div> : null
       const triageReading = (
         <>
-          <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
+          {readings === null ? null : chip}
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
             {kept
@@ -234,15 +236,20 @@ export function TriageBand({
                   : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
             {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
-          {parts ? <div className="triage-evidence">{parts}</div> : null}
         </>
       )
       return (
         <section className="triage-band triage-band--advised" data-rank="triage">
-          <span className="triage-label">Triage</span>
+          <div className="triage-head">
+            <span className="triage-label">Triage</span>
+            {readings === null ? chip : null}
+          </div>
           {headLine ? <p>{headLine}</p> : null}
           {readings === null ? (
-            triageReading
+            <>
+              {triageReading}
+              {evidence}
+            </>
           ) : (
             <>
               <ReadingChoice judgeDrawsNothing={judgeResolution(readings.judge.chose) === null} />
@@ -260,6 +267,7 @@ export function TriageBand({
                   {triageReading}
                 </div>
               </div>
+              {evidence}
             </>
           )}
         </section>
@@ -319,7 +327,7 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
           )
             .filter(([, value]) => value !== null)
             .map(([label, value]) => (
-              <div className="tcontext-field" key={label}>
+              <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
                 <h2>{label}</h2>
                 <DocumentBody
                   source="ticket-body"

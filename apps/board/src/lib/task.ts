@@ -778,7 +778,13 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   const approved = life.status === 'approved'
   const words = blocked
     ? waitWords(life.reason, {
-        branch: item.externalRef === null ? '' : agentBranchOf(item.externalRef),
+        // The stream id names the issue whenever no event recorded it (a ticket
+        // first seen before `externalRef` was folded), so the sentence opens on
+        // `agent/<n>` rather than on nothing.
+        branch: (() => {
+          const issue = item.externalRef ?? (own[0] ? parseTicketStream(own[0].streamId)?.issue : undefined)
+          return issue === undefined ? '' : agentBranchOf(issue)
+        })(),
         base: '',
         findings: [],
       })
