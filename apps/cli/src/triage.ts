@@ -49,6 +49,7 @@ import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
 import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, type ConflictedPath } from '@lingtai/repo'
 
 import { headOf, prepare } from './discuss.ts'
+import { prepareTriageCheckout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
 const queued = new Map<string, Promise<unknown>>()
@@ -325,6 +326,7 @@ export function daemonTriagePorts(
             return (await loadProject(project))?.base ?? 'main'
           },
           prepare,
+          prepareCheckout: prepareTriageCheckout,
           now: Date.now,
           log,
         },
@@ -348,8 +350,7 @@ function clip(text: string): string {
 
 export interface TriagePorts {
   store: EventStore
-  /** `createRuntime` in production. `tools: 'none'` is the containment, not a preference — see `discuss.ts`'s own `runtime`. */
-  runtime(agent: DiscussAgent, options: { tools: 'none' }): Runtime
+  runtime(agent: DiscussAgent, options: { tools: 'none' | 'full' }): Runtime
   mirror: {
     refSha(input: { project: string; ref: string }): Promise<string | null>
     listAt(input: { project: string; ref: string }): Promise<{ paths: string[]; truncated: boolean }>
@@ -363,6 +364,15 @@ export interface TriagePorts {
   base(ticketId: string): Promise<string>
   /** `apps/cli/src/discuss.ts`'s `prepare` in production — an empty directory and a settings file that denies every tool. */
   prepare(id: string): Promise<{ cwd: string; settingsPath: string }>
+  prepareCheckout?(
+    project: string,
+    sha: string,
+  ): Promise<{
+    cwd: string
+    settingsPath: string
+    env: Record<string, string>
+    cleanup(): Promise<void>
+  }>
   now(): number
   log?(line: string): void
 }
@@ -386,7 +396,7 @@ async function gatherEvidence(
   deps: TriagePorts,
   request: WaitTriageRequest,
   before: readonly Envelope[],
-): Promise<{ evidence: TriageEvidence; baseSha: string | null; headSha: string | null }> {
+): Promise<{ evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null }> {
   const project = parseTicketStream(request.ticketId)?.project ?? ''
 
   let ticket: TriageEvidence['ticket'] = null
@@ -415,7 +425,8 @@ async function gatherEvidence(
   let published: PayloadOf<'RunRefsPublished'> | null = null
   let head: string | null = null
   if (runId !== null) {
-    const runEvents = await deps.store.read(runId).catch((): Envelope[] => [])
+    // An unreadable run stream is not evidence that the attempt has no head.
+    const runEvents = await deps.store.read(runId)
     for (const e of runEvents) {
       if (e.type === 'PassRouted') routed = e.data as PayloadOf<'PassRouted'>
       if (e.type === 'RunRefsPublished') published = e.data as PayloadOf<'RunRefsPublished'>
@@ -464,6 +475,7 @@ async function gatherEvidence(
     },
     baseSha,
     headSha,
+    recordedHead: head,
   }
 }
 
@@ -602,231 +614,264 @@ export async function waitTriage(
       headSha = gathered.headSha
 
       const chatId = containmentId(request.waitId)
-      const { cwd, settingsPath } = await deps.prepare(chatId)
-      const runtime = deps.runtime(request.triage.agent, { tools: 'none' })
-      const call = triageCallFor(request.triage)
-      const usdBudget = call.usd ?? 0.5
-      const deadline = deps.now() + call.wallMs
-
-      const project = parseTicketStream(request.ticketId)?.project ?? ''
-      const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
-      const serve = (ref: string, path: string): Promise<string | null> => {
-        const sha = shas.get(ref)
-        if (sha === undefined) return Promise.resolve(null)
-        return deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES }).catch(() => null)
+      const full = request.triage.agent === 'codex' && request.triage.tools === 'full'
+      if (request.triage.tools === 'full' && !full) throw new Error('full triage tools require codex')
+      const selectedSha = gathered.recordedHead === null ? baseSha : headSha
+      if (full && selectedSha === null) {
+        throw new Error(
+          gathered.recordedHead === null ? 'base commit unavailable' : 'recorded attempt head unavailable',
+        )
       }
+      const checkout = full
+        ? await (deps.prepareCheckout ?? prepareTriageCheckout)(
+            parseTicketStream(request.ticketId)?.project ?? '',
+            selectedSha!,
+          )
+        : null
+      // A run whose process scan did not finish may have a tool still alive in
+      // the checkout; leaving the directory is safer than deleting it underneath.
+      let toolsMayRemain = false
+      try {
+        const { cwd, settingsPath } = checkout ?? (await deps.prepare(chatId))
+        const runtime = deps.runtime(request.triage.agent, { tools: full ? 'full' : 'none' })
+        const call = triageCallFor(request.triage)
+        const usdBudget = call.usd ?? 0.5
+        const deadline = deps.now() + call.wallMs
 
-      // `RunSpent`, retried on any error up to five attempts — the same bound
-      // and reasoning `resolve-wait.ts`'s `requestContinuation` uses: a dropped
-      // connection is as transient as a lost version race, and the version read
-      // above the append is re-taken on every attempt so a concurrent writer
-      // (another appender on the same ticket) is not mistaken for one. **A
-      // retry is not always "nothing was written" though** — a dropped
-      // connection can reject the promise after the transaction already
-      // committed, and a blind retry would then append a second, identical
-      // `RunSpent` for the one call. So before every attempt (including the
-      // first retry), check whether the stream already carries one matching
-      // this exact outcome since this `spend()` call started, and treat that as
-      // landed rather than writing it again. `null` once it has landed, one way
-      // or the other; otherwise the last error's message, which ends the
-      // triage rather than leaving a paid call unrecorded.
-      const spend = async (outcome: RunOutcome): Promise<string | null> => {
-        // `since` is captured from the first read that succeeds, not a read taken
-        // before the loop — a transient failure on that very first read (the
-        // scenario this retry exists for) must not propagate past this function
-        // uncaught, discarding both the ledger row and the advice the call
-        // already produced.
-        let since: number | null = null
-        let lastError: unknown = null
-        for (let i = 0; i < 5; i += 1) {
-          try {
-            const current = await deps.store.read(stream)
-            if (since === null) since = current.length
-            const alreadyLanded = current.slice(since).some((e) => {
-              if (e.type !== 'RunSpent') return false
-              const data = e.data as PayloadOf<'RunSpent'>
-              return (
-                data.for._tag === 'Triage' &&
-                data.for.waitId === request.waitId &&
-                data.turns === outcome.turns &&
-                data.durationMs === outcome.durationMs &&
-                data.costUsd === outcome.costUsd
-              )
-            })
-            if (alreadyLanded) return null
-            await deps.store.append(stream, current.length, [
-              {
-                type: 'RunSpent',
-                actor: 'conductor',
-                data: parsePayload('RunSpent', {
-                  for: { _tag: 'Triage', waitId: request.waitId },
-                  runtime: request.triage.agent,
-                  turns: outcome.turns,
-                  durationMs: outcome.durationMs,
-                  usage: outcome.usage ?? [],
-                  costUsd: outcome.costUsd,
-                }),
-              },
-            ])
-            return null
-          } catch (err) {
-            lastError = err
-          }
-        }
-        const message = lastError instanceof Error ? lastError.message : String(lastError)
-        log(`triage ${request.waitId}: RunSpent append failed — ${message}`)
-        return message
-      }
-
-      const served: { at: string; text: string | null }[] = []
-      let costSpent = 0
-      let turnsSpent = 0
-      let result: TriageResult | null = null
-
-      for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
-        // An abort during `serve`, between rounds, must not buy another one.
-        if (request.signal?.aborted) {
-          result = { _tag: 'TriageFailed', why: 'aborted' }
-          break
+        const project = parseTicketStream(request.ticketId)?.project ?? ''
+        const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
+        const serve = (ref: string, path: string): Promise<string | null> => {
+          const sha = shas.get(ref)
+          if (sha === undefined) return Promise.resolve(null)
+          return deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES }).catch(() => null)
         }
 
-        const wallLeft = deadline - deps.now()
-        if (wallLeft <= 0) {
-          result = { _tag: 'TriageFailed', why: 'timeout' }
-          break
-        }
-
-        const usdLeft = usdBudget - costSpent
-        if (usdLeft <= 0) {
-          result = { _tag: 'TriageFailed', why: 'out of usd' }
-          break
-        }
-
-        // `call.turns` bounds the whole triage, not one call — `holdDiscussion`
-        // hands every round the full budget, but a triage can run
-        // `MAX_READ_ROUNDS + 1` rounds, and the recipe's `limits` is documented
-        // as what one triage run may spend in total.
-        const turnsLeft = call.turns - turnsSpent
-        if (turnsLeft <= 0) {
-          result = { _tag: 'TriageFailed', why: 'out of turns' }
-          break
-        }
-
-        const prompt = triageBrief({
-          evidence,
-          served,
-          roundsLeft: MAX_READ_ROUNDS - round,
-          ...(request.triage.prompt === undefined ? {} : { prompt: request.triage.prompt }),
-        })
-
-        let threw = false
-        const outcome = await runtime
-          .run({
-            runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
-            cwd,
-            prompt,
-            ...(call.model === undefined ? {} : { model: call.model }),
-            settingsPath,
-            env: runnableEnv({}),
-            limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
-            // The runtime enforces the bounds before it answers; `parseTriage`
-            // below stays the last check, and the route that cannot carry a
-            // schema keeps the brief's own sentence (#582).
-            ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
-            signal: request.signal,
-          })
-          .catch((err: unknown): RunOutcome => {
-            threw = true
-            return {
-              exitCode: null,
-              turns: 0,
-              durationMs: 0,
-              costUsd: null,
-              failure: { kind: 'crash', detail: (err as Error).message },
-              text: null,
-              sessionId: '',
+        // `RunSpent`, retried on any error up to five attempts — the same bound
+        // and reasoning `resolve-wait.ts`'s `requestContinuation` uses: a dropped
+        // connection is as transient as a lost version race, and the version read
+        // above the append is re-taken on every attempt so a concurrent writer
+        // (another appender on the same ticket) is not mistaken for one. **A
+        // retry is not always "nothing was written" though** — a dropped
+        // connection can reject the promise after the transaction already
+        // committed, and a blind retry would then append a second, identical
+        // `RunSpent` for the one call. So before every attempt (including the
+        // first retry), check whether the stream already carries one matching
+        // this exact outcome since this `spend()` call started, and treat that as
+        // landed rather than writing it again. `null` once it has landed, one way
+        // or the other; otherwise the last error's message, which ends the
+        // triage rather than leaving a paid call unrecorded.
+        const spend = async (outcome: RunOutcome): Promise<string | null> => {
+          // `since` is captured from the first read that succeeds, not a read taken
+          // before the loop — a transient failure on that very first read (the
+          // scenario this retry exists for) must not propagate past this function
+          // uncaught, discarding both the ledger row and the advice the call
+          // already produced.
+          let since: number | null = null
+          let lastError: unknown = null
+          for (let i = 0; i < 5; i += 1) {
+            try {
+              const current = await deps.store.read(stream)
+              if (since === null) since = current.length
+              const alreadyLanded = current.slice(since).some((e) => {
+                if (e.type !== 'RunSpent') return false
+                const data = e.data as PayloadOf<'RunSpent'>
+                return (
+                  data.for._tag === 'Triage' &&
+                  data.for.waitId === request.waitId &&
+                  data.turns === outcome.turns &&
+                  data.durationMs === outcome.durationMs &&
+                  data.costUsd === outcome.costUsd
+                )
+              })
+              if (alreadyLanded) return null
+              await deps.store.append(stream, current.length, [
+                {
+                  type: 'RunSpent',
+                  actor: 'conductor',
+                  data: parsePayload('RunSpent', {
+                    for: { _tag: 'Triage', waitId: request.waitId },
+                    runtime: request.triage.agent,
+                    turns: outcome.turns,
+                    durationMs: outcome.durationMs,
+                    usage: outcome.usage ?? [],
+                    costUsd: outcome.costUsd,
+                  }),
+                },
+              ])
+              return null
+            } catch (err) {
+              lastError = err
             }
-          })
+          }
+          const message = lastError instanceof Error ? lastError.message : String(lastError)
+          log(`triage ${request.waitId}: RunSpent append failed — ${message}`)
+          return message
+        }
 
-        if (!threw) {
-          // A call that was billed and cannot be recorded ends the triage —
-          // never silently continues to spend more against an under-reporting
-          // ledger (`/spend`, 0110 §2).
-          const spendProblem = await spend(outcome)
-          if (spendProblem !== null) {
-            result = { _tag: 'TriageFailed', why: clip(`could not record spend: ${spendProblem}`) }
+        const served: { at: string; text: string | null }[] = []
+        let costSpent = 0
+        let turnsSpent = 0
+        let result: TriageResult | null = null
+
+        for (let round = 0; round <= (full ? 0 : MAX_READ_ROUNDS); round += 1) {
+          // An abort during `serve`, between rounds, must not buy another one.
+          if (request.signal?.aborted) {
+            result = { _tag: 'TriageFailed', why: 'aborted' }
             break
           }
-          // The Responses route reports tokens but no dollars. Reserve its
-          // conservative preflight bound before a later read round can run.
-          if (outcome.spendBoundUsd !== undefined) costSpent += outcome.spendBoundUsd
-          else if (outcome.costUsd !== null) costSpent += outcome.costUsd
-          turnsSpent += outcome.turns
-        }
 
-        if (outcome.failure) {
-          const kind = outcome.failure.kind
-          const why = kind === 'timeout' || kind === 'aborted' ? kind : `${kind}: ${outcome.failure.detail}`
-          result = { _tag: 'TriageFailed', why: clip(why) }
-          break
-        }
-
-        const reply = parseTriage(
-          outcome.structured === undefined ? outcome.text : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
-        )
-
-        if (reply.kind === 'read' && round < MAX_READ_ROUNDS) {
-          for (const at of reply.paths) {
-            const cut = at.indexOf(':')
-            const ref = at.slice(0, cut)
-            const path = at.slice(cut + 1)
-            served.push({ at, text: await serve(ref, path) })
+          const wallLeft = deadline - deps.now()
+          if (wallLeft <= 0) {
+            result = { _tag: 'TriageFailed', why: 'timeout' }
+            break
           }
-          log(`triage ${request.waitId}: served ${reply.paths.length} file(s)`)
-          continue
-        }
 
-        if (reply.kind === 'advised') {
-          if (conflictPaths !== null) {
-            const cause = reply.result.cause
-            const counted = new Set(
-              conflictPaths.flatMap((path) => path.hunkLines.map((line) => JSON.stringify([path.path, line]))),
-            )
-            const classified = new Set<string>()
-            if (cause._tag === 'ConflictingHunks') {
-              for (const hunk of cause.hunks) {
-                classified.add(JSON.stringify([hunk.path, hunk.line]))
+          const usdLeft = usdBudget - costSpent
+          if (usdLeft <= 0) {
+            result = { _tag: 'TriageFailed', why: 'out of usd' }
+            break
+          }
+
+          // `call.turns` bounds the whole triage, not one call — `holdDiscussion`
+          // hands every round the full budget, but a triage can run
+          // `MAX_READ_ROUNDS + 1` rounds, and the recipe's `limits` is documented
+          // as what one triage run may spend in total.
+          const turnsLeft = call.turns - turnsSpent
+          if (turnsLeft <= 0) {
+            result = { _tag: 'TriageFailed', why: 'out of turns' }
+            break
+          }
+
+          const prompt =
+            triageBrief({
+              evidence,
+              served,
+              roundsLeft: full ? 0 : MAX_READ_ROUNDS - round,
+              ...(request.triage.prompt === undefined ? {} : { prompt: request.triage.prompt }),
+            }) +
+            (full
+              ? '\n\nInspect the checked-out files directly with your CLI tools before answering. This checkout is disposable; give one final triage answer without requesting mirror-served files.'
+              : '')
+
+          let threw = false
+          const outcome = await runtime
+            .run({
+              runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
+              cwd,
+              prompt,
+              ...(call.model === undefined ? {} : { model: call.model }),
+              settingsPath,
+              env: checkout?.env ?? runnableEnv({}),
+              limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
+              // The runtime enforces the bounds before it answers; `parseTriage`
+              // below stays the last check, and the route that cannot carry a
+              // schema keeps the brief's own sentence (#582).
+              ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
+              signal: request.signal,
+            })
+            .catch((err: unknown): RunOutcome => {
+              threw = true
+              return {
+                exitCode: null,
+                turns: 0,
+                durationMs: 0,
+                costUsd: null,
+                failure: { kind: 'crash', detail: (err as Error).message },
+                text: null,
+                sessionId: '',
               }
+            })
+
+          if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
+
+          if (!threw) {
+            // A call that was billed and cannot be recorded ends the triage —
+            // never silently continues to spend more against an under-reporting
+            // ledger (`/spend`, 0110 §2).
+            const spendProblem = await spend(outcome)
+            if (spendProblem !== null) {
+              result = { _tag: 'TriageFailed', why: clip(`could not record spend: ${spendProblem}`) }
+              break
             }
-            const complete =
-              cause._tag === 'ConflictingHunks' &&
-              cause.total === conflictPaths.reduce((sum, path) => sum + path.hunks, 0) &&
-              classified.size === cause.hunks.length &&
-              classified.size === counted.size &&
-              [...counted].every((identity) => classified.has(identity))
-            result = complete
-              ? reply.result
-              : { _tag: 'TriageFailed', why: 'agent advice did not classify every counted merge hunk' }
-          } else {
-            result = reply.result
+            // The Responses route reports tokens but no dollars. Reserve its
+            // conservative preflight bound before a later read round can run.
+            if (outcome.spendBoundUsd !== undefined) costSpent += outcome.spendBoundUsd
+            else if (outcome.costUsd !== null) costSpent += outcome.costUsd
+            turnsSpent += outcome.turns
+          }
+
+          if (outcome.failure) {
+            const kind = outcome.failure.kind
+            const why = kind === 'timeout' || kind === 'aborted' ? kind : `${kind}: ${outcome.failure.detail}`
+            result = { _tag: 'TriageFailed', why: clip(why) }
+            break
+          }
+
+          const reply = parseTriage(
+            outcome.structured === undefined ? outcome.text : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
+          )
+
+          if (reply.kind === 'read' && !full && round < MAX_READ_ROUNDS) {
+            for (const at of reply.paths) {
+              const cut = at.indexOf(':')
+              const ref = at.slice(0, cut)
+              const path = at.slice(cut + 1)
+              served.push({ at, text: await serve(ref, path) })
+            }
+            log(`triage ${request.waitId}: served ${reply.paths.length} file(s)`)
+            continue
+          }
+
+          if (reply.kind === 'advised') {
+            if (conflictPaths !== null) {
+              const cause = reply.result.cause
+              const counted = new Set(
+                conflictPaths.flatMap((path) => path.hunkLines.map((line) => JSON.stringify([path.path, line]))),
+              )
+              const classified = new Set<string>()
+              if (cause._tag === 'ConflictingHunks') {
+                for (const hunk of cause.hunks) {
+                  classified.add(JSON.stringify([hunk.path, hunk.line]))
+                }
+              }
+              const complete =
+                cause._tag === 'ConflictingHunks' &&
+                cause.total === conflictPaths.reduce((sum, path) => sum + path.hunks, 0) &&
+                classified.size === cause.hunks.length &&
+                classified.size === counted.size &&
+                [...counted].every((identity) => classified.has(identity))
+              result = complete
+                ? reply.result
+                : { _tag: 'TriageFailed', why: 'agent advice did not classify every counted merge hunk' }
+            } else {
+              result = reply.result
+            }
+            break
+          }
+
+          // `refused`, or a `read` past the last round — both end the triage.
+          result = {
+            _tag: 'TriageFailed',
+            why: clip(
+              reply.kind === 'refused'
+                ? reply.why
+                : `the agent asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
+            ),
           }
           break
         }
 
-        // `refused`, or a `read` past the last round — both end the triage.
-        result = {
-          _tag: 'TriageFailed',
-          why: clip(
-            reply.kind === 'refused'
-              ? reply.why
-              : `the agent asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
-          ),
-        }
-        break
+        // Unreachable: the loop above always sets `result` before it exits.
+        final = result ?? { _tag: 'TriageFailed', why: 'triage did not run' }
+      } finally {
+        if (checkout && toolsMayRemain) {
+          log(`triage ${request.waitId}: checkout kept — a tool process may still be running in it`)
+        } else if (checkout)
+          await checkout.cleanup().catch((error: unknown) => {
+            log(`triage ${request.waitId}: cleanup failed — ${(error as Error).message}`)
+            final = { _tag: 'TriageFailed', why: clip(`cleanup failed: ${(error as Error).message}`) }
+          })
       }
-
-      // Unreachable: the loop above always sets `result` before it exits.
-      final = result ?? { _tag: 'TriageFailed', why: 'triage did not run' }
     } catch (err) {
       log(`triage ${request.waitId}: attempt ${attempt} crashed — ${(err as Error).message}`)
       final = { _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) }
@@ -849,7 +894,12 @@ export async function waitTriage(
   let lastError: unknown = null
   for (let i = 0; i < 5; i += 1) {
     try {
-      const version = (await deps.store.read(stream)).length
+      const current = await deps.store.read(stream)
+      if (!waitIsCurrent(current)) {
+        return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+      }
+      if (request.signal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
+      const version = current.length
       await deps.store.append(stream, version, [
         {
           type: 'WaitTriaged',

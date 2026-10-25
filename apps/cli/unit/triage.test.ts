@@ -245,6 +245,182 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
 }
 
 describe('waitTriage', () => {
+  it('uses one full-tools Codex call at the saved head and cleans its checkout', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 567)
+    const runId = 'pass-567'
+    const waitId = aWaitId()
+    const baseSha = 'a'.repeat(40)
+    const headSha = 'b'.repeat(40)
+    const run = makeStream(runId)
+    await store.append(runId, 0, [
+      run('RunProducedDiff', { branch: 'agent/567', headSha, files: 1, insertions: 1, deletions: 0 }),
+    ])
+    const cleanup = vi.fn(async () => {})
+    const prepareCheckout = vi.fn(async () => ({
+      cwd: '/tmp/private-checkout',
+      settingsPath: '/tmp/private-settings',
+      env: { HOME: '/tmp/private-home' },
+      cleanup,
+    }))
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async ({ ref }) => (ref === 'main' ? baseSha : ref === headSha ? headSha : null) }),
+      prepareCheckout,
+    })
+
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, waitId, { reason: reasonOn(runId), triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
+    )
+
+    expect(held.result._tag).toBe('TriageAdvised')
+    expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha)
+    expect(deps.runtime).toHaveBeenCalledWith('codex', { tools: 'full' })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ cwd: '/tmp/private-checkout', env: { HOME: '/tmp/private-home' } })
+    expect(requests[0]!.prompt).toContain('Inspect the checked-out files directly')
+    expect(cleanup).toHaveBeenCalledOnce()
+    expect(typesOf(await store.read(ticketId))).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+  })
+
+  it('fails when a recorded head is missing instead of inspecting the base', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 569)
+    const runId = 'pass-569'
+    const headSha = 'b'.repeat(40)
+    const run = makeStream(runId)
+    await store.append(runId, 0, [
+      run('RunProducedDiff', { branch: 'agent/569', headSha, files: 1, insertions: 1, deletions: 0 }),
+    ])
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const prepareCheckout = vi.fn()
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async ({ ref }) => (ref === 'main' ? 'a'.repeat(40) : null) }),
+      prepareCheckout,
+    })
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, aWaitId(), {
+        reason: reasonOn(runId),
+        triage: Triage.parse({ agent: 'codex', tools: 'full' }),
+      }),
+    )
+    expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'crashed: recorded attempt head unavailable' })
+    expect(prepareCheckout).not.toHaveBeenCalled()
+    expect(requests).toEqual([])
+  })
+
+  it('refuses a failed run-stream read instead of selecting the base', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 570)
+    const runId = 'pass-570'
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const prepareCheckout = vi.fn()
+    const deps = fakeDeps(
+      {
+        ...store,
+        read: async (streamId) => {
+          if (streamId === runId) throw new Error('run stream unavailable')
+          return store.read(streamId)
+        },
+      },
+      runtime,
+      {
+        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+        prepareCheckout,
+      },
+    )
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, aWaitId(), {
+        reason: reasonOn(runId),
+        triage: Triage.parse({ agent: 'codex', tools: 'full' }),
+      }),
+    )
+    expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'crashed: run stream unavailable' })
+    expect(prepareCheckout).not.toHaveBeenCalled()
+    expect(requests).toEqual([])
+  })
+
+  it('does not publish Codex advice after its wait resolves, but records the call and cleans up', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 568)
+    const waitId = aWaitId()
+    await store.append(ticketId, 0, [
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: OWN_QUESTION } },
+    ])
+    const cleanup = vi.fn(async () => {})
+    const { runtime } = stubRuntime(async () => {
+      const version = (await store.read(ticketId)).length
+      await store.append(ticketId, version, [
+        {
+          type: 'WaitResolved',
+          actor: 'human:steven',
+          data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+        },
+      ])
+      return ADVISED
+    })
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+      prepareCheckout: async () => ({ cwd: '/tmp/checkout', settingsPath: '/tmp/settings', env: {}, cleanup }),
+    })
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, waitId, { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
+    )
+    expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'wait no longer current' })
+    expect(typesOf(await store.read(ticketId))).toEqual(['WaitStarted', 'TriageStarted', 'WaitResolved', 'RunSpent'])
+    expect(cleanup).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the checkout when the runtime could not confirm its tools stopped', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 571)
+    const cleanup = vi.fn(async () => {})
+    const { runtime } = stubRuntime((): RunOutcome => ({
+      ...ADVISED,
+      failure: { kind: 'crash', detail: 'stopped; process cleanup incomplete: ps timed out' },
+    }))
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+      prepareCheckout: async () => ({ cwd: '/tmp/c', settingsPath: '/tmp/s', env: {}, cleanup }),
+    })
+    const held = await waitTriage(
+      deps,
+      requestOn(ticketId, aWaitId(), { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
+    )
+    expect(held.result._tag).toBe('TriageFailed')
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
+  it('keeps the checkout when tools may remain and the spend cannot be recorded', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 572)
+    const cleanup = vi.fn(async () => {})
+    const { runtime } = stubRuntime((): RunOutcome => ({
+      ...ADVISED,
+      failure: { kind: 'crash', detail: 'stopped; process cleanup incomplete: ps timed out' },
+    }))
+    const deps = fakeDeps(
+      {
+        ...store,
+        append: async (streamId, version, events) => {
+          if (events.some((e) => e.type === 'RunSpent')) throw new Error('store down')
+          return store.append(streamId, version, events)
+        },
+      },
+      runtime,
+      {
+        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+        prepareCheckout: async () => ({ cwd: '/tmp/c', settingsPath: '/tmp/s', env: {}, cleanup }),
+      },
+    )
+    await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }))
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
   it('records Codex advice and usage from an eligible wait without granting tools', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 81)

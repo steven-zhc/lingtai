@@ -2954,9 +2954,12 @@ export function callFor(discuss: Discuss): { model?: string; turns: number; wall
  * See `Recipe.triage` below for why this is optional with no default, unlike
  * `discuss:`.
  */
-export const Triage = z.strictObject({
+export const Triage = z
+  .strictObject({
   /** Which runtime answers. `DiscussAgent`, not a second enum — see its doc. */
   agent: DiscussAgent.default('claude-code'),
+  /** Codex CLI can inspect a private disposable checkout when explicitly selected. */
+  tools: z.enum(['none', 'full']).default('none'),
   /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
   model: DISPATCH.model,
   /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
@@ -2982,6 +2985,10 @@ export const Triage = z.strictObject({
     })
     .default({ turns: 40, wall: '5m', usd: 0.5 }),
 })
+  .refine((triage) => triage.tools === 'none' || triage.agent === 'codex', {
+    message: 'tools: full needs agent: codex — only the Codex CLI runs against a checkout',
+    path: ['tools'],
+  })
 export type Triage = z.infer<typeof Triage>
 
 /**

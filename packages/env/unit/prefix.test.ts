@@ -47,6 +47,7 @@ const NOT_OURS: Record<string, string> = {
   USER: "the operating system's, read to attribute an approval to a person",
   PORT: "Next's standalone server.js's, set by `lingtai board` for the server it imports (#183)",
   VITEST: 'set by the test runner, not by Lingtai',
+  CODEX_HOME: "the Codex CLI's, read to share its login directory with a triage checkout",
 }
 
 /** Every `src` directory in the workspace. Tests and fixtures are not scanned:

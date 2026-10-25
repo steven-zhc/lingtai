@@ -865,6 +865,48 @@ describe('the Codex adapter, where it reads the wiring off disk', () => {
     return path
   }
 
+  it('stops a detached background tool before returning its checkout', async () => {
+    const cwd = await mkdtemp(join(root, 'codex-detached-'))
+    const binary = join(cwd, 'codex-stand-in.cjs')
+    const pidFile = join(cwd, 'tool.pid')
+    await writeFile(
+      binary,
+      `#!/usr/bin/env node
+const { spawn } = require('node:child_process');
+const { writeFileSync } = require('node:fs');
+const tool = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+  detached: true,
+  stdio: ['ignore', 'inherit', 'inherit'],
+});
+writeFileSync(process.env.TOOL_PID_FILE, String(tool.pid));
+console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fixture' }));
+console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
+`,
+    )
+    await chmod(binary, 0o755)
+    let pid: number | undefined
+    try {
+      await createCodexRuntime({ binary }).run({
+        runId: 'detached-tool',
+        cwd,
+        prompt: 'start the tool',
+        settingsPath: await settingsAt({}),
+        env: { PATH: process.env.PATH ?? '', TOOL_PID_FILE: pidFile },
+        limits: { turns: 3, wallMs: 10_000 },
+      })
+      pid = Number(await readFile(pidFile, 'utf8'))
+      expect(() => process.kill(pid!, 0)).toThrow()
+    } finally {
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          // Already stopped by the runtime.
+        }
+      }
+    }
+  })
+
   it('finds the hook the conductor rendered and points Codex at it', async () => {
     const path = await settingsAt(renderSettings({ runId: 'pass-1', hookBinary: '/opt/lingtai/lingtai-hook' }))
     const { args } = createCodexRuntime().invocation!({

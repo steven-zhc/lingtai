@@ -426,6 +426,7 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
     recipeValues['triage'] = '(not declared)'
   } else {
     recipeValues['triage.agent'] = recipe.triage.agent
+    recipeValues['triage.tools'] = recipe.triage.tools
     recipeValues['triage.model'] = recipe.triage.model ?? '(none)'
     recipeValues['triage.limits.turns'] = String(recipe.triage.limits.turns)
     recipeValues['triage.limits.wall'] = recipe.triage.limits.wall
