@@ -316,16 +316,15 @@ export function EditBodyAndRequeue({
   waitId: WaitId | null
   reason: WaitReason | null
 }) {
-  const [text, setText] = useState('')
-  const [draftWaitId, setDraftWaitId] = useState<WaitId | null>(null)
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
-  const [edited, setEdited] = useState(false)
   const [, startTransition] = useTransition()
   const triage = useTriageDraft()
   const composed = triage?.waitId === waitId ? triage.text : ''
-  const currentText = waitId === null ? text : draftWaitId === waitId && edited ? text : composed
+  const body = triage?.body ?? null
+  const draftWaitId = body?.waitId ?? null
+  const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
   const question =
     reason?._tag === 'AgentQuestion'
       ? reason.question
@@ -333,7 +332,7 @@ export function EditBodyAndRequeue({
         ? reason.proposal.question
         : null
 
-  if (waitId === null && text === '' && !pending && detail === null) return null
+  if (waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
 
   return (
     <div className="decide">
@@ -347,9 +346,7 @@ export function EditBodyAndRequeue({
           value={currentText}
           placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
           onChange={(event) => {
-            setText(event.target.value)
-            setDraftWaitId(waitId)
-            setEdited(true)
+            triage?.setBody(event.target.value)
             if (draftWaitId !== waitId) setDetail(null)
           }}
         />
@@ -452,9 +449,17 @@ export function Requeue({
   const [refusal, setRefusal] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   // Which box is open: the requeue's why (or the answer), or a withdrawal's why.
-  const [asking, setAsking] = useState<'primary' | 'withdraw' | false>(false)
-  const [note, setNote] = useState('')
+  const [openedBy, setAsking] = useState<'primary' | 'withdraw' | false>(false)
+  const [localNote, setLocalNote] = useState('')
+  // An answer is kept by the page, so a discussion's answer can be added to it
+  // (#574); a withdrawal's why and a requeue's why are this card's own.
+  const shared = useTriageDraft()
+  const sharedAnswer = asked && shared?.answer?.waitId === waitId ? shared.answer : null
+  const asking = openedBy || (sharedAnswer?.open ? 'primary' : false)
   const withdrawing = asking === 'withdraw'
+  const note = asked && !withdrawing && shared !== null ? (sharedAnswer?.text ?? '') : localNote
+  const setNote = (value: string) =>
+    asked && !withdrawing && shared !== null ? shared.setAnswer(value) : setLocalNote(value)
   const [, startTransition] = useTransition()
 
   if (done) return <p className="decided">{done}</p>
@@ -484,18 +489,25 @@ export function Requeue({
     <div className="decide">
       <label className="reason">
         <span>{withdrawing ? 'Why withdraw it? (optional)' : asked ? 'Your answer' : 'Why? (optional)'}</span>
-        <input
-          autoFocus
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={
-            withdrawing
-              ? 'asked on the wrong issue — no attempt is told this'
-              : asked
-                ? 'every attempt at this ticket is told this'
+        {asked && !withdrawing ? (
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="every attempt at this ticket is told this"
+          />
+        ) : (
+          <input
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={
+              withdrawing
+                ? 'asked on the wrong issue — no attempt is told this'
                 : 'main has moved; a fresh branch should merge'
-          }
-        />
+            }
+          />
+        )}
       </label>
       <div className="btnrow">
         <button
@@ -528,7 +540,14 @@ export function Requeue({
         >
           {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Requeue'}
         </button>
-        <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
+        <button
+          className="btn"
+          onClick={() => {
+            setAsking(false)
+            shared?.closeAnswer()
+          }}
+          disabled={pending}
+        >
           Cancel
         </button>
       </div>

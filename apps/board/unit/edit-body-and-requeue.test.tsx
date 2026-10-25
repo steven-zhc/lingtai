@@ -9,7 +9,10 @@ const harness = vi.hoisted(() => ({
   values: [] as unknown[],
   cursor: 0,
   submit: vi.fn(async () => ({ ok: true, detail: 'back in the queue' })),
-  triage: null as null | { waitId: WaitId; text: string },
+  answer: vi.fn(async () => ({ ok: true, detail: 'answered' })),
+  conclude: vi.fn(async () => ({ ok: true, detail: 'concluded' })),
+  /** What `useContext` answers: the provider's value, as the last `mount` rendered it. */
+  triage: null as unknown,
 }))
 
 vi.mock('react', async (importOriginal) => {
@@ -19,16 +22,60 @@ vi.mock('react', async (importOriginal) => {
     useState: (initial: unknown) => {
       const index = harness.cursor++
       if (!(index in harness.values)) harness.values[index] = initial
-      return [harness.values[index], (value: unknown) => (harness.values[index] = value)]
+      return [
+        harness.values[index],
+        (value: unknown) =>
+          (harness.values[index] =
+            typeof value === 'function' ? (value as (current: unknown) => unknown)(harness.values[index]) : value),
+      ]
     },
     useContext: () => harness.triage,
     useTransition: () => [false, (work: () => void) => work()],
   }
 })
 
-vi.mock('../src/app/actions.ts', () => ({ editBodyAndRequeueCard: harness.submit }))
+vi.mock('../src/app/actions.ts', () => ({
+  editBodyAndRequeueCard: harness.submit,
+  answerCard: harness.answer,
+  concludeChat: harness.conclude,
+}))
 
-import { EditBodyAndRequeue } from '../src/app/decide.tsx'
+import { EditBodyAndRequeue, Requeue } from '../src/app/decide.tsx'
+import { TriagePicks, appendTo, draftTarget } from '../src/app/triage-picks.tsx'
+
+type Tag = string | null
+type By = { none: Tag; judge: Tag; triage: Tag }
+const question = (text: string, picked: string) => ({
+  id: text,
+  text,
+  recommended: picked,
+  answers: [
+    { id: 'A', text: 'A' },
+    { id: 'B', text: 'B' },
+  ],
+})
+
+/**
+ * Renders the provider and then a component under it, the way a page does: the
+ * provider's own state is the harness's too, so what an add writes is what the
+ * component reads next time. The provider is called as a function and its
+ * context value taken from the element it returns.
+ */
+function mount<T>(
+  waitId: WaitId | null,
+  component: () => T,
+  { by = { none: null, judge: null, triage: null } as By, questions = [] as ReturnType<typeof question>[] } = {},
+): T {
+  harness.cursor = 0
+  const provider = TriagePicks({ waitId, questions, recommendedBy: by, children: null }) as ReactElement<{
+    value: unknown
+  }>
+  harness.triage = provider.props.value
+  return component()
+}
+
+const editor = (waitId: WaitId | null, reason: WaitReason | null = null) =>
+  EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason })
 
 type ControlProps = {
   children?: ReactNode
@@ -61,8 +108,7 @@ it('can submit a new answer after a successful wait while the editor stays mount
   const first = aWaitId()
   const next = aWaitId()
   const render = (waitId: WaitId | null) => {
-    harness.cursor = 0
-    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: null })
+    return mount(waitId, () => editor(waitId))
   }
 
   control(render(first), 'textarea').props.onChange?.({ target: { value: 'First answer' } })
@@ -87,11 +133,9 @@ it('can submit a new answer after a successful wait while the editor stays mount
 
 it('keeps an unsent answer visible but unsendable after another person ends the wait', () => {
   harness.values = []
-  harness.triage = null
   const waitId = aWaitId()
   const render = (currentWaitId: WaitId | null) => {
-    harness.cursor = 0
-    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId: currentWaitId, reason: null })
+    return mount(currentWaitId, () => editor(currentWaitId))
   }
 
   control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My unsent answer' } })
@@ -103,12 +147,10 @@ it('keeps an unsent answer visible but unsendable after another person ends the 
 
 it('does not call a submitted answer an unsent draft after Follow ends the wait', async () => {
   harness.values = []
-  harness.triage = null
   harness.submit.mockClear()
   const waitId = aWaitId()
   const render = (currentWaitId: WaitId | null) => {
-    harness.cursor = 0
-    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId: currentWaitId, reason: null })
+    return mount(currentWaitId, () => editor(currentWaitId))
   }
 
   control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My submitted answer' } })
@@ -126,19 +168,18 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
   harness.submit.mockClear()
   const first = aWaitId()
   const next = aWaitId()
-  harness.triage = { waitId: first, text: 'Which? — A' }
-  const render = (waitId: WaitId) => {
-    harness.cursor = 0
-    return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: null })
-  }
+  const render = (waitId: WaitId, picked: string, text = 'Which?') =>
+    mount(waitId, () => editor(waitId), { questions: [question(text, picked)] })
+  const pick = (answerId: string) =>
+    (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
 
-  expect(control(render(first), 'textarea').props.value).toBe('Which? — A')
-  harness.triage = { waitId: first, text: 'Which? — B' }
-  expect(control(render(first), 'textarea').props.value).toBe('Which? — B')
-  control(render(first), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
-  harness.triage = { waitId: first, text: 'Which? — A' }
-  expect(control(render(first), 'textarea').props.value).toBe('My own answer')
-  control(render(first), 'button').props.onClick?.()
+  expect(control(render(first, 'A'), 'textarea').props.value).toBe('Which? — A')
+  pick('B')
+  expect(control(render(first, 'A'), 'textarea').props.value).toBe('Which? — B')
+  control(render(first, 'A'), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
+  pick('A')
+  expect(control(render(first, 'A'), 'textarea').props.value).toBe('My own answer')
+  control(render(first, 'A'), 'button').props.onClick?.()
   await vi.waitFor(() =>
     expect(harness.submit).toHaveBeenCalledWith({
       project: 'lingtai',
@@ -148,9 +189,105 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
     }),
   )
 
-  harness.triage = { waitId: next, text: 'Where? — Here' }
-  expect(control(render(next), 'textarea').props.value).toBe('Where? — Here')
-  harness.triage = null
+  expect(control(render(next, 'A', 'Where?'), 'textarea').props.value).toBe('Where? — A')
+})
+
+const writesNothing = () => {
+  expect(harness.submit).not.toHaveBeenCalled()
+  expect(harness.answer).not.toHaveBeenCalled()
+  expect(harness.conclude).not.toHaveBeenCalled()
+}
+const resetAdd = () => {
+  harness.values = []
+  harness.submit.mockClear()
+  harness.answer.mockClear()
+  harness.conclude.mockClear()
+}
+const addToDraft = (text: string) => (harness.triage as { add: (text: string) => void }).add(text)
+const body: By = { none: 'EditBodyAndRequeue', judge: null, triage: null }
+const asked: By = { none: 'AnswerQuestion', judge: null, triage: null }
+
+it('adds a discussion answer under the picks, writes nothing, and stops following the picks', () => {
+  resetAdd()
+  const waitId = aWaitId()
+  const render = (picked: string) =>
+    mount(waitId, () => editor(waitId), { by: body, questions: [question('Which?', picked)] })
+  const pick = (answerId: string) =>
+    (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
+
+  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A')
+  addToDraft('Because the lock is held.')
+  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A\n\nBecause the lock is held.')
+  pick('B')
+  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A\n\nBecause the lock is held.')
+  addToDraft('And a second thing.')
+  expect(control(render('A'), 'textarea').props.value).toBe(
+    'Which? — A\n\nBecause the lock is held.\n\nAnd a second thing.',
+  )
+  writesNothing()
+})
+
+it('adds a discussion answer into an empty body draft as the draft itself', () => {
+  resetAdd()
+  const waitId = aWaitId()
+  const render = () => mount(waitId, () => editor(waitId), { by: body })
+  expect(control(render(), 'textarea').props.value).toBe('')
+  addToDraft('Reasoned in Discussion.')
+  expect(control(render(), 'textarea').props.value).toBe('Reasoned in Discussion.')
+  writesNothing()
+})
+
+it('adds a discussion answer to the answer box, opening it, and the person still sends it', async () => {
+  resetAdd()
+  const waitId = aWaitId()
+  const render = () =>
+    mount(waitId, () => Requeue({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }), {
+      by: asked,
+    })
+  expect(findControl(render(), 'textarea')).toBeNull()
+  addToDraft('Use the first helper.')
+  const open = render()
+  expect(control(open, 'textarea').props.value).toBe('Use the first helper.')
+  expect(findControl(open, 'input')).toBeNull()
+  writesNothing()
+
+  addToDraft('It is already tested.')
+  expect(control(render(), 'textarea').props.value).toBe('Use the first helper.\n\nIt is already tested.')
+  writesNothing()
+
+  control(render(), 'button').props.onClick?.()
+  await vi.waitFor(() =>
+    expect(harness.answer).toHaveBeenCalledWith({
+      project: 'lingtai',
+      issue: 112,
+      answer: 'Use the first helper.\n\nIt is already tested.',
+      question: 'Which helper?',
+      waitId,
+    }),
+  )
+})
+
+it('does not add when no text-writing resolution is the one drawn first', () => {
+  resetAdd()
+  const waitId = aWaitId()
+  const none: By = { none: 'Close', judge: 'EditBodyAndRequeue', triage: null }
+  const render = () => mount(waitId, () => editor(waitId), { by: none })
+  render()
+  expect((harness.triage as { target: unknown }).target).toBeNull()
+  addToDraft('Ignored.')
+  expect(control(render(), 'textarea').props.value).toBe('')
+  writesNothing()
+})
+
+it('appends under what is there, after a blank line, and names the target by reading', () => {
+  expect(appendTo('', 'a')).toBe('a')
+  expect(appendTo('  \n', 'a')).toBe('a')
+  expect(appendTo('x', 'a')).toBe('x\n\na')
+  const by = { none: null, judge: 'AnswerQuestion', triage: 'EditBodyAndRequeue' }
+  expect(draftTarget(by, null)).toBeNull()
+  expect(draftTarget(by, 'judge')).toBe('AnswerQuestion')
+  expect(draftTarget(by, 'triage')).toBe('EditBodyAndRequeue')
+  expect(draftTarget({ none: 'Close', judge: 'Approve', triage: 'Split' }, 'judge')).toBeNull()
 })
 
 it.each([
@@ -176,8 +313,7 @@ it.each([
     harness.submit.mockClear()
     const waitId = aWaitId()
     const render = () => {
-      harness.cursor = 0
-      return EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason: reason as WaitReason })
+      return mount(waitId, () => editor(waitId, reason as WaitReason))
     }
 
     const html = renderToStaticMarkup(render())
@@ -202,6 +338,7 @@ it.each([
 it('keeps the body-writing label for FixerDisagrees', () => {
   harness.values = []
   harness.cursor = 0
+  harness.triage = null
   const html = renderToStaticMarkup(
     EditBodyAndRequeue({
       project: 'lingtai',

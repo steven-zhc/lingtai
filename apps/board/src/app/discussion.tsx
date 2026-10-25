@@ -62,6 +62,7 @@ import type { DiscussionView } from '@/lib/task'
 import { askDiscussion, concludeChat } from './actions.ts'
 import { useFollowing } from './live.tsx'
 import { useLogTail, type TailState } from './run-log.tsx'
+import { useTriageDraft } from './triage-picks.tsx'
 
 /** `$1.20`, or nothing at all when no figure was reported. See `costUsd`. */
 function meter(costUsd: number | null): string | null {
@@ -470,6 +471,9 @@ export function Discussion({
   const [echo, setEcho] = useState<Echo | null>(null)
   const [expanded, setExpanded] = useState(false)
   const following = useFollowing()
+  // Under a wait whose recommended resolution writes text, an answer is added to
+  // that resolution's draft instead of being written to the ticket (#574).
+  const target = useTriageDraft()
   const [, startTransition] = useTransition()
   const conversation = useRef<HTMLDivElement | null>(null)
 
@@ -730,23 +734,39 @@ export function Discussion({
                                 >
                                   Use for the next run
                                 </button>
-                                <button
-                                  className={t.answer.proposal.kind === 'ticket' ? pri : 'btn'}
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(() =>
-                                      concludeChat({
-                                        taskId,
-                                        chatId: d.chatId,
-                                        outcome: 'ticket',
-                                        text: t.answer?.proposal?.text ?? '',
-                                      }),
-                                    )
-                                  }
-                                >
-                                  Add to the ticket
-                                </button>
+                                {target?.target != null ? (
+                                  <button
+                                    className={t.answer.proposal.kind === 'ticket' ? pri : 'btn'}
+                                    onClick={() => target.add(t.answer?.proposal?.text ?? '')}
+                                  >
+                                    Add to this resolution
+                                  </button>
+                                ) : (
+                                  <button
+                                    className={t.answer.proposal.kind === 'ticket' ? pri : 'btn'}
+                                    disabled={busy}
+                                    onClick={() =>
+                                      run(() =>
+                                        concludeChat({
+                                          taskId,
+                                          chatId: d.chatId,
+                                          outcome: 'ticket',
+                                          text: t.answer?.proposal?.text ?? '',
+                                        }),
+                                      )
+                                    }
+                                  >
+                                    Add to the ticket
+                                  </button>
+                                )}
                               </div>
+                            </div>
+                          ) : null}
+                          {target?.target != null && !t.answer.proposal && t.answer.text ? (
+                            <div className="btnrow">
+                              <button className="btn" onClick={() => target.add(t.answer?.text ?? '')}>
+                                Add to this resolution
+                              </button>
                             </div>
                           ) : null}
                         </>
