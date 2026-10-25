@@ -288,3 +288,5 @@ permission is listed instead.
 
 Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
 Steps 2–4 then apply; skip Step 3's `lingtai board`, as `init` left one running.
+The landing now merges into `main` of your fork on GitHub, not the local bare
+repository, so Step 4's `git pull` does not apply: look on GitHub instead.
