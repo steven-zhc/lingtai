@@ -277,6 +277,23 @@ describe('continue-conflict', () => {
     expect(h.lines.join('\n')).not.toContain('not waiting')
   })
 
+  it('does not call a confirmation taken up when the approved ticket was closed before any claim', async () => {
+    const h = harness()
+    h.deps.events = async () => [
+      ...own,
+      env(
+        ticketId,
+        'WaitResolved',
+        { waitId: 'w1', resolution: { _tag: 'ContinueConflict', baseSha: BASE, headSha: HEAD, ref: 'agent/7' } },
+        2,
+      ),
+      env(ticketId, 'WaitApproved', { waitId: 'w1', grantRef: 'agent/7' }, 3),
+      env(ticketId, 'TicketClosed', { reason: 'operator', by: 'human:x' }, 4),
+    ]
+    expect(await continueConflictCommand({ project: 'p', issue: 7 }, h.log, h.deps)).toBe(1)
+    expect(h.lines.join('\n')).not.toContain('was taken up')
+  })
+
   it('reports a landed ticket as complete rather than as not continuable', async () => {
     const h = harness()
     h.deps.events = async () => [

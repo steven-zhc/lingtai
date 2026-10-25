@@ -234,8 +234,10 @@ async function continueConflict(
     lifecycle.reason.proposal._tag !== 'MergeConflict' ||
     !allowedResolutions(lifecycle.reason).includes('ContinueConflict')
   ) {
-    // A confirmation whose continuation was taken: the item has left `approved`.
-    if (lifecycle.status !== 'approved' && own.some((e) => isContinueConflictResolved(e))) {
+    // A confirmation whose continuation was taken: a claim follows it on the
+    // item's own stream. Leaving `approved` proves nothing — a close does too.
+    const confirmedAt = own.findLastIndex((e) => isContinueConflictResolved(e))
+    if (confirmedAt >= 0 && own.slice(confirmedAt + 1).some((e) => e.type === 'TicketClaimed')) {
       log(
         `${ticketId} had a conflict continuation confirmed and it was taken up; it is now ${lifecycle.status}${
           lifecycle.status === 'blocked' ? ' on a newer wait' : ''
