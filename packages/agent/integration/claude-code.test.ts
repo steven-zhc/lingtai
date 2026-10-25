@@ -907,6 +907,41 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
     }
   })
 
+  it('reports a throwing process scan as `process cleanup incomplete` (the string triage keeps its checkout on) without an unhandled rejection', async () => {
+    const cwd = await mkdtemp(join(root, 'codex-scan-throws-'))
+    const binary = join(cwd, 'codex-stand-in.cjs')
+    await writeFile(
+      binary,
+      `#!/usr/bin/env node
+console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fixture' }));
+console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
+`,
+    )
+    await chmod(binary, 0o755)
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const outcome = await createCodexRuntime({
+        binary,
+        stopProcesses: () => Promise.reject(new Error('ps unavailable')),
+      }).run({
+        runId: 'scan-throws',
+        cwd,
+        prompt: 'x',
+        settingsPath: await settingsAt({}),
+        env: { PATH: process.env.PATH ?? '' },
+        limits: { turns: 3, wallMs: 10_000 },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(outcome.failure?.kind).toBe('crash')
+      expect(outcome.failure?.detail).toContain('process cleanup incomplete')
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('finds the hook the conductor rendered and points Codex at it', async () => {
     const path = await settingsAt(renderSettings({ runId: 'pass-1', hookBinary: '/opt/lingtai/lingtai-hook' }))
     const { args } = createCodexRuntime().invocation!({

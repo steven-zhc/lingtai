@@ -252,6 +252,8 @@ export interface CodexOptions {
   sandbox?: CodexSandbox
   /** Extra arguments, for a project that needs one. Never used to widen the sandbox. */
   extraArgs?: readonly string[]
+  /** Replaces the scan that stops a run's leftover processes; a test makes it throw. */
+  stopProcesses?: (marker: string, seen: Map<number, string>) => Promise<void>
 }
 
 /** One line of `codex exec --json`. Every field here was read off a real stream. */
@@ -1105,6 +1107,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
   const binary = options.binary ?? 'codex'
   const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
   const extraArgs = options.extraArgs ?? []
+  const stopProcesses = options.stopProcesses ?? stopRunProcesses
 
   return {
     capabilities: CODEX_CAPABILITIES,
@@ -1314,7 +1317,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             hard = null
             // A scan that could not complete is not a clean stop: say so,
             // rather than let the caller delete a checkout still in use.
-            stopRunProcesses(processMarker, seen).then(
+            stopProcesses(processMarker, seen).then(
               () => finish(stopped!),
               (error: unknown) =>
                 finish({
@@ -1356,7 +1359,11 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         child.on('exit', () => {
           if (stopped !== null || settled) return
           signalGroup('SIGKILL')
-          stopRunProcesses(processMarker, seen).catch(() => {})
+          // `close` scans again and decides the outcome; this one only has to
+          // leave a trace if the scan itself fails.
+          stopProcesses(processMarker, seen).catch((error: unknown) =>
+            trace.note('cleanup', `process scan failed on exit: ${(error as Error).message}`),
+          )
         })
 
         child.on('close', async (code) => {
@@ -1366,7 +1373,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           signalGroup('SIGKILL')
           let cleanupFailure: string | null = null
           try {
-            await stopRunProcesses(processMarker, seen)
+            await stopProcesses(processMarker, seen)
           } catch (error) {
             cleanupFailure = (error as Error).message
           }
