@@ -21,7 +21,6 @@ const own = [
     'WaitStarted',
     {
       waitId: 'w1',
-      runId: 'run-1',
       reason: {
         _tag: 'ProposedEscalated',
         run: { runId: 'run-1' },

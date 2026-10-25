@@ -242,8 +242,8 @@ async function continueConflict(
     const confirmedWait = confirmedAt >= 0 ? (own[confirmedAt]!.data as { waitId?: string }).waitId : undefined
     const confirmedRun = own
       .filter((e) => e.type === 'WaitStarted')
-      .map((e) => e.data as { waitId: string; runId: string | null })
-      .findLast((d) => d.waitId === confirmedWait)?.runId
+      .map((e) => e.data as { waitId: string; reason: { run?: { runId?: string } | null } })
+      .findLast((d) => d.waitId === confirmedWait)?.reason.run?.runId
     if (
       confirmedRun != null &&
       own
