@@ -42,12 +42,17 @@ const moved = (toSha: string): ActionResult => ({
  * A pass whose lane answers `answers` in order and then lands. `merges` is what
  * the port was asked, and `landedOn` the `onSha` each `merge` visit was judged at.
  */
-async function walk(answers: readonly ActionResult[], mergeBase: PassOptions['mergeBase']) {
+async function walk(
+  answers: readonly ActionResult[],
+  mergeBase: PassOptions['mergeBase'],
+  buildAnswers: readonly ActionResult[] = [],
+) {
   const events: PassEvent[] = []
   const reviewSaw: ActionContext[] = []
   const landedOn: string[] = []
   const rounds: (number | undefined)[] = []
   let calls = 0
+  let builds = 0
   const lane: Action = {
     name: 'land the branch',
     kind: 'merge',
@@ -64,6 +69,8 @@ async function walk(answers: readonly ActionResult[], mergeBase: PassOptions['me
       return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
     if (step === 'implement')
       return [{ name: 'write', kind: 'agent', yields: 'commit', run: async () => ({ ...PASSED, head: 'c0ffee0' }) }]
+    if (step === 'build')
+      return [{ name: 'gate', kind: 'run', yields: 'verdict', run: async () => buildAnswers[builds++] ?? PASSED }]
     if (step === 'review')
       return [
         {
@@ -117,6 +124,15 @@ describe('a base that moved on the branch’s own files', () => {
     expect(reviewSaw).toHaveLength(2)
     expect('landedOnBase' in reviewSaw[0]!).toBe(false)
     expect(reviewSaw[1]?.landedOnBase).toEqual({ paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha: 'base-1' })
+  })
+
+  it('keeps the section for the review when the rerun’s build fails first (#594)', async () => {
+    const red: ActionResult = { verdict: 'failed', evidence: 'red', findings: [], because: 'red' }
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [PASSED, red])
+
+    expect(reviewSaw).toHaveLength(2)
+    expect('landedOnBase' in reviewSaw[0]!).toBe(false)
+    expect(reviewSaw[1]?.landedOnBase).toMatchObject({ fromSha: 'fork0001', toSha: 'base-1' })
   })
 
   it('reaches a person on the third arrival, the port having been called exactly twice', async () => {

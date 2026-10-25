@@ -1206,7 +1206,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
    */
   let onSha = options.context.onSha
   let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
-  /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the next fix round. */
+  /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
   let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null = null
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
   let lapStart = 0
@@ -1349,7 +1349,9 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         // The same bookkeeping `take` always did: the lap's own findings
         // become the next lap's `recheck` (0038 §2), and a round is spent.
         recheck = findingsIn(steps.slice(lapStart))
-        landedOnBase = null
+        // Dropped once a review has had it; a build that failed first never
+        // reached the review, which is still owed the section.
+        if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
         lapStart = steps.length
         roundsSpent = next.round
         at = next.to
