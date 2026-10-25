@@ -377,6 +377,26 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       expect(github.issues.map((i) => i.title)).toEqual(['revised', 'child b', 'child c'])
     })
 
+    it('refuses a different plan while a create that timed out may still land, though the closing listing was clean', async () => {
+      const github = fakeGitHub()
+      const create = github.port.createIssue
+      let late: (() => void) | null = null
+      // The create times out and lands only after the closing listing has run.
+      github.port.createIssue = async (input) => {
+        late = () => void create(input)
+        throw new Error('create timed out')
+      }
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(github.issues).toHaveLength(0)
+      expect(splitProgressOf(await store.read(ticketId), waitId)).toMatchObject({ listed: true, createUnknown: true })
+      late!()
+      await Promise.resolve()
+      const other = { ...PLAN, children: [{ ...child('a'), title: 'revised' }, child('b'), child('c')] }
+      expect(await split(other)).toMatchObject({ ok: false, reason: 'split-in-progress' })
+      expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(1)
+    })
+
     it('refuses a different plan once an attempt failed, even with no child recorded', async () => {
       const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
       const real = github.port.listIssuesSince

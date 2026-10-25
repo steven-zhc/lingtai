@@ -416,9 +416,10 @@ async function splitOnce(
   // landed and whose read-back listing failed records no identity, and its
   // marker belongs to the old plan hash; replacing the plan then abandons that
   // child. So a different plan is accepted only when the latest attempt's
-  // closing listing succeeded and still found no child — an earlier failure
-  // that wrote nothing does not stand in the way.
-  const untouched = progress !== null && progress.identities.length === 0 && progress.listed
+  // closing listing succeeded and still found no child, and no create ever
+  // threw with its outcome unseen: that one may land after any listing, under
+  // the old hash. An earlier failure that wrote nothing does not stand in the way.
+  const untouched = progress !== null && progress.identities.length === 0 && progress.listed && !progress.createUnknown
 
   if (progress === null || (!unchanged && untouched)) {
     const plan = { children: asked.children.map((c) => ({ ...c })), blockedBy: asked.blockedBy.map((d) => ({ ...d })) }

@@ -171,6 +171,8 @@ export interface SplitProgress {
   readonly reconciled: boolean
   /** True when the latest attempt's closing listing succeeded (`SplitReconciled.listed`). */
   readonly listed: boolean
+  /** True when any attempt since the start had a create whose outcome was never seen. */
+  readonly createUnknown: boolean
   readonly owed: SplitOwed
 }
 
@@ -183,16 +185,19 @@ export interface SplitProgress {
 export function splitProgressOf(events: readonly Envelope[], waitId: WaitId): SplitProgress | null {
   let started: Envelope | null = null
   let reconciled: Envelope | null = null
+  let createUnknown = false
   for (const e of events) {
     if (e.type === 'SplitStarted' && (e.data as PayloadOf<'SplitStarted'>).waitId === waitId) {
       started = e
       reconciled = null
+      createUnknown = false
     } else if (
       started !== null &&
       e.type === 'SplitReconciled' &&
       (e.data as PayloadOf<'SplitReconciled'>).waitId === waitId
     ) {
       reconciled = e
+      if ((e.data as PayloadOf<'SplitReconciled'>).createUnknown === true) createUnknown = true
     }
   }
   if (started === null) return null
@@ -210,6 +215,7 @@ export function splitProgressOf(events: readonly Envelope[], waitId: WaitId): Sp
     failure: read?.failure ?? null,
     reconciled: read !== null,
     listed: read?.listed === true,
+    createUnknown,
     owed: splitOwed(plan, identities, observed, strays),
   }
 }

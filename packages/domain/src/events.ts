@@ -1931,6 +1931,11 @@ export const SplitReconciled = z.strictObject({
    * no child recorded may still be replaced.
    */
   listed: z.boolean().optional(),
+  /**
+   * True when a `createIssue` threw in this attempt: it may still land after
+   * any listing, so the plan can never be replaced once an attempt says so.
+   */
+  createUnknown: z.boolean().optional(),
 })
 
 // ------------------------------------------------------------- extension ----

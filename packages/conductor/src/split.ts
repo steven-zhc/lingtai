@@ -173,6 +173,7 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     return { subIssues, blockedBy }
   }
 
+  let createUnknown = false
   // 1. Read, then write what is missing. Any failure stops the writing.
   try {
     await scan()
@@ -181,11 +182,13 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     if (failures.size === 0) {
       for (const child of plan.children) {
         if (identity.has(child.key)) continue
+        createUnknown = true
         const opened = await port.createIssue({
           title: child.title,
           body: `${child.body.trimEnd()}\n\n${splitMarker(waitId, plan, child.key)}\n`,
           labels: [...new Set([child.kind, SPLIT_HOLD_LABEL])],
         })
+        createUnknown = false
         // A 2xx carries the number and id: recorded at once, so a later throw cannot lose it.
         identity.set(child.key, { key: child.key, number: opened.number, id: opened.id, via: 'created' })
       }
@@ -220,7 +223,7 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   const event: ToAppend<PayloadOf<'SplitReconciled'>> = {
     type: 'SplitReconciled',
     actor: options.by,
-    data: { waitId, children: identities, observed, strays, failure, listed },
+    data: { waitId, children: identities, observed, strays, failure, listed, createUnknown },
   }
   // 4. Record it. The decide lock is held, but the projector may append beside us.
   for (let tries = 0; ; tries++) {
