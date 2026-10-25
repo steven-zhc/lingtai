@@ -201,8 +201,7 @@ which kind a wait was got inferred again in each place that needed it, from
      ```
 
      Triage advises a resolution by its kind alone: it never supplies an
-     `onSha` or a conflict's base and head, because a person confirms the
-     exact branch state shown. It never advises `AnswerQuestion`, which belongs to `OwnQuestion`, a wait it
+     `onSha`, because a person confirms the exact branch state shown. It never advises `AnswerQuestion`, which belongs to `OwnQuestion`, a wait it
      does not read. `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
      page and `recommendedResolution` match on, and what the daemon starts
      triage on: it starts one for `Queued`, and on its own start retries an
@@ -285,8 +284,8 @@ which kind a wait was got inferred again in each place that needed it, from
        its own `ReviewFindings`, `ReviewEmpty`, `BuildRed`, `VerifyRed`,
        `MergeConflict` and `InputNeeded` follow their rows above.
      - `GrantFixRound` is offered for fixable review findings (including a fixer
-       that disagreed), a red build or verification, or a check refusal with
-       evidence, with work preserved on a recorded remote ref. It authorizes
+       that disagreed), a red build or verification, a check refusal with
+       evidence, or a merge conflict, with work preserved on a recorded remote ref. It authorizes
        exactly one additional `implement` round on that saved head under
        [0108](0108-a-refusal-buys-a-round.md) §8, subject to that run's `turns`,
        `wall` and declared `usd` limits. It changes no recipe limit and waives no
@@ -298,7 +297,8 @@ which kind a wait was got inferred again in each place that needed it, from
        non-empty `evidence` or a finding with a non-empty `failureScenario`;
        `FixerDisagrees` a non-empty `said`; `ReviewFindings` some finding with a
        non-empty `failureScenario`; `BuildRed` and `VerifyRed` non-empty
-       `output`. A reason with no criterion is never offered it. The grant and the round's spend
+       `output`; `MergeConflict` always has one (its brief is the merge step
+       with the paths as detail). A reason with no criterion is never offered it. The grant and the round's spend
        are logged separately; another round needs another decision. The result
        visits `build`, `review` and `proposed` again before merge (§11).
      - `Split` is offered on waits where an oversized ticket may be the cause.
@@ -307,8 +307,8 @@ which kind a wait was got inferred again in each place that needed it, from
        to run out.
      - `ProposedEscalated` over `BuildRed`, `VerifyRed`, `MergeConflict` or
        `InputNeeded` has no `Approve`. Merging a red build would break _every
-       path into `end` has been through `build`_; a conflict needs a confirmed
-       behavior and another build and review; a question wants an answer.
+       path into `end` has been through `build`_; a conflict needs resolving
+       and then another build and review; a question wants an answer.
        Today a red build can be approved with a reason; that goes.
      - An approval over a refusal needs a note (`lingtai.ts:169` already asks
        for one), kept as `WaitResolved.note`.
@@ -527,11 +527,11 @@ which kind a wait was got inferred again in each place that needed it, from
    - This repository declares an AI judge for conflicts, and its fix brief
      already asks an agent to merge base into the current branch. That is a
      recipe choice, not a built-in default for every repository. When this
-     automatic path cannot finish, triage presents the hunks, its proposed
-     behavioral resolution and a question for each hunk whose behavior differs
-     on the two sides. The question is carried by the hunk it is about. The
-     page lists every hunk with its status and opens only the ones that need
-     the person.
+     automatic path cannot finish, triage lists the hunks and a question for
+     each hunk whose behavior differs on the two sides, for a person to read.
+     The question is carried by the hunk it is about. They are advice: nothing
+     picked there reaches the grant. The page also shows the wait's paths and
+     GitHub's compare view, or the two shas when no compare URL is known.
    - **A conflict is answered by `GrantFixRound` with the conflict brief.**
      The agent merges the latest base into the preserved branch, resolves the
      hunks and commits, with an instruction to stop and ask when the two sides'
@@ -544,7 +544,7 @@ which kind a wait was got inferred again in each place that needed it, from
      produces another conflict, a new wait is held for it.
    - Past 20 hunks it does not resolve them one by one. The hunks are counted
      from the mirror before any agent is called, and past 20 none is: the
-     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. The answer is the same `GrantFixRound`; there is no per-hunk confirmation to supply.
+     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. The answer is the same `GrantFixRound`.
 
 9. **Triage belongs to the wait it explains.** `WaitTriaged` names the
    wait it answers (its `waitId`) and the head it read. The page and the card
