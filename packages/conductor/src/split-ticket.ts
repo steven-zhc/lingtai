@@ -31,7 +31,7 @@ export type SplitClient = Pick<
   | 'getIssue'
   | 'createIssue'
   | 'updateBody'
-  | 'setLabels'
+  | 'addLabels'
   | 'addSubIssue'
   | 'listSubIssues'
   | 'addBlockedBy'
@@ -218,7 +218,8 @@ export async function splitTicketHolding(
     const labelOk = labels.includes(child.kind)
     if (bodyOk && labelOk) return 'skipped'
     if (!bodyOk) await github.updateBody(number, body)
-    if (!labelOk) await github.setLabels(number, [...labels, child.kind])
+    // Add, never replace: `labels` is a snapshot, and somebody may have held the child since.
+    if (!labelOk) await github.addLabels(number, [child.kind])
     const after = await github.getIssue(number)
     if (!same(after.body, body) || !after.labels.some((l) => l.name === child.kind))
       throw new Error(`#${number} does not carry the approved body and kind on read-back`)
@@ -256,11 +257,13 @@ export async function splitTicketHolding(
         try {
           const opened = await github.createIssue({ title: child.title.trim(), body, labels: [child.kind] })
           have.set(child.key, { number: opened.number })
+          // The create's own answer is not proof of the body and kind: read them back.
+          await repair(child, opened.number, body)
         } catch (err) {
           // A timed-out create is not proof of absence: look before failing.
           await adoptMarked()
           if (!have.has(child.key)) throw err
-          return repair(child, numberOf(child.key), body)
+          await repair(child, numberOf(child.key), body)
         }
         return 'done'
       },

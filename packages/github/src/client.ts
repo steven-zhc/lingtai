@@ -252,6 +252,14 @@ export interface GitHubClient {
   setLabels(issue: number, labels: readonly string[]): Promise<void>
 
   /**
+   * Adds labels to what the issue already has, leaving the rest alone.
+   *
+   * For a caller that has not just read the set: `setLabels` from a snapshot
+   * would drop a label somebody added since (an `agent:hold`, say).
+   */
+  addLabels(issue: number, labels: readonly string[]): Promise<void>
+
+  /**
    * Closes an issue, as completed.
    *
    * The gap this fills: nothing closed a landed issue, and `labelsFor("landed")`
@@ -410,6 +418,12 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     })
   }
 
+  async function addLabels(issue: number, labels: readonly string[]): Promise<void> {
+    await request<unknown>('POST', `/repos/${owner}/${repo}/issues/${issue}/labels`, {
+      labels: [...labels],
+    })
+  }
+
   /**
    * GitHub's `color` as a CSS colour, or null.
    *
@@ -534,6 +548,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     token: tokenFor,
     comment,
     setLabels,
+    addLabels,
     closeIssue,
     updateBody,
 

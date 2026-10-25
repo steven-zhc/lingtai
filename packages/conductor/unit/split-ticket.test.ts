@@ -83,9 +83,11 @@ class FakeGitHub {
         if (opts?.ifUnchanged !== undefined && opts.ifUnchanged !== issue.body) throw new BodyChanged(n)
         issue.body = body
       }),
-    setLabels: async (n, labels) =>
-      this.hit(`setLabels ${n}`, () => {
-        this.issues.get(n)!.labels = labels.map((name) => ({ name, color: null }))
+    addLabels: async (n, labels) =>
+      this.hit(`addLabels ${n}`, () => {
+        const issue = this.issues.get(n)!
+        for (const name of labels)
+          if (!issue.labels.some((l) => l.name === name)) issue.labels.push({ name, color: null })
       }),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
@@ -259,6 +261,28 @@ describe('splitTicketHolding', () => {
     expect(adopted.body).toContain('do a')
     expect(adopted.body).toContain('lingtai:split')
     expect(adopted.labels.map((l) => l.name)).toEqual(['feature'])
+  })
+
+  it('repairs a created child that came back without its kind label', async () => {
+    const { gh, go } = await setup()
+    const create = gh.client.createIssue
+    gh.client.createIssue = async (input) => create({ ...input, labels: [] })
+    const result = await go()
+    expect(result.ok).toBe(true)
+    expect(gh.issues.get(700)!.labels.map((l) => l.name)).toEqual(['feature'])
+  })
+
+  it('adds the kind to an adopted child without dropping a label somebody added since', async () => {
+    const { gh, go } = await setup()
+    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: ['agent:hold'] })
+    await gh.client.addSubIssue(PARENT, a.number)
+    expect((await go()).ok).toBe(true)
+    expect(
+      gh.issues
+        .get(a.number)!
+        .labels.map((l) => l.name)
+        .sort(),
+    ).toEqual(['agent:hold', 'feature'])
   })
 
   it('marks record the split done only once the append lands', async () => {
