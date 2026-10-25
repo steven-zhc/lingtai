@@ -502,6 +502,13 @@ export interface ActionContext {
    */
   landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
   /**
+   * The commit a `base-moved` merge brought in (#594). Unlike `landedOnBase` it
+   * is not dropped by a fix round: the original cut stays an ancestor of `HEAD`,
+   * so every later review's own diff is `mergedOnto...HEAD` or it would show the
+   * base's changes as the branch's. Replaced by a later merge.
+   */
+  mergedOnto?: string
+  /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */

@@ -1208,6 +1208,8 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
   /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
   let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null = null
+  /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
+  let mergedOnto: string | null = null
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
   let lapStart = 0
 
@@ -1225,6 +1227,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     round: roundsSpent,
     recheck,
     ...(landedOnBase === null ? {} : { landedOnBase }),
+    ...(mergedOnto === null ? {} : { mergedOnto }),
   })
 
   /**
@@ -1338,6 +1341,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         baseMergesSpent = next.merge
         // Nothing to diff without the fork point and the paths: the review then
         // falls back to the ordinary prompt. A second merge replaces the value.
+        mergedOnto = next.toSha
         landedOnBase =
           offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
             ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }

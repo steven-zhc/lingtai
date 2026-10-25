@@ -123,7 +123,10 @@ describe('a base that moved on the branch’s own files', () => {
 
     expect(reviewSaw).toHaveLength(2)
     expect('landedOnBase' in reviewSaw[0]!).toBe(false)
+    expect('mergedOnto' in reviewSaw[0]!).toBe(false)
     expect(reviewSaw[1]?.landedOnBase).toEqual({ paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha: 'base-1' })
+    // Kept for every later review, which the section is not (a fix round drops it).
+    expect(reviewSaw[1]?.mergedOnto).toBe('base-1')
   })
 
   it('keeps the section for the review when the rerun’s build fails first (#594)', async () => {

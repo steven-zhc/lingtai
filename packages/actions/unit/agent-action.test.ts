@@ -1851,6 +1851,14 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(prompt).toBe(buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES, []))
   })
 
+  it('diffs against the merged commit in a later round, once the section has been dropped', async () => {
+    const { runtime, diffFrom, landedAsked } = await run({ mergedOnto: 'base0002' })
+
+    expect(diffFrom).toEqual(['base0002'])
+    expect(landedAsked).toEqual([])
+    expect(runtime.seen[0]?.prompt ?? '').not.toContain(HEADING)
+  })
+
   it('cuts a diff over the cap, and names the path it cut and the paths it left out', () => {
     const lines = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `+${tag}${i}`).join('\n')
     const moved = { paths: ['a.ts', 'b.ts', 'c.ts'], fromSha: 'f', toSha: 't' }

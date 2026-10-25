@@ -514,7 +514,8 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // After a base merge the original cut is still the merge-base, so the
       // branch's own change is `toSha...HEAD`; otherwise the base's changes would
       // be in it twice.
-      const diff = await (moved === undefined ? deps.diff() : deps.diff(moved.toSha))
+      const from = context.mergedOnto ?? moved?.toSha
+      const diff = await (from === undefined ? deps.diff() : deps.diff(from))
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is
         // cheaper than an agent call that reads an empty diff.
