@@ -1377,6 +1377,9 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           } catch (error) {
             cleanupFailure = (error as Error).message
           }
+          // The wall timer or an abort may have fired while the scan ran: its
+          // outcome is the answer, and its hard stop is what publishes it.
+          if (stopped !== null || settled) return
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()
