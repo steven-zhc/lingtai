@@ -31,6 +31,7 @@ export type SplitClient = Pick<
   | 'getIssue'
   | 'createIssue'
   | 'updateBody'
+  | 'setLabels'
   | 'addSubIssue'
   | 'listSubIssues'
   | 'addBlockedBy'
@@ -205,6 +206,25 @@ export async function splitTicketHolding(
     return 'done'
   }
 
+  const expectedBody = (child: SplitPlanInput['children'][number]) =>
+    `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
+  const same = (a: string, b: string) => a.replace(/\r\n/g, '\n').trimEnd() === b.replace(/\r\n/g, '\n').trimEnd()
+
+  /** An adopted child is the approved one only if its body and kind label are: write what is not, read it back. */
+  async function repair(child: SplitPlanInput['children'][number], number: number, body: string): Promise<StepStatus> {
+    const current = await github.getIssue(number)
+    const labels = current.labels.map((l) => l.name)
+    const bodyOk = same(current.body, body)
+    const labelOk = labels.includes(child.kind)
+    if (bodyOk && labelOk) return 'skipped'
+    if (!bodyOk) await github.updateBody(number, body)
+    if (!labelOk) await github.setLabels(number, [...labels, child.kind])
+    const after = await github.getIssue(number)
+    if (!same(after.body, body) || !after.labels.some((l) => l.name === child.kind))
+      throw new Error(`#${number} does not carry the approved body and kind on read-back`)
+    return 'done'
+  }
+
   async function writeDoneWhen(): Promise<StepStatus> {
     const numbers = plan.children.map((c) => numberOf(c.key))
     for (let attempt = 0; ; attempt++) {
@@ -230,8 +250,9 @@ export async function splitTicketHolding(
     ...plan.children.map((child) => ({
       name: `create ${child.key}`,
       run: async (): Promise<StepStatus> => {
-        if (have.has(child.key)) return 'skipped'
-        const body = `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
+        const body = expectedBody(child)
+        const existing = have.get(child.key)
+        if (existing !== undefined) return repair(child, existing.number, body)
         try {
           const opened = await github.createIssue({ title: child.title.trim(), body, labels: [child.kind] })
           have.set(child.key, { number: opened.number })
@@ -239,6 +260,7 @@ export async function splitTicketHolding(
           // A timed-out create is not proof of absence: look before failing.
           await adoptMarked()
           if (!have.has(child.key)) throw err
+          return repair(child, numberOf(child.key), body)
         }
         return 'done'
       },
@@ -287,7 +309,8 @@ export async function splitTicketHolding(
           }),
           blockedBy: plan.blockedBy,
         }
-        return 'done'
+        // Not done until the append lands: marked when 'end the wait' succeeds.
+        return 'not-reached'
       },
     },
     {
@@ -320,15 +343,22 @@ export async function splitTicketHolding(
       const outcome = await action.run()
       if (typeof outcome === 'string') {
         steps[i]!.status = outcome
+        if (action.name === 'end the wait') steps[i - 1]!.status = 'done'
       } else {
         steps[i]!.status = 'failed'
         steps[i]!.detail = outcome.detail
+        steps[i - 1]!.status = 'failed'
+        steps[i - 1]!.detail = outcome.detail
         result = { ok: false, ticketId, detail: `${action.name}: ${outcome.detail}`, steps, children: known() }
         break
       }
     } catch (err) {
       steps[i]!.status = 'failed'
       steps[i]!.detail = errorMessage(err)
+      if (action.name === 'end the wait') {
+        steps[i - 1]!.status = 'failed'
+        steps[i - 1]!.detail = errorMessage(err)
+      }
       result = {
         ok: false,
         ticketId,

@@ -83,6 +83,10 @@ class FakeGitHub {
         if (opts?.ifUnchanged !== undefined && opts.ifUnchanged !== issue.body) throw new BodyChanged(n)
         issue.body = body
       }),
+    setLabels: async (n, labels) =>
+      this.hit(`setLabels ${n}`, () => {
+        this.issues.get(n)!.labels = labels.map((name) => ({ name, color: null }))
+      }),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
         if (this.subs.has(`${p}>${c}`)) throw new Error('422')
@@ -242,16 +246,35 @@ describe('splitTicketHolding', () => {
     expect(gh.calls.length).toBe(writes)
   })
 
-  it('adopts a sub-issue whose title is a plan entry instead of creating it again', async () => {
+  it('adopts a sub-issue whose title is a plan entry, and repairs its body and kind label', async () => {
     const { gh, go } = await setup()
-    const existing = gh.client.createIssue({ title: 'part a', body: 'x', labels: ['feature'] })
-    const a = await existing
+    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: [] })
     await gh.client.addSubIssue(PARENT, a.number)
     const result = await go()
     expect(result.ok).toBe(true)
-    expect(result.steps[0]).toMatchObject({ name: 'create a', status: 'skipped' })
+    expect(result.steps[0]).toMatchObject({ name: 'create a', status: 'done' })
     expect(result.steps[3]).toMatchObject({ name: 'attach a', status: 'skipped' })
     expect([...gh.issues.values()].filter((i) => i.title === 'part a')).toHaveLength(1)
+    const adopted = gh.issues.get(a.number)!
+    expect(adopted.body).toContain('do a')
+    expect(adopted.body).toContain('lingtai:split')
+    expect(adopted.labels.map((l) => l.name)).toEqual(['feature'])
+  })
+
+  it('marks record the split done only once the append lands', async () => {
+    const { store, ticketId, go } = await setup()
+    const real = store.append.bind(store)
+    store.append = async () => {
+      throw new Error('append refused')
+    }
+    const failed = await go()
+    expect(failed.ok).toBe(false)
+    expect(failed.steps.find((s) => s.name === 'record the split')!.status).toBe('failed')
+    expect(failed.steps.find((s) => s.name === 'end the wait')!.status).toBe('failed')
+    expect((await store.read(ticketId)).some((e) => e.type === 'TicketSplit')).toBe(false)
+    store.append = real
+    const ok = await go()
+    expect(ok.steps.find((s) => s.name === 'record the split')!.status).toBe('done')
   })
 
   it('refuses two children with one title before any GitHub call', async () => {

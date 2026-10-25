@@ -235,10 +235,10 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     }
   }
 
-  // **A split is checked, and then not built, until the effects exist (#561,
-  // #562).** Appending `WaitResolved{Split}` here would record a completed
-  // choice with no child opened, and 0118 §11 says a partial split cannot
-  // resolve the wait. Both refusals return before any append.
+  // **A split is checked, and resolves only with its written children (#561,
+  // #562, #601).** Appending `WaitResolved{Split}` without `options.split` would
+  // record a completed choice with no child opened, and 0118 §11 says a partial
+  // split cannot resolve the wait. Every refusal returns before any append.
   if (options.resolution._tag === 'Split') {
     if (options.kinds === undefined)
       return {
