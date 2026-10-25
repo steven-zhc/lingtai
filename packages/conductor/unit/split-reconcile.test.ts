@@ -402,14 +402,40 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       expect(github.subs.get(PARENT)?.size).toBe(3)
     })
 
-    it('makes a second child when the create threw and the marker is removed: nothing was recorded', async () => {
+    it('records a create that threw but landed, from the final read, so a removed marker makes no second child', async () => {
       const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
-      const { waitId, split } = await blockedOnFirstWait(github)
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
       expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.identities).toMatchObject([{ key: 'a', number: 600, via: 'adopted' }])
       strip(github, waitId as never, 'a')
-      // The documented residual window: no identity, so nothing to adopt by.
-      await split()
-      expect(carrying(github)).toHaveLength(4)
+      for (let i = 0; i < 4; i++) await split()
+      expect(carrying(github)).toHaveLength(3)
+    })
+
+    it('records a create that returned even when the very next listing throws', async () => {
+      const github = fakeGitHub()
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      const listed = github.port.listIssuesSince
+      const create = github.port.createIssue
+      let broken = false
+      github.port.createIssue = async (input) => {
+        const made = await create(input)
+        broken = true
+        return made
+      }
+      github.port.listIssuesSince = async (since) => {
+        if (broken) throw new Error('listing timed out')
+        return listed(since)
+      }
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.identities).toMatchObject([{ key: 'a', number: 600, via: 'created' }])
+      broken = false
+      github.port.createIssue = create
+      strip(github, waitId as never, 'a')
+      for (let i = 0; i < 4; i++) await split()
+      expect(carrying(github)).toHaveLength(3)
     })
 
     it.each([

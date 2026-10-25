@@ -266,17 +266,25 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
           body: `${child.body.trimEnd()}\n\n${marker}\n`,
           labels: [...new Set([child.kind, SPLIT_HOLD_LABEL])],
         })
-        // A 2xx carries the number and id: an accepted write, recorded even if
-        // every later step throws. Look again: a call that raced this one may
-        // have opened its own, and then the older issue is the child.
-        const first = (await findChildren()).adopt.get(child.key)
+        // A 2xx carries the number and id: an accepted write, recorded at once
+        // so that no later step, however it throws, can lose it.
+        const made: SplitIdentity = { key: child.key, number: opened.number, id: opened.id, via: 'created' }
+        identity.set(child.key, made)
+        writable.add(child.key)
+        // Look again: a call that raced this one may have opened its own, and
+        // then the older issue is the child. The lookup runs with the key
+        // unrecorded, and the created identity stands if it throws.
+        let first: At | undefined
+        identity.delete(child.key)
+        try {
+          first = (await findChildren()).adopt.get(child.key)
+        } finally {
+          identity.set(child.key, made)
+        }
         if (first !== undefined && first.number < opened.number) {
           await withdraw(opened.number, first.number)
           identity.set(child.key, { key: child.key, number: first.number, id: first.id, via: 'adopted' })
-        } else {
-          identity.set(child.key, { key: child.key, number: opened.number, id: opened.id, via: 'created' })
         }
-        writable.add(child.key)
       }
 
       const attached = new Set(before.subIssues)
@@ -302,10 +310,19 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   const join = (note: string): void => {
     failure = `${failure === null ? '' : `${failure}; `}${note}`
   }
+  // A create that timed out but landed shows up here: take it up before the
+  // read-back, so the attempt records it rather than discarding what it saw.
+  let listing: Awaited<ReturnType<typeof findChildren>> | null = null
+  try {
+    listing = await findChildren()
+    adopt(listing.adopt)
+  } catch (err) {
+    join(`read-back failed: ${messageOf(err)}`)
+  }
   try {
     for (const note of await readBack(observed)) join(note)
     // A duplicate still open is a split that is not whole, whatever else was seen.
-    const open = (await findChildren()).duplicates
+    const open = listing?.duplicates ?? []
     if (open.length > 0) join(`duplicate children still open: ${open.map((d) => `#${d.number}`).join(', ')}`)
     const stray = await strayLinks()
     if (stray.subs.length + stray.edges.length > 0)
