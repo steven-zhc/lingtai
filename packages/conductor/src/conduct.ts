@@ -1054,10 +1054,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
         ...(confirmed !== null
           ? {
-              // Not `grantCriterion`: that is `null` for `MergeConflict` on
-              // purpose, since offering `GrantFixRound` on a conflict is not
-              // 0118 §1's table. `fixRound` reads a printed `merge` as a
-              // conflict and its detail as the paths.
+              // Not `grantCriterion`: that is the unconfirmed conflict brief,
+              // and this one carries what a person confirmed (and is spread
+              // first, so the guard below keeps the other from overwriting
+              // it). `fixRound` reads a printed `merge` as a conflict and its
+              // detail as the paths.
               grant: {
                 why: 'A person confirmed the intended behavior of every conflicting hunk.',
                 asked: null,
@@ -1070,7 +1071,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               conflict: { baseSha: confirmed.baseSha, hunks: confirmed.hunks },
             }
           : {}),
-        ...(granted && grantCriterion(reason) !== null
+        ...(granted && confirmed === null && grantCriterion(reason) !== null
           ? {
               grant: {
                 why: 'A person granted one checked fix round.',

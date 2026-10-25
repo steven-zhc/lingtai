@@ -1518,6 +1518,11 @@ describe('what a conflict tells the fixer', () => {
     checks: ['pnpm typecheck && pnpm test'],
   })
 
+  it('tells the agent to stop and ask rather than choose when the behaviours contradict', () => {
+    expect(brief).toMatch(/stop and ask rather than choose/i)
+    expect(brief).toMatch(/do not commit the merge/i)
+  })
+
   it('tells the agent to run the merge itself, not that one is already in progress', () => {
     expect(brief).toContain('git merge `main`')
     expect(brief).toMatch(/this branch does\s+not merge into it cleanly/i)

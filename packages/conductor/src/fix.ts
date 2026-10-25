@@ -673,6 +673,10 @@ So:
   deleting the conflicting hunk. Read what each side was doing.
 - \`git add\` the resolved files and \`git commit\` the merge. Do not
   \`git merge --abort\`: that throws away the merge you just ran.
+- If the two sides' behaviours contradict and the ticket does not settle which
+  one wins, stop and ask rather than choose: do not commit the merge, and say
+  in your final message which two behaviours contradict and why the ticket
+  does not settle it.
 - Change nothing the conflict did not force you to. The diff is about to be read
   again by a reviewer who last saw it without this merge in it.
 

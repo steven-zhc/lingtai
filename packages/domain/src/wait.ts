@@ -299,7 +299,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'VerifyRed':
           return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
         case 'MergeConflict':
-          // 0118 §1: `ContinueConflict`, `Requeue`, `Close` — no body edit.
+          // 0118 §1: `GrantFixRound` and `ContinueConflict` are appended by
+          // `allowedResolutions`; this row is `Requeue`, `Close` — no body edit.
           return ['Requeue', 'Close']
         case 'InputNeeded':
           return ['Requeue', 'EditBodyAndRequeue', 'Close']
@@ -379,6 +380,11 @@ export function grantCriterion(
       const said = text(proposal.said)
       return said === null ? null : { printed: { step: 'review', detail: said }, findings: [] }
     }
+    case 'MergeConflict':
+      // A conflict always has a criterion: merge the base, resolve, commit.
+      // `fixRound` reads a printed `merge` as a conflict and the detail as its
+      // paths (the same shape `ContinueConflict`'s continuation prints).
+      return { printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n') }, findings: [] }
     default:
       return null
   }
