@@ -13,7 +13,7 @@ describe('the environment handed to a tool-enabled triage run', () => {
     expect(env['HOME']).toBe('/tmp/private')
   })
 
-  it('points at the real ~/.codex, never one under the private home, so a refreshed login is kept', () => {
+  it('uses the real ~/.codex, never one under the private home, so a refreshed login is kept', () => {
     const env = triageCheckoutEnv({ HOME: '/home/u' }, '/tmp/private')
     expect(env['CODEX_HOME']).toBe('/home/u/.codex')
     expect(env['CODEX_HOME']).not.toContain('/tmp/private')
