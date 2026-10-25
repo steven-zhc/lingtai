@@ -110,6 +110,7 @@ import {
   baseWrittenAt,
   ceilingOf,
   declaresTurnsOn,
+  isBuiltInJudge,
   recipePath,
   remoteOf,
   type Recipe,
@@ -2069,12 +2070,14 @@ async function dispatchedAuthRow(
   // Found in the injected list rather than built with `createRuntime`, so a
   // test can hand in a fake `checkAuth` instead of spawning the real binary.
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
-  role: 'runtime' | 'discuss' | 'triage' = 'runtime',
+  label: string = 'runtime',
+  // The recipe keys that name `agent`, for the remedy sentence.
+  keys: readonly string[] = ['runtime.agent'],
   // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
   // triage checkout is given, which the caller adds and keeps its own cache for.
   env: Record<string, string> = runnableEnv({}),
 ): Promise<CheckResult> {
-  const name = `${role}: ${project} signed in`
+  const name = `${label}: ${project} signed in`
   if (!asked.has(agent)) {
     const runtime = runtimes.find((r) => r.capabilities.id === agent)
     asked.set(agent, runtime?.checkAuth ? await runtime.checkAuth(env) : null)
@@ -2088,9 +2091,9 @@ async function dispatchedAuthRow(
     name,
     status: 'fail',
     detail:
-      `${agent} reports ${status.detail}, and ${project}'s recipe names it at ${role}.agent — ` +
+      `${agent} reports ${status.detail}, and ${project}'s recipe names it at ${keys.join(', ')} — ` +
       `so that is what its next call constructs and spawns. Sign in, or name a runtime this ` +
-      `machine has at ${role}.agent in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
+      `machine has at ${keys.join(', ')} in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
   }
 }
@@ -2201,7 +2204,30 @@ export async function declaredEnvironment(
       // Whether the runtime named above can actually be started — a different
       // question from whether its declared limits bind, and the one nothing
       // asked between `runtimeAuth` becoming per-machine and this row.
-      results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked, runtimes))
+      // Every agent the recipe will dispatch, once each: `runtime.agent` always
+      // (an unconfigured `implement` runs on it), then each step's agent action
+      // and each judge that names a runtime. Same test as `agentRefusal` — a
+      // built-in judge is a function, not a dispatch.
+      const needed = new Map<RuntimeId, string[]>([[resolved.recipe.runtime.agent, ['runtime.agent']]])
+      const need = (agent: RuntimeId, key: string) => needed.set(agent, [...(needed.get(agent) ?? []), key])
+      for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
+        for (const action of actions) {
+          if ('agent' in action) need(action.agent, `steps.${step}.agent`)
+          else if ('judge' in action && !isBuiltInJudge(action.judge)) {
+            need(action.judge as RuntimeId, `steps.${step}.judge (when: ${action.when})`)
+          }
+        }
+      }
+      for (const [agent, keys] of needed) {
+        const row = await dispatchedAuthRow(project.project, agent, asked, runtimes, 'runtime', keys)
+        const onRuntime = agent === resolved.recipe.runtime.agent
+        results.push({
+          ...row,
+          // Two agents in one project are two rows, so the second names itself.
+          name: onRuntime ? row.name : `steps: ${project.project} ${agent} signed in`,
+          detail: keys.length > 1 || !onRuntime ? `${row.detail} · needed by ${keys.join(', ')}` : row.detail,
+        })
+      }
       for (const role of ['discuss', 'triage'] as const) {
         const selected = resolved.recipe[role]
         if (role === 'triage' && resolved.recipe.triage?.agent === 'codex' && resolved.recipe.triage.tools === 'full') {
@@ -2214,6 +2240,7 @@ export async function declaredEnvironment(
             askedTriageCli,
             runtimes,
             role,
+            [`${role}.agent`],
             codexHome ? { ...runnableEnv({}), CODEX_HOME: codexHome } : runnableEnv({}),
           )
           results.push({
@@ -2234,7 +2261,9 @@ export async function declaredEnvironment(
             codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
           )
         } else if (selected) {
-          results.push(await dispatchedAuthRow(project.project, selected.agent, asked, runtimes, role))
+          results.push(
+            await dispatchedAuthRow(project.project, selected.agent, asked, runtimes, role, [`${role}.agent`]),
+          )
         }
       }
     } catch (err) {
