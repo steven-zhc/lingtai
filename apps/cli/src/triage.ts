@@ -396,18 +396,19 @@ async function gatherEvidence(
   deps: TriagePorts,
   request: WaitTriageRequest,
   before: readonly Envelope[],
+  guard: <T>(work: Promise<T>) => Promise<T>,
 ): Promise<{ evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null }> {
   const project = parseTicketStream(request.ticketId)?.project ?? ''
 
   let ticket: TriageEvidence['ticket'] = null
   let ticketProblem: string | null = null
   try {
-    ticket = await deps.issue(request.ticketId)
+    ticket = await guard(deps.issue(request.ticketId))
   } catch (err) {
     ticketProblem = (err as Error).message
   }
 
-  const base = await deps.base(request.ticketId).catch(() => 'main')
+  const base = await guard(deps.base(request.ticketId)).catch(() => 'main')
 
   // `'run' in reason` is `wait.ts`'s own test (`allowedResolutions`) —
   // `OwnQuestion` is the one `WaitReason` with no run, and this is not the
@@ -434,24 +435,30 @@ async function gatherEvidence(
     head = headOf(runEvents)
   }
 
-  const baseSha = await deps.mirror.refSha({ project, ref: base }).catch(() => null)
+  const baseSha = await guard(deps.mirror.refSha({ project, ref: base })).catch(() => null)
   const refs: ReadableRef[] = []
   if (baseSha !== null) {
-    const listed = await deps.mirror.listAt({ project, ref: base }).catch(() => ({ paths: [], truncated: false }))
+    const listed = await guard(deps.mirror.listAt({ project, ref: base })).catch(() => ({
+      paths: [],
+      truncated: false,
+    }))
     refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
   }
   let headSha: string | null = null
   if (head !== null) {
-    headSha = await deps.mirror.refSha({ project, ref: head }).catch(() => null)
+    headSha = await guard(deps.mirror.refSha({ project, ref: head })).catch(() => null)
     if (headSha !== null) {
-      const listed = await deps.mirror.listAt({ project, ref: headSha }).catch(() => ({ paths: [], truncated: false }))
+      const listed = await guard(deps.mirror.listAt({ project, ref: headSha })).catch(() => ({
+        paths: [],
+        truncated: false,
+      }))
       refs.push({ ref: `attempt-${runAttempt ?? 1}`, sha: headSha, paths: listed.paths, truncated: listed.truncated })
     }
   }
 
   const diffStat =
     baseSha !== null && headSha !== null
-      ? await deps.mirror.diffStatAt({ project, base: baseSha, head: headSha }).catch(() => null)
+      ? await guard(deps.mirror.diffStatAt({ project, base: baseSha, head: headSha })).catch(() => null)
       : null
 
   return {
@@ -492,7 +499,63 @@ export async function waitTriage(
   deps: TriagePorts,
   request: WaitTriageRequest,
 ): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
+  // The recipe's wall starts here, before the first read, and bounds the whole
+  // attempt — reads included. A timer we clear rather than `AbortSignal.timeout`,
+  // so a finished attempt leaves nothing keeping the event loop alive.
+  const wallMs = triageCallFor(request.triage).wallMs
+  const wall = new AbortController()
+  const timer = setTimeout(() => wall.abort(), wallMs)
+  timer.unref?.()
+  const startedAt = deps.now()
+  try {
+    return await waitTriageWithin(deps, request, wall.signal, startedAt + wallMs)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Rejects with this when the wall fires while a read is outstanding. */
+class WallReached extends Error {
+  constructor() {
+    super('timeout')
+  }
+}
+
+async function waitTriageWithin(
+  deps: TriagePorts,
+  request: WaitTriageRequest,
+  wallSignal: AbortSignal,
+  wallDeadline: number,
+): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
   const log = deps.log ?? (() => {})
+  const callerSignal = request.signal
+  const signal = callerSignal === undefined ? wallSignal : AbortSignal.any([wallSignal, callerSignal])
+  // A read that ignores its signal never settles; racing it is what makes the
+  // wall a bound rather than a request. A port that did settle late is dropped.
+  const guard = <T>(work: Promise<T>): Promise<T> => {
+    if (signal.aborted) {
+      work.catch(() => {})
+      return Promise.reject(new WallReached())
+    }
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        work.catch(() => {})
+        reject(new WallReached())
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      work.then(
+        (v) => {
+          signal.removeEventListener('abort', onAbort)
+          resolve(v)
+        },
+        (e: unknown) => {
+          signal.removeEventListener('abort', onAbort)
+          reject(e)
+        },
+      )
+    })
+  }
+  const abortedWhy = (): string => (callerSignal?.aborted ? 'aborted' : 'timeout')
   const stream = request.ticketId
 
   let before: Envelope[]
@@ -526,11 +589,13 @@ export async function waitTriage(
   if (conflict) {
     try {
       const project = parseTicketStream(request.ticketId)?.project ?? ''
-      conflictPaths = await deps.mirror.conflictedPathsAt({
-        project,
-        baseSha: proposal.baseSha!,
-        headSha: proposal.headSha!,
-      })
+      conflictPaths = await guard(
+        deps.mirror.conflictedPathsAt({
+          project,
+          baseSha: proposal.baseSha!,
+          headSha: proposal.headSha!,
+        }),
+      )
       const total = conflictPaths.reduce((sum, path) => sum + path.hunks, 0)
       if (total > MERGE_HUNKS_ONE_BY_ONE) {
         mechanical = {
@@ -542,7 +607,10 @@ export async function waitTriage(
         }
       }
     } catch (err) {
-      mechanical = { _tag: 'TriageFailed', why: clip((err as Error).message) }
+      mechanical = {
+        _tag: 'TriageFailed',
+        why: err instanceof WallReached ? abortedWhy() : clip((err as Error).message),
+      }
     }
   }
   const by =
@@ -607,7 +675,8 @@ export async function waitTriage(
     final = mechanical
   } else
     try {
-      const gathered = await gatherEvidence(deps, request, before)
+      const gathered = await gatherEvidence(deps, request, before, guard)
+      if (signal.aborted) throw new WallReached()
       const evidence = gathered.evidence
       evidence.conflicts = conflictPaths
       baseSha = gathered.baseSha
@@ -623,27 +692,33 @@ export async function waitTriage(
         )
       }
       const checkout = full
-        ? await (deps.prepareCheckout ?? prepareTriageCheckout)(
-            parseTicketStream(request.ticketId)?.project ?? '',
-            selectedSha!,
+        ? await guard(
+            (deps.prepareCheckout ?? prepareTriageCheckout)(
+              parseTicketStream(request.ticketId)?.project ?? '',
+              selectedSha!,
+            ).then((c) => {
+              // A checkout that lands after the wall must not be left behind.
+              if (signal.aborted) void c.cleanup().catch(() => {})
+              return c
+            }),
           )
         : null
       // A run whose process scan did not finish may have a tool still alive in
       // the checkout; leaving the directory is safer than deleting it underneath.
       let toolsMayRemain = false
       try {
-        const { cwd, settingsPath } = checkout ?? (await deps.prepare(chatId))
+        const { cwd, settingsPath } = checkout ?? (await guard(deps.prepare(chatId)))
         const runtime = deps.runtime(request.triage.agent, { tools: full ? 'full' : 'none' })
         const call = triageCallFor(request.triage)
         const usdBudget = call.usd ?? 0.5
-        const deadline = deps.now() + call.wallMs
+        const deadline = wallDeadline
 
         const project = parseTicketStream(request.ticketId)?.project ?? ''
         const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
         const serve = (ref: string, path: string): Promise<string | null> => {
           const sha = shas.get(ref)
           if (sha === undefined) return Promise.resolve(null)
-          return deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES }).catch(() => null)
+          return guard(deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES })).catch(() => null)
         }
 
         // `RunSpent`, retried on any error up to five attempts — the same bound
@@ -715,8 +790,8 @@ export async function waitTriage(
 
         for (let round = 0; round <= (full ? 0 : MAX_READ_ROUNDS); round += 1) {
           // An abort during `serve`, between rounds, must not buy another one.
-          if (request.signal?.aborted) {
-            result = { _tag: 'TriageFailed', why: 'aborted' }
+          if (signal.aborted) {
+            result = { _tag: 'TriageFailed', why: abortedWhy() }
             break
           }
 
@@ -767,7 +842,7 @@ export async function waitTriage(
               // below stays the last check, and the route that cannot carry a
               // schema keeps the brief's own sentence (#582).
               ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
-              signal: request.signal,
+              signal,
             })
             .catch((err: unknown): RunOutcome => {
               threw = true
@@ -873,8 +948,12 @@ export async function waitTriage(
           })
       }
     } catch (err) {
-      log(`triage ${request.waitId}: attempt ${attempt} crashed — ${(err as Error).message}`)
-      final = { _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) }
+      if (err instanceof WallReached) {
+        final = { _tag: 'TriageFailed', why: abortedWhy() }
+      } else {
+        log(`triage ${request.waitId}: attempt ${attempt} crashed — ${(err as Error).message}`)
+        final = { _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) }
+      }
     }
 
   // The one append this function's contract is about, so unlike `TriageStarted`
@@ -898,7 +977,7 @@ export async function waitTriage(
       if (!waitIsCurrent(current)) {
         return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
       }
-      if (request.signal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
+      if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
       const version = current.length
       await deps.store.append(stream, version, [
         {

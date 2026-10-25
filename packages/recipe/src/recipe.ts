@@ -2948,8 +2948,8 @@ export function callFor(discuss: Discuss): { model?: string; turns: number; wall
  * it for the same reason: one agent, one model, one optional prompt, one
  * `limits` block bounding what a single run may spend. Where `discuss:` is a
  * conversation a person starts, a triage run is started by the daemon's own
- * subscriber over a hold it was told about — nothing calls it yet, and #388
- * is the rest of that wiring.
+ * subscriber over a hold it was told about, and `waitTriage` enforces `wall`
+ * for the whole attempt, reads included.
  *
  * See `Recipe.triage` below for why this is optional with no default, unlike
  * `discuss:`.
@@ -2993,9 +2993,8 @@ export type Triage = z.infer<typeof Triage>
 
 /**
  * `triage:`, resolved into what one triage run may spend — `callFor`'s twin,
- * built the same way for the reason given there. Nothing calls a triage agent
- * yet (#388); this is the shape a future caller hands to `@lingtai/agent`'s
- * `limits`.
+ * built the same way for the reason given there. `waitTriage` hands `wallMs` to
+ * its abort signal and the rest to `@lingtai/agent`'s `limits`.
  */
 export function triageCallFor(triage: Triage): { model?: string; turns: number; wallMs: number; usd?: number } {
   return {

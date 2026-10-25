@@ -13,7 +13,7 @@ import { Triage, triageCallFor } from '@lingtai/recipe'
  */
 import { describe, expect, it, vi } from 'vitest'
 
-import { waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
+import { enqueueTriage, waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
 
 const TRIAGE = Triage.parse({})
 
@@ -1027,7 +1027,8 @@ describe('waitTriage', () => {
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { signal: controller.signal }))
 
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.signal).toBe(controller.signal)
+    // The runtime gets the wall combined with the caller's, so identity no longer holds.
+    expect(requests[0]?.signal?.aborted).toBe(true)
 
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'aborted' })
     const events = await store.read(ticketId)
@@ -1035,6 +1036,87 @@ describe('waitTriage', () => {
     const spent = events.find((e) => e.type === 'RunSpent')!.data as { costUsd: number | null; turns: number }
     expect(spent.costUsd).toBeNull()
     expect(spent.turns).toBe(0)
+  })
+
+  describe('the recipe wall', () => {
+    const SHORT = Triage.parse({ limits: { wall: '20ms' } })
+    const never = (): Promise<never> => new Promise(() => {})
+
+    it('stops a triage whose mirror read never returns, appends a failed WaitTriaged, and dispatches nothing', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 7)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+      expect(typesOf(await store.read(ticketId))).toEqual(['TriageStarted', 'WaitTriaged'])
+    })
+
+    it('stops a triage whose GitHub read never returns', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 8)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { issue: never })
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+    })
+
+    it('still pairs TriageStarted with WaitTriaged when the conflict read never returns', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 9)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: never }) })
+
+      const held = await waitTriage(
+        deps,
+        requestOn(ticketId, aWaitId(), {
+          triage: SHORT,
+          reason: conflictReason('a'.repeat(40), 'b'.repeat(40)),
+        }),
+      )
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+      const events = await store.read(ticketId)
+      expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+      expect((events[0]!.data as { by: { _tag: string } }).by._tag).toBe('Mechanical')
+    })
+
+    it('lets the next queued triage run once the first one hit its wall', async () => {
+      const store = createMemoryEventStore()
+      const first = aWaitId()
+      const second = aWaitId()
+      const { runtime } = stubRuntime(() => outcomeOf())
+      const stuck = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+      const ran: string[] = []
+      const log = (): void => {}
+
+      enqueueTriage(
+        { ticketId: ticketStream('lingtai', 10), waitId: first },
+        () => waitTriage(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT })),
+        log,
+      )
+      const done = new Promise<void>((resolve) => {
+        enqueueTriage(
+          { ticketId: ticketStream('lingtai', 11), waitId: second },
+          async () => {
+            ran.push('second')
+            resolve()
+          },
+          log,
+        )
+      })
+      await done
+
+      expect(ran).toEqual(['second'])
+      expect(typesOf(await store.read(ticketStream('lingtai', 10)))).toEqual(['TriageStarted', 'WaitTriaged'])
+    })
   })
 
   it('leaves no RunSpent for a runtime that throws, and still ends in one failed WaitTriaged without throwing', async () => {
