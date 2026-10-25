@@ -745,6 +745,30 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
  * The page, given what `loadTask` folded. Apart from the route so a test can
  * render the whole arrangement without a database (#152).
  */
+function WaitingNav({ waiting }: { waiting: TaskDetail['waiting'] }) {
+  const link = (n: NonNullable<TaskDetail['waiting']['next']>, label: string, arrow: string) => (
+    <Link
+      href={`/task/${encodeURIComponent(n.taskId)}`}
+      title={`${label}: #${n.issue} ${n.title}`}
+      aria-label={`${label}: #${n.issue} ${n.title}`}
+      style={{
+        maxWidth: '24ch',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {arrow === '←' ? `← #${n.issue} ${n.title}` : `#${n.issue} ${n.title} →`}
+    </Link>
+  )
+  return (
+    <>
+      {waiting.previous ? link(waiting.previous, 'previous waiting', '←') : null}
+      {waiting.next ? link(waiting.next, 'next waiting', '→') : null}
+    </>
+  )
+}
+
 export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
   // The issue the controls would act on. `ref` is GitHub's own number, so
   // anything that does not parse is an id that was never one.
@@ -768,6 +792,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
         <span className="sep" />
         {/* Rank 8: one muted line, each identifier once. */}
         <Coords standing={task.standing} taskId={task.taskId} queued={task.queued} />
+        <WaitingNav waiting={task.waiting} />
         {spendCurrency.current ? null : (
           <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
             {spendCurrency.label}

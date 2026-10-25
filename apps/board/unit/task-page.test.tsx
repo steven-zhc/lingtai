@@ -86,6 +86,7 @@ const CRASH = 'the reviewer did not finish (crash): Error: Session ID 1d391e10 i
 
 const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
   taskId: ITEM,
+  waiting: { previous: null, next: null },
   unpushedMirror: null,
   standing: standingOf(own, runs),
   want: null,
@@ -860,5 +861,23 @@ describe('a ticket whose project keeps its tickets in the database', () => {
     const html = page(dbTicket)
     expect(html).not.toContain('could not be asked')
     expect(html).not.toContain('is not known here')
+  })
+})
+
+describe('the waiting links in the header (#584)', () => {
+  const nb = (issue: string) => ({ taskId: `ticket-lingtai-${issue}`, issue, title: `title ${issue}` })
+  const withWaiting = (waiting: TaskDetail['waiting']) => page({ ...blocked(), waiting })
+
+  it('draws both, one, or none', () => {
+    const both = withWaiting({ previous: nb('1'), next: nb('3') })
+    expect(both).toContain('previous waiting')
+    expect(both).toContain('next waiting')
+    expect(both).toContain('/task/ticket-lingtai-3')
+    const onlyNext = withWaiting({ previous: null, next: nb('3') })
+    expect(onlyNext).not.toContain('previous waiting')
+    expect(onlyNext).toContain('next waiting')
+    const none = withWaiting({ previous: null, next: null })
+    expect(none).not.toContain('previous waiting')
+    expect(none).not.toContain('next waiting')
   })
 })
