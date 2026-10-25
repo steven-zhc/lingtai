@@ -50,8 +50,9 @@
  *   lane runs git outside the sandbox. `$HOME` stays refused. Measured every way;
  *   see that function.
  */
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -63,6 +64,96 @@ import { codexAuth } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
+
+/** What was seen of the run's descendants: pid to command, so a recycled pid is not mistaken for one. */
+type Seen = Map<number, string>
+
+function listProcesses(): { pid: number; ppid: number; zombie: boolean; command: string }[] {
+  const listing = execFileSync('ps', ['-Aww', '-o', 'pid=', '-o', 'ppid=', '-o', 'stat=', '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  const rows: { pid: number; ppid: number; zombie: boolean; command: string }[] = []
+  for (const line of listing.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), zombie: m[3]!.startsWith('Z'), command: m[4]! })
+  }
+  return rows
+}
+
+/** Record every live descendant of `root`, so a tool that later detaches and is orphaned is still known. */
+function noteDescendants(root: number | undefined, seen: Seen): void {
+  if (process.platform === 'win32' || root === undefined) return
+  const rows = listProcesses()
+  const family = new Set<number>([root, ...seen.keys()])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const row of rows) {
+      if (family.has(row.ppid) && !family.has(row.pid)) {
+        family.add(row.pid)
+        grew = true
+      }
+    }
+  }
+  for (const row of rows)
+    if (family.has(row.pid) && row.pid !== root && row.pid !== process.pid) seen.set(row.pid, row.command)
+}
+
+/** Pids whose environment carries `identity`. Linux reads `/proc`: procps `-e` selects processes and never appends their environments. */
+function processesWith(identity: string): number[] {
+  if (process.platform === 'linux') {
+    const pids: number[] = []
+    for (const entry of readdirSync('/proc')) {
+      const pid = Number.parseInt(entry, 10)
+      if (!/^\d+$/.test(entry) || pid === process.pid) continue
+      try {
+        if (readFileSync(`/proc/${entry}/environ`, 'latin1').split('\0').includes(identity)) pids.push(pid)
+      } catch {
+        // Exited, or not ours to read.
+      }
+    }
+    return pids
+  }
+  const listing = execFileSync('ps', ['-Aeww', '-o', 'pid=', '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  return listing
+    .split('\n')
+    .filter((line) => line.includes(identity))
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+}
+
+/**
+ * Detached shell tools can leave Codex's process group. They are found by an
+ * inherited per-run environment value where the host shows one, and by having
+ * been seen as the CLI's descendants where it does not.
+ */
+async function stopRunProcesses(marker: string, seen: Seen): Promise<void> {
+  if (process.platform === 'win32') return
+  const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
+  for (;;) {
+    const rows = listProcesses()
+    // A zombie is already dead and SIGKILL cannot reap it (a PID 1 that does
+    // not wait() leaves it); counting it as live would loop here forever.
+    const zombies = new Set(rows.filter((row) => row.zombie).map((row) => row.pid))
+    const live = new Map(rows.filter((row) => !row.zombie).map((row) => [row.pid, row.command]))
+    const pids = new Set(processesWith(identity).filter((pid) => !zombies.has(pid)))
+    for (const [pid, command] of seen) if (live.get(pid) === command) pids.add(pid)
+    if (pids.size === 0) return
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: 'codex',
@@ -161,6 +252,8 @@ export interface CodexOptions {
   sandbox?: CodexSandbox
   /** Extra arguments, for a project that needs one. Never used to widen the sandbox. */
   extraArgs?: readonly string[]
+  /** Replaces the scan that stops a run's leftover processes; a test makes it throw. */
+  stopProcesses?: (marker: string, seen: Map<number, string>) => Promise<void>
 }
 
 /** One line of `codex exec --json`. Every field here was read off a real stream. */
@@ -1014,6 +1107,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
   const binary = options.binary ?? 'codex'
   const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
   const extraArgs = options.extraArgs ?? []
+  const stopProcesses = options.stopProcesses ?? stopRunProcesses
 
   return {
     capabilities: CODEX_CAPABILITIES,
@@ -1082,10 +1176,12 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       })
 
       return new Promise<RunOutcome>((resolve) => {
+        const processMarker = randomUUID()
+        const seen: Seen = new Map()
         const child = spawn(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited (0007).
-          env: request.env as NodeJS.ProcessEnv,
+          env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as unknown as NodeJS.ProcessEnv,
           // **`"ignore"` on stdin is load-bearing**, not tidiness: `codex exec`
           // reads stdin even when a prompt was given as an argument — *"if stdin
           // is piped and a prompt is also provided, stdin is appended as a
@@ -1114,9 +1210,20 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
          * `claude-code.ts`'s and is true there, where `parseResult` looks for one
          * final `result` object.
          */
+        const note = () => {
+          try {
+            noteDescendants(child.pid, seen)
+          } catch {
+            // A missed sample is covered by the next one and the final scan.
+          }
+        }
+        const tracker = setInterval(note, 200)
+        tracker.unref?.()
         let stdoutTail = ''
         let stderr = ''
         let settled = false
+        let stopped: RunOutcome | null = null
+        let hard: ReturnType<typeof setTimeout> | null = null
 
         // Whole lines only: a chunk boundary falls anywhere, and half a JSON
         // object traced as prose would be both unreadable and a lie.
@@ -1147,6 +1254,8 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           if (settled) return
           settled = true
           clearTimeout(wall)
+          if (hard !== null) clearTimeout(hard)
+          clearInterval(tracker)
           request.signal?.removeEventListener('abort', onAbort)
           // On every ending, not only a clean close (`#369`): a kill or a
           // spawn error leaves the file written just as surely as a receipt
@@ -1164,11 +1273,23 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           resolve(outcome)
         }
 
+        const signalGroup = (signal: NodeJS.Signals) => {
+          try {
+            // Codex is spawned detached. Its shell tools inherit this group;
+            // signalling only the CLI leaves them running in the checkout.
+            if (process.platform === 'win32' || child.pid === undefined) child.kill(signal)
+            else process.kill(-child.pid, signal)
+          } catch {
+            // Gone already, or not ours to signal: the process scan that
+            // follows decides whether anything is still alive, and a throw
+            // here would escape the event handlers that call this.
+          }
+        }
+
         const kill = (kind: 'timeout' | 'aborted', detail: string) => {
-          child.kill('SIGTERM')
-          const hard = setTimeout(() => child.kill('SIGKILL'), 5_000)
-          hard.unref?.()
-          finish({
+          if (stopped !== null || settled) return
+          clearTimeout(wall)
+          stopped = {
             exitCode: null,
             // **What the stream counted, not zero.** A run stopped at the wall
             // spent every turn it had taken, and `RunFinished.turns` is what
@@ -1185,7 +1306,29 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             failure: { kind, detail },
             sessionId: account.receipt.sessionId,
             usage: codexUsage(account.receipt.tokens, request.model),
-          })
+          }
+          note()
+          signalGroup('SIGTERM')
+          // Finish only after the group has had the hard stop and every process
+          // still carrying the run's marker is gone. A detached tool may hold
+          // the CLI's pipes open, so `close` is not waited for.
+          hard = setTimeout(() => {
+            signalGroup('SIGKILL')
+            hard = null
+            // A scan that could not complete is not a clean stop: say so,
+            // rather than let the caller delete a checkout still in use.
+            stopProcesses(processMarker, seen).then(
+              () => finish(stopped!),
+              (error: unknown) =>
+                finish({
+                  ...stopped!,
+                  failure: {
+                    kind: 'crash',
+                    detail: `${stopped!.failure?.detail ?? 'stopped'}; process cleanup incomplete: ${(error as Error).message}`,
+                  },
+                }),
+            )
+          }, 5_000)
         }
 
         // Ours, and the only one of the recipe's two bounds anything applies.
@@ -1210,7 +1353,33 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           }),
         )
 
-        child.on('close', (code) => {
+        // `close` waits for every holder of the pipes, so a detached tool that
+        // inherited them would keep it from ever firing: reap on `exit`, which
+        // releases the pipes.
+        child.on('exit', () => {
+          if (stopped !== null || settled) return
+          signalGroup('SIGKILL')
+          // `close` scans again and decides the outcome; this one only has to
+          // leave a trace if the scan itself fails.
+          stopProcesses(processMarker, seen).catch((error: unknown) =>
+            trace.note('cleanup', `process scan failed on exit: ${(error as Error).message}`),
+          )
+        })
+
+        child.on('close', async (code) => {
+          if (stopped !== null) return
+          // A CLI that exited while a tool left a same-group subprocess behind
+          // must not hand its checkout back with that subprocess still running.
+          signalGroup('SIGKILL')
+          let cleanupFailure: string | null = null
+          try {
+            await stopProcesses(processMarker, seen)
+          } catch (error) {
+            cleanupFailure = (error as Error).message
+          }
+          // The wall timer or an abort may have fired while the scan ran: its
+          // outcome is the answer, and its hard stop is what publishes it.
+          if (stopped !== null || settled) return
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
           account.end()
@@ -1229,11 +1398,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           // One decision, and a pure one — `codexClose`. `out-of-turns` is not
           // among its answers and that is correct: nothing bounds turns, so no
           // run can be stopped at one.
-          const failure = codexClose(receipt, {
-            exitCode: code,
-            stderr,
-            stdoutTail,
-          })
+          const failure =
+            cleanupFailure !== null
+              ? { kind: 'crash' as const, detail: `process cleanup incomplete: ${cleanupFailure}` }
+              : codexClose(receipt, {
+                  exitCode: code,
+                  stderr,
+                  stdoutTail,
+                })
 
           // Codex prints no `structured_output` of its own: under a schema the
           // final `agent_message` *is* the constrained JSON, so this is where it

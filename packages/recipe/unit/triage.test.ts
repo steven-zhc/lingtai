@@ -39,10 +39,18 @@ describe('triage:, absent', () => {
 })
 
 describe('triage:, written', () => {
+  it('refuses full tools for an agent that is not codex when the recipe resolves', async () => {
+    await expect(resolve(`${BASE}triage:\n  tools: full\n`)).rejects.toThrow(/triage\.tools/)
+    await expect(resolve(`${BASE}triage:\n  agent: claude-code\n  tools: full\n`)).rejects.toThrow(/needs agent: codex/)
+    const { recipe } = await resolve(`${BASE}triage:\n  agent: codex\n  tools: full\n`)
+    expect(recipe.triage?.tools).toBe('full')
+  })
+
   it('takes an agent, with the stated defaults underneath', async () => {
     const { recipe } = await resolve(`${BASE}triage:\n  agent: claude-code\n`)
     expect(recipe.triage).toEqual({
       agent: 'claude-code',
+      tools: 'none',
       limits: { turns: 40, wall: '5m', usd: 0.5 },
     })
   })
@@ -53,6 +61,7 @@ describe('triage:, written', () => {
     )
     expect(recipe.triage).toEqual({
       agent: 'claude-code',
+      tools: 'none',
       model: 'haiku',
       prompt: 'Be terse.',
       limits: { turns: 7, wall: '90s', usd: 1.25 },
