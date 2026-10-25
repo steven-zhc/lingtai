@@ -52,6 +52,7 @@ const queue: QueueSettings = {
  * it sends two zeroes, which is what the other assertions are about.
  */
 const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?: (string | Label)[] }): Issue => ({
+  id: (over.number * 1000 + 7) as Issue['id'],
   title: `issue ${over.number}`,
   body: '',
   state: 'open',
@@ -326,6 +327,20 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
     fileAt: async () => null,
     refSha: async () => '0'.repeat(40),
     matchingRefs: async () => [],
+    subIssues: async () => [],
+    addSubIssue: async () => {
+      throw new Error('no writes in this test')
+    },
+    blockedBy: async () => [],
+    addBlockedBy: async () => {
+      throw new Error('no writes in this test')
+    },
+    removeSubIssue: async () => {
+      throw new Error('no writes in this test')
+    },
+    removeBlockedBy: async () => {
+      throw new Error('no writes in this test')
+    },
     deleteRef: async () => {
       throw new Error('no writes in this test')
     },

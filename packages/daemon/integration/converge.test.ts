@@ -40,6 +40,7 @@ function fakeGitHub(start: { labels: string[]; state?: 'open' | 'closed' }) {
   const github = {
     getIssue: async (n: number): Promise<Issue> => ({
       number: n,
+      id: (n * 1000 + 7) as Issue['id'],
       title: 'a ticket',
       body: '',
       labels: world.labels.map((name) => ({ name, color: null })),

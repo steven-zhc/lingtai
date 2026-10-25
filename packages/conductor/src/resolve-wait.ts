@@ -30,6 +30,7 @@ import {
   type PayloadOf,
   reduceRun,
   reduceTicket,
+  splitProgressOf,
   type RunState,
   type ToAppend,
   type WaitId,
@@ -39,6 +40,7 @@ import {
   conflictRoundsExhausted,
   continueConflictRefusal,
   describeSplitProblem,
+  sameSplitPlan,
   splitPlanProblems,
   type ContinueConflictRefusal,
   type Resolution,
@@ -48,6 +50,7 @@ import { createFileLocker } from '@lingtai/env/lock'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
 import { agentBranch } from './branches.ts'
+import { reconcileSplit, type SplitPort } from './split.ts'
 
 /**
  * The gates still refusing the sha an approval is about, by `point:action`.
@@ -142,6 +145,12 @@ export interface ResolveWaitOptions {
    * need one of them or the queue never sees the child.
    */
   kinds?: readonly string[]
+  /**
+   * GitHub's issues and links — read only for `Split`, which writes children,
+   * sub-issues and blocked-by edges (#561). Absent for a project on
+   * `source.tickets: db`, which has none of those verbs: the branch refuses.
+   */
+  links?: SplitPort
   /**
    * The recipe's base branch — read only for `ContinueConflict`, whose
    * confirmed `baseSha` must still be that branch's tip (0118 §8).
@@ -254,10 +263,11 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     if (refused !== null) return refused
   }
 
-  // **A split is checked, and then not built, until the effects exist (#561,
-  // #562).** Appending `WaitResolved{Split}` here would record a completed
-  // choice with no child opened, and 0118 §11 says a partial split cannot
-  // resolve the wait. Both refusals return before any append.
+  // **A split is checked, reconciled, and still not resolved (#561, #562).**
+  // `reconcileSplit` writes the children and links and reads them back, and
+  // this branch returns `ok: false` either way: appending `WaitResolved{Split}`
+  // is #562's, and 0118 §11 says a partial split cannot resolve the wait.
+  // Every refusal before the reconcile returns before any append or write.
   if (options.resolution._tag === 'Split') {
     if (options.kinds === undefined)
       return {
@@ -274,12 +284,16 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
         reason: 'invalid-split',
         detail: `the split plan is refused — nothing was created or resolved: ${problems.map(describeSplitProblem).join('; ')}.`,
       }
-    return {
-      ok: false,
-      ticketId,
-      reason: 'split-not-built',
-      detail: 'the split plan is sound, but creating its children is not built yet — nothing was created or resolved.',
-    }
+    const parsed = parseTicketStream(ticketId)
+    if (options.links === undefined || parsed === null)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'split-unsupported',
+        detail:
+          'this project has no GitHub issues to open children in, and a split needs sub-issues and blocked-by links — nothing was created or resolved.',
+      }
+    return splitOnce(options, store, ticketId, Number(parsed.issue), options.links, options.resolution)
   }
 
   let resolution = options.resolution
@@ -376,6 +390,98 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   }
 
   return unscheduled === undefined ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
+}
+
+/**
+ * One attempt at a split: fix the plan on the first one, then reconcile it.
+ *
+ * **The plan is fixed at the first `SplitStarted`.** A retry reconciles that
+ * plan, not the one in the new command: children may already exist under its
+ * keys, and quietly re-keying them is how duplicates appear. A different plan
+ * is accepted only while the log holds no child identity for the wait, whatever
+ * a search for a marker would find today.
+ */
+async function splitOnce(
+  options: ResolveWaitOptions,
+  store: EventStore,
+  ticketId: string,
+  parent: number,
+  links: SplitPort,
+  asked: Extract<Resolution, { _tag: 'Split' }>,
+): Promise<ResolveWaitResult> {
+  let events = await store.read(ticketId)
+  let progress = splitProgressOf(events, options.waitId)
+  const unchanged = progress !== null && sameSplitPlan(progress.plan, asked)
+  const untouched = progress !== null && progress.identities.length === 0
+
+  if (progress === null || (!unchanged && untouched)) {
+    const plan = { children: asked.children.map((c) => ({ ...c })), blockedBy: asked.blockedBy.map((d) => ({ ...d })) }
+    try {
+      await store.append(ticketId, events.length, [
+        {
+          type: 'SplitStarted',
+          actor: options.by,
+          data: parsePayload('SplitStarted', { waitId: options.waitId, by: options.by, plan }),
+        },
+      ])
+    } catch (err) {
+      if (!(err instanceof ConcurrencyError)) throw err
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `${ticketId} moved while this split was being started. Nothing was created — reload and read it again.`,
+      }
+    }
+    events = await store.read(ticketId)
+    progress = splitProgressOf(events, options.waitId)
+  } else if (!unchanged) {
+    const made = progress.identities.map((c) => `#${c.number} (${c.key})`).join(', ')
+    return {
+      ok: false,
+      ticketId,
+      reason: 'split-in-progress',
+      detail: `a different split already started on this wait and recorded ${made} — retry that plan rather than this one. Nothing was created or resolved.`,
+    }
+  }
+
+  const started = events
+    .filter((e) => e.type === 'SplitStarted' && (e.data as PayloadOf<'SplitStarted'>).waitId === options.waitId)
+    .at(-1)!
+  const done = await reconcileSplit({
+    port: links,
+    store,
+    ticketId,
+    parent,
+    waitId: options.waitId,
+    by: options.by,
+    plan: progress!.plan,
+    startedAt: started.at,
+    identities: progress!.identities,
+  })
+  const verified = new Set(done.observed.children)
+  const exists =
+    done.identities.map((c) => `#${c.number} (${c.key})${verified.has(c.key) ? '' : ' unverified'}`).join(', ') ||
+    'no children'
+  if (done.owed.complete && done.failure === null)
+    return {
+      ok: false,
+      ticketId,
+      reason: 'split-not-resolved',
+      detail: `the children and links exist and are held — ${exists} — but resolving the wait is not built yet (#562); nothing was resolved.`,
+    }
+  const owed = [
+    ...done.owed.children.map((k) => `child ${k}`),
+    ...done.owed.unverified.map((c) => `unverified child #${c.number} (${c.key})`),
+    ...done.owed.subIssues.map((k) => `sub-issue ${k}`),
+    ...done.owed.blockedBy.map((d) => `${d.ticket} blocked by ${d.blockedBy}`),
+  ].join(', ')
+  return {
+    ok: false,
+    ticketId,
+    reason: 'split-partial',
+    detail: `the split is not complete — exists: ${exists}; still owed: ${owed || 'nothing, but the last attempt failed'}${done.failure === null ? '' : `; last failure: ${done.failure}`}. Nothing was resolved — run it again.`,
+  }
 }
 
 type Refused = { ok: false; ticketId: string; reason: string; detail: string }

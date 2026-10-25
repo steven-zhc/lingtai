@@ -15,11 +15,13 @@ import {
   findingsRaisedOf,
   releaseCauseOf,
   routesOf,
+  splitIdentitiesOf,
+  splitProgressOf,
   stepOutcomesOf,
   triageFactsOf,
   waitsOf,
 } from '../src/index.ts'
-import { triageStatus, type TriageResult } from '../src/wait.ts'
+import { splitOwed, triageStatus, type TriageResult } from '../src/wait.ts'
 import { aClaim, aRelease, aResolution, aRoute, aRun, aTriageStart, aTriaged, aWait, aWaitId } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
@@ -294,5 +296,94 @@ describe('aClaim', () => {
     const item = makeStream('ticket-1')
     const events = aClaim(item, 'pass-1')
     expect(events[0]!.type).toBe('TicketClaimed')
+  })
+})
+
+describe('splitProgressOf (#561)', () => {
+  const plan = {
+    children: [
+      { key: 'a', title: 'a', body: 'a', kind: 'feature' },
+      { key: 'b', title: 'b', body: 'b', kind: 'feature' },
+    ],
+    blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
+  }
+  const nothing = { children: [], subIssues: [], blockedBy: [] }
+
+  it('is null with no start, and everything owed until a read-back lands', () => {
+    const item = makeStream('ticket-lingtai-1')
+    const wait = aWaitId()
+    expect(splitProgressOf([], wait)).toBeNull()
+    const started = item('SplitStarted', { waitId: wait, by: 'human:steven', plan })
+    const progress = splitProgressOf([started], wait)!
+    expect(progress.reconciled).toBe(false)
+    expect(progress.owed).toMatchObject({ children: ['a', 'b'], complete: false })
+  })
+
+  const a = { key: 'a', number: 7, id: 7007, via: 'created' as const }
+  const b = { key: 'b', number: 8, id: 8007, via: 'adopted' as const }
+
+  it('takes the latest attempt for the wait and ignores another wait', () => {
+    const item = makeStream('ticket-lingtai-1')
+    const wait = aWaitId()
+    const other = aWaitId()
+    const seen = { children: ['a'], subIssues: [], blockedBy: [] }
+    const events = [
+      item('SplitStarted', { waitId: wait, by: 'human:steven', plan }),
+      item('SplitReconciled', { waitId: wait, children: [], observed: nothing, failure: 'timed out' }),
+      item('SplitReconciled', { waitId: other, children: [a], observed: seen, failure: null }),
+      item('SplitReconciled', { waitId: wait, children: [a], observed: seen, failure: null }),
+    ]
+    const progress = splitProgressOf(events, wait)!
+    expect(progress.observed.children).toEqual(['a'])
+    expect(progress.identities).toEqual([a])
+    expect(progress.owed).toMatchObject({ children: ['b'], subIssues: ['a', 'b'], complete: false })
+    expect(splitProgressOf(events, other)).toBeNull()
+  })
+
+  it('keeps an identity a later attempt could not see, and reports it unverified rather than missing', () => {
+    const item = makeStream('ticket-lingtai-1')
+    const wait = aWaitId()
+    const events = [
+      item('SplitStarted', { waitId: wait, by: 'human:steven', plan }),
+      item('SplitReconciled', { waitId: wait, children: [a, b], observed: nothing, failure: null }),
+      item('SplitReconciled', { waitId: wait, children: [], observed: nothing, failure: 'read-back failed' }),
+    ]
+    const progress = splitProgressOf(events, wait)!
+    expect(progress.identities).toEqual([a, b])
+    expect(progress.owed.children).toEqual([])
+    expect(progress.owed.unverified).toEqual([
+      { key: 'a', number: 7 },
+      { key: 'b', number: 8 },
+    ])
+    expect(progress.owed.complete).toBe(false)
+  })
+
+  describe('splitIdentitiesOf', () => {
+    it('keeps the first identity recorded for a key, and ignores another wait', () => {
+      const item = makeStream('ticket-lingtai-1')
+      const wait = aWaitId()
+      const other = aWaitId()
+      const moved = { key: 'a', number: 99, id: 99007, via: 'adopted' as const }
+      const events = [
+        item('SplitStarted', { waitId: wait, by: 'human:steven', plan }),
+        item('SplitReconciled', { waitId: wait, children: [a], observed: nothing, failure: null }),
+        item('SplitReconciled', { waitId: other, children: [b], observed: nothing, failure: null }),
+        item('SplitReconciled', { waitId: wait, children: [moved, b], observed: nothing, failure: null }),
+        item('SplitReconciled', { waitId: wait, children: [], observed: nothing, failure: 'x' }),
+      ]
+      expect(splitIdentitiesOf(events, wait)).toEqual([a, b])
+      expect(splitIdentitiesOf(events, other)).toEqual([b])
+      expect(splitIdentitiesOf([], wait)).toEqual([])
+    })
+  })
+
+  it('is complete only when children, sub-issues and edges are all identified and seen', () => {
+    const observed = { children: ['a', 'b'], subIssues: ['a', 'b'], blockedBy: [{ ticket: 'b', blockedBy: 'a' }] }
+    expect(splitOwed(plan, [a, b], observed).complete).toBe(true)
+    expect(splitOwed(plan, [a, b], { ...observed, blockedBy: [] })).toMatchObject({
+      blockedBy: plan.blockedBy,
+      complete: false,
+    })
+    expect(splitOwed(plan, [a], observed)).toMatchObject({ children: ['b'], complete: false })
   })
 })

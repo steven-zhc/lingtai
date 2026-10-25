@@ -97,8 +97,24 @@ export interface Dependencies {
   totalBlockedBy: number
 }
 
+/**
+ * GitHub's internal issue id — **never an issue number**. A sub-issue or a
+ * blocked-by link names its other end by this, and a number in its place either
+ * 404s or silently names a different repository's issue (`CLAUDE.md`, *Opening
+ * an issue*). Branded so that passing one for the other fails `tsc`.
+ */
+export type IssueId = number & { readonly __brand: 'IssueId' }
+
+/** An issue as a link listing names it: both identifiers, kept apart. */
+export interface LinkedIssue {
+  number: number
+  id: IssueId
+}
+
 export interface Issue {
   number: number
+  /** GitHub's internal id. Not the number; see `IssueId`. */
+  id: IssueId
   title: string
   body: string
   labels: Label[]
@@ -266,6 +282,45 @@ export interface GitHubClient {
   createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
 
   /**
+   * The issues attached to `parent` as sub-issues, paged to the end.
+   * `GET …/issues/{parent}/sub_issues`.
+   */
+  subIssues(parent: number): Promise<LinkedIssue[]>
+
+  /**
+   * Attaches `child` under `parent`. `POST …/issues/{parent}/sub_issues` with
+   * `{ sub_issue_id }` as a JSON integer. A child that is already attached, or
+   * already has another parent, is a 422 — a throw like any other: the caller
+   * reads `subIssues` back to learn what is true.
+   */
+  addSubIssue(parent: number, child: IssueId): Promise<void>
+
+  /**
+   * The issues that block `issue`, open and closed, paged to the end.
+   * `GET …/issues/{issue}/dependencies/blocked_by`.
+   */
+  blockedBy(issue: number): Promise<LinkedIssue[]>
+
+  /**
+   * Records that `blocker` blocks `issue`. `POST …/issues/{issue}/dependencies/blocked_by`
+   * with `{ issue_id }` as a JSON integer — a string is refused with
+   * `Invalid property /issue_id: "…" is not of type integer`.
+   */
+  addBlockedBy(issue: number, blocker: IssueId): Promise<void>
+
+  /**
+   * Detaches `child` from `parent`. `DELETE …/issues/{parent}/sub_issue` with
+   * `{ sub_issue_id }` as a JSON integer.
+   */
+  removeSubIssue(parent: number, child: IssueId): Promise<void>
+
+  /**
+   * Removes `blocker` from what blocks `issue`.
+   * `DELETE …/issues/{issue}/dependencies/blocked_by/{blocker}` — the id in the path.
+   */
+  removeBlockedBy(issue: number, blocker: IssueId): Promise<void>
+
+  /**
    * The current installation token, refreshed if it is about to expire.
    *
    * Exposed because git needs it and this client is the only thing that has it.
@@ -393,8 +448,20 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     return { blockedBy: open, totalBlockedBy: total }
   }
 
+  /** Every page of a link listing; a short page ends it. */
+  async function listLinked(path: string): Promise<LinkedIssue[]> {
+    const out: LinkedIssue[] = []
+    for (let page = 1; ; page++) {
+      if (page > LIST_SINCE_PAGES) throw new Error(`more than ${LIST_SINCE_PAGES * 100} issues listed at ${path}`)
+      const raw = await request<{ number: number; id: number }[]>('GET', `${path}?per_page=100&page=${page}`)
+      out.push(...raw.map((r) => ({ number: r.number, id: r.id as IssueId })))
+      if (raw.length < 100) return out
+    }
+  }
+
   function toIssue(raw: {
     number: number
+    id: number
     title: string
     body: string | null
     labels: ({ name?: string; color?: string | null } | string)[]
@@ -410,6 +477,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       // refuses for the same reason.
       assignees: (raw.assignees ?? []).map((a) => a?.login ?? '').filter((login) => login !== ''),
       number: raw.number,
+      id: raw.id as IssueId,
       title: raw.title,
       body: raw.body ?? '',
       labels: raw.labels
@@ -498,6 +566,32 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
           labels: [...input.labels],
         }),
       )
+    },
+
+    async subIssues(parent) {
+      return listLinked(`/repos/${owner}/${repo}/issues/${parent}/sub_issues`)
+    },
+
+    async addSubIssue(parent, child) {
+      await request<unknown>('POST', `/repos/${owner}/${repo}/issues/${parent}/sub_issues`, { sub_issue_id: child })
+    },
+
+    async blockedBy(issue) {
+      return listLinked(`/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`)
+    },
+
+    async addBlockedBy(issue, blocker) {
+      await request<unknown>('POST', `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`, {
+        issue_id: blocker,
+      })
+    },
+
+    async removeSubIssue(parent, child) {
+      await request<unknown>('DELETE', `/repos/${owner}/${repo}/issues/${parent}/sub_issue`, { sub_issue_id: child })
+    },
+
+    async removeBlockedBy(issue, blocker) {
+      await request<unknown>('DELETE', `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by/${blocker}`)
     },
 
     async listIssuesSince(since) {
