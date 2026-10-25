@@ -69,7 +69,7 @@ version: 2
 repo: { base: main, remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
-runtime: { agent: claude-code }
+runtime: { name: x, prompt: y, agent: claude-code }
 steps: {}
 `
 
@@ -78,9 +78,64 @@ version: 2
 repo: { base: main }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
-runtime: { agent: claude-code }
+runtime: { name: x, prompt: y, agent: claude-code }
 steps: {}
 `
+
+/** Claude Code and Codex, each counting how often it was asked. */
+function twoRuntimes(codexSignedIn = true) {
+  const asks = { 'claude-code': 0, codex: 0 }
+  const runtimes = (() =>
+    (['claude-code', 'codex'] as const).map((id) => ({
+      capabilities: { id, enforces: ['wall'] },
+      checkAuth: async () => {
+        asks[id]++
+        return id === 'codex' && !codexSignedIn
+          ? { loggedIn: false, method: null, detail: 'not logged in' }
+          : { loggedIn: true, method: null, detail: 'signed in' }
+      },
+    })) as unknown as ReturnType<DoctorReach['runtimes']>) as DoctorReach['runtimes']
+  return { asks, runtimes }
+}
+
+describe('declaredEnvironment, every agent a recipe dispatches', () => {
+  const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+  const rowsFor = (steps: string, codexSignedIn = true) => {
+    const { asks, runtimes } = twoRuntimes(codexSignedIn)
+    const recipe = recipeOf(RECIPE_OK.replace('steps: {}', steps))
+    return declaredEnvironment({}, async () => [state], { recipe, agentEnv: agentEnvStub, runtimes }).then((rows) => ({
+      asks,
+      rows: rows.filter((r) => /^(runtime|steps): .* signed in$/.test(r.name)),
+    }))
+  }
+
+  it('adds a row for Codex at review, naming the step', async () => {
+    const { rows } = await rowsFor('steps: { review: [{ name: x, prompt: y, agent: codex }] }')
+    expect(rows.map((r) => r.name)).toEqual(['runtime: esctest signed in', 'steps: esctest codex signed in'])
+    expect(rows[1]?.detail).toContain('steps.review.agent')
+  })
+
+  it('fails the Codex row naming the step when Codex is signed out', async () => {
+    const { rows } = await rowsFor('steps: { review: [{ name: x, prompt: y, agent: codex }] }', false)
+    expect(rows[1]?.status).toBe('fail')
+    expect(rows[1]?.detail).toContain('steps.review.agent')
+  })
+
+  it('adds no row for a built-in judge and never asks Codex', async () => {
+    const { asks, rows } = await rowsFor('steps: { proposed: [{ name: j, judge: same-worktree, when: red }] }')
+    expect(rows.map((r) => r.name)).toEqual(['runtime: esctest signed in'])
+    expect(asks.codex).toBe(0)
+  })
+
+  it('adds one row for two steps on the same agent', async () => {
+    const { asks, rows } = await rowsFor(
+      'steps: { design: [{ name: x, prompt: y, agent: claude-code }], review: [{ name: x, prompt: y, agent: claude-code }] }',
+    )
+    expect(rows.map((r) => r.name)).toEqual(['runtime: esctest signed in'])
+    expect(rows[0]?.detail).toContain('steps.design.agent, steps.review.agent')
+    expect(asks['claude-code']).toBe(1)
+  })
+})
 
 describe('declaredEnvironment, a project with no owner', () => {
   it('asks the Codex CLI route about the CODEX_HOME a triage run is given', async () => {
