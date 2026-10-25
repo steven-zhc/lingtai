@@ -1,6 +1,6 @@
 # 0118 — Waiting on you: every wait says what kind it is, what is asked, and what each answer does
 
-**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md)
+**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md) · §3 amended 2026-10-24 with tool-enabled Codex triage (#569)
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (its title, triage's reading of
@@ -355,8 +355,25 @@ which kind a wait was got inferred again in each place that needed it, from
      `WaitTriaged`. A shell step calls the pure function and acts on its
      answer; a pure function never calls the shell.
    - After the wait's event, the daemon runs the triage agent the way it runs
-     a discussion: off the pass, without the lock, reading the mirror, with no
-     tools. It reuses that code, not that conversation.
+     a discussion: off the pass, without the lock. It reuses that code, not
+     that conversation. The recipe's `triage.tools` chooses between two routes:
+     - **`none`, the default.** Reading the mirror, with no tools. Claude Code
+       denies every tool; Codex reaches the model-only Responses route, billed
+       separately under `codex_text` ([0106](0106-a-role-keeps-its-powers-across-runtimes.md) §6).
+     - **`full`, Codex only.** The Codex CLI with its shell, run in a private
+       clone of the mirror at the attempt's recorded head, or the base where
+       none was recorded. The checkout protects the mirror, its refs and
+       `origin`, which it cannot write; no Git hook runs in it, and nothing
+       pushes, merges or claims; edits die with the directory. It does **not**
+       protect host files, which stay readable by absolute path; the real
+       `CODEX_HOME`, which is the login and is in reach by design because
+       Codex rotates its token in place, so any Codex hook already configured
+       there is loaded and runs (the run ignores neither the user's Codex
+       configuration nor its hooks); the network, which is whatever the
+       Codex CLI's own sandbox gives; or a checkout whose tool processes
+       could not be confirmed dead, which is left on disk rather than
+       deleted. This is not Discussion's containment. Discussion keeps no
+       tools, and its recipe block has no key to ask otherwise.
    - It is declared in the recipe as `triage:` with its runtime and limits.
      Where it is not declared, nothing runs, and the page shows the ticket,
      where it is, and the stopping step's own words.
@@ -400,6 +417,12 @@ which kind a wait was got inferred again in each place that needed it, from
      daemon's subscriber timeout; at the wall the agent is killed, a failed
      `WaitTriaged` is appended, and what the runtime reported spending is its
      `RunSpent`.
+     On the `full` route only the wall stops the agent: turns are checked
+     between read rounds, not inside one CLI call, and the dollar limit never
+     fires because the CLI receipt reports none. The log does not record which
+     route ran — `WaitTriaged.by` is the runtime and model, and `RunSpent.costUsd`
+     is `null` on both Codex routes — so the route is read from the recipe in
+     force, and `doctor` and the board say which it is.
    - **On start, the daemon catches up only on waits still current.** A
      wait with no `TriageStarted` is triaged; one whose last attempt started
      before this daemon did and never finished was interrupted, and is tried

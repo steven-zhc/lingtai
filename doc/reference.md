@@ -366,6 +366,23 @@ still carrying a `repair` block is **refused by name** rather than ignored —
 default while its own file said otherwise. The two old ceilings do not add up to
 the new one, so nothing migrates it for you.
 
+### what triage may spend — `triage:`
+
+`triage:` names the agent that explains a hold ([0118](decisions/0118-a-hold-explains-itself.md) §3).
+Its bounds are `turns` (`40`), `wall` (`5m`) and `usd` (`0.5`). Copyable blocks
+for both Codex routes are in `config.example.yml`.
+
+| | `claude-code` | `codex` + `none` | `codex` + `full` |
+|---|---|---|---|
+| authentication | Claude login | `codex_text.api_key` | `codex login` |
+| billing | subscription | **separate OpenAI API billing, approval required** | the Codex login's plan |
+| what binds | all three | `wall`, `turns` between read rounds, `usd` from the reserved spend bound | `wall` only; `turns` is checked between rounds and `usd` never fires |
+| what runs | no tools | no tools | shell in a disposable checkout |
+| doctor row | `triage: <project> signed in` | `triage: <project> codex ready` | `triage: <project> signed in` and `triage: <project> limits` |
+
+The `full` route is not Discussion's containment: see 0118 §3 for what the
+checkout does and does not protect. The log does not record which route ran.
+
 ### what Lingtai decides for itself
 
 Not the recipe's, and each row says why.
@@ -2028,6 +2045,15 @@ installation-wide `runtime: signed in` asks every runtime and goes green on any
 one of them, so it cannot answer this — a machine signed in to Codex alone is
 green there beside a project whose recipe carries the schema default
 `runtime.agent: claude-code`.
+
+A project whose recipe declares `triage:` adds rows of its own. On the Codex CLI
+route (`tools: full`) `triage: <project> signed in` asks the login the wait
+will use, and `triage: <project> limits` is a `warn`: wall is enforced, turns
+is passed and not enforced, usd is not observed. It is `warn` and not `fail`
+because it is not `runtime.limits` and the CLI route is a deliberate choice;
+`warn` does not gate `lingtai restart`. The model-only route writes
+`triage: <project> codex ready`, naming `tools: full` as the alternative when
+`codex_text` is incomplete.
 
 Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
 `fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding
