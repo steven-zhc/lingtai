@@ -1763,11 +1763,19 @@ describe('the moves the column ends in', () => {
     expect(requested).not.toContain('Ask for the continuation')
     expect(requested).not.toContain('Schedule it')
 
-    const unscheduled = render(
-      { ...approved, conflictContinuation: { _tag: 'Unscheduled', waitId: HELD.waitId!, resolution: conflict } },
+    const notRequested = render(
+      { ...approved, conflictContinuation: { _tag: 'NotRequested', waitId: HELD.waitId!, resolution: conflict } },
       OUTGOING,
     )
-    expect(unscheduled).toContain('Ask for the continuation')
+    expect(notRequested).toContain('Ask for the continuation')
+
+    // A control stream that could not be read is not drawn as *not requested*.
+    const unreadable = render(
+      { ...approved, conflictContinuation: { _tag: 'Unreadable', waitId: HELD.waitId!, resolution: conflict } },
+      OUTGOING,
+    )
+    expect(unreadable).toContain('could not be read')
+    expect(unreadable).not.toContain('Ask for the continuation')
   })
 
   it('puts advised evidence and Discussion before the resolution cards and outgoing prompt', () => {

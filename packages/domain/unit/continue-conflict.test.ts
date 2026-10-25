@@ -346,6 +346,47 @@ describe('conflictRows and confirmHunks (#559)', () => {
   })
 })
 
+describe('a written behavior survives advice that arrives after it (#559)', () => {
+  const counted = [{ path: 'a.ts', line: 3 }]
+  const advised = {
+    _tag: 'Done',
+    result: {
+      _tag: 'TriageAdvised',
+      cause: {
+        _tag: 'ConflictingHunks',
+        total: 1,
+        hunks: [
+          {
+            _tag: 'Divergent',
+            path: 'a.ts',
+            line: 3,
+            question: {
+              id: 'q',
+              text: 'which?',
+              answers: [
+                { id: 'a', text: 'keep A' },
+                { id: 'b', text: 'keep B' },
+              ],
+              recommended: 'b',
+            },
+          },
+        ],
+      },
+    },
+  } as never
+  const written = { 'a.ts:3': { _tag: 'Behavior' as const, text: 'my own rule' } }
+
+  it('confirms the person’s text whether or not triage has answered', () => {
+    for (const status of [null, advised]) {
+      const out = conflictRows(counted, status)
+      if (!('rows' in out)) throw new Error('rows expected')
+      expect(confirmHunks(out.rows, written)).toEqual({
+        hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 3, behavior: 'my own rule', adopted: null }],
+      })
+    }
+  })
+})
+
 describe('conflictContinuationOf reads the log, not the lifecycle (#559)', () => {
   const resolution = {
     _tag: 'ContinueConflict',

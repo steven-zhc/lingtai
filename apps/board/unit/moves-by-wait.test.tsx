@@ -230,6 +230,35 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       expect(html).toContain('Start over from base')
     })
 
+    it('badges the recommendation and checks nothing, so a choice is always the person’s own click', () => {
+      const question = {
+        id: 'q',
+        text: 'which behavior?',
+        answers: [
+          { id: 'a', text: 'keep A' },
+          { id: 'b', text: 'keep B' },
+        ],
+        recommended: 'b',
+      }
+      const html = moves({
+        conflictWork: {
+          ...where,
+          paths: ['a.ts'],
+          rows: [
+            { ...row(3), question, suggested: { _tag: 'Answer' as const, answerId: 'b' } },
+            { ...row(9), suggested: { _tag: 'Mechanical' as const } },
+          ],
+          roundsExhausted: false,
+        },
+      })
+      expect(html).toContain('Recommended')
+      // only the mechanical row triage classed is pre-shown as chosen
+      expect(html.match(/checked=""/g)).toHaveLength(1)
+      expect(html).toContain('Still to choose: a.ts:3.')
+      expect(html).toMatch(/aria-describedby="conflict-unset-[^"]*"/)
+      expect(html).toContain('disabled=""')
+    })
+
     it('asks for an expressly granted extra round when the rounds are spent', () => {
       const html = moves({
         conflictWork: { ...where, paths: ['a.ts'], rows: [row(3)], roundsExhausted: true },

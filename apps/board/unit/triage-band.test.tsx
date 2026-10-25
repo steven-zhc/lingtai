@@ -130,13 +130,12 @@ describe('current wait triage band', () => {
     expect(html).toContain('Mechanical · 1')
     expect(html).toContain('Divergent · 1 question')
     expect(html).toContain('src/a.ts:4</span><span>Mechanical</span>')
-    expect(html).toContain('src/b.ts:9</span><fieldset class="triage-choices">')
+    // The behavior is chosen on the Confirm card; the band holds no second copy of the choice.
+    expect(html).not.toContain('<fieldset')
+    expect(html).not.toContain('type="radio"')
     expect(html).not.toContain('<details')
     expect(html).toContain('&lt;which behavior?&gt;')
-    expect(html).toContain('keep A')
-    expect(html).toContain('<span class="triage-choice-text">keep B</span>')
-    expect(html).toContain('<span class="triage-choice-recommended">Recommended</span>')
-    expect(html).toContain('checked="" value="b"')
+    expect(html).toContain('Triage recommends: keep B')
   })
 
   it('draws an empty conflict list without inventing a hunk or a question', () => {

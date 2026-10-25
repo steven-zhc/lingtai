@@ -179,13 +179,16 @@ describe('continue-conflict', () => {
       env(
         CONTROL_STREAM,
         'ContinueRequested',
-        { project: 'p', issue: '7', runId: 'run-1', by: 'human:x', ...data },
+        { project: 'p', issue: '7', runId: 'run-1', by: 'human:x', waitId: 'w1', ...data },
         seq,
       )
-    const go = async (opts: object, control: Envelope[] = [requested(4)]) => {
+    const go = async (opts: object, control: Envelope[] | 'unreadable' = [requested(4)]) => {
       const resolve = vi.fn(async () => ({ ok: true, ticketId, rescheduled: true })) as never
       const h = harness(resolve)
-      h.deps.events = async (stream) => (stream === ticketId ? approved : stream === CONTROL_STREAM ? control : run)
+      h.deps.events = async (stream) => {
+        if (stream === CONTROL_STREAM && control === 'unreadable') throw new Error('connection reset')
+        return stream === ticketId ? approved : stream === CONTROL_STREAM ? (control as Envelope[]) : run
+      }
       const code = await continueConflictCommand({ project: 'p', issue: 7, ...opts }, h.log, h.deps)
       return { code, lines: h.lines.join('\n'), resolve: resolve as unknown as ReturnType<typeof vi.fn> }
     }
@@ -193,7 +196,7 @@ describe('continue-conflict', () => {
     it('says requested, and exits 0, only when a ContinueRequested for this wait is on the log', async () => {
       const r = await go({})
       expect(r.code).toBe(0)
-      expect(r.lines).toContain('was requested at')
+      expect(r.lines).toContain('the continuation was requested at')
       expect(r.lines).not.toContain('--if-base')
       expect(r.resolve).not.toHaveBeenCalled()
     })
@@ -201,18 +204,35 @@ describe('continue-conflict', () => {
     it('says nothing was scheduled, and exits 1, for an approved wait with no ContinueRequested', async () => {
       const r = await go({}, [])
       expect(r.code).toBe(1)
-      expect(r.lines).toContain('no continuation request is on the log')
+      expect(r.lines).toContain('no continuation request for this confirmation is on the log')
       expect(r.lines).toContain(`--if-base ${BASE} --if-head ${HEAD}`)
       expect(r.lines).not.toContain('was requested')
       expect(r.resolve).not.toHaveBeenCalled()
     })
 
-    it('does not count a row from before the wait was resolved, or for another run or issue', async () => {
-      for (const row of [requested(1), requested(4, { runId: 'run-0' }), requested(4, { issue: '8' })]) {
+    it('does not count a row for another wait, run or issue', async () => {
+      const rows = [requested(4, { waitId: 'w0' }), requested(4, { runId: 'run-0' }), requested(4, { issue: '8' })]
+      for (const row of rows) {
         const r = await go({}, [row])
         expect(r.code).toBe(1)
-        expect(r.lines).toContain('no continuation request is on the log')
+        expect(r.lines).toContain('no continuation request for this confirmation is on the log')
       }
+    })
+
+    it('says a request made before requests named their wait may still start the run, and prints no recovery', async () => {
+      const r = await go({}, [requested(4, { waitId: null })])
+      expect(r.code).toBe(0)
+      expect(r.lines).toContain('before requests named their wait')
+      expect(r.lines).not.toContain('--if-base')
+    })
+
+    it('does not call an unreadable control stream unscheduled, and prints a retry of the same inspection', async () => {
+      const r = await go({}, 'unreadable')
+      expect(r.code).toBe(1)
+      expect(r.lines).toContain('could not be read')
+      expect(r.lines).not.toContain('no continuation request')
+      expect(r.lines).toContain('lingtai continue-conflict p --issue 7')
+      expect(r.lines).not.toContain('--if-base')
     })
 
     it('refuses a base or head other than the recorded one, and choices that differ', async () => {
@@ -237,6 +257,24 @@ describe('continue-conflict', () => {
       expect(r.code).toBe(0)
       expect(r.resolve).toHaveBeenCalledWith(expect.objectContaining({ resolution: recorded }))
     })
+  })
+
+  it('reports a completed continuation, once the item has left approved, as done rather than as not continuable', async () => {
+    const h = harness()
+    h.deps.events = async () => [
+      ...own,
+      env(
+        ticketId,
+        'WaitResolved',
+        { waitId: 'w1', resolution: { _tag: 'ContinueConflict', baseSha: BASE, headSha: HEAD, ref: 'agent/7' } },
+        2,
+      ),
+      env(ticketId, 'WaitApproved', { waitId: 'w1', grantRef: 'agent/7' }, 3),
+      env(ticketId, 'TicketClaimed', { runId: 'run-2', title: null, kind: null }, 4),
+    ]
+    expect(await continueConflictCommand({ project: 'p', issue: 7 }, h.log, h.deps)).toBe(0)
+    expect(h.lines.join('\n')).toContain('was taken up')
+    expect(h.lines.join('\n')).not.toContain('not waiting')
   })
 
   it('reports a landed ticket as complete rather than as not continuable', async () => {

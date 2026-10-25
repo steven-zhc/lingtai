@@ -944,6 +944,7 @@ describe('resolveWait', () => {
                   issue: '999',
                   runId: 'pass-999',
                   by: 'human:someone-else',
+                  waitId: null,
                 }),
               },
             ])

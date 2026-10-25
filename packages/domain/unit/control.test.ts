@@ -352,18 +352,18 @@ describe('ContinueRequested (#465)', () => {
       log([
         {
           type: 'ContinueRequested',
-          data: { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
+          data: { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven', waitId: null },
         },
         {
           type: 'ContinueRequested',
-          data: { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
+          data: { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven', waitId: null },
         },
       ]),
       NOW,
     )
     expect(state.continuing).toEqual([
-      { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
-      { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
+      { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven', waitId: null },
+      { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven', waitId: null },
     ])
   })
 })

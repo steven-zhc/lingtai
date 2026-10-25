@@ -343,6 +343,7 @@ describe("doc/reference.md's upcaster counts", () => {
     fourteen: 14,
     fifteen: 15,
     sixteen: 16,
+    seven: 7,
     seventeen: 17,
     eighteen: 18,
     nineteen: 19,
