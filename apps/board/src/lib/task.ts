@@ -70,7 +70,14 @@ import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
-import { issueUrl, triageContextOf, type PassLimitsView } from './board.ts'
+import {
+  emptyIfUnbuilt,
+  issueUrl,
+  triageContextOf,
+  waitingNeighbours,
+  type PassLimitsView,
+  type WaitingNeighbour,
+} from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
@@ -942,6 +949,8 @@ export interface HistoryGroup {
 
 export interface TaskDetail {
   taskId: string
+  /** Neighbours in the Waiting lane, read from `readTasks` on every render (#584). */
+  waiting: { previous: WaitingNeighbour | null; next: WaitingNeighbour | null }
   /** Local mirror check for the current wait's kept ref; null for every other case. */
   unpushedMirror: { path: string; sha: string | null } | null
   /**
@@ -1800,11 +1809,12 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // head first, the way `loadBoard`'s card read does — a bare read left the
   // task page and the board reading two different currencies of the same
   // money (`#498`'s review).
-  const [streams, ticket, control, spendFold] = await Promise.all([
+  const [streams, ticket, control, spendFold, lane] = await Promise.all([
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
     eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
     currentSpend({ ticket: taskId }),
+    readTasks({}).catch(emptyIfUnbuilt),
   ])
   const spend = spendFold.rows
 
@@ -1959,6 +1969,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     held,
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
+    waiting: waitingNeighbours(lane, taskId),
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is
     // that forty turns of exploration do not drown the thirty-six events this

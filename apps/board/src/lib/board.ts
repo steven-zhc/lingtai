@@ -1123,7 +1123,7 @@ export function splitRegister(projects: readonly ProjectState[]): {
  * Its own function only so the read can sit inside a `Promise.all` and still
  * rethrow everything that is not that.
  */
-function emptyIfUnbuilt(err: unknown): TaskCard[] {
+export function emptyIfUnbuilt(err: unknown): TaskCard[] {
   if (!/does not exist/i.test((err as Error).message)) throw err
   return []
 }
@@ -1176,6 +1176,33 @@ export function filterOptions(registered: readonly string[], onBoard: readonly s
  * rather than a fold of the log, and therefore the one that can fail to be
  * answered.
  */
+export interface WaitingNeighbour {
+  taskId: string
+  issue: string
+  title: string
+}
+
+/**
+ * The neighbours of `taskId` in the Waiting lane, in the order `cards` already
+ * has — which is `readTasks`'s, by how long each has waited. It never sorts:
+ * the rule lives in the store's SQL and this is a second reader of it (#584).
+ *
+ * A ticket that is not in the lane (resolved, landed, queued, running) has no
+ * previous, and its next is the lane's first card, which is already "other than
+ * this one" because it is absent. Its old position is never reconstructed.
+ */
+export function waitingNeighbours(
+  cards: readonly TaskCard[],
+  taskId: string,
+): { previous: WaitingNeighbour | null; next: WaitingNeighbour | null } {
+  const lane = cards.filter((c) => COLUMN_OF[c.state] === 'waiting')
+  const at = lane.findIndex((c) => c.taskId === taskId)
+  const of = (c: TaskCard | undefined): WaitingNeighbour | null =>
+    c === undefined ? null : { taskId: c.taskId, issue: c.issue, title: c.title }
+  if (at < 0) return { previous: null, next: of(lane[0]) }
+  return { previous: of(lane[at - 1]), next: of(lane[at + 1]) }
+}
+
 export function toColumns(
   cards: BoardCard[],
   problems: QueueProblem[] = [],
