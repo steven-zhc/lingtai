@@ -15,6 +15,7 @@ import {
   ledeOf,
   published,
   resolveHref,
+  servable,
   SECTIONS,
   slugify,
   slugOf,
@@ -169,6 +170,16 @@ describe('where a link inside a document goes', () => {
       '/docs/decisions-archive/0022-the-seams/',
     )
     expect(resolveHref('decisions-archive/0022-the-seams.md', '../tutorial.md', isPublished)).toBe('/docs/tutorial/')
+  })
+
+  it('publishes the requirements beside the tutorial and keeps operating on GitHub', async () => {
+    const served = await servable()
+    const served$ = (file: string) => served.includes(file)
+    expect(served).toContain('requirements.md')
+    expect(served).not.toContain('operating.md')
+    expect(resolveHref('tutorial.md', 'requirements.md', served$)).toBe('/docs/requirements/')
+    expect(resolveHref('tutorial.md', 'operating.md', served$)).toBe(`${GITHUB_BLOB}doc/operating.md`)
+    expect(resolveHref('requirements.md', '../README.md', served$)).toBe(`${GITHUB_BLOB}README.md`)
   })
 
   it('keeps the anchor', () => {
