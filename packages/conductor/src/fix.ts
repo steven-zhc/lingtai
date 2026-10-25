@@ -632,6 +632,14 @@ So:
  * Resolving a conflict by taking one side wholesale passes the first and is
  * exactly what the second is there to catch.
  */
+// Left out when a person already confirmed the behaviour (`ContinueConflict`):
+// that confirmation is the answer this would send the agent back to ask for.
+const STOP_AND_ASK = `- If the two sides' behaviours contradict and the ticket does not settle which
+  one wins, stop and ask rather than choose: do not commit the merge, and say
+  in your final message which two behaviours contradict and why the ticket
+  does not settle it.
+`
+
 function conflictHalf(
   base: string,
   paths: string,
@@ -673,7 +681,7 @@ So:
   deleting the conflicting hunk. Read what each side was doing.
 - \`git add\` the resolved files and \`git commit\` the merge. Do not
   \`git merge --abort\`: that throws away the merge you just ran.
-- Change nothing the conflict did not force you to. The diff is about to be read
+${confirmed.length > 0 ? '' : STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is about to be read
   again by a reviewer who last saw it without this merge in it.
 
 The base can move again while you work. If it does, this comes back around —

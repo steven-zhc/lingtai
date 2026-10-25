@@ -217,7 +217,42 @@ describe('allowedResolutions', () => {
         baseSha: 'abc',
         headSha: 'def',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'ContinueConflict'])
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound', 'ContinueConflict'])
+    })
+
+    it('MergeConflict with null shas: GrantFixRound but not ContinueConflict', () => {
+      const reason = parseProposed({
+        _tag: 'MergeConflict',
+        output: 'conflict',
+        paths: ['a.ts'],
+        baseSha: null,
+        headSha: null,
+      })
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound'])
+    })
+
+    it('MergeConflict unpushed: neither GrantFixRound nor ContinueConflict', () => {
+      const proposal = { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: 'abc', headSha: 'def' }
+      const reason = parseReason({
+        _tag: 'ProposedEscalated',
+        run: unpushedRun,
+        proposal,
+        because: { _tag: 'NotAsked' },
+      })
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+    })
+
+    it('grantCriterion: a MergeConflict briefs step merge with its paths', () => {
+      const criterion = grantCriterion(
+        parseProposed({
+          _tag: 'MergeConflict',
+          output: 'conflict',
+          paths: ['a.ts', 'b.ts'],
+          baseSha: null,
+          headSha: null,
+        }),
+      )
+      expect(criterion).toEqual({ printed: { step: 'merge', detail: 'a.ts\nb.ts' }, findings: [] })
     })
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {

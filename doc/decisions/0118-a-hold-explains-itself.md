@@ -265,7 +265,7 @@ which kind a wait was got inferred again in each place that needed it, from
      | `ProposedEscalated` over `ReviewFindings`                                 | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                 | `proposed`                     |
      | `ProposedEscalated` over `ReviewEmpty`                                    | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                          | `proposed`                     |
      | `ProposedEscalated` over `BuildRed` or `VerifyRed`                        | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                            | —                              |
-     | `ProposedEscalated` over `MergeConflict`                                 | `ContinueConflict`, `Requeue`, `Close`                                                      | —                              |
+     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `ContinueConflict`, `Requeue`, `Close`                                      | —                              |
      | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                                     | —                              |
      | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
      | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                                              | —                              |
@@ -533,8 +533,12 @@ which kind a wait was got inferred again in each place that needed it, from
      on the two sides. The question is carried by the hunk it is about. The
      page lists every hunk with its status and opens only the ones that need
      the person.
-   - **A person confirms the intended behavior before AI edits the conflict.**
-     `ContinueConflict` is tied to the shown `baseSha` and `headSha`; it may
+   - **A granted round may edit the conflict unconfirmed; `ContinueConflict` is
+     the confirmed path.** `GrantFixRound` on a conflict gives the agent the
+     conflict brief, with an instruction to stop and ask when the two sides'
+     behaviours contradict and the ticket does not settle which wins. What
+     catches a wrong choice is `build`, `review` and that question, not a
+     confirmation form. With a person's confirmation, `ContinueConflict` is tied to the shown `baseSha` and `headSha`; it may
      include one explicit extra-round grant when the automatic ceiling is
      exhausted (0108 §8). AI then merges the latest base into the preserved
      branch, resolves the hunks and commits. The changed branch runs through
