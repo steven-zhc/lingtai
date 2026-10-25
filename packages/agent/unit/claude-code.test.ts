@@ -322,7 +322,7 @@ describe('a stopped run signals its whole process group (#606)', () => {
 
   it('stops waiting after the hard kill and says the group survived', async () => {
     const h = harness()
-    await vi.advanceTimersByTimeAsync(1_000 + 5_000 + 5_000)
+    await vi.advanceTimersByTimeAsync(1_000 + 5_000 + 100)
     await h.started
     expect(h.outcome()?.failure?.detail).toContain('still alive after SIGKILL')
   })

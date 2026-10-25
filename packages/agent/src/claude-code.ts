@@ -330,6 +330,9 @@ export interface ClaudeCodeOptions {
 
 const PROBE_MS = 100
 
+/** How long after the SIGKILL the group gets to show it is gone, before the run stops waiting. */
+const KILL_GRACE_MS = 100
+
 /** What a closed Claude Code process said, for `claudeClose` to read. */
 export interface ClaudeClosed {
   exitCode: number | null
@@ -584,7 +587,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                     }
                   : stopped,
               )
-            }, 5_000)
+            }, KILL_GRACE_MS)
             last.unref?.()
           }, 5_000)
           hard.unref?.()
