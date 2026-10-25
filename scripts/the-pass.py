@@ -256,7 +256,7 @@ EN = dict(
              "with the recipe's rounds. It leaves the saved work behind and "
              "neither spends nor refunds an automatic restart. "
              "Every move, by who makes it and what it spends, is in the "
-             "<a href=\"/docs/glossary/#what-happens-next\">glossary</a>.",
+             "<a href=\"glossary.md#what-happens-next\">glossary</a>.",
 
     foot="Generated from scripts/the-pass.py · Lingtai",
     f1_alt="One pass from claim to end. Ten steps on a spine; four of them may "
@@ -409,7 +409,7 @@ ZH = dict(
              "<code>proposed</code> 才能合并。保存的分支丢失或移动后，不能这样继续。"
              "<b>从 base 重新开始</b>则把票重新排队，从 base 开始一趟新 pass，"
              "重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。"
-             "每一种做法由谁做、花什么，见<a href=\"/docs/glossary/#what-happens-next\">术语表</a>。",
+             "每一种做法由谁做、花什么，见<a href=\"glossary.md#what-happens-next\">术语表</a>。",
 
     foot="由 scripts/the-pass.py 生成 · 灵台",
     f1_alt="一趟 pass，从 claim 到 end。主干上十步，其中四步会拒绝 —— prepared、"
