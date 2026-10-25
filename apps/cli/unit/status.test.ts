@@ -165,6 +165,7 @@ function fixture0Ok(): Extract<StatusFilter, { ok: true }> {
 
 describe('statusJson', () => {
   it('pins the whole shape', () => {
+    const off = { restarts: 0, held: null, arm: null, unoffered: false }
     const r = (ref: string, kind = 'bug') => ({ taskId: `t${ref}`, ref, kind, title: `title of ${ref}` })
     expect(statusJson(fixture)).toEqual({
       projects: [
@@ -182,10 +183,15 @@ describe('statusJson', () => {
             { ...r('613', 'tech-debt'), restarts: 0, held: null, arm: null },
           ],
           byState: {
-            queued: [r('612')],
-            waiting: [r('609'), r('610')],
-            verifying: [r('611')],
-            landed: [r('600')],
+            queued: [
+              { ...r('612'), ...off, restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+            ],
+            waiting: [
+              { ...r('609'), ...off },
+              { ...r('610'), ...off },
+            ],
+            verifying: [{ ...r('611'), ...off }],
+            landed: [{ ...r('600'), ...off }],
           },
           waiting: [
             { taskId: 't609', ref: '609', reason: 'OwnQuestion', line: asked.line, needs: 'judgement', asked: true },
@@ -281,8 +287,9 @@ describe('renderStatus keeps every fact the old output printed', () => {
   })
 
   it('is plain with NO_COLOR and coloured under FORCE_COLOR, with the same visible text', () => {
-    const keep = { no: process.env['NO_COLOR'], force: process.env['FORCE_COLOR'] }
+    const keep = { no: process.env['NO_COLOR'], force: process.env['FORCE_COLOR'], term: process.env['TERM'] }
     try {
+      delete process.env['TERM']
       delete process.env['NO_COLOR']
       process.env['FORCE_COLOR'] = '1'
       const coloured = renderStatus(fixture, { all: true })
@@ -296,6 +303,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       for (const [name, value] of [
         ['NO_COLOR', keep.no],
         ['FORCE_COLOR', keep.force],
+        ['TERM', keep.term],
       ] as const) {
         if (value === undefined) delete process.env[name]
         else process.env[name] = value

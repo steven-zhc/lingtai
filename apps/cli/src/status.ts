@@ -420,7 +420,14 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
   return {
     projects: report.projects.map((p) => {
       const byState: Record<string, unknown[]> = {}
-      for (const t of p.known) (byState[t.state] ??= []).push(rowJson(t))
+      for (const t of p.known)
+        (byState[t.state] ??= []).push({
+          ...rowJson(t),
+          restarts: t.restarts,
+          held: t.held,
+          arm: t.arm,
+          unoffered: t.unoffered,
+        })
       return {
         project: p.project,
         base: p.base,
