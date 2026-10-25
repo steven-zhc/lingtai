@@ -70,6 +70,11 @@ function fakeGitHub(fault?: Fault) {
       if (throwAfter) throw new Error('create timed out after landing')
       return issue
     },
+    getIssue: async (n) => {
+      const hit = issues.find((i) => i.number === n)
+      if (hit === undefined) throw new Error(`GET /issues/${n}: 404 Not Found`)
+      return { ...hit }
+    },
     comment: async () => ({ id: 1 }),
     closeIssue: async (n) => {
       const hit = issues.find((i) => i.number === n)
@@ -161,7 +166,8 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     expect(reduceTicket(events).lifecycle).toMatchObject({ status: 'blocked', waitId })
     const progress = splitProgressOf(events, waitId)!
     expect(progress.owed.complete).toBe(true)
-    expect(progress.observed.children.map((x) => x.number)).toEqual([a!.number, b!.number, c!.number])
+    expect(progress.identities.map((x) => x.number)).toEqual([a!.number, b!.number, c!.number])
+    expect(progress.observed.children).toEqual(['a', 'b', 'c'])
   })
 
   it('a second command on a whole split creates and writes nothing', async () => {
@@ -228,7 +234,8 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
     await split()
     const progress = splitProgressOf(await store.read(ticketId), waitId)!
-    expect(progress.observed.children.map((c) => c.key)).toEqual(['a'])
+    expect(progress.identities.map((c) => c.key)).toEqual(['a'])
+    expect(progress.observed.children).toEqual(['a'])
     expect(progress.owed.children).toEqual(['b', 'c'])
     expect(progress.owed.complete).toBe(false)
   })
@@ -247,7 +254,7 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     const progress = splitProgressOf(await store.read(ticketId), waitId)!
     expect(progress.failure).toContain('read-back failed')
     expect(progress.owed.complete).toBe(false)
-    expect(progress.observed.children).toHaveLength(3)
+    expect(progress.identities).toHaveLength(3)
     expect(progress.owed.subIssues).toEqual(['a', 'b', 'c'])
   })
 
@@ -319,39 +326,39 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     expect(github.issues.find((i) => i.number === 700)!.state).toBe('closed')
   })
 
-  it('unlinks a duplicate that was attached and made a blocker before the original became visible', async () => {
+  /** The original a lands but the listing omits it, so a retry makes the child the log records; then it shows up, linked. */
+  async function aLinkedOriginalAppears() {
     const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
-    const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+    const run = await blockedOnFirstWait(github)
     const listed = github.port.listIssuesSince
-    // The original a lands but the listing omits it.
     github.port.listIssuesSince = async () => (await listed(new Date())).filter((i) => i.number !== 600)
-    expect(await split()).toMatchObject({ reason: 'split-partial' })
-    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
-    const replacement = github.issues.find((i) => i.number === 601)!
-    expect(github.subs.get(PARENT)).toContain(601)
-    // The original becomes visible: the replacement is withdrawn and unlinked.
+    expect(await run.split()).toMatchObject({ reason: 'split-partial' })
+    expect(await run.split()).toMatchObject({ reason: 'split-not-resolved' })
     github.port.listIssuesSince = listed
-    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
     const at = (n: number) => github.issues.find((i) => i.number === n)!
-    const [original, b, c] = [at(600), at(602), at(603)] as const
-    expect(replacement.state).toBe('closed')
-    expect(github.subs.get(PARENT)).toEqual(new Set([original.number, b.number, c.number]))
-    expect(github.blocks.get(b.number)).toEqual(new Set([original.id]))
-    // The withdrawn replacement was blocked by a too, and keeps nothing.
-    expect(github.blocks.get(replacement.number)?.size ?? 0).toBe(0)
+    const [original, a, b, c] = [at(600), at(601), at(602), at(603)] as const
+    // The original had been attached and made a blocker, and was itself blocked by the recorded a.
+    github.subs.set(PARENT, (github.subs.get(PARENT) ?? new Set()).add(original.number))
+    github.blocks.set(b.number, (github.blocks.get(b.number) ?? new Set()).add(original.id))
+    github.blocks.set(original.number, new Set([a.id]))
+    return { github, ...run, original, a, b, c }
+  }
+
+  it('unlinks a duplicate that is attached, a blocker, and blocked by one of ours; the recorded child stays', async () => {
+    const { github, store, ticketId, waitId, split, original, a, b, c } = await aLinkedOriginalAppears()
+    expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+    expect(original.state).toBe('closed')
+    expect(github.subs.get(PARENT)).toEqual(new Set([a.number, b.number, c.number]))
+    expect(github.blocks.get(b.number)).toEqual(new Set([a.id]))
+    // The assertion that fails if the duplicate-owned dependency cleanup is removed.
+    expect(github.blocks.get(original.number)?.size ?? 0).toBe(0)
     const last = types(await store.read(ticketId), 'SplitReconciled').at(-1)!.data as { failure: string | null }
     expect(last.failure).toBeNull()
     expect(splitProgressOf(await store.read(ticketId), waitId)!.owed.complete).toBe(true)
   })
 
   it('is not complete while a withdrawn duplicate is still linked', async () => {
-    const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
-    const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
-    const listed = github.port.listIssuesSince
-    github.port.listIssuesSince = async () => (await listed(new Date())).filter((i) => i.number !== 600)
-    await split()
-    await split()
-    github.port.listIssuesSince = listed
+    const { github, store, ticketId, waitId, split } = await aLinkedOriginalAppears()
     github.port.removeSubIssue = async () => {
       throw new Error('unlink timed out')
     }
@@ -359,6 +366,111 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
     const failure = splitProgressOf(await store.read(ticketId), waitId)!.failure
     expect(failure).toContain('unlink timed out')
     expect(failure).toContain('still linked')
+  })
+
+  describe('a child is the identity the log recorded (#561)', () => {
+    const strip = (github: ReturnType<typeof fakeGitHub>, waitId: never, key: string) => {
+      const issue = github.issues.find((i) => i.body.includes(splitMarker(PARENT, waitId, PLAN, key)))!
+      issue.body = issue.body.replace(splitMarker(PARENT, waitId, PLAN, key), '')
+      return issue
+    }
+    const carrying = (github: ReturnType<typeof fakeGitHub>) => github.issues.filter((i) => i.labels.length === 2)
+
+    it('creates no second child for a recorded one whose marker a person removed', async () => {
+      const github = fakeGitHub({ op: 'edge', at: 0, mode: 'before' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const a = strip(github, waitId as never, 'a')
+      const b = strip(github, waitId as never, 'b')
+      const created = github.calls.create
+      expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+      expect(github.calls.create).toBe(created)
+      expect(carrying(github)).toHaveLength(PLAN.children.length)
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.identities.map((i) => i.number)).toEqual([a.number, b.number, 602])
+      expect(progress.owed.complete).toBe(true)
+    })
+
+    it('does the same when the first run stopped after a was created and before it was attached', async () => {
+      const github = fakeGitHub({ op: 'create', at: 1, mode: 'before' })
+      const { waitId, split } = await blockedOnFirstWait(github)
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(github.subs.get(PARENT)?.size ?? 0).toBe(0)
+      strip(github, waitId as never, 'a')
+      expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+      expect(carrying(github)).toHaveLength(3)
+      expect(github.subs.get(PARENT)?.size).toBe(3)
+    })
+
+    it('makes a second child when the create threw and the marker is removed: nothing was recorded', async () => {
+      const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+      const { waitId, split } = await blockedOnFirstWait(github)
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      strip(github, waitId as never, 'a')
+      // The documented residual window: no identity, so nothing to adopt by.
+      await split()
+      expect(carrying(github)).toHaveLength(4)
+    })
+
+    it.each([
+      ['is gone (404)', (g: ReturnType<typeof fakeGitHub>) => g.issues.splice(0, 1)],
+      [
+        'has another id now',
+        (g: ReturnType<typeof fakeGitHub>) => {
+          g.issues[0]!.id = 999_999 as Issue['id']
+        },
+      ],
+    ])('keeps a recorded child that %s unverified and never creates it again', async (_, damage) => {
+      const github = fakeGitHub({ op: 'sub', at: 0, mode: 'before' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      await split()
+      damage(github)
+      const created = github.calls.create
+      const result = await split()
+      expect(result).toMatchObject({ ok: false, reason: 'split-partial' })
+      expect(result.ok === false && result.detail).toContain('unverified child #600')
+      expect(github.calls.create).toBe(created)
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.failure).toContain('recorded child #600 for "a" is not readable')
+      expect(progress.owed.unverified).toEqual([{ key: 'a', number: 600 }])
+      expect(progress.owed.children).toEqual([])
+      expect(progress.owed.complete).toBe(false)
+    })
+
+    it('keeps a child a person closed, and says so', async () => {
+      const github = fakeGitHub()
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      await split()
+      github.issues[0]!.state = 'closed'
+      const created = github.calls.create
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(github.calls.create).toBe(created)
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.failure).toContain('recorded child #600 for "a" is closed')
+      expect(progress.owed.unverified).toEqual([])
+    })
+
+    it('withdraws an older marker-carrying issue for a recorded key and keeps the recorded child', async () => {
+      const github = fakeGitHub()
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      await split()
+      const [a] = github.issues
+      github.issues.push({ ...a!, number: 500, id: 500_007 as Issue['id'], createdAt: 500 })
+      expect(await split()).toMatchObject({ reason: 'split-not-resolved' })
+      expect(github.issues.find((i) => i.number === 500)!.state).toBe('closed')
+      expect(a!.state).toBe('open')
+      expect(splitProgressOf(await store.read(ticketId), waitId)!.identities[0]).toMatchObject({ number: 600 })
+    })
+
+    it('refuses a different plan once any identity is recorded, even with no marker to find', async () => {
+      const github = fakeGitHub({ op: 'sub', at: 0, mode: 'before' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      await split()
+      for (const key of ['a', 'b', 'c']) strip(github, waitId as never, key)
+      const other = { ...PLAN, children: [child('x'), child('y')], blockedBy: [] }
+      expect(await split(other)).toMatchObject({ reason: 'split-in-progress', detail: expect.stringContaining('#600') })
+      expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(1)
+    })
   })
 
   describe('a plan change', () => {
@@ -389,7 +501,7 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       github.port.listIssuesSince = listed
       expect(await split(edited)).toMatchObject({ reason: 'split-not-resolved' })
       const progress = splitProgressOf(await store.read(ticketId), waitId)!
-      const a = progress.observed.children.find((c) => c.key === 'a')!
+      const a = progress.identities.find((c) => c.key === 'a')!
       const issue = github.issues.find((i) => i.number === a.number)!
       expect(issue.title).toBe('changed')
       expect(issue.body).toContain('new work')
