@@ -247,6 +247,8 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
     // a restarted ticket is queued, so it is listed from here and nowhere else.
     const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
     const now = Date.now()
+    const offeredKinds = kinds.length > 0 ? kinds : ['bug']
+    const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
 
     const rowOf = (
       t: {
@@ -283,7 +285,8 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         arm: armLine({ restarts }, restartsOf),
         held: until ? backingOff(until, now) : null,
         // Said only when the source actually answered: with no answer every row looks unoffered.
-        unoffered: t.state === 'queued' && asked && !runnable.some((r) => r.taskId === t.taskId),
+        // Against the offer and not `runnable`, which the retry window has already thinned.
+        unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
         wait:
           t.wait == null || words === null
             ? null
@@ -432,8 +435,15 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
         project: p.project,
         base: p.base,
         filter: p.filter.ok
-          ? { ok: true, recipe: p.filter.recipe, ref: p.filter.ref, kinds: p.filter.kinds, exclude: p.filter.exclude }
-          : { ok: false, problem: p.filter.problem },
+          ? {
+              ok: true,
+              recipe: p.filter.recipe,
+              ref: p.filter.ref,
+              kinds: p.filter.kinds,
+              exclude: p.filter.exclude,
+              facts: p.filter.facts.map(([key, value]) => ({ key, value })),
+            }
+          : { ok: false, problem: p.filter.problem, facts: p.filter.facts.map(([key, value]) => ({ key, value })) },
         source: p.source,
         eligible: p.eligible,
         offerError: p.offerError,
@@ -455,6 +465,8 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
             line: t.wait!.line,
             needs: t.wait!.needs,
             asked: t.wait!.reason === 'OwnQuestion',
+            detail: t.wait!.detail,
+            raw: t.wait!.raw,
           })),
       }
     }),
