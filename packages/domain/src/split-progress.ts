@@ -19,8 +19,8 @@ export type SplitProgress =
   | { state: 'idle' }
   | {
       state: SplitProgressState
-      /** The latest attempt's plan — the person's edited one. */
-      plan: PayloadOf<'SplitStarted'>['plan']
+      /** The latest attempt's plan — the person's edited one; null for a split written before #608, which has no `SplitStarted`. */
+      plan: PayloadOf<'SplitStarted'>['plan'] | null
       /** Every child any attempt of this wait wrote, de-duplicated by key. */
       children: SplitChild[]
       /** Every child-to-child link any attempt wrote, de-duplicated. */
@@ -34,7 +34,7 @@ export function splitProgressOf(
 ): SplitProgress {
   let started: PayloadOf<'SplitStarted'> | null = null
   let failed: { step: string; detail: string } | null = null
-  let done = false
+  let done: PayloadOf<'TicketSplit'> | null = null
   const children = new Map<string, SplitChild>()
   const links = new Map<string, Dependency>()
 
@@ -48,6 +48,9 @@ export function splitProgressOf(
         break
       case 'SplitChildWritten': {
         const { key, number, id } = e.data as PayloadOf<'SplitChildWritten'>
+        // A key now naming another issue makes every link written for it stale.
+        if (children.get(key)?.number !== number && children.has(key))
+          for (const [k, l] of links) if (l.ticket === key || l.blockedBy === key) links.delete(k)
         children.set(key, { key, number, id })
         break
       }
@@ -62,14 +65,21 @@ export function splitProgressOf(
         break
       }
       case 'TicketSplit':
-        done = true
+        done = e.data as PayloadOf<'TicketSplit'>
         break
     }
   }
 
+  // The terminal record is the list that was written, so it wins over the progress that led up to it.
+  if (done !== null)
+    return {
+      state: 'done',
+      plan: started?.plan ?? null,
+      children: done.children.map(({ key, number, id }) => ({ key, number, id })),
+      links: done.blockedBy.map(({ ticket, blockedBy }) => ({ ticket, blockedBy })),
+    }
   if (started === null) return { state: 'idle' }
   const base = { plan: started.plan, children: [...children.values()], links: [...links.values()] }
-  if (done) return { state: 'done', ...base }
   if (failed !== null) return { state: 'failed', ...base, failed }
   return { state: started.instance === options.instance ? 'writing' : 'interrupted', ...base }
 }

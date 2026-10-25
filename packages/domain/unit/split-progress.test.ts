@@ -78,6 +78,26 @@ describe('splitProgressOf', () => {
     expect(splitProgressOf([s.started(), s.child('a', 161), s.done()], ME).state).toBe('done')
   })
 
+  it('is done for a split written before SplitStarted existed, with the recorded children and links', () => {
+    const s = stream()
+    const p = splitProgressOf([s.done()], ME)
+    expect(p.state).toBe('done')
+    if (p.state === 'idle') throw new Error('unreachable')
+    expect(p.plan).toBeNull()
+    expect(p.children.length).toBeGreaterThan(0)
+  })
+
+  it('drops links written for a key that now names another issue', () => {
+    const s = stream()
+    const p = splitProgressOf(
+      [s.started(), s.child('a', 161), s.child('b', 162), s.link('b', 'a'), s.child('a', 170)],
+      ME,
+    )
+    if (p.state === 'idle') throw new Error('unreachable')
+    expect(p.links).toEqual([])
+    expect(p.children.find((c) => c.key === 'a')!.number).toBe(170)
+  })
+
   it('keeps the union of every attempt, and reads the latest attempt', () => {
     const s = stream()
     const p = splitProgressOf(

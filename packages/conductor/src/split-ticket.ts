@@ -5,7 +5,7 @@
  * (#608).** `SplitStarted` first, a `SplitChildWritten` or `SplitLinkWritten`
  * per read-back write, then `TicketSplit` or `SplitFailed`. Those are a record
  * for the page, never a gate: the next call still resumes from GitHub's own
- * state, because a person may have edited it since. It reads the parent's sub-issues, adopts a child whose
+ * state, because a person may have edited it since. A call reads the parent's sub-issues, adopts a child whose
  * title is a plan entry, and writes only what is missing. A timed-out create
  * is not proof of absence, so every child carries an invisible marker
  * (`splitMarker`) and a create that threw is looked for by it before anything
@@ -165,7 +165,7 @@ export async function splitTicketHolding(
     return stop(`two children are titled "${twice}" — a retry could not tell them apart. Nothing was written.`)
 
   const prior = splitProgressOf(events, { waitId, instance: options.instance })
-  const known = new Set(prior.state === 'idle' ? [] : prior.children.map((c) => c.key))
+  const known = new Map(prior.state === 'idle' ? [] : prior.children.map((c) => [c.key, c.number] as const))
   const linked = new Set(prior.state === 'idle' ? [] : prior.links.map((l) => `${l.ticket}\u0000${l.blockedBy}`))
 
   /** Facts about GitHub, not decisions about the stream: append at its current version, once more if it moved. */
@@ -324,13 +324,15 @@ export async function splitTicketHolding(
           numberOf(child.key),
         )
         // Written means approved and attached; GitHub's `id` is only on the sub-issue listing.
-        if (!known.has(child.key)) {
+        if (known.get(child.key) !== numberOf(child.key)) {
           const sub = (await github.listSubIssues(options.issue)).find(
             (s) => here(s) && s.number === numberOf(child.key),
           )
           if (sub === undefined) throw new Error(`#${numberOf(child.key)} is not a sub-issue on read-back`)
           await note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })
-          known.add(child.key)
+          // The key names another issue now, so links recorded for the old one are stale.
+          if (known.has(child.key)) for (const l of linked) if (l.split('\u0000').includes(child.key)) linked.delete(l)
+          known.set(child.key, sub.number)
         }
         return status
       },
@@ -433,7 +435,7 @@ export async function splitTicketHolding(
       result = {
         ok: false,
         ticketId,
-        detail: `${action.name} failed: ${errorMessage(err)}. Nothing was recorded — call again to write what is missing.`,
+        detail: `${action.name} failed: ${errorMessage(err)}. Nothing was finished — call again to write what is missing.`,
         steps,
         children: knownChildren(),
       }
