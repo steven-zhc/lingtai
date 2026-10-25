@@ -360,18 +360,24 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
   })
 
   describe('the plan is fixed once anything exists', () => {
-    it('refuses a different plan once a child is recorded, naming it, and accepts one before', async () => {
-      const github = fakeGitHub({ op: 'create', at: 0, mode: 'before' })
+    it('refuses a different plan once an attempt failed, even with no child recorded', async () => {
+      const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+      const real = github.port.listIssuesSince
+      let lists = 0
+      // The create lands, then the read-back listing throws too: no identity is recorded.
+      github.port.listIssuesSince = async (since) => {
+        if (++lists === 2) throw new Error('listing timed out')
+        return real(since)
+      }
       const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
       expect(await split()).toMatchObject({ reason: 'split-partial' })
-      // Nothing recorded yet: a different plan is accepted as a new start.
-      const other = { ...PLAN, children: [child('a'), child('b')], blockedBy: [{ ticket: 'b', blockedBy: 'a' }] }
-      expect(await split(other)).toMatchObject({ reason: 'split-not-resolved' })
-      expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(2)
-      const refused = await split(PLAN)
-      expect(refused).toMatchObject({ ok: false, reason: 'split-in-progress' })
-      expect(refused.ok === false && refused.detail).toContain('#600')
-      expect(splitProgressOf(await store.read(ticketId), waitId)!.plan.children).toHaveLength(2)
+      expect(splitProgressOf(await store.read(ticketId), waitId)!.identities).toEqual([])
+      const other = { ...PLAN, children: [{ ...child('a'), title: 'revised' }, child('b'), child('c')] }
+      expect(await split(other)).toMatchObject({ ok: false, reason: 'split-in-progress' })
+      expect(types(await store.read(ticketId), 'SplitStarted')).toHaveLength(1)
+      // Retrying the original plan adopts the child that landed.
+      for (let i = 0; i < 3; i++) await split()
+      expect(github.issues).toHaveLength(3)
     })
   })
 })

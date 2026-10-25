@@ -412,7 +412,20 @@ async function splitOnce(
   let events = await store.read(ticketId)
   let progress = splitProgressOf(events, options.waitId)
   const unchanged = progress !== null && sameSplitPlan(progress.plan, asked)
-  const untouched = progress !== null && progress.identities.length === 0
+  // **An empty identity log is not proof that nothing exists.** A create that
+  // landed and whose read-back also failed records no identity, and its marker
+  // belongs to the old plan hash; replacing the plan then abandons that child.
+  // So a different plan is accepted only after attempts that all read cleanly.
+  const untouched =
+    progress !== null &&
+    progress.identities.length === 0 &&
+    progress.reconciled &&
+    !events.some(
+      (e) =>
+        e.type === 'SplitReconciled' &&
+        (e.data as PayloadOf<'SplitReconciled'>).waitId === options.waitId &&
+        (e.data as PayloadOf<'SplitReconciled'>).failure !== null,
+    )
 
   if (progress === null || (!unchanged && untouched)) {
     const plan = { children: asked.children.map((c) => ({ ...c })), blockedBy: asked.blockedBy.map((d) => ({ ...d })) }
@@ -436,7 +449,9 @@ async function splitOnce(
     events = await store.read(ticketId)
     progress = splitProgressOf(events, options.waitId)
   } else if (!unchanged) {
-    const made = progress.identities.map((c) => `#${c.number} (${c.key})`).join(', ')
+    const made =
+      progress.identities.map((c) => `#${c.number} (${c.key})`).join(', ') ||
+      'no child it could confirm, though a create may have landed'
     return {
       ok: false,
       ticketId,
