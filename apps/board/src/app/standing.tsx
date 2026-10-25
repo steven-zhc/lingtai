@@ -422,11 +422,52 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
  * moved a ticket that has never run — and it says *never run* instead of
  * stamping the render clock on a ticket that has sat open for a week.
  */
+/**
+ * What a merge-conflict wait recorded about the conflict (#590): the paths, and
+ * either GitHub's compare view or the two shas. Nothing at all for a wait that
+ * recorded none of them, so an older one reads as it always did.
+ */
+function ConflictEvidence({
+  conflict,
+  compareUrl,
+}: {
+  conflict: { paths: readonly string[] | null; baseSha: string | null; headSha: string | null }
+  compareUrl: string | null
+}) {
+  const { paths, baseSha, headSha } = conflict
+  const shas = compareUrl === null && (baseSha !== null || headSha !== null)
+  if (!paths?.length && compareUrl === null && !shas) return null
+  return (
+    <div className="sconflict">
+      {paths?.length ? (
+        <ul className="sconflict-paths">
+          {paths.map((path) => (
+            <li key={path}>
+              <code>{path}</code>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {compareUrl !== null ? (
+        <a className="sconflict-compare" href={compareUrl} target="_blank" rel="noreferrer">
+          compare on GitHub ↗
+        </a>
+      ) : null}
+      {shas ? (
+        <p className="sconflict-shas">
+          base <code>{baseSha ?? 'unknown'}</code>, branch <code>{headSha ?? 'unknown'}</code>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export function Standing({
   standing,
   subject,
   body = null,
   want = null,
+  compareUrl = null,
   project,
   issue,
   taskId,
@@ -463,6 +504,12 @@ export function Standing({
   subject: { ref: string; title: string | null; url: string | null; askedGitHub: boolean } | null
   body?: string | null
   want?: string | null
+  /**
+   * GitHub's compare view of the base against the branch, for a merge-conflict
+   * wait (#590). Null where there is none to give: tickets not on GitHub, no
+   * owner, or a branch that was never pushed — the shas are drawn instead.
+   */
+  compareUrl?: string | null
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
   project: string | null
   issue: number | null
@@ -640,6 +687,10 @@ export function Standing({
         ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
         : []
   const waiting = standing.state === 'blocked'
+  const conflict =
+    standing.reason?._tag === 'ProposedEscalated' && standing.reason.proposal._tag === 'MergeConflict'
+      ? standing.reason.proposal
+      : null
   const subjectRef =
     subject === null ? null : subject.url !== null ? (
       <a className="sref" href={subject.url} target="_blank" rel="noreferrer">
@@ -847,6 +898,8 @@ export function Standing({
                 {/* What happened, in the diagnosis' own sentence. Absent until #83
               writes one, which is every block written before it. */}
                 {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
+
+                {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
                 {standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason

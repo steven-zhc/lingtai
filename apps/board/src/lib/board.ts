@@ -1470,3 +1470,22 @@ export function issueUrl(
   if (owner === null || tickets !== 'github') return null
   return `https://github.com/${owner}/${project}/issues/${encodeURIComponent(ref)}`
 }
+
+/**
+ * GitHub's compare view of `base` against `branch`, for a merge-conflict wait's
+ * page (#590). The same rule as `issueUrl`, for the same reason: no owner, or
+ * tickets that are not known to be on GitHub, get no link. A `base` of `null`
+ * gets none either — there is nothing to compare against. Each `/`-separated
+ * segment is encoded and the slashes kept, because `agent%2F590` is not a branch.
+ */
+export function compareUrl(
+  owner: string | null,
+  project: string,
+  base: string | null,
+  branch: string,
+  tickets: TicketSource | null,
+): string | null {
+  if (owner === null || tickets !== 'github' || base === null) return null
+  const ref = (r: string) => r.split('/').map(encodeURIComponent).join('/')
+  return `https://github.com/${owner}/${project}/compare/${ref(base)}...${ref(branch)}`
+}

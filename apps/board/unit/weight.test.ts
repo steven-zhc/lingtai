@@ -17,7 +17,7 @@ import type { TaskCard } from '@lingtai/projector/task-view'
  */
 import { describe, expect, it } from 'vitest'
 
-import { LANDED_OPEN, issueUrl, ledger, toCard, toColumns } from '../src/lib/board.ts'
+import { LANDED_OPEN, compareUrl, issueUrl, ledger, toCard, toColumns } from '../src/lib/board.ts'
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
@@ -213,5 +213,26 @@ describe("where a card's reference points", () => {
    */
   it('declines to invent one for a project whose ticket source is unknown', () => {
     expect(issueUrl('lingtai-dev', 'lingtai', '112', null)).toBeNull()
+  })
+})
+
+describe("where a merge-conflict wait's compare view points", () => {
+  it('compares the base against the branch on GitHub, keeping the branch slash', () => {
+    expect(compareUrl('lingtai-dev', 'lingtai', 'main', 'agent/590', 'github')).toBe(
+      'https://github.com/lingtai-dev/lingtai/compare/main...agent/590',
+    )
+  })
+
+  it('encodes each segment but not the slash between them', () => {
+    expect(compareUrl('o', 'p', 'release/1 0', 'agent/590', 'github')).toBe(
+      'https://github.com/o/p/compare/release/1%200...agent/590',
+    )
+  })
+
+  it('gives no link without an owner, a base, or tickets known to be on GitHub', () => {
+    expect(compareUrl(null, 'lingtai', 'main', 'agent/590', 'github')).toBeNull()
+    expect(compareUrl('o', 'lingtai', null, 'agent/590', 'github')).toBeNull()
+    expect(compareUrl('o', 'lingtai', 'main', 'agent/590', 'db')).toBeNull()
+    expect(compareUrl('o', 'lingtai', 'main', 'agent/590', null)).toBeNull()
   })
 })
