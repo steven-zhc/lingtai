@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { elapsed } from '@/lib/progress'
-import { describeAction, readRecipeWithReadiness, type FromHead } from '@/lib/recipe'
+import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { billText, spendChip } from '@/lib/spend'
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
 
@@ -346,7 +346,7 @@ export function Attempt({
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.
  */
-export async function RecipeGiven({ run }: { run: RunView }) {
+export function RecipeGiven({ run }: { run: RunView }) {
   const recipe = run.recipe
   if (recipe === undefined) return null
   if (recipe.of === 'none') {
@@ -374,7 +374,7 @@ export async function RecipeGiven({ run }: { run: RunView }) {
           *what was this attempt run under* is the question the page is being
           asked and a disclosure would be an answer nobody found. */}
       <dl className="rread">
-        {(await readRecipeWithReadiness(recipe.recipe)).map((row) => (
+        {readRecipe(recipe.recipe).map((row) => (
           <div key={row.name}>
             <dt>{row.name}</dt>
             <dd>{row.says}</dd>
