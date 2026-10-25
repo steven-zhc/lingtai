@@ -1937,8 +1937,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * branch is a worse lie than the absence.
        */
       const publishWhatIsCommitted = async (): Promise<string | null> => {
+        // Where this run's tree was really cut (#607) — `tree.baseSha` alone is
+        // the approved head on a continuation, so a lane refusal with no new
+        // commit read as "nothing committed" over a head already published.
+        // See `baseShaOr`.
         if (worktree === null) return null
         const tree = worktree
+        const cutBase = continuation?.diffBaseSha ?? tree.baseSha
         // Hoisted out of the `try`, so the `catch` below can still name the
         // head a defect struck after (`#421`) — `head` itself is a `const`
         // the `try`'s own scope would otherwise keep from it.
@@ -1985,8 +1990,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * commit of its own, the WIP is the whole of what this claim has, and
            * `agent/<n>` is left alone entirely rather than asked to carry it.
            */
-          const branchHead: string | null = wip === null ? head : wip.parent === tree.baseSha ? null : wip.parent
-          if (head === tree.baseSha) {
+          const branchHead: string | null = wip === null ? head : wip.parent === cutBase ? null : wip.parent
+          if (head === cutBase) {
             runLog.note('push', `nothing to push — ${branch} is still at the base`)
             await noteRefs('nothing-committed', null, withWipFailure(null))
             return null
@@ -2148,7 +2153,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // — `headRead === armPublished` is the `armPublished` guard: a
           // defect thrown *after* a successful push (inside `recordDiff`, say)
           // must not write a `Mirror` ref for work that is already up.
-          if (headRead !== null && headRead !== tree.baseSha && headRead !== armPublished) {
+          if (headRead !== null && headRead !== cutBase && headRead !== armPublished) {
             await keepHead(headRead)
           }
           runLog.note('push', `the publish itself failed — ${why}`)
