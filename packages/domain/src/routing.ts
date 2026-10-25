@@ -20,7 +20,7 @@
  */
 import { z } from 'zod'
 
-import { FixRound, type PassNext, Restart, type Spent } from './pass-next.ts'
+import { FixRound, MergeBase, type PassNext, Restart, type Spent } from './pass-next.ts'
 import { Proposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { STEPS, type Step } from './vocabulary.ts'
@@ -35,12 +35,21 @@ import { RunRef } from './wait.ts'
  */
 export type RoutingPolicy = { rounds: number; restarts: number }
 
+/**
+ * **At most this many base merges per pass, then a person** (#593). A constant
+ * and not a recipe knob: the number is the ticket's, and a knob is a value
+ * somebody can set to a loop. The merges cost no agent, so it bounds nothing
+ * `rounds` or `restarts` do — it bounds a base that keeps moving.
+ */
+export const BASE_MERGES_LIMIT = 2
+
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */
 const HandToPerson = z.object({ _tag: z.literal('HandToPerson') })
 
 /** A candidate's own next, before a person or a judge chose one — `pass-next.ts`'s `FixRound` whole, or its `Restart` wrapped in the `Requeued` a judge's pick becomes. */
 const CandidateNext = z.discriminatedUnion('_tag', [
   FixRound,
+  MergeBase,
   z.object({ _tag: z.literal('Requeued'), cause: Restart }),
   HandToPerson,
 ])
@@ -109,9 +118,11 @@ function bornAtOrAfterImplement(step: Step): boolean {
  * `'hand-to-person'` is always available, so the set returned here is never
  * empty — the same floor `onOffer` keeps today (`pass.ts:974-976`).
  *
- * **No candidate ever sends `merge` back to `build`**: `FixRound.to` admits
+ * **No fix candidate ever sends `merge` back to `build`**: `FixRound.to` admits
  * only `'design' | 'implement'`, so a `merge`-born proposal's `fix-lines`
  * lands at `'implement'` by the type it is built from, not by a check here.
+ * `merge-base` is the one candidate that does, and it is a `MergeBase` and not a
+ * `FixRound` for that reason: it spends no round (#593).
  */
 export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
   const available: Candidate[] = []
@@ -159,6 +170,21 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     case 'MergeConflict':
       round('fix-lines', 'implement', true)
       break
+    case 'BaseMoved': {
+      // Free, so neither a criterion nor `rounds` applies: only the base
+      // having moved on again and again, and a `toSha` to merge.
+      if (proposal.toSha === null) {
+        unavailable.push({ id: 'merge-base', because: { _tag: 'NoCriterion' } })
+      } else if ((spent.baseMerges ?? 0) >= BASE_MERGES_LIMIT) {
+        unavailable.push({ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } })
+      } else {
+        available.push({
+          id: 'merge-base',
+          next: { _tag: 'MergeBase', toSha: proposal.toSha, merge: (spent.baseMerges ?? 0) + 1 },
+        })
+      }
+      break
+    }
     case 'ReviewFindings': {
       // `fix.ts:375`'s `actionable`: a finding without a failure scenario is an opinion.
       const hasCriterion = proposal.findings.some((f) => f.failureScenario.trim() !== '')
@@ -250,7 +276,7 @@ export function decideRoute(offer: RouteOffer, reply: JudgeReply): RouteDecision
  * is not a different decision, so it needs no ADR of its own.
  *
  * `HandToPerson` never escapes this function — every `PassNext` it returns
- * is `FixRound`, `Requeued` or `WaitOnPerson`, never `nextOf`'s own
+ * is `FixRound`, `MergeBase`, `Requeued` or `WaitOnPerson`, never `nextOf`'s own
  * `Advance`, `Propose` or `Landed` — and an unjudged `InputNeeded` (a
  * `NotAsked` reply, never an unreadable or unknown one) is the only case that
  * reaches `AgentQuestion` rather than `ProposedEscalated`.

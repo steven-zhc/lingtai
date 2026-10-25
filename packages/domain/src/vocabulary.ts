@@ -62,6 +62,10 @@ export const RefusalReason = z.enum([
   // A commit a stopped run's own conductor made, found on the branch the lane
   // is about to merge — never a judgement about the branch itself (#468).
   'wip-commit',
+  // The base moved on files the branch also changed since it was reviewed, and
+  // the trial merge was clean: the lane does not land, the pass merges the base
+  // in itself and builds and reviews again (#593). Nothing is wrong with the branch.
+  'base-moved',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 

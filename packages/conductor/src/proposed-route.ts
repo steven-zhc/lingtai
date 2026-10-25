@@ -64,6 +64,8 @@ export function whenOf(proposal: Proposal): JudgeWhen {
       return 'fixer-disagrees'
     case 'MergeRefused':
       return 'merge-refused'
+    case 'BaseMoved':
+      return 'base-moved'
     case 'BudgetExhausted':
       return 'budget-exhausted'
   }
@@ -72,20 +74,25 @@ export function whenOf(proposal: Proposal): JudgeWhen {
 /** The mechanical answer each built-in wants, before the ceilings are consulted — `MECHANICALLY.wants`'s old table, as a total record over `BuiltInJudge`. */
 const MECHANICAL_WANTS: Record<BuiltInJudge, Destination> = {
   'same-worktree': 'implement',
+  // The merged code is built and reviewed again, and no round is spent (#593).
+  'merge-the-base': 'build',
 }
 
 /**
  * **A candidate's own destination** — `FixRound{to}` → `to`, `Requeued` →
  * `claim`, `HandToPerson` → `waiting` — or, for one the offer excluded and so
  * carries no `next`, the same mapping read off its `id`: `fix-lines` →
- * `implement`, `state-assumption` → `proposal.from`, `restart` → `claim`,
- * `hand-to-person` → `waiting` (though `hand-to-person` is never excluded).
+ * `implement`, `merge-base` → `build`, `state-assumption` → `proposal.from`,
+ * `restart` → `claim`, `hand-to-person` → `waiting` (though `hand-to-person` is
+ * never excluded).
  */
 export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal: Proposal): Destination {
   if ('next' in candidate) {
     switch (candidate.next._tag) {
       case 'FixRound':
         return candidate.next.to
+      case 'MergeBase':
+        return 'build'
       case 'Requeued':
         return 'claim'
       case 'HandToPerson':
@@ -95,6 +102,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
   switch (candidate.id) {
     case 'fix-lines':
       return 'implement'
+    case 'merge-base':
+      return 'build'
     case 'restart':
       return 'claim'
     case 'hand-to-person':

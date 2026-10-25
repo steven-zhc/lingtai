@@ -24,7 +24,10 @@ export const CandidateId = z.string()
 export type CandidateId = z.infer<typeof CandidateId>
 
 /** A paid candidate the recipe's rounds or restarts ran out of room for (`pass.ts:973-974`). */
-export const CeilingReached = z.object({ _tag: z.literal('CeilingReached'), ceiling: z.enum(['rounds', 'restarts']) })
+export const CeilingReached = z.object({
+  _tag: z.literal('CeilingReached'),
+  ceiling: z.enum(['rounds', 'restarts', 'base-merges']),
+})
 export type CeilingReached = z.infer<typeof CeilingReached>
 
 /** Nothing to hold an agent to (0038 §2). */

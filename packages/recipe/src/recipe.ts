@@ -3473,6 +3473,16 @@ export const Recipe = z
           ctx.addIssue({ code: 'custom', path: ['steps', step], message })
         }
         if ('judge' in action && isBuiltInJudge(action.judge)) {
+          // `merge-the-base` answers one direction: at any other `toReply` finds
+          // no candidate for `build` and a person is reached, so the line would
+          // resolve and mean nothing (#593).
+          if (action.judge === 'merge-the-base' && action.when !== 'base-moved') {
+            refuse(
+              `steps.${step}'s "${action.name}" names the built-in judge \`merge-the-base\` for ` +
+                `\`when: ${action.when}\` — but it merges the base into the branch, which only ` +
+                'answers a `base-moved`. At any other direction it would silently mean nothing',
+            )
+          }
           for (const field of ['model', 'limits'] as const) {
             if (action[field] === undefined) continue
             refuse(

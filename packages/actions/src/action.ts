@@ -303,6 +303,11 @@ export interface ActionResult {
    */
   conflict?: { paths: string[]; baseSha: string; headSha: string }
   /**
+   * **What a `base-moved` refusal carries** (#593), threaded the way `conflict` is:
+   * absent on every result but the lane's own `base-moved` refusal.
+   */
+  baseMoved?: { paths: string[]; fromSha: string; toSha: string }
+  /**
    * **What this dispatch billed, on every branch a runtime returned a
    * `RunOutcome` for** (#494, 0110 §2). Absent means no process ran — the
    * empty-diff review and a `run`/`watch`/`human`/`worktree`/`merge`/`queue`
@@ -649,6 +654,8 @@ export interface PipelineResult {
     committedNothing?: true
     /** The three fields a real conflict carries, where the lane refused with one. `ActionResult.conflict`. */
     conflict?: { paths: string[]; baseSha: string; headSha: string }
+    /** The files and shas of a base that moved on the branch's own, where the lane refused with that. `ActionResult.baseMoved`. */
+    baseMoved?: { paths: string[]; fromSha: string; toSha: string }
     /** The merge lane's own commit, where it landed one. `ActionResult.merged`. */
     merged?: string
     /** Set only on `verdict: 'waived'` — the wait an approval waived this action in (#465, 0120 §6). */
@@ -851,6 +858,8 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // Spread for `head`'s reason a ninth time: the three fields a real
       // conflict carries, where the lane refused with one (`#466`).
       ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
+      // And a tenth time, for a base that moved on the branch's own files (#593).
+      ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
     })
 
     // And the same pair onto the context the *next* action is handed, so a

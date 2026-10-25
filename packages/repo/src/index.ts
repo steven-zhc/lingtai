@@ -33,4 +33,11 @@ export {
   type ConflictedPath,
   type MirrorOptions,
 } from './mirror.ts'
-export { integrate, integrateEffect, type IntegrateOptions, type IntegrateResult } from './integrate.ts'
+export {
+  baseMovedOn,
+  integrate,
+  integrateEffect,
+  type BaseMoved,
+  type IntegrateOptions,
+  type IntegrateResult,
+} from './integrate.ts'

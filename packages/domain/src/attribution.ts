@@ -149,6 +149,12 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    * Lingtai's own commit; nothing about the branch's code is in question.
    */
   'wip-commit': 'lingtai',
+  /**
+   * The base moved on files the branch also changed, so the pass merges it in
+   * and reviews again (#593). Nothing about the branch is wrong, and the merge is
+   * the system's own — Lingtai's, for the reason `push-rejected` is.
+   */
+  'base-moved': 'lingtai',
 }
 
 /**
@@ -304,6 +310,14 @@ const REFUSAL_READING: Record<
     // No move is named: a person decides whether to drop the commit or take
     // what is worth keeping from it, and either is a diff Lingtai cannot write.
     move: null,
+  },
+  'base-moved': {
+    says: ({ branch, base }) =>
+      `${base} moved on files ${branch} also changed since it was reviewed, so it was not merged into ${base} unreviewed.`,
+    move: {
+      action: 'requeue',
+      why: 'the base has moved rather than the branch being wrong — a fresh attempt starts from where it is now and is reviewed there',
+    },
   },
 }
 
