@@ -8,7 +8,7 @@
  * same `createSqliteProjectionStore(openSqliteProjections(':memory:'))` path.
  */
 import type { Envelope } from '@lingtai/domain'
-import { aClaim, aRelease, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aResolution, aSplit, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
 import type { ProjectionStore } from '../src/store.ts'
 import type { TaskCard } from '../src/task-view.ts'
-import { taskViewProjection, waitOf } from '../src/task-view.ts'
+import { splitLine, taskViewProjection, waitOf } from '../src/task-view.ts'
 
 const SHA = 'a'.repeat(40)
 
@@ -286,5 +286,40 @@ describe('waitOf', () => {
     expect(() => waitOf('ticket-wait-440-garbled', 'waiting', 'wait-1', { _tag: 'NoSuchReason' })).toThrow(
       /ticket-wait-440-garbled/,
     )
+  })
+})
+
+describe('a TicketSplit puts the children on the parent, in a column of their own', () => {
+  it('survives the resolution, a claim and a release, and leaves `note` alone', async () => {
+    const stream = makeStream('ticket-split-600')
+    const waitId = aWaitId()
+    const events = [
+      ...aWait(stream, { _tag: 'OwnQuestion', question: 'split it?', by: 'steven' }, waitId),
+      ...aSplit(stream, waitId, [161, 162]),
+      ...aResolution(stream, waitId, { _tag: 'Requeue' }),
+    ]
+    await withFold(events, async (store) => {
+      const card = await cardOf(store)
+      expect(card.split).toEqual([
+        { key: 'child-1', number: 161 },
+        { key: 'child-2', number: 162 },
+      ])
+      expect(splitLine(card.split!)).toBe('split into #161, #162')
+      expect(card.note).toBeNull()
+    })
+    await withFold(
+      [...events, ...aClaim(stream, 'pass-600'), ...aRelease(stream, 'pass-600', 'gave up')],
+      async (store) => {
+        const card = await cardOf(store)
+        expect(card.split?.map((c) => c.number)).toEqual([161, 162])
+        expect(card.note).toBe('gave up')
+      },
+    )
+  })
+
+  it('is null on a ticket that was never split', async () => {
+    await withFold(aClaim(makeStream('ticket-split-600-none'), 'pass-600-none'), async (store) => {
+      expect((await cardOf(store)).split).toBeNull()
+    })
   })
 })

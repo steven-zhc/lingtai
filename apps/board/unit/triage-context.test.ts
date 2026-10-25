@@ -45,6 +45,7 @@ function waiting(triage: TaskCard['triage']): TaskCard {
     awaitingApproval: false,
     wait: { waitId, reason },
     answer: null,
+    split: null,
     triage,
     triageHeadSha: null,
     repairPending: false,

@@ -151,6 +151,13 @@ export const taskViewProjection: Projection = {
         -- claim and a landing, because a decision outlives the attempt at it.
         answer       jsonb,
 
+        -- [{ key, number }] — the children a split wrote, from TicketSplit,
+        -- and nothing of the plan (that stays WaitResolved{Split}'s). Its own
+        -- column and not note, which the next release or resolution
+        -- overwrites. Assignment, so a replay lands on the same value; a
+        -- second TicketSplit replaces it and no other event clears it.
+        split        jsonb,
+
         -- A repair bought and not yet claimed, and which run was one. Written
         -- only by the retired RepairRequested (#143), so nothing sets either on
         -- a new ticket — and both stay, because a log that holds the event is
@@ -283,6 +290,14 @@ export const taskViewProjection: Projection = {
             // counting here is what keeps this column and `work-item.restarts`
             // — folded off the same event — from disagreeing.
             ...(d.cause?._tag === 'Restart' ? { restarts: d.cause.restart } : {}),
+          })
+          break
+        }
+
+        case 'TicketSplit': {
+          const d = event.data as PayloadOf<'TicketSplit'>
+          await set(ctx, event.streamId, seq, at, {
+            split: JSON.stringify(d.children.map((c) => ({ key: c.key, number: c.number }))),
           })
           break
         }
@@ -935,6 +950,8 @@ export interface TaskCard {
    * holds without a block before it.
    */
   answer: { question: string | null; answer: string; by: string } | null
+  /** The children a split wrote, or null for a ticket that was never split. */
+  split: { key: string; number: number }[] | null
   /**
    * The sha the open question is about, and null when there is none.
    *
@@ -991,6 +1008,11 @@ export function waitOf(taskId: string, state: TaskState, waitId: unknown, reason
   } catch (err) {
     throw new Error(`task ${taskId} has a wait that does not parse: ${String(err)}`)
   }
+}
+
+/** The parent's line about its split, in one place so the board and a CLI say it alike. */
+export function splitLine(split: readonly { number: number }[]): string {
+  return `split into ${split.map((c) => `#${c.number}`).join(', ')}`
 }
 
 /**

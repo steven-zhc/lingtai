@@ -124,6 +124,7 @@ function toCard(row: pg.QueryResultRow): TaskCard {
           },
     triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
     answer: (row.answer as TaskCard['answer']) ?? null,
+    split: (columnOf(row, 'task_view', 'split') as TaskCard['split']) ?? null,
     awaitingSha: row.awaiting_sha,
     awaitingApproval: row.awaiting_sha !== null,
     repairPending: row.repair_pending === true,

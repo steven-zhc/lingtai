@@ -321,6 +321,7 @@ function toCard(row: ProjectionRow): TaskCard {
           },
     triageHeadSha: wait === null ? null : (columnOf(row, 'task_view', 'triage_head_sha') as string | null),
     answer: (parseJson(row.answer) as TaskCard['answer']) ?? null,
+    split: (parseJson(columnOf(row, 'task_view', 'split')) as TaskCard['split']) ?? null,
     awaitingSha,
     awaitingApproval: awaitingSha !== null,
     repairPending: parseBool(row.repair_pending),

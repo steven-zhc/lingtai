@@ -361,6 +361,7 @@ export function Card({
       {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} held={card.held} /> : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
+      {card.split ? <p className="question">{card.split}</p> : null}
 
       {/* And on a queued card, where it is the only move there is. The state
           this was written for is the item nothing is asking about: five sat in
