@@ -23,8 +23,8 @@ Where this page says "any recent", the code does not check a version.
 | What | Needed when | Minimum version | Why | `lingtai doctor` check | Where |
 | --- | --- | --- | --- | --- | --- |
 | `git` | Always | Any recent; 2.38 for conflict triage | Worktrees, branches, the clone Lingtai keeps of each repository, the merge lane | None. `lingtai init` runs `git --version` and stops if it fails | `packages/repo/src/git.ts:44`, `apps/cli/src/init.ts:1007`; the 2.38 check is `packages/repo/src/mirror.ts:158` |
-| `claude` | The runtime is `claude-code` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/claude-code.ts:402`, `:431` |
-| `codex` | The runtime is `codex` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/codex.ts:1107`, `:1181` |
+| `claude` | Any role in the recipe runs `claude-code`. `discuss.agent` defaults to it, so leaving `discuss:` out needs it even when `runtime.agent` is `codex` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/claude-code.ts:402`, `:431` |
+| `codex` | Any role in the recipe runs `codex`: `runtime.agent`, `discuss.agent`, `triage`, a step's `agent:` or a `judge:` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/codex.ts:1107`, `:1181` |
 | Node.js | A source checkout only. An installed copy carries the Node it was built with | 26 or later | Runs the CLI, the conductor and the board from source | `node: at or above the floor` | `package.json:8`, `.node-version`, `apps/cli/src/doctor.ts:2489` |
 | `bun` | A source checkout only, to build the hook binary a run refuses to start without (`pnpm --filter @lingtai/hook build`) | Any recent | Compiles `packages/hook/bin/lingtai-hook`, which is not committed | None | `apps/cli/src/run.ts:354`, `packages/hook/package.json:10` |
 | `pnpm` | A source checkout only | The version `packageManager` pins, `11.9.0`; nothing checks it | Installs and runs the workspace | None | `package.json:7` |
@@ -57,8 +57,8 @@ it.
 
 | What | Needed when | Why | `lingtai doctor` check |
 | --- | --- | --- | --- |
-| Claude Code | The runtime is `claude-code` | The agent runs as you. Lingtai probes `claude auth status` before it starts one | `runtime: signed in` and `runtime: <project> signed in` |
-| Codex | The runtime is `codex` | Same, with `codex login status` | `runtime: signed in` and `runtime: <project> signed in` |
+| Claude Code | Any role runs `claude-code`, including the `discuss` default | The agent runs as you. Lingtai probes `claude auth status` before it starts one | `runtime: signed in` and `runtime: <project> signed in` |
+| Codex | Any role runs `codex` | Same, with `codex login status` | `runtime: signed in` and `runtime: <project> signed in` |
 | A GitHub App you create and install on the repository | The project is a GitHub one. A `--local` project needs none | Lingtai acts on GitHub as the App, not as you | None. `lingtai add` checks the App's permissions before it records a repository |
 | GitHub access for `git` | You run `git` against the repository yourself, and for a remote that is not served by the App | A run's own push and fetch use an installation token of the App (`packages/repo/src/git.ts:47`), so they need no personal key; your own clone and any push you make use your SSH key or credentials, which Lingtai does not store | None |
 | A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Put the `codex_text` block from `config.example.yml` in `~/.lingtai/config.yml` (the example file itself is never read), or export it as `LINGTAI_CODEX_TEXT_*` variables (`packages/env/src/index.ts:187`) | `discuss: <project> codex ready` and `triage: <project> codex ready` |
@@ -79,7 +79,9 @@ that differs from `codex_text.model`.
   still needs `git` and one agent runtime.
 - **SQLite or Postgres.** SQLite needs nothing. Postgres needs a database you
   run and a direct connection string.
-- **`claude-code` or `codex`.** Only the one you choose has to be installed and
-  signed in.
+- **`claude-code` or `codex`.** Every runtime any role uses has to be installed
+  and signed in. `runtime.agent` is only one role: `discuss.agent` defaults to
+  `claude-code`, and triage, steps and judges can each name a runtime. Set them
+  all to one runtime if you want to install only one.
 - **Installed copy or source checkout.** An installed copy needs no Node and no
   `pnpm`. A checkout needs both, and `bun` to build the hook.
