@@ -107,7 +107,31 @@ export type IntegrateResult =
       detail: string
       /** Set only for `reason: 'conflict'` — the three fields `refuse` was already handed for the log (`#466`). */
       conflict?: { paths: string[]; baseSha: string; headSha: string }
+      /** Set only for `reason: 'base-moved'` (#593): the files both sides changed, and the shas either end of the base's move. */
+      baseMoved?: BaseMoved
     }
+
+/** What a `base-moved` refusal carries: `fromSha` is where the branch forked, `toSha` the base the clean trial merge was proved against. */
+export interface BaseMoved {
+  paths: string[]
+  fromSha: string
+  toSha: string
+}
+
+/**
+ * The files both the branch and the base changed since they forked — sorted,
+ * and empty where the base did not move or moved elsewhere (#593).
+ *
+ * This is the whole rule for when a base that moved on a clean trial merge is
+ * worth another build and review: a base that touched none of the branch's
+ * files cannot clash with its logic in a way review would see, and lands after
+ * `verify` as it always did. Pure, because the git half cannot be checked
+ * inside a pass (0060 §1) and this half can.
+ */
+export function baseMovedOn(ours: readonly string[], theirs: readonly string[]): string[] {
+  const base = new Set(theirs)
+  return [...new Set(ours)].filter((path) => base.has(path)).sort()
+}
 
 /**
  * A push this lane lost and is about to answer itself.
@@ -242,6 +266,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     reason: RefusalReason,
     detail: string,
     conflict?: { paths: string[]; baseSha: string; headSha: string },
+    baseMoved?: BaseMoved,
   ): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
       await append('IntegrationRefused', {
@@ -251,7 +276,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         detail: detail.slice(0, 2_000),
         ...conflict,
       })
-      return { ok: false, reason, detail, ...(conflict === undefined ? {} : { conflict }) } as IntegrateResult
+      return {
+        ok: false,
+        reason,
+        detail,
+        ...(conflict === undefined ? {} : { conflict }),
+        ...(baseMoved === undefined ? {} : { baseMoved }),
+      } as IntegrateResult
     })
 
   const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>
@@ -502,6 +533,32 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
           { paths, baseSha: localBase, headSha },
         )
+      }
+
+      // **A base that moved on the branch's own files is not landed on `verify`
+      // alone** (#593). A conflict has already won, above, by position. What is
+      // left is a textual clean merge, which says nothing about whether the
+      // base's new logic still agrees with what the branch assumed — so the lane
+      // refuses and the pass merges the base in itself and builds and reviews
+      // again. `fork` is the base the last review saw, by construction: after the
+      // pass's own merge it is that merge, so the next check compares only what
+      // landed after it, and no sha is stored anywhere. `-z` for the reason the
+      // conflict branch gives above.
+      const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
+      if (fork !== localBase) {
+        const names = (range: string) =>
+          at(['diff', '--name-only', '-z', range], mirror).pipe(
+            Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),
+          )
+        const paths = baseMovedOn(yield* names(`${fork}..${laneBranch}`), yield* names(`${fork}..${laneBase}`))
+        if (paths.length > 0) {
+          return yield* refuse(
+            'base-moved',
+            `${options.base} moved on files ${options.branch} also changed since they forked:\n${paths.join('\n')}`,
+            undefined,
+            { paths, fromSha: fork, toSha: localBase },
+          )
+        }
       }
 
       if (options.verify) {

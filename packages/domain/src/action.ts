@@ -58,8 +58,17 @@ export const Integration = z.discriminatedUnion('_tag', [
     headSha: z.string().nullable(),
   }),
   z.object({
+    _tag: z.literal('BaseMoved'),
+    /** `null` where the action's own result carries none — the same reason `Conflicted`'s are (#466). */
+    paths: z.array(z.string()).nullable(),
+    /** The merge-base the branch was last reviewed against. */
+    fromSha: z.string().nullable(),
+    /** The base the clean trial merge was proved against: what the system merges in. */
+    toSha: z.string().nullable(),
+  }),
+  z.object({
     _tag: z.literal('IntegrationRefused'),
-    reason: RefusalReason.exclude(['conflict']),
+    reason: RefusalReason.exclude(['conflict', 'base-moved']),
   }),
 ])
 export type Integration = z.infer<typeof Integration>

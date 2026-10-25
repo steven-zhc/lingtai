@@ -1091,7 +1091,7 @@ written as a stand-in.
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **A legal list is checks, then the lane** — `merge: [{name: smoke, run: pnpm smoke}, {name: land it, merge: {strategy: merge-commit}}]`, and the lane alone is legal too. Both ways of getting it wrong are refused when the recipe resolves (0065 §8): anything written *after* a lane would run on a change already on the base, and a step written with checks and **no** lane would pass having landed nothing — releasing the ticket and buying a second agent for the same diff. `merge: []` is neither of those, so it resolves — and **it still merges**: the conductor sees an empty list and an omitted key as the same thing, so the default lane runs (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-pass.test.ts`'s *lands onto main with `merge: []`*). 0065 §6's *`[]` runs nothing* is decided and not built, so an empty `merge:` is **not** the way to stop landing unattended — that is a `human:` at `proposed:` | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue pass**'s field, and that pass runs before a pass exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
-| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for ten of the twelve directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **The other ten cost a run each time they arrive**, and only where you declare a runtime for them — `#471`'s seven included, since `#472` wires `nextOf` to propose all of them: declare nothing and they reach a person, free, as they always did; declare one and it is asked every time the direction arrives. See §`judge:` below |
+| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for ten of the thirteen directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in and `base-moved` by `merge-the-base` (#593), which spend nothing. **The other ten cost a run each time they arrive**, and only where you declare a runtime for them — `#471`'s seven included, since `#472` wires `nextOf` to propose all of them: declare nothing and they reach a person, free, as they always did; declare one and it is asked every time the direction arrives. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
 **`agent:` is the one key that changed meaning rather than arriving** (`#245`,
@@ -1334,7 +1334,8 @@ paid for both; a person is the floor under either, because
 `BUILT_IN_FOR["needs-input"]` is null.
 
 So `when:` is required and has no default — no entry can answer for all
-twelve — and `red` and `verify-failed` are answered by `same-worktree`, a
+thirteen — and `red` and `verify-failed` are answered by `same-worktree`, and
+`base-moved` by `merge-the-base`, each a
 **built-in** which is a synchronous function in
 `packages/conductor/src/judge.ts`. Being synchronous is the declaration that
 it spends nothing: nothing that dispatches an agent can answer without
@@ -1342,7 +1343,7 @@ awaiting. `#471`'s seven are among the ten with no built-in, declared nothing
 reaches a person just as `conflict`, `needs-input` and `findings` already do
 — see `doc/design/471.md` for what each is and what routes it.
 
-**The legal names are `same-worktree` and the runtimes — `claude-code`,
+**The legal names are `same-worktree`, `merge-the-base` and the runtimes — `claude-code`,
 `codex`** (`#277`). The rule has never changed, and it is the list that moves
 under it: *a recipe cannot name a judge no code answers*. `BUILT_IN` is a total
 record over the built-ins, so every one of those is answered; a runtime is

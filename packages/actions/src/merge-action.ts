@@ -74,6 +74,8 @@ export type LandAnswer =
         readonly detail: string
         /** Set only for `reason: 'conflict'` — threaded from `IntegrateResult.conflict` (`#466`). */
         readonly conflict?: { readonly paths: string[]; readonly baseSha: string; readonly headSha: string }
+        /** Set only for `reason: 'base-moved'` — threaded from `IntegrateResult.baseMoved` (#593). */
+        readonly baseMoved?: { readonly paths: string[]; readonly fromSha: string; readonly toSha: string }
       }
     }
 
@@ -131,6 +133,8 @@ export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps):
         // The three fields a real conflict carries, threaded the way
         // `interrupted` is (`#466`) — absent on every refusal but a conflict.
         ...(answer.notMerged.conflict === undefined ? {} : { conflict: answer.notMerged.conflict }),
+        // The same for a base that moved on the branch's files (#593).
+        ...(answer.notMerged.baseMoved === undefined ? {} : { baseMoved: answer.notMerged.baseMoved }),
       }
     },
   }

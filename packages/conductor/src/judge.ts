@@ -440,12 +440,21 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
    * preference of the built-in's.
    */
   'same-worktree': (brief) => (brief.offer.includes('implement') ? 'implement' : 'human'),
+  /**
+   * **The base merged into the branch by the system** (#593): `build`, and then
+   * `review`, on the merged code. This vocabulary has no `build` (`Destination`
+   * here is `implement | claim | human`), so the live answer is
+   * `MECHANICAL_WANTS` in `proposed-route.ts` and this cell is the floor: a
+   * person, which is what a caller who reaches it here has no better word for.
+   * Free either way — no agent runs, and no round is spent.
+   */
+  'merge-the-base': () => 'human',
 }
 
 /**
  * Which directions a built-in answers, and which cost money.
  *
- * A **total** record over the twelve, so a thirteenth direction does not
+ * A **total** record over the thirteen, so a fourteenth direction does not
  * compile until somebody has said which kind it is — `RUN_OWNER`'s argument in
  * `attribution.ts`, and `#197`'s receipt for what a default costs.
  *
@@ -484,6 +493,9 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   'fixer-disagrees': null,
   'merge-refused': null,
   'budget-exhausted': null,
+  // Free and mechanical: the base moved on the branch's own files, so merge it in
+  // and build and review again (#593). Bounded by `BASE_MERGES_LIMIT`, not by a judge.
+  'base-moved': 'merge-the-base',
 }
 
 /** Where the pass goes, and whether the judge had to be overruled to send it there. */

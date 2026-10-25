@@ -437,7 +437,22 @@ describe('nextOf: §4 Fell short as table', () => {
     expect(result).toEqual({ _tag: 'Landed', integrated: 'merge-sha-1' })
   })
 
-  const OTHER_SIX_REASONS = RefusalReason.exclude(['conflict', 'verify-failed']).options
+  it('merge, BaseMoved: Propose{BaseMoved}, carrying the files and both shas', () => {
+    const integration = { _tag: 'BaseMoved' as const, paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' }
+    const result = next(outcome('merge', [action('merge', { _tag: 'Completed', integration })]))
+    expect(result).toEqual({
+      _tag: 'Propose',
+      proposal: { _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' },
+    })
+  })
+
+  it('merge, Conflicted is a MergeConflict and never a BaseMoved', () => {
+    const integration = { _tag: 'Conflicted' as const, paths: ['a.ts'], baseSha: 'b', headSha: 'h' }
+    const result = next(outcome('merge', [action('merge', { _tag: 'Completed', integration })]))
+    expect(result).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'MergeConflict' } })
+  })
+
+  const OTHER_SIX_REASONS = RefusalReason.exclude(['conflict', 'verify-failed', 'base-moved']).options
   it.each(OTHER_SIX_REASONS)('merge, IntegrationRefused{%s}: Propose{MergeRefused}', (reason) => {
     const integration = { _tag: 'IntegrationRefused' as const, reason }
     const result = next(
@@ -682,6 +697,11 @@ describe('spentAfter', () => {
     expect(spentAfter(spent, next)).toEqual({ rounds: 5, restarts: 2 })
   })
 
+  it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {
+    const next = PassNext.parse({ _tag: 'MergeBase', toSha: 'base-1', merge: 2 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, baseMerges: 2 })
+  })
+
   it('Requeued{Restart}: sets restarts and resets rounds to 0', () => {
     const cause = RequeueCause.parse({ _tag: 'Restart', restart: 7 })
     const next = PassNext.parse({ _tag: 'Requeued', cause })
@@ -709,6 +729,10 @@ describe('spentAfter', () => {
 })
 
 describe('fromOf', () => {
+  it('BaseMoved: merge', () => {
+    expect(fromOf({ _tag: 'BaseMoved', paths: null, fromSha: null, toSha: null })).toBe('merge')
+  })
+
   it('BuildRed: build', () => {
     expect(fromOf({ _tag: 'BuildRed', output: 'red' })).toBe('build')
   })

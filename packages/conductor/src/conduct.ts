@@ -2688,8 +2688,44 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             reason: result.reason,
             detail: result.detail,
             ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
+            ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
           },
         }
+      }
+
+      /**
+       * **The base merged into the branch, by the system** (#593) — what a
+       * `MergeBase` route runs, and no agent is involved.
+       *
+       * `toSha`, not the base's tip: it is what the lane's trial merge just proved
+       * clean, so the merge here is clean by construction. If the base has moved
+       * again since, the next visit to `merge` sees that and counts it, which is
+       * what `BASE_MERGES_LIMIT` bounds. **Not pushed here**: `land` pushes `HEAD`
+       * against `lease` on the next visit to `merge`, and this commit is a
+       * fast-forward of the head it pushed last; any ending before that publishes
+       * from the finalizer. A third push site would be a third place `lease` has
+       * to be kept true.
+       *
+       * The subject starts with `Merge`, so it can never look like the
+       * `WIP_COMMIT_PREFIX` commit the lane refuses (`integrate.ts`).
+       */
+      const mergeBase = async (toSha: string): Promise<{ head: string } | { failed: string }> => {
+        const fetched = await gitAsked(['fetch', 'origin', `refs/heads/${base}`])
+        if (Either.isLeft(fetched)) return { failed: `fetching ${base} failed: ${fetched.left.detail}` }
+        const merged = await gitAsked([
+          'merge',
+          '--no-edit',
+          '-m',
+          `Merge ${base} at ${toSha.slice(0, 7)} into ${branch}`,
+          toSha,
+        ])
+        if (Either.isLeft(merged)) {
+          await gitAsked(['merge', '--abort'])
+          return { failed: merged.left.detail }
+        }
+        const head = await gitAsked(['rev-parse', 'HEAD'])
+        if (Either.isLeft(head)) return { failed: head.left.detail }
+        return { head: head.right.trim() }
       }
 
       /**
@@ -3790,6 +3826,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           bodies: passBodies,
           ceilings,
           judge,
+          mergeBase,
           // **Where this walk jumps to, once `admit` and `prepared` have
           // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
           // every ordinary pass, which starts at `admit` and walks the

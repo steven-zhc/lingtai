@@ -303,6 +303,12 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
     })
 
+    it('BaseMoved: Approve, Requeue, Close — and approving continues at merge', () => {
+      const reason = parseProposed({ _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' })
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
+      expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
+    })
+
     it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Split, Close', () => {
       const expected = ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
       expect(allowedResolutions(parseProposed({ _tag: 'NothingProduced', said: null }))).toEqual(expected)

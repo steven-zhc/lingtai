@@ -47,8 +47,8 @@ type ActionOutcomeEntry = PipelineResult['results'][number]
 /** A result narrowed to a single `yields`, for the builders below. */
 type ResultOf<Y extends DomainAction['yields']> = Extract<DomainAction, { yields: Y }>['result']
 
-/** Every `RefusalReason` but `conflict`, which `mergeResultOf` has already handled by the time this is asked. */
-type RefusalReasonNoConflict = Exclude<RefusalReason, 'conflict'>
+/** Every `RefusalReason` but `conflict` and `base-moved`, which `mergeResultOf` has already handled by the time this is asked. */
+type RefusalReasonNoConflict = Exclude<RefusalReason, 'conflict' | 'base-moved'>
 
 const REFUSAL_REASONS: readonly RefusalReasonNoConflict[] = [
   'dirty-base',
@@ -288,6 +288,19 @@ function mergeResultOf(outcome: ActionOutcomeEntry): ResultOf<'merge'> {
         paths: outcome.conflict?.paths ?? null,
         baseSha: outcome.conflict?.baseSha ?? null,
         headSha: outcome.conflict?.headSha ?? null,
+      },
+    }
+  }
+  if (outcome.because === 'base-moved') {
+    // The same for the files and shas of a base that moved on the branch's own
+    // (`ActionResult.baseMoved`, #593).
+    return {
+      _tag: 'Completed',
+      integration: {
+        _tag: 'BaseMoved',
+        paths: outcome.baseMoved?.paths ?? null,
+        fromSha: outcome.baseMoved?.fromSha ?? null,
+        toSha: outcome.baseMoved?.toSha ?? null,
       },
     }
   }

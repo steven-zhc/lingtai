@@ -68,12 +68,37 @@ const Requeued = z.object({ _tag: z.literal('Requeued'), cause: RequeueCause })
 const WaitOnPerson = z.object({ _tag: z.literal('WaitOnPerson'), reason: WaitReason })
 const Landed = z.object({ _tag: z.literal('Landed'), integrated: z.string() })
 
+/**
+ * The base merged into the branch by the system, and the walk resumed at `build`
+ * (#593). `merge` is the count this makes — the third mover of `onSha`, and the
+ * only next that spends neither a round nor a restart. Reused whole by
+ * `routing.ts`'s `CandidateNext`, the way `FixRound` is.
+ */
+export const MergeBase = z.object({
+  _tag: z.literal('MergeBase'),
+  toSha: z.string(),
+  merge: z.number().int(),
+})
+export type MergeBase = z.infer<typeof MergeBase>
+
 /** 0120 §4's next move, with what it spends. */
-export const PassNext = z.discriminatedUnion('_tag', [Advance, Propose, FixRound, Requeued, WaitOnPerson, Landed])
+export const PassNext = z.discriminatedUnion('_tag', [
+  Advance,
+  Propose,
+  FixRound,
+  MergeBase,
+  Requeued,
+  WaitOnPerson,
+  Landed,
+])
 export type PassNext = z.infer<typeof PassNext>
 
-/** Rounds spent this pass, restarts spent on the work item (0120 §4). Folded from events, never parsed. */
-export type Spent = { rounds: number; restarts: number }
+/**
+ * Rounds spent this pass, restarts spent on the work item (0120 §4), and the
+ * base merges the system made this pass (#593) — absent is none. Folded from
+ * events, never parsed.
+ */
+export type Spent = { rounds: number; restarts: number; baseMerges?: number }
 
 type NextOfResult = Extract<PassNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
 
@@ -286,6 +311,15 @@ function mergeCompletedRefused(step: Step, integration: Integration, evidence: s
           headSha: integration.headSha,
         }),
       }
+    case 'BaseMoved':
+      return {
+        _tag: 'Propose',
+        proposal: mergeRefusalProposal('base-moved', evidence, null, {
+          paths: integration.paths,
+          fromSha: integration.fromSha,
+          toSha: integration.toSha,
+        }),
+      }
     case 'IntegrationRefused':
       return { _tag: 'Propose', proposal: mergeRefusalProposal(integration.reason, evidence, null) }
     case 'Integrated':
@@ -369,8 +403,10 @@ export function spentAfter(spent: Spent, next: PassNext): Spent {
   switch (next._tag) {
     case 'FixRound':
       return { ...spent, rounds: next.round }
+    case 'MergeBase':
+      return { ...spent, baseMerges: next.merge }
     case 'Requeued':
-      return next.cause._tag === 'Restart' ? { rounds: 0, restarts: next.cause.restart } : spent
+      return next.cause._tag === 'Restart' ? { ...spent, rounds: 0, restarts: next.cause.restart } : spent
     case 'Advance':
     case 'Propose':
     case 'WaitOnPerson':

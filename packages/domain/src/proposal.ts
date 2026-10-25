@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
- * **The twelve reasons a pass arrives at `proposed`**, which is what a
+ * **The thirteen reasons a pass arrives at `proposed`**, which is what a
  * `judge:` entry's `when:` names — and `SpentFor`'s `Judge` variant
  * (`events.ts`) needs this as a value import.
  */
@@ -36,6 +36,7 @@ export const JudgeWhen = z.enum([
   'fixer-disagrees',
   'merge-refused',
   'budget-exhausted',
+  'base-moved',
 ])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
 
@@ -72,6 +73,20 @@ export const MergeConflict = z.object({
   headSha: z.string().nullable(),
 })
 export type MergeConflict = z.infer<typeof MergeConflict>
+
+/**
+ * The base moved on files the branch also changed, and the trial merge was
+ * clean (#593). The three fields are `null` where the action's result carried
+ * none; a `null` `toSha` leaves nothing to merge, so the offer has no
+ * `merge-base` candidate.
+ */
+export const BaseMoved = z.object({
+  _tag: z.literal('BaseMoved'),
+  paths: z.array(z.string()).nullable(),
+  fromSha: z.string().nullable(),
+  toSha: z.string().nullable(),
+})
+export type BaseMoved = z.infer<typeof BaseMoved>
 
 /** The base moved, and the re-verify on it went red. */
 export const VerifyRed = z.object({ _tag: z.literal('VerifyRed'), output: z.string() })
@@ -141,7 +156,7 @@ const MergeRefused = z.object({
   _tag: z.literal('MergeRefused'),
   // `moves.ts:16-19`'s own reason for the omitted `default`: a reason
   // `RefusalReason` gains tomorrow fails this at the type level.
-  reason: RefusalReason.exclude(['conflict', 'verify-failed']),
+  reason: RefusalReason.exclude(['conflict', 'verify-failed', 'base-moved']),
   output: z.string(),
 })
 type MergeRefused = z.infer<typeof MergeRefused>
@@ -159,13 +174,14 @@ const BudgetExhausted = z.object({
 })
 type BudgetExhausted = z.infer<typeof BudgetExhausted>
 
-/** Why the pass is at `proposed` — 0120 §2's thirteen reasons. */
+/** Why the pass is at `proposed` — 0120 §2's fourteen reasons. */
 export const Proposal = z.discriminatedUnion('_tag', [
   BuildRed,
   ReviewFindings,
   ReviewEmpty,
   InputNeeded,
   MergeConflict,
+  BaseMoved,
   VerifyRed,
   SetupRefused,
   CheckRefused,
@@ -198,6 +214,7 @@ export function fromOf(proposal: Proposal): Step {
     case 'FixerDisagrees':
       return 'implement'
     case 'MergeConflict':
+    case 'BaseMoved':
     case 'VerifyRed':
     case 'MergeRefused':
       return 'merge'
@@ -220,7 +237,16 @@ export function mergeRefusalProposal(
   reason: RefusalReason,
   output: string,
   conflict: { paths: string[] | null; baseSha: string | null; headSha: string | null } | null,
+  baseMoved: { paths: string[] | null; fromSha: string | null; toSha: string | null } | null = null,
 ): Proposal {
+  if (reason === 'base-moved') {
+    return {
+      _tag: 'BaseMoved',
+      paths: baseMoved?.paths ?? null,
+      fromSha: baseMoved?.fromSha ?? null,
+      toSha: baseMoved?.toSha ?? null,
+    }
+  }
   if (reason === 'conflict') {
     return {
       _tag: 'MergeConflict',

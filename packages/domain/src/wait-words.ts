@@ -115,6 +115,17 @@ function mergeRefusedColumns(
   }
 }
 
+/** What a `BaseMoved` proposal says in place of the lane's `output`, which it does not carry. */
+function baseMovedText(proposal: { paths: readonly string[] | null; fromSha: string | null; toSha: string | null }) {
+  const paths =
+    proposal.paths === null || proposal.paths.length === 0 ? 'files the branch changed' : proposal.paths.join(', ')
+  const range =
+    proposal.fromSha === null || proposal.toSha === null
+      ? ''
+      : ` (${proposal.fromSha.slice(0, 7)}..${proposal.toSha.slice(0, 7)})`
+  return `the base changed ${paths} since the branch was reviewed${range}`
+}
+
 function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): WaitWords {
   const question = `${cause}: ${detail}`
   const what =
@@ -271,6 +282,8 @@ function escalatedColumns(
       )
     case 'MergeRefused':
       return mergeRefusedColumns(run, proposal.reason, proposal.output, pass)
+    case 'BaseMoved':
+      return mergeRefusedColumns(run, 'base-moved', baseMovedText(proposal), pass)
     case 'BudgetExhausted':
       return budgetExhaustedColumns(run, proposal.kind, proposal.detail)
   }

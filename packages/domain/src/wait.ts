@@ -132,7 +132,7 @@ const MergeRefused = z.object({
   run: RunRef,
   // `.exclude` rather than a hand-written list: a reason `RefusalReason` gains
   // tomorrow fails this at the type level rather than slipping past.
-  reason: RefusalReason.exclude(['conflict', 'verify-failed']),
+  reason: RefusalReason.exclude(['conflict', 'verify-failed', 'base-moved']),
   raw: z.string(),
   paths: z.array(z.string()).nullable().optional(),
   baseSha: z.string().nullable().optional(),
@@ -286,6 +286,10 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'FixerDisagrees':
           return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
         case 'MergeRefused':
+        // The base moved, and the system's two merges are spent: `Approve`
+        // continues at `merge` with the count back at zero, which reads as
+        // *keep merging the base in* (#593).
+        case 'BaseMoved':
           return ['Approve', 'Requeue', 'Close']
         case 'NothingProduced':
         case 'BudgetExhausted':
@@ -427,6 +431,7 @@ export function continuationOf(
         case 'FixerDisagrees':
           return { step: 'proposed', waive: null }
         case 'MergeRefused':
+        case 'BaseMoved':
           return { step: 'merge', waive: null }
         case 'CheckRefused': {
           const step = fromOf(proposal)

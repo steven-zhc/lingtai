@@ -886,6 +886,17 @@ export interface PassOptions {
    */
   readonly judge?: (on: Judging) => Promise<Judged>
   /**
+   * **Merge the base into the worktree's branch, in the tree the pass is
+   * holding** (#593) — what a `MergeBase` route runs. `toSha` is the base the
+   * merge lane's clean trial merge was proved against; the answer is the merge
+   * commit the tree now stands at, or why git said no.
+   *
+   * A port because `runPass` runs no git (`pass-steps.ts`'s own header). Absent
+   * where a caller says nothing, and the route then ends at a person: a merge
+   * this pass cannot make is not one it pretends to have made.
+   */
+  readonly mergeBase?: (toSha: string) => Promise<{ readonly head: string } | { readonly failed: string }>
+  /**
    * **Where an approved wait continues the run** (#465, 0120 §6) — absent for
    * an ordinary pass, which starts at `admit` as it always has.
    *
@@ -985,8 +996,8 @@ export interface RouteTaken {
   readonly decision: RouteDecision
 }
 
-/** The two limits that take a destination off the offer. */
-export type Ceiling = 'rounds' | 'restarts'
+/** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
+export type Ceiling = 'rounds' | 'restarts' | 'base-merges'
 
 /**
  * **The pass's own terminal, 0120 §6's seam** — the three `PassNext` tags that
@@ -1159,6 +1170,12 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   /** The merge commit a `Landed` visit reported, read back once the walk is over. */
   let landed: string | null = null
   let roundsSpent = options.from?.roundsSpent ?? 0
+  /**
+   * The base merges the system made this pass (#593). **Not seeded from
+   * `options.from`**: the bound is per pass, and a continuation is a new pass —
+   * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
+   */
+  let baseMergesSpent = 0
   const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
   // A restart is automatic fix routing too, and a bigger kind than a round: the lap
   // that spends a human grant ends at a person rather than at a restart nobody
@@ -1237,6 +1254,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,
+        baseMerges: baseMergesSpent,
       },
     )
     const reply = await replyFor(offer, arrived, options.judge)
@@ -1256,7 +1274,24 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     }
     const decision = decideRoute(offer, reply)
     const routed = routedVisit(offer, reply, decision)
-    record({ step: 'proposed', ending: routed, results: [] })
+    const next = routeNext(offer, reply, decision, { runId: options.context.runId })
+
+    // **The third mover of `onSha`** (#593), after `admit` and `implement`: the
+    // system merges the base in, here and not in a step, and the visit that
+    // records the route carries the merge commit as its `head` — `record` stays
+    // the one place `onSha` is written.
+    let merged: { readonly head: string } | { readonly failed: string } | null = null
+    if (next._tag === 'MergeBase') {
+      merged =
+        options.mergeBase === undefined
+          ? { failed: 'this pass was handed no way to merge the base in' }
+          : await options.mergeBase(next.toSha)
+    }
+    record({
+      step: 'proposed',
+      ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
+      results: [],
+    })
     const chose = routed.chose ?? routed.to
     routes.push({
       from: reported?.step ?? 'proposed',
@@ -1269,8 +1304,33 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       decision,
     })
 
-    const next = routeNext(offer, reply, decision, { runId: options.context.runId })
     switch (next._tag) {
+      case 'MergeBase':
+        if (merged === null || !('head' in merged)) {
+          // A clean merge that fails in a tree the lane just proved clean is a
+          // defect, and a person is the floor under it.
+          stopped = reported
+          end = {
+            _tag: 'WaitOnPerson',
+            reason: {
+              _tag: 'ProposedEscalated',
+              run: { runId: options.context.runId },
+              proposal: offer.proposal,
+              because: {
+                _tag: 'JudgeHandedOver',
+                why: `the base could not be merged in: ${merged === null ? 'no result' : merged.failed}`,
+              },
+            },
+          }
+          return false
+        }
+        // Free: neither a round nor a restart. The next lap is judged against the
+        // merged tree, so `recheck` is left as it was and only the lap's start
+        // moves, to keep a later fix round's `recheck` to what the new lap found.
+        baseMergesSpent = next.merge
+        lapStart = steps.length
+        at = 'build'
+        return true
       case 'FixRound':
         // The same bookkeeping `take` always did: the lap's own findings
         // become the next lap's `recheck` (0038 §2), and a round is spent.

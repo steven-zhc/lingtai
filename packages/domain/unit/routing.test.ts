@@ -677,6 +677,61 @@ describe('routeNext', () => {
   })
 })
 
+describe('offerFor: a base that moved on the branch’s own files (#593)', () => {
+  const baseMoved: Proposal = { _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' }
+  const mergeBase = (merge: number): Candidate => ({
+    id: 'merge-base',
+    next: { _tag: 'MergeBase', toSha: 'base-1', merge },
+  })
+  const person: Candidate = { id: 'hand-to-person', next: { _tag: 'HandToPerson' } }
+
+  it.each([
+    [0, 1],
+    [1, 2],
+  ])('with %i merges spent, merge-base is on offer as merge %i', (baseMerges, merge) => {
+    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges })).toEqual({
+      proposal: baseMoved,
+      available: [mergeBase(merge), person],
+      unavailable: [],
+    })
+  })
+
+  it('treats an absent count as none', () => {
+    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0 }).available).toEqual([mergeBase(1), person])
+  })
+
+  it('with 2 merges spent, merge-base is excluded by the base-merges ceiling and only a person is left', () => {
+    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges: 2 })).toEqual({
+      proposal: baseMoved,
+      available: [person],
+      unavailable: [{ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } }],
+    })
+  })
+
+  it('spends no round: a spent rounds ceiling does not take it off', () => {
+    const offer = offerFor(baseMoved, { rounds: 0, restarts: 0 }, { rounds: 5, restarts: 5, baseMerges: 0 })
+    expect(offer.available.map((c) => c.id)).toEqual(['merge-base', 'hand-to-person'])
+  })
+
+  it('has nothing to merge without a toSha', () => {
+    const offer = offerFor({ _tag: 'BaseMoved', paths: null, fromSha: null, toSha: null }, policy, {
+      rounds: 0,
+      restarts: 0,
+    })
+    expect(offer.unavailable).toEqual([{ id: 'merge-base', because: { _tag: 'NoCriterion' } }])
+  })
+
+  it('routeNext hands the merge back as MergeBase when it is chosen', () => {
+    const offer = offerFor(baseMoved, policy, { rounds: 0, restarts: 0 })
+    const reply: JudgeReply = { _tag: 'Selected', candidate: 'merge-base', why: 'free' }
+    expect(routeNext(offer, reply, decideRoute(offer, reply), run)).toEqual({
+      _tag: 'MergeBase',
+      toSha: 'base-1',
+      merge: 1,
+    })
+  })
+})
+
 // `Candidate` and `RouteOffer` are exercised through `offerFor`'s return
 // value above; this pins their shape against a literal so a field added to
 // either silently fails to compile here rather than only downstream.
