@@ -828,6 +828,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
           }
           body={task.ticket?.body}
           want={task.want}
+          compareUrl={task.ticket?.compareUrl ?? null}
           taskId={task.taskId}
           discussions={task.discussions}
           discussionBill={task.totals.byPurpose.Discussion}

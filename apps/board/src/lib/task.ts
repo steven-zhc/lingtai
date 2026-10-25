@@ -72,6 +72,7 @@ import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 
 import {
   emptyIfUnbuilt,
+  compareUrl,
   issueUrl,
   triageContextOf,
   waitingNeighbours,
@@ -153,6 +154,12 @@ export interface TicketView {
   labels: string[]
   /** From GitHub, or built from the owner the project stream recorded. */
   url: string | null
+  /**
+   * GitHub's compare view of the base against `agent/<n>`, for a merge-conflict
+   * wait (#590). Null where tickets are not on GitHub; `loadTask` also clears it
+   * when the branch was never pushed.
+   */
+  compareUrl: string | null
   body: string | null
   /**
    * Whether this issue exists: **true**, **false**, or **null for "I could not
@@ -1579,7 +1586,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   }
 
   const state = await loadProject(project).catch(() => null)
-  const base = { project, ref: issue, title, kind, labels }
+  const base = { project, ref: issue, title, kind, labels, compareUrl: null as string | null }
   if (!state) {
     // A definite absence rather than an unanswered question. Lingtai's own
     // register is the authority on which projects it has, so an id naming one
@@ -1604,6 +1611,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     .then((r) => ticketSourceOf(r.recipe))
     .catch(() => null)
   const url = issueUrl(state.owner, project, issue, tickets)
+  base.compareUrl = compareUrl(state.owner, project, state.base, agentBranchOf(issue), tickets)
   // A `db` ticket's number is not a GitHub issue number — it can collide with
   // an unrelated issue on the same repository (`recipe.ts`, `TicketSource`'s
   // doc comment), so asking GitHub about it answers a different ticket's
@@ -1961,7 +1969,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     unpushedMirror,
     standing,
     want,
-    ticket,
+    // An unpushed branch is not GitHub's `agent/<n>`, so its compare view would
+    // show some other diff or none; the page falls back to the shas (#590).
+    ticket: ticket !== null && standing.unpushed !== null ? { ...ticket, compareUrl: null } : ticket,
     runs,
     discussions,
     outgoing,

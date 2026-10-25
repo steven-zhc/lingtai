@@ -1224,6 +1224,53 @@ const render = (standing: StandingView, outgoing: OutgoingView | null) =>
     />,
   )
 
+const CONFLICT: StandingView = {
+  ...HELD,
+  reason: {
+    _tag: 'ProposedEscalated',
+    run: { runId: RUN_2 },
+    proposal: {
+      _tag: 'MergeConflict',
+      output: 'agent/590 does not merge into main:\na.ts\nb/c.ts',
+      paths: ['a.ts', 'b/c.ts'],
+      baseSha: 'base1',
+      headSha: 'head1',
+    },
+    because: { _tag: 'NotAsked' },
+  },
+}
+
+const renderConflict = (compareUrl: string | null) =>
+  renderToStaticMarkup(
+    <Standing
+      subject={null}
+      standing={CONFLICT}
+      project="lingtai"
+      issue={590}
+      taskId="ticket-lingtai-590"
+      discussions={[]}
+      outgoing={null}
+      queued={null}
+      compareUrl={compareUrl}
+    />,
+  )
+
+it("lists a conflict wait's paths and links to the compare view", () => {
+  const html = renderConflict('https://github.com/o/lingtai/compare/main...agent/590')
+  expect(html).toContain('<code>a.ts</code>')
+  expect(html).toContain('<code>b/c.ts</code>')
+  expect(html).toContain('href="https://github.com/o/lingtai/compare/main...agent/590"')
+  expect(html).not.toContain('sconflict-shas')
+})
+
+it('shows the paths and both shas, and no link, where there is no compare view', () => {
+  const html = renderConflict(null)
+  expect(html).toContain('<code>a.ts</code>')
+  expect(html).toContain('<code>base1</code>')
+  expect(html).toContain('<code>head1</code>')
+  expect(html).not.toContain('/compare/')
+})
+
 const FIXABLE: StandingView = {
   ...HELD,
   reason: {

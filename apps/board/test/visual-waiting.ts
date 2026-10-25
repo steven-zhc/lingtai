@@ -431,6 +431,7 @@ export async function preview(name: CaseName) {
     kind: 'feature',
     labels: ['feature'],
     url: null,
+    compareUrl: null,
     body: representative ? FIXABLE_BODY : 'Review the paused pass and decide how work should continue.',
     found: true,
     askedGitHub: false,

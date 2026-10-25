@@ -76,6 +76,7 @@ const TICKET: TicketView = {
   kind: 'bug',
   labels: ['bug'],
   url: 'https://github.com/example/lingtai/issues/147',
+  compareUrl: null,
   body: 'The reviewer crashed.',
   found: true,
   askedGitHub: true,

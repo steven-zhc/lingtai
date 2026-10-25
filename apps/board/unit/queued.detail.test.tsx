@@ -50,6 +50,7 @@ const TICKET: TicketView = {
   kind: 'bug',
   labels: ['bug'],
   url: 'https://github.com/steven-zhc/lingtai/issues/112',
+  compareUrl: null,
   found: true,
   askedGitHub: true,
   body: 'the body',

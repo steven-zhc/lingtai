@@ -697,7 +697,7 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 299 occurrences in
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 300 occurrences in
 68 files**, counted 2026-10-23 — up from 226 in 47 because `#516`'s pair rule
 below is the same rule for this purpose and is counted here with it, and down
 from 661 in 62 the four words carried alone because `#247` had to
