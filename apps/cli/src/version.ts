@@ -15,7 +15,18 @@ export function platformName(platform: string = process.platform, arch: string =
   return `${platform === 'darwin' ? 'macos' : platform}-${arch}`
 }
 
+/** The facts the line and `--json` both say, so the two cannot drift apart (#616). */
+export function versionFacts(): { lingtai: string; platform: string; form: 'binary' | 'script'; node: string } {
+  return {
+    lingtai: workspace.version,
+    platform: platformName(),
+    form: isSea() ? 'binary' : 'script',
+    node: process.version,
+  }
+}
+
+/** Parsed by `upgrade` from a *different* binary (`versionRuns`): first word `lingtai`, second the version. */
 export function versionLine(): string {
-  const form = isSea() ? 'binary' : 'script'
-  return `lingtai ${workspace.version} ${platformName()} (${form}, node ${process.version})`
+  const { lingtai, platform, form, node } = versionFacts()
+  return `lingtai ${lingtai} ${platform} (${form}, node ${node})`
 }

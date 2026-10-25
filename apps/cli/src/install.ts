@@ -51,9 +51,9 @@ import { SQLITE_MACHINE } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 
 import workspace from '../../../package.json' with { type: 'json' }
-import { platformName, versionLine } from './version.ts'
+import { platformName } from './version.ts'
 
-export const INSTALL_COMMANDS = ['version', 'upgrade', 'rollback', 'uninstall'] as const
+export const INSTALL_COMMANDS = ['upgrade', 'rollback', 'uninstall'] as const
 
 /** Where releases are asked about. `LINGTAI_RELEASES_API` points it at a mirror, or a test. */
 export const RELEASES_API = 'https://api.github.com/repos/steven-zhc/lingtai/releases'
@@ -429,9 +429,6 @@ export async function unpackRelease(
 export async function installCommand(argv: readonly string[], world: World): Promise<number> {
   const [command, ...rest] = argv
   switch (command) {
-    case 'version':
-      world.log(versionLine())
-      return 0
     case 'upgrade':
       return upgrade(rest, world)
     case 'rollback':
