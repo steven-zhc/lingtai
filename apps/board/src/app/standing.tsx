@@ -41,6 +41,7 @@ import { Outgoing } from './outgoing.tsx'
 import { Plan } from './plan.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
+import { SplitPlan } from './split-plan.tsx'
 import { ReadingChoice, ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
@@ -209,8 +210,10 @@ export function TriageBand({
             </>
           )
           break
-        case 'WrongApproach':
         case 'TicketTooBig':
+          parts = cause.split === undefined ? null : <SplitPlan plan={cause.split} />
+          break
+        case 'WrongApproach':
         case 'SetupBroken':
           break
       }

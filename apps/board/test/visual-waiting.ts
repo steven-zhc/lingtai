@@ -273,6 +273,37 @@ function fixableFixture(published: boolean) {
 
 const FIXABLE_FIXTURES = [fixableFixture(true), fixableFixture(false)]
 
+const advisedSplit = (): TriageResult => {
+  const split: Extract<Extract<TriageResult, { _tag: 'TriageAdvised' }>['cause'], { _tag: 'TicketTooBig' }>['split'] = {
+    children: [
+      { key: 'schema', title: 'Add the schema', body: 'The table and its migration.', kind: 'feature' },
+      {
+        key: 'writer',
+        title: 'Write rows from the projector',
+        body: 'Fold events into the table.',
+        kind: 'feature',
+      },
+      { key: 'reader', title: 'Read the table on the board', body: 'Draw it.', kind: 'feature' },
+      { key: 'docs', title: 'Document the table', body: 'An ADR edit.', kind: 'documentation' },
+      { key: 'rebuild', title: 'Rebuild command', body: 'Replay into the table.', kind: 'feature' },
+    ],
+    blockedBy: [
+      { ticket: 'writer', blockedBy: 'schema' },
+      { ticket: 'reader', blockedBy: 'writer' },
+      { ticket: 'docs', blockedBy: 'schema' },
+      { ticket: 'docs', blockedBy: 'reader' },
+      { ticket: 'rebuild', blockedBy: 'schema' },
+    ],
+  }
+  return {
+    _tag: 'TriageAdvised',
+    cause: { _tag: 'TicketTooBig', split },
+    resolution: 'Split',
+    summary: 'Five tickets in three waves would each fit one pass.',
+    want: 'A maintainable fix that keeps the existing behavior.',
+  }
+}
+
 export const CASES = {
   'no-triage': { fixture: 'agentquestion', result: null, status: 'NotDeclared' },
   questions: {
@@ -313,6 +344,10 @@ export const CASES = {
   'ticket-too-big': {
     fixture: 'budgetexhausted',
     result: advised({ _tag: 'TicketTooBig' }, 'This ticket needs a smaller scope.'),
+  },
+  split: {
+    fixture: 'budgetexhausted',
+    result: advisedSplit(),
   },
   'setup-broken': {
     fixture: 'setuprefused',
