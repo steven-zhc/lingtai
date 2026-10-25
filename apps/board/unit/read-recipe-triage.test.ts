@@ -6,7 +6,7 @@
 import { Recipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { readRecipe, withTriageReadiness } from '../src/lib/recipe.ts'
+import { codexProbeEnv, readRecipe, withTriageReadiness } from '../src/lib/recipe.ts'
 
 const BASE = {
   version: 2,
@@ -83,5 +83,15 @@ describe('withTriageReadiness', () => {
     await says({ agent: 'codex' }, login)
     await says({ agent: 'claude-code' }, login)
     expect(asked).toBe(0)
+  })
+})
+
+describe('codexProbeEnv', () => {
+  it('asks about the configured CODEX_HOME, as a triage run is given', () => {
+    expect(codexProbeEnv({ CODEX_HOME: '/profile/codex' })['CODEX_HOME']).toBe('/profile/codex')
+  })
+
+  it('leaves CODEX_HOME to the CLI default when none is configured', () => {
+    expect(codexProbeEnv({})).not.toHaveProperty('CODEX_HOME')
   })
 })

@@ -450,7 +450,7 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 
 export async function projectRecipe(
   state: ProjectState,
   // The same probe `lingtai doctor` asks, handed in so a test spawns nothing.
-  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }> = () => codexAuth('codex', runnableEnv({})),
+  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }> = () => codexAuth('codex', codexProbeEnv()),
 ): Promise<ProjectRecipe> {
   const project = state.project ?? '(unnamed)'
   const at = recipePath(project)
@@ -474,6 +474,18 @@ export async function projectRecipe(
     rows: await withTriageReadiness(readRecipe(resolved.recipe), resolved.recipe, codexLogin),
     provenance: resolved.provenance ?? {},
   }
+}
+
+/**
+ * The environment the probe runs in: the filtered one plus the `CODEX_HOME` a
+ * triage run is given (`triageCheckoutEnv`), so the login asked about is the
+ * login the wait will use rather than `~/.codex` when another is configured.
+ */
+export function codexProbeEnv(
+  processEnv: Readonly<Record<string, string | undefined>> = process.env,
+): Record<string, string> {
+  const codexHome = processEnv['CODEX_HOME']
+  return { ...runnableEnv({}), ...(codexHome ? { CODEX_HOME: codexHome } : {}) }
 }
 
 /**
