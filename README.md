@@ -202,3 +202,7 @@ being typed.
 Lingtai now runs on itself: the tickets in this repository are worked by agents
 Lingtai dispatched. See [`doc/roadmap.md`](doc/roadmap.md) for what is proven and
 [`doc/README.md`](doc/README.md) for what is not.
+
+## License
+
+[Apache License 2.0](LICENSE). See [`NOTICE`](NOTICE).

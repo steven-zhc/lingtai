@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Event-sourced scheduler for autonomous code agents",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=26"
