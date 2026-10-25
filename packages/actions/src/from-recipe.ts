@@ -42,7 +42,7 @@ export interface ActionDeps {
    * The cold reviewer's, and the drafting agent's — **with `runtime` and
    * `limits` as the defaults a step's own `agent:` narrows from** (`#314`).
    *
-   * The five keys stay exactly the five `createAgentAction` reads; what a step
+   * The keys stay exactly the ones `createAgentAction` reads; what a step
    * declared is applied here, at the seam that holds both the action and the
    * recipe entry, and `runtimeFor` below is how the first of them is answered.
    */
@@ -226,6 +226,7 @@ function dispatchDeps(
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
     diff: base.diff,
+    restore: base.restore,
     get settingsPath() {
       return base.settingsPath
     },

@@ -203,7 +203,7 @@ import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
-import { commitWipExceptPlanted, keptRunPort } from './kept-run-port.ts'
+import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
@@ -1843,11 +1843,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // as a clean tree, not send `git add`/`git commit` at a tree with
         // nothing else for them to touch. Porcelain's own format is two
         // status characters, a space, then the path.
-        const onlyThePlantedFile = dirty.right
-          .split('\n')
-          .filter((line) => line.trim() !== '')
-          .every((line) => line.slice(3) === recipe.env.plantAt)
-        if (onlyThePlantedFile) return
+        if (onlyThePlantedFileIsDirty(dirty.right, recipe.env.plantAt)) return
         const parent = await gitAsked(['rev-parse', 'HEAD'])
         if (Either.isLeft(parent)) {
           wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.left.detail}`
@@ -2975,6 +2971,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 return { path, diff: Either.isLeft(got) ? `[could not read this diff: ${got.left.detail}]` : got.right }
               }),
             ),
+          restore: restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt }),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always

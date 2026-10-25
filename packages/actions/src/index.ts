@@ -25,6 +25,7 @@ export {
   verdictFor,
   type AgentActionDeps,
   type AgentActionSpec,
+  type RestoreAnswer,
   type Drafted,
   type ReviewIssue,
 } from './agent-action.ts'

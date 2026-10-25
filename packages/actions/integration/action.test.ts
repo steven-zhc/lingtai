@@ -465,6 +465,7 @@ describe('actionsFromRecipe', () => {
       runtime,
       issue: async () => ({ ref: '245', title: 't', body: 'b' }),
       diff: async () => 'diff --git a/x b/x\n+1',
+      restore: async () => ({ untouched: true as const }),
       settingsPath: '/tmp/s.json',
       limits: { turns: 40, wallMs: 1000, diffBytes: 400_000 },
     }

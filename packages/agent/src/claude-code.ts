@@ -504,13 +504,14 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           resolve(outcome)
         }
 
+        // Set when the run was killed: the outcome waits for the process to be
+        // gone, because a caller that resolves on SIGTERM can restore the
+        // worktree (`#587`) while the agent is still writing to it.
+        let killed: RunOutcome | undefined
+
         const kill = (kind: 'timeout' | 'aborted', detail: string) => {
-          child.kill('SIGTERM')
-          // A SIGTERM the agent ignores must not become a hang. The event is the
-          // point; a process that will not die is a detail for the next line.
-          const hard = setTimeout(() => child.kill('SIGKILL'), 5_000)
-          hard.unref?.()
-          finish({
+          if (killed !== undefined || settled) return
+          killed = {
             exitCode: null,
             turns: 0,
             durationMs: Date.now() - started,
@@ -518,7 +519,17 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             text: null,
             failure: { kind, detail },
             sessionId,
-          })
+          }
+          child.kill('SIGTERM')
+          // A SIGTERM the agent ignores must not become a hang. The event is the
+          // point; a process that will not die is a detail for the next line.
+          const hard = setTimeout(() => {
+            child.kill('SIGKILL')
+            // Not even SIGKILL produced a `close`: stop waiting.
+            const last = setTimeout(() => finish(killed!), 5_000)
+            last.unref?.()
+          }, 5_000)
+          hard.unref?.()
         }
 
         const wall = setTimeout(
@@ -543,6 +554,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         )
 
         child.on('close', (code) => {
+          if (killed !== undefined) return finish(killed)
           const parsed = parseResult(stdout)
           const durationMs = parsed?.duration_ms ?? Date.now() - started
           const turns = parsed?.num_turns ?? 0
