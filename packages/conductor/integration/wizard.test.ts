@@ -146,6 +146,9 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
     setLabels: async () => {
       throw new Error('the wizard wrote to GitHub: setLabels')
     },
+    addLabels: async () => {
+      throw new Error('the wizard wrote to GitHub: addLabels')
+    },
     updateBody: async () => {
       throw new Error('the wizard wrote to GitHub: updateBody')
     },
