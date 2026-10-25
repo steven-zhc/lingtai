@@ -11,6 +11,7 @@ another Git project with its own install and build commands.
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | Lingtai        | Git; Codex installed and signed in                                                                                                                                                     | Lingtai creates worktrees and uses Codex in this tutorial.        |
 | Chapter Garden | Node.js and npm; [GitHub SSH access](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account); permission to push a branch | You will build the site and give Lingtai a branch it can push to. |
+| Part 2 (GitHub) | A fork of Chapter Garden that you own, and permission to create and install a GitHub App on your account or organisation | Each Lingtai installation uses an App of its own; see [GitHub](github.md). |
 
 Install Lingtai. This downloads the CLI; setup is the next step.
 
@@ -114,7 +115,7 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | Option                          | Meaning                                                            |
 | ------------------------------- | ------------------------------------------------------------------ |
 | `--store sqlite`                | Keeps Lingtai's log on this machine; no database server is needed. |
-| `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App.                      |
+| `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
 | `--base ...`                    | Uses your tutorial branch as the merge target.                     |
 | `--agent codex`                 | Uses the Codex account you signed in to.                           |
 | `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
@@ -234,3 +235,86 @@ gh pr create --repo steven-zhc/chapter-garden --base main
 ```
 
 The CLI uses your current tutorial branch and asks for the PR title and description.
+
+## Part 2 — Move the project to GitHub
+
+Steps 1–4 ran on a local project. To have Lingtai work a GitHub repository, it
+needs a GitHub App, and **the App is yours**: Lingtai is self-hosted, there is
+no shared Lingtai App, and every installation creates its own. Lingtai creates
+it for you through GitHub's manifest flow. [GitHub](github.md) explains why an
+App rather than a token.
+
+You need your own fork of Chapter Garden here, because installing an App needs
+admin on the repository; use `<you>/chapter-garden` below. Keep the
+`lingtai board` from Step 3 running: `lingtai add` starts no board of its own,
+and without one it refuses with `no board is running here to create the GitHub
+App on`.
+
+### Create the App
+
+```sh
+lingtai add <you>/chapter-garden --github-app create
+```
+
+`add` asks its recipe questions first (you may pass `--agent`, `--install`,
+`--build` and `--land` as in Step 1), then the App question: `create the GitHub
+App now, or skip it for later`. The CLI opens the board's
+`/setup/github-app` page and prints
+`waiting for the App — press Create on that page, or any key here to skip`. It
+waits ten minutes.
+
+On the page, fill `App name` and `Organisation` (leave `Organisation` for a
+personal account). Leave `Webhook URL` blank: that declares the hook inactive
+and nothing degrades, because discovery runs on the daemon's sweep. Press
+`Create the App on GitHub`. GitHub's own next screen needs you to press
+**Create GitHub App**.
+
+The permissions are in the manifest, so you never choose them and they cannot
+be chosen wrong:
+
+| Permission      | Level | Why                                                    |
+| --------------- | ----- | ------------------------------------------------------ |
+| `issues`        | write | reading work items, writing agent:* labels and comments |
+| `contents`      | write | cloning, pushing agent/*, merging into base            |
+| `pull_requests` | write | opening and reading pull requests                      |
+| `metadata`      | read  | required by GitHub for any App                         |
+
+It also subscribes to the `issues` event.
+
+GitHub hands a private key over exactly once, so that one cannot be fetched
+again. Lingtai writes it to a file at the path the board names (by default
+`~/.ssh/lingtai-agent.private-key.pem`, mode `0600`), and
+`~/.lingtai/config.yml` holds that path, the App id and the webhook secret.
+Back the file up.
+
+When the App answers, the terminal prints `app          <slug>, owned by <owner>
+— it answered`. The same `add` then stops with `The App is not installed on
+<owner>, so it cannot see <slug>.` That is expected: **creating is not
+installing**.
+
+### Install it and add the repository
+
+The board page links `https://github.com/apps/<slug>/installations/new`. Install
+the App on `<you>/chapter-garden` only. Then run `add` again, **without**
+`--github-app`; with an App configured, `--github-app create` is refused
+(`a GitHub App is already configured here`).
+
+```sh
+lingtai add <you>/chapter-garden
+```
+
+### Check it worked
+
+```sh
+lingtai doctor
+```
+
+The `github: app credentials` row should be `ok`; with no App it is `skip`.
+`doctor` checks the credentials only. The installation is proved by the second
+`add`, which prints `installation <id> on <account> (<selection>)` and
+`permissions: issues, contents, pull requests write; metadata read`. If a
+permission is missing it lists the gap and ends `Fix them in the App's
+settings, then re-run.`
+
+From here Steps 2–4 apply, except that a ticket on a GitHub project is a GitHub
+issue carrying a kind label, not `lingtai ticket new`.
