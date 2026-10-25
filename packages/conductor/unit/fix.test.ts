@@ -1478,6 +1478,10 @@ describe('what a person confirmed is in the conflict brief (#558)', () => {
     expect(confirmedBrief).toMatch(/`src\/queue\.ts:40` — mechanical/)
   })
 
+  it('does not send the agent back to ask what a person already answered', () => {
+    expect(confirmedBrief).not.toMatch(/stop and ask rather than choose/i)
+  })
+
   it('names the confirmed behavior the authority, and an unlisted hunk as not covered', () => {
     expect(confirmedBrief).toMatch(/confirmed behavior is the authority/i)
     expect(confirmedBrief).toMatch(/not on this list is not covered/i)
