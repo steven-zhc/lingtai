@@ -9,8 +9,17 @@ describe('routeOf', () => {
   })
 
   it.each([
-    [[], 'lingtai'],
-    [['--help'], 'lingtai'],
+    [[], 'help'],
+    [['--help'], 'help'],
+    [['-h'], 'help'],
+    [['help'], 'help'],
+    [['init', '--help'], 'help'],
+    [['upgrade', '--help'], 'help'],
+    [['status', '--help'], 'help'],
+    [['shutdown', '-h'], 'help'],
+    [['board', 'start', '--help'], 'help'],
+    // A whole argument, never a substring: this one is a question's text.
+    [['ask', 'p', '--issue', '1', 'what --help'], 'lingtai'],
     [['--version'], 'lingtai'],
     [['status'], 'lingtai'],
     [['daemon', '--no-conduct'], 'lingtai'],

@@ -1,0 +1,514 @@
+/**
+ * One definition per command: the source for `lingtai --help`, for
+ * `lingtai <command> --help`, and for the page `doc/cli.md` is generated from
+ * (0121 §6, #617).
+ *
+ * No library imports, on purpose, for the reason `migrated.ts` gives: help is
+ * answered by `entry.ts` before `lingtai.ts` is imported (0121 §8), so this
+ * file and `help.ts` are all that run, and a unit test can load both.
+ *
+ * A line is never wrapped by the command (0121 §4), so every line here is at
+ * most 76 columns — the section that prints it indents two more. `help.test.ts`
+ * measures them. `usage` is the invocation at the left edge with its prose and
+ * flags indented beneath it; `examples` are real invocations.
+ */
+
+export const GROUPS = ['everyday', 'waiting on you', 'daemon', 'install and upkeep'] as const
+export type Group = (typeof GROUPS)[number]
+
+export type CommandDefinition = {
+  readonly name: string
+  readonly group: Group
+  /** One line: what it is for. At most 60 columns, so the root listing needs no wrapping. */
+  readonly task: string
+  /** Decides whether the command takes `--json` (0121 §5). */
+  readonly effect: 'reads' | 'changes'
+  readonly usage: readonly string[]
+  readonly examples: readonly string[]
+}
+
+/** The projections `lingtai projection` knows; `help.test.ts` holds this to `lingtai.ts`'s list. */
+export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend'] as const
+
+const define = <const N extends string>(
+  definition: CommandDefinition & { readonly name: N },
+): CommandDefinition & { readonly name: N } => definition
+
+export const COMMANDS = [
+  define({
+    name: 'add',
+    group: 'everyday',
+    task: 'onboard a repository, on GitHub or on this machine',
+    effect: 'changes',
+    usage: [
+      'lingtai add [<owner>/<repo>] [flags]',
+      '  A GitHub repository the App is installed on, or — with no',
+      '  argument, or --local <dir> — a directory with its own origin.',
+      '  --github <owner>/<repo>   same as the positional',
+      '  --local <dir>             a directory on this machine instead',
+      '  --project <github|local>  answers the question above, when neither',
+      '                            a slug nor --local is given',
+      '  --github-app <create|skip>',
+      '      create or skip the App, asked only when none is configured',
+      '  --base <branch>',
+      '      github: where to read the recipe from, not what the base is —',
+      "      the recipe's own repo.base says that, and a --base",
+      '      contradicting it is refused. local: the branch the recipe',
+      "      governs. default: the repository's own default branch",
+      '  --tickets <github|db>',
+      '      where tickets come from, instead of being asked. local takes',
+      '      db only (#396)',
+      '  --kinds <a,b,c>',
+      '      which labels are work, first taken first.',
+      '      default: bug, feature, documentation',
+      '  --agent <claude-code|codex>  which agent writes the change',
+      "  --model <name>               the writer's model",
+      '  --reviewer <agent|none>      a cold reviewer, and which, or none',
+      "  --reviewer-model <name>      the reviewer's model",
+      '  --land <branch|hold>',
+      '      where a pass lands, or hold every pass for a person at proposed',
+      '  --rounds <n>                 fix rounds a pass may buy',
+      '  --wall <duration>            wall time per agent run, e.g. 1h',
+      '  --budget <usd>               a dollar ceiling per agent run',
+      '  --defaults',
+      '      use every default the questions have. With no terminal, this',
+      '      or an answer to every question is required',
+    ],
+    examples: ['lingtai add steven-zhc/lingtai', 'lingtai add --local ~/code/app --tickets db --defaults'],
+  }),
+  define({
+    name: 'run',
+    group: 'everyday',
+    task: 'take the queue, in the recipe’s priority order',
+    effect: 'changes',
+    usage: [
+      'lingtai run <project> [flags]',
+      '  --issue <n>   one nominated issue instead of the queue',
+      '  --max <n>     stop after n items',
+      '  --once        the same as --max 1',
+      '  --no-merge    stop after the steps and ask before merging',
+    ],
+    examples: ['lingtai run lingtai --once', 'lingtai run lingtai --issue 617 --no-merge'],
+  }),
+  define({
+    name: 'status',
+    group: 'everyday',
+    task: 'what is runnable, and what is holding the rest',
+    effect: 'reads',
+    usage: [
+      'lingtai status [<project>] [--all]',
+      '  Takes nothing and claims nothing.',
+      '  --all   include items that have left the queue, and why',
+    ],
+    examples: ['lingtai status', 'lingtai status lingtai --all'],
+  }),
+  define({
+    name: 'now',
+    group: 'everyday',
+    task: 'ask for one ticket ahead of the queue',
+    effect: 'changes',
+    usage: ['lingtai now <project> --issue <n>'],
+    examples: ['lingtai now lingtai --issue 617'],
+  }),
+  define({
+    name: 'attach',
+    group: 'everyday',
+    task: 'follow a run’s log, from the beginning',
+    effect: 'reads',
+    usage: [
+      'lingtai attach <runId>',
+      '  What a run is doing, as it does it, however late you attach.',
+      '  Reads a file and asks nothing of the daemon or the database, so',
+      '  it answers on a stopped system. A landed run has no log: 0034',
+      '  keeps exactly the ones still owed an explanation.',
+    ],
+    examples: ['lingtai attach 2d6f1c'],
+  }),
+  define({
+    name: 'backlog',
+    group: 'everyday',
+    task: 'the minor findings passing steps raised',
+    effect: 'changes',
+    usage: [
+      'lingtai backlog [<project>] [--all]',
+      '  The open ones. --all adds the decided ones, and what was decided.',
+      'lingtai backlog accept <project> <key> --kind <kind> [--unheld]',
+      '  Open one as an issue through the ticket store. One key: there is',
+      '  no accept-all. Without --kind, opens the issue of an entry',
+      '  already accepted — safe to repeat, never a second.',
+      '  --unheld   without agent:hold, so the next pass may take it',
+      'lingtai backlog decline <project> <key> --reason <why>',
+      '  Recorded, so the next attempt does not ask again.',
+    ],
+    examples: ['lingtai backlog lingtai', 'lingtai backlog accept lingtai a1b2c3 --kind tech-debt'],
+  }),
+  define({
+    name: 'ticket',
+    group: 'everyday',
+    task: 'a project’s own tickets, where the recipe keeps them',
+    effect: 'changes',
+    usage: [
+      'lingtai ticket list [--all] [--project <p>]',
+      "  Only for a project whose recipe keeps tickets in Lingtai's",
+      '  database (source.tickets: db); GitHub-backed ones are read with',
+      '  gh issue list. Open ones by default; --all adds closed ones.',
+      'lingtai ticket close <n> [--project <p>]',
+      '  Closes that row — not lingtai close, which ends a work item on',
+      '  the log. The daemon drops it on its next sweep, not at once.',
+      'lingtai ticket new [--project <p>]',
+      '  Opens $VISUAL or $EDITOR on a form: a title, a labels: line, then',
+      '  the body. Quitting with the form unchanged does nothing. No kind',
+      '  label and the ticket is created with a warning the queue will',
+      '  not take it.',
+      'lingtai ticket edit <n> [--project <p>]',
+      '  The same form, started from the ticket; writes what changed.',
+      '--project <p> is required with more than one project registered.',
+    ],
+    examples: ['lingtai ticket list --project lingtai', 'lingtai ticket new --project lingtai'],
+  }),
+  define({
+    name: 'board',
+    group: 'everyday',
+    task: 'serve, stop or inspect the board',
+    effect: 'changes',
+    usage: [
+      'lingtai board start [--port <n>] [--dir <path>] [--no-open]',
+      '  Serve the board pnpm build wrote beside this CLI, in this',
+      '  process: the URL is printed, a browser opened, ctrl-c stops it.',
+      '  From the source there is no built board:',
+      '  pnpm --filter @lingtai/board dev',
+      '  --port <n>    default 17820, or board.port in ~/.lingtai/config.yml',
+      '  --dir <path>  a built board somewhere else',
+      '  --no-open     no browser — what the service’s job passes',
+      'lingtai board stop',
+      '  Stop the board this machine is running. Not shutdown, which',
+      '  waits for a pass. Where a supervisor keeps the board, this is',
+      '  its stop, and it stays stopped until lingtai service start.',
+      'lingtai board restart',
+      '  Stop, then start. Refuses nothing first: a UI at the wrong',
+      '  commit costs a reload.',
+      'lingtai board status',
+      '  Who serves it, whether a board answers, whether a supervisor',
+      '  keeps one — three facts, none concluded from another.',
+    ],
+    examples: ['lingtai board start', 'lingtai board status'],
+  }),
+  define({
+    name: 'env',
+    group: 'everyday',
+    task: 'the values a project’s agents are given',
+    effect: 'changes',
+    usage: [
+      'lingtai env set <project> KEY=VALUE',
+      '  Write one value into ~/.lingtai/env/<project>.env.',
+      'lingtai env set <project> KEY',
+      '  Read the value from stdin, unechoed.',
+      'lingtai env list <project>',
+      '  Names and which layer answered — never values.',
+      'lingtai env unset <project> KEY',
+      '  Remove one.',
+    ],
+    examples: ['lingtai env set lingtai API_TOKEN', 'lingtai env list lingtai'],
+  }),
+  define({
+    name: 'end',
+    group: 'everyday',
+    task: 'replay the end step for items that landed',
+    effect: 'changes',
+    usage: [
+      'lingtai end replay [<project>] [--issue <n>]',
+      '  Resolve the end step for items that landed, and deliver what it',
+      '  resolves to. --issue limits it to one.',
+    ],
+    examples: ['lingtai end replay lingtai --issue 617'],
+  }),
+  define({
+    name: 'approve',
+    group: 'waiting on you',
+    task: 'merge what a held run produced',
+    effect: 'changes',
+    usage: [
+      'lingtai approve <project> --issue <n> [--note <text>]',
+      '  Merge what a held run produced, if its head has not moved since',
+      '  the approval was asked for.',
+      '  --note <text>   recorded with the approval, and required when a',
+      '                  step still refuses the head: approving then waives',
+      '                  each refusing step, with this as why',
+    ],
+    examples: ['lingtai approve lingtai --issue 617'],
+  }),
+  define({
+    name: 'answer',
+    group: 'waiting on you',
+    task: 'answer a question a ticket was held on',
+    effect: 'changes',
+    usage: [
+      'lingtai answer <project> --issue <n> "<choice>"',
+      '  Answer it on the record: back in the queue, and every attempt at',
+      '  the ticket is told the answer — no editing the issue body.',
+    ],
+    examples: ['lingtai answer lingtai --issue 617 "use the second option"'],
+  }),
+  define({
+    name: 'ask',
+    group: 'waiting on you',
+    task: 'hold a ticket on a decision before any run',
+    effect: 'changes',
+    usage: [
+      'lingtai ask <project> --issue <n> "<question>"',
+      '  Nothing is spent, the queue passes over the ticket, and lingtai',
+      '  status prints the question.',
+    ],
+    examples: ['lingtai ask lingtai --issue 617 "which groups?"'],
+  }),
+  define({
+    name: 'grant-fix-round',
+    group: 'waiting on you',
+    task: 'one more implementation round on saved work',
+    effect: 'changes',
+    usage: [
+      'lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]',
+      '  Run one more implementation round on saved work, then repeat the',
+      '  checks without waiving a refusal.',
+    ],
+    examples: ['lingtai grant-fix-round lingtai --issue 617 --if-head 53fe949'],
+  }),
+  define({
+    name: 'requeue',
+    group: 'waiting on you',
+    task: 'end a wait with a new run',
+    effect: 'changes',
+    usage: [
+      'lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]',
+      '  A blocked item goes back to the queue — held for approval or not —',
+      '  and the next pass cuts a fresh branch from a base that has since',
+      '  moved. The actor is still recorded in by.',
+    ],
+    examples: ['lingtai requeue lingtai --issue 617 --note "base moved"'],
+  }),
+  define({
+    name: 'close',
+    group: 'waiting on you',
+    task: 'end a ticket nobody is going to do',
+    effect: 'changes',
+    usage: [
+      'lingtai close <project> --issue <n> "<reason>"',
+      '  The queue stops offering it because the log says it is over.',
+      '  Nothing lifts a close: if the work is wanted again, open a new',
+      '  ticket.',
+    ],
+    examples: ['lingtai close lingtai --issue 617 "superseded"'],
+  }),
+  define({
+    name: 'start',
+    group: 'daemon',
+    task: 'hold the projections current and take work',
+    effect: 'changes',
+    usage: [
+      'lingtai start [--no-conduct] [--no-merge]',
+      '  Reads no standing signal: a pause or a shutdown aimed at an',
+      '  earlier daemon was not aimed at this one. If another daemon holds',
+      '  the lock this starts nothing and says so. Unchecked — lingtai',
+      '  restart is the checked start.',
+      '  --no-conduct   projections only, take nothing',
+      '  --no-merge     as for lingtai run',
+    ],
+    examples: ['lingtai start', 'lingtai start --no-conduct'],
+  }),
+  define({
+    name: 'daemon',
+    group: 'daemon',
+    task: 'the old name of start, still answered',
+    effect: 'changes',
+    usage: [
+      'lingtai daemon [--no-conduct] [--no-merge]',
+      '  Still answers: an installed LaunchAgent or systemd unit has this',
+      '  name written into it (#159). It is lingtai start.',
+    ],
+    examples: ['lingtai daemon --no-conduct'],
+  }),
+  define({
+    name: 'service',
+    group: 'daemon',
+    task: 'keep the daemon and the board running',
+    effect: 'changes',
+    usage: [
+      'lingtai service install|start|shutdown [why]|restart [why]|status|uninstall',
+      '  Two jobs, the daemon and the board: a LaunchAgent each on macOS,',
+      '  a systemd user unit each on Linux. No service manager? run',
+      '  lingtai daemon and lingtai board start in the foreground.',
+      '  shutdown drains the conductor through the log, waits for the',
+      '  pass, unloads it, then stops the board. restart is that and',
+      '  start, unchecked — lingtai restart is the checked one.',
+      '  status reports each job on its own: one word for both would hide',
+      '  a board that is up beside a conductor launchd keeps respawning.',
+    ],
+    examples: ['lingtai service install', 'lingtai service status'],
+  }),
+  define({
+    name: 'restart',
+    group: 'daemon',
+    task: 'drain, wait for the pass, and start one daemon',
+    effect: 'changes',
+    usage: [
+      'lingtai restart [why] [flags]',
+      '  Here, or through lingtai service when a supervisor keeps it.',
+      '  Refuses a commit the tracking remote does not have, a dirty',
+      '  worktree, and what lingtai doctor failed on. Ctrl+C during the',
+      '  wait leaves the drain standing; the next restart picks it up.',
+      '  --dirty            start from a dirty worktree, having read why not',
+      '  --despite-doctor   start in spite of failed doctor checks',
+      '  --force, --timeout as for lingtai shutdown',
+      '  --no-conduct, --no-merge',
+      '      as for lingtai start; refused under a supervisor',
+    ],
+    examples: ['lingtai restart "picking up #88"'],
+  }),
+  define({
+    name: 'shutdown',
+    group: 'daemon',
+    task: 'stop the daemon after the ticket in flight',
+    effect: 'changes',
+    usage: [
+      'lingtai shutdown [why] [--force] [--timeout <duration>]',
+      '  The pass finishes first, so the steps and the merge lane run',
+      '  too. It does not outlive the daemon it was sent to.',
+      '  --force                do not wait. The agent is left running and',
+      '                         the next conductor kills it',
+      '  --timeout <duration>   give up waiting after this and exit anyway.',
+      '                         Not with --force',
+    ],
+    examples: ['lingtai shutdown "deploying"', 'lingtai shutdown --timeout 10m'],
+  }),
+  define({
+    name: 'pause',
+    group: 'daemon',
+    task: 'stop the daemon taking new tickets',
+    effect: 'changes',
+    usage: [
+      'lingtai pause <why>',
+      '  A run in flight finishes. About the daemon that is running, and',
+      '  gone when it is — but not for lingtai run, which takes no ticket',
+      '  while a pause stands, daemon or none: one already working',
+      '  finishes the ticket in hand and takes no other.',
+    ],
+    examples: ['lingtai pause "reviewing the recipe"'],
+  }),
+  define({
+    name: 'resume',
+    group: 'daemon',
+    task: 'take tickets again',
+    effect: 'changes',
+    usage: ['lingtai resume'],
+    examples: ['lingtai resume'],
+  }),
+  define({
+    name: 'init',
+    group: 'install and upkeep',
+    task: 'a bare machine to the board, on the wizard',
+    effect: 'changes',
+    usage: [
+      'lingtai init [flags]',
+      '  Git and the agents looked at, a store connected to and its tables',
+      '  made, ~/.lingtai/config.yml written. Run it again to continue, or',
+      '  to see what is set.',
+      '  --store <sqlite|postgres>',
+      '      the store, instead of being asked. postgres takes',
+      '      --database-url with it',
+      '  --database-url <url>   instead of being asked',
+      "  --port <n>             the board's port, for this run.",
+      '                         default: 17820, or board.port',
+      '  --defaults',
+      '      use every default the recipe questions have. With no terminal,',
+      '      this or an answer to every question is required',
+    ],
+    examples: ['lingtai init', 'lingtai init --store sqlite --defaults'],
+  }),
+  define({
+    name: 'version',
+    group: 'install and upkeep',
+    task: 'the version, and which artifact is running',
+    effect: 'reads',
+    usage: ['lingtai version [--json] [--no-color]', '  Platform, binary or script, and the Node running it.'],
+    examples: ['lingtai version', 'lingtai version --json'],
+  }),
+  define({
+    name: 'upgrade',
+    group: 'install and upkeep',
+    task: 'fetch and switch to the newest release',
+    effect: 'changes',
+    usage: [
+      'lingtai upgrade [--despite-doctor]',
+      '  Fetch the newest release from GitHub Releases, check its',
+      '  checksums, unpack it beside this one in ~/.lingtai/versions,',
+      '  drain what conducts, then move ~/.local/bin/lingtai. Starts',
+      '  nothing. With lingtai doctor, the one request to the network',
+      '  this tool makes on its own account.',
+      '  --despite-doctor   upgrade in spite of failed doctor checks',
+    ],
+    examples: ['lingtai upgrade'],
+  }),
+  define({
+    name: 'rollback',
+    group: 'install and upkeep',
+    task: 'go back to an older installed version',
+    effect: 'changes',
+    usage: [
+      'lingtai rollback [<version>]',
+      '  Run ~/.local/bin/lingtai from an older version still in',
+      '  ~/.lingtai/versions — the newest one below the current, unless',
+      '  named.',
+    ],
+    examples: ['lingtai rollback', 'lingtai rollback 0.9.0'],
+  }),
+  define({
+    name: 'uninstall',
+    group: 'install and upkeep',
+    task: 'remove everything under ~/.lingtai and the shim',
+    effect: 'changes',
+    usage: [
+      'lingtai uninstall [--yes] [--nothing-conducts]',
+      '  Ask once, remove everything under ~/.lingtai and the shim, then',
+      '  name what it could not: the GitHub App, and the log where the',
+      '  log is a server.',
+      '  --yes               do not ask',
+      "  --nothing-conducts  remove a conductor's state though the lock",
+      '                      under ~/.lingtai/locks could not be read',
+    ],
+    examples: ['lingtai uninstall'],
+  }),
+  define({
+    name: 'doctor',
+    group: 'install and upkeep',
+    task: 'check everything that can be checked',
+    effect: 'reads',
+    usage: ['lingtai doctor', '  Exits non-zero on any failure.'],
+    examples: ['lingtai doctor'],
+  }),
+  define({
+    name: 'projection',
+    group: 'install and upkeep',
+    task: 'how far projections lag, and rebuild one',
+    effect: 'changes',
+    usage: [
+      'lingtai projection lag',
+      '  How far each projection is behind the log.',
+      'lingtai projection rebuild <name>',
+      '  Drop the table, reset the checkpoint, replay.',
+      `Projections: ${PROJECTION_NAMES.join(', ')}`,
+    ],
+    examples: ['lingtai projection lag', 'lingtai projection rebuild spend'],
+  }),
+] as const
+
+export type CommandName = (typeof COMMANDS)[number]['name']
+
+const NAMES: readonly string[] = COMMANDS.map((c) => c.name)
+
+export function isCommand(name: string | undefined): name is CommandName {
+  return name !== undefined && NAMES.includes(name)
+}
+
+export function definitionOf(name: CommandName): CommandDefinition {
+  return COMMANDS.find((c) => c.name === name) as CommandDefinition
+}

@@ -65,12 +65,14 @@ import {
   type BoardWorld,
 } from './board.ts'
 import { closeCommand } from './close.ts'
+import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
 import { grantFixRoundCommand } from './grant-fix-round.ts'
+import { commandHelp, rootHelp } from './help.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
@@ -107,256 +109,6 @@ import { WALL_LIMIT } from './wall-limit.ts'
  * added: here, visibly, or it does not exist.
  */
 const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
-
-const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
-
-  lingtai init                      a bare machine to the board, on the wizard:
-                                git and the agents looked at, a Postgres URL
-                                connected to and its tables made,
-                                ~/.lingtai/config.yml written. Run it again to
-                                continue, or to see what is set
-    --store <sqlite|postgres>   the store, instead of being asked — what a
-                                script or installer with no terminal gives.
-                                postgres takes --database-url with it
-    --database-url <url>        instead of being asked
-    --port <n>                  the board's port, for this run. default: 17820,
-                                or board.port in ~/.lingtai/config.yml
-    --defaults                  use every default the recipe questions have,
-                                instead of asking. With no terminal, one of
-                                this or an answer to every question is required
-  lingtai add [<owner>/<repo>]      onboard a GitHub repository the App is installed
-                                on, or — with no argument, or --local <dir> —
-                                a directory on this machine with its own origin
-    --github <owner>/<repo>     same as the positional
-    --local <dir>                a directory on this machine instead of GitHub
-    --project <github|local>    answers the question above without a slug or
-                                --local, when neither is given
-    --github-app <create|skip>  create or skip the App, asked only when none
-                                is configured yet
-    --base <branch>             github: where to *read the recipe from*, not
-                                what the base is — the recipe's own repo.base
-                                says that, and a --base contradicting it is
-                                refused. local: the branch the recipe governs,
-                                asked for if not given.
-                                default: the repository's own default branch
-    --tickets <github|db>       where this project's tickets come from, instead
-                                of being asked. github: this repository's own
-                                issues. db: Lingtai's own table — the only
-                                answer a local project takes, and the only one
-                                a project already asked this is kept at (#396)
-    --kinds <a,b,c>             which labels are work, comma-separated, first
-                                taken first, instead of being asked.
-                                default: bug, feature, documentation
-    --agent <claude-code|codex> which agent writes the change, instead of
-                                being asked — where the project already has a
-                                recipe. A fresh project is asked nothing here
-                                either way (#398)
-    --model <name>              the writer's model, instead of being asked
-    --reviewer <agent|none>     a cold reviewer, and which agent, or none,
-                                instead of being asked
-    --reviewer-model <name>     the reviewer's model, instead of being asked
-    --land <branch|hold>        where a pass lands, or hold every pass for a
-                                person at proposed, instead of being asked
-    --rounds <n>                fix rounds a pass may buy, instead of being asked
-    --wall <duration>           wall time per agent run, e.g. 1h, instead of
-                                being asked
-    --budget <usd>              a dollar ceiling per agent run, instead of
-                                being asked
-    --defaults                  use every default the recipe questions have,
-                                instead of asking. With no terminal, one of
-                                this or an answer to every question is required
-  lingtai run <project>             take the queue, in the recipe's priority order
-    --issue <n>                 one nominated issue instead of the queue
-    --max <n>                   stop after n items (--max 2 is Phase 2's bar)
-    --once                      the same as --max 1
-    --no-merge                  stop after the steps and ask before merging
-
-  the decisions — each the one the board's card takes, recorded the same way:
-  lingtai approve <project> --issue <n>
-                                merge what a held run produced, if its head has
-                                not moved since the approval was asked for
-    --note <text>               recorded with the approval, and required when
-                                a step still refuses the head: approving then
-                                waives each refusing step, with this as why
-  lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]
-                                run one more implementation round on saved work,
-                                then repeat the checks without waiving a refusal
-  lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
-                                end the wait with a new run instead: a blocked
-                                item goes back to the queue — held for approval
-                                or not — and the next pass cuts a fresh branch
-                                from a base that has since moved. The actor is
-                                still recorded in by, so the requeue is still
-                                not anonymous
-  lingtai backlog [project]         the minor findings passing steps raised, open
-    --all                       decided ones too, and what was decided
-  lingtai backlog accept <project> <key> --kind <kind>
-                                open one as an issue through the ticket store.
-                                One key: there is no accept-all
-    --unheld                    without agent:hold, so the next pass may take it
-                                Without --kind, opens the issue of an entry
-                                already accepted — safe to repeat, never a second
-  lingtai backlog decline <project> <key> --reason <why>
-                                recorded, so the next attempt does not ask again
-  lingtai close <project> --issue <n> "<reason>"
-                                a ticket nobody is going to do, ended: the queue
-                                stops offering it because the log says it is
-                                over. Nothing lifts a close — if the work is
-                                wanted again, open a new ticket
-  lingtai ticket list               a project's own tickets — only for a project
-                                whose recipe keeps them in Lingtai's database
-                                (source.tickets: db); a GitHub-backed project's
-                                are read with gh issue list instead. Open ones,
-                                by default
-    --all                       the closed ones too, marked closed
-    --project <p>               required with more than one project registered
-  lingtai ticket close <n>          closes that row in the table — not lingtai
-                                close, which ends a work item on the log; this
-                                changes nothing there. The daemon drops a
-                                closed ticket on its next sweep, not at once
-    --project <p>               as above
-  lingtai ticket new                opens $VISUAL or $EDITOR on a short text
-                                form — a title, a labels: line, then the body.
-                                Saving creates the ticket; quitting with the
-                                form unchanged does nothing. No kind label in
-                                labels: and the ticket is still created, with
-                                a warning that the queue will not take it
-    --project <p>               as above
-  lingtai ticket edit <n>           the same form, started from the ticket.
-                                Saving writes only the fields that changed
-    --project <p>               as above
-  lingtai ask <project> --issue <n> "<question>"
-                                hold a ticket on a decision before any run
-                                claims it: nothing is spent, the queue passes
-                                over it, and lingtai status prints the question
-  lingtai answer <project> --issue <n> "<choice>"
-                                answer it on the record: back in the queue, and
-                                every attempt at the ticket is told the answer
-                                — no editing the issue body
-  lingtai attach <runId>            follow a run's log — what it is doing, as it
-                                does it, from the beginning however late you
-                                attach. Reads a file and asks nothing of the
-                                daemon or the database, so it answers on a
-                                stopped system and on a run that is long over.
-                                A landed run has no log: 0034 keeps exactly the
-                                ones still owed an explanation
-  lingtai board start               serve the board pnpm build wrote beside this
-                                CLI, in this process: the URL is printed and a
-                                browser opened, and ctrl-c stops it. A port
-                                somebody already holds is said in words. From
-                                the source there is no built board:
-                                pnpm --filter @lingtai/board dev
-    --port <n>                  default 17820, or board.port in
-                                ~/.lingtai/config.yml
-    --dir <path>                a built board somewhere else
-    --no-open                   no browser — what the service's job passes
-  lingtai board stop                stop the board this machine is running. Not
-                                shutdown: that means finish the pass in flight
-                                and waits for it, and a board has no pass to
-                                finish. Where a supervisor keeps the board, this
-                                is its stop and the board stays stopped until
-                                lingtai service start
-  lingtai board restart             stop, then start. Unlike lingtai restart it
-                                refuses nothing first — no commit to check, no
-                                worktree, no doctor: a UI at the wrong commit
-                                costs a reload
-  lingtai board status              who serves it, whether a board answers, and
-                                whether a supervisor keeps one — three facts,
-                                none concluded from another
-  lingtai status [project]          what is runnable, and what is holding the rest
-    --all                       include items that have left the queue
-                                and why. Takes nothing and claims nothing.
-  lingtai doctor                    check everything that can be checked
-  lingtai env set <project> KEY=VALUE
-                                write one value into ~/.lingtai/env/<project>.env
-  lingtai env set <project> KEY     read the value from stdin, unechoed
-  lingtai env list <project>        names and which layer answered — never values
-  lingtai env unset <project> KEY   remove one
-  lingtai end replay [project]      resolve the end step for items that landed
-    --issue <n>                 without it, and deliver what it resolves to
-  lingtai start                     hold the projections current and take work.
-                                Reads no standing signal: a pause or a shutdown
-                                aimed at an earlier daemon was not aimed at this
-                                one, so nothing has to be lifted first. If
-                                another daemon holds the lock this starts
-                                nothing and says so. Unchecked — lingtai restart
-                                is the checked start
-    --no-conduct                projections only, take nothing
-    --no-merge                  as for lingtai run
-  lingtai service install|start|shutdown [why]|restart [why]|status|uninstall
-                                keep both processes running — the daemon and the
-                                board, two jobs: a LaunchAgent each on macOS, a
-                                systemd user unit each on Linux. No service
-                                manager? run lingtai daemon and lingtai board
-                                start in the foreground.
-                                shutdown drains the conductor through the log,
-                                waits for the pass, unloads it, and then stops
-                                the board, which has nothing to drain; restart
-                                is that and start, unchecked — lingtai restart
-                                is the checked one.
-                                status reports each job on its own: one word for
-                                both would hide a board that is up beside a
-                                conductor launchd respawns every thirty seconds
-  lingtai pause <why>               stop the running daemon taking new tickets; a
-                                run in flight finishes. About the daemon that is
-                                running, and gone when it is — but not for
-                                lingtai run, which takes no ticket while a
-                                pause stands, daemon or none: one already
-                                working finishes the ticket in hand and takes
-                                no other
-  lingtai resume                    take tickets again
-  lingtai shutdown [why]            stop the daemon, letting the ticket in flight
-                                finish first — the pass, so the steps and the
-                                merge lane run too. It does not outlive the
-                                daemon it was sent to, so the next lingtai start
-                                needs nothing lifted
-    --force                     do not wait. The agent is left running and the
-                                next conductor kills it and releases the claim
-    --timeout <duration>        give up waiting after this and exit anyway,
-                                leaving the agent running. Not with --force,
-                                which does not wait at all
-  lingtai restart [why]             drain, wait for the pass, and start one daemon
-                                here — or through lingtai service, when a
-                                supervisor keeps it. Refuses a commit that is not on the
-                                tracking remote — a process holds its code for
-                                hours, and a commit nobody pushed cannot be
-                                reasoned about afterwards — a dirty worktree,
-                                and what lingtai doctor failed on. Ctrl+C
-                                during the wait leaves the drain standing, and
-                                the next restart picks it up
-    --dirty                     start from a dirty worktree, having read why not
-    --despite-doctor            start in spite of failed doctor checks
-    --force, --timeout          as for lingtai shutdown — they are that
-                                shutdown's, and the start is unaffected
-    --no-conduct, --no-merge    as for lingtai start; refused under a supervisor
-  lingtai now <project> --issue <n> ask for one ahead of the queue
-  lingtai projection lag            how far each projection is behind the log
-  lingtai projection rebuild <name> drop the table, reset the checkpoint, replay
-  lingtai version                   the version, and which artifact: platform,
-                                binary or script, and the Node running it
-  lingtai upgrade                   fetch the newest release from GitHub Releases,
-                                check its checksums, unpack it beside this one
-                                in ~/.lingtai/versions, drain what conducts,
-                                then move ~/.local/bin/lingtai. Starts nothing.
-                                With lingtai doctor, the one request to the
-                                network this tool makes on its own account
-    --despite-doctor            upgrade in spite of failed doctor checks
-  lingtai rollback [<version>]      run ~/.local/bin/lingtai from an older version
-                                still in ~/.lingtai/versions — the newest one
-                                below the current, unless named
-  lingtai uninstall                 ask once, remove everything under ~/.lingtai
-                                and the shim, then name what it could not: the
-                                GitHub App, and the log where the log is a
-                                server. Where the log is a file under
-                                ~/.lingtai it is named before the question,
-                                because the removal takes it
-    --yes                       do not ask
-    --nothing-conducts          remove a conductor's state though the lock
-                                under ~/.lingtai/locks could not be read
-  lingtai help
-
-Projections: ${PROJECTIONS.map((p) => p.name).join(', ')}
-`
 
 async function doctor(): Promise<number> {
   const report = await doctorReport()
@@ -414,7 +166,8 @@ async function projectionCommand(args: string[]): Promise<number> {
     // Named, not discovered. A list whose only job was to let a projection be
     // written and silently left out of it — no table, no checkpoint, no failing
     // check — is what 0022 refused; `PROJECTIONS` is written out above, and a
-    // projection missing from it is missing from `--help` too.
+    // projection missing from it is missing from `--help` too — `help.test.ts`
+    // holds the names in `commands.ts` to it.
     const projection = PROJECTIONS.find((p) => p.name === name)
     if (!projection) {
       console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(', ')}`)
@@ -446,7 +199,7 @@ async function projectionCommand(args: string[]): Promise<number> {
     return 2
   }
 
-  console.error(USAGE)
+  console.error(commandHelp('projection'))
   return 2
 }
 
@@ -1156,7 +909,7 @@ async function controlCommand(verb: 'pause' | 'resume' | 'shutdown' | 'now', arg
   // does by doing it, on the one command whose cost is a running system. Caught
   // by typing it.
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(USAGE)
+    console.log(commandHelp(verb))
     return 0
   }
 
@@ -1251,7 +1004,24 @@ async function controlCommand(verb: 'pause' | 'resume' | 'shutdown' | 'now', arg
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [command, ...rest] = argv
+  const [asked, ...rest] = argv
+  // Narrowed to `commands.ts`, so the switch below is held to the definitions by
+  // `satisfies never`: a command with no case, or a case with no definition, fails typecheck.
+  if (!isCommand(asked)) {
+    // `entry.ts` answers help, and an empty line, before this file is imported (#617);
+    // here for a process started from this file, as a service's plist starts it.
+    if (asked === undefined) {
+      console.error(rootHelp())
+      return 2
+    }
+    if (asked === 'help' || asked === '--help' || asked === '-h') {
+      console.log(rootHelp())
+      return 0
+    }
+    console.error(`unknown command "${asked}"\n\n${rootHelp()}`)
+    return 2
+  }
+  const command = asked
 
   switch (command) {
     case 'add':
@@ -1546,15 +1316,16 @@ async function main(argv: string[]): Promise<number> {
         'lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai',
       )
       return 2
-    case undefined:
-    case 'help':
-    case '--help':
-    case '-h':
-      console.log(USAGE)
-      return command === undefined ? 2 : 0
-    default:
-      console.error(`unknown command "${command}"\n\n${USAGE}`)
+    // The same: `entry.ts` answers these before the log is loaded (`install.ts`).
+    case 'upgrade':
+    case 'rollback':
+    case 'uninstall':
+      console.error(
+        `lingtai ${command} runs from the entry, before the log is loaded — pnpm lingtai ${command}, or the installed lingtai`,
+      )
       return 2
+    default:
+      return command satisfies never
   }
 }
 
