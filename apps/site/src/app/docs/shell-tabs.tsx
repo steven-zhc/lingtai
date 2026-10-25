@@ -2,7 +2,10 @@
 
 import { Children, type ReactNode, useId } from 'react'
 
-const SHELLS = ['Bash', 'Zsh', 'Fish'] as const
+const SHELLS = [
+  { name: 'POSIX shell', value: 'posix' },
+  { name: 'Fish', value: 'fish' },
+] as const
 
 export function ShellTabs({ children }: { children: ReactNode }) {
   const id = useId()
@@ -14,14 +17,14 @@ export function ShellTabs({ children }: { children: ReactNode }) {
       <fieldset className="shell-tab-list">
         <legend className="visually-hidden">Choose your shell</legend>
         {SHELLS.map((shell, index) => (
-          <label key={shell}>
-            <input type="radio" name={`${id}-shell`} value={shell.toLowerCase()} defaultChecked={index === 0} />
-            <span>{shell}</span>
+          <label key={shell.value}>
+            <input type="radio" name={`${id}-shell`} value={shell.value} defaultChecked={index === 0} />
+            <span>{shell.name}</span>
           </label>
         ))}
       </fieldset>
       {SHELLS.map((shell, index) => (
-        <div key={shell} className="shell-panel" data-shell={shell.toLowerCase()}>
+        <div key={shell.value} className="shell-panel" data-shell={shell.value}>
           {examples[index]}
         </div>
       ))}

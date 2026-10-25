@@ -9,7 +9,7 @@ another Git project with its own install and build commands.
 
 | For            | Have ready                                                                                                                                                                             | Why                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Lingtai        | Git; Codex installed and signed in                                                                                                                                                     | Lingtai creates worktrees and uses Codex in this tutorial.        |
+| Lingtai        | Git; Claude Code installed and signed in                                                                                                                                              | Lingtai creates worktrees and uses Claude Code in this tutorial.  |
 | Chapter Garden | Node.js and npm | You will build the site and let Lingtai merge into a repository on this machine. |
 | Part 2 (GitHub) | A fork of Chapter Garden that you own, and permission to create and install a GitHub App on your account or organisation | Each Lingtai installation uses an App of its own; see [GitHub](github.md). |
 
@@ -25,20 +25,9 @@ Clone Chapter Garden over HTTPS, then make a bare repository beside it the
 checkout's `origin`. Lingtai pushes and merges there, so Part 1 needs no GitHub
 account, and the original repository is never touched.
 
-**Bash**
+**POSIX shell (bash, zsh)**
 
-```bash
-# Change this path if you want the checkout somewhere else.
-export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
-mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
-git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
-git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
-```
-
-**Zsh**
-
-```zsh
+```sh
 # Change this path if you want the checkout somewhere else.
 export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
 mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
@@ -61,28 +50,18 @@ git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ## Step 1 — Set up this machine
 
 Register Chapter Garden with Lingtai. This command uses local SQLite, lets
-Codex write the change, checks the site, and waits for your approval before
+Claude Code write the change, checks the site, and waits for your approval before
 merging.
 
-**Bash**
+**POSIX shell (bash, zsh)**
 
-```bash
+```sh
 # Reuse the checkout path above, or change this default in a new terminal.
 export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --base main \
-  --agent codex --install 'npm ci' --build 'npm run check' \
-  --build 'npm run build' --defaults --land hold
-```
-
-**Zsh**
-
-```zsh
-# Reuse the checkout path above, or change this default in a new terminal.
-export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
-lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base main \
-  --agent codex --install 'npm ci' --build 'npm run check' \
+  --agent claude-code --reviewer claude-code \
+  --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
 
@@ -93,7 +72,8 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
 set -q CHAPTER_GARDEN_DIR; or set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --base main \
-  --agent codex --install 'npm ci' --build 'npm run check' \
+  --agent claude-code --reviewer claude-code \
+  --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
 
@@ -112,18 +92,18 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | `--store sqlite`                | Keeps Lingtai's log on this machine; no database server is needed. |
 | `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
 | `--base main`                  | Merges into `main` of the bare repository beside your checkout.    |
-| `--agent codex`                 | Uses the Codex account you signed in to.                           |
+| `--agent claude-code`           | Uses the Claude Code account you signed in to for the change.      |
+| `--reviewer claude-code`        | Uses the same account for the cold review.                         |
 | `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
 | `--build ...`                   | Runs the site's checks and build before review.                    |
 | `--land hold`                   | Stops for your approval before merging.                            |
 | `--defaults`                    | Accepts the remaining setup defaults.                              |
 
 If you already initialized Lingtai without these options, `init` will not
-reconfigure that project; see the [operating guide](operating.md). With
-`--agent codex`, `init` writes `runtime.limits.turns: unbounded` into the
-recipe, because Codex has no turn limit to enforce; the two-hour wall limit
-still applies and `doctor` reports the limits as passing. A turn count you
-write yourself on Codex is a promise nothing keeps, and `doctor` fails it.
+reconfigure that project; see the [operating guide](operating.md).
+
+To use Codex instead, pass `--agent codex --reviewer codex`; it needs Codex
+installed and signed in.
 
 </details>
 
@@ -185,33 +165,33 @@ foreground process. Use the Board for Step 4, or open a third terminal for its
 CLI commands. The installed binary does not yet support `lingtai service`
 for background startup.
 
-Lingtai takes the ticket, creates a separate worktree, runs Codex, then runs
+Lingtai takes the ticket, creates a separate worktree, runs Claude Code, then runs
 `npm run check` and `npm run build`.
 
-![Step 3 runs the ticket through claim, worktree setup, Codex implementation, checks and review, then stops at the landing hold.](img/pass.svg)
+![Step 3 runs the ticket through claim, worktree setup, Claude Code implementation, checks and review, then stops at the landing hold.](img/pass.svg)
 
 ## Step 4 — Approve and confirm
 
-Check the ticket's state:
+Open the ticket's task page from the Board by clicking its title. Watch the
+rail advance through the steps above.
+
+When the card is under **Waiting on you** and `proposed` is lit on the rail,
+read the change and the check results on that page, then press **Approve**. The
+card moves to **Landed**: the checked change reached `main` of the bare
+repository. Run `git pull` in your Chapter Garden checkout
+(`~/workspace/chapter-garden` unless you changed it) to see the new chapter. If
+it stopped for another reason, the [operating guide](operating.md) explains the
+next action. To put work on GitHub, continue with Part 2.
+
+From a terminal instead:
 
 ```sh
 lingtai status chapter-garden --all
-```
-
-When it says **Waiting on you** for the landing hold, review the change and
-the check results. If you want it merged, approve the ticket number from
-Step 2:
-
-```sh
 lingtai approve chapter-garden --issue <ticket-number>
 ```
 
-Run `lingtai status chapter-garden --all` again until the ticket says
-**Landed**. That means the checked change reached `main` of the bare repository; run
-`git pull` in your Chapter Garden checkout (`~/workspace/chapter-garden` unless
-you changed it) to see the new chapter. If it
-stopped for another reason, the [operating guide](operating.md) explains the
-next action. To put work on GitHub, continue with Part 2.
+`status` shows **Waiting on you** for the landing hold; `<ticket-number>` is the
+number from Step 2.
 
 ![Step 4 reviews and approves the landing hold, then Lingtai merges the change and marks the ticket Landed.](img/waiting.svg)
 
