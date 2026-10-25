@@ -215,11 +215,11 @@ export type RecipeFor = (state: ProjectState, client: unknown) => Promise<Resolv
  * road out, and none of the four callers has to remember a second branch. This
  * is where "an App that is misconfigured" stopped being an empty column.
  */
-export async function githubClientFor(state: ProjectState): Promise<GitHubClient> {
+export async function githubClientFor(state: ProjectState, signal?: AbortSignal): Promise<GitHubClient> {
   if (!hasGitHubApp()) throw new Error('no GitHub App configured, so GitHub cannot be asked about this project')
   if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
   if (!state.owner) throw new Error('no owner recorded — re-run lingtai add to record it')
-  return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project })
+  return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project, signal })
 }
 
 /**

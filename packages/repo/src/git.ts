@@ -37,6 +37,8 @@ export interface GitRunOptions {
    */
   token?: TokenSource
   env?: NodeJS.ProcessEnv
+  /** Kills the child when it aborts; the promise then rejects. */
+  signal?: AbortSignal
 }
 
 export async function git(args: string[], options: GitRunOptions = {}): Promise<string> {
@@ -54,7 +56,12 @@ export async function git(args: string[], options: GitRunOptions = {}): Promise<
   // from a slow clone.
   env['GIT_TERMINAL_PROMPT'] = '0'
 
-  const { stdout } = await exec('git', args, { cwd: options.cwd, env, maxBuffer: 32 * 1024 * 1024 })
+  const { stdout } = await exec('git', args, {
+    cwd: options.cwd,
+    env,
+    maxBuffer: 32 * 1024 * 1024,
+    signal: options.signal,
+  })
   return options.trimOutput === false ? stdout : stdout.trim()
 }
 

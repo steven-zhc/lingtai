@@ -35,12 +35,15 @@ export function mirrorPathFor(project: string, home = stateDir()): string {
 export interface MirrorOptions {
   project: string
   home?: string
+  /** Kills the `git` child when it aborts. */
+  signal?: AbortSignal
 }
 
 /** The commit a ref points at, or null when the mirror has no such ref. */
 export async function refSha(options: MirrorOptions & { ref: string }): Promise<string | null> {
   return git(['rev-parse', '--verify', `${options.ref}^{commit}`], {
     cwd: mirrorPathFor(options.project, options.home),
+    signal: options.signal,
   }).catch(() => null)
 }
 
@@ -73,6 +76,7 @@ export async function readAt(
   const limit = options.limitBytes ?? 64_000
   const text = await git(['show', `${options.ref}:${options.path}`], {
     cwd: mirrorPathFor(options.project, options.home),
+    signal: options.signal,
   }).catch(() => null)
   if (text === null) return null
   return text.length > limit
@@ -99,6 +103,7 @@ export async function diffStatAt(
   const limit = options.limitBytes ?? 8_000
   const text = await git(['diff', '--stat', `${options.base}...${options.head}`], {
     cwd: mirrorPathFor(options.project, options.home),
+    signal: options.signal,
   }).catch(() => null)
   if (text === null) return null
   return text.length > limit
@@ -119,6 +124,7 @@ export async function listAt(
   const limit = options.limit ?? 1_500
   const out = await git(['ls-tree', '-r', '--name-only', options.ref], {
     cwd: mirrorPathFor(options.project, options.home),
+    signal: options.signal,
   }).catch(() => null)
   if (out === null) return { paths: [], truncated: false }
   const paths = out.split('\n').filter((p) => p !== '')
@@ -148,7 +154,8 @@ export async function conflictedPathsAt(
   options: MirrorOptions & { baseSha: string; headSha: string; limitBytes?: number },
 ): Promise<ConflictedPath[]> {
   const cwd = mirrorPathFor(options.project, options.home)
-  const version = await git(['--version'], { cwd })
+  const signal = options.signal
+  const version = await git(['--version'], { cwd, signal })
   const match = /git version (\d+)\.(\d+)/.exec(version)
   if (!match || Number(match[1]) < 2 || (Number(match[1]) === 2 && Number(match[2]) < 38)) {
     throw new Error(`git merge-tree --write-tree requires git 2.38 or later; found ${version}`)
@@ -156,7 +163,7 @@ export async function conflictedPathsAt(
 
   let output: string
   try {
-    output = await git(['merge-tree', '--write-tree', '-z', options.baseSha, options.headSha], { cwd })
+    output = await git(['merge-tree', '--write-tree', '-z', options.baseSha, options.headSha], { cwd, signal })
   } catch (err) {
     const failure = err as Error & { code?: number; stdout?: string }
     if (failure.code !== 1 || typeof failure.stdout !== 'string') throw err
@@ -179,14 +186,14 @@ export async function conflictedPathsAt(
   const limit = options.limitBytes ?? 64_000
   const readBlob = async (oid: string | null): Promise<string | null> => {
     if (oid === null) return null
-    const content = await git(['cat-file', '-p', oid], { cwd, trimOutput: false })
+    const content = await git(['cat-file', '-p', oid], { cwd, trimOutput: false, signal })
     return content.length > limit
       ? `${content.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${content.length}]`
       : content
   }
   const paths: ConflictedPath[] = []
   for (const [path, [baseOid, oursOid, theirsOid]] of stages) {
-    const merged = await git(['show', `${tree}:${path}`], { cwd, trimOutput: false }).catch((err: unknown) => {
+    const merged = await git(['show', `${tree}:${path}`], { cwd, trimOutput: false, signal }).catch((err: unknown) => {
       const failure = err as Error & { code?: number; stderr?: string }
       if (failure.code === 128 && /fatal: path .* does not exist in /.test(failure.stderr ?? '')) return null
       throw err

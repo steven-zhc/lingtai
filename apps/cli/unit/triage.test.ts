@@ -13,7 +13,7 @@ import { Triage, triageCallFor } from '@lingtai/recipe'
  */
 import { describe, expect, it, vi } from 'vitest'
 
-import { waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
+import { enqueueTriage, waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
 
 const TRIAGE = Triage.parse({})
 
@@ -275,7 +275,7 @@ describe('waitTriage', () => {
     )
 
     expect(held.result._tag).toBe('TriageAdvised')
-    expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha)
+    expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha, expect.any(AbortSignal))
     expect(deps.runtime).toHaveBeenCalledWith('codex', { tools: 'full' })
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({ cwd: '/tmp/private-checkout', env: { HOME: '/tmp/private-home' } })
@@ -502,7 +502,12 @@ describe('waitTriage', () => {
     const mirrorCall = vi.fn(async () => [CONFLICT_PATH])
     const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: mirrorCall }) })
     await waitTriage(deps, requestOn(ticketStream('lingtai', 415), aWaitId(), { reason: conflictReason('a', 'b') }))
-    expect(mirrorCall).toHaveBeenCalledWith({ project: 'lingtai', baseSha: 'a', headSha: 'b' })
+    expect(mirrorCall).toHaveBeenCalledWith({
+      project: 'lingtai',
+      baseSha: 'a',
+      headSha: 'b',
+      signal: expect.any(AbortSignal),
+    })
     expect(prompt).toContain('"base": "before"')
     expect(prompt).toContain('"ours": "ours"')
     expect(prompt).toContain('"theirs": "theirs"')
@@ -1027,7 +1032,8 @@ describe('waitTriage', () => {
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { signal: controller.signal }))
 
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.signal).toBe(controller.signal)
+    // The runtime gets the wall combined with the caller's, so identity no longer holds.
+    expect(requests[0]?.signal?.aborted).toBe(true)
 
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'aborted' })
     const events = await store.read(ticketId)
@@ -1035,6 +1041,125 @@ describe('waitTriage', () => {
     const spent = events.find((e) => e.type === 'RunSpent')!.data as { costUsd: number | null; turns: number }
     expect(spent.costUsd).toBeNull()
     expect(spent.turns).toBe(0)
+  })
+
+  describe('the recipe wall', () => {
+    const SHORT = Triage.parse({ limits: { wall: '20ms' } })
+    const never = (): Promise<never> => new Promise(() => {})
+
+    it('stops a triage whose mirror read never returns, appends a failed WaitTriaged, and dispatches nothing', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 7)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+      expect(typesOf(await store.read(ticketId))).toEqual(['TriageStarted', 'WaitTriaged'])
+    })
+
+    it('stops a triage whose GitHub read never returns', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 8)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { issue: never })
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+    })
+
+    it('still pairs TriageStarted with WaitTriaged when the conflict read never returns', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 9)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: never }) })
+
+      const held = await waitTriage(
+        deps,
+        requestOn(ticketId, aWaitId(), {
+          triage: SHORT,
+          reason: conflictReason('a'.repeat(40), 'b'.repeat(40)),
+        }),
+      )
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(requests).toHaveLength(0)
+      const events = await store.read(ticketId)
+      expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+      expect((events[0]!.data as { by: { _tag: string } }).by._tag).toBe('Mechanical')
+    })
+
+    it('hands the mirror a signal the wall aborts, so the work itself is stopped', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 12)
+      const { runtime } = stubRuntime(() => outcomeOf())
+      const seen: (AbortSignal | undefined)[] = []
+      const deps = fakeDeps(store, runtime, {
+        mirror: fakeMirror({
+          refSha: (input) => {
+            seen.push(input.signal)
+            return never()
+          },
+        }),
+      })
+
+      await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(seen[0]).toBeDefined()
+      expect(seen[0]?.aborted).toBe(true)
+    })
+
+    it("records the wall as 'timeout' when the runtime reports the wall's abort as 'aborted'", async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 13)
+      const { runtime } = stubRuntime(
+        (request) =>
+          new Promise<RunOutcome>((resolve) => {
+            request.signal?.addEventListener('abort', () =>
+              resolve(outcomeOf({ failure: { kind: 'aborted', detail: 'the signal aborted the run' } })),
+            )
+          }),
+      )
+      const deps = fakeDeps(store, runtime)
+
+      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+    })
+
+    it('lets the next queued triage run once the first one hit its wall', async () => {
+      const store = createMemoryEventStore()
+      const first = aWaitId()
+      const second = aWaitId()
+      const { runtime } = stubRuntime(() => outcomeOf())
+      const stuck = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+      const ran: string[] = []
+      const log = (): void => {}
+
+      enqueueTriage(
+        { ticketId: ticketStream('lingtai', 10), waitId: first },
+        () => waitTriage(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT })),
+        log,
+      )
+      const done = new Promise<void>((resolve) => {
+        enqueueTriage(
+          { ticketId: ticketStream('lingtai', 11), waitId: second },
+          async () => {
+            ran.push('second')
+            resolve()
+          },
+          log,
+        )
+      })
+      await done
+
+      expect(ran).toEqual(['second'])
+      expect(typesOf(await store.read(ticketStream('lingtai', 10)))).toEqual(['TriageStarted', 'WaitTriaged'])
+    })
   })
 
   it('leaves no RunSpent for a runtime that throws, and still ends in one failed WaitTriaged without throwing', async () => {
@@ -1180,7 +1305,9 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(readAtCalls).toEqual([{ project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000 }])
+    expect(readAtCalls).toEqual([
+      { project: 'lingtai', ref: baseSha, path: 'a.ts', limitBytes: 24_000, signal: expect.any(AbortSignal) },
+    ])
     expect(requests[1]?.limits.usd).toBeCloseTo(0.3)
 
     // Two runtime calls (the `read`, then the `advised` that follows it), so

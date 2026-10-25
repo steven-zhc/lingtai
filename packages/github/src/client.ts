@@ -194,7 +194,7 @@ export interface GitHubClient {
    * anybody commented on since.
    */
   listIssuesSince(since: Date): Promise<Issue[]>
-  getIssue(number: number): Promise<Issue>
+  getIssue(number: number, signal?: AbortSignal): Promise<Issue>
 
   /**
    * Posts a comment.
@@ -290,15 +290,17 @@ export interface CreateClientOptions {
   repo: string
   /** Skips the installation lookup when one has already been made. */
   installation?: Installation
+  /** Stops the installation lookup when it aborts; later requests take their own. */
+  signal?: AbortSignal
 }
 
 export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
   const { auth, owner, repo } = options
-  const installation = options.installation ?? (await installationForRepo(auth, owner, repo))
+  const installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
   const tokenFor = createTokenSource(auth, installation.id)
 
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await tokenFor()
+  async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+    const token = await tokenFor(signal)
     const response = await fetch(`${GITHUB_API}${path}`, {
       method,
       headers: {
@@ -309,6 +311,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     })
 
     if (!response.ok) {
@@ -524,8 +527,15 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       return out.reverse()
     },
 
-    async getIssue(number) {
-      return toIssue(await request<Parameters<typeof toIssue>[0]>('GET', `/repos/${owner}/${repo}/issues/${number}`))
+    async getIssue(number, signal) {
+      return toIssue(
+        await request<Parameters<typeof toIssue>[0]>(
+          'GET',
+          `/repos/${owner}/${repo}/issues/${number}`,
+          undefined,
+          signal,
+        ),
+      )
     },
   }
 }

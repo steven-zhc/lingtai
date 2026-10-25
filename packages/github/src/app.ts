@@ -147,11 +147,17 @@ async function githubJson<T>(path: string, init: RequestInit & { token: string; 
 }
 
 /** Which installation covers a repository, and what it may do there. */
-export async function installationForRepo(auth: AppAuth, owner: string, repo: string): Promise<Installation> {
+export async function installationForRepo(
+  auth: AppAuth,
+  owner: string,
+  repo: string,
+  signal?: AbortSignal,
+): Promise<Installation> {
   try {
     const raw = await githubJson<RawInstallation>(`/repos/${owner}/${repo}/installation`, {
       token: appJwt(auth),
       tokenKind: 'bearer',
+      signal,
     })
     return toInstallation(raw, owner)
   } catch (err) {
@@ -222,10 +228,12 @@ export function installationToken(auth: AppAuth, installationId: number): Effect
   const fresh = () => cached !== null && cached.expiresAtMs - Date.now() > 60_000
 
   const fetchToken = Effect.tryPromise({
-    try: async () => {
+    // Effect hands `try` a signal that aborts when the fiber is interrupted,
+    // which is how a caller's `tokenFor(signal)` stops the request itself.
+    try: async (signal) => {
       const raw = await githubJson<{ token: string; expires_at: string }>(
         `/app/installations/${installationId}/access_tokens`,
-        { method: 'POST', token: appJwt(auth), tokenKind: 'bearer' },
+        { method: 'POST', token: appJwt(auth), tokenKind: 'bearer', signal },
       )
       cached = { token: raw.token, expiresAtMs: Date.parse(raw.expires_at) }
       return raw.token
@@ -255,10 +263,10 @@ export function installationToken(auth: AppAuth, installationId: number): Effect
  * is the `GitHubError` itself rather than a fiber's wrapper, because a caller
  * that reads `.status` should not have to know which face it took.
  */
-export function createTokenSource(auth: AppAuth, installationId: number): () => Promise<string> {
+export function createTokenSource(auth: AppAuth, installationId: number): (signal?: AbortSignal) => Promise<string> {
   const token = installationToken(auth, installationId)
-  return async function tokenFor(): Promise<string> {
-    const exit = await Effect.runPromiseExit(token)
+  return async function tokenFor(signal?: AbortSignal): Promise<string> {
+    const exit = await Effect.runPromiseExit(token, { signal })
     if (Exit.isSuccess(exit)) return exit.value
     throw Cause.squash(exit.cause)
   }
