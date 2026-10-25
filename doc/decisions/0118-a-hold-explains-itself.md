@@ -537,7 +537,7 @@ which kind a wait was got inferred again in each place that needed it, from
    `TicketReleased{cause: Restart}` (0120 §5), and a person's requeue
    releases with `cause: ByPerson`. Every cost line on the page says so.
 
-8. **A merge conflict is triaged.**
+8. **A merge conflict is triaged, and a moved base is answered by its overlap.**
    - The wait records only the conflicting paths and the two shas
      (`ProposedEscalated{ proposal: MergeConflict{ paths, baseSha, headSha } }`),
      so triage reads both sides from the mirror.
@@ -562,6 +562,16 @@ which kind a wait was got inferred again in each place that needed it, from
    - Past 20 hunks it does not resolve them one by one. The hunks are counted
      from the mirror before any agent is called, and past 20 none is: the
      triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. The answer is the same `GrantFixRound`.
+   - **A moved base has three answers, checked in this order.** A conflict
+     comes first and is the rest of this section. A clean trial merge where
+     the base moved on files the branch also changed (`base-moved`) is merged
+     into the branch by the system, with no agent and no round spent; `build`
+     and `review` then run again, and that review is shown what landed on those
+     paths (capped at 400 lines). That happens at most twice a pass
+     (`BASE_MERGES_LIMIT`); the third is a wait (§1's `BaseMoved` row). A base
+     that moved only elsewhere lands after the lane's `verify` on the merged
+     tree, and a red `verify` there is `VerifyRed` and goes back to
+     `implement` (0108).
 
 9. **Triage belongs to the wait it explains.** `WaitTriaged` names the
    wait it answers (its `waitId`) and the head it read. The page and the card
