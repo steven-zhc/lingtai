@@ -159,13 +159,15 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   async function strayLinks(): Promise<{
     subs: IssueId[]
     edges: { issue: number; blocker: IssueId }[]
+    /** Open duplicates its own listing saw, which the caller may not have listed. */
+    duplicates: { number: number; of: number }[]
   }> {
     // Its listing is a listing like any other: a child it finds for a key the
     // log has nothing for is taken up, so a failed earlier listing loses nothing.
     const found = await findChildren()
     adopt(found.adopt)
-    const { extras } = found
-    if (extras.length === 0) return { subs: [], edges: [] }
+    const { extras, duplicates } = found
+    if (extras.length === 0) return { subs: [], edges: [], duplicates }
     const ids = new Set(extras.map((e) => e.id as number))
     const subs = (await port.subIssues(parent)).filter((i) => ids.has(i.id)).map((i) => i.id)
     const edges: { issue: number; blocker: IssueId }[] = []
@@ -182,14 +184,14 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
     for (const extra of extras)
       for (const b of await port.blockedBy(extra.number))
         if (ours.has(b.id)) edges.push({ issue: extra.number, blocker: b.id })
-    return { subs, edges }
+    return { subs, edges, duplicates }
   }
 
   /** Withdraws a newer duplicate in favour of the older issue that is the child. */
   async function withdraw(duplicate: number, kept: number): Promise<void> {
     await port.comment(
       duplicate,
-      `Duplicate of #${kept} — two reconciles of the same split opened this child at once, and the older one is kept.`,
+      `Duplicate of #${kept} — two reconciles of the same split opened this child, and #${kept} is the one this split recorded as the child.`,
     )
     await port.closeIssue(duplicate, 'not_planned')
   }
@@ -257,7 +259,10 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
       // A duplicate left by an earlier attempt — a create that timed out and
       // became visible after a retry made another — is withdrawn first, so a
       // withdrawal that failed is tried again rather than forgotten.
-      for (const d of (await findChildren()).duplicates) await withdraw(d.number, d.of)
+      const scan = await findChildren()
+      // A child this scan alone sees is the child from now on, recorded even if a later step throws.
+      adopt(scan.adopt)
+      for (const d of scan.duplicates) await withdraw(d.number, d.of)
       const stray = await strayLinks()
       for (const id of stray.subs) await port.removeSubIssue(parent, id)
       for (const e of stray.edges) await port.removeBlockedBy(e.issue, e.blocker)
@@ -327,10 +332,11 @@ export async function reconcileSplit(options: ReconcileSplitOptions): Promise<Re
   }
   try {
     for (const note of await readBack(observed)) join(note)
-    // A duplicate still open is a split that is not whole, whatever else was seen.
-    const open = listing?.duplicates ?? []
-    if (open.length > 0) join(`duplicate children still open: ${open.map((d) => `#${d.number}`).join(', ')}`)
     const stray = await strayLinks()
+    // A duplicate still open is a split that is not whole, whatever else was seen:
+    // from either listing, since the second may see what the first did not.
+    const open = [...new Set([...(listing?.duplicates ?? []), ...stray.duplicates].map((d) => d.number))]
+    if (open.length > 0) join(`duplicate children still open: ${open.map((n) => `#${n}`).join(', ')}`)
     if (stray.subs.length + stray.edges.length > 0)
       join(
         `duplicate children still linked: ${stray.subs.length} sub-issue(s), ${stray.edges.length} blocked-by edge(s)`,

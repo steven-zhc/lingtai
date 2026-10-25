@@ -456,6 +456,50 @@ describe('reconcileSplit through resolveWaitHolding (#561)', () => {
       expect(carrying(github)).toHaveLength(3)
     })
 
+    it('records a create that landed from the pre-write scan alone, so a removed marker makes no second child', async () => {
+      const github = fakeGitHub({ op: 'create', at: 0, mode: 'after' })
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      const listed = github.port.listIssuesSince
+      github.port.listIssuesSince = async () => []
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(splitProgressOf(await store.read(ticketId), waitId)!.identities).toEqual([])
+      // Retry: the first listing hides it, the pre-write scan shows it, every later listing throws.
+      let lists = 0
+      github.port.listIssuesSince = async (since) => {
+        const n = lists++
+        if (n >= 2) throw new Error('listing timed out')
+        return n === 0 ? [] : listed(since)
+      }
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      expect(splitProgressOf(await store.read(ticketId), waitId)!.identities[0]).toMatchObject({
+        key: 'a',
+        number: 600,
+        via: 'adopted',
+      })
+      github.port.listIssuesSince = listed
+      strip(github, waitId as never, 'a')
+      for (let i = 0; i < 4; i++) await split()
+      expect(carrying(github)).toHaveLength(3)
+    })
+
+    it('is not complete when a duplicate shows up only in the final stray-link listing', async () => {
+      const github = fakeGitHub()
+      const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
+      await split()
+      const listed = github.port.listIssuesSince
+      const [a] = github.issues
+      const duplicate = { ...a!, number: 700, id: 700_007 as Issue['id'], createdAt: 700 }
+      // Listings in one attempt: read, pre-write scan, stray links, final adopt, final stray links.
+      let lists = 0
+      github.port.listIssuesSince = async (since) => {
+        const all = await listed(since)
+        return lists++ === 4 ? [...all, duplicate] : all
+      }
+      expect(await split()).toMatchObject({ reason: 'split-partial' })
+      const progress = splitProgressOf(await store.read(ticketId), waitId)!
+      expect(progress.failure).toContain('duplicate children still open: #700')
+    })
+
     it('keeps the older issue as the child when the duplicate withdrawal lands and then throws', async () => {
       const github = fakeGitHub()
       const { store, ticketId, waitId, split } = await blockedOnFirstWait(github)
