@@ -363,11 +363,13 @@ which kind a wait was got inferred again in each place that needed it, from
      - **`full`, Codex only.** The Codex CLI with its shell, run in a private
        clone of the mirror at the attempt's recorded head, or the base where
        none was recorded. The checkout protects the mirror, its refs and
-       `origin`, which it cannot write; no hook runs, and nothing pushes,
-       merges or claims; edits die with the directory. It does **not**
+       `origin`, which it cannot write; no Git hook runs in it, and nothing
+       pushes, merges or claims; edits die with the directory. It does **not**
        protect host files, which stay readable by absolute path; the real
        `CODEX_HOME`, which is the login and is in reach by design because
-       Codex rotates its token in place; the network, which is whatever the
+       Codex rotates its token in place, so any Codex hook already configured
+       there is loaded and runs (the run ignores neither the user's Codex
+       configuration nor its hooks); the network, which is whatever the
        Codex CLI's own sandbox gives; or a checkout whose tool processes
        could not be confirmed dead, which is left on disk rather than
        deleted. This is not Discussion's containment. Discussion keeps no
