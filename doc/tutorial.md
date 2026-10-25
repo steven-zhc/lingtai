@@ -10,7 +10,7 @@ another Git project with its own install and build commands.
 | For            | Have ready                                                                                                                                                                             | Why                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | Lingtai        | Git; Codex installed and signed in                                                                                                                                                     | Lingtai creates worktrees and uses Codex in this tutorial.        |
-| Chapter Garden | Node.js and npm; [GitHub SSH access](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account); permission to push a branch | You will build the site and give Lingtai a branch it can push to. |
+| Chapter Garden | Node.js and npm | You will build the site and let Lingtai merge into a repository on this machine. |
 | Part 2 (GitHub) | A fork of Chapter Garden that you own, and permission to create and install a GitHub App on your account or organisation | Each Lingtai installation uses an App of its own; see [GitHub](github.md). |
 
 Everything else Lingtai needs, and when, is on [requirements](requirements.md).
@@ -21,10 +21,9 @@ Install Lingtai. This downloads the CLI; setup is the next step.
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 ```
 
-Clone Chapter Garden and push a branch of your own. Lingtai will use that
-branch as its base, leaving protected `main` alone. If you cannot push to the
-original repository, [fork it on GitHub](https://github.com/steven-zhc/chapter-garden/fork)
-first and use your fork's SSH URL in `git clone` below.
+Clone Chapter Garden over HTTPS, then make a bare repository beside it the
+checkout's `origin`. Lingtai pushes and merges there, so Part 1 needs no GitHub
+account, and the original repository is never touched.
 
 **Bash**
 
@@ -32,11 +31,9 @@ first and use your fork's SSH URL in `git clone` below.
 # Change this path if you want the checkout somewhere else.
 export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
 mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
-git clone git@github.com:steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-cd "$CHAPTER_GARDEN_DIR"
-tutorial_branch="tutorial-$USER-$(date +%Y%m%d%H%M%S)"
-git switch -c "$tutorial_branch"
-git push -u origin "$tutorial_branch"
+git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
+git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
+git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
 **Zsh**
@@ -45,11 +42,9 @@ git push -u origin "$tutorial_branch"
 # Change this path if you want the checkout somewhere else.
 export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
 mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
-git clone git@github.com:steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-cd "$CHAPTER_GARDEN_DIR"
-tutorial_branch="tutorial-$USER-$(date +%Y%m%d%H%M%S)"
-git switch -c "$tutorial_branch"
-git push -u origin "$tutorial_branch"
+git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
+git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
+git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
 **Fish**
@@ -58,11 +53,9 @@ git push -u origin "$tutorial_branch"
 # Change this path if you want the checkout somewhere else.
 set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
 mkdir -p (dirname "$CHAPTER_GARDEN_DIR")
-git clone git@github.com:steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-cd "$CHAPTER_GARDEN_DIR"
-set tutorial_branch tutorial-$USER-(date +%Y%m%d%H%M%S)
-git switch -c $tutorial_branch
-git push -u origin $tutorial_branch
+git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
+git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
+git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
 ## Step 1 — Set up this machine
@@ -77,7 +70,7 @@ merging.
 # Reuse the checkout path above, or change this default in a new terminal.
 export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base "$(git -C "$CHAPTER_GARDEN_DIR" branch --show-current)" \
+  --base main \
   --agent codex --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
@@ -88,7 +81,7 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
 # Reuse the checkout path above, or change this default in a new terminal.
 export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base "$(git -C "$CHAPTER_GARDEN_DIR" branch --show-current)" \
+  --base main \
   --agent codex --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
@@ -99,7 +92,7 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
 # Reuse the checkout path above, or change this default in a new terminal.
 set -q CHAPTER_GARDEN_DIR; or set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base (git -C "$CHAPTER_GARDEN_DIR" branch --show-current) \
+  --base main \
   --agent codex --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
 ```
@@ -118,7 +111,7 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | ------------------------------- | ------------------------------------------------------------------ |
 | `--store sqlite`                | Keeps Lingtai's log on this machine; no database server is needed. |
 | `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
-| `--base ...`                    | Uses your tutorial branch as the merge target.                     |
+| `--base main`                  | Merges into `main` of the bare repository beside your checkout.    |
 | `--agent codex`                 | Uses the Codex account you signed in to.                           |
 | `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
 | `--build ...`                   | Runs the site's checks and build before review.                    |
@@ -214,29 +207,12 @@ lingtai approve chapter-garden --issue <ticket-number>
 ```
 
 Run `lingtai status chapter-garden --all` again until the ticket says
-**Landed**. That means the checked change reached your tutorial branch. If it
+**Landed**. That means the checked change reached `main` of the bare repository; run
+`git -C "$CHAPTER_GARDEN_DIR" pull` to see the new chapter in your checkout. If it
 stopped for another reason, the [operating guide](operating.md) explains the
-next action.
+next action. To put work on GitHub, continue with Part 2.
 
 ![Step 4 reviews and approves the landing hold, then Lingtai merges the change and marks the ticket Landed.](img/waiting.svg)
-
-## Optional Step 5 — Open a pull request
-
-**Landed** means Lingtai merged the change into the tutorial branch you chose
-as `repo.base` in Step 1. It has not entered Chapter Garden's `main` branch.
-
-To share the chapter, open [Chapter Garden's pull requests](https://github.com/steven-zhc/chapter-garden/pulls)
-and choose **New pull request**. Set **base** to `main` and **compare** to your
-tutorial branch. If you used a fork, choose your fork and tutorial branch as
-the compare source. Review the diff, then submit the PR.
-
-Or, from your Chapter Garden checkout, use the signed-in GitHub CLI:
-
-```sh
-gh pr create --repo steven-zhc/chapter-garden --base main
-```
-
-The CLI uses your current tutorial branch and asks for the PR title and description.
 
 ## Part 2 — Move the project to GitHub
 
