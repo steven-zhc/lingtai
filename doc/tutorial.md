@@ -300,5 +300,10 @@ is proved by the second `add`:
 `permissions: issues, contents, pull requests write; metadata read`; a missing
 permission is listed and ends `Fix them in the App's settings, then re-run.`
 
-Steps 2–4 apply from here, but a ticket is a GitHub issue with a kind label,
-not `lingtai ticket new`.
+A ticket on a GitHub project is a GitHub issue with a kind label, not
+`lingtai ticket new`. **But only if the log has no tickets for this project
+yet.** If you completed Steps 2–4, `add` prints `tickets       db — kept: the log
+already has work items for this project` and keeps polling database tickets, so
+a GitHub issue is never taken. To take issues from GitHub, run Part 2 on a store
+with no work items for the project: before creating a ticket, or from a fresh
+`LINGTAI_HOME`. Then Steps 2–4 apply.
