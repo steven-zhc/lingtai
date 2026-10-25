@@ -10,6 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@effect/cli": "^0.73.2",
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-node": "^0.104.1",
+    "@effect/printer": "^0.47.0",
+    "@effect/printer-ansi": "^0.47.0",
     "@lingtai/actions": "workspace:*",
     "@lingtai/agent": "workspace:*",
     "@lingtai/agent-env": "workspace:*",

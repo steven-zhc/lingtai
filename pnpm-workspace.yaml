@@ -5,8 +5,11 @@ packages:
 # pnpm blocks postinstall scripts by default. Prisma 8's CLI engine bundles
 # esbuild and workerd, both of which fetch a platform binary in postinstall;
 # msgpackr-extract is an optional native accelerator pulled in alongside.
-# These three are the only ones this tree needs.
+# @parcel/watcher arrives with @effect/platform-node and ships prebuilt
+# per-platform packages, so its install script is declined.
+# The other three are the only ones this tree needs.
 allowBuilds:
+  '@parcel/watcher': false
   esbuild: true
   msgpackr-extract: true
   workerd: true

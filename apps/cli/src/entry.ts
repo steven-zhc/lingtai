@@ -18,13 +18,23 @@
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
-import { INSTALL_COMMANDS, installCommand } from './install.ts'
+import { installCommand } from './install.ts'
+import { routeOf } from './migrated.ts'
 // Neither reaches the log: `world.ts` loads `@lingtai/env` and nothing else.
 import { liveWorld } from './world.ts'
 
 const argv = process.argv.slice(2)
 
-if (argv[0] === 'init') {
+const route = routeOf(argv)
+
+if (route === 'effect') {
+  // A migrated command is parsed and helped by `@effect/cli` (#616); everything else falls through.
+  void import('./cli.ts')
+    .then(({ runCli }) => runCli(process.argv))
+    .then((code) => {
+      process.exitCode = code
+    })
+} else if (route === 'init') {
   // Only once asked: `init.ts` loads the board's server module, and no other command here needs it.
   import('./init.ts')
     .then(({ initCommand, liveInitWorld }) => initCommand(argv.slice(1), liveInitWorld()))
@@ -47,7 +57,7 @@ if (argv[0] === 'init') {
         process.exit(1)
       },
     )
-} else if ((INSTALL_COMMANDS as readonly string[]).includes(argv[0] ?? '')) {
+} else if (route === 'install') {
   installCommand(argv, liveWorld(import.meta.filename)).then(
     (code) => {
       process.exitCode = code
