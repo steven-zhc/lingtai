@@ -1456,10 +1456,19 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    Waiting page's bounded measure. */
 .sresolutiongrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  /* Three even columns, rows as tall as their tallest card, so five moves read
+     as two tidy rows rather than four abreast with one left over (#596's page,
+     where a disagreement leaves nothing recommended yet). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
+}
+@media (max-width: 60rem) {
+  .sresolutiongrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 40rem) {
+  .sresolutiongrid { grid-template-columns: minmax(0, 1fr); }
 }
 .sresolution {
   display: flex;
