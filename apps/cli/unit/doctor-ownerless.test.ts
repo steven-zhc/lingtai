@@ -83,6 +83,32 @@ steps: {}
 `
 
 describe('declaredEnvironment, a project with no owner', () => {
+  it('names the Codex CLI route for triage.tools: full, without reading codex_text', async () => {
+    const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
+    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+    const asked: string[] = []
+    const rows = await declaredEnvironment({}, async () => [state], {
+      recipe,
+      agentEnv: agentEnvStub,
+      runtimes: (() => {
+        asked.push('codex')
+        return [
+          {
+            capabilities: { id: 'codex', enforces: ['wall'] },
+            checkAuth: async () => ({ loggedIn: true, detail: 'signed in' }),
+          },
+        ]
+      }) as unknown as DoctorReach['runtimes'],
+      codexText: () => undefined,
+    })
+    expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toBeUndefined()
+    expect(rows.find((row) => row.name.startsWith('triage: esctest') && row.name.endsWith('signed in'))).toBeDefined()
+    const limits = rows.find((row) => row.name === 'triage: esctest limits')
+    expect(limits?.status).toBe('warn')
+    expect(limits?.detail).toContain('wall is enforced')
+    expect(limits?.detail).toContain('usd is not observed')
+  })
+
   it('reports each selected Codex role without exposing credentials or starting a paid call', async () => {
     const recipe = recipeOf(
       `${RECIPE_OK}\ndiscuss: { agent: codex, model: priced-model }\ntriage: { agent: codex, model: other-model }\n`,

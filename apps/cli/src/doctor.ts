@@ -2111,7 +2111,11 @@ function codexRoleRow(
     }
     return { name, status: 'ok', detail: `model-only API route ready for ${role}; separately billed` }
   } catch (err) {
-    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}` }
+    const remedy =
+      role === 'triage'
+        ? ' — or set triage.tools: full to run the Codex CLI with tools on its own login, which needs no codex_text'
+        : ''
+    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}${remedy}` }
   }
 }
 
@@ -2198,12 +2202,19 @@ export async function declaredEnvironment(
       for (const role of ['discuss', 'triage'] as const) {
         const selected = resolved.recipe[role]
         if (role === 'triage' && resolved.recipe.triage?.agent === 'codex' && resolved.recipe.triage.tools === 'full') {
-          results.push(await dispatchedAuthRow(project.project, 'codex', asked, runtimes, role))
+          const signedIn = await dispatchedAuthRow(project.project, 'codex', asked, runtimes, role)
+          results.push({
+            ...signedIn,
+            detail:
+              `triage runs the Codex CLI with tools in a disposable checkout of the attempt's head, ` +
+              `billed to the Codex login; codex_text is not read. ${signedIn.detail}`,
+          })
           results.push({
             name: `triage: ${project.project} limits`,
             status: 'warn',
             detail:
-              'Codex CLI applies the wall limit; turns and USD are passed to the runtime but Codex CLI does not enforce them',
+              'Codex CLI route: wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
+              '(the CLI receipt carries no dollars), so the out-of-usd check never fires',
           })
         } else if (selected?.agent === 'codex') {
           results.push(
