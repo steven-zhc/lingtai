@@ -13,6 +13,8 @@
  */
 import { homedir } from 'node:os'
 
+import { runnableEnv } from '@lingtai/agent-env'
+import { codexAuth } from '@lingtai/agent/auth'
 import { passCeiling } from '@lingtai/conductor/ceiling'
 import { MAX_READ_ROUNDS } from '@lingtai/conductor/discuss'
 import { describeAssignee } from '@lingtai/conductor/filter'
@@ -445,7 +447,11 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 
  * not a duration — so the file that holds it says so, under its own key,
  * before a resolve ever succeeds.
  */
-export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe> {
+export async function projectRecipe(
+  state: ProjectState,
+  // The same probe `lingtai doctor` asks, handed in so a test spawns nothing.
+  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }> = () => codexAuth('codex', codexProbeEnv()),
+): Promise<ProjectRecipe> {
   const project = state.project ?? '(unnamed)'
   const at = recipePath(project)
   let resolved: Resolved
@@ -465,9 +471,51 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
     at,
     configHash: resolved.configHash,
     ref: resolved.ref,
-    rows: readRecipe(resolved.recipe),
+    rows: await readRecipeWithReadiness(resolved.recipe, codexLogin),
     provenance: resolved.provenance ?? {},
   }
+}
+
+/**
+ * The environment the probe runs in: the filtered one plus the `CODEX_HOME` a
+ * triage run is given (`triageCheckoutEnv`), so the login asked about is the
+ * login the wait will use rather than `~/.codex` when another is configured.
+ */
+export function codexProbeEnv(
+  processEnv: Readonly<Record<string, string | undefined>> = process.env,
+): Record<string, string> {
+  const codexHome = processEnv['CODEX_HOME']
+  return { ...runnableEnv({}), ...(codexHome ? { CODEX_HOME: codexHome } : {}) }
+}
+
+/** `readRecipe` plus the CLI route's readiness — what every page that shows a recipe's reading says. */
+export async function readRecipeWithReadiness(
+  recipe: Recipe,
+  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }> = () => codexAuth('codex', codexProbeEnv()),
+): Promise<Reading[]> {
+  return withTriageReadiness(readRecipe(recipe), recipe, codexLogin)
+}
+
+/**
+ * The CLI route's readiness, said beside the route (#568).
+ *
+ * `triage.tools: full` runs on the Codex login alone, and the board's other
+ * health surfaces say nothing about it: a machine with no login reads healthy
+ * while every wait fails. Asked only for that route, so no other recipe spawns
+ * anything on a render — the same spawn `currentRecipe` already makes for its
+ * sign-in detection.
+ */
+export async function withTriageReadiness(
+  rows: Reading[],
+  recipe: Recipe,
+  codexLogin: () => Promise<{ loggedIn: boolean; detail: string }>,
+): Promise<Reading[]> {
+  if (recipe.triage?.agent !== 'codex' || recipe.triage.tools !== 'full') return rows
+  const status = await codexLogin().catch((err: Error) => ({ loggedIn: false, detail: err.message }))
+  const readiness = status.loggedIn
+    ? `Codex login ready (${status.detail})`
+    : `NOT READY — Codex is not signed in (${status.detail}), so triage cannot run; run codex login`
+  return rows.map((row) => (row.name === 'triage' ? { ...row, says: `${row.says} · ${readiness}` } : row))
 }
 
 /**
@@ -893,10 +941,22 @@ export function readRecipe(recipe: Recipe): Reading[] {
       : {
           name: 'triage',
           says:
-            `${recipe.triage.agent}, ${recipe.triage.model ?? 'its default model'}, ` +
-            `${recipe.triage.limits.turns} turns, ${recipe.triage.limits.wall} and ` +
-            `$${recipe.triage.limits.usd} per hold`,
-          keys: ['triage.agent', 'triage.model', 'triage.limits.turns', 'triage.limits.wall', 'triage.limits.usd'],
+            recipe.triage.agent === 'codex' && recipe.triage.tools === 'full'
+              ? `Codex CLI with tools, in a disposable checkout, ${recipe.triage.model ?? 'its default model'}, ` +
+                `${recipe.triage.limits.wall} per hold enforced; ` +
+                `${recipe.triage.limits.turns} turns and $${recipe.triage.limits.usd} declared, not enforced`
+              : `${recipe.triage.agent === 'codex' ? 'Codex model-only API, separately billed' : recipe.triage.agent}, ` +
+                `${recipe.triage.model ?? 'its default model'}, ` +
+                `${recipe.triage.limits.turns} turns, ${recipe.triage.limits.wall} and ` +
+                `$${recipe.triage.limits.usd} per hold`,
+          keys: [
+            'triage.agent',
+            'triage.tools',
+            'triage.model',
+            'triage.limits.turns',
+            'triage.limits.wall',
+            'triage.limits.usd',
+          ],
         },
   ]
 }

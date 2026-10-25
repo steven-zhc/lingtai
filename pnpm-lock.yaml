@@ -23,6 +23,12 @@ importers:
 
   apps/board:
     dependencies:
+      '@lingtai/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@lingtai/agent-env':
+        specifier: workspace:*
+        version: link:../../packages/agent-env
       '@lingtai/conductor':
         specifier: workspace:*
         version: link:../../packages/conductor

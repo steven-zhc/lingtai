@@ -2070,12 +2070,14 @@ async function dispatchedAuthRow(
   // test can hand in a fake `checkAuth` instead of spawning the real binary.
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
   role: 'runtime' | 'discuss' | 'triage' = 'runtime',
+  // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
+  // triage checkout is given, which the caller adds and keeps its own cache for.
+  env: Record<string, string> = runnableEnv({}),
 ): Promise<CheckResult> {
   const name = `${role}: ${project} signed in`
   if (!asked.has(agent)) {
     const runtime = runtimes.find((r) => r.capabilities.id === agent)
-    // Exactly what a run gets. Not `process.env`.
-    asked.set(agent, runtime?.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null)
+    asked.set(agent, runtime?.checkAuth ? await runtime.checkAuth(env) : null)
   }
   const status = asked.get(agent) ?? null
   if (status === null) {
@@ -2111,7 +2113,11 @@ function codexRoleRow(
     }
     return { name, status: 'ok', detail: `model-only API route ready for ${role}; separately billed` }
   } catch (err) {
-    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}` }
+    const remedy =
+      role === 'triage'
+        ? ' — or set triage.tools: full to run the Codex CLI with tools on its own login, which needs no codex_text'
+        : ''
+    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}${remedy}` }
   }
 }
 
@@ -2140,6 +2146,7 @@ export async function declaredEnvironment(
   const results: CheckResult[] = []
   /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
   const asked = new Map<RuntimeId, AuthStatus | null>()
+  const askedTriageCli = new Map<RuntimeId, AuthStatus | null>()
   for (const project of projects) {
     if (!project.project) {
       results.push({
@@ -2198,12 +2205,29 @@ export async function declaredEnvironment(
       for (const role of ['discuss', 'triage'] as const) {
         const selected = resolved.recipe[role]
         if (role === 'triage' && resolved.recipe.triage?.agent === 'codex' && resolved.recipe.triage.tools === 'full') {
-          results.push(await dispatchedAuthRow(project.project, 'codex', asked, runtimes, role))
+          // The login the wait will use: a triage checkout keeps `CODEX_HOME`,
+          // which `runnableEnv` strips, so this is asked in its own cache.
+          const codexHome = process.env['CODEX_HOME']
+          const signedIn = await dispatchedAuthRow(
+            project.project,
+            'codex',
+            askedTriageCli,
+            runtimes,
+            role,
+            codexHome ? { ...runnableEnv({}), CODEX_HOME: codexHome } : runnableEnv({}),
+          )
+          results.push({
+            ...signedIn,
+            detail:
+              `triage runs the Codex CLI with tools in a disposable checkout of the attempt's head, ` +
+              `billed to the Codex login; codex_text is not read. ${signedIn.detail}`,
+          })
           results.push({
             name: `triage: ${project.project} limits`,
             status: 'warn',
             detail:
-              'Codex CLI applies the wall limit; turns and USD are passed to the runtime but Codex CLI does not enforce them',
+              'Codex CLI route: wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
+              '(the CLI receipt carries no dollars), so the out-of-usd check never fires',
           })
         } else if (selected?.agent === 'codex') {
           results.push(

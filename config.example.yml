@@ -85,6 +85,12 @@ board:
 #     agent: codex
 #     model: gpt-5.1-codex
 #     limits: { turns: 2, wall: 30s, usd: 0.25 }
+# The Codex CLI with tools instead, for triage only: it uses the Codex login and
+# needs none of the codex_text block below; turns and usd do not bind it.
+#   triage:
+#     agent: codex
+#     tools: full
+#     limits: { turns: 40, wall: 5m, usd: 0.5 }
 # Discussion may make up to five calls per question. Verify the model's current
 # prices and set conservative upper bounds; API billing is separate from Codex login.
 # codex_text:

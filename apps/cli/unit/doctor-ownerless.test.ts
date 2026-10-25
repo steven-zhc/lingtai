@@ -83,6 +83,69 @@ steps: {}
 `
 
 describe('declaredEnvironment, a project with no owner', () => {
+  it('asks the Codex CLI route about the CODEX_HOME a triage run is given', async () => {
+    const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
+    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+    const seen: Array<string | undefined> = []
+    const saved = process.env['CODEX_HOME']
+    process.env['CODEX_HOME'] = '/profile/codex'
+    try {
+      await declaredEnvironment({}, async () => [state], {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: (() => [
+          {
+            capabilities: { id: 'codex', enforces: ['wall'] },
+            checkAuth: async (env: Record<string, string>) => {
+              seen.push(env['CODEX_HOME'])
+              return { loggedIn: true, method: null, detail: 'ok' }
+            },
+          },
+        ]) as unknown as DoctorReach['runtimes'],
+      })
+    } finally {
+      if (saved === undefined) delete process.env['CODEX_HOME']
+      else process.env['CODEX_HOME'] = saved
+    }
+    expect(seen).toEqual(['/profile/codex'])
+  })
+
+  it('names the Codex CLI route for triage.tools: full, without reading codex_text', async () => {
+    const recipe = recipeOf(`${RECIPE_OK}\ntriage: { agent: codex, tools: full }\n`)
+    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
+    let probes = 0
+    let textReads = 0
+    const rows = await declaredEnvironment({}, async () => [state], {
+      recipe,
+      agentEnv: agentEnvStub,
+      runtimes: (() => [
+        {
+          capabilities: { id: 'codex', enforces: ['wall'] },
+          checkAuth: async () => {
+            probes += 1
+            return { loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
+          },
+        },
+      ]) as unknown as DoctorReach['runtimes'],
+      codexText: () => {
+        textReads += 1
+        return undefined
+      },
+    })
+    expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toBeUndefined()
+    const signedIn = rows.find((row) => row.name === 'triage: esctest signed in')
+    expect(signedIn?.status).toBe('ok')
+    expect(signedIn?.detail).toContain('Codex CLI with tools in a disposable checkout')
+    expect(signedIn?.detail).toContain('codex_text is not read')
+    expect(signedIn?.detail).toContain('Logged in using ChatGPT')
+    expect(probes).toBe(1)
+    expect(textReads).toBe(0)
+    const limits = rows.find((row) => row.name === 'triage: esctest limits')
+    expect(limits?.status).toBe('warn')
+    expect(limits?.detail).toContain('wall is enforced')
+    expect(limits?.detail).toContain('usd is not observed')
+  })
+
   it('reports each selected Codex role without exposing credentials or starting a paid call', async () => {
     const recipe = recipeOf(
       `${RECIPE_OK}\ndiscuss: { agent: codex, model: priced-model }\ntriage: { agent: codex, model: other-model }\n`,
