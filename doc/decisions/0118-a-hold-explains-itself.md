@@ -238,6 +238,9 @@ which kind a wait was got inferred again in each place that needed it, from
      const recommendedResolution: (reason: WaitReason, triage: TriageStatus) => Resolution['_tag'] | null
      ```
 
+     Which of these continue the saved branch and which cut a new one from the
+     base is the [glossary's *What happens next*](../glossary.md#what-happens-next).
+
      `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
      the board's buttons. `GrantFixRound` is a person's separately logged grant
      under [0108](0108-a-refusal-buys-a-round.md) §8; `ContinueConflict` is
