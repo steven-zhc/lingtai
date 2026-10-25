@@ -935,6 +935,8 @@ export interface PassOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
+    readonly landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -1206,6 +1208,11 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
    */
   let onSha = options.context.onSha
   let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
+  /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
+  let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null =
+    options.from?.landedOnBase ?? null
+  /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
+  let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
   let lapStart = 0
 
@@ -1217,7 +1224,14 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
    * `onSha` from the pipeline that just ran at `build` would be two verdicts
    * about two commits on one card.
    */
-  const contextFor = (): ActionContext => ({ ...options.context, onSha, round: roundsSpent, recheck })
+  const contextFor = (): ActionContext => ({
+    ...options.context,
+    onSha,
+    round: roundsSpent,
+    recheck,
+    ...(landedOnBase === null ? {} : { landedOnBase }),
+    ...(mergedOnto === null ? {} : { mergedOnto }),
+  })
 
   /**
    * One visit, recorded — and the head it left the tree at, if it moved it.
@@ -1328,6 +1342,13 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         // merged tree, so `recheck` is left as it was and only the lap's start
         // moves, to keep a later fix round's `recheck` to what the new lap found.
         baseMergesSpent = next.merge
+        // Nothing to diff without the fork point and the paths: the review then
+        // falls back to the ordinary prompt. A second merge replaces the value.
+        mergedOnto = next.toSha
+        landedOnBase =
+          offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
+            ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
+            : null
         lapStart = steps.length
         at = 'build'
         return true
@@ -1335,6 +1356,9 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         // The same bookkeeping `take` always did: the lap's own findings
         // become the next lap's `recheck` (0038 §2), and a round is spent.
         recheck = findingsIn(steps.slice(lapStart))
+        // Dropped once a review has had it; a build that failed first never
+        // reached the review, which is still owed the section.
+        if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
         lapStart = steps.length
         roundsSpent = next.round
         at = next.to

@@ -16,6 +16,7 @@ import {
   buildReviewPrompt,
   createAgentAction,
   createDraftAction,
+  landedOnBaseBlock,
   parseDraft,
   parseFindings,
   verdictFor,
@@ -1795,5 +1796,88 @@ describe('the schema and ActionFinding cannot diverge', () => {
     const severity = (items.properties as Record<string, { enum: readonly string[] }>).severity!
 
     expect(severity.enum).toEqual(SEVERITIES)
+  })
+})
+
+describe('a review after a base-moved merge (#594)', () => {
+  const MOVED = { paths: ['src/a.ts', 'src/b.ts'], fromSha: 'fork0001', toSha: 'base0002' }
+  const HEADING = '## What landed on the base'
+  const QUESTION =
+    'Does what landed on the base change the behaviour this change relies on or alters? Name the line on each side.'
+
+  function run(ctx: Record<string, unknown>) {
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+    const diffFrom: (string | undefined)[] = []
+    const landedAsked: unknown[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async (from) => {
+          diffFrom.push(from)
+          return 'THE-DIFF'
+        },
+        landed: async (moved) => {
+          landedAsked.push(moved)
+          return moved.paths.map((path) => ({ path, diff: `+changed ${path}` }))
+        },
+        settingsPath: '/tmp/s.json',
+        limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+      },
+    )
+    return action.run({ ...context, ...ctx }).then(() => ({ runtime, diffFrom, landedAsked }))
+  }
+
+  it('is shown what landed on exactly the overlapping paths, and the branch diff against toSha', async () => {
+    const { runtime, diffFrom, landedAsked } = await run({ landedOnBase: MOVED })
+    const prompt = runtime.seen[0]?.prompt ?? ''
+
+    expect(prompt).toContain(HEADING)
+    expect(prompt).toContain('+changed src/a.ts')
+    expect(prompt).toContain('+changed src/b.ts')
+    expect(prompt).toContain(QUESTION)
+    expect(landedAsked).toEqual([MOVED])
+    expect(diffFrom).toEqual(['base0002'])
+  })
+
+  it('leaves an ordinary review’s prompt as it was', async () => {
+    const { runtime, diffFrom, landedAsked } = await run({})
+    const prompt = runtime.seen[0]?.prompt ?? ''
+
+    expect(landedAsked).toEqual([])
+    expect(diffFrom).toEqual([undefined])
+    expect(prompt).not.toContain(HEADING)
+    expect(prompt).toBe(buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES, []))
+  })
+
+  it('diffs against the merged commit in a later round, once the section has been dropped', async () => {
+    const { runtime, diffFrom, landedAsked } = await run({ mergedOnto: 'base0002' })
+
+    expect(diffFrom).toEqual(['base0002'])
+    expect(landedAsked).toEqual([])
+    expect(runtime.seen[0]?.prompt ?? '').not.toContain(HEADING)
+  })
+
+  it('cuts a diff over the cap, and names the path it cut and the paths it left out', () => {
+    const lines = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `+${tag}${i}`).join('\n')
+    const moved = { paths: ['a.ts', 'b.ts', 'c.ts'], fromSha: 'f', toSha: 't' }
+    const block = landedOnBaseBlock(
+      moved,
+      [
+        { path: 'a.ts', diff: lines(300, 'a') },
+        { path: 'b.ts', diff: lines(300, 'b') },
+        { path: 'c.ts', diff: lines(300, 'c') },
+      ],
+      400,
+    )
+
+    const shown = block.split('\n').filter((l) => /^\+[abc]\d+$/.test(l))
+    expect(shown).toHaveLength(400)
+    expect(block).toContain('Cut at 400 lines: b.ts.')
+    expect(block).toContain('Left out, past the 400-line cap: c.ts.')
+    expect(block).not.toContain('+c0')
+    // The overlap is listed up front, even where its diff was cut.
+    expect(block).toContain('a.ts, b.ts, c.ts')
   })
 })

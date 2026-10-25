@@ -493,6 +493,22 @@ export interface ActionContext {
    */
   recheck?: readonly ActionFinding[]
   /**
+   * What landed on the base while this branch was being built, for the review
+   * that follows a `base-moved` merge (#594): the paths both sides changed, the
+   * fork point the refusal named, and the commit that was merged. Absent on every
+   * pass that has not been through that route, and again after the next fix
+   * round — a finding about the interaction travels on `recheck` from then on.
+   * On the context for the same reason `recheck` is: a fact about this run.
+   */
+  landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
+  /**
+   * The commit a `base-moved` merge brought in (#594). Unlike `landedOnBase` it
+   * is not dropped by a fix round: the original cut stays an ancestor of `HEAD`,
+   * so every later review's own diff is `mergedOnto...HEAD` or it would show the
+   * base's changes as the branch's. Replaced by a later merge.
+   */
+  mergedOnto?: string
+  /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */

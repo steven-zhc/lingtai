@@ -193,7 +193,7 @@ import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
-import { armFor, diffBaseShaOf, priorAttempts } from './attempts.ts'
+import { armFor, diffBaseShaOf, landedOnBaseOf, priorAttempts } from './attempts.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
 import { closeHolding } from './close.ts'
@@ -1058,6 +1058,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * this replaced asserted a field only that dispatch fills.
          */
         diffBaseSha: diffBaseShaOf(runEvents),
+        landedOnBase: landedOnBaseOf(runEvents),
       }
     })
 
@@ -2785,6 +2786,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * The base commit an earlier lap of a **held** run merged in, for a
+       * continuation's review (#594). The pass that merged it is over and its
+       * in-memory record with it, but the merge commit is in the branch: ours,
+       * subject `Merge <base> at <sha> into <branch>`, and its second parent is
+       * the `toSha`. Without it a human-granted fix round's review would diff
+       * against the original cut and show everything the base landed. `null` for
+       * a pass that is not a continuation, or whose branch holds no such merge.
+       */
+      const heldBaseMerge = async (): Promise<string | null> => {
+        if (continuation === null) return null
+        const log = await gitAsked([
+          'log',
+          '--first-parent',
+          '--merges',
+          '--fixed-strings',
+          `--grep=Merge ${base} at `,
+          '--format=%P%x09%s',
+        ])
+        if (Either.isLeft(log)) return null
+        for (const line of log.right.split('\n')) {
+          const [parents = '', subject = ''] = line.split('\t')
+          const second = parents.split(' ')[1]
+          if (second !== undefined && subject.startsWith(`Merge ${base} at `) && subject.endsWith(` into ${branch}`))
+            return second
+        }
+        return null
+      }
+
+      /**
        * `design` — the document into the worktree, and onto the branch (0066 §5,
        * `#300`).
        *
@@ -2934,7 +2964,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
-          diff: () => gitOrDie(['diff', `${baseShaOr('HEAD')}...HEAD`]),
+          diff: async (from?: string) =>
+            gitOrDie(['diff', `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`]),
+          // One call per path, so no `diff --git` header has to be parsed back
+          // into paths. A diff that cannot be read is text, not a dead review.
+          landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
+            Promise.all(
+              paths.map(async (path) => {
+                const got = await gitAsked(['diff', fromSha, toSha, '--', path])
+                return { path, diff: Either.isLeft(got) ? `[could not read this diff: ${got.left.detail}]` : got.right }
+              }),
+            ),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always
@@ -3893,6 +3933,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   step: continuation.step,
                   waive: continuation.waive,
                   roundsSpent: continuation.roundsSpent,
+                  ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                   ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                   ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 },
