@@ -566,10 +566,12 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             probe = setInterval(() => {
               if (signalGroup(0)) finish(stopped)
             }, PROBE_MS)
-            probe.unref?.()
           }
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
+          // None of these timers is `unref`ed: once the CLI has closed they are
+          // all that keeps the process alive to send the SIGKILL and resolve,
+          // and `finish` clears every one of them.
           hard = setTimeout(() => {
             if (signalGroup('SIGKILL')) return finish(stopped)
             // Not even SIGKILL ended the group (or produced a `close`): stop
@@ -588,9 +590,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                   : stopped,
               )
             }, KILL_GRACE_MS)
-            last.unref?.()
           }, 5_000)
-          hard.unref?.()
         }
 
         const wall = setTimeout(
