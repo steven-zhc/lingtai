@@ -81,11 +81,35 @@ function resumedPast(events: readonly Envelope[], now: Date): boolean {
       }
       // Any other pause (a quota refusal, a person's) is not the ceiling's, and leaves its waiver as it was.
     } else if (e.type === 'ConductorResumed') {
-      if (holding) waived = true
+      // The ceiling's own lift (a raised figure, below) is not a person's waiver.
+      if (holding && d['by'] !== 'lingtai') waived = true
       holding = false
     }
   }
   return waived && until !== null && !Number.isNaN(until) && now.getTime() < until
+}
+
+/**
+ * A pause that is the ceiling's own and still holds while today is under the
+ * figure — the figure was raised or removed — is lifted here, because the
+ * callers ask the control stream's pause first and would never read the new
+ * figure otherwise. Appended `by: 'lingtai'`, which `resumedPast` does not
+ * count as a person's waiver. Any other pause is left alone.
+ */
+async function liftOwnPause(store: EventStore, now: Date): Promise<void> {
+  const events = await store.read(CONTROL_STREAM)
+  if (!reduceControl(events, now).paused) return
+  let own = false
+  for (const e of events) {
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === 'ConductorPaused') {
+      own = d['by'] === 'lingtai' && typeof d['reason'] === 'string' && d['reason'].startsWith(CEILING_REASON)
+    } else if (e.type === 'ConductorResumed') own = false
+  }
+  if (!own) return
+  await store.append(CONTROL_STREAM, events.length, [
+    { type: 'ConductorResumed', actor: 'conductor', data: parsePayload('ConductorResumed', { by: 'lingtai' }) },
+  ])
 }
 
 export interface DayCeilingOptions {
@@ -108,10 +132,16 @@ export interface DayCeilingOptions {
  * catches it.
  */
 export async function dayCeilingPause(options: DayCeilingOptions): Promise<string | null> {
-  if (options.ceilingUsd === undefined) return null
   const now = options.now ?? new Date()
+  if (options.ceilingUsd === undefined) {
+    await liftOwnPause(options.store, now)
+    return null
+  }
   const day = daySpend(await options.rows(startOfLocalDay(now)), now)
-  if (!ceilingReached(day, options.ceilingUsd)) return null
+  if (!ceilingReached(day, options.ceilingUsd)) {
+    await liftOwnPause(options.store, now)
+    return null
+  }
   const reason = daySpendText(day, options.ceilingUsd)
   const events = await options.store.read(CONTROL_STREAM)
   // `lingtai resume` after one of our own pauses lifts the ceiling for the rest

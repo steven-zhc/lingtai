@@ -114,6 +114,30 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(4)
   })
 
+  it('a raised figure lifts the ceiling’s own pause, and a later check at the old figure pauses again', async () => {
+    const store = createMemoryEventStore()
+    await check([today(60)], store)
+    expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(true)
+    expect(await check([today(60)], store, now, 100)).toBeNull()
+    expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(false)
+    // The lift was not a person's waiver: the old figure pauses again.
+    expect(await check([today(60)], store)).not.toBeNull()
+    expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(true)
+  })
+
+  it('a raised figure does not lift a person’s pause', async () => {
+    const store = createMemoryEventStore()
+    await store.append(CONTROL_STREAM, 0, [
+      {
+        type: 'ConductorPaused',
+        actor: 'human:ops',
+        data: { by: 'human:ops', reason: 'migrating', until: null, holdsAcrossStarts: false },
+      },
+    ])
+    expect(await check([today(60)], store, now, 100)).toBeNull()
+    expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(true)
+  })
+
   it('names zero unknown with no ceiling', () => {
     expect(daySpendText(daySpend([today(1)], now), undefined)).toContain('+ 0 unknown')
   })

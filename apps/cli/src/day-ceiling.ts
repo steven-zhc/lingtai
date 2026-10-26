@@ -16,7 +16,6 @@ import { readSpend } from '@lingtai/projector'
 export async function dayCeilingStop(store: EventStore | undefined): Promise<string | null> {
   try {
     const ceilingUsd = machineDayCeiling()
-    if (ceilingUsd === undefined) return null
     return await dayCeilingPause({
       ceilingUsd,
       rows: (since) => readSpend({ since }),

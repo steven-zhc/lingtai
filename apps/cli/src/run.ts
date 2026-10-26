@@ -145,7 +145,8 @@ class Paused extends Data.TaggedError('Paused')<{
  */
 const heedThePause = (store: EventStore | undefined) =>
   Effect.tryPromise({
-    try: () => readControl(store),
+    // The ceiling first: a raised figure lifts its own pause before it is read.
+    try: async () => (await dayCeilingStop(store), readControl(store)),
     // Not "not paused": a pause that could not be read is not consent.
     catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
   }).pipe(
@@ -167,10 +168,11 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  */
 const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
   try {
+    // The daily ceiling first, so its own pause lifts when the figure was raised.
+    const stop = await dayCeilingStop(store)
     const control = await readControl(store)
     if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
-    // The daily ceiling, asked here and so before a claim, never inside a pass.
-    return await dayCeilingStop(store)
+    return stop
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
