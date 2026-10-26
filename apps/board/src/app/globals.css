@@ -2896,3 +2896,21 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .split-check { display: flex; align-items: center; gap: 0.5rem; min-height: 2rem; font-size: 0.85rem; }
 .split-blockers { display: grid; gap: 0.1rem; margin: 0; padding: 0; border: 0; }
 .split-blockers legend { padding: 0; font-size: 0.8rem; color: var(--muted); }
+
+.split-card--written {
+  border-color: #0b6a70;
+  background: #eaf4f4;
+}
+.split-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.split-note {
+  margin: 0;
+  font-size: 13px;
+}
+.split-note--failed {
+  color: #8a3b12;
+}

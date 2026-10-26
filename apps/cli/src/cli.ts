@@ -1,11 +1,11 @@
 /**
  * The `@effect/cli` side of the entry (#616). Loaded by `entry.ts` with a
- * dynamic `import()` and only for a command in `MIGRATED_COMMANDS`, so every
- * other command pays nothing for it and is parsed exactly as before.
+ * dynamic `import()` and only for a command named in `commands.ts`, so a word
+ * that is not one pays nothing for it. It is the only parser (#626).
  */
 import { Args, Command, Options } from '@effect/cli'
 import * as NodeContext from '@effect/platform-node/NodeContext'
-import { coloured } from '@lingtai/env/colour'
+import { coloured, paint } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
 import type { BoardVerb } from './board.ts'
@@ -13,6 +13,8 @@ import { definitionOf, PROJECTION_NAMES } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
 import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
+import { parseRestartArgs, type RestartArgs } from './restart.ts'
+import { createSteps } from './steps.ts'
 import { refusal, renderVerdict, VERBS, verdictJson, type Answered } from './verdict.ts'
 import { versionFacts, versionLine } from './version.ts'
 import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
@@ -896,7 +898,186 @@ const uninstallCommand = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('uninstall').task))
 
-const root = Command.make('lingtai').pipe(
+// ------------------------------------------------------- the daemon commands --
+//
+// (#622) `start`, `daemon`, `service`, `restart`, `shutdown`, `pause` and `resume`. Their code
+// lives in `daemon.ts`, which has no side effects at import: `lingtai.ts` runs `main` when it
+// is loaded, and the supervisor's plist still runs that file with `daemon`.
+
+/** Every handler here ends the same way: a thrown error is a sentence and exit 1. */
+function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>, jsonCommand?: string) {
+  return Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    try {
+      handlerCode = await run()
+    } catch (err) {
+      // A script reading `--json` gets the error document on stdout, not an empty string.
+      handlerCode =
+        jsonCommand === undefined
+          ? wizardFailed(err)
+          : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err))
+    }
+  })
+}
+
+const startFlags = { noConduct: Options.boolean('no-conduct'), noMerge: Options.boolean('no-merge'), noColor }
+
+function startCommand(name: 'start' | 'daemon') {
+  return Command.make(name, startFlags, (args) =>
+    daemonHandler(args, async () => {
+      const { daemonCommand } = await import('./daemon.ts')
+      const flags: Record<string, string> = {
+        ...(args.noConduct ? { 'no-conduct': '' } : {}),
+        ...(args.noMerge ? { 'no-merge': '' } : {}),
+      }
+      // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
+      // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
+      return daemonCommand(flags, null, name === 'start' ? () => console.log(`${symbol.pass()} started`) : null)
+    }),
+  ).pipe(Command.withDescription(definitionOf(name).task))
+}
+
+const whyArg = Args.text({ name: 'why' }).pipe(Args.repeated)
+const reasonOption = optionalText('reason')
+
+const pause = Command.make('pause', { why: whyArg, reason: reasonOption, noColor }, (args) =>
+  daemonHandler(args, async () => {
+    const { controlCommand } = await import('./daemon.ts')
+    return controlCommand('pause', { reason: given(args.reason) ?? args.why.join(' ') })
+  }),
+).pipe(Command.withDescription(definitionOf('pause').task))
+
+const resume = Command.make('resume', { noColor }, (args) =>
+  daemonHandler(args, async () => {
+    const { controlCommand } = await import('./daemon.ts')
+    return controlCommand('resume', {})
+  }),
+).pipe(Command.withDescription(definitionOf('resume').task))
+
+const shutdown = Command.make(
+  'shutdown',
+  { why: whyArg, reason: reasonOption, force: Options.boolean('force'), timeout: optionalText('timeout'), noColor },
+  (args) =>
+    daemonHandler(args, async () => {
+      const { controlCommand } = await import('./daemon.ts')
+      return controlCommand('shutdown', {
+        reason: given(args.reason) ?? args.why.join(' '),
+        ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
+        force: args.force,
+      })
+    }),
+).pipe(Command.withDescription(definitionOf('shutdown').task))
+
+/**
+ * `lingtai restart`'s line, as `parseRestartArgs` read it (`runCli` reads it before `@effect/cli`
+ * does, for the reason that function gives: a boolean must never consume the next word, or
+ * `--dirty picking up #88` records `dirty: "picking"`). The flags are declared below for help and
+ * for usage errors; the value that is acted on is this one.
+ */
+let restartArgs: RestartArgs | null = null
+
+const restart = Command.make(
+  'restart',
+  {
+    why: whyArg,
+    reason: reasonOption,
+    dirty: Options.boolean('dirty'),
+    despiteDoctor: Options.boolean('despite-doctor'),
+    force: Options.boolean('force'),
+    timeout: optionalText('timeout'),
+    noConduct: Options.boolean('no-conduct'),
+    noMerge: Options.boolean('no-merge'),
+    noColor,
+  },
+  (args) =>
+    daemonHandler(args, async () => {
+      const { restartCommand } = await import('./daemon.ts')
+      return restartCommand(restartArgs!, createSteps(console.log))
+    }),
+).pipe(Command.withDescription(definitionOf('restart').task))
+
+/** The `service` verbs, with their closing line (#622): `✓ <done>` on 0, `✗ not <verb>` otherwise. */
+const SERVICE_DONE = {
+  install: 'installed',
+  start: 'started',
+  shutdown: 'shut down',
+  restart: 'restarted',
+  uninstall: 'uninstalled',
+} as const
+
+function serviceVerb(verb: keyof typeof SERVICE_DONE) {
+  const withWhy = verb === 'shutdown' || verb === 'restart'
+  return Command.make(verb, { why: withWhy ? whyArg : Args.none, noColor }, (args) =>
+    daemonHandler(args, async () => {
+      const { serviceOptions } = await import('./daemon.ts')
+      const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = await import('./service.ts')
+      const why = Array.isArray(args.why) ? (args.why as string[]) : []
+      const steps = createSteps(console.log)
+      // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
+      if (verb === 'install') steps.begin('writing')
+      if (verb === 'uninstall') steps.begin('removing')
+      let unconfirmed = false // the supervisor already had a conductor process
+      let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
+      let code: number
+      try {
+        code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+          ...serviceOptions(),
+          steps,
+          unconfirmed: (job) => {
+            if (job === 'conductor') unconfirmed = true
+            else boardHad = true
+          },
+        })
+      } finally {
+        // A throw (EACCES on the service file, say) must not leave the spinner animating.
+        steps.end()
+      }
+      if (unconfirmed && code === START_BOARD_ONLY)
+        console.log(
+          `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+        )
+      else if (code === 0 && unconfirmed && !boardHad)
+        console.log(
+          paint.muted(
+            `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
+          ),
+        )
+      else if (code === 0 && unconfirmed)
+        console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
+      else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
+      else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
+        console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
+      else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)
+      return code
+    }),
+  ).pipe(Command.withDescription(`${verb} the daemon and the board jobs`))
+}
+
+const serviceStatus = Command.make('status', { json, noColor }, (args) =>
+  daemonHandler(
+    args,
+    async () => {
+      const { serviceOptions } = await import('./daemon.ts')
+      const { serviceCommand } = await import('./service.ts')
+      return serviceCommand(['status'], { ...serviceOptions(), json: args.json })
+    },
+    args.json ? 'service status' : undefined,
+  ),
+).pipe(Command.withDescription('each job on its own: the supervisor, and whether it answers'))
+
+const service = Command.make('service').pipe(
+  Command.withDescription(definitionOf('service').task),
+  Command.withSubcommands([
+    serviceVerb('install'),
+    serviceVerb('start'),
+    serviceVerb('shutdown'),
+    serviceVerb('restart'),
+    serviceStatus,
+    serviceVerb('uninstall'),
+  ]),
+)
+
+export const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
     status,
@@ -921,6 +1102,13 @@ const root = Command.make('lingtai').pipe(
     upgradeCommand,
     rollbackCommand,
     uninstallCommand,
+    startCommand('start'),
+    startCommand('daemon'),
+    service,
+    restart,
+    shutdown,
+    pause,
+    resume,
   ]),
 )
 
@@ -1049,6 +1237,26 @@ export async function runCli(
   }
   if (args[0] === 'approve' || args[0] === 'requeue') {
     argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
+  }
+  if (args[0] === 'service' && args[1] === 'stop') {
+    // Gone rather than kept as an alias. It sent the supervisor's signal, and
+    // launchd SIGKILLed the drain that began twenty seconds in (#174).
+    console.error(
+      "lingtai service stop is gone — it was the supervisor's signal, which kills a pass in flight 20 seconds in.",
+    )
+    console.error('pnpm lingtai service shutdown "why" drains through the log, waits for the pass, then unloads.')
+    return 2
+  }
+  restartArgs = null
+  if (args[0] === 'restart') {
+    // Read first, and by the function that has always read this line: its refusals — `--anyway`,
+    // `--timeout`, a flag this command does not have — are sentences with exit code 2.
+    const parsed = parseRestartArgs(args.slice(1).filter((a) => a !== '--no-color'))
+    if (!parsed.ok) {
+      console.error(parsed.message)
+      return 2
+    }
+    restartArgs = parsed.args
   }
   if (args.includes('--no-color')) applyNoColor()
   const json = args.some(jsonOn)

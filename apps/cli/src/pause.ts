@@ -10,6 +10,7 @@ import { paint } from '@lingtai/env/colour'
 import type { EventStore } from '@lingtai/event-store'
 
 import { RUN_UNDER_A_PAUSE } from './run.ts'
+import { renderVerdict } from './verdict.ts'
 
 export async function pauseCommand(
   by: string,
@@ -19,8 +20,8 @@ export async function pauseCommand(
 ): Promise<void> {
   const log = options.log ?? console.log
   await pauseConductor(by, reason, options.store)
-  log(paint.held(`paused by ${by} — ${reason}`))
   // What is true about the other conductor, and the sentence `run` itself
   // prints when it refuses (#166). `#159` printed one here that was not.
-  log(`${RUN_UNDER_A_PAUSE}.`)
+  const detail = `${paint.held(`paused by ${by} — ${reason}`)}\n${RUN_UNDER_A_PAUSE}.`
+  for (const line of renderVerdict('paused', { outcome: 'accepted', detail })) log(line)
 }

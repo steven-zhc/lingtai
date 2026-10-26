@@ -22,6 +22,7 @@ import {
   PROJECT,
   fakeGitHub,
   fakePorts,
+  issue,
   memoryStore,
   once,
   project,
@@ -162,5 +163,62 @@ describe('a granted round names the grant it spent (#573)', () => {
     expect(automatic.length).toBeGreaterThan(0)
     // Absent, not set to undefined: the stored payload carries no key at all.
     for (const f of automatic) expect('grant' in f).toBe(false)
+  })
+})
+
+describe('a granted round is briefed with the ticket as it reads at the round (#643)', () => {
+  it('hands the fixer the body a person edited after the first claim', async () => {
+    const store = memoryStore()
+    const ticketId = ticketStream(PROJECT, 7)
+    const ports = fakePorts([], store)
+    const fixPrompts: string[] = []
+    const runtime: Runtime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        if (request.runId.includes(':fix:')) fixPrompts.push(request.prompt)
+        return refusingRuntime.run(request)
+      },
+    }
+    // The client is asked for the issue once per `conduct` call, so editing what it
+    // returns between the two calls is a person editing the ticket between claims.
+    let body = 'fix it'
+    const client = fakeGitHub([], MANY_ROUNDS)
+    client.getIssue = async () => ({ ...issue, body })
+    const args = (continuing?: { runId: string }) => ({
+      project,
+      client,
+      runtime,
+      issue: 7,
+      hookBinary: '/tmp/fake/lingtai-hook',
+      prompt: 'fix {{issue}}',
+      merge: false,
+      home: '/tmp/fake-home',
+      store,
+      ...(continuing === undefined ? {} : { continuing }),
+    })
+    const first = await once(args(), ports)
+    if (first.ok !== 'held') throw new Error(`the first pass did not hold: ${JSON.stringify(first)}`)
+
+    body = 'fix it. Done when the importer survives a second call (added after the first claim).'
+    const wait = waitsOf(await store.read(ticketId)).at(-1)!
+    await store.append(
+      ticketId,
+      (await store.read(ticketId)).length,
+      aResolution(
+        makeStream(ticketId),
+        wait.waitId,
+        { _tag: 'GrantFixRound', onSha: 'd'.repeat(40), ref: 'agent/7' },
+        'human:steven',
+      ),
+    )
+    const before = fixPrompts.length
+    const next = await once(args({ runId: first.runId }), ports)
+    if (next.ok === false) throw new Error(`stopped at ${next.stage}: ${next.detail}`)
+
+    const granted = fixPrompts.slice(before)
+    expect(granted.length).toBeGreaterThan(0)
+    for (const prompt of granted) {
+      expect(prompt).toContain('Done when the importer survives a second call')
+    }
   })
 })

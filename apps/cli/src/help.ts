@@ -37,6 +37,12 @@ export function commandHelp(name: Parameters<typeof definitionOf>[0]): string {
   ].join('\n')
 }
 
+/** A word that is not a command: the sentence and the root help on stderr, exit 2. */
+export function unknownCommand(asked: string): number {
+  process.stderr.write(`unknown command "${asked}"\n\n${rootHelp()}\n`)
+  return 2
+}
+
 /** The first argument that is not a flag, which is the command a question is about. */
 function commandAsked(argv: readonly string[]): string | undefined {
   const first = argv[0]
@@ -54,10 +60,7 @@ export function helpCommand(argv: readonly string[]): number {
     ;(none ? process.stderr : process.stdout).write(`${rootHelp()}\n`)
     return none ? 2 : 0
   }
-  if (!isCommand(asked)) {
-    process.stderr.write(`unknown command "${asked}"\n\n${rootHelp()}\n`)
-    return 2
-  }
+  if (!isCommand(asked)) return unknownCommand(asked)
   process.stdout.write(`${commandHelp(asked)}\n`)
   return 0
 }

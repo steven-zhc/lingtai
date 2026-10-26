@@ -1180,6 +1180,12 @@ export const FindingDeclined = z.object({
 
 // ----------------------------------------------------------- integration ----
 
+/**
+ * A pass reached `merge` while another pass's landing held the lane (#639).
+ * Appended only when it had to wait, so a lone pass's log is unchanged.
+ */
+export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
+
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
 /**
  * `paths`/`baseSha`/`headSha` are gone (#502): a conflict's three fields now
@@ -2065,6 +2071,7 @@ export const EVENTS = {
   FindingAccepted,
   FindingProposed,
   FindingDeclined,
+  MergeLaneWaited,
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
@@ -2155,6 +2162,7 @@ export const EVENT_AT = {
   FindingAccepted: ['end', 'outside'],
   FindingProposed: ['end', 'outside'],
   FindingDeclined: ['end', 'outside'],
+  MergeLaneWaited: ['merge'],
   IntegrationAttempted: ['merge'],
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],

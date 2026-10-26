@@ -29,6 +29,7 @@
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
     "effect": "^3.22.1",
+    "ora": "^9.4.1",
     "pg": "^8.16.3",
     "yaml": "^2.8.1"
   },

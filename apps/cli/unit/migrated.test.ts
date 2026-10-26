@@ -1,4 +1,4 @@
-/** The router's claim (#616): `version` is `@effect/cli`'s, and nothing else moved. */
+/** The router's claim (#616): `version` is `@effect/cli`'s, and every command is its. */
 import { describe, expect, it } from 'vitest'
 
 import { routeOf } from '../src/migrated.ts'
@@ -39,6 +39,15 @@ describe('routeOf', () => {
     [['upgrade']],
     [['rollback', '0.9.0']],
     [['uninstall', '--yes']],
+    [['start']],
+    [['start', '--no-conduct', '--no-merge']],
+    [['daemon', '--no-conduct']],
+    [['service', 'status', '--json']],
+    [['service', 'shutdown', 'moving the database']],
+    [['restart', '--dirty', 'picking up #88']],
+    [['shutdown', '--timeout', '10m']],
+    [['pause', 'reviewing the recipe']],
+    [['resume']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -61,6 +70,12 @@ describe('routeOf', () => {
     [['ask', '--help'], 'help'],
     [['now', '--help'], 'help'],
     [['shutdown', '-h'], 'help'],
+    [['start', '--help'], 'help'],
+    [['daemon', '--help'], 'help'],
+    [['service', 'status', '--help'], 'help'],
+    [['restart', '--help'], 'help'],
+    [['pause', '--help'], 'help'],
+    [['resume', '--help'], 'help'],
     [['board', 'start', '--help'], 'help'],
     [['run', '--help'], 'help'],
     [['attach', '--help'], 'help'],
@@ -71,9 +86,9 @@ describe('routeOf', () => {
     [['projection', 'rebuild', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'effect'],
-    [['--version'], 'lingtai'],
-    [['daemon', '--no-conduct'], 'lingtai'],
-  ])('leaves %j on its existing path (%s)', (argv, route) => {
+    [['--version'], 'unknown'],
+    [['bogus'], 'unknown'],
+  ])('routes %j to %s', (argv, route) => {
     expect(routeOf(argv)).toBe(route)
   })
 })
