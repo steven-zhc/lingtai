@@ -14,10 +14,12 @@
  * was read. That has to be visible, not swallowed.
  */
 import type { WaitId } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import type { Resolution, WaitReason } from '@lingtai/domain/wait'
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
+import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 
 import {
   answerCard,
@@ -823,6 +825,88 @@ export function RunNow({
           what is currently stopping the item is another, and a label that tried
           to be both would be a button whose name changes while you read it. */}
       {holding ? <p className="jumps">{holding}</p> : null}
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * The one button a waiting card on the board carries: triage's advised
+ * resolution (#647, 0118 §2).
+ *
+ * Takes data only, because the board's page is a server component and cannot
+ * call a function from here. **One click** for the three resolutions that need
+ * nothing typed, through the actions the task page already uses and with the
+ * card's own `waitId`, so a stale card refuses and says why. **A link** for the
+ * four that need text or a plan — it writes nothing, and opens the task page at
+ * that resolution's card (`Split` has none, so it lands on the triage band).
+ * Never a `confirm()`: the refusal, not a dialog, is what protects a click.
+ */
+export function TriageMove({
+  project,
+  issue,
+  taskId,
+  waitId,
+  move,
+}: {
+  project: string
+  issue: number
+  taskId: string
+  waitId: WaitId
+  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null }
+}) {
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+  const label = RESOLUTION_COPY[move.resolution].title
+
+  const run = (act: () => Promise<ActionResult>) => {
+    setPending(true)
+    setRefusal(null)
+    startTransition(async () => {
+      const result = await act()
+      setPending(false)
+      if (result.ok) setDone(result.detail)
+      else setRefusal(result.detail)
+    })
+  }
+
+  let click: (() => void) | null = null
+  if (move.resolution === 'GrantFixRound' && move.onSha !== null) {
+    const onSha = move.onSha
+    click = () => run(() => continueFixingCard({ project, issue, waitId, onSha }))
+  } else if (move.resolution === 'Requeue') {
+    // An empty note on purpose: the requeue note is what every later attempt is
+    // told, and triage's sentence is not the person's.
+    click = () => run(() => requeueCard({ project, issue, note: '', waitId }))
+  } else if (move.resolution === 'Approve' && move.onSha !== null) {
+    const onSha = move.onSha
+    click = () => run(() => approveCard({ project, issue, onSha, note: move.note ?? '', waitId }))
+  }
+
+  if (done) return <p className="decided">{done}</p>
+
+  if (click === null) {
+    const anchor = move.resolution === 'Split' ? 'triage' : `resolution-${move.resolution}`
+    return (
+      <div className="decide">
+        <div className="btnrow">
+          <Link className="btn pri" href={`/task/${encodeURIComponent(taskId)}#${anchor}`}>
+            {label}
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="decide">
+      <div className="btnrow">
+        <button className="btn pri" disabled={pending} onClick={click}>
+          {pending ? 'working…' : label}
+        </button>
+      </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
   )
