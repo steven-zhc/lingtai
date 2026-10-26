@@ -532,6 +532,16 @@ describe('conflictLines (#652)', () => {
     expect(c?.advised).toContain('saved head could not be checked (rate limited)')
   })
 
+  it('names an unreadable saved head even when triage advised the round it cannot offer', () => {
+    const c = conflictLines(reason, triage(2, 'GrantFixRound'), { unreadable: 'timeout' })
+    expect(c?.rec).toBeNull()
+    expect(c?.advised).toContain('saved head could not be checked (timeout)')
+  })
+
+  it('leaves the divergent-hunk clause out when no hunk is divergent', () => {
+    expect(conflictLines(reason, triage(2))?.rec).not.toContain('divergent hunk')
+  })
+
   it('says nothing for no triage', () => {
     expect(conflictLines(reason, undefined)).toBeNull()
   })

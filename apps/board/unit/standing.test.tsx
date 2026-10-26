@@ -1454,6 +1454,32 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
     'Triage advised Start over from base. With 2 hunks to resolve, a fix round is drawn first instead',
   )
   expect(html).not.toContain('which this wait does not offer')
+  expect(html).not.toContain('recommended answer goes to the fixer')
+  const divergent = {
+    _tag: 'Divergent' as const,
+    path: 'a.ts',
+    line: 1,
+    question: {
+      id: 'q',
+      text: 'Where?',
+      answers: [
+        { id: 'port', text: 'Port it' },
+        { id: 'requeue', text: 'Start over' },
+      ],
+      recommended: 'port',
+    },
+  }
+  const withHunks = render(
+    {
+      ...saved,
+      triageStatus: {
+        ...triageStatus,
+        result: { ...triageStatus.result, cause: { ...triageStatus.result.cause, hunks: [divergent] } },
+      },
+    },
+    OUTGOING,
+  )
+  expect(withHunks).toContain('each divergent hunk’s recommended answer goes to the fixer')
   const large = render(
     {
       ...CONFLICT,

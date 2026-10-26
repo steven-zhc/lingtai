@@ -39,7 +39,7 @@ export function conflictLines(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
   savedHead?: SavedHead,
-): { rec: string; advised: string | null } | null {
+): { rec: string | null; advised: string | null } | null {
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
   const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
@@ -48,16 +48,20 @@ export function conflictLines(
     { _tag: 'Done', result },
     { savedHead: typeof savedHead === 'object' ? false : savedHead },
   )
-  if (rec === null) return null
   if (unreadable !== null && result.cause.total <= CONFLICT_ROUND_HUNKS) {
     return {
-      rec: `recommends ${rec} — ${result.summary}`,
+      rec: rec === null ? null : `recommends ${rec} — ${result.summary}`,
       advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
     }
   }
+  if (rec === null) return null
   if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
     return {
-      rec: 'recommends a fix round — a small conflict is resolved in place rather than started over, and triage’s recommended answer for each divergent hunk goes to the fixer',
+      rec:
+        'recommends a fix round — a small conflict is resolved in place rather than started over' +
+        (result.cause.hunks.some((h) => h._tag === 'Divergent')
+          ? ', and triage’s recommended answer for each divergent hunk goes to the fixer'
+          : ''),
       advised: `triage advised ${result.resolution}: ${result.summary}`,
     }
   }
@@ -408,7 +412,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                 }),
                 detail: describeWaitLines(words).flatMap((l) => {
                   const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage, t.savedHead) : null
-                  return c === null ? [l.text] : c.advised === null ? [c.rec] : [c.rec, c.advised]
+                  return c === null ? [l.text] : [c.rec ?? l.text, ...(c.advised === null ? [] : [c.advised])]
                 }),
                 raw: Boolean(words.diagnosis?.raw),
               },
