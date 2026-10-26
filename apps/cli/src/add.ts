@@ -28,56 +28,6 @@ export interface AddWorld {
   error: (line: string) => void
 }
 
-/**
- * `--flag value` pairs plus positionals. Enough for three commands — moved
- * here from `lingtai.ts` (#435) rather than left there, since every other
- * caller of it still imports from that file, and `addFlow` cannot.
- *
- * A flag whose next token is another flag, or which ends the line, is a boolean
- * and consumes nothing. Without that rule `--no-merge --no-conduct` parsed as
- * `no-merge: "--no-conduct"` and swallowed the second flag whole, so the second
- * stayed on while the command line said to turn it off — a flag that reads as
- * ignored is the one kind that is worse than a flag that errors.
- *
- * `flags` is last-wins, as every caller here already reads it; `repeated`
- * carries every occurrence of every flag, in order, for the one caller that
- * needs more than the last — `--build <cmd>` is repeatable (`setup-build.ts`'s
- * own refusal says so), and `flags['build']` alone cannot say that back (#431
- * fix round, finding 3).
- */
-export function parseFlags(args: string[]): {
-  positional: string[]
-  flags: Record<string, string>
-  repeated: Record<string, string[]>
-} {
-  const positional: string[] = []
-  const flags: Record<string, string> = {}
-  const repeated: Record<string, string[]> = {}
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]!
-    if (a.startsWith('--')) {
-      const next = args[i + 1]
-      const name = a.slice(2)
-      // `--defaults` names no value — unlike every other flag here, whose
-      // boolean reading only fires when the next token looks like a flag
-      // too. Without this, `lingtai add --defaults owner/repo` would read
-      // `owner/repo` as `--defaults`'s value and drop it from `positional`
-      // (#433).
-      if (name === 'defaults' || next === undefined || next.startsWith('--')) {
-        flags[name] = ''
-        ;(repeated[name] ??= []).push('')
-      } else {
-        flags[name] = next
-        ;(repeated[name] ??= []).push(next)
-        i++
-      }
-    } else {
-      positional.push(a)
-    }
-  }
-  return { positional, flags, repeated }
-}
-
 export async function addFlow(
   args: { positional?: string | undefined; flags: Record<string, string>; repeated: Record<string, string[]> },
   world: AddWorld,

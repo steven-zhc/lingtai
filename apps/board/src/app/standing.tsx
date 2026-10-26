@@ -39,7 +39,7 @@ import { Outgoing } from './outgoing.tsx'
 import { Plan } from './plan.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
-import { SplitPlan } from './split-plan.tsx'
+import { SplitPlan, type SplitControls } from './split-plan.tsx'
 import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
@@ -87,11 +87,13 @@ export function TriageBand({
   status,
   headLine,
   savedHead,
+  split,
 }: {
   reason: WaitReason
   status: TriageStatus
   headLine?: string | null
   savedHead?: boolean
+  split?: SplitControls
 }) {
   switch (status._tag) {
     case 'NotNeeded':
@@ -205,7 +207,7 @@ export function TriageBand({
           )
           break
         case 'TicketTooBig':
-          parts = cause.split === undefined ? null : <SplitPlan plan={cause.split} />
+          parts = cause.split === undefined ? null : <SplitPlan plan={cause.split} controls={split} />
           break
         case 'WrongApproach':
         case 'SetupBroken':
@@ -908,6 +910,11 @@ export function Standing({
                 status={standing.triageStatus}
                 headLine={standing.triageHeadLine}
                 savedHead={savedHead}
+                split={
+                  standing.split !== undefined && project !== null && issue !== null && standing.waitId !== null
+                    ? { project, issue, waitId: standing.waitId, ...standing.split }
+                    : undefined
+                }
               />
             ) : null}
             <div className="spair" data-rank="discussion">
@@ -920,6 +927,8 @@ export function Standing({
           className={standing.state === 'blocked' ? 'sresolutions' : 'sactions'}
           aria-label={standing.state === 'blocked' ? 'Resolutions' : 'Actions'}
           data-rank={standing.state === 'blocked' ? 'resolutions' : undefined}
+          // The other moves wait while a split is being written; the decision lock refuses them anyway.
+          inert={standing.split?.progress.state === 'writing' ? true : undefined}
         >
           {standing.state === 'blocked' ? <h2 className="ssectiontitle">Resolutions</h2> : null}
 

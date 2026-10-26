@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { COMMANDS, GROUPS, PROJECTION_NAMES, type CommandName } from '../src/commands.ts'
 import { commandHelp, helpCommand, rootHelp } from '../src/help.ts'
-import { MIGRATED_COMMANDS, routeOf } from '../src/migrated.ts'
+import { routeOf } from '../src/migrated.ts'
 import { stripColour, width } from '../src/output.ts'
 import { PROJECTIONS } from '../src/projection.ts'
 
@@ -44,13 +44,7 @@ describe('the definitions', () => {
   })
 
   it.each(names)('%s routes to something that answers it', (name) => {
-    const route = routeOf([name])
-    const expected = (MIGRATED_COMMANDS as readonly string[]).includes(name)
-      ? 'effect'
-      : name === 'init'
-        ? 'init'
-        : 'lingtai'
-    expect(route).toBe(expected)
+    expect(routeOf([name])).toBe('effect')
     // `version`'s help is `@effect/cli`'s (#617); every other command's is the definition's (0121 §6).
     expect(routeOf([name, '--help'])).toBe(name === 'version' ? 'effect' : 'help')
   })
@@ -63,6 +57,17 @@ describe('the definitions', () => {
     }
     expect(PROJECTION_NAMES).toEqual(PROJECTIONS.map((p) => p.name))
     expect(commandHelp('projection')).toContain(PROJECTION_NAMES.join(', '))
+  })
+})
+
+describe('examples', () => {
+  it('show an id as a placeholder, not a ticket or run of the tutorial', () => {
+    for (const c of COMMANDS) {
+      for (const example of c.examples) {
+        expect(example, c.name).not.toContain('chapter-garden')
+        expect(example, c.name).not.toMatch(/(--issue|--if-head|attach|accept|decline) [0-9a-f]+\b/)
+      }
+    }
   })
 })
 

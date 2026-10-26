@@ -1,4 +1,4 @@
-/** The router's claim (#616): `version` is `@effect/cli`'s, and nothing else moved. */
+/** The router's claim (#616): `version` is `@effect/cli`'s, and every command is its. */
 import { describe, expect, it } from 'vitest'
 
 import { routeOf } from '../src/migrated.ts'
@@ -86,8 +86,9 @@ describe('routeOf', () => {
     [['projection', 'rebuild', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'effect'],
-    [['--version'], 'lingtai'],
-  ])('leaves %j on its existing path (%s)', (argv, route) => {
+    [['--version'], 'unknown'],
+    [['bogus'], 'unknown'],
+  ])('routes %j to %s', (argv, route) => {
     expect(routeOf(argv)).toBe(route)
   })
 })

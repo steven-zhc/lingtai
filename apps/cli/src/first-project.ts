@@ -157,7 +157,7 @@ export type FirstProjectOutcome =
 function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
   const local = flags['local']
   const github = flags['github']
-  // A valueless flag parses as '' (`lingtai.ts`'s `parseFlags`), and `git` run
+  // A valueless flag parses as '' (`@effect/cli`'s empty option), and `git` run
   // in '' runs in this process's own directory — so `--local` alone would
   // register whatever repository the shell sits in (#394's review).
   if (local !== undefined && local.trim() === '') {

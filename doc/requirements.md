@@ -35,7 +35,7 @@ Where this page says "any recent", the code does not check a version.
 | `shasum` or `sha256sum` | Installing | Any recent | Checks the download; the installer refuses if neither exists | None | `apps/site/public/install.sh:67-73` |
 | `lsof` | An installed copy, on `lingtai upgrade` | Any recent | Finds processes still using the old version's directory | None | `apps/cli/src/install.ts:802` |
 | `curl` and `sh` | Installing, once; `curl` is also checked by the installer before anything else | Any recent | The one-line installer in the tutorial | None | [tutorial.md](tutorial.md) |
-| `open` (macOS) or `xdg-open` (Linux) | Optional | Any recent | Opens the board or the GitHub App page in your browser; without it Lingtai prints the address | None | `apps/cli/src/lingtai.ts:611`, `apps/cli/src/init.ts:1054` |
+| `open` (macOS) or `xdg-open` (Linux) | Optional | Any recent | Opens the board or the GitHub App page in your browser; without it Lingtai prints the address | None | `apps/cli/src/board-world.ts:56`, `apps/cli/src/init.ts:1054` |
 | `terminal-notifier` or `osascript` (macOS) | Optional, for desktop notifications | Any recent | Shows a notification when a question is waiting; `osascript` ships with macOS and is the fallback | None | `apps/cli/src/notify.ts:68`, `:124` |
 | `$EDITOR` | Optional, for `lingtai ticket` | Any | Opens the ticket form | None | `apps/cli/src/ticket.ts:87` |
 

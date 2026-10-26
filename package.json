@@ -21,6 +21,7 @@
     "test:db": "pnpm test:integration",
     "test:all": "vitest run",
     "lingtai": "node apps/cli/src/entry.ts",
+    "docs:cli": "node scripts/cli-doc.ts",
     "contract:emit": "pnpm --filter @lingtai/event-store contract:emit",
     "db:plan": "pnpm --filter @lingtai/event-store db:plan",
     "db:init": "pnpm --filter @lingtai/event-store db:init",

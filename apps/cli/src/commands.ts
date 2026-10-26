@@ -10,7 +10,9 @@
  * A line is never wrapped by the command (0121 §4), so every line here is at
  * most 76 columns — the section that prints it indents two more. `help.test.ts`
  * measures them. `usage` is the invocation at the left edge with its prose and
- * flags indented beneath it; `examples` are real invocations.
+ * flags indented beneath it; `examples` are real invocations, except that an
+ * id is a placeholder (`<n>`, `<runId>`) — the page shares them, and a ticket
+ * number belongs to nobody who reads it.
  */
 
 export const GROUPS = ['everyday', 'waiting on you', 'daemon', 'install and upkeep'] as const
@@ -94,7 +96,7 @@ export const COMMANDS = [
       '  --once        the same as --max 1',
       '  --no-merge    stop after the steps and ask before merging',
     ],
-    examples: ['lingtai run lingtai --once', 'lingtai run lingtai --issue 617 --no-merge'],
+    examples: ['lingtai run lingtai --once', 'lingtai run lingtai --issue <n> --no-merge'],
   }),
   define({
     name: 'status',
@@ -115,7 +117,7 @@ export const COMMANDS = [
     task: 'ask for one ticket ahead of the queue',
     effect: 'changes',
     usage: ['lingtai now <project> --issue <n> [--json] [--no-color]'],
-    examples: ['lingtai now lingtai --issue 617'],
+    examples: ['lingtai now lingtai --issue <n>'],
   }),
   define({
     name: 'attach',
@@ -129,7 +131,7 @@ export const COMMANDS = [
       '  it answers on a stopped system. A landed run has no log: 0034',
       '  keeps exactly the ones still owed an explanation.',
     ],
-    examples: ['lingtai attach 2d6f1c'],
+    examples: ['lingtai attach <runId>'],
   }),
   define({
     name: 'backlog',
@@ -147,7 +149,7 @@ export const COMMANDS = [
       'lingtai backlog decline <project> <key> --reason <why>',
       '  Recorded, so the next attempt does not ask again.',
     ],
-    examples: ['lingtai backlog lingtai', 'lingtai backlog accept lingtai a1b2c3 --kind tech-debt'],
+    examples: ['lingtai backlog lingtai', 'lingtai backlog accept lingtai <findingId> --kind tech-debt'],
   }),
   define({
     name: 'ticket',
@@ -227,7 +229,7 @@ export const COMMANDS = [
       '  Resolve the end step for items that landed, and deliver what it',
       '  resolves to. --issue limits it to one.',
     ],
-    examples: ['lingtai end replay lingtai --issue 617'],
+    examples: ['lingtai end replay lingtai --issue <n>'],
   }),
   define({
     name: 'approve',
@@ -242,7 +244,7 @@ export const COMMANDS = [
       '                  step still refuses the head: approving then waives',
       '                  each refusing step, with this as why',
     ],
-    examples: ['lingtai approve lingtai --issue 617'],
+    examples: ['lingtai approve lingtai --issue <n>'],
   }),
   define({
     name: 'answer',
@@ -254,7 +256,7 @@ export const COMMANDS = [
       '  Answer it on the record: back in the queue, and every attempt at',
       '  the ticket is told the answer — no editing the issue body.',
     ],
-    examples: ['lingtai answer lingtai --issue 617 "use the second option"'],
+    examples: ['lingtai answer lingtai --issue <n> "use the second option"'],
   }),
   define({
     name: 'ask',
@@ -266,7 +268,7 @@ export const COMMANDS = [
       '  Nothing is spent, the queue passes over the ticket, and lingtai',
       '  status prints the question.',
     ],
-    examples: ['lingtai ask lingtai --issue 617 "which groups?"'],
+    examples: ['lingtai ask lingtai --issue <n> "which groups?"'],
   }),
   define({
     name: 'grant-fix-round',
@@ -278,7 +280,7 @@ export const COMMANDS = [
       '  Run one more implementation round on saved work, then repeat the',
       '  checks without waiving a refusal.',
     ],
-    examples: ['lingtai grant-fix-round lingtai --issue 617 --if-head 53fe949'],
+    examples: ['lingtai grant-fix-round lingtai --issue <n> --if-head <sha>'],
   }),
   define({
     name: 'requeue',
@@ -292,7 +294,7 @@ export const COMMANDS = [
       '  and the next pass cuts a fresh branch from a base that has since',
       '  moved. The actor is still recorded in by.',
     ],
-    examples: ['lingtai requeue lingtai --issue 617 --note "base moved"'],
+    examples: ['lingtai requeue lingtai --issue <n> --note "base moved"'],
   }),
   define({
     name: 'close',
@@ -305,7 +307,7 @@ export const COMMANDS = [
       '  Nothing lifts a close: if the work is wanted again, open a new',
       '  ticket.',
     ],
-    examples: ['lingtai close lingtai --issue 617 "superseded"'],
+    examples: ['lingtai close lingtai --issue <n> "superseded"'],
   }),
   define({
     name: 'start',
