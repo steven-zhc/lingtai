@@ -64,7 +64,7 @@ export const DOCS_PUBLIC = false
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ['tutorial', 'requirements', 'plugins']
+export const PUBLIC_SLUGS = ['tutorial', 'requirements', 'from-symphony', 'plugins']
 
 export function isPublicSlug(slug: string): boolean {
   return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`))
@@ -104,7 +104,16 @@ export const SECTIONS: Section[] = [
     id: 'guides',
     label: 'Guides',
     note: 'Written to be read in order. Start at the tutorial.',
-    files: ['tutorial.md', 'requirements.md', 'guide.md', 'operating.md', 'reference.md', 'design.md', 'roadmap.md'],
+    files: [
+      'tutorial.md',
+      'requirements.md',
+      'from-symphony.md',
+      'guide.md',
+      'operating.md',
+      'reference.md',
+      'design.md',
+      'roadmap.md',
+    ],
   },
   {
     id: 'plugins',

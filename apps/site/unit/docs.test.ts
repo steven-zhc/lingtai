@@ -190,6 +190,15 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('requirements.md', '../README.md', served$)).toBe(`${GITHUB_BLOB}README.md`)
   })
 
+  it('publishes the Symphony page and links it from the requirements', async () => {
+    const served = await servable()
+    const served$ = (file: string) => served.includes(file)
+    expect(served).toContain('from-symphony.md')
+    expect(resolveHref('requirements.md', 'from-symphony.md', served$)).toBe('/docs/from-symphony/')
+    const requirements = await readFile(path.join(docRoot, 'requirements.md'), 'utf8')
+    expect(requirements).toContain('(from-symphony.md)')
+  })
+
   it('keeps the anchor', () => {
     expect(resolveHref('tutorial.md', 'decisions-archive/0022-the-seams.md#the-seams', isPublished)).toBe(
       '/docs/decisions-archive/0022-the-seams/#the-seams',
