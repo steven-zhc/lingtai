@@ -1039,6 +1039,7 @@ pnpm lingtai board start      # serve it here; prints the URL, opens a browser
 pnpm lingtai board stop       # stop the one this machine is running
 pnpm lingtai board restart    # stop, then start
 pnpm lingtai board status     # who serves it, whether it answers, who keeps it
+pnpm lingtai board status --json   # the same three facts, for a script
 ```
 
 `start` serves in this terminal and **ctrl-c stops it**; `--no-open` leaves the

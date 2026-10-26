@@ -90,6 +90,13 @@ using them in a terminal.
    `✓ approved <ticket>` or `✗ not approved (<reason>)`, the old sentence
    beneath it, and `next:` only where that sentence already named a command.
 
+   **A read-only verb of a `changes` command takes `--json` too** (#623):
+   `board status` today, whose `command` is `"board status"` so no other verb
+   of `board` can be mistaken for it. Its three facts — who serves, whether a
+   board answers, whether a supervisor keeps one — each carry `{ "unread": … }`
+   in their own key when that fact could not be read; the `error` document is
+   for a handler that could not run at all.
+
 6. **A command's definition is the one source for its help.** Each definition
    carries its group, a one-line task, whether it only *reads* or *changes*
    something, and one or two examples. `lingtai --help`,

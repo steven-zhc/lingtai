@@ -10,10 +10,7 @@
  * the repository root — see `packages/event-store/src/env.ts`. Never read
  * `process.env` for a connection string directly.
  */
-import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { connect } from 'node:net'
-import { hostname } from 'node:os'
 
 import { currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
 import {
@@ -39,7 +36,7 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT, boardPort } from '@lingtai/env'
+import { BOARD_PORT } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
 import { log } from '@lingtai/event-store'
@@ -51,16 +48,7 @@ import type { Triage } from '@lingtai/recipe'
 import { parseFlags } from './add.ts'
 import { attach } from './attach.ts'
 import { backlogCommand } from './backlog.ts'
-import {
-  boardCommand,
-  boardEntry,
-  boardLock,
-  boardPortOrWhy,
-  builtBoardDir,
-  parseBoardArgs,
-  serveBoard,
-  type BoardWorld,
-} from './board.ts'
+import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
@@ -80,7 +68,7 @@ import {
   restartSupervised,
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
-import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
+import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
 import {
@@ -234,7 +222,7 @@ function boardOptions(): ServiceOptions['board'] {
   const { port } = asked
   return {
     url: `http://127.0.0.1:${port}`,
-    answering: () => boardAnswering(port),
+    answering: () => boardAt(port),
     missing: boardMissing,
     // The key `lingtai board start` takes, read without taking it — so a board
     // in a terminal is not a job the supervisor respawns every thirty seconds.
@@ -262,88 +250,6 @@ function boardMissing(): { why: string; remedy: readonly string[] } | null {
           'from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal',
         ],
       }
-}
-
-/**
- * Whether a **Lingtai** board answers on `port`, as its own page says so.
- *
- * The title and not a 200: a port some other server holds answers too, and
- * calling that one a board is how `board stop` ends up signalling somebody
- * else's process. `lingtai init` asks the same question the same way.
- */
-async function boardAnswering(port: number): Promise<string | null> {
-  const url = `http://127.0.0.1:${port}`
-  try {
-    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
-    return (await res.text()).includes('<title>Lingtai</title>') ? url : null
-  } catch {
-    return null
-  }
-}
-
-function liveBoardWorld(): BoardWorld {
-  return {
-    host: '127.0.0.1',
-    hostname: hostname(),
-    answering: boardAnswering,
-    bound: (port) =>
-      new Promise<boolean>((resolve) => {
-        const socket = connect(port, '127.0.0.1')
-        socket.once('connect', () => {
-          socket.destroy()
-          resolve(true)
-        })
-        socket.once('error', () => resolve(false))
-      }),
-    locker: createFileLocker(),
-    // The supervisor's job is `lingtai board start --no-open` with no `--port`
-    // (`BOARD_JOB.argv`), so the board it keeps is on `boardPort()` and on no
-    // other. A `--port` that names a different one is a board of this
-    // terminal's, and the supervisor keeps nothing there — asked without the
-    // port, `board stop --port 18080` booted out the job serving 17820 and
-    // reported that as the stop of the board it was given (#187). A port that
-    // could not be read at all is one no job is serving either.
-    keeper: (port) => {
-      let supervised: number
-      try {
-        supervised = boardPort()
-      } catch {
-        return { kept: false }
-      }
-      return port === supervised ? keeper({}, BOARD_JOB) : { kept: false }
-    },
-    exec: (call) => {
-      const r = spawnSync(call[0]!, call.slice(1), { encoding: 'utf8' })
-      if (r.error) return { status: 127, out: r.error.message }
-      return { status: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
-    },
-    serve: serveBoard,
-    open: (url) =>
-      new Promise((resolve) => {
-        const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
-        const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
-        child.once('error', () => resolve(false))
-        child.once('spawn', () => {
-          child.unref()
-          resolve(true)
-        })
-      }),
-    // `kill` with no signal would only ask whether it exists; SIGTERM is the
-    // stop, and a board installs no handler that could swallow it.
-    signal: (pid) => {
-      try {
-        process.kill(pid, 'SIGTERM')
-        return true
-      } catch {
-        return false
-      }
-    },
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    now: () => Date.now(),
-    whereThePortIsSet: `board.port in ${configPath(process.env)}, or --port for this one run`,
-    log: (line) => console.log(line),
-    error: (line) => console.error(line),
-  }
 }
 
 /**
@@ -1061,24 +967,14 @@ async function main(argv: string[]): Promise<number> {
       process.on('SIGINT', () => detach.abort())
       return attach({ runId, signal: detach.signal })
     }
-    case 'board': {
-      const parsed = parseBoardArgs(rest)
-      if ('refused' in parsed) {
-        console.error(parsed.refused)
-        return 2
-      }
-      // `--port` is this run's; without it the machine file's, and without that
-      // 17820 (#187). A file that does not parse is refused by name here rather
-      // than serving on a port nobody chose.
-      let port: number
-      try {
-        port = parsed.port ?? boardPort()
-      } catch (err) {
-        console.error((err as Error).message)
-        return 1
-      }
-      return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld())
-    }
+    // **Not in the entry group below, though `board` is `@effect/cli`'s (#623).**
+    // `lingtai service` writes the board job as `node <root>/apps/cli/src/lingtai.ts
+    // board start --no-open` (`BOARD_JOB.argv`, `service.ts` — the launchd plist and
+    // the systemd `ExecStart`), and `keeper` refuses a plist that does not name this
+    // file. A refusal here would exit every installed board job 2, and launchd
+    // would respawn it every thirty seconds (#187). One parser, two doors.
+    case 'board':
+      return (await import('./cli.ts')).runCli(['node', 'lingtai', 'board', ...rest])
     // Positional throughout, and not through `parseFlags`: a value is an
     // argument here, and `KEY=--anything` is a legitimate one.
     case 'env':

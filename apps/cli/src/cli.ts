@@ -8,8 +8,9 @@ import * as NodeContext from '@effect/platform-node/NodeContext'
 import { coloured } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
+import type { BoardVerb } from './board.ts'
 import { definitionOf } from './commands.ts'
-import { applyNoColor, printJson, printJsonError, stripColour } from './output.ts'
+import { applyNoColor, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { refusal, renderVerdict, VERBS, verdictJson, type Answered } from './verdict.ts'
 import { versionFacts, versionLine } from './version.ts'
 import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
@@ -271,6 +272,94 @@ const now = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('now').task))
 
+/** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
+export interface BoardRequest {
+  verb: BoardVerb
+  port: number | null
+  dir: string | null
+  open: boolean
+  json: boolean
+}
+
+/** Runs one request and resolves to the exit code. A test hands `runCli` its own; the live one is below. */
+export type BoardRunner = (request: BoardRequest) => Promise<number>
+
+const BOARD_USAGE = 'lingtai board start|stop|restart|status [--port <n>] [--dir <path>] [--no-open]'
+
+async function liveBoardRunner(request: BoardRequest): Promise<number> {
+  const { boardCommand, builtBoardDir, boardStatusJson, readBoardStatus } = await import('./board.ts')
+  const { liveBoardWorld } = await import('./board-world.ts')
+  const { boardPort } = await import('@lingtai/env')
+  // `--port` is this run's; without it the machine file's, and without that
+  // 17820 (#187). A file that does not parse is refused by name here rather
+  // than serving on a port nobody chose.
+  let port: number
+  try {
+    port = request.port ?? boardPort()
+  } catch (err) {
+    return failed('board', request.json, err)
+  }
+  const world = liveBoardWorld()
+  if (request.verb === 'status' && request.json) {
+    printJson('board status', boardStatusJson(await readBoardStatus({ port }, world)))
+    return 0
+  }
+  return boardCommand({ verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open }, world)
+}
+
+let boardRunner: BoardRunner = liveBoardRunner
+
+const portOption = Options.integer('port').pipe(Options.optional)
+const dirOption = Options.text('dir').pipe(Options.optional)
+const noOpen = Options.boolean('no-open')
+
+/** Checked here and not by the parser, which reads `--port 99999` as an integer: the sentence has always been this one. */
+function boardHandler(verb: BoardVerb) {
+  return (args: {
+    port: { _tag: string; value?: number }
+    dir?: { _tag: string; value?: string }
+    noOpen?: boolean
+    json?: boolean
+    noColor?: boolean
+  }) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const asJson = args.json === true
+      const port = args.port._tag === 'Some' ? args.port.value! : null
+      if (port !== null && (port <= 0 || port > 65535)) {
+        const sentence = `${BOARD_USAGE} — --port takes a port number`
+        if (asJson) printJsonError('board', 'usage', sentence)
+        else console.error(sentence)
+        handlerCode = 2
+        return
+      }
+      try {
+        handlerCode = await boardRunner({
+          verb,
+          port,
+          dir: args.dir?._tag === 'Some' ? args.dir.value! : null,
+          open: !args.noOpen,
+          json: asJson,
+        })
+      } catch (err) {
+        handlerCode = failed('board', asJson, err)
+      }
+    })
+}
+
+const startOptions = { port: portOption, dir: dirOption, noOpen, noColor }
+const boardStart = Command.make('start', startOptions, boardHandler('start'))
+const boardRestart = Command.make('restart', startOptions, boardHandler('restart'))
+const boardStop = Command.make('stop', { port: portOption, noColor }, boardHandler('stop'))
+const boardStatus = Command.make('status', { port: portOption, json, noColor }, boardHandler('status'))
+
+// The parent is `start` too: `lingtai board` and `lingtai board --port <n> --no-open` are what the
+// wizard's last line, the release test and the service's job have always run.
+const board = Command.make('board', startOptions, boardHandler('start')).pipe(
+  Command.withDescription(definitionOf('board').task),
+  Command.withSubcommands([boardStart, boardStop, boardRestart, boardStatus]),
+)
+
 const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
@@ -285,6 +374,7 @@ const root = Command.make('lingtai').pipe(
     ask,
     answer,
     now,
+    board,
   ]),
 )
 
@@ -344,8 +434,17 @@ function withoutBareNote(args: readonly string[]): string[] {
 }
 
 /** `argv` is the full `process.argv` shape; resolves to the exit code. */
-export async function runCli(argv: readonly string[]): Promise<number> {
+export async function runCli(argv: readonly string[], deps: { board?: BoardRunner } = {}): Promise<number> {
   const args = argv.slice(2)
+  boardRunner = deps.board ?? liveBoardRunner
+  if (args[0] === 'board' && args[1] === 'shutdown') {
+    const sentence =
+      'lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the ' +
+      'wall limit for it. A board has no pass to finish: pnpm lingtai board stop, which returns at once'
+    if (args.some(jsonOn)) printJsonError('board', 'usage', sentence)
+    else console.error(`${symbol.fail()} ${sentence}`)
+    return 2
+  }
   for (const { flag, sentence, trimmed } of TAKES[args[0] ?? ''] ?? []) {
     const value = flagValue(args.slice(1), flag)
     if (value !== undefined && !(trimmed ? value?.trim() : value)) {
