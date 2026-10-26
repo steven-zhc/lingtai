@@ -58,7 +58,7 @@
  * rule nobody can check.
  */
 import type { ActionFinding } from '@lingtai/actions'
-import { SEVERITIES, type Severity } from '@lingtai/domain'
+import { type Envelope, SEVERITIES, type Severity, type WaitId, triageFactsOf } from '@lingtai/domain'
 import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
 
 import { checksBrief } from './prompt.ts'
@@ -487,6 +487,19 @@ export function fixBrief(input: {
    * slower than this turn (`#319`).
    */
   checks: readonly string[]
+  /**
+   * The ticket as it reads at this round. Context for the findings and never
+   * the job handed over again: the cold reviewer held the change to it, so a
+   * `Done when` a person added before granting the round is the one thing a
+   * fixer without it cannot meet (#643).
+   */
+  ticket: { title: string; body: string }
+  /**
+   * What triage advised and the person who granted this round accepted
+   * (`grantedAdviceOf`). Evidence, not a second spec; absent or empty leaves
+   * the brief without the section.
+   */
+  advice?: readonly LineFix[]
 }): string {
   const clipped =
     input.diff.length > input.diffBytes
@@ -509,6 +522,15 @@ ${input.round} of ${input.of}.
 session. What you have is below, and the code in front of you.
 
 ${evidence}
+${adviceSection(input.advice)}
+## The ticket the reviewer held this change to
+
+${input.ticket.title}
+
+${input.ticket.body}
+
+This is what the cold reviewer read the change against. It is context for the
+findings, not the job handed to you again: the findings are still the criterion.
 
 ## The change under review
 
@@ -543,6 +565,35 @@ caused by this diff. **Never make the code worse to make the refusal go away.** 
 fixer that rewrites working code to silence a false finding, or deletes a test to
 make a build go green, is the failure this whole loop is most likely to produce,
 and committing nothing is the move that exists so you never have to.`
+}
+
+/** One line triage advised fixing, as `FixableLines` carries it. */
+export type LineFix = { readonly path: string; readonly line: number | null; readonly what: string }
+
+/**
+ * Triage's `FixableLines` advice for the wait a granted continuation resumes,
+ * or `undefined` — another wait's advice, an earlier attempt's, any other
+ * cause and an empty list are all none. `triageFactsOf` keeps 0118 §3's
+ * latest-attempt rule, so this does not write a second fold.
+ */
+export function grantedAdviceOf(events: readonly Envelope[], waitId: WaitId): readonly LineFix[] | undefined {
+  const { result } = triageFactsOf(events, waitId)
+  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'FixableLines') return undefined
+  return result.cause.fixes.length > 0 ? result.cause.fixes : undefined
+}
+
+function adviceSection(advice: readonly LineFix[] | undefined): string {
+  if (advice === undefined || advice.length === 0) return ''
+  const lines = advice.map((f) => `- \`${f.line === null ? f.path : `${f.path}:${f.line}`}\` — ${f.what}`)
+  return `
+## What the person who granted this round accepted
+
+${lines.join('\n')}
+
+The findings above are what the re-review asks about. This is how the person
+expects them to be met, so depart from it only for a reason you state in your
+final message.
+`
 }
 
 /**
