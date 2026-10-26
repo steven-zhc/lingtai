@@ -110,7 +110,7 @@ describe('pnpm build', () => {
       encoding: 'utf8',
     })
     expect(run.status, run.stderr).toBe(0)
-    const committed = JSON.parse(readFileSync(join(__dirname, '../../../doc/events.json'), 'utf8'))
+    const committed = JSON.parse(readFileSync(join(import.meta.dirname, '../../../doc/events.json'), 'utf8'))
     expect(JSON.parse(run.stdout).events).toHaveLength(committed.events.length)
   })
 
