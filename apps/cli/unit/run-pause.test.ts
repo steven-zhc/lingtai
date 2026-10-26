@@ -71,3 +71,13 @@ describe('lingtai run under a standing pause', () => {
     expect(liveness.detail).toContain(RUN_UNDER_A_PAUSE)
   })
 })
+
+describe('lingtai pause prints one verdict', () => {
+  it('is a verdict line over the sentences it always said', async () => {
+    const printed: string[] = []
+    await pauseCommand('human:ops', 'reviewing', { store: createMemoryEventStore(), log: (l) => printed.push(l) })
+    expect(printed[0]).toContain('✓ paused')
+    expect(printed.join('\n')).toContain('paused by human:ops — reviewing')
+    expect(printed.join('\n')).toContain(`${RUN_UNDER_A_PAUSE}.`)
+  })
+})

@@ -24,6 +24,15 @@ describe('routeOf', () => {
     [['answer', 'lingtai', '--issue', '617', 'use the second option']],
     [['ask', 'lingtai', '--issue', '617', 'which groups?']],
     [['now', 'lingtai', '--issue', '617', '--json']],
+    [['start']],
+    [['start', '--no-conduct', '--no-merge']],
+    [['daemon', '--no-conduct']],
+    [['service', 'status', '--json']],
+    [['service', 'shutdown', 'moving the database']],
+    [['restart', '--dirty', 'picking up #88']],
+    [['shutdown', '--timeout', '10m']],
+    [['pause', 'reviewing the recipe']],
+    [['resume']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -46,11 +55,16 @@ describe('routeOf', () => {
     [['ask', '--help'], 'help'],
     [['now', '--help'], 'help'],
     [['shutdown', '-h'], 'help'],
+    [['start', '--help'], 'help'],
+    [['daemon', '--help'], 'help'],
+    [['service', 'status', '--help'], 'help'],
+    [['restart', '--help'], 'help'],
+    [['pause', '--help'], 'help'],
+    [['resume', '--help'], 'help'],
     [['board', 'start', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'effect'],
     [['--version'], 'lingtai'],
-    [['daemon', '--no-conduct'], 'lingtai'],
     [['upgrade'], 'install'],
     [['rollback'], 'install'],
     [['uninstall'], 'install'],

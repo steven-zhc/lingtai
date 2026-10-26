@@ -21,7 +21,7 @@ export type CommandDefinition = {
   readonly group: Group
   /** One line: what it is for. At most 60 columns, so the root listing needs no wrapping. */
   readonly task: string
-  /** Decides whether the command takes `--json` (0121 §5): a `changes` command takes it only when it answers with a verdict (#621). */
+  /** Decides whether the command takes `--json` (0121 §5): a `changes` command takes it only when it answers with a verdict (#621), or on a subcommand that only reads (`service status`, #622). */
   readonly effect: 'reads' | 'changes'
   readonly usage: readonly string[]
   readonly examples: readonly string[]
@@ -313,7 +313,7 @@ export const COMMANDS = [
     task: 'hold the projections current and take work',
     effect: 'changes',
     usage: [
-      'lingtai start [--no-conduct] [--no-merge]',
+      'lingtai start [--no-conduct] [--no-merge] [--no-color]',
       '  Reads no standing signal: a pause or a shutdown aimed at an',
       '  earlier daemon was not aimed at this one. If another daemon holds',
       '  the lock this starts nothing and says so. Unchecked — lingtai',
@@ -329,7 +329,7 @@ export const COMMANDS = [
     task: 'the old name of start, still answered',
     effect: 'changes',
     usage: [
-      'lingtai daemon [--no-conduct] [--no-merge]',
+      'lingtai daemon [--no-conduct] [--no-merge] [--no-color]',
       '  Still answers: an installed LaunchAgent or systemd unit has this',
       '  name written into it (#159). It is lingtai start.',
     ],
@@ -341,7 +341,8 @@ export const COMMANDS = [
     task: 'keep the daemon and the board running',
     effect: 'changes',
     usage: [
-      'lingtai service install|start|shutdown [why]|restart [why]|status|uninstall',
+      'lingtai service install|start|shutdown [why]|restart [why]|uninstall',
+      'lingtai service status [--json]',
       '  Two jobs, the daemon and the board: a LaunchAgent each on macOS,',
       '  a systemd user unit each on Linux. No service manager? run',
       '  lingtai daemon and lingtai board start in the foreground.',
@@ -359,7 +360,7 @@ export const COMMANDS = [
     task: 'drain, wait for the pass, and start one daemon',
     effect: 'changes',
     usage: [
-      'lingtai restart [why] [flags]',
+      'lingtai restart [why] [flags] [--no-color]',
       '  Here, or through lingtai service when a supervisor keeps it.',
       '  Refuses a commit the tracking remote does not have, a dirty',
       '  worktree, and what lingtai doctor failed on. Ctrl+C during the',
@@ -378,7 +379,7 @@ export const COMMANDS = [
     task: 'stop the daemon after the ticket in flight',
     effect: 'changes',
     usage: [
-      'lingtai shutdown [why] [--force] [--timeout <duration>]',
+      'lingtai shutdown [why] [--force] [--timeout <duration>] [--no-color]',
       '  The pass finishes first, so the steps and the merge lane run',
       '  too. It does not outlive the daemon it was sent to.',
       '  --force                do not wait. The agent is left running and',
@@ -394,7 +395,7 @@ export const COMMANDS = [
     task: 'stop the daemon taking new tickets',
     effect: 'changes',
     usage: [
-      'lingtai pause <why>',
+      'lingtai pause <why> [--no-color]',
       '  A run in flight finishes. About the daemon that is running, and',
       '  gone when it is — but not for lingtai run, which takes no ticket',
       '  while a pause stands, daemon or none: one already working',
@@ -407,7 +408,7 @@ export const COMMANDS = [
     group: 'daemon',
     task: 'take tickets again',
     effect: 'changes',
-    usage: ['lingtai resume'],
+    usage: ['lingtai resume [--no-color]'],
     examples: ['lingtai resume'],
   }),
   define({

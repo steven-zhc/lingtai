@@ -97,7 +97,9 @@ using them in a terminal.
    definitions, and `doc/cli.md` is what the site's CLI page shows. For a
    command that only *reads*, the `reads`/`changes` marker is what decides
    whether it takes `--json` (clause 5); a `changes` command that answers
-   with a verdict takes it as clause 5 says.
+   with a verdict takes it as clause 5 says. A command that changes
+   something but has a subcommand that only reads (`service status`) takes
+   `--json` on that subcommand alone (#622).
 
 7. **Help groups.** `lingtai --help` lists commands in four groups, each
    command in exactly one:
