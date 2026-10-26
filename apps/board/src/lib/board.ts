@@ -168,7 +168,13 @@ export interface BoardCard {
    * `Approve`, and nothing for the rest. `note` is `Approve`'s, because a
    * one-click approve over a refusing step must say whose reading it took.
    */
-  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null } | null
+  move: {
+    resolution: Resolution['_tag']
+    onSha: string | null
+    note: string | null
+    /** Triage's own resolution, present only where the recommendation overrides it (#652). */
+    advised?: Resolution['_tag']
+  } | null
   /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
   triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | null
   /**
@@ -594,7 +600,14 @@ function moveOf(
   if (resolution === null) return null
   switch (resolution) {
     case 'GrantFixRound':
-      return fixHead === null ? null : { resolution, onSha: fixHead, note: null }
+      return fixHead === null
+        ? null
+        : {
+            resolution,
+            onSha: fixHead,
+            note: null,
+            ...(status.result.resolution === resolution ? {} : { advised: status.result.resolution }),
+          }
     case 'Approve':
       return t.awaitingSha === null
         ? null

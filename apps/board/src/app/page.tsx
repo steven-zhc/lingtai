@@ -14,6 +14,7 @@ import { Fragment } from 'react'
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
+import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
 
 import { Close, TriageMove } from './decide.tsx'
@@ -187,6 +188,11 @@ export function Card({
           <p className="question waiting-fallback">{TRIAGE_WORDS[card.triage]}</p>
         ) : fallback ? (
           <p className="question waiting-fallback">{fallback}</p>
+        ) : null}
+        {card.move?.advised ? (
+          <p className="question waiting-advised">
+            Triage advised {RESOLUTION_COPY[card.move.advised].title}; a fix round is drawn first.
+          </p>
         ) : null}
         {card.move && card.waitId !== null ? (
           <TriageMove
