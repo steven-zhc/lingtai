@@ -14,7 +14,8 @@
  * its `StepStarted` and its `StepEnded` an envelope is allowed at that step and
  * no other, so `RunStarted` declared only at `end` is caught — **and loose once
  * it has closed**: only `end`, since what is appended after a step closes is the
- * ending, written by `conduct.ts` once `runPass` returns. So `WaitStarted`
+ * ending, written by `conduct.ts` once `runPass` returns, **and `proposed` alone for an agent judge's
+ * `RunSpent`**, which `routeProposal` appends after `review` has closed. So `WaitStarted`
  * declared at `review` is caught, and so is `TicketLanded` declared at
  * `proposed`. **The cost:** a type declared at `end` is checked loosely after a
  * step has closed. A tighter check would need `conduct.ts` to announce those
@@ -34,6 +35,7 @@ import {
   fakeGitHub,
   fakePorts,
   JUDGED,
+  JUDGED_BY_AN_AGENT,
   memoryStore,
   once,
   project,
@@ -65,7 +67,10 @@ export function misplaced(envelopes: readonly Envelope[], at: Readonly<Record<Ev
       started = true
       open = true
     }
-    const window = !started ? ['claim'] : open ? [current] : ['end']
+    // An agent judge is dispatched by `routeProposal` at `proposed`, after `review` has closed,
+    // and its `RunSpent` is the one event that visit appends (`for._tag` is `Judge`).
+    const judged = e.type === 'RunSpent' && (e.data as { for?: { _tag?: string } }).for?._tag === 'Judge'
+    const window = !started ? ['claim'] : open ? [current] : judged ? ['proposed'] : ['end']
     const declared = at[e.type as EventType]
     if (!declared.some((s) => window.includes(s))) found.push({ type: e.type, seq: e.seq, window, declared })
     if (e.type === 'StepEnded') open = false
@@ -122,6 +127,21 @@ const PASSES: Record<string, () => Promise<ReturnType<typeof memoryStore>>> = {
     await once({ ...base, client: fakeGitHub([], JUDGED), runtime: twoSided, store }, ports)
     return store
   },
+  'a review refusal that an agent judge answers at proposed': async () => {
+    const store = memoryStore()
+    const judging: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) =>
+        request.runId.includes(':judge:')
+          ? { ...(await refusingRuntime.run(request)), text: '```json\n{"next": "claim", "why": "restart it"}\n```' }
+          : refusingRuntime.run(request),
+    }
+    await once(
+      { ...base, merge: false, client: fakeGitHub([], JUDGED_BY_AN_AGENT), runtime: judging, store },
+      fakePorts([], store),
+    )
+    return store
+  },
   'a merge conflict': async () => {
     const store = memoryStore()
     const ports = fakePorts([], store, true)
@@ -139,6 +159,10 @@ describe('what an event is written at (#628)', () => {
       const all = everything(store)
       expect(all.length).toBeGreaterThan(0)
       if (name.includes('waits for a person')) expect(all.some((e) => e.type === 'WaitStarted')).toBe(true)
+      if (name.includes('agent judge'))
+        expect(
+          all.some((e) => e.type === 'RunSpent' && (e.data as { for: { _tag: string } }).for._tag === 'Judge'),
+        ).toBe(true)
       if (name === 'a merge conflict') expect(all.some((e) => e.type === 'PassRouted')).toBe(true)
       expect(misplaced(all, EVENT_AT)).toEqual([])
     })
@@ -156,6 +180,12 @@ describe('what an event is written at (#628)', () => {
       const wrong = { ...EVENT_AT, RunStarted: [away] } as Record<EventType, readonly At[]>
       expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['RunStarted']))
     }
+  })
+
+  it("fails when the agent judge's RunSpent is declared without proposed", async () => {
+    const store = await PASSES['a review refusal that an agent judge answers at proposed']!()
+    const wrong = { ...EVENT_AT, RunSpent: ['implement', 'review', 'end'] } as Record<EventType, readonly At[]>
+    expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['RunSpent']))
   })
 
   it('fails when an event appended after the walk is declared at proposed', async () => {
