@@ -118,12 +118,16 @@ describe('lingtai ticket', () => {
     }
     const code = await ticketList({ project: 'p' }, log, reading)
     expect(code).toBe(0)
-    expect(lines).toHaveLength(2)
-    expect(lines[0]).toContain('#1')
-    expect(lines[0]).toContain('bug')
-    expect(lines[0]).toContain('first')
-    expect(lines[1]).toContain('#2')
-    expect(lines[1]).toContain('second')
+    // The heading and the header row, then the rows.
+    expect(lines[0]).toBe('p')
+    expect(lines[1]).toMatch(/^ID\s+KIND\s+TITLE$/)
+    const rows = lines.slice(2)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toContain('#1')
+    expect(rows[0]).toContain('bug')
+    expect(rows[0]).toContain('first')
+    expect(rows[1]).toContain('#2')
+    expect(rows[1]).toContain('second')
   })
 
   it('--all adds closed tickets, marked closed, in number order even when created out of number order', async () => {
@@ -146,8 +150,9 @@ describe('lingtai ticket', () => {
     }
     const code = await ticketList({ project: 'p', all: true }, log, reading)
     expect(code).toBe(0)
-    expect(lines.map((l) => l.split(/\s+/)[0])).toEqual(['#1', '#2', '#3'])
-    expect(lines[1]).toContain('closed')
+    const rows = lines.slice(2)
+    expect(rows.map((l) => l.split(/\s+/)[0])).toEqual(['#1', '#2', '#3'])
+    expect(rows[1]).toContain('closed')
   })
 
   it('shows the kind column, "—" for a ticket with no kind, and other labels in brackets', async () => {
@@ -163,11 +168,12 @@ describe('lingtai ticket', () => {
     }
     const code = await ticketList({ project: 'p' }, log, reading)
     expect(code).toBe(0)
-    expect(lines[0]).toContain('bug')
-    expect(lines[0]).toContain('[agent:hold]')
-    expect(lines[0]).not.toContain('[bug]')
-    expect(lines[1]).toContain('—')
-    expect(lines[1]).toContain('[triage]')
+    const rows = lines.slice(2)
+    expect(rows[0]).toContain('bug')
+    expect(rows[0]).toContain('[agent:hold]')
+    expect(rows[0]).not.toContain('[bug]')
+    expect(rows[1]).toContain('—')
+    expect(rows[1]).toContain('[triage]')
   })
 
   it('closes a ticket, and a following list no longer shows it', async () => {
@@ -252,6 +258,64 @@ describe('lingtai ticket', () => {
     expect(lines[0]).toContain('a')
     expect(lines[0]).toContain('b')
     expect(lines[0]).toContain('--project')
+  })
+})
+
+describe('lingtai ticket list --json (#624)', () => {
+  const doc = async (reading: TicketReading, options = {}) => {
+    const { log, lines } = sink()
+    const code = await ticketList({ project: 'p', json: true, ...options }, log, reading)
+    return { code, doc: JSON.parse(lines.join('\n')) as Record<string, unknown>, lines }
+  }
+
+  it('prints one document of the tickets, and nothing else', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    await tickets.createIssue({ title: 'a bug', body: '', labels: ['bug', 'agent:hold'] })
+    const r = await doc({
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+    })
+    expect(r.code).toBe(0)
+    expect(r.lines).toHaveLength(1)
+    expect(r.doc).toEqual({
+      version: 1,
+      command: 'ticket list',
+      project: 'p',
+      all: false,
+      tickets: [{ number: 1, kind: 'bug', title: 'a bug', state: 'open', labels: ['bug', 'agent:hold'] }],
+    })
+  })
+
+  it('answers each refusal with an error document and a code, exit 1', async () => {
+    const base = { recipeFor: async () => recipeFrom(DB_YAML), ticketsFor: async () => dbTickets(freshSql(), 'p') }
+    const code = async (reading: TicketReading, options = {}) => {
+      const r = await doc(reading, options)
+      expect(r.code).toBe(1)
+      expect(r.doc['command']).toBe('ticket list')
+      return (r.doc['error'] as { code: string }).code
+    }
+    expect(await code({ ...base, projects: async () => [project('a')] }, { project: 'zzz' })).toBe('no-project')
+    expect(await code({ ...base, projects: async () => [] }, { project: undefined })).toBe('no-projects')
+    expect(await code({ ...base, projects: async () => [project('a'), project('b')] }, { project: undefined })).toBe(
+      'ambiguous-project',
+    )
+    expect(
+      await code({
+        projects: async () => [project('p')],
+        recipeFor: async () => {
+          throw new Error('no recipe')
+        },
+        ticketsFor: base.ticketsFor,
+      }),
+    ).toBe('recipe-unreadable')
+    expect(
+      await code({
+        projects: async () => [project('p')],
+        recipeFor: async () => recipeFrom(GITHUB_YAML),
+        ticketsFor: base.ticketsFor,
+      }),
+    ).toBe('tickets-on-github')
   })
 })
 

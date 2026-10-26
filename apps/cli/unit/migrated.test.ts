@@ -27,6 +27,13 @@ describe('routeOf', () => {
     [['board']],
     [['board', 'status']],
     [['board', '--port', '1', '--no-open']],
+    [['run', 'lingtai', '--issue', '624', '--no-merge']],
+    [['attach', '2d6f1c']],
+    [['ticket', 'list', '--json']],
+    [['ticket', 'close', '3']],
+    [['end', 'replay', 'lingtai']],
+    [['backlog']],
+    [['backlog', 'accept', 'lingtai', 'a1b2c3', '--kind', 'bug']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -50,6 +57,11 @@ describe('routeOf', () => {
     [['now', '--help'], 'help'],
     [['shutdown', '-h'], 'help'],
     [['board', 'start', '--help'], 'help'],
+    [['run', '--help'], 'help'],
+    [['attach', '--help'], 'help'],
+    [['ticket', 'list', '--help'], 'help'],
+    [['end', 'replay', '--help'], 'help'],
+    [['backlog', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'effect'],
     [['--version'], 'lingtai'],

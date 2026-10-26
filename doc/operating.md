@@ -594,7 +594,7 @@ nothing refuses, and nothing tells you.
 Four commands work a project's own ticket table:
 
 ```
-lingtai ticket list [--all] [--project <p>]
+lingtai ticket list [--all] [--project <p>] [--json]
 lingtai ticket new [--project <p>]
 lingtai ticket edit <n> [--project <p>]
 lingtai ticket close <n> [--project <p>]
@@ -1550,7 +1550,7 @@ The line it prints at the end is read back from the log, not counted up from
 what the process did:
 
 ```
-9 run(s): 1 landed, 7 held, 1 stopped (empty)
+✗ 9 run(s): 1 landed, 7 held, 1 stopped (empty)
 ```
 
 **landed** the work item's stream says `TicketLanded` — by this run, or by
@@ -1780,7 +1780,7 @@ section's own *After* step rebuilds the projection to nothing. For every
 project noted above, before the reset:
 
 ```bash
-pnpm lingtai backlog <project> --all
+pnpm lingtai backlog <project> --all --json
 ```
 
 and keep what it prints — every accepted and declined finding, and the reason
