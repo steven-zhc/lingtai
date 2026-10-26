@@ -27,8 +27,8 @@ export function renderEvents(doc: EventsDoc, options: { columns?: number | undef
     ...(i > 0 ? [''] : []),
     section(at, [
       ...table(
-        ['event', 'v', 'stream', 'defined'],
-        list.map((e) => [e.name, String(e.schemaVersion), e.stream.join(' '), e.definition]),
+        ['event', 'v', 'stream', 'defined', 'appended'],
+        list.map((e) => [e.name, String(e.schemaVersion), e.stream.join(' '), e.definition, e.sites.join(' ')]),
         options,
       ),
     ]),

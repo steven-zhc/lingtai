@@ -111,7 +111,8 @@ describe('pnpm build', () => {
     })
     expect(run.status, run.stderr).toBe(0)
     const committed = JSON.parse(readFileSync(join(import.meta.dirname, '../../../doc/events.json'), 'utf8'))
-    expect(JSON.parse(run.stdout).events).toHaveLength(committed.events.length)
+    const { version: _v, command: _c, ...rest } = JSON.parse(run.stdout)
+    expect(rest).toEqual(committed)
   })
 
   it('starts a pass from the bundled CLI without refusing its runtime assets', async () => {

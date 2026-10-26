@@ -94,11 +94,11 @@ describe('rendering', () => {
     expect(sections.flatMap(([, l]) => l.map((e) => e.name))).not.toContain('Gone')
   })
 
-  it('prints one heading per section and no site links in the listing', () => {
+  it('prints one heading per section, each event with its definition and append-site links', () => {
     const text = renderEvents(small).join('\n')
     expect(text).toContain('claim')
     expect(text).toContain('https://example.test/Late')
-    expect(text).not.toContain('/site/')
+    expect(text).toContain('https://example.test/site/Late')
   })
 
   it('shows one event with its sites and summary when it has one', () => {
