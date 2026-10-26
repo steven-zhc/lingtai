@@ -19,7 +19,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
+import { agentBranchOf, CONFLICT_ROUND_HUNKS, waitWords, type ProjectState } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -38,20 +38,34 @@ import { heading, keyValues, section, symbol, table } from './output.ts'
 export function conflictLines(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
-  savedHead?: boolean,
+  savedHead?: SavedHead,
 ): { rec: string; advised: string | null } | null {
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
-  const rec = recommendedResolution(reason, { _tag: 'Done', result }, { savedHead })
+  const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
+  const rec = recommendedResolution(
+    reason,
+    { _tag: 'Done', result },
+    { savedHead: typeof savedHead === 'object' ? false : savedHead },
+  )
   if (rec === null) return null
+  if (unreadable !== null && result.cause.total <= CONFLICT_ROUND_HUNKS) {
+    return {
+      rec: `recommends ${rec} — ${result.summary}`,
+      advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
+    }
+  }
   if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
     return {
-      rec: 'recommends a fix round — each conflicting hunk has a recommended answer from triage, so it is resolved in place rather than started over',
+      rec: 'recommends a fix round — a small conflict is resolved in place rather than started over, and triage’s recommended answer for each divergent hunk goes to the fixer',
       advised: `triage advised ${result.resolution}: ${result.summary}`,
     }
   }
   return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
 }
+
+/** A run's saved head: whether one is there, or why that could not be read. */
+export type SavedHead = boolean | { unreadable: string }
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -118,7 +132,7 @@ export interface StatusReading {
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
-  savedHeadOf?: (runId: string, project: ProjectState) => Promise<boolean>
+  savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHead>
 }
 
 /**
@@ -126,13 +140,13 @@ export interface StatusReading {
  * the remote ref still points at it — the precondition `GrantFixRound` is
  * offered on, which the recommendation must not outrun (#652). The task page
  * makes the same remote comparison, so a deleted or moved branch is no saved
- * head here either. A stream or a remote that will not read is no saved head.
+ * head here either. A stream or a remote that will not read is neither: it is reported as unreadable, so the recommendation is not drawn from a guess.
  */
 async function hasSavedHead(
   runId: string,
   project: ProjectState,
   clientFor: ClientFor = githubClientFor,
-): Promise<boolean> {
+): Promise<SavedHead> {
   try {
     const saved = (await eventStore.read(runId)).findLast((e) => e.type === 'RunRefsPublished')?.data as
       | { outcome?: string; branchCarries?: boolean; headSha?: string; branch?: string }
@@ -147,8 +161,8 @@ async function hasSavedHead(
     )
       return false
     return (await (await clientFor(project)).refSha(`heads/${saved.branch}`)) === saved.headSha
-  } catch {
-    return false
+  } catch (e) {
+    return { unreadable: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -351,7 +365,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         wait?: TaskCard['wait']
         triage?: TaskCard['triage']
         awaitingSha?: string | null
-        savedHead?: boolean
+        savedHead?: SavedHead
       },
       restarts: number,
     ): StatusRow => {

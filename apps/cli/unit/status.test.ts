@@ -526,6 +526,12 @@ describe('conflictLines (#652)', () => {
     expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
   })
 
+  it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
+    const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
+    expect(c?.rec).toBe('recommends Requeue — why')
+    expect(c?.advised).toContain('saved head could not be checked (rate limited)')
+  })
+
   it('says nothing for no triage', () => {
     expect(conflictLines(reason, undefined)).toBeNull()
   })
