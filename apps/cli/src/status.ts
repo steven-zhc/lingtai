@@ -9,6 +9,7 @@
 import {
   backingOff,
   filterFacts,
+  githubClientFor,
   heldUntil,
   loadProjects,
   passedOver,
@@ -18,7 +19,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, waitWords } from '@lingtai/domain'
+import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -117,25 +118,35 @@ export interface StatusReading {
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
-  savedHeadOf?: (runId: string) => Promise<boolean>
+  savedHeadOf?: (runId: string, project: ProjectState) => Promise<boolean>
 }
 
 /**
- * Whether the run's last `RunRefsPublished` left a clean head to continue — the
- * precondition `GrantFixRound` is offered on, which the recommendation must not
- * outrun (#652). A stream that will not read is no saved head.
+ * Whether the run's last `RunRefsPublished` left a clean head to continue, and
+ * the remote ref still points at it — the precondition `GrantFixRound` is
+ * offered on, which the recommendation must not outrun (#652). The task page
+ * makes the same remote comparison, so a deleted or moved branch is no saved
+ * head here either. A stream or a remote that will not read is no saved head.
  */
-async function hasSavedHead(runId: string): Promise<boolean> {
+async function hasSavedHead(
+  runId: string,
+  project: ProjectState,
+  clientFor: ClientFor = githubClientFor,
+): Promise<boolean> {
   try {
     const saved = (await eventStore.read(runId)).findLast((e) => e.type === 'RunRefsPublished')?.data as
       | { outcome?: string; branchCarries?: boolean; headSha?: string; branch?: string }
       | undefined
-    return (
-      (saved?.outcome === 'published' || saved?.outcome === 'already-published') &&
-      saved.branchCarries !== false &&
-      Boolean(saved.headSha) &&
-      Boolean(saved.branch)
+    if (
+      !(
+        (saved?.outcome === 'published' || saved?.outcome === 'already-published') &&
+        saved.branchCarries !== false &&
+        saved.headSha &&
+        saved.branch
+      )
     )
+      return false
+    return (await (await clientFor(project)).refSha(`heads/${saved.branch}`)) === saved.headSha
   } catch {
     return false
   }
@@ -408,7 +419,12 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
             t.runId &&
             t.triage?.result?._tag === 'TriageAdvised' &&
             t.triage.result.cause._tag === 'ConflictingHunks'
-          const savedHead = conflict ? await (reading.savedHeadOf ?? hasSavedHead)(t.runId as string) : undefined
+          const savedHead = conflict
+            ? await (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(
+                t.runId as string,
+                project,
+              )
+            : undefined
           const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
           // Every pass in flight is a row with its step, not only the first (#640).
           if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
