@@ -624,6 +624,16 @@ export function requeueNote(text: string): string {
 }
 
 /**
+ * The reason a one-click `Approve` from the board's card is recorded with
+ * (#647): it names whose reading the waiver took. Sent on every such approve —
+ * the card cannot know whether a step still refuses, and a note costs nothing
+ * where none does.
+ */
+export function acceptedTriageNote(summary: string): string {
+  return `accepted triage's recommendation: ${summary.trim()}`
+}
+
+/**
  * One line to fix. `triage.ts`'s `Lines` cause inlines this shape rather than
  * naming it (`triage.ts:96-108`); named here because `RootCause.FixableLines`
  * needs to say it once.

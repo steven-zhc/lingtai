@@ -13,7 +13,13 @@ import {
   isRegistered,
   waitWords,
 } from '@lingtai/domain'
-import { triageStatus, type TriageStatus } from '@lingtai/domain/wait'
+import {
+  acceptedTriageNote,
+  recommendedResolution,
+  triageStatus,
+  type Resolution,
+  type TriageStatus,
+} from '@lingtai/domain/wait'
 import { eventStore } from '@lingtai/event-store'
 import type { SpendRow } from '@lingtai/projector'
 /**
@@ -53,6 +59,7 @@ import {
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { describeHeld, foldProgress, type RunProgress } from './progress.ts'
+import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBills,
   billOf,
@@ -148,6 +155,19 @@ export interface BoardCard {
   split: string | null
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
   cause: (CausePresentation & { summary: string }) | null
+  /**
+   * The one button this waiting card carries (#647): the resolution triage
+   * *advised*, in `recommendedResolution`'s terms, or null. Null for every
+   * triage status but `Done` with `TriageAdvised` — a wait's own default orders
+   * the task page's cards but is not triage's recommendation — and null when
+   * the advice is contradicted or the wait does not allow it.
+   *
+   * `onSha` is what the action wants: the saved fix head for `GrantFixRound`
+   * (null, so no button, where the log has none), the awaited sha for
+   * `Approve`, and nothing for the rest. `note` is `Approve`'s, because a
+   * one-click approve over a refusing step must say whose reading it took.
+   */
+  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null } | null
   /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
   triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | null
   /**
@@ -561,6 +581,28 @@ async function declaredTriage(projects: ProjectState[]): Promise<Set<string>> {
   return new Set(projects.flatMap((p, i) => (declared[i] && p.project !== null ? [p.project] : [])))
 }
 
+/** What the card's one button does, decided from the same `status` as its cause line (#647). */
+function moveOf(
+  t: Pick<TaskCard, 'wait' | 'awaitingSha'>,
+  status: TriageStatus | 'Unknown' | null,
+  fixHead: string | null,
+): BoardCard['move'] {
+  if (t.wait === null || status === null || status === 'Unknown') return null
+  if (status._tag !== 'Done' || status.result._tag !== 'TriageAdvised') return null
+  const resolution = recommendedResolution(t.wait.reason, status, { savedHead: fixHead !== null })
+  if (resolution === null) return null
+  switch (resolution) {
+    case 'GrantFixRound':
+      return fixHead === null ? null : { resolution, onSha: fixHead, note: null }
+    case 'Approve':
+      return t.awaitingSha === null
+        ? null
+        : { resolution, onSha: t.awaitingSha, note: acceptedTriageNote(status.result.summary) }
+    default:
+      return { resolution, onSha: null, note: null }
+  }
+}
+
 /**
  * `runnableAt`, `progress` and `kindColor` are passed in rather than computed:
  * one needs the project's `source.backoff`, one the run's own stream and one
@@ -591,6 +633,12 @@ export function toCard(
    * wait, so it never reaches `triageStatus` and the default is never used.
    */
   triage: TriageContext = triageContextOf(false, null),
+  /**
+   * The saved fix head, from the run's own stream, for the waiting cards
+   * `laneProgress` reads. Null is "not known", which drops `GrantFixRound`
+   * from `move` exactly as `savedHead: false` does on the task page.
+   */
+  fixHead: string | null = null,
 ): BoardCard {
   const words =
     t.wait === null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
@@ -620,6 +668,7 @@ export function toCard(
       status !== 'Unknown' && status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
         ? { ...presentCause(status.result.cause), summary: status.result.summary }
         : null,
+    move: moveOf(t, status, fixHead),
     triage:
       status === 'Unknown'
         ? 'Unknown'
@@ -857,6 +906,7 @@ export async function queuedCards(
         note: null,
         split: null,
         cause: null,
+        move: null,
         triage: null,
         attempts: 0,
         // Nothing has run, so no approach has been abandoned.
@@ -917,18 +967,28 @@ export async function queuedCards(
 async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
-): Promise<Map<string, RunProgress>> {
+): Promise<{ progress: Map<string, RunProgress>; fixHeads: Map<string, string> }> {
   const folded = await Promise.all(
     railCandidates(tasks).map(async ({ task, over }) => {
       try {
         const events = await eventStore.read(task.runId as string)
-        return [task.taskId, foldProgress(events, plans.get(task.project), over)] as const
+        // The saved head rides on the read already made, for the waiting cards
+        // only; the remote-ref check stays in the action (#647).
+        const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)
+        return [
+          task.taskId,
+          foldProgress(events, plans.get(task.project), over),
+          saved !== null && 'head' in saved ? saved.head : null,
+        ] as const
       } catch {
-        return [task.taskId, null] as const
+        return [task.taskId, null, null] as const
       }
     }),
   )
-  return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null))
+  return {
+    progress: new Map(folded.flatMap(([id, p]) => (p === null ? [] : [[id, p] as const]))),
+    fixHeads: new Map(folded.flatMap(([id, , head]) => (head === null ? [] : [[id, head] as const]))),
+  }
 }
 
 /** A card that draws a rail, and whether this run's pass landed. */
@@ -1038,7 +1098,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const progress = await laneProgress(tasks, queued.plans)
+  const { progress, fixHeads } = await laneProgress(tasks, queued.plans)
   // Keyed by project, for `held`'s fallback when a run's own stream named no
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).
@@ -1071,6 +1131,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       bills.Work,
       bills.Answering,
       triageContextOf(triageDeclared === null ? null : triageDeclared.has(t.project), daemon),
+      fixHeads.get(t.taskId) ?? null,
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so

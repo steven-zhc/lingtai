@@ -19,6 +19,7 @@ import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, type QueuedView } from '@/lib/queued'
+import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import type { DiscussionView, StandingView } from '@/lib/task'
 import { presentCause } from '@/lib/triage-cause'
@@ -43,43 +44,6 @@ import { SplitPlan, type SplitControls } from './split-plan.tsx'
 import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
-
-/** Every requeue's cost line says so (0118 §7): a restart is neither spent nor refunded. */
-const NO_RESTART_EFFECT = 'This neither spends nor refunds an automatic restart.'
-
-const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
-  Approve: {
-    title: 'Approve and continue',
-    consequence: 'Continue this run from its recorded commit. Any refusal at this hold is waived.',
-  },
-  GrantFixRound: {
-    title: 'Continue fixing current work',
-    consequence:
-      'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
-  },
-  AnswerQuestion: {
-    title: 'Answer the question',
-    consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
-  },
-  Requeue: {
-    title: 'Start over from base',
-    consequence:
-      'Start a new pass from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
-  },
-  EditBodyAndRequeue: {
-    title: 'Add to the ticket and start over',
-    consequence:
-      'Append your text to the ticket body, then queue a new pass from main with that text. ' + NO_RESTART_EFFECT,
-  },
-  Split: {
-    title: 'Split into smaller tickets',
-    consequence: 'Open the approved child tickets in the order given, then end this wait.',
-  },
-  Close: {
-    title: 'Close the ticket',
-    consequence: 'End this ticket without another pass. A reason is required.',
-  },
-}
 
 /** Agent-written fields stay React text; there is no markdown path in this band. */
 export function TriageBand({
@@ -218,7 +182,7 @@ export function TriageBand({
       // reading (decided 2026-10-25).
       const kept = recommendedResolution(reason, status, { savedHead }) === result.resolution
       return (
-        <section className="triage-band triage-band--advised" data-rank="triage">
+        <section id="triage" className="triage-band triage-band--advised" data-rank="triage">
           <div className="triage-head">
             <span className="triage-label">Triage</span>
             <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
@@ -955,6 +919,7 @@ export function Standing({
                     recommended={triageRecommended === tag}
                     className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
                     data-resolution={visible ? tag : undefined}
+                    id={visible ? `resolution-${tag}` : undefined}
                     hidden={!visible && tag !== 'EditBodyAndRequeue'}
                     head={visible ? <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3> : null}
                   >

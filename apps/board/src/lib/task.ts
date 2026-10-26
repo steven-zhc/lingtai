@@ -19,7 +19,6 @@ import {
   type BlockDiagnosis,
   type BoardFact,
   type Envelope,
-  type PayloadOf,
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
@@ -87,6 +86,7 @@ import { describeHeld, elapsed, foldProgress, type RunProgress } from './progres
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
+import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBill,
   billHasAny,
@@ -914,35 +914,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   }
 }
 
-/** The same published-head precondition the grant checks before its remote comparison. */
-export function savedFixWork(
-  runId: string,
-  events: readonly Envelope[],
-): { head: string; ref: string } | { refusal: string } {
-  const saved = events.findLast((e) => e.type === 'RunRefsPublished')?.data as PayloadOf<'RunRefsPublished'> | undefined
-  if (saved?.outcome === 'arm-only')
-    return {
-      refusal: `${saved.arm} holds saved work, but ${saved.branch} rejected its push. Reconcile the refs or start over from base.`,
-    }
-  if (
-    saved?.armSha &&
-    ((saved.outcome !== 'published' && saved.outcome !== 'already-published') || saved.branchCarries === false)
-  )
-    return {
-      refusal: `Run ${runId} saved a WIP head on ${saved.arm}. Recover a clean published head or start over from base.`,
-    }
-  if (
-    !saved ||
-    (saved.outcome !== 'published' && saved.outcome !== 'already-published') ||
-    saved.branchCarries === false ||
-    !saved.headSha ||
-    !saved.branch
-  )
-    return {
-      refusal: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or start over from base.`,
-    }
-  return { head: saved.headSha, ref: saved.branch }
-}
+export { savedFixWork }
 
 /**
  * One stream's events, in order, under a name.
