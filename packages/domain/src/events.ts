@@ -2101,6 +2101,93 @@ export type EventType = keyof typeof EVENTS
 export type PayloadOf<T extends EventType> = z.infer<(typeof EVENTS)[T]>
 
 /**
+ * Where an event is written: one of the ten steps of a pass, or `outside` —
+ * the control stream, a project, the queue, triage, a discussion, the GitHub
+ * app or an extension, none of which is a step of anything.
+ */
+export type At = Step | 'outside'
+
+const AGENT_STEPS = ['design', 'implement', 'review'] as const
+
+/**
+ * **The steps each event is appended at** (#628) — declared here, beside the
+ * registry, so a page can draw "what a step writes" without keeping a list by
+ * hand. `satisfies` over `EventType` makes `tsc` refuse a type with no entry
+ * and an entry for a type that is not one.
+ *
+ * Declaration first: a type may be listed at a step no fixture reaches
+ * (`RunContextExhausted`), and a type written both in a pass and outside one
+ * lists the steps *and* `outside`. `conductor/unit/what-an-event-is-written-at.test.ts`
+ * holds this to real passes — *appended ⊆ declared*, never equality. `RETIRED`
+ * types declare `[]`.
+ */
+export const EVENT_AT = {
+  TicketDiscovered: ['outside'],
+  TicketClaimed: ['claim'],
+  TicketReleased: ['claim', 'end', 'outside'],
+  WaitStarted: ['end', 'outside'],
+  WaitResolved: ['outside'],
+  TicketSplit: ['outside'],
+  SplitStarted: ['outside'],
+  SplitChildWritten: ['outside'],
+  SplitLinkWritten: ['outside'],
+  SplitFailed: ['outside'],
+  TicketLinked: ['outside'],
+  TicketLanded: ['merge', 'end'],
+  TicketClosed: ['outside'],
+  DispatchRefused: [...AGENT_STEPS],
+  RunStarted: [...AGENT_STEPS],
+  RunPrompted: [...AGENT_STEPS],
+  RunTouchedFile: [...AGENT_STEPS],
+  RunContextExhausted: [...AGENT_STEPS],
+  RunAwaitingInput: [...AGENT_STEPS],
+  RunProducedDiff: ['implement', 'end'],
+  RunRefsPublished: ['implement', 'end'],
+  RunKeptUncommitted: ['implement', 'end'],
+  RunProposedCompletion: ['implement', 'end'],
+  RunFinished: [...AGENT_STEPS, 'end'],
+  RunFailed: [...AGENT_STEPS, 'end'],
+  RunSpent: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
+  StepsResolved: ['claim', 'admit', 'implement'],
+  EndActionsResolved: ['end'],
+  StepStarted: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
+  StepEnded: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'end'],
+  FindingAccepted: ['end', 'outside'],
+  FindingProposed: ['end', 'outside'],
+  FindingDeclined: ['end', 'outside'],
+  IntegrationAttempted: ['merge'],
+  IntegrationRefused: ['merge'],
+  IntegrationSucceeded: ['merge'],
+  PassRouted: ['review', 'proposed', 'end'],
+  ConductorPaused: [...AGENT_STEPS, 'end', 'outside'],
+  ConductorResumed: ['outside'],
+  ConductorShutdownRequested: ['outside'],
+  ConductorStarted: ['outside'],
+  ConductorShutdownWithdrawn: ['outside'],
+  OutboxDelivered: [],
+  OutboxFailed: [],
+  IssueUpdated: ['claim', 'end', 'outside'],
+  IssueUpdateFailed: ['claim', 'end', 'outside'],
+  QueueChanged: ['outside'],
+  RunRequested: ['outside'],
+  ContinueRequested: ['outside'],
+  DiscussionRequested: ['outside'],
+  DiscussionAsked: ['outside'],
+  DiscussionAnswered: ['outside'],
+  DiscussionHeld: ['outside'],
+  PromptEdited: ['outside'],
+  ProjectOnboardingStarted: ['outside'],
+  ProjectConfigured: ['outside'],
+  ProjectRefused: ['outside'],
+  ProjectRecovered: ['outside'],
+  Reconciled: ['outside'],
+  GitHubAppCreated: ['outside'],
+  TriageStarted: ['outside'],
+  WaitTriaged: ['outside'],
+  PluginFailed: ['outside'],
+} as const satisfies { readonly [T in EventType]: readonly At[] }
+
+/**
  * Current payload shape per type. Everything starts at 1; a type that has moved
  * on is listed here, and the same commit adds its upcaster in `upcast.ts`.
  */
