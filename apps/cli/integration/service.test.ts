@@ -1156,8 +1156,8 @@ describe('status', () => {
       },
     })
     expect(await go('status')).toBe(0)
-    expect(out).toContain('  state = spawn scheduled')
-    expect(out).toContain('  could not read it — connect ECONNREFUSED')
+    expect(out.join('\n')).toContain('state = spawn scheduled')
+    expect(out.join('\n')).toContain('could not read it — connect ECONNREFUSED')
     expect(out.join('\n')).not.toContain('no daemon has run')
   })
 
@@ -1216,8 +1216,8 @@ describe('status', () => {
     ])
     const { go, out } = command('linux', s.exec)
     expect(await go('status')).toBe(0)
-    expect(out).toContain('  SubState=auto-restart')
-    expect(out).toContain('  NRestarts=9')
+    expect(out.join('\n')).toContain('SubState=auto-restart')
+    expect(out.join('\n')).toContain('NRestarts=9')
   })
 })
 
@@ -1684,8 +1684,8 @@ describe('two jobs', () => {
     // The conductor's block, then the board's, and the board is plainly down
     // while its job is plainly loaded.
     expect(said.indexOf('the conductor')).toBeLessThan(said.indexOf('the board'))
-    expect(said).toContain(`supervisor  (launchctl, gui/${UID}/${LAUNCHD_LABEL})`)
-    expect(said).toContain(`supervisor  (launchctl, gui/${UID}/${BOARD_LAUNCHD_LABEL})`)
+    expect(said).toContain(`(launchctl, gui/${UID}/${LAUNCHD_LABEL})`)
+    expect(said).toContain(`(launchctl, gui/${UID}/${BOARD_LAUNCHD_LABEL})`)
     expect(said).toContain('nothing answers')
   })
 

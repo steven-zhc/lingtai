@@ -82,6 +82,15 @@ import { dirname, join } from 'node:path'
 import type { Asking, RecordedStart, Withdrawal } from '@lingtai/daemon'
 import { repoRoot, stateDir } from '@lingtai/env'
 
+import { jsonErrorDocument } from './output.ts'
+import {
+  renderServiceStatus,
+  serviceStatusCode,
+  serviceStatusJson,
+  type ServiceStatus,
+  type SupervisorAnswer,
+} from './service-status.ts'
+import { noSteps, type Steps } from './steps.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
@@ -578,7 +587,11 @@ export interface LockQueue {
    * never a fixed sleep: a quiet daemon reads the request and lets go at once.
    * `retaken` runs each time a place lost with its connection is taken again.
    */
-  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<'held' | 'interrupted' | 'gave-up'>
+  wait: (
+    log: (line: string) => void,
+    retaken?: () => Promise<void>,
+    progress?: (line: string) => void,
+  ) => Promise<'held' | 'interrupted' | 'gave-up'>
   /**
    * Whether the lock is still this command's, asked on its own connection. A
    * wait that ended held is not proof a moment later: Postgres releases the
@@ -590,6 +603,8 @@ export interface LockQueue {
 }
 
 export interface ServiceOptions {
+  /** `status --json` (#622): the one document goes to `log`, and `NO_SUPERVISOR` becomes the error document. */
+  json?: boolean
   /** `daemon_status`, the beacon outside the log (#46). Injected so this file loads without a database. */
   liveness: () => Promise<string>
   /**
@@ -685,6 +700,10 @@ export interface ServiceOptions {
   now?: () => number
   log?: (line: string) => void
   error?: (line: string) => void
+  /** The phases, shown by the entry (#622); none where a test passes none. */
+  steps?: Steps
+  /** Called when a start was answered 0 without being started or confirmed: the supervisor already had a process, or the board had no job or build to start. */
+  unconfirmed?: (job: 'conductor' | 'board') => void
 }
 
 /** Whether launchd or systemd keeps a job here, as `lingtai restart` needs to know it (0042 §8). */
@@ -772,7 +791,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const platform = platformFor(options.platform ?? process.platform)
   // Not just the OS: a Linux container has `linux` and no `systemctl`.
   if (!platform || !which(platform === 'launchd' ? 'launchctl' : 'systemctl')) {
-    error(NO_SUPERVISOR)
+    if (options.json && verb === 'status') log(jsonErrorDocument('service status', 'no-supervisor', NO_SUPERVISOR))
+    else error(NO_SUPERVISOR)
     return 1
   }
 
@@ -797,9 +817,12 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     file = fileFor(DAEMON_JOB)
     boardFile = fileFor(BOARD_JOB)
   } catch (err) {
-    error((err as Error).message)
+    if (options.json && verb === 'status')
+      log(jsonErrorDocument('service status', 'service-file', (err as Error).message))
+    else error((err as Error).message)
     return 1
   }
+  const steps = options.steps ?? noSteps
   const target = `gui/${uid}/${LAUNCHD_LABEL}`
   const boardTarget = `gui/${uid}/${BOARD_JOB.label}`
   const named = (job: Job): string => (platform === 'launchd' ? job.label : job.unit)
@@ -947,6 +970,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     const missing = options.board.missing()
     if (missing !== null) {
       sayNoBoard(missing, 'started')
+      options.unconfirmed?.('board')
       return 0
     }
     if (!boardInstalled()) {
@@ -955,6 +979,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         `no board job at ${boardFile.path}, so nothing was started for the board — pnpm lingtai service install writes one`,
       )
+      options.unconfirmed?.('board')
       return 0
     }
     const answer = askJob(BOARD_JOB)
@@ -966,6 +991,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         "the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers",
       )
+      options.unconfirmed?.('board')
       return 0
     }
     // The port, before the supervisor is told anything. The lock is held by a
@@ -1297,6 +1323,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         'the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process ' +
           'may have lost the lock and be taking no work. lingtai doctor says who holds the lock',
       )
+      options.unconfirmed?.('conductor')
       return 0
     }
     if (platform === 'systemd') return startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])
@@ -1330,6 +1357,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
    *    next `service start` is not refused over it.
    */
   const drain = async (): Promise<number> => {
+    steps.begin('draining')
     const queue = await options.drain.queue().catch((err: unknown) => err as Error)
     if (queue instanceof Error) {
       // The database is what the drain goes through, and it is also what a
@@ -1416,7 +1444,15 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`)
         mine = again.version
       }
-      let waited = await queue.wait(log, askAgain)
+      // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
+      const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
+      // A line written while the spinner is live would be erased by its next redraw, so it ends first.
+      const waitLog = (line: string): void => {
+        steps.end()
+        log(line)
+      }
+      let waited = await queue.wait(waitLog, askAgain, progress)
+      steps.end()
       // Asked again right before the supervisor is told: the lock is only worth
       // anything while its session lasts, and a wait that ended held says
       // nothing about a connection that dropped since. After `bootout` or
@@ -1426,7 +1462,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         log(
           'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
         )
-        waited = await queue.wait(log, askAgain)
+        waited = await queue.wait(waitLog, askAgain, progress)
+        steps.end()
       }
       if (waited !== 'held') {
         await queue.leave()
@@ -1492,12 +1529,28 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // Two jobs, two reports, and never one summary: a board that is up beside
       // a conductor launchd respawns every thirty seconds is the exact state a
       // single word for both would hide.
-      log('the conductor')
-      const daemon = await report()
-      log('')
-      log('the board')
-      const board = await reportBoard()
-      return daemon !== 0 ? daemon : board
+      const asked = (job?: Job): SupervisorAnswer => {
+        const answer = askSupervisor(platform, exec, uid, job)
+        return 'unread' in answer ? { unread: answer.unread } : { lines: answer.lines }
+      }
+      const status: ServiceStatus = {
+        platform,
+        conductor: {
+          target: platform === 'launchd' ? target : SYSTEMD_UNIT,
+          supervisor: asked(),
+          beacon: await options.liveness().catch((err: unknown) => ({ unread: (err as Error).message })),
+        },
+        board: {
+          target: platform === 'launchd' ? boardTarget : BOARD_SYSTEMD_UNIT,
+          supervisor: asked(BOARD_JOB),
+          url: options.board.url,
+          answers: await boardAnswers(),
+          missing: options.board.missing(),
+        },
+      }
+      if (options.json) log(JSON.stringify({ version: 1, command: 'service status', ...serviceStatusJson(status) }))
+      else for (const line of renderServiceStatus(status)) log(line)
+      return serviceStatusCode(status)
     }
 
     case 'install': {
@@ -1617,6 +1670,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
     case 'start': {
       if (!installed) return notInstalled()
+      steps.begin('starting')
       const daemon = await start()
       // A standing shutdown request refuses both legs, and that is the one
       // failure of the daemon's that stops the board's start: the refusal says
@@ -1667,6 +1721,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // says, and not 1, since the conductor is drained and unloaded and a
       // restart has no reason to abandon its start over the UI.
       if (verb === 'shutdown') return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY
+      steps.begin('starting')
       const daemonStarted = await start(kept)
       // The sentinel stays inside this file: what a refused start is worth to
       // anybody outside is 1.

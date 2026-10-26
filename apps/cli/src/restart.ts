@@ -90,6 +90,7 @@ import { parseDuration } from '@lingtai/recipe'
 
 import { doctorReport } from './doctor.ts'
 import { SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } from './service.ts'
+import { noSteps, type Steps } from './steps.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** How often the lock is asked about while a drain is in flight. */
@@ -895,8 +896,10 @@ export async function prepareRestart(
   args: RestartArgs,
   log: (line: string) => void = console.log,
   facts: RestartFacts = liveFacts(),
+  steps: Steps = noSteps,
 ): Promise<Prepared> {
   const by = `human:${process.env['USER'] ?? 'operator'}`
+  steps.begin('checking')
   const checked = await checkBeforeTheDrain(args, by, facts, log)
   if (!checked.ok) return checked
   const { before, plan } = checked
@@ -1006,12 +1009,22 @@ export async function prepareRestart(
     // timeout. A `lingtai run` reads no request, and a request this command did
     // not make has the timeout it was asked with — so that one, either way.
     const giveUpMs = drainTimeoutMs
+    steps.begin(plan.go === 'drain' ? 'draining' : 'waiting')
     const waited = await waitForTheLock(
       plan.go === 'drain' ? 'draining' : 'waiting',
       giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
-      log,
-      { ask: facts.holder, ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }) },
+      // A line written while the spinner is live would be erased by its next redraw.
+      (line) => {
+        steps.end()
+        log(line)
+      },
+      {
+        ask: facts.holder,
+        ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }),
+        progress: (line) => steps.progress(line),
+      },
     )
+    steps.end()
 
     if (waited !== 'free') {
       const stopped = waited === 'interrupted' ? 'stopped waiting' : 'the lock is still held after the timeout'
@@ -1028,6 +1041,7 @@ export async function prepareRestart(
   }
 
   // Again, now — the same function the supervised path calls.
+  steps.begin('checking again')
   const { plan: after, now } = await checkAfterTheWait(checked, args, mark, facts)
   if (after.go === 'refuse') {
     sayRefusal(
@@ -1108,11 +1122,15 @@ export async function restartSupervised(
     service: (argv: string[], drain: { timeoutMs: number | null; force: boolean }) => Promise<number>
     facts?: RestartFacts
     log?: (line: string) => void
+    /** The phases, shown by the entry (#622); none where a test passes none. */
+    steps?: Steps
   },
 ): Promise<number> {
   const log = how.log ?? console.log
   const facts = how.facts ?? liveFacts()
+  const steps = how.steps ?? noSteps
   const by = `human:${process.env['USER'] ?? 'operator'}`
+  steps.begin('checking')
   const checked = await checkBeforeTheDrain(args, by, facts, log)
   if (!checked.ok) return checked.code
 
@@ -1153,6 +1171,7 @@ export async function restartSupervised(
       "the supervisor keeps the daemon, so the drain is lingtai service shutdown's and the start is its start.",
     ),
   )
+  steps.begin('draining')
   const drained = await how.service(['shutdown', `restarting: ${args.reason}`], drain)
   // `SHUTDOWN_BOARD_ONLY` is the conductor drained and unloaded with the board's
   // job left running — a `launchctl bootout` the job refused mid-start, say. The
@@ -1180,6 +1199,7 @@ export async function restartSupervised(
   // — is unloaded and conducting nothing. Only a start after the drain is a
   // second conductor.
   const drainedAt = await facts.watermark().catch(() => null)
+  steps.begin('checking again')
   const { plan: after, now } = await checkAfterTheWait(checked, args, drainedAt, facts)
   if (after.go === 'refuse') {
     sayRefusal(
@@ -1197,6 +1217,7 @@ export async function restartSupervised(
   }
 
   const startMark = await facts.watermark().catch(() => null)
+  steps.begin('starting')
   const started = await how.service(['start'], drain)
   // `START_BOARD_ONLY` is the daemon started and recorded it, and no board
   // answered — a port held by something that is not a Lingtai board, say. The
@@ -1306,6 +1327,8 @@ export async function waitForTheLock(
     sayEveryMs?: number
     /** What Ctrl+C does, in the repeated line — the caller's to say, since it is the caller that acts on it. */
     ctrlC?: string
+    /** Where the repeated "still …" line goes (#622): a spinner's message on a terminal. Left out, it is `log`. */
+    progress?: (line: string) => void
   } = {},
 ): Promise<'free' | 'interrupted' | 'gave-up'> {
   const ask = how.ask ?? (() => conductorLockHolder())
@@ -1349,7 +1372,7 @@ export async function waitForTheLock(
       if (Date.now() - said >= sayEveryMs) {
         said = Date.now()
         const held = await inFlight().catch(() => [])
-        log(
+        ;(how.progress ?? log)(
           paint.muted(
             `still ${doing} after ${Math.round((Date.now() - began) / 1000)}s — ${describeInFlight(held)}. ` + ctrlC,
           ),
@@ -1387,7 +1410,11 @@ export async function queueForTheLock(
     sayEveryMs?: number
   } = {},
 ): Promise<{
-  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<'held' | 'interrupted' | 'gave-up'>
+  wait: (
+    log: (line: string) => void,
+    retaken?: () => Promise<void>,
+    progress?: (line: string) => void,
+  ) => Promise<'held' | 'interrupted' | 'gave-up'>
   holds: () => Promise<boolean>
   leave: () => Promise<void>
 }> {
@@ -1396,7 +1423,7 @@ export async function queueForTheLock(
   let place = await take()
   const holds = async (): Promise<boolean> => place.lost() === null && place.held() && (await place.confirm())
   return {
-    wait: async (log, retaken) => {
+    wait: async (log, retaken, progress) => {
       const waited = await waitForTheLock('draining', null, log, {
         ask: async () => {
           if (await holds()) return null
@@ -1421,6 +1448,7 @@ export async function queueForTheLock(
           "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its pass, and the supervisor then starts one that takes work.",
         ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
         ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
+        ...(progress === undefined ? {} : { progress }),
       })
       return waited === 'free' ? 'held' : waited
     },
