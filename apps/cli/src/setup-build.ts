@@ -272,7 +272,7 @@ async function askBuild(
     }
     // `--build` with no value right after it — forgotten before another flag,
     // or last on the line — parses to `''` rather than being dropped (both
-    // `lingtai.ts`'s `parseFlags` and `init.ts`'s `parseArgs` do this
+    // `init.ts`'s `parseArgs` does this
     // deliberately, so a forgotten value is seen rather than silently
     // absorbed). `''` is not a command: refuse by name instead of writing a
     // `run: ""` that `command.ts` would execute as `sh -c ''`, exiting 0

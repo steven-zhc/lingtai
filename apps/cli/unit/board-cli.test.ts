@@ -1,11 +1,9 @@
 /** `lingtai board` through `@effect/cli` (#623): the arguments, `board status`'s layout, and its `--json`. */
-import { readFileSync } from 'node:fs'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { boardStatusJson, renderBoardStatus, type BoardStatus } from '../src/board.ts'
 import { runCli, type BoardRequest } from '../src/cli.ts'
-import { BOARD_JOB } from '../src/service.ts'
 
 async function capture(
   args: string[],
@@ -95,19 +93,6 @@ describe('lingtai board, the arguments', () => {
 
   it('gives `--json` to status alone', async () => {
     expect((await capture(['stop', '--json'])).code).toBe(1)
-  })
-})
-
-describe('the supervisor reaches board through lingtai.ts', () => {
-  it("serves the job's command from a real case, not the entry's refusal group", () => {
-    expect(BOARD_JOB.argv.slice(0, 2)).toEqual(['board', 'start'])
-    const source = readFileSync(new URL('../src/lingtai.ts', import.meta.url), 'utf8')
-    const body = /case 'board':\n([\s\S]*?)\n\s*case 'start':/.exec(source)?.[1] ?? ''
-    expect(body).toContain('runCli')
-    expect(body).not.toContain('runs from the entry')
-    // And it is not also in the group that answers "runs from the entry" with 2.
-    const refusal = source.slice(source.indexOf("case 'init':"), source.indexOf('runs from the entry'))
-    expect(refusal).not.toContain("case 'board'")
   })
 })
 
