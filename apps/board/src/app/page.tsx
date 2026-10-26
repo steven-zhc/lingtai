@@ -17,7 +17,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
 
-import { Close } from './decide.tsx'
+import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { Health } from './health.tsx'
 import { Paused } from './paused.tsx'
@@ -39,8 +39,9 @@ import { Rail, Segs } from './rail.tsx'
  * detail is folded from the event stream on demand, which makes a card's
  * contents a decision instead of a consequence.
  *
- * A waiting card carries the rail and one cause line. Its resolutions and the
- * rest of the wait's detail are on the task page (0118 §2).
+ * A waiting card carries the rail, one cause line and, when triage advised, the
+ * one resolution it recommends. All but that one, and the rest of the wait's
+ * detail, are on the task page (0118 §2).
  *
  * **Weight follows attention, and it used not to.** Landed rendered a card each
  * and was the heaviest thing on the page while one waiting card took about a
@@ -187,6 +188,15 @@ export function Card({
           <p className="question waiting-fallback">{TRIAGE_WORDS[card.triage]}</p>
         ) : fallback ? (
           <p className="question waiting-fallback">{fallback}</p>
+        ) : null}
+        {card.move && card.waitId !== null ? (
+          <TriageMove
+            project={card.project}
+            issue={Number(card.ref)}
+            taskId={card.taskId}
+            waitId={card.waitId}
+            move={card.move}
+          />
         ) : null}
       </article>
     )

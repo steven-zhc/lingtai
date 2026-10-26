@@ -70,7 +70,11 @@ export interface Bearing {
 /** How long ago the daemon last said anything, as a phrase. */
 function beating(health: Health): string {
   const secs = Math.round((health.sinceBeatMs ?? 0) / 1000)
-  if (health.daemon === 'up') return `daemon beating ${secs}s ago`
+  if (health.daemon === 'up') {
+    // The count rides in the title and never in a chip of its own (#134); one pass or none says nothing (#640).
+    const side = health.inFlight.length > 1 ? ` · ${health.inFlight.length} passes in flight` : ''
+    return `daemon beating ${secs}s ago${side}`
+  }
   if (health.daemon === 'stale') return `no beat for ${secs}s`
   return 'no daemon has ever run'
 }

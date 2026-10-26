@@ -13,7 +13,7 @@ import type { TaskCard } from '@lingtai/projector/task-view'
  */
 import { describe, expect, it } from 'vitest'
 
-import { COLUMNS, emptyNote, toCard, toColumns } from '../src/lib/board.ts'
+import { COLUMNS, emptyNote, railCandidates, toCard, toColumns } from '../src/lib/board.ts'
 
 function task(state: TaskCard['state']): TaskCard {
   return {
@@ -69,6 +69,14 @@ describe("the board's columns", () => {
       ).toHaveLength(1)
       expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(1)
     }
+  })
+
+  it('shows two running tickets in Working, each with a rail (#640)', () => {
+    const a = { ...task('running'), taskId: 'ticket-esctest-a', issue: '1', runId: 'pass-a' }
+    const b = { ...task('running'), taskId: 'ticket-esctest-b', issue: '2', runId: 'pass-b' }
+    const working = toColumns([toCard(a), toCard(b)]).find((c) => c.id === 'running')
+    expect(working?.cards).toHaveLength(2)
+    expect(railCandidates([a, b]).map((c) => c.task.runId)).toEqual(['pass-a', 'pass-b'])
   })
 
   it('loses none of them when they are on the board together', () => {

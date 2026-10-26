@@ -39,12 +39,13 @@ import { close } from '@lingtai/conductor/close'
 import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
 import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
-import { projectClient } from '@lingtai/conductor/filter'
+import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
+import { splitTicket, type SplitPlanInput } from '@lingtai/conductor/split-ticket'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
 import {
@@ -61,7 +62,7 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
-import { kindsOf } from '@lingtai/recipe/settings'
+import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
 
@@ -71,6 +72,7 @@ import { actor } from '@/lib/actor'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
+import { runSplit, splitInstance } from '@/lib/split-instance'
 
 async function project(name: string) {
   const state = await loadProject(name)
@@ -816,6 +818,63 @@ export async function loadDiff(input: { project: string; baseSha: string; headSh
     // that was scoped too large, which the card says elsewhere.
     const truncated = files.length > DIFF_FILE_LIMIT
     return { ok: true, files: files.slice(0, DIFF_FILE_LIMIT), truncated }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * **Create all**, and **Retry what is missing** (#603, 0118 §12).
+ *
+ * Both start the same writer: the first call freezes `plan` in `SplitStarted`,
+ * and a retry sends none — the writer reads the frozen one off the log. It
+ * returns once `SplitStarted` is appended (or the writer refused before writing
+ * anything), not when the writing ends: the page learns the rest from the log,
+ * which `live.tsx` re-renders on every append. Returning earlier would render
+ * the page idle and editable for a moment.
+ */
+export async function splitCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  plan?: SplitPlanInput
+}): Promise<ActionResult> {
+  try {
+    if (!input.waitId) {
+      return {
+        ok: false,
+        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
+      }
+    }
+    const state = await project(input.project)
+    const { recipe } = await currentRecipe(state)
+    if (ticketSourceOf(recipe) === 'db')
+      return { ok: false, detail: 'splitting is not available for a project whose tickets are in the database yet' }
+    const github = await githubClientFor(state)
+
+    let started!: () => void
+    const begun = new Promise<void>((resolve) => (started = resolve))
+    // Detached once running: the board must not hold a request open for the writes, nor crash on one.
+    const done = runSplit(input.waitId, () =>
+      splitTicket({
+        project: input.project,
+        issue: input.issue,
+        waitId: input.waitId,
+        plan: input.plan,
+        kinds: kindsOf(recipe),
+        repository: `${state.owner}/${state.project}`,
+        by: actor(),
+        instance: splitInstance(),
+        github,
+        onStarted: started,
+      }),
+    )
+    if (done === null) return { ok: false, detail: 'a write for this split is already running in this board' }
+    const refused = await Promise.race([begun.then(() => 'started' as const), done])
+    if (refused === null) return { ok: false, detail: 'the split could not be started — nothing was written' }
+    if (refused !== 'started') return { ok: refused.ok, detail: refused.detail }
+    revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
+    return { ok: true, detail: 'writing the split' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

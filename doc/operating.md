@@ -1170,7 +1170,9 @@ answers stay two: one summary saying *running* would hide a board that is up
 beside a conductor launchd respawns every thirty seconds. The board's own
 second answer is whether a board **answers** on the port — a job the supervisor
 has loaded is not a UI anybody can open, exactly as a loaded daemon is not a
-daemon taking work.
+daemon taking work. `pnpm lingtai service status --json` prints the same facts as one
+document (`conductor` and `board`, each with the supervisor's `lines` or why it
+could not be `unread`), and an unreadable supervisor is still that document, exiting 1.
 
 The board's two files carry none of the daemon's reasons. It detaches no agent,
 so its systemd unit leaves `KillMode` at the default; it finishes no pass, so
@@ -2049,10 +2051,9 @@ every issue *Before*'s held-items note or its landed/closed note left held.**
 That is what actually keeps a freshly started daemon from claiming work during
 this section; the pause by itself does not.
 
-Rebuild every projection — there are three. `lingtai --help`'s closing line
-names all of them (`Projections: task_view, finding_backlog, spend`,
-`apps/cli/src/lingtai.ts:346`); check there first if this page is ever behind
-it again. `lingtai projection rebuild <name>` only refuses — and lists the
+Rebuild every projection — there are three. `PROJECTION_NAMES` in
+`apps/cli/src/commands.ts` names all of them (`task_view`, `finding_backlog`,
+`spend`); check there first if this page is ever behind it again. `lingtai projection rebuild <name>` only refuses — and lists the
 known names in doing so — when `<name>` is not one of them; a name that is
 one, typed only to probe, drops that table and replays the log for real:
 

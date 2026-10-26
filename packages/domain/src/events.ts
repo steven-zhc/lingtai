@@ -409,6 +409,15 @@ export const WAIT_EVENTS = ['WaitStarted', 'WaitResolved'] as const
 /**
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed
  * against code that #58 had already merged, and nothing connected them.
+ *
+ * **Retired** ([0022](../../../doc/decisions-archive/0022-the-seams.md)). Readable
+ * for ever, appended never: `RETIRED` below, refused by `store.append`. Its
+ * writer went in `3958bb09` (#450's rename) and nothing replaced it.
+ *
+ * The fold in `ticket.ts` and the label in `apps/board/src/lib/history.ts` stay,
+ * because [0019](../../../doc/decisions-archive/0019-a-second-reset.md) says a
+ * type the log may still hold must stay readable: a read that drops rows makes
+ * every later append fail its concurrency check.
  */
 export const TicketLinked = z.object({
   relation: z.enum(['caused-by', 'follows-up', 'duplicates']),
@@ -1179,6 +1188,12 @@ export const FindingDeclined = z.object({
 })
 
 // ----------------------------------------------------------- integration ----
+
+/**
+ * A pass reached `merge` while another pass's landing held the lane (#639).
+ * Appended only when it had to wait, so a lone pass's log is unchanged.
+ */
+export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
 
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
 /**
@@ -2065,6 +2080,7 @@ export const EVENTS = {
   FindingAccepted,
   FindingProposed,
   FindingDeclined,
+  MergeLaneWaited,
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
@@ -2132,7 +2148,7 @@ export const EVENT_AT = {
   SplitChildWritten: ['outside'],
   SplitLinkWritten: ['outside'],
   SplitFailed: ['outside'],
-  TicketLinked: ['outside'],
+  TicketLinked: [],
   TicketLanded: ['merge', 'end'],
   TicketClosed: ['outside'],
   DispatchRefused: ['claim'],
@@ -2155,6 +2171,7 @@ export const EVENT_AT = {
   FindingAccepted: ['end', 'outside'],
   FindingProposed: ['end', 'outside'],
   FindingDeclined: ['end', 'outside'],
+  MergeLaneWaited: ['merge'],
   IntegrationAttempted: ['merge'],
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],
@@ -2224,7 +2241,7 @@ export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
  * things and only the second can be enforced: stop writing them, and keep
  * reading them for ever.
  */
-export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(['OutboxDelivered', 'OutboxFailed'])
+export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(['OutboxDelivered', 'OutboxFailed', 'TicketLinked'])
 
 export function isRetiredEventType(t: string): boolean {
   return isEventType(t) && RETIRED.has(t)

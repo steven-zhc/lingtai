@@ -1,5 +1,7 @@
 import type { ActionFinding } from '@lingtai/actions'
 import { SEVERITIES } from '@lingtai/domain'
+import { aTriageStart, aTriaged, aWaitId } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
 /**
  * Whether a refused review buys an agent, what that agent is told, and what a
  * person is shown when two of them cannot agree.
@@ -34,6 +36,7 @@ import {
   stopAction,
   stopNeeds,
   unfixedQuestion,
+  grantedAdviceOf,
 } from '../src/fix.ts'
 
 const SCENARIO =
@@ -189,6 +192,8 @@ describe('whether a refusal buys an agent', () => {
   })
 })
 
+const TICKET = { title: 'a title', body: 'Done when the stream says whether a writer is running.' }
+
 describe('what the fixer is told', () => {
   const DIFF = 'diff --git a/packages/daemon/src/subscribers.ts b/x\n+  } catch {\n+    return ok;'
   const brief = fixBrief({
@@ -199,6 +204,7 @@ describe('what the fixer is told', () => {
     diff: DIFF,
     diffBytes: 400_000,
     checks: ['pnpm typecheck && pnpm test'],
+    ticket: TICKET,
   })
 
   it('carries the failure scenario verbatim, line for line', () => {
@@ -225,8 +231,8 @@ describe('what the fixer is told', () => {
   it('hands over no plan, transcript or session from the implementer', () => {
     expect(brief).toMatch(/not given that agent's reasoning\s+either/i)
     expect(brief).toMatch(/No plan, no transcript, no\s+session/i)
-    // The task is bounded, and the ticket is not part of it: this agent is not
-    // being asked to do the work again, it is being asked to make these
+    // The ticket is context and the criterion is still the scenarios: this agent
+    // is not being asked to do the work again, it is being asked to make these
     // sequences stop happening.
     expect(brief).toMatch(/Make each sequence stop producing its outcome/i)
   })
@@ -305,6 +311,7 @@ describe('what the fixer is told', () => {
       diff: 'x'.repeat(5_000),
       diffBytes: 1_000,
       checks: ['pnpm typecheck && pnpm test'],
+      ticket: TICKET,
     })
     expect(huge).toContain('[diff truncated at 1000 bytes]')
   })
@@ -321,6 +328,7 @@ describe('what the fixer is told', () => {
       diff: 'd',
       diffBytes: 400_000,
       checks: ['pnpm typecheck && pnpm test'],
+      ticket: TICKET,
     })
 
     expect(two).toContain('### 1. blocker')
@@ -1470,6 +1478,7 @@ describe('what a conflict tells the fixer', () => {
     diff: 'diff --git a/src/queue.ts b/src/queue.ts',
     diffBytes: 400_000,
     checks: ['pnpm typecheck && pnpm test'],
+    ticket: TICKET,
   })
 
   it('tells the agent to stop and ask rather than choose when the behaviours contradict', () => {
@@ -1546,5 +1555,84 @@ describe('a decline, told apart from a crash', () => {
 
     expect(why).toContain('…')
     expect(why.length).toBeLessThan(600)
+  })
+})
+
+describe('the ticket and the advice a fix round is briefed with (#643)', () => {
+  const base = {
+    refusal: { on: 'findings', findings: [finding()] } as const,
+    round: 1,
+    of: 1,
+    action: 'review',
+    diff: 'd',
+    diffBytes: 1_000,
+    checks: ['pnpm test'],
+    ticket: TICKET,
+  }
+  const fixes = [
+    { path: 'src/spinner.ts', line: 12, what: 'replace the spinner with ora' },
+    { path: 'src/cli.ts', line: null, what: 'pass hideCursor: false' },
+  ]
+
+  it('carries the ticket body it is given, as the criterion the reviewer used', () => {
+    expect(fixBrief(base)).toContain(TICKET.body)
+    expect(fixBrief({ ...base, ticket: { title: 't', body: 'Done when B.' } })).toContain('Done when B.')
+  })
+
+  it('carries every fix, a null line printing the path alone', () => {
+    const brief = fixBrief({ ...base, advice: fixes })
+    expect(brief).toContain('`src/spinner.ts:12` — replace the spinner with ora')
+    expect(brief).toContain('`src/cli.ts` — pass hideCursor: false')
+    expect(brief).not.toContain('src/cli.ts:')
+  })
+
+  it('is the same brief with no advice, or an empty list', () => {
+    expect(fixBrief({ ...base, advice: [] })).toBe(fixBrief(base))
+    expect(fixBrief({ ...base, advice: undefined })).toBe(fixBrief(base))
+    expect(fixBrief(base)).not.toContain('granted this round')
+  })
+
+  describe('grantedAdviceOf', () => {
+    const item = makeStream('ticket-p-1')
+    const lines = { _tag: 'FixableLines', fixes } as const
+    const advised = (cause: object) =>
+      ({ _tag: 'TriageAdvised', cause, resolution: 'GrantFixRound', summary: 's', want: null }) as never
+
+    it('reads FixableLines on the wait asked about', () => {
+      const w = aWaitId()
+      const events = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, advised(lines))]
+      expect(grantedAdviceOf(events, w)).toEqual(fixes)
+    })
+
+    it('reads only the latest attempt', () => {
+      const w = aWaitId()
+      const events = [
+        ...aTriageStart(item, w, 1),
+        ...aTriaged(item, w, 1, advised(lines)),
+        ...aTriageStart(item, w, 2),
+        ...aTriaged(item, w, 2, advised({ _tag: 'WrongApproach' })),
+      ]
+      expect(grantedAdviceOf(events, w)).toBeUndefined()
+    })
+
+    it('never reads another wait’s advice', () => {
+      const earlier = aWaitId()
+      const events = [...aTriageStart(item, earlier, 1), ...aTriaged(item, earlier, 1, advised(lines))]
+      expect(grantedAdviceOf(events, aWaitId())).toBeUndefined()
+    })
+
+    it('is none for another cause, a failed triage, an empty list or no triage', () => {
+      const w = aWaitId()
+      const other = [
+        ...aTriageStart(item, w, 1),
+        ...aTriaged(item, w, 1, advised({ _tag: 'UndecidedQuestion', questions: [] })),
+      ]
+      expect(grantedAdviceOf(other, w)).toBeUndefined()
+      const failed = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, { _tag: 'TriageFailed', why: 'x' })]
+      expect(grantedAdviceOf(failed, w)).toBeUndefined()
+      const empty = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, advised({ _tag: 'FixableLines', fixes: [] }))]
+      expect(grantedAdviceOf(empty, w)).toBeUndefined()
+      expect(grantedAdviceOf([], w)).toBeUndefined()
+    })
   })
 })

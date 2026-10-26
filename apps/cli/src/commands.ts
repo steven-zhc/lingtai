@@ -10,7 +10,9 @@
  * A line is never wrapped by the command (0121 §4), so every line here is at
  * most 76 columns — the section that prints it indents two more. `help.test.ts`
  * measures them. `usage` is the invocation at the left edge with its prose and
- * flags indented beneath it; `examples` are real invocations.
+ * flags indented beneath it; `examples` are real invocations, except that an
+ * id is a placeholder (`<n>`, `<runId>`) — the page shares them, and a ticket
+ * number belongs to nobody who reads it.
  */
 
 export const GROUPS = ['everyday', 'waiting on you', 'daemon', 'install and upkeep'] as const
@@ -21,7 +23,7 @@ export type CommandDefinition = {
   readonly group: Group
   /** One line: what it is for. At most 60 columns, so the root listing needs no wrapping. */
   readonly task: string
-  /** Decides whether the command takes `--json` (0121 §5): a `changes` command takes it only when it answers with a verdict (#621). */
+  /** Decides whether the command takes `--json` (0121 §5): a `changes` command takes it only when it answers with a verdict (#621), or on a subcommand that only reads (`service status`, #622). */
   readonly effect: 'reads' | 'changes'
   readonly usage: readonly string[]
   readonly examples: readonly string[]
@@ -94,7 +96,7 @@ export const COMMANDS = [
       '  --once        the same as --max 1',
       '  --no-merge    stop after the steps and ask before merging',
     ],
-    examples: ['lingtai run lingtai --once', 'lingtai run lingtai --issue 617 --no-merge'],
+    examples: ['lingtai run lingtai --once', 'lingtai run lingtai --issue <n> --no-merge'],
   }),
   define({
     name: 'status',
@@ -115,7 +117,7 @@ export const COMMANDS = [
     task: 'ask for one ticket ahead of the queue',
     effect: 'changes',
     usage: ['lingtai now <project> --issue <n> [--json] [--no-color]'],
-    examples: ['lingtai now lingtai --issue 617'],
+    examples: ['lingtai now lingtai --issue <n>'],
   }),
   define({
     name: 'attach',
@@ -129,7 +131,7 @@ export const COMMANDS = [
       '  it answers on a stopped system. A landed run has no log: 0034',
       '  keeps exactly the ones still owed an explanation.',
     ],
-    examples: ['lingtai attach 2d6f1c'],
+    examples: ['lingtai attach <runId>'],
   }),
   define({
     name: 'backlog',
@@ -147,7 +149,7 @@ export const COMMANDS = [
       'lingtai backlog decline <project> <key> --reason <why>',
       '  Recorded, so the next attempt does not ask again.',
     ],
-    examples: ['lingtai backlog lingtai', 'lingtai backlog accept lingtai a1b2c3 --kind tech-debt'],
+    examples: ['lingtai backlog lingtai', 'lingtai backlog accept lingtai <findingId> --kind tech-debt'],
   }),
   define({
     name: 'ticket',
@@ -227,7 +229,7 @@ export const COMMANDS = [
       '  Resolve the end step for items that landed, and deliver what it',
       '  resolves to. --issue limits it to one.',
     ],
-    examples: ['lingtai end replay lingtai --issue 617'],
+    examples: ['lingtai end replay lingtai --issue <n>'],
   }),
   define({
     name: 'approve',
@@ -242,7 +244,7 @@ export const COMMANDS = [
       '                  step still refuses the head: approving then waives',
       '                  each refusing step, with this as why',
     ],
-    examples: ['lingtai approve lingtai --issue 617'],
+    examples: ['lingtai approve lingtai --issue <n>'],
   }),
   define({
     name: 'answer',
@@ -254,7 +256,7 @@ export const COMMANDS = [
       '  Answer it on the record: back in the queue, and every attempt at',
       '  the ticket is told the answer — no editing the issue body.',
     ],
-    examples: ['lingtai answer lingtai --issue 617 "use the second option"'],
+    examples: ['lingtai answer lingtai --issue <n> "use the second option"'],
   }),
   define({
     name: 'ask',
@@ -266,7 +268,7 @@ export const COMMANDS = [
       '  Nothing is spent, the queue passes over the ticket, and lingtai',
       '  status prints the question.',
     ],
-    examples: ['lingtai ask lingtai --issue 617 "which groups?"'],
+    examples: ['lingtai ask lingtai --issue <n> "which groups?"'],
   }),
   define({
     name: 'grant-fix-round',
@@ -278,7 +280,7 @@ export const COMMANDS = [
       '  Run one more implementation round on saved work, then repeat the',
       '  checks without waiving a refusal.',
     ],
-    examples: ['lingtai grant-fix-round lingtai --issue 617 --if-head 53fe949'],
+    examples: ['lingtai grant-fix-round lingtai --issue <n> --if-head <sha>'],
   }),
   define({
     name: 'requeue',
@@ -292,7 +294,7 @@ export const COMMANDS = [
       '  and the next pass cuts a fresh branch from a base that has since',
       '  moved. The actor is still recorded in by.',
     ],
-    examples: ['lingtai requeue lingtai --issue 617 --note "base moved"'],
+    examples: ['lingtai requeue lingtai --issue <n> --note "base moved"'],
   }),
   define({
     name: 'close',
@@ -305,7 +307,7 @@ export const COMMANDS = [
       '  Nothing lifts a close: if the work is wanted again, open a new',
       '  ticket.',
     ],
-    examples: ['lingtai close lingtai --issue 617 "superseded"'],
+    examples: ['lingtai close lingtai --issue <n> "superseded"'],
   }),
   define({
     name: 'start',
@@ -313,7 +315,7 @@ export const COMMANDS = [
     task: 'hold the projections current and take work',
     effect: 'changes',
     usage: [
-      'lingtai start [--no-conduct] [--no-merge]',
+      'lingtai start [--no-conduct] [--no-merge] [--no-color]',
       '  Reads no standing signal: a pause or a shutdown aimed at an',
       '  earlier daemon was not aimed at this one. If another daemon holds',
       '  the lock this starts nothing and says so. Unchecked — lingtai',
@@ -329,7 +331,7 @@ export const COMMANDS = [
     task: 'the old name of start, still answered',
     effect: 'changes',
     usage: [
-      'lingtai daemon [--no-conduct] [--no-merge]',
+      'lingtai daemon [--no-conduct] [--no-merge] [--no-color]',
       '  Still answers: an installed LaunchAgent or systemd unit has this',
       '  name written into it (#159). It is lingtai start.',
     ],
@@ -341,7 +343,8 @@ export const COMMANDS = [
     task: 'keep the daemon and the board running',
     effect: 'changes',
     usage: [
-      'lingtai service install|start|shutdown [why]|restart [why]|status|uninstall',
+      'lingtai service install|start|shutdown [why]|restart [why]|uninstall',
+      'lingtai service status [--json]',
       '  Two jobs, the daemon and the board: a LaunchAgent each on macOS,',
       '  a systemd user unit each on Linux. No service manager? run',
       '  lingtai daemon and lingtai board start in the foreground.',
@@ -359,7 +362,7 @@ export const COMMANDS = [
     task: 'drain, wait for the pass, and start one daemon',
     effect: 'changes',
     usage: [
-      'lingtai restart [why] [flags]',
+      'lingtai restart [why] [flags] [--no-color]',
       '  Here, or through lingtai service when a supervisor keeps it.',
       '  Refuses a commit the tracking remote does not have, a dirty',
       '  worktree, and what lingtai doctor failed on. Ctrl+C during the',
@@ -378,7 +381,7 @@ export const COMMANDS = [
     task: 'stop the daemon after the ticket in flight',
     effect: 'changes',
     usage: [
-      'lingtai shutdown [why] [--force] [--timeout <duration>]',
+      'lingtai shutdown [why] [--force] [--timeout <duration>] [--no-color]',
       '  The pass finishes first, so the steps and the merge lane run',
       '  too. It does not outlive the daemon it was sent to.',
       '  --force                do not wait. The agent is left running and',
@@ -394,7 +397,7 @@ export const COMMANDS = [
     task: 'stop the daemon taking new tickets',
     effect: 'changes',
     usage: [
-      'lingtai pause <why>',
+      'lingtai pause <why> [--no-color]',
       '  A run in flight finishes. About the daemon that is running, and',
       '  gone when it is — but not for lingtai run, which takes no ticket',
       '  while a pause stands, daemon or none: one already working',
@@ -407,7 +410,7 @@ export const COMMANDS = [
     group: 'daemon',
     task: 'take tickets again',
     effect: 'changes',
-    usage: ['lingtai resume'],
+    usage: ['lingtai resume [--no-color]'],
     examples: ['lingtai resume'],
   }),
   define({
@@ -533,6 +536,19 @@ export const COMMANDS = [
       `Projections: ${PROJECTION_NAMES.join(', ')}`,
     ],
     examples: ['lingtai projection lag', 'lingtai projection rebuild spend'],
+  }),
+  define({
+    name: 'events',
+    group: 'install and upkeep',
+    task: 'the events this version writes, by step',
+    effect: 'reads',
+    usage: [
+      'lingtai events [<name>] [--json] [--no-color]',
+      '  Reads the list bundled with this version; needs no project and no',
+      '  network.',
+      '  --json  the manifest instead of the sections',
+    ],
+    examples: ['lingtai events', 'lingtai events TicketReleased --json'],
   }),
 ] as const
 

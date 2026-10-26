@@ -199,12 +199,17 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
         break
     }
   } catch (err) {
-    await record(store, ticketId, 'IssueUpdateFailed', {
-      project,
-      issue: String(issue),
-      change: change.kind,
-      error: (err as Error).message,
-    })
+    await record(
+      store,
+      ticketId,
+      'IssueUpdateFailed', // the update threw
+      {
+        project,
+        issue: String(issue),
+        change: change.kind,
+        error: (err as Error).message,
+      },
+    )
     return { recorded: 'IssueUpdateFailed', error: err }
   }
   await record(store, ticketId, 'IssueUpdated', {

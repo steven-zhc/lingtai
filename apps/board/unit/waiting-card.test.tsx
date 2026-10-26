@@ -162,7 +162,8 @@ describe('the cause line', () => {
     expect(html).toContain('<span class="waiting-cause-summary">the approach cannot converge</span>')
     expect(questionOf(html)).toBeNull()
     expect(html).not.toContain('class="held"')
-    expect(buttonsOf(html)).toEqual([])
+    // The one button #647 adds: triage advised Requeue, so the card carries it.
+    expect(buttonsOf(html)).toEqual(['Start over from base'])
   })
 
   it('uses the wait reason when the copied note is stale', async () => {

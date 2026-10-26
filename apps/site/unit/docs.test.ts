@@ -130,6 +130,7 @@ describe('the tutorial stays a first-run path', () => {
       'Step 4 — Approve and confirm',
       'Optional — Watch a check refuse',
       'Part 2 — Move the project to GitHub',
+      'Next',
     ])
   })
 })

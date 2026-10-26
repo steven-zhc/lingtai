@@ -219,7 +219,7 @@ Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 
 A regular Postgres table built by replaying the log. Holds no truth of its own.
 Source: `taskViewProjection` in `packages/projector/src/task-view.ts`, wired in
-`apps/cli/src/lingtai.ts`.
+`apps/cli/src/projector.ts`.
 
 | Name | Answers | Owns its table? |
 |---|---|---|
@@ -1947,20 +1947,21 @@ Four rules:
   which is under the boundary's ten — that one is the backstop for a promise
   that never settles at all.
 
-## lingtai subcommand — 26
+## lingtai subcommand — 30
 
-Source: the switch in `apps/cli/src/lingtai.ts`.
+Source: `COMMANDS` in `apps/cli/src/commands.ts`; `apps/cli/src/cli.ts` has a subcommand for each, and
+`apps/cli/unit/one-parser.test.ts` holds the two lists equal.
 
 `add` · `run` · `approve` · `backlog` · `requeue` · `ask` · `answer` · `close` ·
 `ticket` · `attach` · `board` · `status` · `doctor` · `env` · `end` · `start` ·
 `daemon` · `service` · `restart` · `pause` · `resume` · `shutdown` · `now` ·
-`projection` · `version` · `init`
+`projection` · `version` · `init` · `grant-fix-round` · `upgrade` · `rollback` ·
+`uninstall`
 
-`daemon` is `start`'s own case, fallen through to the same handler rather
-than removed — `lingtai.ts:1389-1394` calls `start` "the name" and keeps
-`daemon` answering so a supervisor's plist that still has the old name
-written into it does not stop working. `waive` is not among these: it names
-a decision a person can take (below), not a case in this switch.
+`daemon` is `start`'s own definition (`startCommand('daemon')` in `cli.ts`),
+kept answering so a supervisor's plist that still has the old name written
+into it does not stop working. `waive` is not among these: it names
+a decision a person can take (below), not a command.
 
 `approve`, `requeue` and `waive` are the decisions a person can take from
 here. The board's are the first two — `apps/board/src/app/actions.ts` imports

@@ -31,7 +31,9 @@
  * `EventSource` reconnects on its own and sends `Last-Event-ID`, so resume is
  * the browser's job and the server's — not this component's. What it does keep
  * is the last seq, so a tab that has been asleep asks for the right place even
- * on a first connection.
+ * on a first connection. On a reconnect it also re-reads once, because some of
+ * what a page shows (*writing*) is in-process state and not in the log, so no
+ * `Last-Event-ID` replay can bring it back (#644).
  *
  * **The dot reports the projection, not the socket.** It used to report
  * whether this connection was open, which is precisely the thing that was never
@@ -99,6 +101,19 @@ import type { Health } from '@/lib/health'
  * doing the one job it was always doing.
  */
 const COALESCE_MS = 250
+
+/**
+ * The listener for a stream's `open`: the first does nothing — the page was just
+ * rendered — and every later one, a reconnect, runs `reread` once. One per
+ * `EventSource`, so a remount or a StrictMode double effect starts counting again.
+ */
+export function onOpen(reread: () => void): () => void {
+  let opened = false
+  return () => {
+    if (opened) reread()
+    opened = true
+  }
+}
 
 /**
  * The subscription: re-render this route when the log moves, and report what
@@ -171,7 +186,11 @@ function useFollow(): { socket: 'connecting' | 'open' | 'trouble'; health: Healt
   useEffect(() => {
     const source = new EventSource(`/api/stream?from=${lastSeq.current}`)
 
-    source.addEventListener('open', () => setSocket('open'))
+    const opened = onOpen(schedule)
+    source.addEventListener('open', () => {
+      setSocket('open')
+      opened()
+    })
 
     source.addEventListener('append', (e) => {
       setSocket('open')

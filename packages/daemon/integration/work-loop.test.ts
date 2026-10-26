@@ -195,6 +195,39 @@ describe('the work loop', () => {
   })
 
   /**
+   * #640: a look that returns without waiting for the passes it started. The
+   * drain is still owed every one of them, not the look's own promise.
+   */
+  it('waits for every pass a look handed to started, after the look has returned', async () => {
+    const releases: (() => void)[] = []
+    let begun = 0
+
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      pass: async (_reason, started) => {
+        for (let i = 0; i < 2; i++) {
+          begun += 1
+          started?.(new Promise<void>((r) => releases.push(r)))
+        }
+      },
+    })
+
+    await loop.start()
+    expect(begun).toBe(2)
+
+    let drained = false
+    const stopping = loop.stop().then(() => (drained = true))
+
+    releases[0]!()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(drained).toBe(false)
+
+    releases[1]!()
+    await stopping
+    expect(drained).toBe(true)
+  })
+
+  /**
    * A shutdown is read where a pause is, and it takes nothing new after it.
    *
    * The `again` set by events arriving during the pass lapses on its own,

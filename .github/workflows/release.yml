@@ -47,6 +47,13 @@ jobs:
       - name: build, run and serve a page — the bundle and the binary
         run: pnpm exec vitest run --project integration apps/release/integration/build.test.ts
 
+      # The list `lingtai events` prints is inlined at build, so it is regenerated at the tag
+      # first: the binary then carries byte for byte the events.json the publish job attaches.
+      # Not `pnpm events:generate`, for the reason the publish job gives.
+      - name: events.json at this tag, for the bundle to inline
+        if: github.ref_type == 'tag'
+        run: node packages/domain/scripts/events.ts --ref "$GITHUB_REF_NAME"
+
       - name: build the artifact
         run: pnpm build && pnpm binary
 
@@ -101,10 +108,85 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+      - name: CLI contract diff
+        # doc/cli.json is generated and carries no stamp (#545), so a plain diff
+        # against the previous tag is the change to the command line.
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "${{ github.ref_name }}^" 2>/dev/null || true)
+          {
+            echo "## CLI contract"
+            echo
+            if [ -z "$prev" ]; then
+              echo "No earlier release to compare \`doc/cli.json\` with."
+            elif git diff --quiet "$prev" "${{ github.ref_name }}" -- doc/cli.json; then
+              echo "No change to the command line since $prev."
+            else
+              echo "Changes to the command line since $prev (\`git diff $prev..${{ github.ref_name }} -- doc/cli.json\`):"
+              echo
+              echo '```diff'
+              git diff "$prev" "${{ github.ref_name }}" -- doc/cli.json
+              echo '```'
+            fi
+            echo
+          } > cli-contract.md
+          cat cli-contract.md
+      - name: Events manifest and what changed
+        # Not `pnpm events:generate`: pnpm would hand `--ref` to the oxfmt that
+        # follows it in that script. The asset needs no formatting. The asset is
+        # in artifacts/ before checksums, so SHA256SUMS covers it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node packages/domain/scripts/events.ts --ref "${{ github.ref_name }}"
+          cp doc/events.json artifacts/events.json
+          # The previous release is the highest-versioned tag below this one that
+          # has a published release, whether or not it is an ancestor (a release
+          # branch's tag counts) and whatever happened to the tags in between: a
+          # tag whose publish failed has no release and is passed over. Every gh
+          # call is an assignment, so a failed lookup fails the step (-e) instead
+          # of reading as "no earlier manifest". A draft is not a publication, and
+          # versionsort.suffix=- puts v1.0.0-rc.1 below v1.0.0 as semver does.
+          published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft | not) | .tagName')
+          tags=$(git -c versionsort.suffix=- tag --list 'v*' --sort=-v:refname)
+          prev=
+          seen=
+          for t in $tags; do
+            if [ "$t" = "${{ github.ref_name }}" ]; then
+              seen=1
+            elif [ -n "$seen" ] && printf '%s\n' "$published" | grep -qx "$t"; then
+              prev=$t
+              break
+            fi
+          done
+          old=
+          if [ -n "$prev" ]; then
+            assets=$(gh release view "$prev" --repo "${{ github.repository }}" --json assets --jq '.assets[].name')
+          else
+            assets=
+          fi
+          # Only a published release that lists no events.json means no earlier
+          # manifest; a failed download must fail the step, not publish "first release".
+          if printf '%s\n' "$assets" | grep -qx events.json; then
+            mkdir previous
+            gh release download "$prev" --repo "${{ github.repository }}" --pattern events.json --dir previous
+            old=previous/events.json
+          fi
+          node packages/domain/scripts/events-diff.ts $old artifacts/events.json $prev > events-changed.md
+          cat events-changed.md
+          cat cli-contract.md events-changed.md > release-notes.md
       - name: checksums
         working-directory: artifacts
         # `shasum -a 256 -c SHA256SUMS` on a Mac, `sha256sum -c` on Linux.
@@ -112,4 +194,4 @@ jobs:
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" artifacts/* --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" artifacts/* --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes-file release-notes.md --generate-notes

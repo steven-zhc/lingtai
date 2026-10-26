@@ -180,6 +180,8 @@ export function ResolutionCard({
   head: ReactNode
   children: ReactNode
   'data-resolution'?: string
+  /** The anchor a waiting card's button opens the page at (#647). */
+  id?: string
   hidden?: boolean
 }) {
   return (
