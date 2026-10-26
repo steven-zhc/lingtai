@@ -182,7 +182,7 @@ export function billText(bill: Bill): string {
     return '—'
   }
   const est = bill.estimates.reduce((a, b) => a + b, 0)
-  if (est > 0) parts.push(`~$${est.toFixed(2)} est.`)
+  if (bill.estimates.length > 0) parts.push(`~$${est.toFixed(2)} est.`)
   return parts.join(' ')
 }
 

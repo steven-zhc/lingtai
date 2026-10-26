@@ -234,3 +234,12 @@ describe('machineDayCeiling', () => {
     expect(() => machineDayCeiling({ LINGTAI_LIMITS_DAY_USD: bad }, file(null))).toThrow(/LINGTAI_LIMITS_DAY_USD/)
   })
 })
+
+describe('daySpend sub-cent estimates', () => {
+  it('sums a thousand $0.004 estimates to $4.00 and reaches a $1 ceiling', () => {
+    const rows = Array.from({ length: 1000 }, () => today(null, codexUsage()))
+    const day = daySpend(rows, now, () => 0.004)
+    expect(day).toMatchObject({ estimatedCents: 400, estimatedRuns: 1000, unknown: 0 })
+    expect(ceilingReached(day, 1)).toBe(true)
+  })
+})

@@ -25,7 +25,7 @@ export interface DayRow {
 export interface DaySpend {
   reportedCents: number
   reportedRuns: number
-  /** Cents the rate card priced, rounded once per row. Never part of `reportedCents`. */
+  /** Cents the rate card priced, rounded once over the day's sum. Never part of `reportedCents`. */
   estimatedCents: number
   estimatedRuns: number
   unknown: number
@@ -37,7 +37,7 @@ export const startOfLocalDay = (now: Date): Date => new Date(now.getFullYear(), 
 /** The next local midnight after `now`. */
 export const nextLocalMidnight = (now: Date): Date => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
 
-/** Today's rows only; each priced row rounded to cents once, as the board's `billOf` does. */
+/** Today's rows only; each reported row rounded to cents once; estimates are summed first and rounded once. */
 export function daySpend(
   rows: readonly DayRow[],
   now: Date,
@@ -45,6 +45,7 @@ export function daySpend(
 ): DaySpend {
   const since = startOfLocalDay(now).getTime()
   const day: DaySpend = { reportedCents: 0, reportedRuns: 0, estimatedCents: 0, estimatedRuns: 0, unknown: 0 }
+  let estimatedUsd = 0
   for (const row of rows) {
     if (row.at.getTime() < since) continue
     if (row.costUsd !== null) {
@@ -57,9 +58,11 @@ export function daySpend(
       day.unknown += 1
       continue
     }
-    day.estimatedCents += Math.round(estimate * 100)
+    estimatedUsd += estimate
     day.estimatedRuns += 1
   }
+  // Summed in dollars and rounded once: a run's estimate is often a fraction of a cent, and rounding each would drop spend the board shows.
+  day.estimatedCents = Math.round(estimatedUsd * 100)
   return day
 }
 
