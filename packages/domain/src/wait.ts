@@ -22,7 +22,7 @@
  */
 import { z } from 'zod'
 
-import { decidingAction, type StepOutcome, type WaitId } from './action.ts'
+import { decidingAction, WaitId, type StepOutcome } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
 import { SplitProposal, SplitResolution } from './split.ts'
@@ -151,6 +151,42 @@ const BudgetExhausted = z.object({
   detail: z.string(),
 })
 
+/** A `prepared` step refused before any agent ran — a check, a file not kept, a tree not cut. */
+const SetupRefused = z.object({
+  _tag: z.literal('SetupRefused'),
+  run: RunRef,
+  step: Step,
+  action: z.string(),
+  why: z.string(),
+})
+
+/** The agent answered, and the machine could not read it. */
+const AnswerUnreadable = z.object({
+  _tag: z.literal('AnswerUnreadable'),
+  run: RunRef,
+  step: Step.extract(['design', 'review', 'proposed', 'merge']),
+  action: z.string(),
+  raw: z.string(),
+})
+
+/**
+ * What a wait could be when a crash stands in for it: any reason but
+ * `AgentCrashed`, so the nesting is one level and never recursive (#654).
+ */
+const StandingReason = z.discriminatedUnion('_tag', [
+  OwnQuestion,
+  AgentQuestion,
+  SignoffRequired,
+  FixerDisagrees,
+  NothingProduced,
+  ProposedEscalated,
+  CheckRefused,
+  MergeRefused,
+  BudgetExhausted,
+  SetupRefused,
+  AnswerUnreadable,
+])
+
 /**
  * An agent that crashed, timed out or was aborted.
  *
@@ -168,24 +204,13 @@ const AgentCrashed = z.object({
   step: Step.extract(['admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge']),
   cause: z.enum(RUN_FAILURE_KINDS).extract(['crash', 'timeout', 'aborted']),
   detail: z.string(),
-})
-
-/** A `prepared` step refused before any agent ran — a check, a file not kept, a tree not cut. */
-const SetupRefused = z.object({
-  _tag: z.literal('SetupRefused'),
-  run: RunRef,
-  step: Step,
-  action: z.string(),
-  why: z.string(),
-})
-
-/** The agent answered, and the machine could not read it. */
-const AnswerUnreadable = z.object({
-  _tag: z.literal('AnswerUnreadable'),
-  run: RunRef,
-  step: Step.extract(['design', 'review', 'proposed', 'merge']),
-  action: z.string(),
-  raw: z.string(),
+  /**
+   * #654: a granted round that crashed with the head exactly where the person
+   * last decided about it. The wait it resumed, whose offer still stands —
+   * `allowedResolutions`, `grantCriterion` and `continuationOf` answer for
+   * `reason`. Absent on every other crash, and on every event written before.
+   */
+  standing: z.object({ waitId: WaitId, reason: StandingReason }).optional(),
 })
 
 /** A wait is exactly one of these twelve — 0118 §1's table, flattened. */
@@ -255,6 +280,11 @@ const _triageAdviceCoversResolution: AssertEqual<
  * non-exhaustive and `pnpm typecheck` goes red.
  */
 function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
+  // #654: a crash that stands in for a wait offers what that wait offered —
+  // and a way out of it, which the wait itself may not have carried.
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) {
+    return [...new Set([...tableResolutions(reason.standing.reason), 'Requeue', 'Close'] as const)]
+  }
   switch (reason._tag) {
     case 'OwnQuestion':
       return ['AnswerQuestion', 'Requeue', 'Close']
@@ -320,6 +350,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function grantCriterion(
   reason: WaitReason,
 ): { printed: { step: Step; detail: string }; findings: Finding[] } | null {
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) return grantCriterion(reason.standing.reason)
   const text = (value: string | null | undefined) => (value != null && value.trim().length > 0 ? value : null)
   const checkBrief = (from: Step, action: string | null | undefined, output: string) => ({
     // `proposed`, never the step the check ran at: `fixRound` reads a printed
@@ -370,6 +401,36 @@ export function grantCriterion(
 }
 
 /**
+ * The `standing` a crash is written with (#654), or `null` where it has none:
+ * a granted round (`granted`) over a wait that ended `crash`, `timeout` or
+ * `aborted` with the worktree still at the head that wait's resolution named
+ * (`onSha`), nothing committed and nothing kept uncommitted (`wip`, `unpushed`).
+ * Then the person's last decision about that head is untouched, and its offer
+ * stands.
+ *
+ * A resumed wait that is itself a standing crash hands its own `standing` on
+ * unchanged, so the nesting is one level and the original wait's triage and
+ * waiver are what stay in play.
+ */
+export function standingFor(input: {
+  reason: WaitReason
+  granted: boolean
+  onSha: string
+  resumed: { readonly waitId: WaitId; readonly reason: WaitReason } | undefined
+  head: string | null
+  wip: unknown
+  unpushed: boolean
+}): { waitId: WaitId; reason: z.infer<typeof StandingReason> } | null {
+  if (input.reason._tag !== 'AgentCrashed') return null
+  if (!input.granted || input.resumed === undefined) return null
+  if (input.wip !== null || input.unpushed) return null
+  if (input.head === null || input.head !== input.onSha) return null
+  const resumed = input.resumed
+  if (resumed.reason._tag === 'AgentCrashed') return resumed.reason.standing ?? null
+  return { waitId: resumed.waitId, reason: resumed.reason }
+}
+
+/**
  * `tableResolutions` plus one rule 0118 §1's table is silent on, applied
  * uniformly to every variant — before #502, `moves.ts`'s `allowedMoves` only
  * applied it to `Routed`/`CheckRed`/`MergeRefused`: if the run is `unpushed`,
@@ -416,6 +477,9 @@ export function continuationOf(
   reason: WaitReason,
   runOutcomes: readonly (StepOutcome & { readonly runId: string })[],
 ): Continuation | null {
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) {
+    return continuationOf(reason.standing.reason, runOutcomes)
+  }
   switch (reason._tag) {
     case 'SignoffRequired':
     case 'CheckRefused':
@@ -544,6 +608,7 @@ function lastRefusedActionName(
  * prefilled resolution is read off this function.
  */
 function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) return defaultResolution(reason.standing.reason)
   switch (reason._tag) {
     case 'SignoffRequired':
       return 'Approve'

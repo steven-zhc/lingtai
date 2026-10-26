@@ -9,7 +9,7 @@
  */
 export interface InFlight {
   /** Adds a pass. It leaves the set when it settles, however it settles. */
-  track(pass: Promise<void>): void
+  track(pass: Promise<unknown>): void
   /** How many are in flight now. */
   readonly size: number
   /** Resolves once the set is empty, including passes tracked while waiting. */

@@ -29,6 +29,7 @@
 import Link from 'next/link'
 
 import { ledger, loadBoard } from '@/lib/board'
+import { readDayReading } from '@/lib/day-spend'
 import { spendChip } from '@/lib/spend'
 
 import { SpendTable } from '../spend-table.tsx'
@@ -38,6 +39,7 @@ export const dynamic = 'force-dynamic'
 export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
   const board = await loadBoard(only)
+  const today = await readDayReading()
   const { limits } = board
   const chip = spendChip(board.spend.currency)
   const { rows: byProject, total } = ledger(board.columns, board.spend.rows)
@@ -60,6 +62,8 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
       </div>
 
       <div className="detail-body">
+        {/* Every project, whatever the filter: the ceiling covers the installation. */}
+        <p className="mono">{today.text}</p>
         <section>
           <h2>
             <span className="hlab">Spend</span>

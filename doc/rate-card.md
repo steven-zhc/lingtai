@@ -2,8 +2,11 @@
 
 What a million tokens costs, per model, per mode, with the date the rate came
 into force. [0073](decisions-archive/0073-tokens-go-on-the-event-and-money-never-does.md)
-§5 decided this is a file a person edits rather than a page something scrapes or
-a table compiled into code, and this is that file.
+§5 decided this is a file a person edits rather than a page something scrapes,
+and this is that file. A compiled copy, `RATE_CARD` in
+`packages/domain/src/rate-card.ts`, is what code prices through, because the
+release binary carries no `doc/`; `packages/domain/unit/rate-card.test.ts` holds
+the copy equal to this file, so a row appended to one and not the other fails it.
 
 **Nothing computes money on the way in.** An event carries the tokens a runtime
 reported and, where the runtime reported it, the dollars it reported — never a
@@ -108,22 +111,24 @@ not what "the first thing to check" means for that row.
 
 ## Codex — `codex`
 
-**No rows, and that is the honest state.** This machine runs Codex at
-`model = "gpt-5.6-sol"` with `model_reasoning_effort = "xhigh"`
-(`~/.codex/config.toml`), and no rate for it has been established here. So a
-Codex run is **unpriced**: its tokens are on the event and no money is computed
-from them.
+Per million tokens, US dollars, read 2026-10-26 from OpenAI's model page for
+[`gpt-5.6-sol`](https://developers.openai.com/api/docs/models/GPT-5.6): $4 input,
+$0.40 cached input, $20 output, and a cache write billed at 1.25× input ($5).
+The page lists no separate reasoning rate, so reasoning bills at the output rate.
 
-This is the case 0073 §6 chose absent for. The alternative — a guessed row —
-would put a confident number on the board for the one runtime that reports no
-dollars of its own, which is the failure
-[#198](https://github.com/steven-zhc/lingtai/issues/198) refused, reached by a
-longer route.
+| from | model | mode | input | output | cache read | cache write |
+|---|---|---|---|---|---|---|
+| 2026-10-26 | `gpt-5.6-sol` | | 4.00 | 20.00 | 0.40 | 5.00 |
 
-Note also that Codex reports `reasoning_output_tokens` separately and that this
-machine runs it at `xhigh`, so reasoning is expected to be a thick slice of its
-output — a row added here without a reasoning-output rate distinct from output,
-if the provider charges one, would understate it.
+**This is a promotional rate**, "available at least through November 21, 2026":
+when it moves, append a row with the new `from`. **A prompt over 272K input
+tokens bills the whole request at 2× input and 1.5× output** — the tokens on an
+event carry no per-request size, so that tier is not modelled and a run that
+reached it is under-estimated, like every total here (0110 §2).
+
+Codex's `model` is the recipe's `request.model`, and is absent when the recipe
+sets none (`packages/agent/src/codex.ts`): an event with no model is still
+**unpriced**, and any other model id is unpriced until a row is appended.
 
 ## Not a billing record
 

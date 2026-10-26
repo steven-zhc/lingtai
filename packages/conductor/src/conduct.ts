@@ -58,6 +58,7 @@ import type { ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
+  standingFor,
   waivedActionsAt,
   type KeptAt,
   type RunRef,
@@ -214,7 +215,7 @@ import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
-import { type NeverStarted, standDown } from './never-started.ts'
+import { metTheAccountWall, type NeverStarted, standDown } from './never-started.ts'
 import {
   type Brief,
   type Claimed,
@@ -1012,6 +1013,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const granted = folded.lifecycle.grantRef !== undefined
+      // A crash that stands in for a wait carries that wait's advice (#654).
+      const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const priorGrant = waitsOf(before).some(
         (wait) =>
           wait.resolution?._tag === 'GrantFixRound' &&
@@ -1043,8 +1046,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         // Only a granted lap: it is one round long, so this reaches the round
         // the person paid for, on the advice of the wait they granted it on (#643).
-        ...(granted && grantedAdviceOf(before, approvedWaitId) !== undefined
-          ? { advice: grantedAdviceOf(before, approvedWaitId)! }
+        ...(granted && grantedAdviceOf(before, adviceWaitId) !== undefined
+          ? { advice: grantedAdviceOf(before, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
@@ -1342,7 +1345,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const it =
           what.of === 'run'
             ? 'a run'
-            : what.of === 'step' || what.of === 'draft'
+            : what.of === 'step' || what.of === 'draft' || what.of === 'mid-run'
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`
         const { until, reason } = standDown({
@@ -1355,9 +1358,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // restarting is itself a reasonable response to a run that never started.
         const outcome = yield* pauseConductorOnce({ until: until.toISOString(), reason, holdsAcrossStarts: false })
         if (outcome.kind === 'appended') {
-          log(`${it} never started — conductor paused until ${until.toISOString()}`)
+          log(
+            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'} — conductor paused until ${until.toISOString()}`,
+          )
         } else if (outcome.kind === 'already-paused') {
-          log(`${it} never started; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`)
+          log(
+            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'}; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`,
+          )
         }
         // 'failed': `pauseConductorOnce` has already logged why.
       })
@@ -1474,6 +1481,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
+      /**
+       * Conflict fix rounds dispatched so far (#653). A conflict round leaves
+       * `round` where `rounds` was, so `round` alone would hand Claude Code the
+       * previous fix's session id, which it refuses. Within one `conduct` call
+       * only: a continuation keeps `runId` and `round` and restarts this at zero,
+       * so the id also carries the wait it resumes, as the judge's does.
+       */
+      let conflictFixes = 0
       /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
@@ -1712,6 +1727,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * commit itself, which is what the arm carries and this never is.
        */
       let wip: { sha: string; parent: string; stoppedBy: string } | null = null
+      /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
+      let headNow: string | null = null
       /**
        * **The commit `keepUncommittedWork` made, before its own sha is known**
        * (`#468`). Set the moment `git commit` itself succeeds — never the moment
@@ -1978,6 +1995,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           const head = at.right
           headRead = head
+          headNow = head
           // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
           // `wipParent` is set the moment `git commit` succeeds there, before
           // its own `rev-parse HEAD` is attempted — so a flaky read on that one
@@ -2607,6 +2625,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
         }
         if (outcome.failure) {
+          // #655: the judge's crash is the ticket's wait, and the account's wall is the conductor's.
+          if (outcome.failure.kind === 'crash' && metTheAccountWall(outcome.failure.detail)) {
+            await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'proposed' }, outcome.failure.detail))
+          }
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
               `${outcome.failure.detail} — so the pass is held for a person (${spent})`,
@@ -3659,6 +3681,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 } as const)
               : ({ on: 'output', output: said } as const)
 
+        // Keyed on where the fix came from and not on `refusal`: a passing review's
+        // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
+        const fixId =
+          from === 'merge'
+            ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
+            : `${runId}:fix:${round}`
+
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
         runLog.note('fix', `round ${round} for ${from}`)
 
@@ -3688,7 +3717,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return yield* Effect.promise(() =>
                 dispatched
                   .run({
-                    runId: `${runId}:fix:${round}`,
+                    runId: fixId,
                     cwd: tree.path,
                     prompt: alsoSays(
                       fixBrief({
@@ -3804,6 +3833,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // tells `keepUncommittedWork` to look — null only where the dispatch
         // itself reports none.
         stoppedBy = fixed.failure ? fixed.failure.kind : null
+        // #655: `committed` below drops the failure, so the blocked branch never sees
+        // the account's wall a fixer met after it had committed. Pause here instead.
+        if (fixed.failure?.kind === 'crash' && metTheAccountWall(fixed.failure.detail)) {
+          await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'implement' }, fixed.failure.detail))
+        }
         await recordDiff(branch, after)
         return { committed: after }
       }
@@ -4187,7 +4221,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           WaitReason,
           { _tag: 'OwnQuestion' }
         >
-        return { ...reason, run: runRef }
+        const resumed =
+          continuation === null ? undefined : waitsOf(before).find((w) => w.waitId === continuation.resumedWaitId)
+        const standing = standingFor({
+          reason,
+          granted: continuation?.grant !== undefined,
+          onSha: continuation?.onSha ?? '',
+          resumed,
+          head: headNow,
+          wip,
+          // A keep that failed leaves the edits in the tree, for the finalizer to save
+          // as a WIP after this wait is written — so it is not an unmoved head either.
+          unpushed: notPushed !== null || wipFailure !== null,
+        })
+        return { ...reason, run: runRef, ...(standing === null ? {} : { standing }) } as WaitReason
       }
 
       // ---- landed -------------------------------------------------------------
@@ -4471,6 +4518,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             appended: endResolved,
           }),
         )
+        // #655: a run that started and met the account's limit. The wait above is
+        // the ticket's and is already written; this only stops the conductor.
+        if (reason._tag === 'AgentCrashed' && reason.cause === 'crash' && metTheAccountWall(reason.detail)) {
+          yield* standDownConductor({ of: 'mid-run', step: reason.step }, reason.detail)
+        }
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
           ok: 'held',

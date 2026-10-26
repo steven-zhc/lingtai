@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { parseResetAt, standDown } from '../src/never-started.ts'
+import { metTheAccountWall, parseResetAt, standDown } from '../src/never-started.ts'
 
 /** What the log actually held, six times, on the night 0031 is about. */
 const QUOTA = "You've hit your session limit · resets 11pm (America/Chicago)"
@@ -380,5 +380,48 @@ describe('standDown', () => {
 
     expect(reason).toContain('a run ended without ever starting — no turns taken, nothing spent')
     expect(reason).toContain('The run said:')
+  })
+})
+
+/** #655: a run that started and met the account's limit pauses the conductor, and nothing looser does. */
+describe('metTheAccountWall', () => {
+  const MONTHLY =
+    "You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 12:50pm (America/Chicago)"
+
+  it("pauses until the reset #637's message names", () => {
+    expect(metTheAccountWall(MONTHLY)).toBe(true)
+    const { until, reason } = standDown({
+      detail: MONTHLY,
+      backoffMs: 3_600_000,
+      what: { of: 'mid-run', step: 'implement' },
+      now: new Date('2026-10-26T17:33:31Z'),
+      zone: 'America/Chicago',
+    })
+    expect(until.toISOString()).toBe('2026-10-26T17:50:00.000Z')
+    expect(reason).toContain('after it had started and been paid for')
+    expect(reason).not.toContain('never started')
+  })
+
+  it("matches the sentence inside a fix round's own wrapping", () => {
+    expect(metTheAccountWall(`the fixing agent did not finish (crash: ${MONTHLY}), so …`)).toBe(true)
+  })
+
+  it("falls back to the backoff for Codex's sentence, which names no reset", () => {
+    const detail = 'You have hit your usage limit.'
+    expect(metTheAccountWall(detail)).toBe(true)
+    const now = new Date('2026-10-26T17:33:31Z')
+    const { until } = standDown({ detail, backoffMs: 3_600_000, what: { of: 'mid-run', step: 'review' }, now })
+    expect(until.getTime()).toBe(now.getTime() + 3_600_000)
+  })
+
+  it('does not match a crash that merely contains the word limit', () => {
+    for (const detail of [
+      'rate limit exceeded',
+      'the recipe allows no limit',
+      'AssertionError: expected the limit to be 3',
+      'the agent hit the turn limit',
+    ]) {
+      expect(metTheAccountWall(detail)).toBe(false)
+    }
   })
 })

@@ -62,6 +62,7 @@ import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
+import { dayCeilingStop } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 
@@ -144,7 +145,8 @@ class Paused extends Data.TaggedError('Paused')<{
  */
 const heedThePause = (store: EventStore | undefined) =>
   Effect.tryPromise({
-    try: () => readControl(store),
+    // The ceiling first: a raised figure lifts its own pause before it is read.
+    try: async () => (await dayCeilingStop(store), readControl(store)),
     // Not "not paused": a pause that could not be read is not consent.
     catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
   }).pipe(
@@ -166,8 +168,11 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  */
 const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
   try {
+    // The daily ceiling first, so its own pause lifts when the figure was raised.
+    const stop = await dayCeilingStop(store)
     const control = await readControl(store)
-    return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null
+    if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
+    return stop
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
@@ -520,6 +525,14 @@ export async function run(
       }
 
       // ---- one nominated issue -----------------------------------------------
+      // The daily ceiling is asked before this claim as `runQueue` asks it
+      // before each one: a nomination is not a waiver of it.
+      const stop = yield* Effect.promise(() => dayCeilingStop(options.store))
+      if (stop !== null) {
+        log(stop)
+        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+        return 0
+      }
       const result = yield* world.runOnce({
         ...common,
         issue: options.issue,

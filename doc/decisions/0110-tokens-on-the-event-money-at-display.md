@@ -248,9 +248,10 @@ about something else are the three whose spend is not recorded.
 
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.
-- **Nothing reads the rate card.** No code prices tokens, so under decision 7
-  every run without a reported `costUsd`, every Codex run among them, is
-  unknown until it does. (#208)
+- **The rate card names one Codex model, `gpt-5.6-sol`.** `priceRow`
+  (`@lingtai/domain/rate-card`) prices a null-`costUsd` run from the card at read
+  time; a Codex run on any other model, or with none recorded, is unknown, under
+  decision 7, until a person appends its row.
 
 ---
 

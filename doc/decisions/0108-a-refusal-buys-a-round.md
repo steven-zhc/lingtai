@@ -109,7 +109,7 @@ fixes the bounds and the endings that router works inside.
    also changed, the system merges it in itself and the pass builds and reviews
    again — no agent runs for the merge and no `round` is spent — at most twice
    per pass (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
-   ceiling above beyond the `build` and `review` it reruns. Absent, the
+   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): `CONFLICT_ROUNDS_LIMIT = 2` per pass, beside the base-merge budget, never drawn from `rounds`, and never counted in it — that round runs an agent, so it falls outside the ceiling above, and its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. Absent, the
    sentence is unchanged, character for character. A person's `GrantFixRound`
    ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
    one additional `implement` round on saved work when the wait has a fixable
@@ -149,13 +149,20 @@ fixes the bounds and the endings that router works inside.
     and falls back to `source.backoff`. A pause already holding (a person's has no
     `until`) is left alone. The pause lifts by itself and names which agent met
     the wall. The item is released (`failed`) and keeps its place; any commits
-    are published first.
+    are published first. **A run that started and met the account's limit pauses
+    the conductor the same way** — a crash whose detail is the runtime's own
+    account-limit sentence (`metTheAccountWall`: Claude Code's *You've hit your …
+    limit*, Codex's *You have hit your usage limit*) appends the same
+    `ConductorPaused`, with the same `until` and fallback — but the item is **not**
+    released: it keeps its crash wait (§12), and the match adds the pause and
+    changes nothing else.
 
 12. **An agent that started and did not finish judged nothing, and stops only
     the pass.** A crash, a spent turn budget, a missing receipt, or a fixer that
     committed nothing ends the step `did-not-finish` (`StepDidNotFinish`). It buys
     no round, reaches no judge, is not retried, and does not pause the conductor,
-    because a crash is local. The item is blocked for a person; the card offers no
+    because a crash is local — except a crash whose detail is the runtime's account-limit
+    sentence, which pauses it as §11 says and is still the ticket's wait. The item is blocked for a person; the card offers no
     approval, because no step judged the diff, and the move left is requeue. A step
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.

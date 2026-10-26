@@ -19,40 +19,67 @@ reader learns to disbelieve the stamp instead of the table.
 
 ---
 
-## event — 71 types
+## event
 
 One fact that already happened, past tense. Never edited, never deleted.
-Source: the registry at the bottom of `packages/domain/src/events.ts`.
-**Recounted 2026-10-13** — every group below, against that registry.
+The list of types is [doc/events.json](events.json), and the site draws it as
+`/docs/events/`. It is generated from the registry at the bottom of
+`packages/domain/src/events.ts` by `packages/domain/scripts/events.ts`, and
+`packages/domain/unit/events-json.test.ts` checks it against that registry — so
+this section carries no count and no list of its own, and what follows is only
+what the manifest does not say.
 
-| Group | Types |
-|---|---|
-| work item (8) | `TicketDiscovered` `TicketClaimed` `TicketReleased` `WorkItemBlocked` `WorkItemUnblocked` `TicketLinked` `TicketLanded` `TicketClosed` |
-| dispatch (1) | `DispatchRefused` |
-| run (11) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunKeptUncommitted` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run. `RunKeptUncommitted` is a stopped run's dirty tree, committed by the conductor and kept on the arm alone rather than lost with the worktree (`#468`) |
-| step (10) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepAsked` `StepWaived` — eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. **Three** of them are the three ways a step's agent ends without judging the diff: it never started ([0041](decisions-archive/0041-a-gate-that-never-ran.md)), it started and produced no receipt ([0057](decisions-archive/0057-a-gate-that-did-not-finish.md)), or it stopped and asked something ([0068](decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md)). `StepAsked` is `#296`'s and came with the log's fourth reset ([014](experiments/014-the-log-before-the-fourth-reset.md)) rather than with an upcaster: it was the half of `StepDidNotFinish` the *workflow* branched on, and the token it branched on — `needs-input`, in a `because` — was never on the event, so no stored row could be told which half it was |
-| approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
-| finding (3) | `FindingAccepted` `FindingProposed` `FindingDeclined` — the minors a passing gate raised, and what a person then did with each one. `finding_backlog` is the projection that folds them (`#137`) |
-| integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
-| repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
-| fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
-| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It was never named `Gate…`** — the allowlist below could only shrink — so for three days the log carried two vocabularies, which is what a log with two eras looks like; `#247` ended that with the reset 0061 §7 spends |
-| restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
-| control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` |
-| issue (2) | `IssueUpdated` `IssueUpdateFailed` |
-| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions-archive/0022-the-seams.md)), `RETIRED` in the same file |
-| discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
-| prompt (1) | `PromptEdited` |
-| project & queue (7) | `QueueChanged` `RunRequested` `ProjectOnboardingStarted` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
-| github app (1) | `GitHubAppCreated` — the team's own App, minted from a manifest (`#169`). **Two fields, and the other four values that arrived are the reason**: the private key, the webhook secret and an OAuth client secret Lingtai has no flow for. The log is permanent and `projection rebuild` replays it, so what is recorded is the **id and the slug** — the key goes to a `0600` file, the webhook secret to the env file, and the OAuth pair is dropped where the conversion is read (`packages/github/src/manifest.ts`) |
-| triage (2) | `TriageStarted` `WaitTriaged` — triage's advice, or its failure, on the ticket's stream, keyed by the wait's `waitId` ([0118](decisions/0118-a-hold-explains-itself.md) §3). `TriageStarted` is appended before the agent is dispatched; `WaitTriaged` finishes the attempt it names, with `result` a `TriageResult` (`TriageFailed` \| `TriageAdvised`), so advice and failure can never be written on the same row. Both carry `by`: `Agent` (`runtime`, `model` — no `costUsd` or `usage` field on either event; an agent's cost is a `RunSpent` instead, 0110 §10) or `Mechanical`, where Lingtai answered without an agent and there is nothing to record (`#414`) |
-| extension (1) | `PluginFailed` |
+`RunRefsPublished` is what a claim left on origin, appended on every outcome of
+the publish including the ones that are not failures — but on no run that
+**landed**, where the publish is skipped and the merge's own push writes no row
+([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the
+absence of a push had four meanings and a run log could tell none of them apart,
+which cost `#250` its whole run. `RunKeptUncommitted` is a stopped run's dirty
+tree, committed by the conductor and kept on the arm alone rather than lost with
+the worktree (`#468`).
+
+`FindingAccepted`, `FindingProposed` and `FindingDeclined` are the minors a
+passing gate raised, and what a person then did with each one. `finding_backlog`
+is the projection that folds them (`#137`).
+
+`PassRouted` is where `proposed` sent a pass and why (`#271`). It carries
+**`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a
+judge may choose `implement` and the pass still go to `waiting` because `rounds`
+is spent, and *the decision sent this to a person* and *the decision wanted
+another round and there was none* are the two sentences a person reads on the
+card. Written by the pass and not by whatever routed, because the budget is the
+workflow's ([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §3,
+[0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §7).
+**It was never named `Gate…`** — the allowlist below could only shrink — so for
+three days the log carried two vocabularies, which is what a log with two eras
+looks like; `#247` ended that with the reset 0061 §7 spends.
+
+`GitHubAppCreated` is the team's own App, minted from a manifest (`#169`). **Two
+fields, and the other four values that arrived are the reason**: the private key,
+the webhook secret and an OAuth client secret Lingtai has no flow for. The log is
+permanent and `projection rebuild` replays it, so what is recorded is the **id
+and the slug** — the key goes to a `0600` file, the webhook secret to the env
+file, and the OAuth pair is dropped where the conversion is read
+(`packages/github/src/manifest.ts`).
+
+`TriageStarted` and `WaitTriaged` are triage's advice, or its failure, on the
+ticket's stream, keyed by the wait's `waitId`
+([0118](decisions/0118-a-hold-explains-itself.md) §3). `TriageStarted` is
+appended before the agent is dispatched; `WaitTriaged` finishes the attempt it
+names, with `result` a `TriageResult` (`TriageFailed` \| `TriageAdvised`), so
+advice and failure can never be written on the same row. Both carry `by`:
+`Agent` (`runtime`, `model` — no `costUsd` or `usage` field on either event; an
+agent's cost is a `RunSpent` instead, 0110 §10) or `Mechanical`, where Lingtai
+answered without an agent and there is nothing to record (`#414`).
 
 Every type has a Zod payload schema and an entry in `SCHEMA_VER`. A payload
 change means bumping that type's version and adding an upcaster in the same
 commit — old events are never rewritten.
 
-A **retired** type is one the log holds and nothing appends again. The refusal is
+A **retired** type is one the log holds and nothing appends again: it is named in
+`RETIRED` (`packages/domain/src/events.ts:2244`), and the manifest marks each one
+`"retired": true`. The outbox pair was retired with the outbox itself
+([0022](decisions-archive/0022-the-seams.md)). The refusal is
 on the write side because the read side has no honest way to decline a row:
 retiring is two things, and only the second can be enforced — stop writing them,
 and keep reading them for ever.

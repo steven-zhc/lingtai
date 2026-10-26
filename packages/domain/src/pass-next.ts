@@ -51,6 +51,12 @@ export const FixRound = z.object({
   _tag: z.literal('FixRound'),
   to: Step.extract(['design', 'implement']),
   round: z.number().int(),
+  /**
+   * Set on a merge conflict's round (#653): the count of conflict rounds this
+   * makes, drawn from its own budget. `round` then stays what `rounds` already
+   * was, so nothing that reads `round` as the review's counter is reset by it.
+   */
+  conflict: z.number().int().optional(),
 })
 export type FixRound = z.infer<typeof FixRound>
 
@@ -95,10 +101,10 @@ export type PassNext = z.infer<typeof PassNext>
 
 /**
  * Rounds spent this pass, restarts spent on the work item (0120 §4), and the
- * base merges the system made this pass (#593) — absent is none. Folded from
+ * base merges the system made this pass (#593), and the conflict rounds (#653) — absent is none. Folded from
  * events, never parsed.
  */
-export type Spent = { rounds: number; restarts: number; baseMerges?: number }
+export type Spent = { rounds: number; restarts: number; baseMerges?: number; conflictRounds?: number }
 
 type NextOfResult = Extract<PassNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
 
@@ -395,14 +401,17 @@ function lastCommitEvidence(outcome: StepOutcome): string | null {
 
 /**
  * What a `PassNext` spends, applied without a second judgement (0120 §4):
- * `FixRound` sets this pass's rounds, a `Restart` sets the item's restarts
+ * `FixRound` sets this pass's rounds (a conflict round sets `conflictRounds`
+ * and leaves `rounds` alone, #653), a `Restart` sets the item's restarts
  * and resets rounds to 0, and everything else — including
  * `Requeued{NeverStarted}` — leaves `spent` unchanged.
  */
 export function spentAfter(spent: Spent, next: PassNext): Spent {
   switch (next._tag) {
     case 'FixRound':
-      return { ...spent, rounds: next.round }
+      return next.conflict === undefined
+        ? { ...spent, rounds: next.round }
+        : { ...spent, conflictRounds: next.conflict }
     case 'MergeBase':
       return { ...spent, baseMerges: next.merge }
     case 'Requeued':

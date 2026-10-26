@@ -84,3 +84,4 @@ own words · **related**, links to the pages a reader would follow next.
 - [reference.md](../reference.md) — the glossary: event types, stream prefixes,
   `runtime.limits`.
 - [tamper-watch.md](../tamper-watch.md) — the paths `watch:` is pointed at.
+- [events.json](../events.json) — the events each step writes, and where the code appends them.

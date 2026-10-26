@@ -19,11 +19,12 @@
  * **Every row goes to exactly one of three arms, and only one of them is
  * money.** `costUsd !== null` is *reported*, counted in cents once and never
  * recomputed from a float a second time (`ledger`'s own rule, carried here).
- * Otherwise a rate card, when `#208` builds one, may *estimate* it — shown
+ * Otherwise the rate card (`@lingtai/domain/rate-card`) may *estimate* it from the row's usage — shown
  * beside the total and never folded into it (0110 §7). Anything left over is
  * *unknown*, and **no path through this file prints `$0.00` for a bill that has
  * an unknown run in it.** A total is a floor (0110 §2) and every reader says so.
  */
+import { priceRow } from '@lingtai/domain/rate-card'
 import { createProjectionRunner, readSpend, spendProjection, type SpendRow } from '@lingtai/projector'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
@@ -37,7 +38,7 @@ export interface Bill {
   reportedCents: number
   /** How many rows reported a figure. */
   reportedRuns: number
-  /** Dollars a rate card priced — `#208`'s, once it exists. Never summed into `reportedCents`. */
+  /** Dollars the rate card priced from a row's usage. Never summed into `reportedCents`. */
   estimates: number[]
   /** Rows with no reported figure and no estimate. Never shown as `$0.00`. */
   unknown: number
@@ -117,14 +118,10 @@ export function withNoSpendFallback(
 }
 
 /**
- * A price for a row with no reported figure, or null — `#208` has not built
- * one. A parameter rather than a reader of its own so the estimate arm can be
- * exercised by a test without a rate card existing.
+ * A price for a row with no reported figure, or null — unknown. A parameter so
+ * a test can hand the estimate arm its own card; the default is the shipped one.
  */
 export type RateCard = (row: SpendRow) => number | null
-
-/** No rate card exists yet (`#208`). Every row with no reported figure is unknown. */
-export const noRateCard: RateCard = () => null
 
 /** `Action` at round 0 is the work; at round 1 or above it is answering a refusal (0039 §3). */
 function purposeOf(row: SpendRow): Purpose {
@@ -136,7 +133,7 @@ function purposeOf(row: SpendRow): Purpose {
  * Every row, sorted into its purpose and then into reported, estimated or
  * unknown — the one fold every reader in this directory goes through.
  */
-export function billOf(rows: readonly SpendRow[], price: RateCard = noRateCard): Record<Purpose, Bill> {
+export function billOf(rows: readonly SpendRow[], price: RateCard = (row) => priceRow(row)): Record<Purpose, Bill> {
   const bills = emptyBills()
   for (const row of rows) {
     const bill = bills[purposeOf(row)]
@@ -185,7 +182,7 @@ export function billText(bill: Bill): string {
     return '—'
   }
   const est = bill.estimates.reduce((a, b) => a + b, 0)
-  if (est > 0) parts.push(`~$${est.toFixed(2)} est.`)
+  if (bill.estimates.length > 0) parts.push(`~$${est.toFixed(2)} est.`)
   return parts.join(' ')
 }
 

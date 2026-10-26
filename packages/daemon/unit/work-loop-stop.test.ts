@@ -50,4 +50,48 @@ describe('the work loop drain', () => {
     expect(drained).toBe(true)
     expect(loop.busy).toBe(false)
   })
+
+  it('looks again when a pass a look started settles, since nothing else would wake it', async () => {
+    const releases: ((worked: boolean) => void)[] = []
+    const reasons: string[] = []
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      eventLog: log,
+      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      pass: async (reason, started) => {
+        reasons.push(reason)
+        if (reasons.length === 1) started?.(new Promise<boolean>((r) => releases.push(r)))
+      },
+    })
+
+    await loop.start()
+    expect(reasons).toEqual(['startup'])
+
+    releases[0]!(true)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reasons).toEqual(['startup', 'completion'])
+
+    await loop.stop()
+  })
+
+  it('does not look again for a pass that declined before doing any work, which would only find the same refusal', async () => {
+    const releases: ((worked: boolean) => void)[] = []
+    const reasons: string[] = []
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      eventLog: log,
+      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      pass: async (reason, started) => {
+        reasons.push(reason)
+        started?.(new Promise<boolean>((r) => releases.push(r)))
+      },
+    })
+
+    await loop.start()
+    releases[0]!(false)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reasons).toEqual(['startup'])
+
+    await loop.stop()
+  })
 })

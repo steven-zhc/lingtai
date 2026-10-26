@@ -15,7 +15,9 @@ import {
   passedOver,
   projectFilter,
   runnableNow,
+  readFixFiles,
   selectRunnable,
+  waitsFor,
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
@@ -27,6 +29,7 @@ import { eventStore } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
+import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 
 /**
@@ -136,6 +139,8 @@ export function armLine(row: { restarts?: number }, restartsOf: number | null): 
 export interface StatusReading {
   clientFor?: ClientFor
   recipeFor?: RecipeFor
+  /** Today's spend against the ceiling, in the one sentence. */
+  spendLine?: () => Promise<string>
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
@@ -268,6 +273,8 @@ export interface StatusReport {
   projects: ProjectStatus[]
   /** The one-line answer when there is nothing to report on. */
   message: string | null
+  /** Today's spend across every project, and how much of it is unknown (#637). */
+  spend?: string
 }
 
 /** `verifying` folds into `running`: from an operator's seat they are the same fact. */
@@ -356,6 +363,21 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
     // **The arm comes from the row, because the offer cannot carry it** (#100):
     // a restarted ticket is queued, so it is listed from here and nowhere else.
     const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
+    // **Computed, never appended** (0122 §2): what is in flight is the `task_view` rows
+    // running, and the files are each ticket's own `Fix` row. A queued ticket that would
+    // be skipped for one of them says so in the `held` cell, in `waitsFor`'s words —
+    // the sentence the daemon's look logs, from the same function.
+    const flying = tasks.filter((t) => t.state === 'running' || t.state === 'verifying')
+    const waits = new Map<string, string>()
+    if (filter.ok && flying.length > 0 && runnable.length > 0) {
+      const inFlight = await Promise.all(
+        flying.map(async (t) => ({ issue: t.issue, files: await readFixFiles(filter.tickets, Number(t.issue)) })),
+      )
+      for (const r of runnable) {
+        const why = waitsFor(await readFixFiles(filter.tickets, Number(r.issue)), inFlight)
+        if (why !== null) waits.set(r.taskId, why)
+      }
+    }
     const now = Date.now()
     const offeredKinds = kinds.length > 0 ? kinds : ['bug']
     const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
@@ -395,7 +417,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         state: t.state,
         restarts,
         arm: armLine({ restarts }, restartsOf),
-        held: until ? backingOff(until, now) : null,
+        held: until ? backingOff(until, now) : (waits.get(t.taskId) ?? null),
         // Said only when the source actually answered: with no answer every row looks unoffered.
         // Against the offer and not `runnable`, which the retry window has already thinned.
         unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
@@ -460,7 +482,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       ),
     })
   }
-  return { projects: out, message: null }
+  return { projects: out, message: null, spend: await (reading.spendLine ?? daySpendLine)() }
 }
 
 /** The state column: the wait's words, the clock, the absence — and the arm, muted. */
@@ -487,6 +509,7 @@ export function renderStatus(
 ): string[] {
   if (report.message !== null) return [report.message]
   const blocks: string[] = []
+  if (report.spend !== undefined) blocks.push(section('Spend', [report.spend]))
   for (const p of report.projects) {
     const lines: string[] = [heading(p.project), '']
     lines.push(
@@ -561,6 +584,7 @@ const rowJson = (r: StatusRow): Record<string, unknown> => ({
 /** The body `--json` wraps in `{ version, command }` (0121 §5). */
 export function statusJson(report: StatusReport): Record<string, unknown> {
   return {
+    ...(report.spend === undefined ? {} : { spend: report.spend }),
     projects: report.projects.map((p) => {
       const byState: Record<string, unknown[]> = {}
       for (const t of p.known)

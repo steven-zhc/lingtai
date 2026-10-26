@@ -11,6 +11,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { Action, StepOutcome } from '../src/action.ts'
 import { ImpossibleOutcomeError, nextOf, PassNext, RequeueCause, spentAfter, type Spent } from '../src/pass-next.ts'
 import { fromOf, type Proposal } from '../src/proposal.ts'
+import { CeilingReached } from '../src/route.ts'
 import { Finding, RefusalReason, Step } from '../src/vocabulary.ts'
 import type { RunRef } from '../src/wait.ts'
 
@@ -695,6 +696,20 @@ describe('spentAfter', () => {
   it('FixRound: sets rounds, leaves restarts', () => {
     const next = PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 5 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 5, restarts: 2 })
+  })
+
+  it('FixRound with conflict: counts the conflict round, leaving rounds alone (#653)', () => {
+    const next = PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 1, conflict: 1 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, conflictRounds: 1 })
+  })
+
+  it('parses a FixRound written before conflict existed, and a CeilingReached of rounds', () => {
+    expect(PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 2 })).toEqual({
+      _tag: 'FixRound',
+      to: 'implement',
+      round: 2,
+    })
+    expect(CeilingReached.parse({ _tag: 'CeilingReached', ceiling: 'rounds' }).ceiling).toBe('rounds')
   })
 
   it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {

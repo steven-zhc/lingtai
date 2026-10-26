@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 
-import { currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { createSlots, currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
 import {
   clientsForProjects,
   createStatusTable,
@@ -37,6 +37,7 @@ import type { Triage } from '@lingtai/recipe'
 
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorPass } from './conduct.ts'
+import { pausedSentence } from './day-ceiling.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
@@ -497,6 +498,9 @@ export async function daemonCommand(
     })
     for (const line of declared.describe()) console.log(line)
 
+    // The passes in flight, held across looks (0122 §1): a look that starts
+    // several returns, and the next look must still know they are running.
+    const slots = createSlots()
     loop = createWorkLoop({
       log: (line) => console.log(line),
       subscribers: () => declared.subscribers(),
@@ -511,7 +515,7 @@ export async function daemonCommand(
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
-      paused: async () => (await readControl(undefined, since)).paused,
+      paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
@@ -543,7 +547,7 @@ export async function daemonCommand(
             )
           : void drain(why, asked?.timeoutMs ?? null),
 
-      pass: async (reason) => {
+      pass: async (reason, started) => {
         await declared.retry()
         const recipes = new Map<string, Triage | null>()
         const outcome = await conductorPass({
@@ -555,16 +559,9 @@ export async function daemonCommand(
           // the same scope as the loop's own (#159): a run that stands the
           // conductor down must stop the next claim in this pass, not the next
           // pass (#210).
-          paused: async () => {
-            try {
-              const c = await readControl(undefined, since)
-              return c.paused ? `paused by ${c.by} — ${c.reason}` : null
-            } catch (err) {
-              // Not "not paused": a pause that could not be read is not consent.
-              return `could not read whether the conductor is paused: ${(err as Error).message}`
-            }
-          },
+          paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
           log: (line) => console.log(line),
+          ...(started ? { slots: { set: slots, started } } : {}),
           onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
         })
         for (const [project, triage] of recipes) await scanTriage(project, triage)

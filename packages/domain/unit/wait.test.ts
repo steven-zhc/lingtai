@@ -14,6 +14,7 @@ import {
   continuationOf,
   grantCriterion,
   recommendedResolution,
+  standingFor,
   triageStatus,
   waivedActionsAt,
   TriageResult as TriageResultSchema,
@@ -1140,5 +1141,88 @@ describe('waivedActionsAt', () => {
       { waitId: 'wait-2' as WaitId, reason, resolution: { _tag: 'Approve', onSha: 'sha-2' } as Resolution },
     ]
     expect(waivedActionsAt(waits, [], 'pass-1', 'merge')).toEqual([{ name: 'human:land', waitId: 'wait-1' }])
+  })
+})
+
+describe('AgentCrashed{standing} (#654)', () => {
+  const standingReason = WaitReasonSchema.parse({
+    _tag: 'ProposedEscalated',
+    run,
+    proposal: {
+      _tag: 'ReviewFindings',
+      findings: [{ file: 'src/a.ts', line: 1, claim: 'wrong', failureScenario: 'empty input', severity: 'major' }],
+    },
+    because: { _tag: 'NotAsked' },
+  })
+  if (standingReason._tag === 'AgentCrashed') throw new Error('unreachable')
+  const crash = (standing?: unknown): WaitReason =>
+    WaitReasonSchema.parse({
+      _tag: 'AgentCrashed',
+      run,
+      step: 'implement',
+      cause: 'crash',
+      detail: 'spend limit',
+      ...(standing === undefined ? {} : { standing }),
+    })
+  const standing = { waitId: 'wait-1', reason: standingReason }
+
+  it('offers the standing wait’s resolutions, with Requeue and Close once', () => {
+    expect(allowedResolutions(crash(standing))).toEqual(allowedResolutions(standingReason))
+    expect(allowedResolutions(crash(standing))).toContain('Approve')
+    expect(allowedResolutions(crash(standing))).toContain('GrantFixRound')
+  })
+
+  it('continues and waives exactly what the standing wait does', () => {
+    expect(continuationOf(crash(standing), [])).toEqual(continuationOf(standingReason, []))
+    expect(continuationOf(crash(standing), [])).not.toBeNull()
+  })
+
+  it('prefills nothing, and recommends the standing wait’s advice', () => {
+    expect(recommendedResolution(crash(standing), { _tag: 'NotNeeded' })).toBeNull()
+    expect(grantCriterion(crash(standing))).toEqual(grantCriterion(standingReason))
+  })
+
+  it('without standing, today’s row', () => {
+    expect(allowedResolutions(crash())).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(continuationOf(crash(), [])).toBeNull()
+  })
+
+  it('a standing reason that is itself a crash is refused', () => {
+    expect(() => crash({ waitId: 'wait-1', reason: crash(standing) })).toThrow()
+  })
+
+  describe('standingFor', () => {
+    const resumed = { waitId: 'wait-1' as WaitId, reason: standingReason }
+    const base = {
+      reason: crash(),
+      granted: true,
+      onSha: 'sha-1',
+      resumed,
+      head: 'sha-1',
+      wip: null,
+      unpushed: false,
+    }
+    it('head unmoved: the resumed wait stands', () => {
+      expect(standingFor(base)).toEqual({ waitId: 'wait-1', reason: standingReason })
+    })
+    it('one new commit: nothing stands', () => {
+      expect(standingFor({ ...base, head: 'sha-2' })).toBeNull()
+    })
+    it('kept uncommitted work: nothing stands', () => {
+      expect(standingFor({ ...base, wip: { sha: 'w' } })).toBeNull()
+    })
+    it('unpushed: nothing stands', () => {
+      expect(standingFor({ ...base, unpushed: true })).toBeNull()
+    })
+    it('not a granted round: nothing stands', () => {
+      expect(standingFor({ ...base, granted: false })).toBeNull()
+    })
+    it('not a crash: nothing stands', () => {
+      expect(standingFor({ ...base, reason: standingReason })).toBeNull()
+    })
+    it('a resumed standing crash hands its own standing on', () => {
+      const again = { waitId: 'wait-2' as WaitId, reason: crash(standing) }
+      expect(standingFor({ ...base, resumed: again })).toEqual(standing)
+    })
   })
 })

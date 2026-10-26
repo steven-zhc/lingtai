@@ -140,6 +140,10 @@ describe('billText renders the one table every reader shows', () => {
     expect(billText(emptyBill())).toBe('—')
   })
 
+  it('says a zero estimate rather than nothing for a priced row', () => {
+    expect(billText({ ...emptyBill(), estimates: [0] })).toBe('~$0.00 est.')
+  })
+
   it('says the dollar figure for a bill with only reported rows', () => {
     expect(billText(billOf([row({ costUsd: 3.1 })]).Work)).toBe('$3.10')
   })

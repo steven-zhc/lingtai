@@ -7,6 +7,11 @@
  * itself, and an operator's pause (#45) can take effect between items instead
  * of only after a whole queue has been worked.
  *
+ * That is the awaited mode, and the default. Where a daily ceiling is set and
+ * `runtime.concurrency` asks for more (0122 §1), a pass is detached instead: it
+ * fills the free slots, hands each started pass to `slots.started` and returns
+ * while they are still running, so awaiting it is no barrier on the items.
+ *
  * This lives in the CLI and not in `@lingtai/daemon` on purpose. The daemon
  * hosts a loop and knows nothing about GitHub clients, runtimes or prompts;
  * assembling those is what this application already does for `lingtai run`, and
@@ -21,8 +26,10 @@ import {
   ownerlessClient,
   PortsLive,
   currentRecipe,
+  declinedBeforeWork,
   loadProjects,
   passClientOf,
+  readFixFiles,
   runOnce,
   runQueue,
   runnableNow,
@@ -31,7 +38,9 @@ import {
   type PassClient,
   type RunOnceResult,
   type ScheduleResult,
+  type Slots,
   type Tickets,
+  waitsFor,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
 import {
@@ -43,11 +52,11 @@ import {
   reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
-import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
+import { githubApp, hasGitHubApp, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
-import { baseOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -61,6 +70,8 @@ export interface ConductOptions {
   promptPath?: string
   /** How many items one pass may take. One, so completion drives the loop. */
   max?: number
+  /** The daemon's in-flight set and where a started pass is handed (0122); absent, every pass is awaited. */
+  slots?: Pick<PassSlots, 'set' | 'started'>
   /**
    * The commit this process was loaded from, read once at its start and never
    * per pass — the checkout is exactly what moves under loaded modules. Carried
@@ -117,6 +128,28 @@ export function liveConductWorld(): ConductWorld {
   return { createGitHubClient, currentRecipe, ticketsFor, selectRunnable, runOnce, runQueue }
 }
 
+/**
+ * What a look needs to keep several passes of a project in flight (0122): the
+ * installation's in-flight set, and where a started pass is handed so a drain
+ * waits for it. `ceilingSet` is whether a daily ceiling is configured — while
+ * none is, the installation runs one pass in all and a look awaits its pass.
+ */
+export interface PassSlots {
+  set: Slots
+  started: (pass: Promise<boolean | void>) => void
+  ceilingSet: boolean
+  /**
+   * Whether any project of this pass asks for more than one slot — worked out before
+   * the walk, so whether a look awaits its pass never depends on the order the
+   * projects are visited in.
+   */
+  anyMany?: boolean
+}
+
+/** Continuations a detached look launched and the claim declined, by project, issue and run, and when. */
+const declinedContinuations = new Map<string, number>()
+const DECLINED_BACKOFF_MS = 5 * 60_000
+
 /** What `conductWork` needs beside `ConductWorld` — everything a pass already read once. */
 export interface ConductWorkOptions {
   hookBinary: string
@@ -127,6 +160,8 @@ export interface ConductWorkOptions {
   max?: number
   merge?: boolean
   paused?: () => Promise<string | null>
+  /** Absent, every pass is awaited, as it always was. */
+  slots?: PassSlots
   log: (line: string) => void
   onRecipe?: (project: string, recipe: Recipe) => void
   /**
@@ -268,11 +303,97 @@ export function conductWork(
     // and only a `runOnce` that actually claimed something ends the pass.
     // One that declined at claim is logged and passed over, same as any other
     // `notClaimed`, and the walk continues to the next row.
+    //
+    // **Detached** (0122 §1) only where a ceiling is configured and this project
+    // asks for more than one slot, or another project already has a pass in
+    // flight: every other look awaits its pass, which is today's behaviour.
+    const wanted = concurrencyOf(resolved.recipe)
+    const slots = options.slots
+    // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
+    const limit = slots && !slots.ceilingSet ? 1 : wanted
+    if (slots && wanted > 1 && !slots.ceilingSet) {
+      options.log(
+        `${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one pass runs in all`,
+      )
+    }
+    // Passes already in flight, in any project, keep the look detached even when the
+    // limit has since fallen to one or the ceiling has been removed: awaiting would
+    // ignore them, and the slot count and the same-file rule are what keep a lowered
+    // limit honest until they have drained.
+    const detached =
+      slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
+    // No ceiling means one pass in all: any pass in flight, in any project, fills the installation.
+    const isFull = (): boolean =>
+      detached && (slots.ceilingSet ? slots.set.of(name).length >= limit : slots.set.size >= 1)
+
+    /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
+    const report = (result: RunOnceResult): boolean => {
+      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+      else if (result.ok === 'held') options.log(`held at ${result.step}`)
+      else options.log(`stopped at ${result.stage}: ${result.detail}`)
+      return !declinedBeforeWork(result)
+    }
+    /**
+     * Starts one pass into a slot and does not wait for it — unless its `Fix` row
+     * names a file a pass in flight names, in which case nothing starts and it says
+     * so (0122 §2). The same rule `runQueue` applies, for the rows that jump it.
+     */
+    const launch = async (issue: number, continuing?: { runId: string }): Promise<boolean> => {
+      // Asked before every start, as the awaited walk asks it before every pass: a pause
+      // recorded while an earlier pass of this look was starting must stop this one.
+      const paused = options.paused ? await options.paused() : null
+      if (paused !== null) {
+        options.log(`${name}: #${issue} not started — ${paused}`)
+        return false
+      }
+      const files = await readFixFiles(common.client, issue)
+      const why = waitsFor(files, slots!.set.of(name))
+      if (why !== null) {
+        options.log(`${name}: #${issue} ${why}`)
+        return false
+      }
+      const leave = slots!.set.enter({ project: name, issue: String(issue), files })
+      options.outcome.ran += 1
+      const pass = Effect.runPromise(
+        world.runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) }).pipe(Effect.provide(PortsLive)),
+      ).then(
+        (result) => {
+          const worked = report(result)
+          // A continuation declined at claim stays `approved` on the log, so the next look
+          // would pick it again and starve the queue. Remember it for a while, and wake
+          // once: whatever it kept out of its slot can go now.
+          if (!worked && continuing) {
+            declinedContinuations.set(`${name}#${issue}:${continuing.runId}`, Date.now())
+            return true
+          }
+          return worked
+        },
+        (err: unknown) => {
+          options.log(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
+          return false
+        },
+      )
+      slots!.started(pass.finally(leave))
+      return true
+    }
+
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
+      if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
+      if (
+        detached &&
+        Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
+      )
+        continue
       const ticket = reduceTicket(await store.read(ticketStream(name, Number(c.issue))))
       if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
+      if (detached) {
+        // Not a reason to stop looking: one that is declined at claim, or that has to
+        // wait for a file, must leave the free slots to the rest of the project.
+        await launch(Number(c.issue), { runId: c.runId })
+        continue
+      }
       const result: RunOnceResult = await Effect.runPromise(
         world
           .runOnce({
@@ -329,29 +450,39 @@ export function conductWork(
           kinds: kindsOf(resolved.recipe),
           backoffMs: 0,
         })
-      ).map((t) => [t.issue, t] as const),
+      )
+        // The projection lags a claim: what is in flight here is taken already.
+        .filter((t) => !(detached && slots.set.of(name).some((f) => f.issue === t.issue)))
+        .map((t) => [t.issue, t] as const),
     )
-    const asked = options.control.requested.find((r) => r.project === name && queued.has(r.issue))
+    const asked = isFull()
+      ? undefined
+      : options.control.requested.find((r) => r.project === name && queued.has(r.issue))
 
     if (asked) {
       // Non-null because `queued.has` is what matched it. The shape is
       // `lingtai status`'s — `#123  bug  the title`.
       const task = queued.get(asked.issue)!
       options.log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
-      const result: RunOnceResult = await Effect.runPromise(
-        world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
-      )
-      options.outcome.ran += 1
-      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-      else if (result.ok === 'held') options.log(`held at ${result.step}`)
-      else options.log(`stopped at ${result.stage}: ${result.detail}`)
-    } else {
+      if (detached) await launch(Number(asked.issue))
+      else {
+        const result: RunOnceResult = await Effect.runPromise(
+          world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
+        )
+        options.outcome.ran += 1
+        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        else if (result.ok === 'held') options.log(`held at ${result.step}`)
+        else options.log(`stopped at ${result.stage}: ${result.detail}`)
+      }
+    }
+    // Detached, a request and a continuation take a slot and the queue fills the rest.
+    if ((!asked || detached) && !isFull()) {
       const ran: ScheduleResult = await Effect.runPromise(
         world
           .runQueue({
             ...common,
             recipe: resolved.recipe,
-            max: options.max ?? 1,
+            ...(detached ? { slots: { set: slots.set, limit, started: slots.started } } : { max: options.max ?? 1 }),
             // One ticket today, so the loop's own check comes first; handed in
             // anyway so a `max` above one cannot walk into a wall the ticket
             // before it just met.
@@ -359,7 +490,7 @@ export function conductWork(
           })
           .pipe(Effect.provide(PortsLive)),
       )
-      options.outcome.ran += ran.ran.length
+      options.outcome.ran += ran.started ?? ran.ran.length
     }
     return 'looked'
   }
@@ -423,6 +554,11 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   const registered = await loadProjects()
   const projects = projectsForPass(registered, hasGitHubApp(), outcome)
 
+  // Whether a look awaits its pass must not depend on which project is visited
+  // first, so with a ceiling and several projects each recipe is asked once up front.
+  const ceilingSet = machineDayCeiling() !== undefined
+  const anyMany = options.slots && ceilingSet && projects.length > 1 ? await anyWantsMany(projects) : false
+
   return conductProjects({
     projects,
     codeSha: options.codeSha ?? null,
@@ -437,10 +573,38 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       max: options.max,
       ...(options.merge === undefined ? {} : { merge: options.merge }),
       ...(options.paused ? { paused: options.paused } : {}),
+      ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
       log,
       ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
     }),
   })
+}
+
+/** Whether any project's recipe asks for more than one slot. A recipe that cannot be read asks for one. */
+async function anyWantsMany(
+  projects: readonly ProjectState[],
+  world: ConductWorld = liveConductWorld(),
+): Promise<boolean> {
+  for (const project of projects) {
+    if (!project.project) continue
+    try {
+      if (project.owner === null) {
+        const { recipe } = await world.currentRecipe(project, undefined, project.base ?? undefined)
+        if (concurrencyOf(recipe) > 1) return true
+      } else {
+        const client = await world.createGitHubClient({
+          auth: githubApp(),
+          owner: project.owner,
+          repo: project.project,
+        })
+        const { recipe } = await world.currentRecipe(project, client, project.base ?? (await client.defaultBranch()))
+        if (concurrencyOf(recipe) > 1) return true
+      }
+    } catch {
+      // The walk meets the same refusal and records it; here it only means one slot.
+    }
+  }
+  return false
 }
 
 /** How far a project's work got before it refused: the branch, once known. */
