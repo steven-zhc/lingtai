@@ -27,7 +27,7 @@ export interface ApproveCommandOptions {
   by?: string
 }
 
-/** `progress` is where `withProjector`'s warnings and `approveRun`'s own line go: stdout, or stderr under `--json`. */
+/** `progress` is where `withProjector`'s warnings go: stdout, or stderr under `--json`. */
 export async function approveVerdict(
   options: ApproveCommandOptions,
   progress: (line: string) => void,
@@ -61,6 +61,9 @@ export async function approveVerdict(
   // a card off the lane the board exists for. So it follows the log while it
   // works, like every other host that appends — see `withProjector`.
   return withProjector(progress, async (): Promise<Answered> => {
+    // `approveRun`'s own line carries the sha and the actor; it is held back and
+    // becomes the verdict's detail, so a success prints one verdict and not two.
+    const said: string[] = []
     const result = await approveRun({
       project: options.project,
       issue: options.issue,
@@ -74,7 +77,7 @@ export async function approveVerdict(
       // "the wait it resolves" are the same read — there is no card, read
       // before the lock, for a stale one to disagree with (#508).
       waitId: 'open',
-      log: progress,
+      log: (line) => said.push(line),
     })
 
     if (!result.ok) {
@@ -88,7 +91,7 @@ export async function approveVerdict(
         ticketId: result.ticketId,
         detail:
           unscheduled === undefined
-            ? `continues at ${result.continuesAt}`
+            ? (said.at(-1)?.replace(/^approved /, '') ?? `continues at ${result.continuesAt}`)
             : `continues at ${result.continuesAt}, but the continuation was not scheduled (${unscheduled}); run it again to schedule it`,
         ...(unscheduled === undefined ? {} : { next: `lingtai approve ${options.project} --issue ${options.issue}` }),
         extra: { continuesAt: result.continuesAt, ...(unscheduled === undefined ? {} : { unscheduled }) },

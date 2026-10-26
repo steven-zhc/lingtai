@@ -31,6 +31,7 @@ import { resolveWaitHolding } from './resolve-wait.ts'
 export interface AskOutcome {
   ok: boolean
   ticketId: string
+  reason?: string
   detail: string
 }
 
@@ -54,7 +55,7 @@ export async function ask(options: {
   const ticketId = ticketStream(options.project, options.issue)
 
   if (!options.question.trim()) {
-    return { ok: false, ticketId, detail: 'a question needs a question' }
+    return { ok: false, ticketId, reason: 'blank', detail: 'a question needs a question' }
   }
 
   const item = reduceTicket(await store.read(ticketId))
@@ -64,6 +65,7 @@ export async function ask(options: {
     return {
       ok: false,
       ticketId,
+      reason: 'not-backlog',
       detail: `${ticketId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
     }
   }
@@ -83,7 +85,7 @@ export async function ask(options: {
     // A conductor claimed it between the read and the append. The claim won,
     // which is the right outcome: say so rather than retrying onto a run.
     if (err instanceof ConcurrencyError) {
-      return { ok: false, ticketId, detail: `${ticketId} changed while asking — read it again` }
+      return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while asking — read it again` }
     }
     throw err
   }
@@ -134,13 +136,14 @@ export async function answer(options: AnswerOptions): Promise<AskOutcome> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
   if (!options.answer.trim()) {
-    return { ok: false, ticketId, detail: 'an answer needs an answer' }
+    return { ok: false, ticketId, reason: 'blank', detail: 'an answer needs an answer' }
   }
   return deciding(
     ticketId,
     () => ({
       ok: false,
       ticketId,
+      reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
     () => answerHolding(options, store, ticketId),
@@ -157,7 +160,12 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
   const events = await store.read(ticketId)
   const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked') {
-    return { ok: false, ticketId, detail: `${ticketId} is ${item.lifecycle.status}, not asking anything` }
+    return {
+      ok: false,
+      ticketId,
+      reason: 'not-blocked',
+      detail: `${ticketId} is ${item.lifecycle.status}, not asking anything`,
+    }
   }
 
   // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
@@ -165,7 +173,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
   // today: a hold with no `run` field is `Question`'s alone.
   const wait = waitsOf(events).at(-1)
   if (wait === undefined) {
-    return { ok: false, ticketId, detail: `${ticketId} is not asking anything` }
+    return { ok: false, ticketId, reason: 'not-asking', detail: `${ticketId} is not asking anything` }
   }
   const reason = wait.reason
   if (!allowedResolutions(reason).includes('AnswerQuestion')) {
@@ -173,6 +181,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
     return {
       ok: false,
       ticketId,
+      reason: 'not-a-question',
       detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai requeue <project> --issue <n> --into-body <text> to answer its question`,
     }
   }
@@ -180,6 +189,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
     return {
       ok: false,
       ticketId,
+      reason: 'question-changed',
       detail: `${ticketId} is asking a different question now — "${reason.question}" — read it again`,
     }
   }
@@ -203,7 +213,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
     ticketId,
   )
   if (!resolved.ok) {
-    return { ok: false, ticketId, detail: resolved.detail }
+    return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
   }
 
   return { ok: true, ticketId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }

@@ -116,6 +116,7 @@ import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
 export interface CloseOutcome {
   ok: boolean
   ticketId: string
+  reason?: string
   detail: string
 }
 
@@ -123,13 +124,14 @@ export async function close(options: CloseOptions): Promise<CloseOutcome> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
   if (!options.reason.trim()) {
-    return { ok: false, ticketId, detail: 'a close needs a reason' }
+    return { ok: false, ticketId, reason: 'blank', detail: 'a close needs a reason' }
   }
   return deciding(
     ticketId,
     () => ({
       ok: false,
       ticketId,
+      reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was closed — reload and read it again.`,
     }),
     () => closeHolding(options, store, ticketId),
@@ -147,16 +149,21 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
   const item = reduceTicket(events)
 
   if (item.lifecycle.status === 'closed') {
-    return { ok: false, ticketId, detail: `${ticketId} is already closed` }
+    return { ok: false, ticketId, reason: 'already-closed', detail: `${ticketId} is already closed` }
   }
   if (item.lifecycle.status === 'landed') {
     // Not an error a person needs to work around: it is done, and saying so is
     // more useful than appending a second ending over the first.
-    return { ok: false, ticketId, detail: `${ticketId} landed — there is nothing to close` }
+    return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
   }
 
   if (options.ifVersion !== undefined && item.version !== options.ifVersion) {
-    return { ok: false, ticketId, detail: `${ticketId} changed since it was checked — read it again` }
+    return {
+      ok: false,
+      ticketId,
+      reason: 'changed',
+      detail: `${ticketId} changed since it was checked — read it again`,
+    }
   }
 
   // Before the close is recorded, so an unreadable recipe refuses rather than
@@ -171,6 +178,7 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
       return {
         ok: false,
         ticketId,
+        reason: 'recipe-unreadable',
         detail: `${(err as Error).message}. Nothing was closed.`,
       }
     }
@@ -200,6 +208,7 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
       return {
         ok: false,
         ticketId,
+        reason: 'wait-moved',
         detail:
           `this card showed no wait and ${ticketId} is now waiting on ${item.lifecycle.waitId} — ` +
           `nothing was closed. Reload and read it again.`,
@@ -218,7 +227,7 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
       ticketId,
     )
     if (!resolved.ok) {
-      return { ok: false, ticketId, detail: resolved.detail }
+      return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
     }
   } else {
     try {
@@ -227,7 +236,7 @@ export async function closeHolding(options: CloseOptions, store: EventStore, tic
       // Something moved between the read and the append — a pass claimed it, or
       // a gate answered. Say so rather than closing over a decision nobody saw.
       if (err instanceof ConcurrencyError) {
-        return { ok: false, ticketId, detail: `${ticketId} changed while closing — read it again` }
+        return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while closing — read it again` }
       }
       throw err
     }

@@ -171,6 +171,15 @@ describe('verdictJson', () => {
     expect('reason' in doc).toBe(false)
   })
 
+  it('an outcome that names a reason carries it on a refusal, and never on an acceptance', () => {
+    expect(
+      verdictJson(fromOutcome({ ok: false, ticketId: TICKET, reason: 'busy', detail: 'being decided' }).verdict),
+    ).toEqual({ outcome: 'refused', ticketId: TICKET, reason: 'busy', detail: 'being decided' })
+    expect('reason' in verdictJson(fromOutcome({ ok: true, ticketId: TICKET, reason: 'x', detail: 'd' }).verdict)).toBe(
+      false,
+    )
+  })
+
   it('requeue --into-body reports written', () => {
     expect(
       verdictJson(

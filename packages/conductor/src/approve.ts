@@ -326,7 +326,7 @@ export async function requeue(options: {
   /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
   waitId?: WaitId
   store?: EventStore
-}): Promise<{ ok: boolean; ticketId: string; detail: string }> {
+}): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
 
@@ -341,6 +341,7 @@ export async function requeue(options: {
     () => ({
       ok: false,
       ticketId,
+      reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
     () => requeueHolding(options, store, ticketId),
@@ -352,7 +353,7 @@ export async function requeueHolding(
   options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse'; waitId?: WaitId },
   store: EventStore,
   ticketId: string,
-): Promise<{ ok: boolean; ticketId: string; detail: string }> {
+): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
   const events = await store.read(ticketId)
   const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked') {
@@ -361,6 +362,7 @@ export async function requeueHolding(
     return {
       ok: false,
       ticketId,
+      reason: 'not-blocked',
       detail: `${ticketId} is ${item.lifecycle.status}, not blocked`,
     }
   }
@@ -380,6 +382,7 @@ export async function requeueHolding(
     return {
       ok: false,
       ticketId,
+      reason: 'asking-question',
       detail: `${ticketId} is asking a question before any run — answer it first`,
     }
   }
@@ -400,7 +403,7 @@ export async function requeueHolding(
     ticketId,
   )
   if (!resolved.ok) {
-    return { ok: false, ticketId, detail: resolved.detail }
+    return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
   }
 
   return {

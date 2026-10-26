@@ -78,9 +78,9 @@ export function refusal(code: number, reason: string, detail: string, rest: Part
   return { code, verdict: { outcome: 'refused', reason, detail, ...rest } }
 }
 
-/** An `{ ok, ticketId, detail }` outcome, which carries no reason of its own. */
+/** An `{ ok, ticketId, reason?, detail }` outcome; a refusal's `reason` is carried where the conductor named one. */
 export function fromOutcome(
-  outcome: { ok: boolean; ticketId: string; detail: string },
+  outcome: { ok: boolean; ticketId: string; reason?: string; detail: string },
   extra?: Record<string, unknown>,
 ): Answered {
   return {
@@ -88,6 +88,7 @@ export function fromOutcome(
     verdict: {
       outcome: outcome.ok ? 'accepted' : 'refused',
       ticketId: outcome.ticketId,
+      ...(outcome.ok || outcome.reason === undefined ? {} : { reason: outcome.reason }),
       detail: outcome.detail,
       ...(extra === undefined ? {} : { extra }),
     },
