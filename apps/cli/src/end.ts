@@ -34,6 +34,7 @@ import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 
+import { heading, symbol } from './output.ts'
 import { withProjector } from './projector.ts'
 
 export interface EndReplayOptions {
@@ -64,6 +65,20 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
   // Held for the appending, not applied after it. This command writes end
   // actions and the board reads a projection of them, so it follows the log
   // while it works — the same rule the daemon and `lingtai run` obey.
+  log(
+    heading(
+      [
+        'end replay',
+        options.project === undefined
+          ? ''
+          : options.issue === undefined
+            ? options.project
+            : `${options.project}#${options.issue}`,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    ),
+  )
   return withProjector(log, async () => {
     // One client per project — now a project's own ticket side too
     // (`projectClient`, #383), never GitHub's for a `db` project. An
@@ -75,7 +90,7 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
     for (const item of found) {
       const project = await loadProject(item.project)
       if (!project?.owner) {
-        log(`${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
+        log(`${symbol.fail()} ${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
         continue
       }
       try {
@@ -101,11 +116,13 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
         // outbox used to stand between them; there is nothing to wait for now.
         await tellGitHubAbout({ store: eventStore, github: client, ticketId: item.ticketId, appended: ended })
         replayed += 1
-        log(`${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${resolved.ref}`)
+        log(
+          `${symbol.pass()} ${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${resolved.ref}`,
+        )
       } catch (err) {
         // Named and carried on. One unreadable recipe must not strand the other
         // items, and the log is intact either way.
-        log(`${item.project}#${item.issue}: not replayed — ${(err as Error).message}`)
+        log(`${symbol.fail()} ${item.project}#${item.issue}: not replayed — ${(err as Error).message}`)
       }
     }
 
