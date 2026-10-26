@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./wait": "./src/wait.ts",
+    "./rate-card": "./src/rate-card.ts",
     "./test/events": "./test/events.ts",
     "./test/support": "./test/support.ts"
   },

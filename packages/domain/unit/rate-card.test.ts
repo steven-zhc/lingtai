@@ -24,7 +24,8 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { parseRateCard, priceTokens, rateFor, type RateRow } from '../test/rate-card.ts'
+import { priceRow, priceTokens, RATE_CARD, rateFor, type RateRow } from '../src/rate-card.ts'
+import { parseRateCard } from '../test/rate-card.ts'
 
 /** A synthetic `RateRow` with everything but the given overrides zeroed. */
 function syntheticRow(overrides: Partial<RateRow>): RateRow {
@@ -38,6 +39,12 @@ async function rows(): Promise<RateRow[]> {
 }
 
 describe('doc/rate-card.md', () => {
+  it('is what RATE_CARD compiles, row for row', async () => {
+    const parsed = await rows()
+    parsed.forEach((row, i) => expect(RATE_CARD[i], `row ${i}: ${row.from} ${row.model} ${row.mode}`).toEqual(row))
+    expect(RATE_CARD.length).toBe(parsed.length)
+  })
+
   it('parses every dated row, including the one this file appended', async () => {
     const parsed = await rows()
     expect(parsed.length).toBeGreaterThanOrEqual(6)
@@ -166,5 +173,38 @@ describe('doc/rate-card.md', () => {
       expect(text, file).not.toMatch(/\bpriceTokens\b/)
       expect(text, file).not.toMatch(/\brateFor\b/)
     }
+  })
+})
+
+describe('priceRow', () => {
+  const at = new Date('2026-10-20T12:00:00Z')
+  const card = [syntheticRow({ model: 'gpt-x', input: 1, output: 4, cacheRead: 0.5, cacheWrite: 2 })]
+
+  it('prices a row from the card handed in, reasoning at the output rate', () => {
+    const usage = [{ model: 'gpt-x', tokens: { fresh: 1_000_000, output: 500_000, reasoning: 500_000 } }]
+    expect(priceRow({ at, usage }, card)).toBeCloseTo(5)
+  })
+
+  it('is null, never 0, for what it cannot price', () => {
+    const tokens = { fresh: 10 }
+    expect(priceRow({ at, usage: [] }, card)).toBeNull()
+    expect(priceRow({ at, usage: [{ tokens }] }, card)).toBeNull()
+    expect(priceRow({ at, usage: [{ model: 'unknown', tokens }] }, card)).toBeNull()
+    expect(priceRow({ at, usage: [{ model: 'gpt-x', tokens: {} }] }, card)).toBeNull()
+    expect(priceRow({ at: new Date('2025-01-01'), usage: [{ model: 'gpt-x', tokens }] }, card)).toBeNull()
+  })
+
+  it('is unknown as a whole when one of two entries cannot be priced', () => {
+    const usage = [
+      { model: 'gpt-x', tokens: { fresh: 10 } },
+      { model: 'nope', tokens: { fresh: 10 } },
+    ]
+    expect(priceRow({ at, usage }, card)).toBeNull()
+  })
+
+  it('prices Claude rows from the shipped card, and names no Codex model', () => {
+    const usage = [{ model: 'claude-sonnet-5', tokens: { fresh: 1_000_000 } }]
+    expect(priceRow({ at, usage })).toBeCloseTo(2)
+    expect(priceRow({ at, usage: [{ model: 'gpt-5.6-sol', tokens: { fresh: 1 } }] })).toBeNull()
   })
 })

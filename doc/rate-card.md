@@ -2,8 +2,11 @@
 
 What a million tokens costs, per model, per mode, with the date the rate came
 into force. [0073](decisions-archive/0073-tokens-go-on-the-event-and-money-never-does.md)
-§5 decided this is a file a person edits rather than a page something scrapes or
-a table compiled into code, and this is that file.
+§5 decided this is a file a person edits rather than a page something scrapes,
+and this is that file. A compiled copy, `RATE_CARD` in
+`packages/domain/src/rate-card.ts`, is what code prices through, because the
+release binary carries no `doc/`; `packages/domain/unit/rate-card.test.ts` holds
+the copy equal to this file, so a row appended to one and not the other fails it.
 
 **Nothing computes money on the way in.** An event carries the tokens a runtime
 reported and, where the runtime reported it, the dollars it reported — never a

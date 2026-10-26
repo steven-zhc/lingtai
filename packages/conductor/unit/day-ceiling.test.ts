@@ -1,9 +1,10 @@
-import { CONTROL_STREAM, reduceControl } from '@lingtai/domain'
+import { CONTROL_STREAM, reduceControl, type Usage } from '@lingtai/domain'
 import { machineDayCeiling, machineFileFrom } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import {
+  ceilingReached,
   dayCeilingPause,
   daySpend,
   daySpendText,
@@ -13,8 +14,15 @@ import {
 } from '../src/day-ceiling.ts'
 
 const now = new Date(2026, 9, 26, 14, 0, 0)
-const today = (costUsd: number | null): DayRow => ({ at: new Date(2026, 9, 26, 9, 0, 0), costUsd })
-const yesterday = (costUsd: number | null): DayRow => ({ at: new Date(2026, 9, 25, 23, 59, 0), costUsd })
+const today = (costUsd: number | null, usage: Usage = []): DayRow => ({
+  at: new Date(2026, 9, 26, 9, 0, 0),
+  costUsd,
+  usage,
+})
+const yesterday = (costUsd: number | null): DayRow => ({ at: new Date(2026, 9, 25, 23, 59, 0), costUsd, usage: [] })
+/** A million fresh tokens at 1 dollar per million: exactly $1.00 on the injected card. */
+const codexUsage = (model = 'gpt-x'): Usage => [{ model, tokens: { fresh: 1_000_000 } }]
+const price = (row: DayRow) => (row.usage[0]?.model === 'gpt-x' ? 1 : null)
 
 const check = (rows: DayRow[], store: ReturnType<typeof createMemoryEventStore>, at = now, ceilingUsd = 50) =>
   dayCeilingPause({ ceilingUsd, rows: async () => rows, store, now: at })
@@ -22,14 +30,44 @@ const check = (rows: DayRow[], store: ReturnType<typeof createMemoryEventStore>,
 describe('daySpend', () => {
   it('excludes yesterday, counts null as unknown, and rounds per row', () => {
     const day = daySpend([yesterday(99), today(0.004), today(0.004), today(null)], now)
-    expect(day).toEqual({ reportedCents: 0, reportedRuns: 2, unknown: 1 })
+    expect(day).toEqual({ reportedCents: 0, reportedRuns: 2, estimatedCents: 0, estimatedRuns: 0, unknown: 1 })
+  })
+})
+
+describe('daySpend estimates', () => {
+  it('prices a null-cost row from usage, apart from the reported cents', () => {
+    const day = daySpend([today(3.1), today(null, codexUsage())], now, price)
+    expect(day).toMatchObject({ reportedCents: 310, estimatedCents: 100, estimatedRuns: 1, unknown: 0 })
+  })
+
+  it('leaves a row the card does not name unknown, adding nothing', () => {
+    const day = daySpend([today(null, codexUsage('mystery'))], now, price)
+    expect(day).toMatchObject({ reportedCents: 0, estimatedCents: 0, unknown: 1 })
+  })
+
+  it('never reprices a reported figure', () => {
+    const day = daySpend([today(0.5, codexUsage())], now, price)
+    expect(day).toMatchObject({ reportedCents: 50, estimatedCents: 0, estimatedRuns: 0 })
+  })
+
+  it('reaches the ceiling by reported plus estimated, and says the estimated part', async () => {
+    const day = daySpend([today(3.1), today(null, codexUsage())], now, price)
+    expect(ceilingReached(day, 4.1)).toBe(true)
+    expect(ceilingReached(day, 4.11)).toBe(false)
+    const text = daySpendText(day, 4.1)
+    expect(text).toContain('$3.10 + ~$1.00 est. + 0 unknown')
+  })
+
+  it('counts Claude estimates through the shipped card', () => {
+    const usage: Usage = [{ model: 'claude-sonnet-5', tokens: { fresh: 1_000_000 } }]
+    expect(daySpend([today(null, usage)], now)).toMatchObject({ estimatedCents: 200, unknown: 0 })
   })
 })
 
 describe('daySpendText', () => {
   it('never says $0.00 over unknown rows, and names the unknown count with a ceiling', () => {
     const text = daySpendText(daySpend([today(null)], now), 50)
-    expect(text).not.toContain('$0.00')
+    expect(text).not.toContain('today $0.00')
     expect(text).toContain('1 unknown')
     expect(daySpendText(daySpend([today(1)], now), 50)).toContain('+ 0 unknown')
   })
@@ -94,7 +132,7 @@ describe('dayCeilingPause', () => {
     expect(await check([today(60)], store, now, 100)).toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(2)
     const next = new Date(nextLocalMidnight(now).getTime() + 3_600_000)
-    const tomorrow: DayRow = { at: new Date(next.getTime() - 60_000), costUsd: 60 }
+    const tomorrow: DayRow = { at: new Date(next.getTime() - 60_000), costUsd: 60, usage: [] }
     expect(await check([tomorrow], store, next)).not.toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
   })

@@ -74,7 +74,10 @@ const reach: DoctorReach = {
   settings: async () => null,
   runtimes: () => [signedInRuntime],
   // No store is opened: today is empty and no ceiling is set.
-  spend: async () => ({ day: { reportedCents: 0, reportedRuns: 0, unknown: 0 }, ceilingUsd: undefined }),
+  spend: async () => ({
+    day: { reportedCents: 0, reportedRuns: 0, estimatedCents: 0, estimatedRuns: 0, unknown: 0 },
+    ceilingUsd: undefined,
+  }),
   // Never reached on this machine: `isSea()` is false under vitest, so this
   // stands in for the probe without spawning Node or writing a scratch SEA.
   sea: () => ({ can: true }),
