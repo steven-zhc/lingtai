@@ -42,7 +42,7 @@ say what code it is running and who started it.
    **beacon**: one overwritten row in `daemon_status`, written every
    `HEARTBEAT_MS` (5 s) and treated as stale after three missed beats. It carries
    `pid`, `host`, `startedAt`, `lastSeenAt`, `state` (`up`, `draining`,
-   `stopping`), `currentRunId`, and the commit and dirtiness the process started
+   `stopping`), the runs in flight (every one, since [0122](0122-several-passes-share-one-conductor.md); one `currentRunId` until then), and the commit and dirtiness the process started
    from. It is the system's only mutable operational state, and it is not history.
 
 3. **A control signal applies to the daemon running when it was appended.** Before
@@ -79,8 +79,9 @@ say what code it is running and who started it.
    - **A lock file is never deleted.** The lock lives on an inode, and the holder
      confirms that the inode at the path is still the one it locked.
    - The other keys are `decide:<ticketId>` (an approval's merge) and the board's
-     own. The merge lane takes no lock, because git rejecting a second push to a
-     ref is the guarantee.
+     own. The merge lane takes no file lock, because git rejecting a second push to
+     a ref is the guarantee. Inside this one conductor, landings onto one base
+     are taken one at a time ([0122](0122-several-passes-share-one-conductor.md) §3).
 
 5. **Holding the lock is the proof that every foreign claim is dead.** A claim has
    no expiry. A daemon that has just taken the lock knows no other conductor
@@ -103,7 +104,7 @@ say what code it is running and who started it.
 
 8. **Stopping is a command, and the boundary is the pass.** `lingtai shutdown
    [why]` appends `ConductorShutdownRequested` and returns. The daemon finishes
-   the pass in flight (the agent, every step, the merge lane) and takes nothing
+   every pass in flight ([0122](0122-several-passes-share-one-conductor.md) §4; the agent, every step, the merge lane) and takes nothing
    new. An idle daemon wakes on the request itself rather than waiting for the
    five-minute sweep.
    - **No default timeout.** A drain can last as long as the pass ceiling the

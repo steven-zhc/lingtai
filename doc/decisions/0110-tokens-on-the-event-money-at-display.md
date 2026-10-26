@@ -211,7 +211,9 @@ about something else are the three whose spend is not recorded.
 12. **Ceilings are the runtime's, and read nothing on the log.**
     `runtime.limits.usd` bounds one run and is enforced by the runtime
     (`--max-budget-usd`) on its own count, as `turns` and `wall` are. Lingtai
-    enforces no dollar ceiling of its own — per pass, per ticket or per day.
+    enforces no dollar ceiling per pass or per ticket. Its one ceiling of its own
+    is the daily one, which pauses taking new work and kills nothing
+    ([0122](0122-several-passes-share-one-conductor.md) §5).
 
 13. **No event but `RunSpent` carries spend.** The old fields — `turns`,
     `costUsd` and `usage` on `RunFinished`, `DiscussionAnswered` and
