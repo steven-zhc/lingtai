@@ -62,6 +62,9 @@ describe('oraSpinner', () => {
       process.listenerCount('SIGINT'),
     ]
     const writes: string[] = []
+    const realTty = [process.stdout.isTTY, process.stderr.isTTY]
+    process.stdout.isTTY = true
+    process.stderr.isTTY = true
     const stream = Object.assign(new Writable({ write: (c, _e, done) => (writes.push(String(c)), done()) }), {
       isTTY: true,
       columns: 80,
@@ -75,6 +78,8 @@ describe('oraSpinner', () => {
       spinner.message('still draining after 60s')
       spinner.clear()
     } finally {
+      process.stdout.isTTY = realTty[0] as boolean
+      process.stderr.isTTY = realTty[1] as boolean
       if (had === undefined) delete stdin.setRawMode
       else stdin.setRawMode = had
     }
@@ -85,5 +90,7 @@ describe('oraSpinner', () => {
       process.listenerCount('SIGINT'),
     ]).toEqual(before)
     expect(writes.join('')).toContain('still draining')
+    // The hide-cursor escape is what routes through restore-cursor and its SIGINT listener.
+    expect(writes.join('')).not.toContain('\u001B[?25l')
   })
 })

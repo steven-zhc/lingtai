@@ -35,10 +35,12 @@ export interface Spinner {
  * `ora`, with `discardStdin` off. Left on, ora puts stdin in raw mode while it spins, and raw mode
  * turns Ctrl+C into a keystroke rather than a SIGINT — so the handler a drain's wait installs
  * (`waitForTheLock`, which withdraws the request) never ran. Off, Ctrl+C stays a signal.
+ * `hideCursor` is off too: its default goes through restore-cursor, which registers a SIGINT listener
+ * on a real terminal and so changes `process.listenerCount('SIGINT')` for good.
  * ora wraps a long message over as many rows as it needs and redraws them in place.
  */
 export function oraSpinner(stream: NodeJS.WriteStream = process.stdout): Spinner {
-  const spinner = ora({ text: '', stream, discardStdin: false, isEnabled: true })
+  const spinner = ora({ text: '', stream, discardStdin: false, hideCursor: false, isEnabled: true })
   return {
     start(message) {
       spinner.start(message)
