@@ -13,7 +13,8 @@
  * `pnpm events:generate` runs this and formats the result.
  */
 import { execFileSync } from 'node:child_process'
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -434,18 +435,28 @@ if (import.meta.main) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   const sha = git('rev-parse', 'HEAD')
-  const doc = generate({ root, sha })
-  // A permalink's line numbers come from the working tree and its sha from HEAD;
-  // they only agree when nothing under the scanned directories differs from HEAD.
-  // Checked *after* the sources were read, so an edit saved at any point up to
-  // here is caught: it stays in the tree and shows as dirty, and a HEAD that
-  // moved meanwhile is refused the same way.
+  // A permalink's line numbers must be the lines of the commit it names, so the
+  // sources are read from that commit's own objects rather than the working
+  // tree: an edit saved, undone or redone while this runs cannot reach the
+  // output. `ELSEWHERE` and `STREAMS` are this file's, which the dirty check
+  // below holds to HEAD.
   const dirty = git('status', '--porcelain', '--', 'apps', 'packages')
-  if (dirty !== '' || git('rev-parse', 'HEAD') !== sha) {
+  if (dirty !== '') {
     console.error(
       `refusing to generate: uncommitted changes would make the links point at the wrong lines of ${sha}\n${dirty}\ncommit them first, then run pnpm events:generate`,
     )
     process.exit(1)
   }
-  writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(doc, null, 2) + '\n')
+  const snapshot = mkdtempSync(join(tmpdir(), 'events-json-'))
+  try {
+    const tar = execFileSync('git', ['archive', '--format=tar', sha, 'apps', 'packages'], {
+      cwd: root,
+      maxBuffer: 1 << 30,
+    })
+    execFileSync('tar', ['-x', '-C', snapshot], { input: tar })
+    const doc = generate({ root: snapshot, sha })
+    writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(doc, null, 2) + '\n')
+  } finally {
+    rmSync(snapshot, { recursive: true, force: true })
+  }
 }
