@@ -448,7 +448,12 @@ export function permalink(sha: string, file: string, line: number): string {
   return `${REPOSITORY}/blob/${sha}/${file}#L${line}`
 }
 
-export function generate({ root, sha }: { root: string; sha: string }): EventsDoc {
+/**
+ * `ref` is the name the links carry (a release tag); `sha` stays the commit the
+ * lines were read at. The caller guarantees `ref` resolves to `sha`.
+ */
+export function generate({ root, sha, ref }: { root: string; sha: string; ref?: string }): EventsDoc {
+  const named = ref ?? sha
   const defs = definitions(root)
   const found = findAppendSites(root)
   const elsewhere = ELSEWHERE.map((row) => {
@@ -472,11 +477,11 @@ export function generate({ root, sha }: { root: string; sha: string }): EventsDo
       retired: RETIRED.has(name),
       at: EVENT_AT[name],
       summary: def.summary,
-      definition: permalink(sha, EVENTS_FILE, def.line),
+      definition: permalink(named, EVENTS_FILE, def.line),
       sites: sites
         .filter((s) => s.event === name)
         .sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1))
-        .map((s) => permalink(sha, s.file, s.line)),
+        .map((s) => permalink(named, s.file, s.line)),
       subscribers: `on: [${name}]`,
     }
   })
@@ -489,11 +494,23 @@ if (import.meta.main) {
   if (process.argv[2] === '--emit') {
     // The child: this file is the snapshot's own copy, so `ELSEWHERE`, `STREAMS`
     // and everything imported from `src/` are the ones at the commit.
-    const [, , , sha, out] = process.argv
-    writeFileSync(out!, JSON.stringify(generate({ root, sha: sha! }), null, 2) + '\n')
+    const [, , , sha, out, ref] = process.argv
+    writeFileSync(out!, JSON.stringify(generate({ root, sha: sha!, ref: ref || undefined }), null, 2) + '\n')
   } else {
     const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
     const sha = git('rev-parse', 'HEAD')
+    const at = process.argv.indexOf('--ref')
+    const ref = at === -1 ? undefined : process.argv[at + 1]
+    if (at !== -1 && !ref) {
+      console.error('--ref needs a value')
+      process.exit(1)
+    }
+    // The links would name `ref` while the lines are read from HEAD: refuse a
+    // ref that is not HEAD rather than publish links to the wrong lines.
+    if (ref !== undefined && git('rev-parse', `${ref}^{commit}`) !== sha) {
+      console.error(`refusing to generate: ${ref} is not HEAD (${sha}), so its links would point at the wrong lines`)
+      process.exit(1)
+    }
     // A permalink's line numbers must be the lines of the commit it names, so
     // everything is read from that commit's own objects, and the generator that
     // reads them is that commit's copy of this file, run as a child: an edit
@@ -520,7 +537,7 @@ if (import.meta.main) {
       const out = join(snapshot, 'events.json')
       execFileSync(
         process.execPath,
-        [join(snapshot, 'packages', 'domain', 'scripts', 'events.ts'), '--emit', sha, out],
+        [join(snapshot, 'packages', 'domain', 'scripts', 'events.ts'), '--emit', sha, out, ref ?? ''],
         { cwd: snapshot, stdio: 'inherit' },
       )
       writeFileSync(join(root, 'doc', 'events.json'), readFileSync(out))
