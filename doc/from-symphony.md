@@ -43,7 +43,7 @@ at a time.
 | `workspace.root`, `hooks.after_create` (cloning) | a worktree Lingtai cuts for each pass |
 | `hooks.after_create` (installing dependencies) | the install command you give `lingtai add --install` |
 | `agent.max_concurrent_agents` | one at a time today (#341) |
-| `agent.max_turns` | `runtime.limits.turns`, per run — a different count, so do not copy the number across ([reference](reference.md)) |
+| `agent.max_turns` | `runtime.limits.turns`, per run, on the `claude-code` runtime only. The `codex` runtime enforces `wall` alone, and `lingtai doctor` fails a numeric `turns` there, so on Codex bound a run with `runtime.limits.wall` instead ([reference](reference.md)) |
 | `agent.max_retry_backoff_ms` | `source.backoff`, `1h` by default and flat; `lingtai now <project> --issue <n>` takes one ticket ahead of the queue |
 | `codex.command` | `runtime.agent: codex` |
 | the prompt body (Liquid) | the `prompt:` beside an `agent:` at `implement:` — **project guidance only**, see below ([`agent:`](plugins/agent.md)) |
