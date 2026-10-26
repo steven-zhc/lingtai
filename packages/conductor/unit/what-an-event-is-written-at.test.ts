@@ -10,10 +10,12 @@
  * `memoryStore`), the step starting at `claim` and moving at each `StepStarted`.
  * `claim`, `end` and routing visits write no `StepStarted` (`pass.ts:1388`), and
  * `conduct.ts` appends `PassRouted`, the held `StepEnded` and `WaitStarted` after
- * `runPass` returns, so an envelope is allowed at the step in force *or*
- * `proposed` *or* `end`. **The cost:** a type declared only at `proposed` or `end`
- * is checked loosely — it passes anywhere after the claim. A tighter check would
- * need `conduct.ts` to announce those visits.
+ * `runPass` returns. **So the window is strict while a step is open** — between
+ * its `StepStarted` and its `StepEnded` an envelope is allowed at that step and
+ * no other, so `RunStarted` declared only at `end` is caught — **and loose once
+ * it has closed**: the step in force *or* `proposed` *or* `end`. **The cost:** a
+ * type declared only at `proposed` or `end` is checked loosely after a step has
+ * closed. A tighter check would need `conduct.ts` to announce those visits.
  *
  * **No row here is a `build` refusal that buys a round**: only `runPlugin`
  * serves `build`, and `run:` spawns a real process (`actions/src/command.ts:43`),
@@ -53,14 +55,17 @@ export function misplaced(envelopes: readonly Envelope[], at: Readonly<Record<Ev
   const found: Misplaced[] = []
   let current: string = 'claim'
   let started = false
+  let open = false
   for (const e of [...envelopes].sort(bySeq)) {
     if (e.type === 'StepStarted') {
       current = (e.data as { step: string }).step
       started = true
+      open = true
     }
-    const window = started ? [current, 'proposed', 'end'] : ['claim']
+    const window = !started ? ['claim'] : open ? [current] : [current, 'proposed', 'end']
     const declared = at[e.type as EventType]
     if (!declared.some((s) => window.includes(s))) found.push({ type: e.type, seq: e.seq, window, declared })
+    if (e.type === 'StepEnded') open = false
   }
   return found
 }
@@ -140,5 +145,13 @@ describe('what an event is written at (#628)', () => {
     const store = await PASSES['a pass that lands']!()
     const wrong = { ...EVENT_AT, RunStarted: ['claim'] } as Record<EventType, readonly At[]>
     expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['RunStarted']))
+  })
+
+  it('fails when an event written inside a step is declared only at end or proposed', async () => {
+    const store = await PASSES['a pass that lands']!()
+    for (const away of ['end', 'proposed'] as const) {
+      const wrong = { ...EVENT_AT, RunStarted: [away] } as Record<EventType, readonly At[]>
+      expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['RunStarted']))
+    }
   })
 })

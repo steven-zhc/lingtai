@@ -2135,7 +2135,7 @@ export const EVENT_AT = {
   TicketLinked: ['outside'],
   TicketLanded: ['merge', 'end'],
   TicketClosed: ['outside'],
-  DispatchRefused: [...AGENT_STEPS],
+  DispatchRefused: ['claim'],
   RunStarted: [...AGENT_STEPS],
   RunPrompted: [...AGENT_STEPS],
   RunTouchedFile: [...AGENT_STEPS],
