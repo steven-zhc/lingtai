@@ -15,8 +15,8 @@
  * holds a projector of its own, so lag with no daemon is normal during a run
  * and a standing accusation after one.
  */
-import { inFlight, lastBeat, readStatus } from '@lingtai/daemon/control'
-import { projectionLag } from '@lingtai/projector'
+import { held as heldBy, lastBeat, readStatus } from '@lingtai/daemon/control'
+import { projectionLag, readTasks } from '@lingtai/projector'
 
 export interface Health {
   /** Events between the projection and the head. Null when it was never built. */
@@ -40,7 +40,8 @@ export async function readHealth(): Promise<Health> {
     const [lags, status, held] = await Promise.all([
       projectionLag().catch(() => []),
       readStatus().catch(() => null),
-      inFlight().catch(() => []),
+      // Not caught: a count that could not be read is the health read failing, said as such, never as no passes.
+      readTasks().then(heldBy),
     ])
 
     const row = lags.find((l) => l.name === PROJECTION)
