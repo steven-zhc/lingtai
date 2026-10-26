@@ -215,3 +215,16 @@ describe('service status --json when the handler throws', () => {
     expect(JSON.parse(r.out.trim())).toMatchObject({ command: 'service status', error: { message: 'no passwd entry' } })
   })
 })
+
+describe('a thrown failure ends the steps', () => {
+  it('service install clears the live spinner when serviceCommand throws', async () => {
+    const service = await import('../src/service.ts')
+    const ended = vi.fn()
+    const steps = await import('../src/steps.ts')
+    vi.spyOn(steps, 'createSteps').mockReturnValue({ begin() {}, progress() {}, end: ended })
+    vi.spyOn(service, 'serviceCommand').mockRejectedValueOnce(new Error('EACCES'))
+    const r = await capture(['service', 'install'])
+    expect(r.code).toBe(1)
+    expect(ended).toHaveBeenCalled()
+  })
+})

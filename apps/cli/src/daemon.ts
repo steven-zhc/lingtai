@@ -775,13 +775,17 @@ export async function controlCommand(
  */
 export async function restartCommand(args: RestartArgs, steps: Steps): Promise<number> {
   let started = false
-  const code = await restartSteps(args, steps, (sha) => {
-    started = true
-    steps.end()
-    console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
-  })
-  // A failed refusal or drain returns with a spinner still live; nothing else ends it.
-  if (!started) steps.end()
+  let code: number
+  try {
+    code = await restartSteps(args, steps, (sha) => {
+      started = true
+      steps.end()
+      console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
+    })
+  } finally {
+    // A refusal or drain returns with a spinner still live, and a throw must not leave it animating.
+    if (!started) steps.end()
+  }
   // One closing line either way. After the start there is no second verdict: the daemon's own
   // lines follow, and a failure of the running daemon is not a restart that did not happen.
   if (!started && code !== 0) console.log(`${symbol.fail()} not restarted`)

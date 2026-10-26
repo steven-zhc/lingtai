@@ -1018,15 +1018,20 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
       if (verb === 'uninstall') steps.begin('removing')
       let unconfirmed = false // the supervisor already had a conductor process
       let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
-      const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
-        ...serviceOptions(),
-        steps,
-        unconfirmed: (job) => {
-          if (job === 'conductor') unconfirmed = true
-          else boardHad = true
-        },
-      })
-      steps.end()
+      let code: number
+      try {
+        code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+          ...serviceOptions(),
+          steps,
+          unconfirmed: (job) => {
+            if (job === 'conductor') unconfirmed = true
+            else boardHad = true
+          },
+        })
+      } finally {
+        // A throw (EACCES on the service file, say) must not leave the spinner animating.
+        steps.end()
+      }
       if (unconfirmed && code === START_BOARD_ONLY)
         console.log(
           `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,

@@ -53,22 +53,41 @@ describe('createSteps', () => {
     expect(events).toEqual(['start:starting…'])
   })
 
-  it('shows no spinner when colour is off (NO_COLOR, --no-color, TERM=dumb)', () => {
-    const saved = process.env['NO_COLOR']
-    process.env['NO_COLOR'] = '1'
-    const realTty = process.stdout.isTTY
-    process.stdout.isTTY = true
-    try {
-      const events: string[] = []
-      const steps = createSteps(() => {}, { spinner: fakeSpinner(events) })
-      steps.begin('draining')
-      steps.progress('still draining')
-      expect(events).toEqual([])
-    } finally {
-      process.stdout.isTTY = realTty as boolean
-      if (saved === undefined) delete process.env['NO_COLOR']
-      else process.env['NO_COLOR'] = saved
+  describe('on a real terminal', () => {
+    const KEYS = ['NO_COLOR', 'TERM', 'FORCE_COLOR'] as const
+    const run = (env: Record<string, string | undefined>): string[] => {
+      const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
+      const tty = [process.stdin.isTTY, process.stdout.isTTY]
+      process.stdin.isTTY = true
+      process.stdout.isTTY = true
+      for (const k of KEYS) delete process.env[k]
+      Object.assign(process.env, env)
+      try {
+        const events: string[] = []
+        const steps = createSteps(() => {}, { spinner: fakeSpinner(events) })
+        steps.begin('draining')
+        steps.progress('still draining')
+        return events
+      } finally {
+        process.stdin.isTTY = tty[0] as boolean
+        process.stdout.isTTY = tty[1] as boolean
+        for (const k of KEYS) {
+          if (saved[k] === undefined) delete process.env[k]
+          else process.env[k] = saved[k]
+        }
+      }
     }
+
+    it('shows a spinner when colour is on (the control for the cases below)', () => {
+      expect(run({ TERM: 'xterm-256color', FORCE_COLOR: '1' })).toEqual(['start:draining…', 'message:still draining'])
+    })
+
+    it.each([
+      ['NO_COLOR', { NO_COLOR: '1', FORCE_COLOR: '1' }],
+      ['TERM=dumb', { TERM: 'dumb' }],
+    ])('shows no spinner when colour is off (%s)', (_name, env) => {
+      expect(run(env)).toEqual([])
+    })
   })
 
   it('clears a live spinner before the next phase writes its line', () => {
