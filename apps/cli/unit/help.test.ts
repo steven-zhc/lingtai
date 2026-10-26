@@ -60,6 +60,17 @@ describe('the definitions', () => {
   })
 })
 
+describe('examples', () => {
+  it('show an id as a placeholder, not a ticket or run of the tutorial', () => {
+    for (const c of COMMANDS) {
+      for (const example of c.examples) {
+        expect(example, c.name).not.toContain('chapter-garden')
+        expect(example, c.name).not.toMatch(/(--issue|--if-head|attach|accept|decline) [0-9a-f]+\b/)
+      }
+    }
+  })
+})
+
 describe('lingtai --help', () => {
   it('lists every command once, under its own group', () => {
     const lines = rootHelp().split('\n')
