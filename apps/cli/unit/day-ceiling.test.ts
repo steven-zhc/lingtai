@@ -1,3 +1,4 @@
+import { CONTROL_STREAM } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { ProjectionLag } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
@@ -44,9 +45,30 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
     expect(spendStall([spend(2n, null)], now)).toMatch(/has never moved/)
   })
 
-  it('does not call a missing row or a caught-up row stalled', () => {
-    expect(spendStall([], now)).toBeNull()
+  it('does not call a caught-up row stalled', () => {
     expect(spendStall([spend(0n, 10 * 60_000)], now)).toBeNull()
+  })
+
+  it('takes no work when spend never checkpointed and the log has spend from today', async () => {
+    const store = createMemoryEventStore()
+    await store.append(CONTROL_STREAM, 0, [
+      {
+        type: 'RunSpent',
+        actor: 'conductor',
+        data: { for: { _tag: 'Discussion' }, runtime: 'claude-code', turns: 1, durationMs: 1, costUsd: 1, usage: [] },
+      },
+    ])
+    const stop = await dayCeilingStop(store, { ...ports(async () => []), now: () => new Date() })
+    expect(stop).toMatch(/^could not check the daily ceiling: the spend projection has never checkpointed/)
+  })
+
+  it('does not stop a fresh install with no row and no spend', async () => {
+    expect(
+      await dayCeilingStop(
+        createMemoryEventStore(),
+        ports(async () => []),
+      ),
+    ).toBeNull()
   })
 
   it('never reads the lag where no ceiling is set', async () => {

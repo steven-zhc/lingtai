@@ -18,12 +18,36 @@ function ago(ms: number): string {
   return s < 120 ? `${s}s` : `${Math.floor(s / 60)}m`
 }
 
+/** Whether the log holds a `RunSpent` from `now`'s day: what a `spend` that never checkpointed is leaving out. */
+async function runSpentToday(store: EventStore, now: Date): Promise<boolean> {
+  const since = startOfLocalDay(now).getTime()
+  let from = 0n
+  for (;;) {
+    const page = await store.readAll(from, 1000)
+    if (page.length === 0) return false
+    if (page.some((e) => e.type === 'RunSpent' && e.at.getTime() >= since)) return true
+    from = page[page.length - 1]!.seq
+  }
+}
+
 /**
  * The sentence for a `spend` projection that is not following the log, or null.
- * No `spend` row is not stalled: a projector registers its checkpoint before it
- * follows, so a missing one is a system that has never run, and `readSpend`
- * reports what it finds.
+ * No `spend` row is stalled only when the log has a `RunSpent` from today, which
+ * the empty table would read as zero; with none, a system that has never run
+ * spent nothing and is not stopped.
  */
+export async function spendStallIn(
+  lags: readonly ProjectionLag[],
+  now: Date,
+  store: EventStore,
+): Promise<string | null> {
+  if (lags.some((l) => l.name === 'spend')) return spendStall(lags, now)
+  return (await runSpentToday(store, now))
+    ? 'the spend projection has never checkpointed and the log has spend from today'
+    : null
+}
+
+/** The sentence for a `spend` row that is behind and quiet, or null; a missing row is `spendStallIn`'s. */
 export function spendStall(lags: readonly ProjectionLag[], now: Date): string | null {
   const row = lags.find((l) => l.name === 'spend')
   if (row === undefined || row.lag <= 0n) return null
@@ -55,7 +79,11 @@ export async function dayCeilingStop(
     const ceilingUsd = (ports.ceiling ?? machineDayCeiling)()
     const rows = ports.rows ?? ((since: Date) => readSpend({ since }))
     if (ceilingUsd !== undefined) {
-      const stall = spendStall(await (ports.lags ?? (() => projectionLag()))(), (ports.now ?? (() => new Date()))())
+      const stall = await spendStallIn(
+        await (ports.lags ?? (() => projectionLag()))(),
+        (ports.now ?? (() => new Date()))(),
+        store ?? eventStore,
+      )
       if (stall !== null) return `could not check the daily ceiling: ${stall} — taking no work`
     }
     return await dayCeilingPause({ ceilingUsd, rows, store: store ?? eventStore })
@@ -94,7 +122,7 @@ export async function daySpendLine(
 ): Promise<string> {
   try {
     const { day, ceilingUsd } = await readDaySpend()
-    const stall = ceilingUsd === undefined ? null : spendStall(await lags(), new Date())
+    const stall = ceilingUsd === undefined ? null : await spendStallIn(await lags(), new Date(), eventStore)
     if (stall !== null) return `the daily ceiling could not be checked: ${stall}`
     return daySpendText(day, ceilingUsd)
   } catch (err) {
