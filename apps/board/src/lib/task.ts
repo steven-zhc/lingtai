@@ -9,6 +9,7 @@ import {
   chatStream,
   emptyTicket,
   reduceControl,
+  splitProgressOf,
   CONTROL_STREAM,
   isTicketStream,
   parseTicketStream,
@@ -19,6 +20,7 @@ import {
   type BoardFact,
   type Envelope,
   type PayloadOf,
+  type SplitProgress,
   type WaitId,
   type TicketLifecycle,
 } from '@lingtai/domain'
@@ -99,6 +101,7 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
+import { isSplitRunning, splitInstance } from './split-instance.ts'
 import { triageHeadLine } from './triage-head.ts'
 
 export interface Finding {
@@ -417,6 +420,8 @@ export interface StandingView {
   triageStatus: TriageStatus | null
   /** A comparison with the local mirror, only for a completed current triage. */
   triageHeadLine?: string | null
+  /** The split write the log shows for this wait, where Split is offered (#603). */
+  split?: { progress: SplitProgress; tickets: 'github' | 'db' }
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -1900,6 +1905,22 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       } catch (err) {
         standing.fixWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
       }
+    }
+  }
+  if (
+    standing.state === 'blocked' &&
+    standing.waitId !== null &&
+    standing.reason !== null &&
+    allowedResolutions(standing.reason).includes('Split') &&
+    ticket !== null
+  ) {
+    const state = await loadProject(ticket.project)
+    const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
+    standing.split = {
+      progress: splitProgressOf(own, { waitId: standing.waitId, instance: splitInstance(),
+        running: isSplitRunning(standing.waitId),
+      }),
+      tickets,
     }
   }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null

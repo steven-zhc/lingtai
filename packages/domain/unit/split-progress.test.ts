@@ -16,7 +16,7 @@ const plan = {
   ],
   blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
 }
-const ME = { waitId: WAIT, instance: 'board-1' }
+const ME = { waitId: WAIT, instance: 'board-1', running: true }
 
 function stream() {
   const event = makeStream('ticket-lingtai-1')
@@ -62,6 +62,11 @@ describe('splitProgressOf', () => {
   it('is interrupted when another instance started it and nothing ended it', () => {
     const s = stream()
     expect(splitProgressOf([s.started('board-0'), s.child('a', 161)], ME).state).toBe('interrupted')
+  })
+
+  it('is interrupted when no writer is running in this process, though the instance is the asker\'s', () => {
+    const s = stream()
+    expect(splitProgressOf([s.started()], { ...ME, running: false }).state).toBe('interrupted')
   })
 
   it('is failed after a SplitFailed, whichever instance, and carries the step', () => {
@@ -121,6 +126,6 @@ describe('splitProgressOf', () => {
     const s = stream()
     const events = [s.started('board-1', OTHER), s.child('a', 161, OTHER), s.done()]
     expect(splitProgressOf(events.slice(0, 2), ME)).toEqual({ state: 'idle' })
-    expect(splitProgressOf(events.slice(0, 2), { waitId: OTHER, instance: 'board-1' }).state).toBe('writing')
+    expect(splitProgressOf(events.slice(0, 2), { waitId: OTHER, instance: 'board-1', running: true }).state).toBe('writing')
   })
 })

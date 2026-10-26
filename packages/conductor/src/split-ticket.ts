@@ -1,21 +1,32 @@
 /**
- * Turning an approved split plan into GitHub issues and links (#601, 0118 §12).
+ * Turning an approved split plan into GitHub issues and links (#601, #603, 0118 §12).
  *
- * **Writes in order, each one read back, and each one on the log as it lands
- * (#608).** `SplitStarted` first, a `SplitChildWritten` or `SplitLinkWritten`
- * per read-back write, then `TicketSplit` or `SplitFailed`. Those are a record
- * for the page, never a gate: the next call still resumes from GitHub's own
- * state, because a person may have edited it since. A call reads the parent's sub-issues, adopts a child whose
- * title is a plan entry, and writes only what is missing. A timed-out create
- * is not proof of absence, so every child carries an invisible marker
- * (`splitMarker`) and a create that threw is looked for by it before anything
- * is created again — `githubTicketStore`'s `propose` does the same for
- * findings.
+ * **A reconciliation of a frozen plan against GitHub.** GitHub has no
+ * transaction, so what this guarantees is that running it twice is running it
+ * once, that running it again after a failure converges on the whole plan, and
+ * that it never touches an issue it did not create.
+ *
+ * - **The plan freezes at the first `SplitStarted`** for the wait. Every later
+ *   call uses that plan and ignores `options.plan`.
+ * - **A child is known by its marker (`splitMarker`) and nothing else** — never
+ *   by title. Found by listing the issues created since the first
+ *   `SplitStarted` (`listIssuesSince`, which is complete or throws; never
+ *   search, whose index lags a create). An issue without the marker is never
+ *   adopted, edited, attached or linked, and a child found keeps GitHub's title
+ *   and body.
+ * - **One child at a time:** create, attach, `SplitChildWritten`, then the next
+ *   child. A crash between a create and its record is accepted: a retry finds
+ *   the child by marker.
+ * - **`TicketSplit` is the outcome read back:** its `blockedBy` is what GitHub
+ *   returned, mapped to keys.
+ *
+ * The page's *writing* is not read off this log alone: `splitProgressOf` takes
+ * whether a writer is running in the asker's process, so a writer whose last
+ * append threw reads as interrupted, with Retry.
  *
  * The last step is `resolveWaitHolding`, still the only writer of
  * `WaitResolved`; it appends `TicketSplit` ahead of it in the same
  * transaction, so a retry after a lost race re-reads and lands only that.
- * The board is not wired to this here — #604 is.
  */
 import {
   reduceTicket,
@@ -40,7 +51,6 @@ export type SplitClient = Pick<
   | 'getIssue'
   | 'createIssue'
   | 'updateBody'
-  | 'addLabels'
   | 'addSubIssue'
   | 'listSubIssues'
   | 'addBlockedBy'
@@ -74,7 +84,11 @@ export interface SplitTicketOptions {
   project: string
   issue: number
   waitId: WaitId
-  plan: SplitPlanInput
+  /**
+   * Required on the first call only: the plan is frozen by the first
+   * `SplitStarted`, and a call after it ignores whatever is passed here.
+   */
+  plan?: SplitPlanInput
   /** The recipe's `source.kinds`. */
   kinds: readonly string[]
   /** `owner/repo` of the project — a sub-issue from another repository is not this split's. */
@@ -89,6 +103,8 @@ export interface SplitTicketOptions {
    */
   instance: string
   note?: string
+  /** Called straight after this attempt's `SplitStarted` is appended — the write is running from here. */
+  onStarted?: () => void
   github: SplitClient
   store?: EventStore
 }
@@ -113,15 +129,16 @@ export async function splitTicket(options: SplitTicketOptions): Promise<SplitTic
   return deciding(
     ticketId,
     () =>
-      refused(options, ticketId, `${ticketId} is being decided by someone else right now. Reload and read it again.`),
+      refused(options.plan, ticketId, `${ticketId} is being decided by someone else right now. Reload and read it again.`),
     () => splitTicketHolding(options, store, ticketId),
   )
 }
 
-function stepNames(plan: SplitPlanInput): string[] {
+function stepNames(plan: SplitPlanInput | undefined): string[] {
+  if (plan === undefined) return []
   return [
-    ...plan.children.map((c) => `create ${c.key}`),
-    ...plan.children.map((c) => `attach ${c.key}`),
+    'read GitHub',
+    ...plan.children.map((c) => `write ${c.key}`),
     ...plan.blockedBy.map((d) => `chain ${d.ticket}←${d.blockedBy}`),
     ...plan.children.map((c) => `hold parent ← ${c.key}`),
     'done when',
@@ -130,12 +147,12 @@ function stepNames(plan: SplitPlanInput): string[] {
   ]
 }
 
-function refused(options: SplitTicketOptions, ticketId: string, detail: string): SplitTicketResult {
+function refused(plan: SplitPlanInput | undefined, ticketId: string, detail: string): SplitTicketResult {
   return {
     ok: false,
     ticketId,
     detail,
-    steps: stepNames(options.plan).map((name) => ({ name, status: 'not-reached' as const })),
+    steps: stepNames(plan).map((name) => ({ name, status: 'not-reached' as const })),
     children: [],
   }
 }
@@ -146,25 +163,30 @@ export async function splitTicketHolding(
   store: EventStore,
   ticketId: string,
 ): Promise<SplitTicketResult> {
-  const { github, plan, waitId, repository } = options
-  const stop = (detail: string) => refused(options, ticketId, detail)
+  const { github, waitId, repository } = options
 
   // **Refuse before writing**, with no GitHub call until every check passed.
   const events = await store.read(ticketId)
+  const first = events.find((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)
+  // The plan is the one the first Create all froze, whatever this call was handed.
+  const plan: SplitPlanInput | undefined =
+    first === undefined ? options.plan : (first.data as PayloadOf<'SplitStarted'>).plan
+  const stop = (detail: string) => refused(plan, ticketId, detail)
   const item = reduceTicket(events)
   if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== waitId)
     return stop(`${ticketId} is not waiting on ${waitId} — nothing was written. Reload and read it again.`)
   if (!allowedResolutions(item.lifecycle.reason).includes('Split'))
     return stop(`Split is not offered for ${describeReason(item.lifecycle.reason)} — nothing was written.`)
-  const problems = splitPlanProblems(plan, { kinds: options.kinds })
-  if (problems.length > 0)
-    return stop(`the split plan is refused — nothing was written: ${problems.map(describeSplitProblem).join('; ')}.`)
-  const titles = plan.children.map((c) => c.title.trim())
-  const twice = titles.find((t, i) => titles.indexOf(t) !== i)
-  if (twice !== undefined)
-    return stop(`two children are titled "${twice}" — a retry could not tell them apart. Nothing was written.`)
+  if (plan === undefined) return stop('there is no split plan to write — nothing was written.')
+  if (first === undefined) {
+    const problems = splitPlanProblems(plan, { kinds: options.kinds })
+    if (problems.length > 0)
+      return stop(`the split plan is refused — nothing was written: ${problems.map(describeSplitProblem).join('; ')}.`)
+  }
+  // Before this attempt's own `SplitStarted`: a read that threw after it would leave a start with nothing terminal after it.
+  const since = new Date((first?.at ?? new Date()).getTime() - SKEW_MS)
 
-  const prior = splitProgressOf(events, { waitId, instance: options.instance })
+  const prior = splitProgressOf(events, { waitId, instance: options.instance, running: true })
   const known = new Map(prior.state === 'idle' ? [] : prior.children.map((c) => [c.key, c.number] as const))
   const linked = new Set(prior.state === 'idle' ? [] : prior.links.map((l) => `${l.ticket}\u0000${l.blockedBy}`))
 
@@ -185,47 +207,34 @@ export async function splitTicketHolding(
     plan: { children: [...plan.children], blockedBy: [...plan.blockedBy] },
     instance: options.instance,
   })
+  options.onStarted?.()
+
+  /** The terminal event. If it cannot be appended the caller's running set still says the writer is gone. */
+  const noteFailed = async (step: string, detail: string): Promise<void> => {
+    try {
+      await note('SplitFailed', { waitId, step, detail })
+    } catch (err) {
+      console.error(`could not record SplitFailed for ${ticketId}:`, err)
+    }
+  }
   const failedAt = async (step: string, detail: string): Promise<SplitTicketResult> => {
-    await note('SplitFailed', { waitId, step, detail })
+    await noteFailed(step, detail)
     return stop(detail)
   }
 
-  const started = events.find((e) => e.type === 'WaitStarted' && (e.data as { waitId?: string }).waitId === waitId)
-  const since = new Date((started ?? events[0]!).at.getTime() - SKEW_MS)
-
-  // What GitHub already has, never what the log says: a partial split left nothing on it.
-  const have = new Map<string, { number: number; id?: number }>()
-  const here = (l: LinkedIssue) => l.repository === repository
-  try {
-    const subs = (await github.listSubIssues(options.issue)).filter(here)
-    for (const child of plan.children) {
-      const match = subs.filter((s) => s.title.trim() === child.title.trim())
-      if (match.length > 1)
-        return failedAt(
-          'read GitHub',
-          `#${options.issue} has ${match.length} sub-issues titled "${child.title.trim()}" — nothing was written. Close the extras first.`,
-        )
-      if (match[0] !== undefined) {
-        have.set(child.key, { number: match[0].number, id: match[0].id })
-      }
-    }
-  } catch (err) {
-    return failedAt('read GitHub', `the parent's sub-issues could not be read: ${errorMessage(err)}`)
-  }
-
-  /** Children created by an earlier call whose response was lost, found by their marker. */
-  async function adoptMarked(): Promise<void> {
-    const missing = plan.children.filter((c) => !have.has(c.key))
-    if (missing.length === 0) return
+  // The children GitHub has, by marker alone: never by title, never by search.
+  const found = new Map<string, number>()
+  async function findMarked(): Promise<void> {
     const listed = (await github.listIssuesSince(since)).sort((a, b) => a.number - b.number)
-    for (const child of missing) {
+    for (const child of plan!.children) {
+      if (found.has(child.key)) continue
       const marker = splitMarker(waitId, child.key)
-      const found = listed.find((i) => i.body.includes(marker))
-      if (found !== undefined) have.set(child.key, { number: found.number })
+      const hit = listed.find((i) => i.body.includes(marker))
+      if (hit !== undefined) found.set(child.key, hit.number)
     }
   }
   try {
-    await adoptMarked()
+    await findMarked()
   } catch (err) {
     return failedAt(
       'read GitHub',
@@ -233,7 +242,8 @@ export async function splitTicketHolding(
     )
   }
 
-  const numberOf = (key: string) => have.get(key)!.number
+  const here = (l: LinkedIssue) => l.repository === repository
+  const numberOf = (key: string) => found.get(key)!
   const links = (list: readonly LinkedIssue[], number: number) => list.some((l) => here(l) && l.number === number)
 
   /** Add a link only if absent (GitHub answers a duplicate with a 422), and read it back. */
@@ -255,26 +265,50 @@ export async function splitTicketHolding(
 
   const expectedBody = (child: SplitPlanInput['children'][number]) =>
     `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
-  const same = (a: string, b: string) => a.replace(/\r\n/g, '\n').trimEnd() === b.replace(/\r\n/g, '\n').trimEnd()
 
-  /** An adopted child is the approved one only if its body and kind label are: write what is not, read it back. */
-  async function repair(child: SplitPlanInput['children'][number], number: number, body: string): Promise<StepStatus> {
-    const current = await github.getIssue(number)
-    const labels = current.labels.map((l) => l.name)
-    const bodyOk = same(current.body, body)
-    const labelOk = labels.includes(child.kind)
-    if (bodyOk && labelOk) return 'skipped'
-    if (!bodyOk) await github.updateBody(number, body)
-    // Add, never replace: `labels` is a snapshot, and somebody may have held the child since.
-    if (!labelOk) await github.addLabels(number, [child.kind])
-    const after = await github.getIssue(number)
-    if (!same(after.body, body) || !after.labels.some((l) => l.name === child.kind))
-      throw new Error(`#${number} does not carry the approved body and kind on read-back`)
-    return 'done'
+  /** Create (unless a marker answers), attach, record — and only then is the next child started. */
+  async function writeChild(child: SplitPlanInput['children'][number]): Promise<StepStatus> {
+    let status: StepStatus = 'skipped'
+    if (!found.has(child.key)) {
+      try {
+        const opened = await github.createIssue({
+          title: child.title.trim(),
+          body: expectedBody(child),
+          labels: [child.kind],
+        })
+        found.set(child.key, opened.number)
+      } catch (err) {
+        // A timed-out create is not proof of absence: look by marker before failing.
+        try {
+          await findMarked()
+        } catch {
+          throw err
+        }
+        if (!found.has(child.key)) throw err
+      }
+      status = 'done'
+    }
+    const number = numberOf(child.key)
+    const attached = await ensure(
+      () => github.listSubIssues(options.issue),
+      () => github.addSubIssue(options.issue, number),
+      number,
+    )
+    if (attached === 'done') status = 'done'
+    // Written means attached; GitHub's `id` is only on the sub-issue listing.
+    if (known.get(child.key) !== number) {
+      const sub = (await github.listSubIssues(options.issue)).find((s) => here(s) && s.number === number)
+      if (sub === undefined) throw new Error(`#${number} is not a sub-issue on read-back`)
+      await note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })
+      // The key names another issue now, so links recorded for the old one are stale.
+      if (known.has(child.key)) for (const l of linked) if (l.split('\u0000').includes(child.key)) linked.delete(l)
+      known.set(child.key, number)
+    }
+    return status
   }
 
   async function writeDoneWhen(): Promise<StepStatus> {
-    const numbers = plan.children.map((c) => numberOf(c.key))
+    const numbers = plan!.children.map((c) => numberOf(c.key))
     for (let attempt = 0; ; attempt++) {
       const body = (await github.getIssue(options.issue)).body
       const next = splitDoneWhen(body, numbers)
@@ -295,48 +329,8 @@ export async function splitTicketHolding(
   let result: SplitTicketResult | null = null
 
   const actions: { name: string; run: () => Promise<StepStatus | { detail: string }> }[] = [
-    ...plan.children.map((child) => ({
-      name: `create ${child.key}`,
-      run: async (): Promise<StepStatus> => {
-        const body = expectedBody(child)
-        const existing = have.get(child.key)
-        if (existing !== undefined) return repair(child, existing.number, body)
-        try {
-          const opened = await github.createIssue({ title: child.title.trim(), body, labels: [child.kind] })
-          have.set(child.key, { number: opened.number })
-          // The create's own answer is not proof of the body and kind: read them back.
-          await repair(child, opened.number, body)
-        } catch (err) {
-          // A timed-out create is not proof of absence: look before failing.
-          await adoptMarked()
-          if (!have.has(child.key)) throw err
-          await repair(child, numberOf(child.key), body)
-        }
-        return 'done'
-      },
-    })),
-    ...plan.children.map((child) => ({
-      name: `attach ${child.key}`,
-      run: async (): Promise<StepStatus> => {
-        const status = await ensure(
-          () => github.listSubIssues(options.issue),
-          () => github.addSubIssue(options.issue, numberOf(child.key)),
-          numberOf(child.key),
-        )
-        // Written means approved and attached; GitHub's `id` is only on the sub-issue listing.
-        if (known.get(child.key) !== numberOf(child.key)) {
-          const sub = (await github.listSubIssues(options.issue)).find(
-            (s) => here(s) && s.number === numberOf(child.key),
-          )
-          if (sub === undefined) throw new Error(`#${numberOf(child.key)} is not a sub-issue on read-back`)
-          await note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })
-          // The key names another issue now, so links recorded for the old one are stale.
-          if (known.has(child.key)) for (const l of linked) if (l.split('\u0000').includes(child.key)) linked.delete(l)
-          known.set(child.key, sub.number)
-        }
-        return status
-      },
-    })),
+    { name: 'read GitHub', run: async () => 'done' },
+    ...plan.children.map((child) => ({ name: `write ${child.key}`, run: () => writeChild(child) })),
     ...plan.blockedBy.map((d) => ({
       name: `chain ${d.ticket}←${d.blockedBy}`,
       run: async (): Promise<StepStatus> => {
@@ -364,20 +358,28 @@ export async function splitTicketHolding(
     })),
     { name: 'done when', run: writeDoneWhen },
     {
-      // Every child is a sub-issue by now, and that listing is where GitHub's
-      // `id` comes from: no create call returns one.
+      // Every read here is GitHub's answer, not the plan's: the sub-issue
+      // listing is where the `id` comes from (no create call returns one), and
+      // each child's own `blocked_by` is where the recorded links come from.
       name: 'record the split',
       run: async (): Promise<StepStatus> => {
         const subs = (await github.listSubIssues(options.issue)).filter(here)
-        payload = {
-          waitId,
-          children: plan.children.map((c) => {
-            const sub = subs.find((s) => s.number === numberOf(c.key))
-            if (sub === undefined) throw new Error(`#${numberOf(c.key)} is not a sub-issue on read-back`)
-            return { key: c.key, number: sub.number, id: sub.id }
-          }),
-          blockedBy: plan.blockedBy,
+        const keyOf = new Map(plan.children.map((c) => [numberOf(c.key), c.key] as const))
+        const children: { key: string; number: number; id: number }[] = []
+        const blockedBy: { ticket: string; blockedBy: string }[] = []
+        for (const c of plan.children) {
+          const sub = subs.find((s) => s.number === numberOf(c.key))
+          if (sub === undefined) throw new Error(`#${numberOf(c.key)} is not a sub-issue on read-back`)
+          children.push({ key: c.key, number: sub.number, id: sub.id })
+          for (const l of (await github.listBlockedBy(sub.number)).filter(here)) {
+            const blocker = keyOf.get(l.number)
+            if (blocker !== undefined && blocker !== c.key) blockedBy.push({ ticket: c.key, blockedBy: blocker })
+          }
         }
+        for (const d of plan.blockedBy)
+          if (!blockedBy.some((b) => b.ticket === d.ticket && b.blockedBy === d.blockedBy))
+            throw new Error(`${d.ticket}←${d.blockedBy} was not linked on read-back`)
+        payload = { waitId, children, blockedBy }
         // Not done until the append lands: marked when 'end the wait' succeeds.
         return 'not-reached'
       },
@@ -406,10 +408,12 @@ export async function splitTicketHolding(
 
   const steps: SplitStep[] = actions.map((a) => ({ name: a.name, status: 'not-reached' as const }))
   const knownChildren = () =>
-    plan.children.filter((c) => have.has(c.key)).map((c) => ({ key: c.key, number: numberOf(c.key) }))
+    plan.children.filter((c) => found.has(c.key)).map((c) => ({ key: c.key, number: numberOf(c.key) }))
+  steps[0]!.status = 'done'
 
   let failedStep = ''
   for (const [i, action] of actions.entries()) {
+    if (i === 0) continue
     try {
       const outcome = await action.run()
       if (typeof outcome === 'string') {
@@ -444,7 +448,7 @@ export async function splitTicketHolding(
   }
 
   // One place on the way out: a failure with no terminal event would read as writing until the board restarts.
-  if (result !== null) await note('SplitFailed', { waitId, step: failedStep, detail: result.detail })
+  if (result !== null) await noteFailed(failedStep, result.detail)
 
   return (
     result ?? { ok: true, ticketId, detail: 'split written, and back in the queue', steps, children: knownChildren() }

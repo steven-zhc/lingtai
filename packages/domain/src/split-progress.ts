@@ -4,8 +4,10 @@
  * `SplitLinkWritten` per read-back write, then `TicketSplit` or `SplitFailed`.
  *
  * **Interrupted is derived, never written.** A `SplitStarted` with nothing
- * terminal after it is *writing* only if its `instance` is the asker's own;
- * otherwise the writer is gone — the reading triage makes of an unfinished
+ * terminal after it is *writing* only if its `instance` is the asker's own
+ * **and** the asker says a writer is running (`running`, the caller's own
+ * in-memory set — a writer whose last append threw is gone though the log never
+ * said so); otherwise the writer is gone — the reading triage makes of an unfinished
  * attempt. Scoped to one `waitId`, because a parent can wait again and plan
  * keys repeat. Order is stream position, never `at`.
  */
@@ -30,7 +32,7 @@ export type SplitProgress =
 
 export function splitProgressOf(
   events: readonly Envelope[],
-  options: { waitId: string; instance: string },
+  options: { waitId: string; instance: string; running: boolean },
 ): SplitProgress {
   let started: PayloadOf<'SplitStarted'> | null = null
   let failed: { step: string; detail: string } | null = null
@@ -81,5 +83,5 @@ export function splitProgressOf(
   if (started === null) return { state: 'idle' }
   const base = { plan: started.plan, children: [...children.values()], links: [...links.values()] }
   if (failed !== null) return { state: 'failed', ...base, failed }
-  return { state: started.instance === options.instance ? 'writing' : 'interrupted', ...base }
+  return { state: started.instance === options.instance && options.running ? 'writing' : 'interrupted', ...base }
 }
