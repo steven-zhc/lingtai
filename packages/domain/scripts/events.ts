@@ -152,27 +152,22 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
   {
     event: 'SplitStarted',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:183',
+    site: 'packages/conductor/src/split-ticket.ts:209',
   },
   {
     event: 'SplitFailed',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:189',
-  },
-  {
-    event: 'SplitFailed',
-    why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:447',
+    site: 'packages/conductor/src/split-ticket.ts:219',
   },
   {
     event: 'SplitChildWritten',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:332',
+    site: 'packages/conductor/src/split-ticket.ts:306',
   },
   {
     event: 'SplitLinkWritten',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:350',
+    site: 'packages/conductor/src/split-ticket.ts:348',
   },
   { event: 'StepStarted', why: 'handed to `options.emit`, which appends', site: 'packages/conductor/src/pass.ts:1396' },
   { event: 'TicketClosed', why: 'the event is built, then handed on', site: 'packages/conductor/src/close.ts:191' },
