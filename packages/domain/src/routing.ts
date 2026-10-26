@@ -43,6 +43,14 @@ export type RoutingPolicy = { rounds: number; restarts: number }
  */
 export const BASE_MERGES_LIMIT = 2
 
+/**
+ * **At most this many merge-conflict fix rounds per pass, then a person** (#653).
+ * A constant and not a recipe knob, for `BASE_MERGES_LIMIT`'s reason. Unlike it,
+ * a conflict round runs an agent — it is a round `rounds` does not count, so a
+ * review that spent them all does not leave a conflict at merge with nothing.
+ */
+export const CONFLICT_ROUNDS_LIMIT = 2
+
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */
 const HandToPerson = z.object({ _tag: z.literal('HandToPerson') })
 
@@ -167,9 +175,17 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     case 'VerifyRed':
       round('fix-lines', 'implement', proposal.output.trim() !== '')
       break
-    case 'MergeConflict':
-      round('fix-lines', 'implement', true)
+    case 'MergeConflict': {
+      // Its own budget, never `rounds`: `round` stays what `rounds` is so the
+      // review's counter is not reset by the lap this buys.
+      const conflict = (spent.conflictRounds ?? 0) + 1
+      if (conflict > CONFLICT_ROUNDS_LIMIT) {
+        unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' } })
+      } else {
+        available.push({ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: spent.rounds, conflict } })
+      }
       break
+    }
     case 'BaseMoved': {
       // Free, so neither a criterion nor `rounds` applies: only the base
       // having moved on again and again, and a `toSha` to merge.

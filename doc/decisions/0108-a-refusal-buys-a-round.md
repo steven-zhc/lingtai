@@ -109,7 +109,7 @@ fixes the bounds and the endings that router works inside.
    also changed, the system merges it in itself and the pass builds and reviews
    again — no agent runs for the merge and no `round` is spent — at most twice
    per pass (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
-   ceiling above beyond the `build` and `review` it reruns. Absent, the
+   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): `CONFLICT_ROUNDS_LIMIT = 2` per pass, beside the base-merge budget, never drawn from `rounds`, and never counted in it — that round runs an agent, so it falls outside the ceiling above, and its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. Absent, the
    sentence is unchanged, character for character. A person's `GrantFixRound`
    ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
    one additional `implement` round on saved work when the wait has a fixable

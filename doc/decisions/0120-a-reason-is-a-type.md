@@ -362,7 +362,7 @@ type RouteCandidate = { id: CandidateId; next: CandidateNext } // next already c
 type ExcludedCandidate = {
   id: CandidateId
   because:
-    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' | 'base-merges' } // pass.ts:973-974
+    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds' } // pass.ts:973-974
     | { _tag: 'NoCriterion' } // nothing to hold an agent to (0038 §2)
 }
 type RouteOffer = { proposal: Proposal; available: RouteCandidate[]; unavailable: ExcludedCandidate[] }
@@ -399,6 +399,7 @@ const routeNext: (
   including a conflict or a red re-verify at `merge`, for the agent to fix on
   the new base; a restart from the base, for `ReviewFindings` only; a person,
   always.
+- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per pass, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was.
 - **`merge-base` is the one candidate that sends `merge` back to `build`, and
   it spends no round** (#593). A `BaseMoved` is offered `merge-base`
   (`MergeBase{toSha, merge}`) and a person. Choosing it merges `toSha` into
