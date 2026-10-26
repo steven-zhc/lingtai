@@ -99,6 +99,25 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
   })
 
+  it('a resumed provider-quota pause does not waive the ceiling', async () => {
+    const store = createMemoryEventStore()
+    await store.append(CONTROL_STREAM, 0, [
+      {
+        type: 'ConductorPaused',
+        actor: 'conductor',
+        data: {
+          by: 'lingtai',
+          reason: 'provider quota refused',
+          until: new Date(now.getTime() + 30 * 3_600_000).toISOString(),
+          holdsAcrossStarts: false,
+        },
+      },
+      { type: 'ConductorResumed', actor: 'human:ops', data: { by: 'human:ops' } },
+    ])
+    expect(await check([today(60)], store)).not.toBeNull()
+    expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
+  })
+
   it('is no ceiling when none is set', async () => {
     const store = createMemoryEventStore()
     expect(await dayCeilingPause({ ceilingUsd: undefined, rows: async () => [today(1e6)], store, now })).toBeNull()

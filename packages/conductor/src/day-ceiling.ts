@@ -62,14 +62,26 @@ export function daySpendText(day: DaySpend, ceilingUsd: number | undefined): str
 export const ceilingReached = (day: DaySpend, ceilingUsd: number): boolean =>
   day.reportedCents >= Math.round(ceilingUsd * 100)
 
+/** What a ceiling pause's reason begins with: `by: 'lingtai'` and a timed `until` are also a provider quota pause's, so this is what tells them apart. */
+const CEILING_REASON = 'daily ceiling reached — '
+
 /** True when the last ceiling pause has been resumed and its day is not over. */
 function resumedPast(events: readonly Envelope[], now: Date): boolean {
   let until: number | null = null
   let resumed = false
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'ConductorPaused' && d['by'] === 'lingtai' && typeof d['until'] === 'string') {
-      until = Date.parse(d['until'])
+    if (
+      e.type === 'ConductorPaused' &&
+      d['by'] === 'lingtai' &&
+      typeof d['reason'] === 'string' &&
+      d['reason'].startsWith(CEILING_REASON)
+    ) {
+      until = typeof d['until'] === 'string' ? Date.parse(d['until']) : null
+      resumed = false
+    } else if (e.type === 'ConductorPaused') {
+      // Any other pause (a quota refusal, a person's) is not the ceiling's, and ends its waiver.
+      until = null
       resumed = false
     } else if (e.type === 'ConductorResumed' && until !== null) resumed = true
   }
@@ -112,7 +124,7 @@ export async function dayCeilingPause(options: DayCeilingOptions): Promise<strin
         actor: 'conductor',
         data: parsePayload('ConductorPaused', {
           by: 'lingtai',
-          reason,
+          reason: CEILING_REASON + reason,
           until: nextLocalMidnight(now).toISOString(),
           holdsAcrossStarts: false,
         }),
