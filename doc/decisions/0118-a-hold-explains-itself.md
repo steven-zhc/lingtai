@@ -353,9 +353,16 @@ which kind a wait was got inferred again in each place that needed it, from
      where it is. Evidence a person needs and triage does not carry, such as a
      conflict's paths, still shows.
    - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
-   - **The card** on the board carries only the number, the title, the rail and
-     its line, and triage's cause with one sentence. Everything else, resolutions
-     included, is on the page the card links to.
+   - **The card** on the board carries the number, the title, the rail and its
+     line, triage's cause with one sentence, and, once triage has advised, one
+     button: the resolution `recommendedResolution` names. `GrantFixRound`,
+     `Requeue` and `Approve` resolve the wait in one click, through the same
+     actions the page uses and refused the same way when the card is stale. An
+     `Approve` over a step that still refuses records the note
+     `accepted triage's recommendation: <triage's sentence>`, so the waiver
+     names whose reading it took. `EditBodyAndRequeue`, `Split`,
+     `AnswerQuestion` and `Close` open the page at that resolution and write
+     nothing. Every other resolution is on the page the card links to.
 
 3. **Triage is its own step, run by the daemon after a wait is recorded.**
    - **The decisions are pure and the effects are the shell's**, as
@@ -639,72 +646,72 @@ which kind a wait was got inferred again in each place that needed it, from
 
 12. **A split is written from the page, and its parent closes with its
     children.** The mockup is [`0118/Split.dc.html`](0118/Split.dc.html).
-    1.  **The plan is advice until a person approves it on the page.** Triage
-        can recommend `Split` as soon as it sees `TicketTooBig`, including the
-        first wait, with at most 8 children. The waiting page draws the plan;
-        the person edits titles, bodies, kinds, which children are included
-        and the chain, then presses **Create all**. Nothing is created before
-        that. A project whose tickets are in `db` sees the plan with splitting
-        marked unavailable.
-    2.  **The plan freezes at the first Create all.** From then on the plan is
-        the one `SplitStarted` recorded, and a retry sends none: the writer
-        reads the frozen one from the log. Nothing on the page can change it,
-        not after a failure either, where the split's one move is **Retry what
-        is missing**. A person who wants a different split takes one of the
-        wait's other resolutions, which stay available once nothing is
-        writing; the children already created are named on the page and left
-        for the person to close.
-    3.  **A child is known by its marker and by nothing else.** Every child's
-        body carries an invisible marker naming the parent, the wait and the
-        child's key. The writer finds what exists by listing the issues its
-        own App created since the split started and reading their markers,
-        never by title, and never through GitHub's search index, which lags a
-        create by seconds. An issue without its marker is never adopted,
-        edited or linked. A lookup that fails fails the write; an empty answer
-        is never read as _not created_. A child found by its marker keeps
-        GitHub's title and body.
-    4.  **GitHub has no transaction, so every run reconciles against GitHub,
-        never against the log.** Running the write twice is the same as
-        running it once, running it again after a failure converges on the
-        whole plan, and it never touches an issue it did not create. A run
-        creates each child no marker answers for, attaches each missing
-        sub-issue, adds each missing blocked-by, and records `TicketSplit`
-        only once every child and link has been read back; `TicketSplit`
-        records what GitHub returned, not the plan. A retry never trusts the
-        progress events of rule 5 to skip a write.
-    5.  **Progress is recorded as it goes.** `SplitStarted` carries the wait,
-        the frozen plan and the board process's `instance`; then one
-        `SplitChildWritten` per child and one `SplitLinkWritten` per
-        child-to-child link, each after its read-back; the run ends with
-        `TicketSplit` or `SplitFailed{step, detail}`. Every one carries the
-        `waitId`, because a parent can wait again. The page draws progress
-        from the log (`splitProgressOf`) and shows which children and links
-        exist and which are still owed.
-    6.  **One child at a time:** create it, attach it, record it, then the
-        next.
-    7.  **Writing or interrupted, and the lock.** A `SplitStarted` with
-        nothing terminal after it is _writing_ only if its `instance` is this
-        board process's own and this process says a writer for that wait is
-        running. Otherwise it is _interrupted_, which is derived and never
-        written. The page is locked exactly while the split is _writing_, and
-        offers **Retry what is missing** on `failed` and on _interrupted_. An
-        unfinished split from an earlier board process therefore reads as
-        _interrupted_.
-    8.  **A partial split resolves nothing; a complete one resolves the
-        wait.** Whatever progress events were written stay, and nothing else
-        is appended: no `TicketSplit` and no `WaitResolved`. The wait stays
-        open and the retry reconciles from what GitHub has. A complete split
-        appends `TicketSplit` and then `WaitResolved{Split}` in one
-        transaction, which also releases the claim, _after a split_.
-    9.  **The parent waits on its children and is closed at claim when they
-        are all closed.** The writer marks the parent blocked by each child
-        and rewrites its `## Done when` as one checkbox per child, so the
-        queue passes the parent over as `blocked-by` while any child is open.
-        At claim, `claimTicket` reads exactly `TicketSplit.children`, not the
-        body and not GitHub's sub-issue list. All closed: the parent is
-        closed with no run, a comment saying why posted first. Any open:
-        `split-open`. One that cannot be read: `split-unreadable`, and
-        nothing is closed.
+    1. **The plan is advice until a person approves it on the page.** Triage
+       can recommend `Split` as soon as it sees `TicketTooBig`, including the
+       first wait, with at most 8 children. The waiting page draws the plan;
+       the person edits titles, bodies, kinds, which children are included
+       and the chain, then presses **Create all**. Nothing is created before
+       that. A project whose tickets are in `db` sees the plan with splitting
+       marked unavailable.
+    2. **The plan freezes at the first Create all.** From then on the plan is
+       the one `SplitStarted` recorded, and a retry sends none: the writer
+       reads the frozen one from the log. Nothing on the page can change it,
+       not after a failure either, where the split's one move is **Retry what
+       is missing**. A person who wants a different split takes one of the
+       wait's other resolutions, which stay available once nothing is
+       writing; the children already created are named on the page and left
+       for the person to close.
+    3. **A child is known by its marker and by nothing else.** Every child's
+       body carries an invisible marker naming the parent, the wait and the
+       child's key. The writer finds what exists by listing the issues its
+       own App created since the split started and reading their markers,
+       never by title, and never through GitHub's search index, which lags a
+       create by seconds. An issue without its marker is never adopted,
+       edited or linked. A lookup that fails fails the write; an empty answer
+       is never read as _not created_. A child found by its marker keeps
+       GitHub's title and body.
+    4. **GitHub has no transaction, so every run reconciles against GitHub,
+       never against the log.** Running the write twice is the same as
+       running it once, running it again after a failure converges on the
+       whole plan, and it never touches an issue it did not create. A run
+       creates each child no marker answers for, attaches each missing
+       sub-issue, adds each missing blocked-by, and records `TicketSplit`
+       only once every child and link has been read back; `TicketSplit`
+       records what GitHub returned, not the plan. A retry never trusts the
+       progress events of rule 5 to skip a write.
+    5. **Progress is recorded as it goes.** `SplitStarted` carries the wait,
+       the frozen plan and the board process's `instance`; then one
+       `SplitChildWritten` per child and one `SplitLinkWritten` per
+       child-to-child link, each after its read-back; the run ends with
+       `TicketSplit` or `SplitFailed{step, detail}`. Every one carries the
+       `waitId`, because a parent can wait again. The page draws progress
+       from the log (`splitProgressOf`) and shows which children and links
+       exist and which are still owed.
+    6. **One child at a time:** create it, attach it, record it, then the
+       next.
+    7. **Writing or interrupted, and the lock.** A `SplitStarted` with
+       nothing terminal after it is _writing_ only if its `instance` is this
+       board process's own and this process says a writer for that wait is
+       running. Otherwise it is _interrupted_, which is derived and never
+       written. The page is locked exactly while the split is _writing_, and
+       offers **Retry what is missing** on `failed` and on _interrupted_. An
+       unfinished split from an earlier board process therefore reads as
+       _interrupted_.
+    8. **A partial split resolves nothing; a complete one resolves the
+       wait.** Whatever progress events were written stay, and nothing else
+       is appended: no `TicketSplit` and no `WaitResolved`. The wait stays
+       open and the retry reconciles from what GitHub has. A complete split
+       appends `TicketSplit` and then `WaitResolved{Split}` in one
+       transaction, which also releases the claim, _after a split_.
+    9. **The parent waits on its children and is closed at claim when they
+       are all closed.** The writer marks the parent blocked by each child
+       and rewrites its `## Done when` as one checkbox per child, so the
+       queue passes the parent over as `blocked-by` while any child is open.
+       At claim, `claimTicket` reads exactly `TicketSplit.children`, not the
+       body and not GitHub's sub-issue list. All closed: the parent is
+       closed with no run, a comment saying why posted first. Any open:
+       `split-open`. One that cannot be read: `split-unreadable`, and
+       nothing is closed.
 
 ## Consequences
 
