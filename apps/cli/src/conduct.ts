@@ -141,6 +141,10 @@ export interface PassSlots {
   anyMany?: boolean
 }
 
+/** Continuations a detached look launched and the claim declined, by project, issue and run, and when. */
+const declinedContinuations = new Map<string, number>()
+const DECLINED_BACKOFF_MS = 5 * 60_000
+
 /** What `conductWork` needs beside `ConductWorld` — everything a pass already read once. */
 export interface ConductWorkOptions {
   hookBinary: string
@@ -303,7 +307,11 @@ export function conductWork(
     if (slots && limit > 1 && !slots.ceilingSet) {
       options.log(`${name}: runtime.concurrency ${limit} is ignored — no daily ceiling is set, so one pass runs in all`)
     }
-    const detached = slots !== undefined && slots.ceilingSet && (limit > 1 || slots.anyMany === true)
+    // Passes already in flight keep the look detached even when the limit has since
+    // fallen to one: awaiting would ignore them, and the slot count and the same-file
+    // rule are what keep a lowered limit honest until they have drained.
+    const detached =
+      slots !== undefined && slots.ceilingSet && (limit > 1 || slots.anyMany === true || slots.set.of(name).length > 0)
     const isFull = (): boolean => detached && slots.set.of(name).length >= limit
 
     /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
@@ -319,6 +327,13 @@ export function conductWork(
      * so (0122 §2). The same rule `runQueue` applies, for the rows that jump it.
      */
     const launch = async (issue: number, continuing?: { runId: string }): Promise<boolean> => {
+      // Asked before every start, as the awaited walk asks it before every pass: a pause
+      // recorded while an earlier pass of this look was starting must stop this one.
+      const paused = options.paused ? await options.paused() : null
+      if (paused !== null) {
+        options.log(`${name}: #${issue} not started — ${paused}`)
+        return false
+      }
       const files = await readFixFiles(common.client, issue)
       const why = waitsFor(files, slots!.set.of(name))
       if (why !== null) {
@@ -329,10 +344,23 @@ export function conductWork(
       options.outcome.ran += 1
       const pass = Effect.runPromise(
         world.runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) }).pipe(Effect.provide(PortsLive)),
-      ).then(report, (err: unknown) => {
-        options.log(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
-        return false
-      })
+      ).then(
+        (result) => {
+          const worked = report(result)
+          // A continuation declined at claim stays `approved` on the log, so the next look
+          // would pick it again and starve the queue. Remember it for a while, and wake
+          // once: whatever it kept out of its slot can go now.
+          if (!worked && continuing) {
+            declinedContinuations.set(`${name}#${issue}:${continuing.runId}`, Date.now())
+            return true
+          }
+          return worked
+        },
+        (err: unknown) => {
+          options.log(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
+          return false
+        },
+      )
       slots!.started(pass.finally(leave))
       return true
     }
@@ -340,6 +368,11 @@ export function conductWork(
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
       if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
+      if (
+        detached &&
+        Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
+      )
+        continue
       const ticket = reduceTicket(await store.read(ticketStream(name, Number(c.issue))))
       if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
