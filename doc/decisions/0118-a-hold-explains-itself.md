@@ -1,6 +1,6 @@
 # 0118 — Waiting on you: every wait says what kind it is, what is asked, and what each answer does
 
-**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md) · §3 amended 2026-10-24 with tool-enabled Codex triage (#569)
+**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md) · §3 amended 2026-10-24 with tool-enabled Codex triage (#569) · §12 amended 2026-10-26 (#605)
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (its title, triage's reading of
@@ -637,44 +637,74 @@ which kind a wait was got inferred again in each place that needed it, from
       waiting or not, and still writes `TicketClosed`; a waiting ticket
       closed also gets its `WaitResolved{Close}`.
 
-12. **A split makes the waiting ticket an open parent epic.**
-    - Triage can recommend `Split` as soon as it sees `TicketTooBig`, including
-      the first wait. Its proposed child tickets and order are advice. A person
-      reviews and approves the concrete child titles and bodies and the
-      dependency chain before any issue is created.
-    - Create the children and their GitHub dependency links, then record
-      `WaitResolved{Split}`. The original ticket stays open as the parent epic
-      and is excluded from the queue; children enter the queue subject to
-      their blockers. The parent is not treated as completed merely because
-      its wait was resolved.
-    - **GitHub has no transaction, so the write is a reconciliation, not a
-      sequence.** All or nothing cannot be had; what is had instead is that
-      running the write twice is the same as running it once, that running it
-      again after a failure converges on the whole plan, and that it never
-      touches an issue it did not create.
-    - **The plan freezes at the first Create all.** The person edits titles,
-      bodies, kinds, which children are included and the chain until they
-      press it; from then on the plan is the one `SplitStarted` recorded, and
-      nothing on the page can change it — not after a failure either, where
-      the split's one move is **Retry what is missing**. A person who wants a
-      different split takes one of the wait's other moves, which stay
-      available once nothing is writing; the children already created are
-      named on the page and left for the person to close.
-    - **A child is known by its marker and by nothing else.** Every child's
-      body carries an invisible marker naming the parent, the wait and the
-      child's key. The writer finds what exists by listing the issues its own
-      App created since the split started and reading their markers — never
-      by title, and never through GitHub's search index, which lags a create
-      by seconds. An issue without its marker is never adopted, edited or
-      linked. A lookup that fails fails the write; an empty answer is never
-      read as _not created_.
-    - **Every run of the writer reconciles the frozen plan against GitHub**:
-      it creates each child no marker answers for, attaches each missing
-      sub-issue, adds each missing blocked-by, and records `TicketSplit` only
-      once every child and link has been read back. A retry is the same run
-      again; it needs no record of where the last one stopped. The page draws
-      progress from the log (`splitProgressOf`) and shows which children and
-      links exist and which are still owed.
+12. **A split is written from the page, and its parent closes with its
+    children.** The mockup is [`0118/Split.dc.html`](0118/Split.dc.html).
+    1.  **The plan is advice until a person approves it on the page.** Triage
+        can recommend `Split` as soon as it sees `TicketTooBig`, including the
+        first wait, with at most 8 children. The waiting page draws the plan;
+        the person edits titles, bodies, kinds, which children are included
+        and the chain, then presses **Create all**. Nothing is created before
+        that. A project whose tickets are in `db` sees the plan with splitting
+        marked unavailable.
+    2.  **The plan freezes at the first Create all.** From then on the plan is
+        the one `SplitStarted` recorded, and a retry sends none: the writer
+        reads the frozen one from the log. Nothing on the page can change it,
+        not after a failure either, where the split's one move is **Retry what
+        is missing**. A person who wants a different split takes one of the
+        wait's other resolutions, which stay available once nothing is
+        writing; the children already created are named on the page and left
+        for the person to close.
+    3.  **A child is known by its marker and by nothing else.** Every child's
+        body carries an invisible marker naming the parent, the wait and the
+        child's key. The writer finds what exists by listing the issues its
+        own App created since the split started and reading their markers,
+        never by title, and never through GitHub's search index, which lags a
+        create by seconds. An issue without its marker is never adopted,
+        edited or linked. A lookup that fails fails the write; an empty answer
+        is never read as _not created_. A child found by its marker keeps
+        GitHub's title and body.
+    4.  **GitHub has no transaction, so every run reconciles against GitHub,
+        never against the log.** Running the write twice is the same as
+        running it once, running it again after a failure converges on the
+        whole plan, and it never touches an issue it did not create. A run
+        creates each child no marker answers for, attaches each missing
+        sub-issue, adds each missing blocked-by, and records `TicketSplit`
+        only once every child and link has been read back; `TicketSplit`
+        records what GitHub returned, not the plan. A retry never trusts the
+        progress events of rule 5 to skip a write.
+    5.  **Progress is recorded as it goes.** `SplitStarted` carries the wait,
+        the frozen plan and the board process's `instance`; then one
+        `SplitChildWritten` per child and one `SplitLinkWritten` per
+        child-to-child link, each after its read-back; the run ends with
+        `TicketSplit` or `SplitFailed{step, detail}`. Every one carries the
+        `waitId`, because a parent can wait again. The page draws progress
+        from the log (`splitProgressOf`) and shows which children and links
+        exist and which are still owed.
+    6.  **One child at a time:** create it, attach it, record it, then the
+        next.
+    7.  **Writing or interrupted, and the lock.** A `SplitStarted` with
+        nothing terminal after it is _writing_ only if its `instance` is this
+        board process's own and this process says a writer for that wait is
+        running. Otherwise it is _interrupted_, which is derived and never
+        written. The page is locked exactly while the split is _writing_, and
+        offers **Retry what is missing** on `failed` and on _interrupted_. An
+        unfinished split from an earlier board process therefore reads as
+        _interrupted_.
+    8.  **A partial split resolves nothing; a complete one resolves the
+        wait.** Whatever progress events were written stay, and nothing else
+        is appended: no `TicketSplit` and no `WaitResolved`. The wait stays
+        open and the retry reconciles from what GitHub has. A complete split
+        appends `TicketSplit` and then `WaitResolved{Split}` in one
+        transaction, which also releases the claim, _after a split_.
+    9.  **The parent waits on its children and is closed at claim when they
+        are all closed.** The writer marks the parent blocked by each child
+        and rewrites its `## Done when` as one checkbox per child, so the
+        queue passes the parent over as `blocked-by` while any child is open.
+        At claim, `claimTicket` reads exactly `TicketSplit.children`, not the
+        body and not GitHub's sub-issue list. All closed: the parent is
+        closed with no run, a comment saying why posted first. Any open:
+        `split-open`. One that cannot be read: `split-unreadable`, and
+        nothing is closed.
 
 ## Consequences
 
@@ -724,7 +754,9 @@ the merge conflict, the questions, and what follows a resolution. They open dire
 in a browser. `dc-lite.js` beside them is all they run. They illustrate the
 decision and do not extend it: where a mockup and this text differ, this text
 is the decision. In particular, _Outcomes_' "the judge and triage disagree"
-draws the side-by-side and the pick that §5 no longer has.
+draws the side-by-side and the pick that §5 no longer has, and _Split_'s partial
+stage says the missing child can still be edited or left out before Retry,
+where §12 rule 2 freezes the plan.
 
 ---
 
