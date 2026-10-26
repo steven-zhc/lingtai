@@ -137,6 +137,21 @@ using them in a terminal.
    no flag the command refuses by name, saying which flag would answer it.
    Under `--json` there are no prompts at all.
 
+10. **Output only writes; the command owns the process.** A spinner, a
+    progress line or anything else that draws output never reads stdin, never
+    puts it in raw mode, never installs a signal listener and never calls
+    `process.exit`. In raw mode Ctrl+C stops being `SIGINT` and arrives as a
+    byte, so a command's own handler — `restart`'s drain, `service
+    shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
+    that exits ends the process before that handler's asynchronous work has
+    landed. Either way the cleanup is skipped and the exit code lies. The
+    spinner is `ora` with `discardStdin: false` and `hideCursor: false`, which
+    leaves it nothing but writing; `@clack/prompts`' `spinner`,
+    `yocto-spinner` and `nanospinner` each take Ctrl+C for themselves and are
+    not used. A prompt is the one exception, because asking is reading: while
+    a question is open nothing is in flight to clean up, and clack hands a
+    cancel back to the caller rather than exiting.
+
 ## Consequences
 
 - The hand-written `USAGE` in `lingtai.ts` is deleted when this is built, not
