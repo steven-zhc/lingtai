@@ -7,6 +7,11 @@
  * itself, and an operator's pause (#45) can take effect between items instead
  * of only after a whole queue has been worked.
  *
+ * That is the awaited mode, and the default. Where a daily ceiling is set and
+ * `runtime.concurrency` asks for more (0122 §1), a pass is detached instead: it
+ * fills the free slots, hands each started pass to `slots.started` and returns
+ * while they are still running, so awaiting it is no barrier on the items.
+ *
  * This lives in the CLI and not in `@lingtai/daemon` on purpose. The daemon
  * hosts a loop and knows nothing about GitHub clients, runtimes or prompts;
  * assembling those is what this application already does for `lingtai run`, and
@@ -317,7 +322,9 @@ export function conductWork(
     // limit honest until they have drained.
     const detached =
       slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
-    const isFull = (): boolean => detached && slots.set.of(name).length >= limit
+    // No ceiling means one pass in all: any pass in flight, in any project, fills the installation.
+    const isFull = (): boolean =>
+      detached && (slots.ceilingSet ? slots.set.of(name).length >= limit : slots.set.size >= 1)
 
     /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
     const report = (result: RunOnceResult): boolean => {
@@ -469,7 +476,7 @@ export function conductWork(
       }
     }
     // Detached, a request and a continuation take a slot and the queue fills the rest.
-    if (!asked || detached) {
+    if ((!asked || detached) && !isFull()) {
       const ran: ScheduleResult = await Effect.runPromise(
         world
           .runQueue({
