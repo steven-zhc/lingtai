@@ -99,8 +99,11 @@ and the dollar ceiling lands before any N > 1.
    flight.** It is one figure in `~/.lingtai/config.yml`
    ([0117](0117-configuration-is-config-yml-and-the-environment.md), so it can
    also be exported as a `LINGTAI_` variable) and it stays installation-wide,
-   because one account pays. **While none is set, a project's effective slots
-   are 1**, and `lingtai doctor` says so: no N > 1 runs unbounded.
+   because one account pays. **While none is set, the installation runs one
+   pass in all**, whatever each project's `concurrency` says: a look starts a
+   pass only when nothing is in flight in any project, so two projects with a
+   free slot each do not run together. `lingtai doctor` says so: no N > 1 runs
+   unbounded.
    - The day is the machine's local calendar day. Spend is the sum of today's
      `spend` rows; a row whose `costUsd` is null is priced from the rate card at
      the moment of reading, never in a fold
@@ -113,9 +116,15 @@ and the dollar ceiling lands before any N > 1.
      ([0108](0108-a-refusal-buys-a-round.md) §11). It needs no
      `holdsAcrossStarts`: a restarted daemon recomputes and pauses again at its
      first check.
-   - **The overshoot is bounded by slots × one pass's ceiling** (`passCeiling`,
-     `packages/conductor/src/ceiling.ts`). That number is the price of never
-     killing a pass.
+   - **The overshoot is bounded only as far as the recipe bounds a pass.** The
+     figure is `passCeiling`'s (`packages/conductor/src/ceiling.ts`) times the
+     slots in flight, and that product counts `implement`'s runs alone: the cold
+     reviewer's and a judge's calls are outside it, and `runtime.limits.usd` is
+     optional. So the daily ceiling is a bound on when new work stops being
+     taken, not on the day's total; what a pass spends after the ceiling is
+     reached is whatever its own limits allow. An operator who wants a number
+     sets `runtime.limits.usd` on every step that dispatches and budgets slots ×
+     that figure over the ceiling. That is the price of never killing a pass.
 
 6. **Per pass, and shared.**
 
@@ -156,7 +165,8 @@ and the dollar ceiling lands before any N > 1.
 
 - Both the beacon and the work loop hold a set of runs where they held one.
   `lingtai status`, `doctor` and the board's bar read the set.
-- Until a ceiling is configured nothing changes for anyone: one slot, as today.
+- Until a ceiling is configured nothing changes for anyone: one pass in the
+  whole installation, as today.
 - Two tickets that collide in a way a `Fix` row did not predict both run, and the
   second to land pays a re-review on the new base. That cost is chosen over paying
   an agent to predict scope.
