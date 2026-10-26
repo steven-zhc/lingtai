@@ -42,9 +42,14 @@ export async function askText(message: string, flag: string, how: Interactivity)
   return answer(await clack.text({ message }))
 }
 
-export async function askConfirm(message: string, flag: string, how: Interactivity): Promise<boolean> {
+export async function askConfirm(
+  message: string,
+  flag: string,
+  how: Interactivity,
+  initialValue = true,
+): Promise<boolean> {
   assertAskable(flag, how)
-  return answer(await clack.confirm({ message }))
+  return answer(await clack.confirm({ message, initialValue }))
 }
 
 /** What Ctrl+C at a question says: every earlier answer is already written, and this one was not. */

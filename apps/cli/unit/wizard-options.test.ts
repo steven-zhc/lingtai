@@ -77,6 +77,19 @@ describe('flagsOf', () => {
     expect((await parsedBy('add', ['--local', '/repo']))?.positional).toBeUndefined()
   })
 
+  it('accepts --no-color on both commands without making it a wizard flag', async () => {
+    expect(await parsedBy('init', ['--no-color', '--store', 'sqlite'])).toEqual({
+      flags: { store: 'sqlite' },
+      repeated: { store: ['sqlite'] },
+    })
+    expect(await parsedBy('add', ['owner/repo', '--no-color'])).toEqual({
+      positional: 'owner/repo',
+      flags: {},
+      repeated: {},
+    })
+    expect(valuelessFlag(['--no-color'])).toBeNull()
+  })
+
   it('refuses a flag neither command has, where add used to ignore it', async () => {
     expect(await parsedBy('add', ['owner/repo', '--no-such-flag', 'x'])).toBeNull()
   })

@@ -28,6 +28,8 @@ export const recipeOptions = {
   wall: text('wall'),
   budget: text('budget'),
   defaults: Options.boolean('defaults'),
+  // `runCli` applies NO_COLOR itself; this only lets the parser accept the flag.
+  'no-color': Options.boolean('no-color'),
 }
 
 export const initOptions = {
@@ -61,6 +63,7 @@ export function flagsOf(parsed: Record<string, Option.Option<string> | readonly 
   const flags: Record<string, string> = {}
   const repeated: Record<string, string[]> = {}
   for (const [name, value] of Object.entries(parsed)) {
+    if (name === 'no-color') continue
     if (typeof value === 'boolean') {
       if (value) {
         flags[name] = ''
@@ -80,7 +83,7 @@ export function flagsOf(parsed: Record<string, Option.Option<string> | readonly 
   return { flags, repeated }
 }
 
-const VALUELESS_OK = new Set(['defaults'])
+const VALUELESS_OK = new Set(['defaults', 'no-color'])
 
 /**
  * The first `--flag` of `init` or `add` that takes a value and was given none —

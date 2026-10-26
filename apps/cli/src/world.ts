@@ -87,7 +87,8 @@ export function liveWorld(self: string, outside: Live = live()): World {
     log: outside.log,
     ask: async (question) => {
       try {
-        return await askConfirm(question.replace(/\s*\[y\/N\]\s*:?\s*$/i, ''), '--yes', interactivity(false))
+        // Enter is a no, as the `[y/N]` reader had it: the default must not be the deletion.
+        return await askConfirm(question.replace(/\s*\[y\/N\]\s*:?\s*$/i, ''), '--yes', interactivity(false), false)
       } catch (err) {
         if (!(err instanceof PromptRefused)) throw err
         // Not a terminal on both ends: refused by name, as before, and nothing is removed.
