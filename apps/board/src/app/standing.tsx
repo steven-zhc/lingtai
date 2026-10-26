@@ -196,7 +196,10 @@ export function TriageBand({
                 ? 'The approach is wrong; start over from base instead of continuing saved work.'
                 : cause._tag === 'FixableLines' && result.resolution === 'Approve'
                   ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
-                  : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
+                  : cause._tag === 'ConflictingHunks' &&
+                      recommendedResolution(reason, status, { savedHead }) === 'GrantFixRound'
+                    ? `Triage advised ${RESOLUTION_COPY[result.resolution].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a fix round is drawn first instead: each hunk’s recommended answer goes to the fixer.`
+                    : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
             {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
           {parts ? (

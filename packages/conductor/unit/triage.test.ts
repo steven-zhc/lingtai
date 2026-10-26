@@ -287,6 +287,14 @@ describe('triageBrief', () => {
     expect(brief).toMatch(/Past that bound, send\s+`"hunks": \[\]` with `total`/)
     expect(brief).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
+
+  it('asks the resolution to agree with a conflict’s hunk answers (#652)', () => {
+    const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
+    expect(brief).toMatch(/With `ConflictingHunks`, the resolution agrees with the hunks' recommended\s+answers/)
+    expect(brief).toMatch(
+      /Recommend `Requeue` only when every `Divergent` hunk's recommended\s+answer is to redo the work/,
+    )
+  })
 })
 
 describe('parseTriage', () => {

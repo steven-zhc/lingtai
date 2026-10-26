@@ -1559,7 +1559,7 @@ describe('a decline, told apart from a crash', () => {
 })
 
 describe('the ticket and the advice a fix round is briefed with (#643)', () => {
-  const base = {
+  const briefBase = {
     refusal: { on: 'findings', findings: [finding()] } as const,
     round: 1,
     of: 1,
@@ -1569,6 +1569,7 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
     checks: ['pnpm test'],
     ticket: TICKET,
   }
+  const base = briefBase
   const fixes = [
     { path: 'src/spinner.ts', line: 12, what: 'replace the spinner with ora' },
     { path: 'src/cli.ts', line: null, what: 'pass hideCursor: false' },
@@ -1580,14 +1581,15 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
   })
 
   it('carries every fix, a null line printing the path alone', () => {
-    const brief = fixBrief({ ...base, advice: fixes })
+    const brief = fixBrief({ ...base, advice: { on: 'lines', fixes } })
     expect(brief).toContain('`src/spinner.ts:12` — replace the spinner with ora')
     expect(brief).toContain('`src/cli.ts` — pass hideCursor: false')
     expect(brief).not.toContain('src/cli.ts:')
   })
 
   it('is the same brief with no advice, or an empty list', () => {
-    expect(fixBrief({ ...base, advice: [] })).toBe(fixBrief(base))
+    expect(fixBrief({ ...base, advice: { on: 'lines', fixes: [] } })).toBe(fixBrief(base))
+    expect(fixBrief({ ...base, advice: { on: 'hunks', hunks: [] } })).toBe(fixBrief(base))
     expect(fixBrief({ ...base, advice: undefined })).toBe(fixBrief(base))
     expect(fixBrief(base)).not.toContain('granted this round')
   })
@@ -1601,7 +1603,7 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
     it('reads FixableLines on the wait asked about', () => {
       const w = aWaitId()
       const events = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, advised(lines))]
-      expect(grantedAdviceOf(events, w)).toEqual(fixes)
+      expect(grantedAdviceOf(events, w)).toEqual({ on: 'lines', fixes })
     })
 
     it('reads only the latest attempt', () => {
@@ -1619,6 +1621,55 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
       const earlier = aWaitId()
       const events = [...aTriageStart(item, earlier, 1), ...aTriaged(item, earlier, 1, advised(lines))]
       expect(grantedAdviceOf(events, aWaitId())).toBeUndefined()
+    })
+
+    describe('ConflictingHunks (#652)', () => {
+      const divergent = {
+        _tag: 'Divergent',
+        path: 'apps/cli/src/lingtai.ts',
+        line: 40,
+        question: {
+          id: 'q',
+          text: 'Where does daemonCommand live now?',
+          answers: [
+            { id: 'port', text: 'Move the two dayCeilingStop calls into daemon.ts' },
+            { id: 'requeue', text: 'Start over' },
+          ],
+          recommended: 'port',
+        },
+      }
+      const mechanical = { _tag: 'Mechanical', path: 'apps/cli/src/status.ts', line: 3 }
+      const conflict = (hunks: object[]) => advised({ _tag: 'ConflictingHunks', hunks, total: hunks.length })
+
+      it('carries each divergent hunk’s question and recommended answer into the brief', () => {
+        const w = aWaitId()
+        const events = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, conflict([divergent, mechanical]))]
+        const advice = grantedAdviceOf(events, w)
+        expect(advice).toEqual({
+          on: 'hunks',
+          hunks: [
+            {
+              path: 'apps/cli/src/lingtai.ts',
+              line: 40,
+              question: 'Where does daemonCommand live now?',
+              recommended: 'Move the two dayCeilingStop calls into daemon.ts',
+            },
+          ],
+        })
+        const brief = fixBrief({ ...briefBase, advice })
+        expect(brief).toContain('What the person who granted this round accepted')
+        expect(brief).toContain('`apps/cli/src/lingtai.ts:40` — Where does daemonCommand live now?')
+        expect(brief).toContain("Triage's answer: Move the two dayCeilingStop calls into daemon.ts")
+        expect(brief).not.toContain('status.ts')
+      })
+
+      it('is none, and the brief unchanged, with only mechanical hunks or none listed', () => {
+        const w = aWaitId()
+        const only = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, conflict([mechanical]))]
+        expect(grantedAdviceOf(only, w)).toBeUndefined()
+        const none = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, conflict([]))]
+        expect(grantedAdviceOf(none, w)).toBeUndefined()
+      })
     })
 
     it('is none for another cause, a failed triage, an empty list or no triage', () => {

@@ -143,6 +143,9 @@ const RULES = `## The rules
 - **The parts belong to the cause** (0118 §3): questions only inside
   \`UndecidedQuestion\` or a \`Divergent\` hunk's own \`question\`, fixes only
   inside \`FixableLines\`, hunks only inside \`ConflictingHunks\`.
+- **With \`ConflictingHunks\`, the resolution agrees with the hunks' recommended
+  answers.** Recommend \`Requeue\` only when every \`Divergent\` hunk's recommended
+  answer is to redo the work.
 - **The budget is never a cause** (0118 §4). A turn or dollar ceiling is a fact
   about the pass, not a reason the approach is wrong or the lines need fixing —
   name the actual cause underneath it, if there is one, or say the run did not
