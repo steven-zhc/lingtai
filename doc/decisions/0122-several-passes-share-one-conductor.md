@@ -137,7 +137,14 @@ and the dollar ceiling lands before any N > 1.
    | Worktree | `~/.lingtai/worktrees/<project>/<runId>` (`run-log.ts`) |
    | Branch | `agent/<issue>` |
    | Run log | `runLogPath` (`run-log.ts`) |
-   | Test store | made per vitest run by `packages/event-store/test-support/teardown.ts` |
+   | Test store | a SQLite file in a directory made per vitest run by `packages/event-store/test-support/teardown.ts`, only while no `LINGTAI_TEST_DATABASE_URL` is set |
+
+   **With `LINGTAI_TEST_DATABASE_URL` set the test store is shared, not per pass:**
+   `setup()` makes no directory for it, every pass's suite writes the one Postgres
+   database, and the first suite's teardown deletes every `esctest*` event and
+   control stream in it, including a still-running pass's. At N > 1 a pass
+   therefore runs its tests with no URL set, or the URL names a database of its
+   own.
 
    No port is assigned to a pass. A test that binds a fixed port is a defect at
    N > 1.
