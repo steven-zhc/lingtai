@@ -30,6 +30,7 @@
 import { log, subscribe } from '@lingtai/event-store'
 
 import { readHealth } from '@/lib/health'
+import { onSplitEnded } from '@/lib/split-instance'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +64,7 @@ export function GET(request: Request): Response {
   // A `setTimeout`, not a second interval: it fires once after a burst of
   // appends stops, so a run that writes fifty events costs one health read.
   let healthSoon: ReturnType<typeof setTimeout> | undefined
+  let unlistenSplit: (() => void) | undefined
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -110,6 +112,7 @@ export function GET(request: Request): Response {
         open = false
         clearInterval(keepAlive)
         clearTimeout(healthSoon)
+        unlistenSplit?.()
         void subscription?.close()
         try {
           controller.close()
@@ -119,6 +122,11 @@ export function GET(request: Request): Response {
       }
 
       request.signal.addEventListener('abort', stop, { once: true })
+
+      // A split writer leaving this process's running set changes what the page
+      // shows (*writing* → *interrupted*) with no append behind it, e.g. when
+      // its last SplitFailed append threw. No `id:`, so a resume point is not moved.
+      unlistenSplit = onSplitEnded(() => send(`event: append\ndata: ${JSON.stringify({ type: 'SplitEnded' })}\n\n`))
 
       try {
         subscription = subscribe({
@@ -160,6 +168,7 @@ export function GET(request: Request): Response {
     },
 
     cancel() {
+      unlistenSplit?.()
       clearInterval(keepAlive)
       clearTimeout(healthSoon)
       void subscription?.close()

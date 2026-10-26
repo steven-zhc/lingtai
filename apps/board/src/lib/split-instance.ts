@@ -27,6 +27,23 @@ export function isSplitRunning(waitId: string): boolean {
   return running().has(waitId)
 }
 
+const ENDED = Symbol.for('lingtai.board.splitEnded')
+
+function listeners(): Set<() => void> {
+  const g = globalThis as unknown as Record<symbol, Set<() => void> | undefined>
+  return (g[ENDED] ??= new Set())
+}
+
+/**
+ * Called when a writer in this process leaves the running set. *Writing* is read
+ * off that set as well as the log, so its leaving changes what a page shows
+ * with no append to say so — the live stream forwards this as a change.
+ */
+export function onSplitEnded(listener: () => void): () => void {
+  listeners().add(listener)
+  return () => void listeners().delete(listener)
+}
+
 /**
  * Starts a writer and keeps `waitId` in the running set until it ends, however
  * it ends. A second start while one runs is refused without calling `start`:
@@ -42,5 +59,14 @@ export function runSplit<T>(waitId: string, start: () => Promise<T>): Promise<T 
       console.error(`split of ${waitId} failed:`, err)
       return null
     })
-    .finally(() => set.delete(waitId))
+    .finally(() => {
+      set.delete(waitId)
+      for (const listener of [...listeners()]) {
+        try {
+          listener()
+        } catch (err) {
+          console.error('a split-ended listener failed:', err)
+        }
+      }
+    })
 }
