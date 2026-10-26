@@ -432,18 +432,20 @@ export function generate({ root, sha }: { root: string; sha: string }): EventsDo
 
 if (import.meta.main) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+  const sha = git('rev-parse', 'HEAD')
+  const doc = generate({ root, sha })
   // A permalink's line numbers come from the working tree and its sha from HEAD;
   // they only agree when nothing under the scanned directories differs from HEAD.
-  const dirty = execFileSync('git', ['status', '--porcelain', '--', 'apps', 'packages'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).trim()
-  if (dirty !== '') {
+  // Checked *after* the sources were read, so an edit saved at any point up to
+  // here is caught: it stays in the tree and shows as dirty, and a HEAD that
+  // moved meanwhile is refused the same way.
+  const dirty = git('status', '--porcelain', '--', 'apps', 'packages')
+  if (dirty !== '' || git('rev-parse', 'HEAD') !== sha) {
     console.error(
       `refusing to generate: uncommitted changes would make the links point at the wrong lines of ${sha}\n${dirty}\ncommit them first, then run pnpm events:generate`,
     )
     process.exit(1)
   }
-  writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(generate({ root, sha }), null, 2) + '\n')
+  writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(doc, null, 2) + '\n')
 }
