@@ -451,7 +451,7 @@ export async function splitTicketHolding(
     }
   }
 
-  // One place on the way out: a failure with no terminal event would read as writing until the board restarts.
+  // One place on the way out. If this append is lost the board's running set still says the writer is gone, so the page reads interrupted, with Retry.
   if (result !== null) await noteFailed(failedStep, result.detail)
 
   return (

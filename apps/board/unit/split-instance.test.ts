@@ -1,3 +1,8 @@
+import { splitTicketHolding } from '@lingtai/conductor/split-ticket'
+import { splitProgressOf, ticketStream } from '@lingtai/domain'
+import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { isSplitRunning, runSplit } from '../src/lib/split-instance.ts'
@@ -29,5 +34,61 @@ describe('runSplit', () => {
     release()
     await first
     expect(isSplitRunning('w3')).toBe(false)
+  })
+})
+
+describe('runSplit around the writer (0118 §12 rule 7)', () => {
+  it('reads interrupted, not writing, once a writer whose SplitFailed append threw has ended', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('p', 1)
+    const item = makeStream(ticketId)
+    const waitId = aWaitId()
+    const run = aRun('pass-1')
+    await store.append(ticketId, 0, [
+      ...aClaim(item, run.runId),
+      ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
+    ])
+    const real = store.append.bind(store)
+    store.append = async (id, version, events) => {
+      if (events.some((e) => e.type === 'SplitFailed')) throw new Error('store is down')
+      return real(id, version, events)
+    }
+    const github = {
+      listIssuesSince: async () => {
+        throw new Error('GitHub is down')
+      },
+    } as unknown as Parameters<typeof splitTicketHolding>[0]['github']
+    let during: boolean | null = null
+    await runSplit(waitId, () =>
+      splitTicketHolding(
+        {
+          project: 'p',
+          issue: 1,
+          waitId,
+          plan: {
+            children: [
+              { key: 'a', title: 'a', body: 'a', kind: 'bug' },
+              { key: 'b', title: 'b', body: 'b', kind: 'bug' },
+            ],
+            blockedBy: [],
+          },
+          kinds: ['bug'],
+          repository: 'o/p',
+          by: 'human:h',
+          instance: 'board-1',
+          github,
+          store,
+          onStarted: () => (during = isSplitRunning(waitId)),
+        },
+        store,
+        ticketId,
+      ),
+    )
+    expect(during).toBe(true)
+    const events = await store.read(ticketId)
+    expect(events.some((e) => e.type === 'SplitStarted')).toBe(true)
+    expect(events.some((e) => e.type === 'SplitFailed')).toBe(false)
+    const progress = splitProgressOf(events, { waitId, instance: 'board-1', running: isSplitRunning(waitId) })
+    expect(progress.state).toBe('interrupted')
   })
 })

@@ -131,14 +131,15 @@ async function setup(body = PARENT_BODY) {
     ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
   ])
   const gh = new FakeGitHub(body)
-  const go = (given: SplitPlanInput | undefined = plan, onStarted?: () => void) =>
+  // `go()` submits the plan; `go(undefined)` is the board's Retry, which sends none.
+  const go = (...args: [given?: SplitPlanInput, onStarted?: () => void]) =>
     splitTicketHolding(
       {
         project: PROJECT,
         issue: PARENT,
         waitId,
-        plan: given,
-        onStarted,
+        plan: args.length === 0 ? plan : args[0],
+        onStarted: args[1],
         kinds: ['bug', 'feature'],
         repository: REPO,
         by: 'human:steven',
