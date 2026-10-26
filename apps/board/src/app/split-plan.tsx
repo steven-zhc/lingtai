@@ -15,13 +15,16 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 
 import { splitModeOf } from '../lib/split-mode.ts'
 import { waves, wouldCycle, type Link } from '../lib/split-waves.ts'
 import { splitCard } from './actions.ts'
 
 /** The mockup's measurements (`doc/decisions/0118/Split.dc.html`): cards left to right, one column per wave. */
+/** How often a page that says *writing* asks again, in case the writer ended without an append to hear. */
+const WRITING_RECHECK_MS = 4000
 const CARD_W = 236
 const CARD_H = 66
 const NODE_SEP = 16
@@ -110,6 +113,15 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const children: Child[] = frozen === null ? localChildren : frozen.children.map((child) => ({ ...child }))
   const links: Link[] = frozen === null ? localLinks : frozen.blockedBy.map((link) => ({ ...link }))
   const [pending, start] = useTransition()
+  const router = useRouter()
+  const writing = progress.state === 'writing'
+  // *Writing* ends when the writer leaves this process's running set, and a writer whose last append
+  // failed leaves nothing on the log for `live.tsx` to hear. So while the page says writing, it re-reads.
+  useEffect(() => {
+    if (!writing) return
+    const timer = setInterval(() => router.refresh(), WRITING_RECHECK_MS)
+    return () => clearInterval(timer)
+  }, [writing, router])
   const [said, setSaid] = useState<string | null>(null)
   const written = new Map(progress.state === 'idle' ? [] : progress.children.map((c) => [c.key, c.number] as const))
   const [off, setOff] = useState<ReadonlySet<string>>(new Set())
