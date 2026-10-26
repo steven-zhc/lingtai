@@ -47,19 +47,25 @@ function testFiles(): { file: string; text: string }[] {
 
 /** `.listen(` calls in `text` whose first argument is a fixed, nonzero port. */
 export function fixedPorts(text: string): string[] {
+  // Blank comments and strings in place, keeping every offset and newline, so a
+  // call is matched across lines and a quoted or commented one is neither a call
+  // nor a declaration.
+  const code = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|`[^`]*`|'[^'\n]*'|"[^"\n]*"/g, (m) => m.replace(/[^\n]/g, ' '))
+  // A numeric literal as written: decimal, hex, binary or octal, with `_` separators.
+  const num = '0[xX][\\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\\d[\\d_]*'
+  const nonzero = (token: string): boolean => Number(token.replace(/_/g, '')) !== 0
   const constants = new Set<string>()
   // The number may be followed by anything but more of itself (`as const`, a
   // trailing comment, `satisfies`), so only a fraction or an identifier tail is out.
-  for (const m of text.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*([1-9]\d*)(?![\w.$])/g)) {
-    constants.add(m[1]!)
+  for (const m of code.matchAll(
+    new RegExp(`\\b(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*(?::\\s*number\\s*)?=\\s*(${num})(?![\\w.$])`, 'g'),
+  )) {
+    if (nonzero(m[2]!)) constants.add(m[1]!)
   }
-  // Blank comments and strings in place, keeping every offset and newline, so a
-  // call is matched across lines and a quoted or commented one is not a call.
-  const code = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|`[^`]*`|'[^'\n]*'|"[^"\n]*"/g, (m) => m.replace(/[^\n]/g, ' '))
   const out: string[] = []
-  for (const m of code.matchAll(/\.listen\(\s*([A-Za-z_$][\w$]*|\d+)/g)) {
+  for (const m of code.matchAll(new RegExp(`\\.listen\\(\\s*([A-Za-z_$][\\w$]*|${num})(?![\\w.$])`, 'g'))) {
     const arg = m[1]!
-    if (!(/^\d+$/.test(arg) ? Number(arg) !== 0 : constants.has(arg))) continue
+    if (!(/^\d/.test(arg) ? nonzero(arg) : constants.has(arg))) continue
     const start = text.lastIndexOf('\n', m.index) + 1
     out.push(text.slice(start, text.indexOf('\n', m.index) + 1 || undefined).trim())
   }
@@ -86,6 +92,11 @@ describe('no test binds a fixed port (0122 §6)', () => {
     expect(fixedPorts('const PORT = 8080 // test server\nserver.listen(PORT, "127.0.0.1")')).toHaveLength(1)
     expect(fixedPorts('const PORT = 8080 as const\nserver.listen(PORT)')).toHaveLength(1)
     expect(fixedPorts('const PORT = 8080; /* x */ server.listen(PORT)')).toHaveLength(1)
+    expect(fixedPorts('const PORT = 8_080\nserver.listen(PORT)')).toHaveLength(1)
+    expect(fixedPorts('server.listen(0x1f90)')).toHaveLength(1)
+    expect(fixedPorts('server.listen(8_080)')).toHaveLength(1)
+    expect(fixedPorts('server.listen(0x0)')).toEqual([])
+    expect(fixedPorts('// const PORT = 8080\nconst PORT = 0\nserver.listen(PORT, "127.0.0.1")')).toEqual([])
     expect(fixedPorts('const PORT = 0 // any\nserver.listen(PORT)')).toEqual([])
   })
 
