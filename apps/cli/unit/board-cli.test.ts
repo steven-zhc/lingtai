@@ -102,7 +102,7 @@ describe('the supervisor reaches board through lingtai.ts', () => {
   it("serves the job's command from a real case, not the entry's refusal group", () => {
     expect(BOARD_JOB.argv.slice(0, 2)).toEqual(['board', 'start'])
     const source = readFileSync(new URL('../src/lingtai.ts', import.meta.url), 'utf8')
-    const body = /case 'board':\n([\s\S]*?)\n\s*\/\/ Positional throughout/.exec(source)?.[1] ?? ''
+    const body = /case 'board':\n([\s\S]*?)\n\s*case 'start':/.exec(source)?.[1] ?? ''
     expect(body).toContain('runCli')
     expect(body).not.toContain('runs from the entry')
     // And it is not also in the group that answers "runs from the entry" with 2.

@@ -1,11 +1,11 @@
 /** `lingtai --help` and `lingtai <command> --help` (0121 §6–8, #617). */
-import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai/projector'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { COMMANDS, GROUPS, PROJECTION_NAMES, type CommandName } from '../src/commands.ts'
 import { commandHelp, helpCommand, rootHelp } from '../src/help.ts'
-import { INSTALL_ONLY, MIGRATED_COMMANDS, routeOf } from '../src/migrated.ts'
+import { MIGRATED_COMMANDS, routeOf } from '../src/migrated.ts'
 import { stripColour, width } from '../src/output.ts'
+import { PROJECTIONS } from '../src/projection.ts'
 
 /** 0121 §7's table, written out here so changing a group is a change in two places. */
 const ADR_GROUPS: Record<(typeof GROUPS)[number], string[]> = {
@@ -49,9 +49,7 @@ describe('the definitions', () => {
       ? 'effect'
       : name === 'init'
         ? 'init'
-        : (INSTALL_ONLY as readonly string[]).includes(name)
-          ? 'install'
-          : 'lingtai'
+        : 'lingtai'
     expect(route).toBe(expected)
     // `version`'s help is `@effect/cli`'s (#617); every other command's is the definition's (0121 §6).
     expect(routeOf([name, '--help'])).toBe(name === 'version' ? 'effect' : 'help')
@@ -63,7 +61,7 @@ describe('the definitions', () => {
       expect(c.usage.length).toBeGreaterThan(0)
       expect(c.examples.length).toBeGreaterThan(0)
     }
-    expect(PROJECTION_NAMES).toEqual([taskViewProjection, backlogProjection, spendProjection].map((p) => p.name))
+    expect(PROJECTION_NAMES).toEqual(PROJECTIONS.map((p) => p.name))
     expect(commandHelp('projection')).toContain(PROJECTION_NAMES.join(', '))
   })
 })

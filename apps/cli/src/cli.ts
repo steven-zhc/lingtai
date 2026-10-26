@@ -9,7 +9,9 @@ import { coloured } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
 import type { BoardVerb } from './board.ts'
-import { definitionOf } from './commands.ts'
+import { definitionOf, PROJECTION_NAMES } from './commands.ts'
+import { USAGE as ENV_USAGE } from './env-usage.ts'
+import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { refusal, renderVerdict, VERBS, verdictJson, type Answered } from './verdict.ts'
 import { versionFacts, versionLine } from './version.ts'
@@ -391,12 +393,33 @@ export type BacklogRequest =
   | { verb: 'accept'; positional: string[]; kind?: string; unheld: boolean }
   | { verb: 'decline'; positional: string[]; reason?: string }
 
+export type EnvRequest =
+  | { verb: 'list'; project: string; json: boolean }
+  | { verb: 'set'; project: string; argument: string }
+  | { verb: 'unset'; project: string; name: string }
+export type ProjectionRequest = { verb: 'lag'; json: boolean } | { verb: 'rebuild'; name: string }
+export interface UpgradeRequest {
+  despiteDoctor: boolean
+}
+export interface RollbackRequest {
+  version?: string
+}
+export interface UninstallRequest {
+  yes: boolean
+  nothingConducts: boolean
+}
+
 export interface Runners {
   run: (request: RunRequest) => Promise<number>
   attach: (request: AttachRequest) => Promise<number>
   end: (request: EndRequest) => Promise<number>
   ticket: (request: TicketRequest) => Promise<number>
   backlog: (request: BacklogRequest) => Promise<number>
+  env: (request: EnvRequest) => Promise<number>
+  projection: (request: ProjectionRequest) => Promise<number>
+  upgrade: (request: UpgradeRequest) => Promise<number>
+  rollback: (request: RollbackRequest) => Promise<number>
+  uninstall: (request: UninstallRequest) => Promise<number>
 }
 
 const liveRunners: Runners = {
@@ -458,6 +481,62 @@ const liveRunners: Runners = {
         ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
         : { verb: 'decline', project, key, extra, reason: request.reason },
     )
+  },
+  async env(request) {
+    const { envList, envSet, envUnset } = await import('./env.ts')
+    switch (request.verb) {
+      case 'list':
+        return envList({ project: request.project, json: request.json, columns: process.stdout.columns })
+      case 'set':
+        return envSet(request)
+      case 'unset':
+        return envUnset(request)
+    }
+  },
+  async projection(request) {
+    const projection = await import('./projection.ts')
+    if (request.verb === 'lag') {
+      try {
+        const { projectionLag } = await import('@lingtai/projector')
+        const lags = await projectionLag()
+        if (request.json) printJson('projection lag', projection.projectionLagJson(lags))
+        else
+          for (const line of projection.renderProjectionLag(lags, { columns: process.stdout.columns }))
+            console.log(line)
+        return 0
+      } catch (err) {
+        return failed('projection lag', request.json, err)
+      }
+    }
+    const { log } = await import('@lingtai/event-store')
+    const { createProjectionRunner } = await import('@lingtai/projector')
+    const chosen = projection.PROJECTIONS.find((p) => p.name === request.name)!
+    // Drop the table, reset the checkpoint, replay — which is what makes a
+    // projection's shape free to change, a rebuild rather than a migration.
+    // `rebuildProjection` refuses before any of that if the log predates
+    // #445's payload reset (#451).
+    return projection.rebuildProjection({
+      name: request.name,
+      queries: log.queries,
+      runnerFor: () => createProjectionRunner({ projection: chosen }),
+    })
+  },
+  // `upgrade` is spawned-from and `version` is what it spawns, so none of these three
+  // is imported at the top; `self` is the file this process started from (`install.ts`).
+  async upgrade(request) {
+    const { upgrade } = await import('./install.ts')
+    const { liveWorld } = await import('./world.ts')
+    return upgrade(request, liveWorld(import.meta.filename))
+  },
+  async rollback(request) {
+    const { rollback } = await import('./install.ts')
+    const { liveWorld } = await import('./world.ts')
+    return rollback(request, liveWorld(import.meta.filename))
+  },
+  async uninstall(request) {
+    const { uninstall } = await import('./install.ts')
+    const { liveWorld } = await import('./world.ts')
+    return uninstall(request, liveWorld(import.meta.filename))
   },
 }
 
@@ -689,6 +768,134 @@ const backlogCommand = Command.make('backlog', {}, () =>
   Command.withSubcommands([backlogList, backlogAccept, backlogDecline]),
 )
 
+// ---- env, projection, upgrade, rollback, uninstall (#625) --------------------------------
+
+const envProject = Args.text({ name: 'project' }).pipe(Args.optional)
+
+/** `env` is the parent of three verbs and answers none itself: its usage, exit 2, as a missing verb always was. */
+function envUsage(json = false, command = 'env'): void {
+  // Under --json the failure is the error document on stdout, as everywhere else (0121 §5).
+  if (json) printJsonError(command, 'usage', ENV_USAGE)
+  else console.error(ENV_USAGE)
+  handlerCode = 2
+}
+
+const envList = Command.make('list', { project: envProject, json, noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    const project = given(args.project)
+    if (!project) return envUsage(args.json, 'env list')
+    await guarded('env list', () => runners.env({ verb: 'list', project, json: args.json }), args.json)
+  }),
+)
+
+// `KEY=VALUE` is one token that starts with a letter, so `Args.text` takes it whole — a value of
+// `--x` or one with its own `=` reaches the runner as typed (the first `=` splits it, in `env.ts`).
+const envSet = Command.make(
+  'set',
+  { project: envProject, argument: Args.text({ name: 'KEY[=VALUE]' }).pipe(Args.optional), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      const argument = given(args.argument)
+      if (!project || !argument) return envUsage()
+      await guarded('env set', () => runners.env({ verb: 'set', project, argument }))
+    }),
+)
+
+const envUnset = Command.make(
+  'unset',
+  { project: envProject, name: Args.text({ name: 'KEY' }).pipe(Args.optional), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      const name = given(args.name)
+      if (!project || !name) return envUsage()
+      await guarded('env unset', () => runners.env({ verb: 'unset', project, name }))
+    }),
+)
+
+const envCommand = Command.make('env', {}, () => Effect.sync(envUsage)).pipe(
+  Command.withDescription(definitionOf('env').task),
+  Command.withSubcommands([envList, envSet, envUnset]),
+)
+
+const projectionLag = Command.make('lag', { json, noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    await guarded('projection lag', () => runners.projection({ verb: 'lag', json: args.json }), args.json)
+  }),
+)
+
+const projectionRebuild = Command.make(
+  'rebuild',
+  { name: Args.text({ name: 'name' }).pipe(Args.optional), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const name = given(args.name)
+      if (!name) {
+        console.error('lingtai projection rebuild <name>')
+        handlerCode = 2
+        return
+      }
+      // Named, not discovered (0022): `PROJECTIONS` in `projection.ts` is the list, and
+      // `help.test.ts` holds the names in `commands.ts` to it.
+      if (!(PROJECTION_NAMES as readonly string[]).includes(name)) {
+        console.error(`${symbol.fail()} unknown projection "${name}" — known: ${PROJECTION_NAMES.join(', ')}`)
+        handlerCode = 2
+        return
+      }
+      await guarded('projection rebuild', () => runners.projection({ verb: 'rebuild', name }))
+    }),
+)
+
+const projectionCommand = Command.make('projection', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('projection'))
+    handlerCode = 2
+  }),
+).pipe(
+  Command.withDescription(definitionOf('projection').task),
+  Command.withSubcommands([projectionLag, projectionRebuild]),
+)
+
+const upgradeCommand = Command.make('upgrade', { despiteDoctor: Options.boolean('despite-doctor'), noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    await guarded('upgrade', () => runners.upgrade({ despiteDoctor: args.despiteDoctor }))
+  }),
+).pipe(Command.withDescription(definitionOf('upgrade').task))
+
+const rollbackCommand = Command.make(
+  'rollback',
+  { version: Args.text({ name: 'version' }).pipe(Args.optional), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const version = given(args.version)
+      // The parser takes `--x` as a version; it was never one, and the sentence it was refused with stands.
+      if (version?.startsWith('--')) {
+        console.error(`${symbol.fail()} lingtai rollback [<version>]`)
+        handlerCode = 2
+        return
+      }
+      await guarded('rollback', () => runners.rollback(version === undefined ? {} : { version }))
+    }),
+).pipe(Command.withDescription(definitionOf('rollback').task))
+
+const uninstallCommand = Command.make(
+  'uninstall',
+  { yes: Options.boolean('yes'), nothingConducts: Options.boolean('nothing-conducts'), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      await guarded('uninstall', () => runners.uninstall({ yes: args.yes, nothingConducts: args.nothingConducts }))
+    }),
+).pipe(Command.withDescription(definitionOf('uninstall').task))
+
 const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
@@ -709,6 +916,11 @@ const root = Command.make('lingtai').pipe(
     ticketCommand,
     endCommand,
     backlogCommand,
+    envCommand,
+    projectionCommand,
+    upgradeCommand,
+    rollbackCommand,
+    uninstallCommand,
   ]),
 )
 
@@ -813,6 +1025,17 @@ export async function runCli(
       'lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the ' +
       'wall limit for it. A board has no pass to finish: pnpm lingtai board stop, which returns at once'
     if (args.some(jsonOn)) printJsonError('board', 'usage', sentence)
+    else console.error(`${symbol.fail()} ${sentence}`)
+    return 2
+  }
+  if (args[0] === 'projection' && args[1] === 'run') {
+    // Gone, and answered by name rather than by a usage error. It was another name for
+    // `lingtai daemon`, and two names for one process is how "why is the board stale" gets a
+    // different answer depending on which name you happened to learn (0022).
+    if (args.includes('--no-color')) applyNoColor()
+    const sentence =
+      'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.'
+    if (args.some(jsonOn)) printJsonError('projection', 'usage', sentence)
     else console.error(`${symbol.fail()} ${sentence}`)
     return 2
   }

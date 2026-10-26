@@ -43,7 +43,11 @@ RELEASES="${LINGTAI_RELEASES_URL:-https://github.com/$REPO/releases/download}"
 API="${LINGTAI_RELEASES_API:-https://api.github.com/repos/$REPO/releases}"
 
 say() { printf '%s\n' "$*"; }
-refuse() { printf 'lingtai: %s\n' "$*" >&2; exit 1; }
+# The layout is plain text here: a shell script cannot use the CLI's colour module, and
+# plain is the same text with no escape codes (0121 §3).
+refuse() { printf '✗ %s\n' "$*" >&2; exit 1; }
+
+say 'lingtai install'
 
 # ----------------------------------------------------------------- platform --
 
@@ -126,7 +130,7 @@ else
     *) refuse "the unpacked lingtai does not run here as $version, so it was not installed — it said: ${said:-nothing}" ;;
   esac
   if mv "$partial" "$dir" 2> /dev/null && [ ! -e "$dir/$(basename "$partial")" ]; then
-    say "installed lingtai $version into $dir, checksum verified"
+    say "✓ installed lingtai $version into $dir, checksum verified"
   else
     # Another install renamed its whole directory into place first; mv moved
     # this one inside it, or refused, and either way that one is used.
@@ -147,18 +151,18 @@ if [ -L "$shim" ]; then
     *) refuse "$shim points at $current, which is not Lingtai's to replace. Move it and run this again" ;;
   esac
   if [ "$current" = "$target" ]; then
-    say "$shim already runs $version"
+    say "✓ $shim already runs $version"
   else
     ln -s "$target" "$shim.$$.new"
     mv -f "$shim.$$.new" "$shim"
     was=$(basename "$(dirname "$current")")
-    say "$shim now runs $version (was $was — still in $HOME_DIR/versions, and lingtai rollback points back at it)"
+    say "✓ $shim now runs $version (was $was — still in $HOME_DIR/versions, and lingtai rollback points back at it)"
   fi
 elif [ -e "$shim" ]; then
   refuse "$shim is a file and not a link into $HOME_DIR/versions — not Lingtai's to replace. Move it and run this again"
 else
   ln -s "$target" "$shim"
-  say "$shim runs $version"
+  say "✓ $shim runs $version"
 fi
 
 case ":$PATH:" in

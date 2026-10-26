@@ -226,6 +226,7 @@ only needed after the contract changes.
 pnpm lingtai doctor                   # non-zero exit on any failure
 pnpm lingtai doctor --json | jq '.checks[] | select(.status == "fail")'
 pnpm lingtai projection lag           # how far each projection is behind the log
+pnpm lingtai projection lag --json | jq '.projections[] | select(.lag != "0")'   # seqs are decimal strings
 ```
 
 `lingtai doctor` never writes to the event log — every check reads the catalogue,
@@ -515,6 +516,7 @@ The recipe declares **names**. The values come from one file, the project's own:
 lingtai env set nextloom-ai-admin LOCAL_DATABASE_URL=postgresql://localhost:5432/admin_dev
 lingtai env set nextloom-ai-admin API_TOKEN     # no value: read from stdin, unechoed
 lingtai env list nextloom-ai-admin              # names and their layer, never values
+lingtai env list nextloom-ai-admin --json | jq -r '.names[].name'
 lingtai env unset nextloom-ai-admin API_TOKEN
 ```
 

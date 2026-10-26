@@ -51,6 +51,7 @@ import { SQLITE_MACHINE } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 
 import workspace from '../../../package.json' with { type: 'json' }
+import { heading, symbol } from './output.ts'
 import { platformName } from './version.ts'
 
 export const INSTALL_COMMANDS = ['upgrade', 'rollback', 'uninstall'] as const
@@ -426,22 +427,8 @@ export async function unpackRelease(
 
 // --------------------------------------------------------------- commands --
 
-export async function installCommand(argv: readonly string[], world: World): Promise<number> {
-  const [command, ...rest] = argv
-  switch (command) {
-    case 'upgrade':
-      return upgrade(rest, world)
-    case 'rollback':
-      return rollback(rest, world)
-    case 'uninstall':
-      return uninstall(rest, world)
-    default:
-      throw new Error(`not an install command: ${command}`)
-  }
-}
-
 function refuse(world: Pick<World, 'log'>, line: string, code = 1): number {
-  world.log(paint.fail(line))
+  world.log(`${symbol.fail()} ${line}`)
   return code
 }
 
@@ -455,9 +442,8 @@ function refuse(world: Pick<World, 'log'>, line: string, code = 1): number {
  * before the switch, and the start is left to the person: this command has no
  * terminal to hold a daemon in.
  */
-async function upgrade(argv: readonly string[], world: World): Promise<number> {
-  const unknown = argv.find((a) => a !== '--despite-doctor')
-  if (unknown !== undefined) return refuse(world, `lingtai upgrade [--despite-doctor] — no ${unknown}`, 2)
+export async function upgrade(options: { despiteDoctor: boolean }, world: World): Promise<number> {
+  world.log(heading('upgrade'))
   const paths = installPaths(world.env)
   const current = installedVersion(world.self, paths)
   if (current === null) {
@@ -483,7 +469,9 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
   }
   const pointed = shim ?? current
   if (compareVersions(release.version, pointed) <= 0) {
-    world.log(paint.pass(`lingtai ${pointed} is current — the newest release is ${release.version}. Nothing changed`))
+    world.log(
+      `${symbol.pass()} ${paint.pass(`lingtai ${pointed} is current — the newest release is ${release.version}. Nothing changed`)}`,
+    )
     return 0
   }
 
@@ -500,7 +488,7 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
     return refuse(world, `not upgrading: ${(err as Error).message}`)
   }
 
-  const drained = await world.drain(`upgrading ${pointed} to ${release.version}`, argv.includes('--despite-doctor'))
+  const drained = await world.drain(`upgrading ${pointed} to ${release.version}`, options.despiteDoctor)
   if (!drained.ok) {
     world.log(paint.held(`the shim still runs ${pointed}. lingtai upgrade again picks up where this stopped`))
     return drained.code
@@ -508,7 +496,7 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
 
   pointShim(paths, release.version)
   await drained.after()
-  world.log(paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`))
+  world.log(`${symbol.pass()} ${paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`)}`)
   world.log(
     paint.muted(
       `${join(paths.versions, pointed)} is kept: lingtai rollback returns to it. Nothing was started — lingtai start runs ${release.version}`,
@@ -518,15 +506,15 @@ async function upgrade(argv: readonly string[], world: World): Promise<number> {
 }
 
 /** `lingtai rollback [<version>]`: the shim, pointed at an older directory. Nothing is fetched and nothing removed. */
-function rollback(argv: readonly string[], world: World): number {
-  if (argv.length > 1 || argv.some((a) => a.startsWith('--'))) return refuse(world, 'lingtai rollback [<version>]', 2)
+export function rollback(options: { version?: string | undefined }, world: World): number {
+  world.log(heading('rollback'))
   const paths = installPaths(world.env)
   const shim = shimVersion(paths)
   if (shim === null) return refuse(world, `there is no ${paths.shim} to move — nothing is installed here`)
   if (typeof shim === 'object') return refuse(world, `not rolling back: ${shim.refused}`)
 
   const versions = installedVersions(paths)
-  const target = argv[0] ?? versions.filter((v) => compareVersions(v, shim) < 0).at(-1)
+  const target = options.version ?? versions.filter((v) => compareVersions(v, shim) < 0).at(-1)
   if (target === undefined) {
     return refuse(
       world,
@@ -537,14 +525,14 @@ function rollback(argv: readonly string[], world: World): number {
     return refuse(world, `${target} is not under ${paths.versions} — installed: ${versions.join(', ') || 'none'}`)
   }
   if (target === shim) {
-    world.log(paint.pass(`${paths.shim} already runs ${target}. Nothing changed`))
+    world.log(`${symbol.pass()} ${paint.pass(`${paths.shim} already runs ${target}. Nothing changed`)}`)
     return 0
   }
   const runs = versionRuns(join(paths.versions, target), target)
   if (!runs.ok) return refuse(world, `not rolling back: ${target} does not run — it said: ${runs.said || 'nothing'}`)
 
   pointShim(paths, target)
-  world.log(paint.pass(`${paths.shim} runs ${target} again (was ${shim})`))
+  world.log(`${symbol.pass()} ${paint.pass(`${paths.shim} runs ${target} again (was ${shim})`)}`)
   world.log(
     paint.muted(
       `a daemon started from ${shim} keeps running it — lingtai shutdown, then lingtai start, runs ${target}`,
@@ -561,9 +549,8 @@ function rollback(argv: readonly string[], world: World): number {
  * asked about *before* anything goes, because its private key may be among what
  * goes, and after that nothing can ask GitHub anything as the App.
  */
-async function uninstall(argv: readonly string[], world: World): Promise<number> {
-  const unknown = argv.find((a) => a !== '--yes' && a !== '--nothing-conducts')
-  if (unknown !== undefined) return refuse(world, `lingtai uninstall [--yes] [--nothing-conducts] — no ${unknown}`, 2)
+export async function uninstall(options: { yes: boolean; nothingConducts: boolean }, world: World): Promise<number> {
+  world.log(heading('uninstall'))
   const paths = installPaths(world.env)
   const user = world.env['HOME'] ?? homedir()
   if (resolve(paths.home) === resolve(user) || resolve(paths.home) === sep) {
@@ -575,7 +562,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   const shim = shimVersion(paths)
   const ownShim = typeof shim === 'string'
   if (!existsSync(paths.home) && !ownShim) {
-    world.log(`nothing is installed: there is no ${paths.home} and no ${paths.shim}`)
+    world.log(`${symbol.pass()} nothing is installed: there is no ${paths.home} and no ${paths.shim}`)
     return 0
   }
 
@@ -585,7 +572,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   // anything under the home by command line or working directory, are looked for.
   const running = world.running([paths.home + sep, paths.shim])
   if (running.length > 0) {
-    world.log(paint.fail('not uninstalling — these are running from what would be removed:'))
+    world.log(`${symbol.fail()} ${paint.fail('not uninstalling — these are running from what would be removed:')}`)
     for (const p of running) world.log(paint.fail(`  · pid ${p.pid}  ${p.command}`))
     world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
     return 1
@@ -602,7 +589,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
     // A read that failed is not a no (`daemon/src/lock.ts`), and nothing an
     // operator can set makes an unreadable file readable — so the remedy
     // offered is the one that works: fix the file, or answer for it.
-    if (!argv.includes('--nothing-conducts')) {
+    if (!options.nothingConducts) {
       return refuse(
         world,
         `not uninstalling: the conductor lock under ${join(paths.home, 'locks')} could not be read ` +
@@ -614,9 +601,9 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   }
   if (holder !== null) {
     world.log(
-      paint.fail(
+      `${symbol.fail()} ${paint.fail(
         `not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`,
-      ),
+      )}`,
     )
     world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
     return 1
@@ -648,7 +635,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
       ),
     )
   }
-  if (!argv.includes('--yes') && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
+  if (!options.yes && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
     world.log('nothing was removed')
     return 1
   }
@@ -661,7 +648,7 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
 
   rmSync(paths.home, { recursive: true, force: true })
   if (ownShim) unlinkSync(paths.shim)
-  world.log(paint.pass(`Removed ${what}.`))
+  world.log(`${symbol.pass()} ${paint.pass(`Removed ${what}.`)}`)
 
   if (app === null) {
     world.log('No GitHub App was configured here, so none is left behind.')
