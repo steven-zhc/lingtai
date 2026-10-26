@@ -121,44 +121,19 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - name: CLI contract diff
-        # doc/cli.json is generated and carries no stamp (#545), so a plain diff
-        # against the previous tag is the change to the command line.
-        run: |
-          prev=$(git describe --tags --abbrev=0 --match 'v*' "${{ github.ref_name }}^" 2>/dev/null || true)
-          {
-            echo "## CLI contract"
-            echo
-            if [ -z "$prev" ]; then
-              echo "No earlier release to compare \`doc/cli.json\` with."
-            elif git diff --quiet "$prev" "${{ github.ref_name }}" -- doc/cli.json; then
-              echo "No change to the command line since $prev."
-            else
-              echo "Changes to the command line since $prev (\`git diff $prev..${{ github.ref_name }} -- doc/cli.json\`):"
-              echo
-              echo '```diff'
-              git diff "$prev" "${{ github.ref_name }}" -- doc/cli.json
-              echo '```'
-            fi
-            echo
-          } > cli-contract.md
-          cat cli-contract.md
-      - name: Events manifest and what changed
-        # Not `pnpm events:generate`: pnpm would hand `--ref` to the oxfmt that
-        # follows it in that script. The asset needs no formatting. The asset is
-        # in artifacts/ before checksums, so SHA256SUMS covers it.
+      - name: Previous release
+        # The highest-versioned tag below this one that has a published release,
+        # whether or not it is an ancestor (a release branch's tag counts) and
+        # whatever happened to the tags in between: a tag whose publish failed has
+        # no release and is passed over. Both sections of the notes read this, so
+        # they name the same baseline. Every gh call is an assignment, so a failed
+        # lookup fails the step (-e) instead of reading as "no earlier release". A
+        # draft is not a publication, and versionsort.suffix=- puts v1.0.0-rc.1
+        # below v1.0.0 as semver does.
+        id: prev
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node packages/domain/scripts/events.ts --ref "${{ github.ref_name }}"
-          cp doc/events.json artifacts/events.json
-          # The previous release is the highest-versioned tag below this one that
-          # has a published release, whether or not it is an ancestor (a release
-          # branch's tag counts) and whatever happened to the tags in between: a
-          # tag whose publish failed has no release and is passed over. Every gh
-          # call is an assignment, so a failed lookup fails the step (-e) instead
-          # of reading as "no earlier manifest". A draft is not a publication, and
-          # versionsort.suffix=- puts v1.0.0-rc.1 below v1.0.0 as semver does.
           published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft | not) | .tagName')
           tags=$(git -c versionsort.suffix=- tag --list 'v*' --sort=-v:refname)
           prev=
@@ -171,6 +146,40 @@ jobs:
               break
             fi
           done
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+      - name: CLI manifest and what changed
+        # doc/cli.json is generated and carries no stamp (#545), so the file at
+        # the previous tag is exactly what that release shipped and is read from
+        # git. Nothing here runs the unit half, so the regenerate-and-diff is what
+        # makes "generated from the command definitions at the tag" true; a stale
+        # file fails the step before anything is released. The asset is in
+        # artifacts/ before checksums, so SHA256SUMS covers it.
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          node scripts/cli-doc.ts
+          git diff --exit-code -- doc/cli.json doc/cli.md
+          cp doc/cli.json artifacts/cli.json
+          # `prev` is a tag the previous step listed, so a failed probe can only
+          # mean the file is absent; any other failure fails the step (-e).
+          old=
+          if [ -n "$PREV" ] && git cat-file -e "$PREV:doc/cli.json"; then
+            git show "$PREV:doc/cli.json" > previous-cli.json
+            old=previous-cli.json
+          fi
+          node apps/cli/src/cli-diff.ts $old artifacts/cli.json $PREV > cli-changed.md
+          cat cli-changed.md
+      - name: Events manifest and what changed
+        # Not `pnpm events:generate`: pnpm would hand `--ref` to the oxfmt that
+        # follows it in that script. The asset needs no formatting. The asset is
+        # in artifacts/ before checksums, so SHA256SUMS covers it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          node packages/domain/scripts/events.ts --ref "${{ github.ref_name }}"
+          cp doc/events.json artifacts/events.json
+          prev=$PREV
           old=
           if [ -n "$prev" ]; then
             assets=$(gh release view "$prev" --repo "${{ github.repository }}" --json assets --jq '.assets[].name')
@@ -186,7 +195,8 @@ jobs:
           fi
           node packages/domain/scripts/events-diff.ts $old artifacts/events.json $prev > events-changed.md
           cat events-changed.md
-          cat cli-contract.md events-changed.md > release-notes.md
+      - name: release notes
+        run: cat cli-changed.md events-changed.md > release-notes.md
       - name: checksums
         working-directory: artifacts
         # `shasum -a 256 -c SHA256SUMS` on a Mac, `sha256sum -c` on Linux.
