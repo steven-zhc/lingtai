@@ -132,12 +132,20 @@ and the dollar ceiling lands before any N > 1.
 
 6. **Per pass, and shared.**
 
-   | Per pass | Where |
-   | --- | --- |
-   | Worktree | `~/.lingtai/worktrees/<project>/<runId>` (`run-log.ts`) |
-   | Branch | `agent/<issue>` |
-   | Run log | `runLogPath` (`run-log.ts`) |
-   | Test store | a SQLite file in a directory made per vitest run by `packages/event-store/test-support/teardown.ts`, only while no `LINGTAI_TEST_DATABASE_URL` is set |
+   | Resource | Where | Per pass because, or shared and safe because |
+   | --- | --- | --- |
+   | Worktree | `~/.lingtai/worktrees/<project>/<runId>` (`run-log.ts`) | Per pass: named by `runId`. |
+   | Branch | `agent/<issue>` | Per pass: one issue is one pass. |
+   | Run log | `runLogPath` (`run-log.ts`) | Per pass: `<runId>.log`. `findOrphanLogs` reads only `*.log`, so it leaves the `runs/<runId>/` directories alone. |
+   | Hook socket | `socketPathFor` (`packages/agent/src/hook-config.ts`) | Per pass: `tmpdir()/lingtai/<sha256(home, runId)[:12]>.sock`. The parent directory is shared and safe, since each name is per run and a socket is removed only by the run that made it. |
+   | Agent settings | `settingsPathFor`, `<home>/runs/<runId>/settings.json` | Per pass: under the run's own directory, as its labelled siblings are. |
+   | Codex output schema | `tmpdir()/lingtai-output-schema-<runId>.json` (`codex.ts`) | Per pass: named by `runId`. |
+   | Scratch directories | `sea-build.ts`, `triage-checkout.ts`, `install.ts`, `ticket.ts`, `apps/release/src/binary.ts` | Per call: each is a `mkdtemp`. |
+   | Test lock directory | `setup()` in `teardown.ts`, a `mkdtemp` | Per vitest run. The unit project has no `globalSetup`, so a unit test that took a lock would throw rather than take the operator's. |
+   | Test store | a SQLite file in a directory made per vitest run by `packages/event-store/test-support/teardown.ts`, only while no `LINGTAI_TEST_DATABASE_URL` is set | Per pass. The gate's `pnpm test` gets `PATH, HOME, TMPDIR, LANG, USER, LOGNAME` plus the project's env file, so the URL reaches a pass only if the operator wrote it there, which is the case below. |
+   | Ports | every test that binds uses `listen(0, …)` | No port is assigned to a pass. `17820` and `18080` in `apps/cli/unit/board*.test.ts` are values handed to a fake world that starts no server. The one gap is `freePort()` then spawn in `apps/release/integration/build.test.ts`: the port is free when probed and could be taken before the spawn uses it. Two runs drawing the same ephemeral port is very unlikely, and it is integration-only. Held by `packages/event-store/unit/no-fixed-port.test.ts`. |
+   | `node_modules`, `.vite`, `.next` | inside the worktree | Per pass: `node_modules` is a real directory, not a link. |
+   | pnpm content store | under the operator's `HOME` | Shared. Concurrent `pnpm install` is safe by pnpm's own atomic writes, which is pnpm's claim and not proven here; it held with two `pnpm test` runs in two checkouts at once (#641). |
 
    **With `LINGTAI_TEST_DATABASE_URL` set the test store is shared, not per pass:**
    `setup()` makes no directory for it, every pass's suite writes the one Postgres
@@ -146,8 +154,9 @@ and the dollar ceiling lands before any N > 1.
    therefore runs its tests with no URL set, or the URL names a database of its
    own.
 
-   No port is assigned to a pass. A test that binds a fixed port is a defect at
-   N > 1.
+   A test that binds a fixed port is a defect at N > 1, and
+   `packages/event-store/unit/no-fixed-port.test.ts` fails on one in either half
+   of the suite.
 
    **Shared:** the event store, the lock, the beacon, the projector, the GitHub
    App token, the runtime's account and quota, the recipe file, and the bare
