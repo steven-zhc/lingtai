@@ -77,7 +77,7 @@ describe('in memory: what is retired', () => {
     await s.append('ticket-r-2', 0, [
       {
         type: 'TicketDiscovered',
-        actor: 'bootstrap',
+        actor: 'daemon',
         data: { project: 'p', source: 'manual', externalRef: '1', title: 't', kind: 'bug', labels: [] },
       },
     ])
