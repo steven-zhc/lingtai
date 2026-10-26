@@ -1836,6 +1836,19 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     ticket !== null
   ) {
     triage = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
+
+    // A crash that stands in for a wait is advised by the triage the person saw
+    // for that wait, which the projected card does not carry (#654).
+    if (foldedStanding.reason._tag === 'AgentCrashed' && foldedStanding.reason.standing !== undefined) {
+      triage = {
+        status: triageStatus(
+          foldedStanding.reason.standing.reason,
+          triageFactsOf(own, foldedStanding.reason.standing.waitId),
+          { declared: false, daemonStartedAt: null },
+        ),
+        headSha: null,
+      }
+    }
   }
   const status = triage?.status ?? null
   const triageHeadLineText =

@@ -274,6 +274,7 @@ which kind a wait was got inferred again in each place that needed it, from
      | `ProposedEscalated` over `BaseMoved`                                     | `Approve` (keep merging the base in), `Requeue`, `Close`                      | `merge`                        |
      | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                             | —                              |
      | `SetupRefused`                                                           | `Requeue`, `Close`                                                            | —                              |
+     | `AgentCrashed` with a standing wait (#654)                               | that wait's resolutions on the unmoved head, plus `Requeue`, `Close`          | that wait's                    |
      - `BaseMoved` is held only after the system's own two merges of the base
        are spent (0120 §3, #593); `Approve` continues at `merge` as a new pass
        whose count is zero, so it reads as _keep merging the base in_, and no

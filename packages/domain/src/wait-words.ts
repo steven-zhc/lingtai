@@ -340,7 +340,14 @@ export function waitWords(
       return budgetExhaustedColumns(reason.run, reason.cause, reason.detail)
 
     case 'AgentCrashed':
-      return acknowledgement(stepLine(reason.step, 'did-not-finish', reason.detail), reason.run, reason.detail)
+      return acknowledgement(
+        stepLine(reason.step, 'did-not-finish', reason.detail) +
+          (reason.standing === undefined
+            ? ''
+            : ' It changed nothing: what was offered before this round still stands.'),
+        reason.run,
+        reason.detail,
+      )
 
     case 'SetupRefused':
       return acknowledgement(stepLine(reason.step, 'refused', reason.why), reason.run, reason.why)

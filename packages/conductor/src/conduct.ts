@@ -58,6 +58,7 @@ import type { ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
+  standingFor,
   waivedActionsAt,
   type KeptAt,
   type RunRef,
@@ -1012,6 +1013,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const granted = folded.lifecycle.grantRef !== undefined
+      // A crash that stands in for a wait carries that wait's advice (#654).
+      const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const priorGrant = waitsOf(before).some(
         (wait) =>
           wait.resolution?._tag === 'GrantFixRound' &&
@@ -1043,8 +1046,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
         // Only a granted lap: it is one round long, so this reaches the round
         // the person paid for, on the advice of the wait they granted it on (#643).
-        ...(granted && grantedAdviceOf(before, approvedWaitId) !== undefined
-          ? { advice: grantedAdviceOf(before, approvedWaitId)! }
+        ...(granted && grantedAdviceOf(before, adviceWaitId) !== undefined
+          ? { advice: grantedAdviceOf(before, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
@@ -1720,6 +1723,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * commit itself, which is what the arm carries and this never is.
        */
       let wip: { sha: string; parent: string; stoppedBy: string } | null = null
+      /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
+      let headNow: string | null = null
       /**
        * **The commit `keepUncommittedWork` made, before its own sha is known**
        * (`#468`). Set the moment `git commit` itself succeeds — never the moment
@@ -1986,6 +1991,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           const head = at.right
           headRead = head
+          headNow = head
           // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
           // `wipParent` is set the moment `git commit` succeeds there, before
           // its own `rev-parse HEAD` is attempted — so a flaky read on that one
@@ -4202,7 +4208,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           WaitReason,
           { _tag: 'OwnQuestion' }
         >
-        return { ...reason, run: runRef }
+        const resumed =
+          continuation === null ? undefined : waitsOf(before).find((w) => w.waitId === continuation.resumedWaitId)
+        const standing = standingFor({
+          reason,
+          granted: continuation?.grant !== undefined,
+          onSha: continuation?.onSha ?? '',
+          resumed,
+          head: headNow,
+          wip,
+          // A keep that failed leaves the edits in the tree, for the finalizer to save
+          // as a WIP after this wait is written — so it is not an unmoved head either.
+          unpushed: notPushed !== null || wipFailure !== null,
+        })
+        return { ...reason, run: runRef, ...(standing === null ? {} : { standing }) } as WaitReason
       }
 
       // ---- landed -------------------------------------------------------------
