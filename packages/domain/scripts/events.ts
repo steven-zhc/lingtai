@@ -181,11 +181,6 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
     why: 'the only append left is the probe event the bootstrap script writes (0012 took the queue off the log)',
     site: 'packages/event-store/scripts/bootstrap.mjs:54',
   },
-  {
-    event: 'TicketLinked',
-    why: 'no production code appends it; the only writer is a test fixture, so the link is to that',
-    site: 'packages/domain/unit/ticket.test.ts:285',
-  },
 ]
 
 /**

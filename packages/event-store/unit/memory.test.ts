@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { RetiredEventTypeError } from '../src/event-store.ts'
 import { describeEventStoreContract } from '../test/contract.ts'
 import { createMemoryEventStore } from '../test/memory.ts'
 
@@ -60,5 +61,26 @@ describe('in memory: what is not in the contract', () => {
     ])
 
     expect(written!.at).toEqual(at)
+  })
+})
+
+describe('in memory: what is retired', () => {
+  it('refuses TicketLinked, whose writer is gone, and still takes TicketDiscovered, which the bootstrap appends', async () => {
+    const s = createMemoryEventStore()
+    await expect(
+      s.append('ticket-r-1', 0, [
+        { type: 'TicketLinked', actor: 'conductor', data: { relation: 'follows-up', otherRef: '58' } },
+      ]),
+    ).rejects.toBeInstanceOf(RetiredEventTypeError)
+    expect(s.all()).toEqual([])
+
+    await s.append('ticket-r-2', 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'bootstrap',
+        data: { project: 'p', source: 'manual', externalRef: '1', title: 't', kind: 'bug', labels: [] },
+      },
+    ])
+    expect(s.all()).toHaveLength(1)
   })
 })
