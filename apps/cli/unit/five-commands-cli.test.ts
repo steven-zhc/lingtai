@@ -104,6 +104,18 @@ describe('lingtai ticket', () => {
     ])
   })
 
+  it('answers a runner that threw with the error document under --json, and prose otherwise', async () => {
+    const boom = async (): Promise<number> => {
+      throw new Error('database is down')
+    }
+    const json = await capture(['ticket', 'list', '--json'], { ticket: boom })
+    expect(json.code).toBe(1)
+    expect(JSON.parse(json.out)).toMatchObject({ command: 'ticket list', error: { message: 'database is down' } })
+    const text = await capture(['ticket', 'list'], { ticket: boom })
+    expect(text.code).toBe(1)
+    expect(text.err).toContain('database is down')
+  })
+
   it('prints the four usage lines and exits 2 with no verb, and refuses a number that is not one', async () => {
     const r = recording<unknown>()
     const bare = await capture(['ticket'], { ticket: r.run })

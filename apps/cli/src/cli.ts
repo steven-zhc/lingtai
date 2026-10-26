@@ -464,11 +464,11 @@ const liveRunners: Runners = {
 let runners: Runners = liveRunners
 
 /** A runner that threw: the message and exit 1, as `lingtai.ts` ended every command that threw. */
-async function guarded(command: string, work: () => Promise<number>): Promise<void> {
+async function guarded(command: string, work: () => Promise<number>, asJson = false): Promise<void> {
   try {
     handlerCode = await work()
   } catch (err) {
-    handlerCode = failed(command, false, err)
+    handlerCode = failed(command, asJson, err)
   }
 }
 
@@ -593,8 +593,16 @@ const ticketList = Command.make(
     Effect.promise(async () => {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
-      await guarded('ticket list', () =>
-        runners.ticket({ verb: 'list', all: args.all, json: args.json, ...(project === undefined ? {} : { project }) }),
+      await guarded(
+        'ticket list',
+        () =>
+          runners.ticket({
+            verb: 'list',
+            all: args.all,
+            json: args.json,
+            ...(project === undefined ? {} : { project }),
+          }),
+        args.json,
       )
     }),
 )
