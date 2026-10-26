@@ -30,7 +30,7 @@
 import { log, subscribe } from '@lingtai/event-store'
 
 import { readHealth } from '@/lib/health'
-import { onSplitEnded, splitsEnded } from '@/lib/split-instance'
+import { onSplitEnded } from '@/lib/split-instance'
 
 export const dynamic = 'force-dynamic'
 
@@ -128,9 +128,6 @@ export function GET(request: Request): Response {
       // its last SplitFailed append threw. No `id:`, so a resume point is not moved.
       const splitEnded = () => send(`event: append\ndata: ${JSON.stringify({ type: 'SplitEnded' })}\n\n`)
       unlistenSplit = onSplitEnded(splitEnded)
-      // A writer may have ended while no stream was connected (a dropped
-      // connection reconnecting later): tell this page to re-read once.
-      if (splitsEnded() > 0) splitEnded()
 
       try {
         subscription = subscribe({
