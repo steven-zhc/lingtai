@@ -71,7 +71,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
   {
     event: 'RunRequested',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:401',
+    site: 'packages/daemon/src/control.ts:402',
   },
   {
     event: 'DiscussionAsked',
@@ -113,7 +113,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
     why: 'type is a string argument of `record`',
     site: 'packages/conductor/src/tell.ts:202',
   },
-  { event: 'PassRouted', why: 'the event is built, then handed on', site: 'packages/conductor/src/conduct.ts:4048' },
+  { event: 'PassRouted', why: 'the event is built, then handed on', site: 'packages/conductor/src/conduct.ts:4055' },
   {
     event: 'ProjectRecovered',
     why: 'returned from a function; the caller appends it',
@@ -147,7 +147,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
   {
     event: 'RunProducedDiff',
     why: 'the array is built before it is appended',
-    site: 'packages/conductor/src/conduct.ts:1790',
+    site: 'packages/conductor/src/conduct.ts:1795',
   },
   {
     event: 'SplitStarted',
@@ -180,11 +180,6 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
     event: 'TicketDiscovered',
     why: 'the only append left is the probe event the bootstrap script writes (0012 took the queue off the log)',
     site: 'packages/event-store/scripts/bootstrap.mjs:54',
-  },
-  {
-    event: 'TicketLinked',
-    why: 'no production code appends it; the only writer is a test fixture, so the link is to that',
-    site: 'packages/domain/unit/ticket.test.ts:285',
   },
 ]
 
