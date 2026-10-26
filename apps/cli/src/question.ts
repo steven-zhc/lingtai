@@ -12,13 +12,26 @@
  * **The seam writes nothing.** It returns `{ answer }` or `{ refused }`; the
  * caller decides what that answer means to write, and when.
  */
-import { createInterface } from 'node:readline/promises'
-
 import { paint } from '@lingtai/env/colour'
 
+/** What a front end that draws its own prompt needs: the words, the default, and the choices if there are any. */
+export interface AskShape {
+  message: string
+  defaultValue: string
+  choices?: readonly string[] | undefined
+}
+
 export interface QuestionWorld {
-  ask: (prompt: string) => Promise<string | null>
+  /** `prompt` is the painted line a readline front end prints; `shape` is the same question for one that draws its own. */
+  ask: (prompt: string, shape?: AskShape) => Promise<string | null>
   log: (line: string) => void
+  /** Runs a slow step under a label. Absent means just run it; the live one draws a spinner only on a terminal. */
+  spin?: <T>(label: string, fn: () => Promise<T>) => Promise<T>
+}
+
+/** `world.spin`, or the function itself where the world has none. */
+export function spun<T>(world: { spin?: QuestionWorld['spin'] }, label: string, fn: () => Promise<T>): Promise<T> {
+  return world.spin === undefined ? fn() : world.spin(label, fn)
 }
 
 export interface Question {
@@ -53,26 +66,6 @@ export interface Question {
 export type Answered = { answer: string } | { refused: string }
 
 /**
- * A readline reader over this process's own stdin/stdout — null with no
- * terminal attached. Shared by every live `QuestionWorld`, `init` and `add`
- * alike, so there is one terminal reader rather than one per command (#398).
- */
-export async function liveAsk(prompt: string): Promise<string | null> {
-  if (!process.stdin.isTTY) return null
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-  // Ctrl+C at a question: every earlier answer is already written, and this one was not.
-  rl.on('SIGINT', () => {
-    console.log('\nstopped at the question — its answer was not written, and running the command again asks it here')
-    process.exit(130)
-  })
-  try {
-    return await rl.question(prompt)
-  } finally {
-    rl.close()
-  }
-}
-
-/**
  * `--defaults` (#433): a `QuestionWorld` that takes the default at every
  * question, by answering `''` — the same thing an empty line at a terminal
  * means (`:127`).
@@ -90,6 +83,7 @@ export function acceptingDefaults(world: QuestionWorld): QuestionWorld {
   let lastPrompt: string | null = null
   return {
     log: world.log,
+    ...(world.spin === undefined ? {} : { spin: world.spin }),
     ask: async (prompt) => {
       const repeat = prompt === lastPrompt
       lastPrompt = prompt
@@ -121,7 +115,7 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
   const prompt = paint.signal(`${q.prompt}${bracket}: `)
 
   for (;;) {
-    const typed = await world.ask(prompt)
+    const typed = await world.ask(prompt, { message: q.prompt, defaultValue, choices: q.choices })
     if (typed === null)
       return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
     const answer = typed.trim() === '' ? defaultValue : typed.trim()

@@ -264,7 +264,7 @@ GitHub hands over the private key once. It is a file at
 the path the board names (default `~/.ssh/lingtai-agent.private-key.pem`);
 `$LINGTAI_HOME/config.yml` (`~/.lingtai-github-tutorial/config.yml`) holds that path, the App id and the webhook secret.
 
-When the terminal prints `app          <slug>, owned by <owner> — it answered`,
+When the terminal prints `app  <slug>, owned by <owner> — it answered` under *GitHub App*,
 the same `add` stops with `The App is not installed on <owner>, so it cannot see
 <slug>.` Expected: **creating is not installing**.
 

@@ -49,7 +49,7 @@ import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 
-import { addFlow, liveAddWorld, parseFlags } from './add.ts'
+import { parseFlags } from './add.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -107,15 +107,6 @@ import { WALL_LIMIT } from './wall-limit.ts'
  * added: here, visibly, or it does not exist.
  */
 const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
-
-/**
- * `lingtai add <owner>/<repo>`, or `lingtai add` with no positional — the
- * body is `addFlow` in `./add.ts`, moved there so a `unit/` test can reach it
- * without importing this file, which calls `main()` on import (#435).
- */
-async function addCommand(args: string[]): Promise<number> {
-  return addFlow(args, liveAddWorld())
-}
 
 async function projectionCommand(args: string[]): Promise<number> {
   const [sub, name] = args
@@ -998,8 +989,6 @@ async function main(argv: string[]): Promise<number> {
   const command = asked
 
   switch (command) {
-    case 'add':
-      return addCommand(rest)
     case 'run': {
       const { flags } = parseFlags(rest)
       const positional = rest.filter((a) => !a.startsWith('--') && a !== flags['issue'] && a !== flags['max'])
@@ -1278,14 +1267,10 @@ async function main(argv: string[]): Promise<number> {
     case 'version':
       console.log(versionLine())
       return 0
-    // The same: `entry.ts` answers it, since it runs before there is a log to load.
+    // `init`, `add`, `status` and `doctor` are `@effect/cli`'s (#618, #619, #620) and `entry.ts` routes
+    // them there; they are named here only because the command list is exhaustive.
     case 'init':
-      console.error(
-        'lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai',
-      )
-      return 2
-    // `status` and `doctor` are `@effect/cli`'s (#618, #619) and `entry.ts` routes them there; they are named
-    // here only because the command list is exhaustive.
+    case 'add':
     case 'status':
     case 'doctor':
       console.error(`lingtai ${command} runs from the entry — pnpm lingtai ${command}, or the installed lingtai`)

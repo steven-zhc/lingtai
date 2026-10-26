@@ -2,8 +2,8 @@
 /**
  * `lingtai` — the entry, in front of `lingtai.ts`.
  *
- * **Five commands answer before the rest is imported** (#184, #186): `version`,
- * `upgrade`, `rollback`, `uninstall` and `init`. `lingtai.ts`'s many commands
+ * **Some commands answer before the rest is imported** (#184, #186): `version`,
+ * `upgrade`, `rollback`, `uninstall`, and `init` and `add`, which `cli.ts` parses (#620). `lingtai.ts`'s many commands
  * all assume a database is already configured, and read or write the log
  * close to where they start. Since #179, importing `@lingtai/event-store`
  * does not itself build a client — the barrel hands out a deferred view, and
@@ -33,34 +33,19 @@ if (route === 'effect') {
   void import('./cli.ts')
     .then(({ runCli }) => runCli(process.argv))
     .then((code) => {
+      // `init` may have started the board in this process, and its listening
+      // socket holds the event loop open past `process.exitCode` (#394 finding
+      // 1): a refusal reached after that cannot rely on it. Every refusal of
+      // init's is safe to `process.exit` on, and it is never reached on
+      // success, which is what "the board keeps running in this terminal"
+      // promises. Not the rule for every command — `doctor --json` may still
+      // be writing to a pipe.
+      if (code !== 0 && argv[0] === 'init') process.exit(code)
       process.exitCode = code
     })
 } else if (route === 'help') {
   // From the definitions alone (0121 §8): no project, no log, no network.
   process.exitCode = helpCommand(argv)
-} else if (route === 'init') {
-  // Only once asked: `init.ts` loads the board's server module, and no other command here needs it.
-  import('./init.ts')
-    .then(({ initCommand, liveInitWorld }) => initCommand(argv.slice(1), liveInitWorld()))
-    .then(
-      (code) => {
-        // A refusal reached after `initCommand` has started serving the board
-        // in this process cannot rely on `process.exitCode` alone: the
-        // board's listening socket holds the event loop open past it (#394
-        // finding 1). Before #394, every refusal preceded the board, so a
-        // non-zero code never raced a bound socket; `process.exit` is safe on
-        // every one of those same paths too, and is never reached on success,
-        // which is what "the board keeps running in this terminal" promises.
-        if (code === 0) process.exitCode = code
-        else process.exit(code)
-      },
-      (err: unknown) => {
-        const error = err as Error
-        console.error(error.message || String(err))
-        if (process.env['LINGTAI_DEBUG']) console.error(error.stack)
-        process.exit(1)
-      },
-    )
 } else if (route === 'install') {
   installCommand(argv, liveWorld(import.meta.filename)).then(
     (code) => {

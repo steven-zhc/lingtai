@@ -28,7 +28,8 @@ import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFil
 
 import { EMPTY_SETUP_READER, type SetupReader } from './detect-setup.ts'
 import { livePicker } from './first-project.ts'
-import { liveAsk, type QuestionWorld } from './question.ts'
+import { liveAsk, liveSpin } from './prompt.ts'
+import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
@@ -129,7 +130,8 @@ export interface AskBeforeGithubAddDeps {
     installation: Installation | undefined,
     ref: string | null,
   ) => Promise<SetupReader>
-  ask: (prompt: string) => Promise<string | null>
+  ask: QuestionWorld['ask']
+  spin?: QuestionWorld['spin']
   /** `askRecipe`'s `runtimes` — already probed, never by this function itself. */
   runtimes: () => Promise<readonly RuntimeFound[]>
   /** `askRecipe`'s `history` — `ticket-<project>-*` streams already in the log for this project. */
@@ -142,6 +144,7 @@ const liveDeps: AskBeforeGithubAddDeps = {
   files: diskFiles,
   reader: liveGithubReader,
   ask: liveAsk,
+  spin: liveSpin,
   runtimes: askRuntimes,
   history: liveHistory,
 }
@@ -246,7 +249,11 @@ export async function askBeforeGithubAdd(
   // refused for lack of a file any more.
   const path = recipePath(repo)
   const existing = await deps.files.read(path)
-  const world: QuestionWorld = { ask: deps.ask, log: (line) => console.log(line) }
+  const world: QuestionWorld = {
+    ask: deps.ask,
+    ...(deps.spin === undefined ? {} : { spin: deps.spin }),
+    log: (line) => console.log(line),
+  }
 
   // Memoized, and shared with `askLanding`'s own `detected`, inside
   // `askRecipe` — asking GitHub for the default branch twice for one run is
@@ -298,6 +305,7 @@ export async function askBeforeGithubAdd(
     defaultBranch,
     history: deps.history,
     seeds,
+    again: `lingtai add ${owner}/${repo}`,
     keptBeforeWrite: 'Nothing was written',
     kept: ADD_KEPT,
     files: deps.files,

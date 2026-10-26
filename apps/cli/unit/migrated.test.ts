@@ -13,6 +13,10 @@ describe('routeOf', () => {
     [['status', '--all', 'lingtai']],
     [['doctor']],
     [['doctor', '--json']],
+    [['init']],
+    [['init', '--store', 'sqlite', '--defaults']],
+    [['add', 'owner/repo']],
+    [['add', '--local', '.', '--defaults']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -23,6 +27,7 @@ describe('routeOf', () => {
     [['-h'], 'help'],
     [['help'], 'help'],
     [['init', '--help'], 'help'],
+    [['add', '--help'], 'help'],
     [['upgrade', '--help'], 'help'],
     [['status', '--help'], 'help'],
     [['doctor', '--help'], 'help'],
@@ -32,7 +37,6 @@ describe('routeOf', () => {
     [['ask', 'p', '--issue', '1', 'what --help'], 'lingtai'],
     [['--version'], 'lingtai'],
     [['daemon', '--no-conduct'], 'lingtai'],
-    [['init'], 'init'],
     [['upgrade'], 'install'],
     [['rollback'], 'install'],
     [['uninstall'], 'install'],

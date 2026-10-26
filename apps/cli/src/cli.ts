@@ -11,6 +11,7 @@ import { Console, Effect } from 'effect'
 import { definitionOf } from './commands.ts'
 import { applyNoColor, printJson, printJsonError, stripColour } from './output.ts'
 import { versionFacts, versionLine } from './version.ts'
+import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
 
 const json = Options.boolean('json')
 const noColor = Options.boolean('no-color')
@@ -84,7 +85,45 @@ const doctor = Command.make('doctor', { json, noColor }, (args) =>
   }),
 ).pipe(Command.withDescription(definitionOf('doctor').task))
 
-const root = Command.make('lingtai').pipe(Command.withSubcommands([version, status, doctor]))
+/** A wizard that threw: the message, as the hand-rolled entry printed it, and exit 1. */
+function wizardFailed(err: unknown): number {
+  const error = err as Error
+  console.error(error.message || String(err))
+  if (process.env['LINGTAI_DEBUG']) console.error(error.stack)
+  return 1
+}
+
+// Loaded in the handler and not at the top, for the reason `status` gives; `init` also
+// loads the board's server module, which no other command needs.
+const init = Command.make('init', initOptions, (args) =>
+  Effect.promise(async () => {
+    try {
+      const { initCommand, liveInitWorld } = await import('./init.ts')
+      handlerCode = await initCommand(flagsOf(args), liveInitWorld())
+    } catch (err) {
+      handlerCode = wizardFailed(err)
+    }
+  }),
+).pipe(Command.withDescription(definitionOf('init').task))
+
+const add = Command.make(
+  'add',
+  { repo: Args.text({ name: 'owner/repo' }).pipe(Args.optional), ...addOptions },
+  ({ repo, ...options }) =>
+    Effect.promise(async () => {
+      try {
+        const { addFlow, liveAddWorld } = await import('./add.ts')
+        handlerCode = await addFlow(
+          { positional: repo._tag === 'Some' ? repo.value : undefined, ...flagsOf(options) },
+          liveAddWorld(),
+        )
+      } catch (err) {
+        handlerCode = wizardFailed(err)
+      }
+    }),
+).pipe(Command.withDescription(definitionOf('add').task))
+
+const root = Command.make('lingtai').pipe(Command.withSubcommands([version, status, doctor, init, add]))
 
 const run = Command.run(root, { name: 'lingtai', version: versionFacts().lingtai })
 
@@ -119,6 +158,13 @@ export async function runCli(argv: readonly string[]): Promise<number> {
   const args = argv.slice(2)
   if (args.includes('--no-color')) applyNoColor()
   const json = args.some(jsonOn)
+  if (args[0] === 'init' || args[0] === 'add') {
+    const valueless = valuelessFlag(args.slice(1))
+    if (valueless !== null) {
+      console.error(`lingtai ${args[0]}: --${valueless} takes a value`)
+      return 1
+    }
+  }
   const errors: string[] = []
   handlerCode = 0
   const code = await Effect.runPromise(

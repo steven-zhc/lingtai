@@ -1,3 +1,9 @@
+import type { RecipeFiles } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
+
+import type { GitResult } from '../src/first-project.ts'
+import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineRuntimeRefusal } from '../src/init.ts'
 /**
  * `machineRuntimeRefusal` (#398): a pure function of the machine's
  * `config.yml`, so the migration message for a file still naming a runtime
@@ -12,12 +18,8 @@
  * `LINGTAI_TEST_SQLITE_PATH` the environment used to answer from before this
  * seam existed.
  */
-import type { RecipeFiles } from '@lingtai/recipe'
-import { describe, expect, it } from 'vitest'
-import { parseDocument } from 'yaml'
-
-import type { GitResult } from '../src/first-project.ts'
-import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineRuntimeRefusal } from '../src/init.ts'
+import { stripColour } from '../src/output.ts'
+import { flagsFromArgv } from '../test/flags.ts'
 
 const PATH = '/home/me/.lingtai/config.yml'
 
@@ -163,7 +165,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       doctor: async () => warning,
     })
 
-    const code = await initCommand(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none'], world)
+    const code = await initCommand(
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      world,
+    )
     expect(code).toBe(0)
 
     // A config written through `world.machine`, and a recipe that resolves
@@ -175,7 +180,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     const written = files.get(path)
     expect(written).toBeDefined()
 
-    const pathIndex = logged.indexOf(path)
+    const pathIndex = logged.findIndex((line) => line.includes(path))
     expect(pathIndex).toBeGreaterThan(-1)
     // The file's bytes, exactly as read back — not trimmed, not summarised.
     expect(logged[pathIndex + 1]).toBe(written)
@@ -188,6 +193,41 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(logged.at(-1)).toContain('no board was started')
   })
 
+  it('under NO_COLOR, a local init with --defaults still prints every fact the old output did, in plain sections (#620)', async () => {
+    const before = process.env['NO_COLOR']
+    process.env['NO_COLOR'] = '1'
+    try {
+      const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''], doctor: async () => 'doctor: 3 ok' })
+      const code = await initCommand(
+        flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+        world,
+      )
+      expect(code).toBe(0)
+      const text = logged.join('\n')
+      expect(stripColour(text)).toBe(text)
+      for (const heading of ['init', 'Machine', 'Store', 'GitHub App', 'Projects', 'Recipe  ', 'Board']) {
+        expect(text).toContain(heading)
+      }
+      // The git version, every runtime's state, and the home line.
+      expect(text).toMatch(/git\s+git version 2\.50\.0/)
+      expect(text).toMatch(/claude-code\s+signed in/)
+      expect(text).toMatch(/home\s+\/nonexistent\/\.lingtai — nothing yet/)
+      // The store row, the app row, the project row.
+      expect(text).toMatch(/store\s+SQLite/)
+      expect(text).toMatch(/app\s+none yet — the board's first screen creates it through GitHub's manifest flow/)
+      expect(text).toMatch(/project\s+local — repo, registered with its own origin as repo.remote/)
+      // The recipe's path and text, then the doctor text and the board row.
+      expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
+      expect(text).toContain('repo:')
+      expect(text).toContain('doctor: 3 ok')
+      expect(text).toContain('no board was started')
+      expect(text).toContain('next: lingtai board')
+    } finally {
+      if (before === undefined) delete process.env['NO_COLOR']
+      else process.env['NO_COLOR'] = before
+    }
+  })
+
   it('a local init exits 0 even when doctor throws, and prints why it did not finish', async () => {
     const { world, logged } = harness({
       gitPlan: GIT_PLAN,
@@ -197,7 +237,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       },
     })
 
-    const code = await initCommand(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none'], world)
+    const code = await initCommand(
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      world,
+    )
 
     expect(code).toBe(0)
     expect(logged).toContain('doctor did not finish — the beacon file does not parse')
@@ -207,7 +250,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('a local init never binds a board, though it probes the port once to say whether one is already running', async () => {
     const { world, calls } = harness({ gitPlan: GIT_PLAN, answers: [''] })
 
-    const code = await initCommand(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none'], world)
+    const code = await initCommand(
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      world,
+    )
     expect(code).toBe(0)
     expect(calls).toEqual({ boardAt: 1, board: 0 })
   })
@@ -215,7 +261,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('a local init, with a board already running on the port, says so rather than naming a `lingtai board` that would refuse', async () => {
     const { world, logged, calls } = harness({ gitPlan: GIT_PLAN, answers: [''], boardAt: 'http://127.0.0.1:17820' })
 
-    const code = await initCommand(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none'], world)
+    const code = await initCommand(
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      world,
+    )
     expect(code).toBe(0)
     expect(calls).toEqual({ boardAt: 1, board: 0 })
     expect(logged.at(-1)).toContain('the board was already running at http://127.0.0.1:17820 — this started none')
@@ -238,7 +287,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       return null
     }
 
-    const code = await initCommand(['--store', 'sqlite'], world)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
     expect(code).toBe(0)
 
     expect(countsWhenProjectAsked).toEqual({ boardAt: 0, board: 0 })
@@ -246,7 +295,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     // more to print "next, install it…" — and started only once: `startBoard`
     // memoises rather than asking `boardAt`/`board` a second time.
     expect(calls).toEqual({ boardAt: 1, board: 1 })
-    expect(logged.join('\n')).toContain('next, install it and pick a repository')
+    expect(logged.join('\n')).toContain('next: open')
     expect(logged.join('\n')).toContain('the board keeps running in this terminal')
   })
 })
@@ -269,7 +318,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     const { world, files, machineFiles, logged } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      ['--local', '/repo', '--store', 'sqlite', '--base', 'main', '--defaults', '--install', 'none'],
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--base', 'main', '--defaults', '--install', 'none']),
       world,
     )
 
@@ -277,14 +326,14 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(machineFiles.get(`${HOME}/config.yml`)).toContain('store: sqlite')
     const path = `${HOME}/repo/recipe.yml`
     expect(files.get(path)).toBeDefined()
-    expect(logged).toContain(path)
+    expect(logged.some((line) => line.includes(path))).toBe(true)
   })
 
   it('--defaults, with every other question also answered by a flag, asks nothing — not the store, not the project, not a recipe question', async () => {
     const { world, asked } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      ['--local', '/repo', '--store', 'sqlite', '--base', 'main', '--defaults', '--install', 'none'],
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--base', 'main', '--defaults', '--install', 'none']),
       world,
     )
 
@@ -300,7 +349,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     h.world.ask = async () => ''
 
     const argv = ['--local', '/repo']
-    const first = await initCommand(argv, h.world)
+    const first = await initCommand(flagsFromArgv(argv), h.world)
     expect(first).toBe(0)
 
     const configKey = `${HOME}/config.yml`
@@ -311,7 +360,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(recipeAfterFirst).toBeDefined()
     const writesAfterFirst = h.machineWrites
 
-    expect(await initCommand(argv, h.world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(argv), h.world)).toBe(0)
 
     // A settled store is reported, not rewritten (this file's header), and a
     // recipe re-asked with every answer unchanged renders no differently

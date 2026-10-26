@@ -6,12 +6,12 @@
  * in `MIGRATED_COMMANDS` is never shown to `@effect/cli` — it would add
  * `--version`, `--help` and `--wizard` to commands that have their own answer.
  */
-export const MIGRATED_COMMANDS = ['version', 'status', 'doctor'] as const
+export const MIGRATED_COMMANDS = ['version', 'status', 'doctor', 'init', 'add'] as const
 
 /** `upgrade`, `rollback`, `uninstall` — answered by `install.ts` before `lingtai.ts` is imported. */
 export const INSTALL_ONLY = ['upgrade', 'rollback', 'uninstall'] as const
 
-export type Route = 'effect' | 'help' | 'init' | 'install' | 'lingtai'
+export type Route = 'effect' | 'help' | 'install' | 'lingtai'
 
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
@@ -23,7 +23,6 @@ export function routeOf(argv: readonly string[]): Route {
   // argument, is answered from the definitions before any command sees it.
   if (argv.length === 0 || ['help', '--help', '-h'].includes(first) || argv.some((a) => a === '--help' || a === '-h'))
     return 'help'
-  if (first === 'init') return 'init'
   if ((INSTALL_ONLY as readonly string[]).includes(first)) return 'install'
   return 'lingtai'
 }
