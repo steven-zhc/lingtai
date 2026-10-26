@@ -145,11 +145,28 @@ jobs:
         run: |
           node packages/domain/scripts/events.ts --ref "${{ github.ref_name }}"
           cp doc/events.json artifacts/events.json
-          prev=$(git describe --tags --abbrev=0 --match 'v*' "${{ github.ref_name }}^" 2>/dev/null || true)
+          # The previous release is the nearest ancestor tag that was published,
+          # not the nearest tag: a tag whose publish failed has no release. Every
+          # gh call is an assignment, so a failed lookup fails the step (-e)
+          # instead of reading as "no earlier manifest".
+          published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName --jq '.[].tagName')
+          ancestors=$(git tag --merged "${{ github.ref_name }}^" --list 'v*' --sort=-creatordate)
+          prev=
+          for t in $ancestors; do
+            if printf '%s\n' "$published" | grep -qx "$t"; then
+              prev=$t
+              break
+            fi
+          done
           old=
-          # Only "not listed" or "no such release" means no earlier manifest; a
-          # failed download must fail the step, not publish "first release".
-          if [ -n "$prev" ] && gh release view "$prev" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx events.json; then
+          if [ -n "$prev" ]; then
+            assets=$(gh release view "$prev" --repo "${{ github.repository }}" --json assets --jq '.assets[].name')
+          else
+            assets=
+          fi
+          # Only a published release that lists no events.json means no earlier
+          # manifest; a failed download must fail the step, not publish "first release".
+          if printf '%s\n' "$assets" | grep -qx events.json; then
             mkdir previous
             gh release download "$prev" --repo "${{ github.repository }}" --pattern events.json --dir previous
             old=previous/events.json
