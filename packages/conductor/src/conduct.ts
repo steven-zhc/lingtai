@@ -29,7 +29,15 @@ import {
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
-import { type PayloadOf, type SpentFor, type Tier, WIP_COMMIT_PREFIX, parsePayload, waitWords } from '@lingtai/domain'
+import {
+  type PayloadOf,
+  type SpentFor,
+  type Tier,
+  WIP_COMMIT_PREFIX,
+  integrationStream,
+  parsePayload,
+  waitWords,
+} from '@lingtai/domain'
 import {
   CONTROL_STREAM,
   type Envelope,
@@ -205,6 +213,7 @@ import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
+import { type LandingLane, landingLane } from './landing-lane.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
   type Brief,
@@ -394,6 +403,8 @@ export type PassClient = Tickets &
   }
 
 export interface RunOnceOptions {
+  /** The lane landings queue on — the process's own unless a test shares one between passes. */
+  lane?: LandingLane
   project: ProjectState
   client: PassClient
   /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
@@ -2702,7 +2713,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * reached only where every step before it passed, so a lane told otherwise
        * would be a lane told something the pass cannot be in a position to say.
        */
-      const land = async (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> => {
+      const landNow = async (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> => {
         const pushed = await gitAsked([
           'push',
           `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
@@ -2750,6 +2761,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           },
         }
       }
+
+      const land = (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> =>
+        (options.lane ?? landingLane).through(
+          integrationStream(project, base),
+          { runId, issue: options.issue },
+          {
+            onWait: (behind) =>
+              appendNow(runId, [
+                {
+                  type: 'MergeLaneWaited',
+                  actor: 'conductor',
+                  data: parsePayload('MergeLaneWaited', {
+                    behind: { runId: behind.runId, issue: String(behind.issue) },
+                  }),
+                },
+              ]),
+          },
+          () => landNow(on),
+        )
 
       /**
        * **The base merged into the branch, by the system** (#593) — what a
