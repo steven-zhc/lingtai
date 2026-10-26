@@ -1,7 +1,7 @@
 /** The phases of a long command (#622): a spinner on a terminal, the same bytes everywhere else. */
 import { describe, expect, it } from 'vitest'
 
-import { createSteps, type Spinner } from '../src/steps.ts'
+import { createSteps, lineSpinner, type Spinner } from '../src/steps.ts'
 
 function fakeSpinner(events: string[]): () => Spinner {
   return () => ({
@@ -45,5 +45,27 @@ describe('createSteps', () => {
     steps.progress('waiting')
     steps.begin('checking again')
     expect(events).toEqual(['start:waiting', 'clear'])
+  })
+})
+
+describe('lineSpinner', () => {
+  it('leaves stdin alone, so Ctrl+C stays a SIGINT for the wait to handle', () => {
+    const before = [
+      process.stdin.listenerCount('keypress'),
+      process.stdin.listenerCount('data'),
+      process.listenerCount('SIGINT'),
+    ]
+    const writes: string[] = []
+    const spinner = lineSpinner({ write: (t) => writes.push(t) })
+    spinner.start('still draining')
+    spinner.message('still draining after 60s')
+    spinner.clear()
+    expect([
+      process.stdin.listenerCount('keypress'),
+      process.stdin.listenerCount('data'),
+      process.listenerCount('SIGINT'),
+    ]).toEqual(before)
+    expect(writes[0]).toContain('still draining')
+    expect(writes.at(-1)).toBe('\r\x1b[2K')
   })
 })
