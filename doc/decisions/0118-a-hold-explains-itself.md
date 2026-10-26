@@ -642,12 +642,34 @@ which kind a wait was got inferred again in each place that needed it, from
       and is excluded from the queue; children enter the queue subject to
       their blockers. The parent is not treated as completed merely because
       its wait was resolved.
-    - A partial GitHub write leaves the wait current and shows which child
-      issue IDs and dependency links exist and which are still owed. A retry
-      reads those identities and reconciles the approved plan before creating
-      anything, so it neither duplicates children nor claims a resolved wait
-      while a child or link is missing. The page keeps the partial result
-      visible for the person.
+    - **GitHub has no transaction, so the write is a reconciliation, not a
+      sequence.** All or nothing cannot be had; what is had instead is that
+      running the write twice is the same as running it once, that running it
+      again after a failure converges on the whole plan, and that it never
+      touches an issue it did not create.
+    - **The plan freezes at the first Create all.** The person edits titles,
+      bodies, kinds, which children are included and the chain until they
+      press it; from then on the plan is the one `SplitStarted` recorded, and
+      nothing on the page can change it — not after a failure either, where
+      the split's one move is **Retry what is missing**. A person who wants a
+      different split takes one of the wait's other moves, which stay
+      available once nothing is writing; the children already created are
+      named on the page and left for the person to close.
+    - **A child is known by its marker and by nothing else.** Every child's
+      body carries an invisible marker naming the parent, the wait and the
+      child's key. The writer finds what exists by listing the issues its own
+      App created since the split started and reading their markers — never
+      by title, and never through GitHub's search index, which lags a create
+      by seconds. An issue without its marker is never adopted, edited or
+      linked. A lookup that fails fails the write; an empty answer is never
+      read as *not created*.
+    - **Every run of the writer reconciles the frozen plan against GitHub**:
+      it creates each child no marker answers for, attaches each missing
+      sub-issue, adds each missing blocked-by, and records `TicketSplit` only
+      once every child and link has been read back. A retry is the same run
+      again; it needs no record of where the last one stopped. The page draws
+      progress from the log (`splitProgressOf`) and shows which children and
+      links exist and which are still owed.
 
 ## Consequences
 
