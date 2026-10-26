@@ -66,6 +66,17 @@ describe('lineSpinner', () => {
       process.listenerCount('SIGINT'),
     ]).toEqual(before)
     expect(writes[0]).toContain('still draining')
-    expect(writes.at(-1)).toBe('\r\x1b[2K')
+    expect(writes.at(-1)).toBe('\r\x1b[J')
+  })
+
+  it('keeps the whole message on a narrow terminal, wrapped and redrawn in place', () => {
+    const writes: string[] = []
+    const spinner = lineSpinner({ write: (t) => writes.push(t), columns: 80 })
+    const long = `still draining after 30s — ${'x'.repeat(60)}. ctrl-c stops waiting, and tells the supervisor nothing`
+    spinner.start(long)
+    expect(writes[0]!.split('\n').join('')).toContain(long)
+    expect(writes[0]!.split('\n').length).toBeGreaterThan(1)
+    spinner.clear()
+    expect(writes.at(-1)).toBe('\r\u001b[1A\u001b[J')
   })
 })

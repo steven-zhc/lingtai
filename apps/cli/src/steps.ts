@@ -35,15 +35,24 @@ export interface Spinner {
  * runs and answers Ctrl+C with `process.exit(0)`, so the SIGINT handler a drain's wait installs
  * (`waitForTheLock`, which withdraws the request) never ran and the command reported success.
  * This one never touches stdin: Ctrl+C stays a signal.
+ *
+ * The message is wrapped over as many rows as it needs and redrawn in place, never cut: the
+ * repeated line says what is in flight and what Ctrl+C does, and both must reach the reader.
  */
 export function lineSpinner(out: { write(text: string): unknown; columns?: number } = process.stdout): Spinner {
   const frames = ['◒', '◐', '◓', '◑']
   let text = ''
   let timer: ReturnType<typeof setInterval> | undefined
   let i = 0
+  let rows = 0
+  const erase = (): string => `\r${rows > 1 ? `\x1b[${rows - 1}A` : ''}\x1b[J`
   const draw = (): void => {
-    const room = Math.max(10, (out.columns ?? 80) - 3)
-    out.write(`\r\x1b[2K${frames[i++ % frames.length]} ${text.slice(0, room)}`)
+    const width = Math.max(10, (out.columns ?? 80) - 1)
+    const body = `${frames[i++ % frames.length]} ${text}`
+    const lines: string[] = []
+    for (let at = 0; at < body.length; at += width) lines.push(body.slice(at, at + width))
+    out.write(erase() + lines.join('\n'))
+    rows = lines.length
   }
   return {
     start(message) {
@@ -59,7 +68,8 @@ export function lineSpinner(out: { write(text: string): unknown; columns?: numbe
       if (timer === undefined) return
       clearInterval(timer)
       timer = undefined
-      out.write('\r\x1b[2K')
+      out.write(erase())
+      rows = 0
     },
   }
 }
