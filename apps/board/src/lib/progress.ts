@@ -226,6 +226,8 @@ export const AGENT = 'agent'
  * what the pass is doing (`task-view.ts:559`).
  */
 const FIXING = 'fixing'
+/** The live label while a pass queues behind another's landing (#639). */
+const WAITING_FOR_LANE = 'waiting for the merge lane'
 
 /**
  * The point a phase is at, or null where the phase names no point.
@@ -423,8 +425,10 @@ export function foldProgress(
   // agent, and clearing unconditionally would lose it. Shared by `RunFinished`
   // (direct below) and the fact a `RunFailed` answers (`RunEnded`), which end
   // the agent phase the same way.
+  // It also ends a wait for the merge lane: a pass that dies while queued
+  // writes no `StepEnded` for `merge`, and the run ending always comes.
   const clearAgentPhase = () => {
-    if (now?.label === AGENT) now = null
+    if (now?.label === AGENT || now?.label === WAITING_FOR_LANE) now = null
   }
 
   for (const event of events) {
@@ -466,6 +470,10 @@ export function foldProgress(
         break
       }
 
+      case 'MergeLaneWaited':
+        now = { label: WAITING_FOR_LANE, since: event.at.toISOString(), budgetMs: null }
+        break
+
       // **No action to key the verdict by, or the budget by** (0120's own
       // Consequences: the board loses which action of a step is running).
       // `StepStarted` carries only `{step, round}` now, so `now` names the
@@ -474,14 +482,6 @@ export function foldProgress(
       // an empty action name `mine`'s own `k.startsWith('${step}:')` still
       // matches, so the step-level state still reads `running` until its
       // `StepEnded` closes an actual `step:action` key over it.
-      case 'MergeLaneWaited':
-        now = { label: 'waiting for the merge lane', since: event.at.toISOString(), budgetMs: null }
-        break
-
-      case 'MergeLaneEntered':
-        now = { label: 'merge', since: event.at.toISOString(), budgetMs: null }
-        break
-
       case 'StepStarted': {
         const stepName = String(data['step'])
         const round = Number(data['round'] ?? 0)

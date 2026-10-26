@@ -1185,8 +1185,6 @@ export const FindingDeclined = z.object({
  * Appended only when it had to wait, so a lone pass's log is unchanged.
  */
 export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
-/** The waiting pass took the lane; `waitedMs` is how long it queued. */
-export const MergeLaneEntered = z.object({ waitedMs: z.number() })
 
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
 /**
@@ -2074,7 +2072,6 @@ export const EVENTS = {
   FindingProposed,
   FindingDeclined,
   MergeLaneWaited,
-  MergeLaneEntered,
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
@@ -2166,7 +2163,6 @@ export const EVENT_AT = {
   FindingProposed: ['end', 'outside'],
   FindingDeclined: ['end', 'outside'],
   MergeLaneWaited: ['merge'],
-  MergeLaneEntered: ['merge'],
   IntegrationAttempted: ['merge'],
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],

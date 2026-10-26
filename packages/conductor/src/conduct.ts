@@ -2777,10 +2777,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   }),
                 },
               ]),
-            onEnter: (waitedMs) =>
-              appendNow(runId, [
-                { type: 'MergeLaneEntered', actor: 'conductor', data: parsePayload('MergeLaneEntered', { waitedMs }) },
-              ]),
           },
           () => landNow(on),
         )

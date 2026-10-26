@@ -7,9 +7,10 @@
  * ordering and not safety, so there is deliberately no timeout: one would let a
  * second landing start beside a holder whose git is still running.
  *
- * In process, because a conductor is one process holding the lock (0102). The
- * hold is one `land` call, released on every outcome — a rejection included —
- * and the key leaves the map when its chain drains.
+ * In process, because a conductor is one process holding the lock (0102): a
+ * crash takes the lane with it and there is nothing to clean up. The hold is
+ * one `land` call, released on every outcome — a rejection included — and the
+ * key leaves the map when its chain drains.
  */
 export interface LaneHolder {
   readonly runId: string
@@ -19,22 +20,21 @@ export interface LaneHolder {
 export interface LandingLane {
   /**
    * Runs `land` once every earlier caller on `key` has settled. `onWait` is
-   * called, with the holder at the head of the queue, only when the key was
-   * already held; `onEnter` only after such a wait, with how long it took.
+   * called, with the holder inside `land` now (not the last one queued), only
+   * when the key was already held.
    */
   through<T>(
     key: string,
     holder: LaneHolder,
-    hooks: {
-      onWait: (behind: LaneHolder) => Promise<void>
-      onEnter: (waitedMs: number) => Promise<void>
-    },
+    hooks: { onWait: (behind: LaneHolder) => Promise<void> },
     land: () => Promise<T>,
   ): Promise<T>
 }
 
-export function createLandingLane(now: () => number = Date.now): LandingLane {
+export function createLandingLane(): LandingLane {
   const tails = new Map<string, { done: Promise<void>; holder: LaneHolder }>()
+  /** Who is inside `land` now, which is not the tail of the queue once two wait. */
+  const holding = new Map<string, LaneHolder>()
   return {
     async through(key, holder, hooks, land) {
       const before = tails.get(key)
@@ -44,19 +44,18 @@ export function createLandingLane(now: () => number = Date.now): LandingLane {
       tails.set(key, mine)
       try {
         if (before !== undefined) {
-          const since = now()
           try {
-            await hooks.onWait(before.holder)
+            await hooks.onWait(holding.get(key) ?? before.holder)
+          } finally {
+            // A refused append must not strand the callers queued behind us,
+            // and must not let us land beside the holder either.
             await before.done
-            await hooks.onEnter(now() - since)
-          } catch (err) {
-            // A refused append must not strand the callers queued behind us.
-            await before.done
-            throw err
           }
         }
+        holding.set(key, holder)
         return await land()
       } finally {
+        if (holding.get(key) === holder) holding.delete(key)
         release()
         if (tails.get(key) === mine) tails.delete(key)
       }

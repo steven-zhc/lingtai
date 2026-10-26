@@ -49,7 +49,7 @@ async function race(secondFiles: string[]) {
         return lane.through(
           'p:main',
           { runId: name, issue: name },
-          { onWait: async () => void order.push(`${name}:wait`), onEnter: async () => {} },
+          { onWait: async () => void order.push(`${name}:wait`) },
           async (): Promise<ActionResult> => {
             order.push(`${name}:begin`)
             if (hold) await hold
