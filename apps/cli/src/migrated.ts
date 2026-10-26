@@ -19,6 +19,13 @@ export const MIGRATED_COMMANDS = [
   'answer',
   'ask',
   'now',
+  'start',
+  'daemon',
+  'service',
+  'restart',
+  'shutdown',
+  'pause',
+  'resume',
 ] as const
 
 /** `upgrade`, `rollback`, `uninstall` — answered by `install.ts` before `lingtai.ts` is imported. */

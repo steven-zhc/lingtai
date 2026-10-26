@@ -82,6 +82,14 @@ import { dirname, join } from 'node:path'
 import type { Asking, RecordedStart, Withdrawal } from '@lingtai/daemon'
 import { repoRoot, stateDir } from '@lingtai/env'
 
+import { jsonErrorDocument } from './output.ts'
+import {
+  renderServiceStatus,
+  serviceStatusCode,
+  serviceStatusJson,
+  type ServiceStatus,
+  type SupervisorAnswer,
+} from './service-status.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
@@ -590,6 +598,8 @@ export interface LockQueue {
 }
 
 export interface ServiceOptions {
+  /** `status --json` (#622): the one document goes to `log`, and `NO_SUPERVISOR` becomes the error document. */
+  json?: boolean
   /** `daemon_status`, the beacon outside the log (#46). Injected so this file loads without a database. */
   liveness: () => Promise<string>
   /**
@@ -772,7 +782,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   const platform = platformFor(options.platform ?? process.platform)
   // Not just the OS: a Linux container has `linux` and no `systemctl`.
   if (!platform || !which(platform === 'launchd' ? 'launchctl' : 'systemctl')) {
-    error(NO_SUPERVISOR)
+    if (options.json && verb === 'status') log(jsonErrorDocument('service status', 'no-supervisor', NO_SUPERVISOR))
+    else error(NO_SUPERVISOR)
     return 1
   }
 
@@ -1492,12 +1503,28 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // Two jobs, two reports, and never one summary: a board that is up beside
       // a conductor launchd respawns every thirty seconds is the exact state a
       // single word for both would hide.
-      log('the conductor')
-      const daemon = await report()
-      log('')
-      log('the board')
-      const board = await reportBoard()
-      return daemon !== 0 ? daemon : board
+      const asked = (job?: Job): SupervisorAnswer => {
+        const answer = askSupervisor(platform, exec, uid, job)
+        return 'unread' in answer ? { unread: answer.unread } : { lines: answer.lines }
+      }
+      const status: ServiceStatus = {
+        platform,
+        conductor: {
+          target: platform === 'launchd' ? target : SYSTEMD_UNIT,
+          supervisor: asked(),
+          beacon: await options.liveness().catch((err: unknown) => ({ unread: (err as Error).message })),
+        },
+        board: {
+          target: platform === 'launchd' ? boardTarget : BOARD_SYSTEMD_UNIT,
+          supervisor: asked(BOARD_JOB),
+          url: options.board.url,
+          answers: await boardAnswers(),
+          missing: options.board.missing(),
+        },
+      }
+      if (options.json) log(JSON.stringify({ version: 1, command: 'service status', ...serviceStatusJson(status) }))
+      else for (const line of renderServiceStatus(status)) log(line)
+      return serviceStatusCode(status)
     }
 
     case 'install': {
