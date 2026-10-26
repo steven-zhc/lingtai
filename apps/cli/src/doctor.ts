@@ -1029,6 +1029,9 @@ export async function daemonLiveness(
   // was what this said for both, which is the folding #77 argued against.
   const held = beat.state === 'draining' ? await inFlight().catch(() => []) : []
   const stopping = beat.state === 'draining' ? ` — ${describeInFlight(held)}` : ''
+  // Up with several passes side by side says how many, and one or none stays as it was (#640).
+  const running = beat.state === 'up' ? await inFlight().catch(() => []) : []
+  const side = running.length > 1 ? ` — ${running.length} passes in flight` : ''
   // The same argument one state along. `starting` is up and taking nothing
   // yet, and saying only `starting` would invite the restart that `#144`'s
   // `not running` invited.
@@ -1037,7 +1040,7 @@ export async function daemonLiveness(
   return {
     name: 'daemon: liveness',
     status: 'ok',
-    detail: `${beat.state}${stopping}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
+    detail: `${beat.state}${stopping}${side}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
   }
 }
 
