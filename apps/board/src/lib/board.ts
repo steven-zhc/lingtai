@@ -968,23 +968,43 @@ async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
 ): Promise<{ progress: Map<string, RunProgress>; fixHeads: Map<string, string> }> {
-  const folded = await Promise.all(
-    railCandidates(tasks).map(async ({ task, over }) => {
+  const railed = railCandidates(tasks)
+  const railedIds = new Set(railed.map((c) => c.task.taskId))
+  // A waiting card past the rail cap still gets its one button (#647), so the
+  // saved head is read for it too — but only where triage advised
+  // `GrantFixRound`, the one advice that needs the stream. No rail is folded.
+  const headOnly = tasks.filter(
+    (t) =>
+      t.runId !== null &&
+      t.wait !== null &&
+      !railedIds.has(t.taskId) &&
+      t.triage.result?._tag === 'TriageAdvised' &&
+      t.triage.result.resolution === 'GrantFixRound',
+  )
+  const headOf = (task: TaskCard, events: Awaited<ReturnType<typeof eventStore.read>>) => {
+    const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)
+    return saved !== null && 'head' in saved ? saved.head : null
+  }
+  const folded = await Promise.all([
+    ...railed.map(async ({ task, over }) => {
       try {
         const events = await eventStore.read(task.runId as string)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)
-        return [
-          task.taskId,
-          foldProgress(events, plans.get(task.project), over),
-          saved !== null && 'head' in saved ? saved.head : null,
-        ] as const
+        return [task.taskId, foldProgress(events, plans.get(task.project), over), headOf(task, events)] as const
       } catch {
         return [task.taskId, null, null] as const
       }
     }),
-  )
+    ...headOnly.map(async (task) => {
+      try {
+        const events = await eventStore.read(task.runId as string)
+        return [task.taskId, null, headOf(task, events)] as const
+      } catch {
+        return [task.taskId, null, null] as const
+      }
+    }),
+  ])
   return {
     progress: new Map(folded.flatMap(([id, p]) => (p === null ? [] : [[id, p] as const]))),
     fixHeads: new Map(folded.flatMap(([id, , head]) => (head === null ? [] : [[id, head] as const]))),
