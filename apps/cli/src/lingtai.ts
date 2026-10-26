@@ -39,8 +39,6 @@ import {
 import { BOARD_PORT } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
-import { log } from '@lingtai/event-store'
-import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 

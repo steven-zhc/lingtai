@@ -874,6 +874,12 @@ const rollbackCommand = Command.make(
     Effect.promise(async () => {
       if (args.noColor) applyNoColor()
       const version = given(args.version)
+      // The parser takes `--x` as a version; it was never one, and the sentence it was refused with stands.
+      if (version?.startsWith('--')) {
+        console.error(`${symbol.fail()} lingtai rollback [<version>]`)
+        handlerCode = 2
+        return
+      }
       await guarded('rollback', () => runners.rollback(version === undefined ? {} : { version }))
     }),
 ).pipe(Command.withDescription(definitionOf('rollback').task))
