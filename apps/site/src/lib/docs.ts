@@ -65,7 +65,7 @@ export const DOCS_PUBLIC = false
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ['tutorial', 'cli', 'requirements', 'from-symphony', 'plugins']
+export const PUBLIC_SLUGS = ['tutorial', 'cli', 'requirements', 'from-symphony', 'plugins', 'events']
 
 export function isPublicSlug(slug: string): boolean {
   return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`))
@@ -417,6 +417,8 @@ export function resolveHref(from: string, href: string, isPublished: (file: stri
   const rel = path.posix.normalize(path.posix.join(fromDir === '.' ? '' : fromDir, target))
 
   if (rel.startsWith('../')) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, '') + suffix
+  // The manifest is a file on GitHub and a page here (#630).
+  if (rel === 'events.json' && isPublicSlug('events')) return `/docs/events/${suffix}`
   if (/^img\/[a-z0-9-]+\.svg$/.test(rel)) return `/img/docs/${rel.slice('img/'.length)}${suffix}`
   if (rel.endsWith('.md') && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`
   if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`

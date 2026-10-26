@@ -587,3 +587,28 @@ footer.foot a { color: var(--ink-2); }
 .prose .hljs-built_in, .prose .hljs-type { color: var(--accent); }
 .prose .hljs-comment { color: var(--muted); font-style: italic; }
 .prose .hljs-punctuation, .prose .hljs-operator { color: var(--ink-2); }
+
+/* --- /docs/events/ (#630) ------------------------------------------------- */
+/* The drawing scrolls inside its own box, never the page. */
+.ev-drawing { overflow-x: auto; margin: 18px 0; padding: 14px; border: 1px solid var(--rule); border-radius: 3px; }
+.ev-spine, .ev-lane { list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; min-width: 760px; }
+.ev-lane { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--rule-2); }
+.ev-spine li, .ev-lane li { flex: 1; }
+.ev-spine a, .ev-lane a { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--rule-2); border-radius: 3px; text-decoration: none; color: var(--ink); }
+.ev-lane li { flex: 0 0 160px; }
+.ev-spine a:hover, .ev-lane a:hover { background: var(--surface); }
+.ev-step { font-family: var(--mono); font-size: 12px; }
+.ev-count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.events:has(.ev-section:target) .ev-section:not(:target) { display: none; }
+.events:has(.ev-section:target) .ev-drawing a { opacity: .55; }
+.ev-section { padding: 10px 0; }
+.ev-section h2 { font-size: 18px; margin: 16px 0 8px; }
+.ev { border-top: 1px solid var(--rule); padding: 6px 0; }
+.ev summary { cursor: pointer; }
+.ev-tag { font-size: 11px; color: var(--muted); }
+.ev-body { padding: 8px 0 8px 18px; font-size: 14px; }
+.ev-body dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0; }
+.ev-body dt { color: var(--muted); }
+.ev-body dd { margin: 0; overflow-wrap: anywhere; }
+.ev-body ul { margin: 0; padding-left: 18px; }
+.ev-body pre { overflow-x: auto; }

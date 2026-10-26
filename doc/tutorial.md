@@ -298,4 +298,5 @@ repository, so Step 4's `git pull` does not apply: look on GitHub instead.
 
 Once a pass has run, [the CLI guide](cli.md) has the command for each routine
 action that follows: waiting on a ticket, answering a question, restarting the
-daemon.
+daemon. To subscribe to what a pass writes, [the events](events.json) lists each step's
+events with the code that appends them.

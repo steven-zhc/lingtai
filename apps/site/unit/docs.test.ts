@@ -181,6 +181,11 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('decisions-archive/0022-the-seams.md', '../tutorial.md', isPublished)).toBe('/docs/tutorial/')
   })
 
+  it('sends a link to the events manifest to its page', () => {
+    expect(resolveHref('tutorial.md', 'events.json', isPublished)).toBe('/docs/events/')
+    expect(resolveHref('plugins/index.md', '../events.json', isPublished)).toBe('/docs/events/')
+  })
+
   it('publishes the requirements beside the tutorial and keeps operating on GitHub', async () => {
     const served = await servable()
     const served$ = (file: string) => served.includes(file)
