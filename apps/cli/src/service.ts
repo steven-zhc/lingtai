@@ -702,7 +702,7 @@ export interface ServiceOptions {
   error?: (line: string) => void
   /** The phases, shown by the entry (#622); none where a test passes none. */
   steps?: Steps
-  /** Called when a start was answered 0 without being started or confirmed: the supervisor already had a process. */
+  /** Called when a start was answered 0 without being started or confirmed: the supervisor already had a process, or the board had no job or build to start. */
   unconfirmed?: (job: 'conductor' | 'board') => void
 }
 
@@ -970,6 +970,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     const missing = options.board.missing()
     if (missing !== null) {
       sayNoBoard(missing, 'started')
+      options.unconfirmed?.('board')
       return 0
     }
     if (!boardInstalled()) {
@@ -978,6 +979,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         `no board job at ${boardFile.path}, so nothing was started for the board — pnpm lingtai service install writes one`,
       )
+      options.unconfirmed?.('board')
       return 0
     }
     const answer = askJob(BOARD_JOB)

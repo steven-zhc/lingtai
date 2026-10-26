@@ -388,7 +388,7 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
       if (verb === 'install') steps.begin('writing')
       if (verb === 'uninstall') steps.begin('removing')
       let unconfirmed = false // the supervisor already had a conductor process
-      let boardHad = false // ...and a board process, so the board's start was not made either
+      let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
       const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
         ...serviceOptions(),
         steps,

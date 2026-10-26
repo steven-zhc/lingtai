@@ -248,8 +248,11 @@ async function main(argv: string[]): Promise<number> {
     // already on disk. `start` is the name; this is the one it used to have.
     case 'daemon':
       return daemonCommand(parseFlags(rest).flags)
-    case 'service':
-      return serviceCommand(rest, { ...serviceOptions(), steps: createSteps(console.log) })
+    case 'service': {
+      const steps = createSteps(console.log)
+      // A spinner started by the drain's wait must not outlive the command.
+      return serviceCommand(rest, { ...serviceOptions(), steps }).finally(() => steps.end())
+    }
     case 'projection':
       return projectionCommand(rest)
     // `entry.ts` answers this before the log is loaded; here for a process

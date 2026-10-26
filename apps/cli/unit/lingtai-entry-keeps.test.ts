@@ -34,6 +34,6 @@ describe('lingtai.ts and the supervisor', () => {
 
   it('has a working case for each of the three', () => {
     expect(source).toMatch(/case 'daemon':\s*return daemonCommand\(/)
-    expect(source).toMatch(/case 'service':\s*return serviceCommand\(/)
+    expect(source).toMatch(/case 'service':\s*\{[^}]*return serviceCommand\(/)
   })
 })
