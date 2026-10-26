@@ -39,13 +39,14 @@
  * flag and the loop goes round again when it finishes — which also collapses a
  * burst of events into one extra pass rather than one each.
  *
- * ## Stopping is waiting for that pass
+ * ## Stopping is waiting for every pass in flight
  *
  * **The boundary is the pass, not the agent**
  * ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §1). A ticket is
  * not finished when its agent exits: the gates run, the merge lane runs, the
- * `end` point runs, and one pass spans all of it. So `stop()` waits for the
- * pass, and `pump` retains its promise for it to wait on — which is the only
+ * `end` point runs, and one pass spans all of it. So `stop()` waits for every
+ * pass in flight, and `pump` retains the look's promise (and any pass a look
+ * hands to `started`) for it to wait on — which is the only
  * thing that was missing. `running`, `again` and the `if (stopped) break` were
  * all already here, so from outside the loop looked as though it drained.
  *
@@ -81,6 +82,7 @@ import { type Envelope, SUBSCRIBER_STREAM, WAIT_EVENTS, parsePayload, ticketOf }
 import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
 
 import { withDaemonStore } from './choose.ts'
+import { createInFlight } from './in-flight.ts'
 import type { DaemonStore } from './store.ts'
 
 /**
@@ -167,7 +169,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: PassReason) => Promise<void>
+  pass: (reason: PassReason, started?: (pass: Promise<void>) => void) => Promise<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -301,17 +303,19 @@ export interface WorkLoop {
   /** Runs the first pass and then follows the log. */
   start(): Promise<void>
   /**
-   * Takes no more work, and waits for the pass in flight.
+   * Takes no more work, and waits for every pass in flight.
    *
    * **The drain**, and the whole of 0030 §1: a pass spans the agent, the
    * gates, the merge lane and the `end` point, so waiting for the pass is the
    * only wait that means "finished". `running` used to be a flag nothing read;
-   * the promise it stands for is retained now, and this is what awaits it.
+   * the promises it stands for are retained now, and this is what awaits them.
+   * A look that starts passes without waiting for them hands each to `started`,
+   * and the drain waits for those as well as for the look.
    */
   stop(): Promise<void>
   /** Passes run so far. */
   readonly passes: number
-  /** True while a pass is running. What a drain is waiting for. */
+  /** True while a look is running or any pass it started is still in flight. What a drain is waiting for. */
   readonly busy: boolean
 }
 
@@ -333,7 +337,8 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * the loop looked as though it drained; nothing held the promise, so nothing
    * could wait for it (0030).
    */
-  let inFlight: Promise<void> | null = null
+  let lookInFlight: Promise<void> | null = null
+  const passesInFlight = createInFlight()
 
   // ------------------------------------------------ the subscriber boundary --
 
@@ -455,14 +460,15 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // A pass is in flight. Remember to go round again rather than starting a
       // second one into the same queue.
       again = true
-      return inFlight ?? Promise.resolve()
+      return lookInFlight ?? Promise.resolve()
     }
     running = true
     const pass = drain(reason).finally(() => {
       running = false
-      inFlight = null
+      lookInFlight = null
     })
-    inFlight = pass
+    lookInFlight = pass
+    passesInFlight.track(pass)
     return pass
   }
 
@@ -497,7 +503,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         }
         passes += 1
         try {
-          await options.pass(reason)
+          await options.pass(reason, passesInFlight.track)
         } catch (err) {
           // A pass that throws must not take the loop with it: the next
           // completion event is exactly when you want it to try again.
@@ -519,7 +525,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     },
 
     get busy() {
-      return running
+      return running || passesInFlight.size > 0
     },
 
     async start() {
@@ -588,7 +594,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // as `runtime.limits.wall`, and a wait that gave up after some minutes
       // would recreate the orphan this exists to prevent, silently, at the
       // moment it matters most. Whoever wants to accept that asks for it.
-      await inFlight?.catch(() => {})
+      await passesInFlight.settled()
     },
   }
 }

@@ -15,8 +15,8 @@
  * holds a projector of its own, so lag with no daemon is normal during a run
  * and a standing accusation after one.
  */
-import { lastBeat, readStatus } from '@lingtai/daemon/control'
-import { projectionLag } from '@lingtai/projector'
+import { held as heldBy, lastBeat, readStatus } from '@lingtai/daemon/control'
+import { projectionLag, readTasks } from '@lingtai/projector'
 
 export interface Health {
   /** Events between the projection and the head. Null when it was never built. */
@@ -25,6 +25,8 @@ export interface Health {
   daemon: 'up' | 'stale' | 'never'
   /** Milliseconds since the last beat, for the tooltip. Null when never. */
   sinceBeatMs: number | null
+  /** The passes in flight, one per running or verifying ticket — the title says how many when several (#640). */
+  inFlight: string[]
   /** Set when the health read itself failed, which is its own kind of answer. */
   error?: string
 }
@@ -35,12 +37,17 @@ export async function readHealth(): Promise<Health> {
   try {
     // Two reads rather than one join: they are different tables owned by
     // different mechanisms, and a join would imply they fail together.
-    const [lags, status] = await Promise.all([projectionLag().catch(() => []), readStatus().catch(() => null)])
+    const [lags, status, held] = await Promise.all([
+      projectionLag().catch(() => []),
+      readStatus().catch(() => null),
+      // Not caught: a count that could not be read is the health read failing, said as such, never as no passes.
+      readTasks().then(heldBy),
+    ])
 
     const row = lags.find((l) => l.name === PROJECTION)
     const lag = row ? Number(row.lag) : null
 
-    if (!status) return { lag, daemon: 'never', sinceBeatMs: null }
+    if (!status) return { lag, daemon: 'never', sinceBeatMs: null, inFlight: held }
     // The same function `lingtai doctor` reads this row with, so the chip and
     // the check cannot come to different answers about one row — which is the
     // shape of `#64`. `starting` counts as `up` here and reads as *catching
@@ -52,10 +59,11 @@ export async function readHealth(): Promise<Health> {
       lag,
       daemon: beat.up ? 'up' : 'stale',
       sinceBeatMs: beat.ageMs,
+      inFlight: held,
     }
   } catch (err) {
     // Reported as its own state. A board that cannot tell you whether it is
     // current must not render as though it is.
-    return { lag: null, daemon: 'never', sinceBeatMs: null, error: (err as Error).message }
+    return { lag: null, daemon: 'never', sinceBeatMs: null, inFlight: [], error: (err as Error).message }
   }
 }

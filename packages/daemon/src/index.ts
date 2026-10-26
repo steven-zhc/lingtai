@@ -36,6 +36,7 @@ export {
   beat,
   createStatusTable,
   describeInFlight,
+  held,
   inFlight,
   lastBeat,
   pauseConductor,
