@@ -19,12 +19,23 @@ import {
   type RecipeFor,
 } from '@lingtai/conductor'
 import { agentBranchOf, waitWords } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
+import { recommendedResolution } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { heading, keyValues, section, symbol, table } from './output.ts'
+
+export function smallConflictRound(reason: WaitReason, triage: TaskCard['triage'] | undefined): boolean {
+  const result = triage?.result
+  return (
+    result?._tag === 'TriageAdvised' &&
+    result.cause._tag === 'ConflictingHunks' &&
+    recommendedResolution(reason, { _tag: 'Done', result }) === 'GrantFixRound'
+  )
+}
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -289,6 +300,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         lastAttemptAt?: Date | null
         repairPending?: boolean
         wait?: TaskCard['wait']
+        triage?: TaskCard['triage']
         awaitingSha?: string | null
       },
       restarts: number,
@@ -330,7 +342,12 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   awaitingSha: t.awaitingSha ?? null,
                   needs: words.needs,
                 }),
-                detail: describeWaitLines(words).map((l) => l.text),
+                detail: describeWaitLines(words).map((l) =>
+                  // A small conflict recommends a fix round whatever triage chose (#652), as the board does.
+                  l.part === 'rec' && smallConflictRound(t.wait!.reason, t.triage)
+                    ? 'recommends a fix round — each conflicting hunk has a recommended answer from triage, so it is resolved in place rather than started over'
+                    : l.text,
+                ),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
