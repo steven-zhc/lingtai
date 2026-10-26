@@ -125,6 +125,23 @@ describe('dayCeilingPause', () => {
     expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(true)
   })
 
+  it('a raised figure does not withdraw a standing shutdown request', async () => {
+    const store = createMemoryEventStore()
+    await check([today(60)], store)
+    const events = await store.read(CONTROL_STREAM)
+    await store.append(CONTROL_STREAM, events.length, [
+      {
+        type: 'ConductorShutdownRequested',
+        actor: 'human:ops',
+        data: { by: 'human:ops', reason: 'bye', timeoutMs: null, force: false },
+      } as never,
+    ])
+    expect(await check([today(60)], store, now, 100)).toBeNull()
+    const control = reduceControl(await store.read(CONTROL_STREAM), now)
+    expect(control.shutdown).not.toBeNull()
+    expect(await store.read(CONTROL_STREAM)).toHaveLength(2)
+  })
+
   it('a raised figure does not lift a person’s pause', async () => {
     const store = createMemoryEventStore()
     await store.append(CONTROL_STREAM, 0, [

@@ -92,13 +92,16 @@ function resumedPast(events: readonly Envelope[], now: Date): boolean {
 /**
  * A pause that is the ceiling's own and still holds while today is under the
  * figure — the figure was raised or removed — is lifted here, because the
- * callers ask the control stream's pause first and would never read the new
- * figure otherwise. Appended `by: 'lingtai'`, which `resumedPast` does not
+ * callers ask this before the control stream's pause and so lift it before it is
+ * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which `resumedPast` does not
  * count as a person's waiver. Any other pause is left alone.
  */
 async function liftOwnPause(store: EventStore, now: Date): Promise<void> {
   const events = await store.read(CONTROL_STREAM)
-  if (!reduceControl(events, now).paused) return
+  const control = reduceControl(events, now)
+  // `ConductorResumed` also withdraws a standing shutdown request (reduceControl),
+  // and an unrelated shutdown is not ours to withdraw: leave the pause for it.
+  if (!control.paused || control.shutdown !== null) return
   let own = false
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>
