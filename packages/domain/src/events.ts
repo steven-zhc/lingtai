@@ -2159,7 +2159,7 @@ export const EVENT_AT = {
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],
   PassRouted: ['review', 'proposed', 'end'],
-  ConductorPaused: [...AGENT_STEPS, 'end', 'outside'],
+  ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
   ConductorShutdownRequested: ['outside'],
   ConductorStarted: ['outside'],

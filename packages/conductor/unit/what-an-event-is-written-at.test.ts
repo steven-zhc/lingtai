@@ -13,9 +13,10 @@
  * `runPass` returns. **So the window is strict while a step is open** — between
  * its `StepStarted` and its `StepEnded` an envelope is allowed at that step and
  * no other, so `RunStarted` declared only at `end` is caught — **and loose once
- * it has closed**: the step in force *or* `proposed` *or* `end`. **The cost:** a
- * type declared only at `proposed` or `end` is checked loosely after a step has
- * closed. A tighter check would need `conduct.ts` to announce those visits.
+ * it has closed**: the step in force *or* `end`. `proposed` is not in that
+ * window, so `TicketLanded` declared at `proposed` is caught. **The cost:** a
+ * type declared at `end` is checked loosely after a step has closed. A tighter
+ * check would need `conduct.ts` to announce those visits.
  *
  * **No row here is a `build` refusal that buys a round**: only `runPlugin`
  * serves `build`, and `run:` spawns a real process (`actions/src/command.ts:43`),
@@ -62,7 +63,7 @@ export function misplaced(envelopes: readonly Envelope[], at: Readonly<Record<Ev
       started = true
       open = true
     }
-    const window = !started ? ['claim'] : open ? [current] : [current, 'proposed', 'end']
+    const window = !started ? ['claim'] : open ? [current] : [current, 'end']
     const declared = at[e.type as EventType]
     if (!declared.some((s) => window.includes(s))) found.push({ type: e.type, seq: e.seq, window, declared })
     if (e.type === 'StepEnded') open = false
@@ -153,5 +154,11 @@ describe('what an event is written at (#628)', () => {
       const wrong = { ...EVENT_AT, RunStarted: [away] } as Record<EventType, readonly At[]>
       expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['RunStarted']))
     }
+  })
+
+  it('fails when an event appended after the walk is declared at proposed', async () => {
+    const store = await PASSES['a pass that lands']!()
+    const wrong = { ...EVENT_AT, TicketLanded: ['proposed'] } as Record<EventType, readonly At[]>
+    expect(new Set(misplaced(everything(store), wrong).map((m) => m.type))).toEqual(new Set(['TicketLanded']))
   })
 })
