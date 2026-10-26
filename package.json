@@ -13,8 +13,8 @@
     "build": "pnpm --filter @lingtai/release build",
     "binary": "pnpm --filter @lingtai/release binary",
     "typecheck": "pnpm -r --if-present typecheck",
-    "fmt": "oxfmt 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts'",
-    "fmt:check": "oxfmt --check 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts'",
+    "fmt": "oxfmt 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts' 'doc/events.json'",
+    "fmt:check": "oxfmt --check 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts' 'doc/events.json'",
     "lint": "oxlint --deny-warnings",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
@@ -27,7 +27,8 @@
     "db:init": "pnpm --filter @lingtai/event-store db:init",
     "db:bootstrap": "pnpm --filter @lingtai/event-store db:bootstrap",
     "db:migrate": "pnpm --filter @lingtai/event-store db:migrate",
-    "db:verify": "pnpm --filter @lingtai/event-store db:verify"
+    "db:verify": "pnpm --filter @lingtai/event-store db:verify",
+    "events:generate": "node packages/domain/scripts/events.ts && oxfmt doc/events.json"
   },
   "devDependencies": {
     "oxfmt": "0.71.0",
