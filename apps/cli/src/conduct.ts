@@ -302,16 +302,21 @@ export function conductWork(
     // **Detached** (0122 §1) only where a ceiling is configured and this project
     // asks for more than one slot, or another project already has a pass in
     // flight: every other look awaits its pass, which is today's behaviour.
-    const limit = concurrencyOf(resolved.recipe)
+    const wanted = concurrencyOf(resolved.recipe)
     const slots = options.slots
-    if (slots && limit > 1 && !slots.ceilingSet) {
-      options.log(`${name}: runtime.concurrency ${limit} is ignored — no daily ceiling is set, so one pass runs in all`)
+    // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
+    const limit = slots && !slots.ceilingSet ? 1 : wanted
+    if (slots && wanted > 1 && !slots.ceilingSet) {
+      options.log(
+        `${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one pass runs in all`,
+      )
     }
-    // Passes already in flight keep the look detached even when the limit has since
-    // fallen to one: awaiting would ignore them, and the slot count and the same-file
-    // rule are what keep a lowered limit honest until they have drained.
+    // Passes already in flight, in any project, keep the look detached even when the
+    // limit has since fallen to one or the ceiling has been removed: awaiting would
+    // ignore them, and the slot count and the same-file rule are what keep a lowered
+    // limit honest until they have drained.
     const detached =
-      slots !== undefined && slots.ceilingSet && (limit > 1 || slots.anyMany === true || slots.set.of(name).length > 0)
+      slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
     const isFull = (): boolean => detached && slots.set.of(name).length >= limit
 
     /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
