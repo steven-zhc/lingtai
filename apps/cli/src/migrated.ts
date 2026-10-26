@@ -30,6 +30,13 @@ export const MIGRATED_COMMANDS = [
   'upgrade',
   'rollback',
   'uninstall',
+  'start',
+  'daemon',
+  'service',
+  'restart',
+  'shutdown',
+  'pause',
+  'resume',
 ] as const
 
 export type Route = 'effect' | 'help' | 'lingtai'

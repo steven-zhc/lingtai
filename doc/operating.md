@@ -1170,7 +1170,9 @@ answers stay two: one summary saying *running* would hide a board that is up
 beside a conductor launchd respawns every thirty seconds. The board's own
 second answer is whether a board **answers** on the port — a job the supervisor
 has loaded is not a UI anybody can open, exactly as a loaded daemon is not a
-daemon taking work.
+daemon taking work. `pnpm lingtai service status --json` prints the same facts as one
+document (`conductor` and `board`, each with the supervisor's `lines` or why it
+could not be `unread`), and an unreadable supervisor is still that document, exiting 1.
 
 The board's two files carry none of the daemon's reasons. It detaches no agent,
 so its systemd unit leaves `KillMode` at the default; it finishes no pass, so
