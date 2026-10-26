@@ -14,7 +14,9 @@ import {
   passedOver,
   projectFilter,
   runnableNow,
+  readFixFiles,
   selectRunnable,
+  waitsFor,
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
@@ -280,6 +282,21 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
     // **The arm comes from the row, because the offer cannot carry it** (#100):
     // a restarted ticket is queued, so it is listed from here and nowhere else.
     const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
+    // **Computed, never appended** (0122 §2): what is in flight is the `task_view` rows
+    // running, and the files are each ticket's own `Fix` row. A queued ticket that would
+    // be skipped for one of them says so in the `held` cell, in `waitsFor`'s words —
+    // the sentence the daemon's look logs, from the same function.
+    const flying = tasks.filter((t) => t.state === 'running' || t.state === 'verifying')
+    const waits = new Map<string, string>()
+    if (filter.ok && flying.length > 0 && runnable.length > 0) {
+      const inFlight = await Promise.all(
+        flying.map(async (t) => ({ issue: t.issue, files: await readFixFiles(filter.tickets, Number(t.issue)) })),
+      )
+      for (const r of runnable) {
+        const why = waitsFor(await readFixFiles(filter.tickets, Number(r.issue)), inFlight)
+        if (why !== null) waits.set(r.taskId, why)
+      }
+    }
     const now = Date.now()
     const offeredKinds = kinds.length > 0 ? kinds : ['bug']
     const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
@@ -317,7 +334,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         state: t.state,
         restarts,
         arm: armLine({ restarts }, restartsOf),
-        held: until ? backingOff(until, now) : null,
+        held: until ? backingOff(until, now) : (waits.get(t.taskId) ?? null),
         // Said only when the source actually answered: with no answer every row looks unoffered.
         // Against the offer and not `runnable`, which the retry window has already thinned.
         unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),

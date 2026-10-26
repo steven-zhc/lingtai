@@ -42,6 +42,8 @@ import { type PassClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNow } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
+import { readFixFiles, waitsFor } from './same-file.ts'
+import type { Slots } from './slots.ts'
 
 export interface ScheduleOptions {
   project: ProjectState
@@ -86,6 +88,17 @@ export interface ScheduleOptions {
    * while its first ticket runs has to stop it taking the second (#166).
    */
   paused?: () => Promise<string | null>
+  /**
+   * Fills this project's free slots and returns without waiting for the passes
+   * (0122 §1). Absent, every item is awaited in turn, exactly as before.
+   */
+  slots?: {
+    set: Slots
+    /** The project's `runtime.concurrency`. */
+    limit: number
+    /** Handed each started pass, which the work loop's drain waits for. */
+    started: (pass: Promise<void>) => void
+  }
   log?: (line: string) => void
 }
 
@@ -121,6 +134,8 @@ export interface ScheduleResult {
   stopped: StoppedBecause
   /** Work items attempted in this pass, in order. */
   attempted: string[]
+  /** Passes started and not waited for; set only when `slots` was given. */
+  started?: number
 }
 
 /**
@@ -136,12 +151,17 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
     const log = options.log ?? (() => {})
     const ran: RunOnceResult[] = []
     const attempted = new Set<string>()
+    /** Detached only: passes started, and tickets that must wait for one in flight. */
+    let started = 0
+    const waiting = new Set<string>()
+    let envRefused = false
+    const context = options.slots ? yield* Effect.context<Repo | AgentHost>() : undefined
     /** Whether this pass has already reported a GitHub that reports no dependencies. */
     let saidDependenciesUnread = false
 
     const finish = (stopped: StoppedBecause): ScheduleResult => {
       log(`stopped: ${stopped} — ${ran.length} run(s)`)
-      return { ran, stopped, attempted: [...attempted] }
+      return { ran, stopped, attempted: [...attempted], ...(options.slots ? { started } : {}) }
     }
 
     // Null for a project registered before the name was recorded. Refusing here
@@ -200,6 +220,70 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       )
       if (queue.length === 0) return finish('empty')
 
+      if (options.slots) {
+        if (envRefused) return finish('env')
+        const { set, limit, started: handOver } = options.slots
+        const flying = set.of(name)
+        if (flying.length >= limit) return finish('max')
+        // The projection lags a claim, so what is in flight is subtracted first.
+        const open = queue.filter((e) => !flying.some((f) => f.issue === e.issue))
+        if (open.length === 0) return finish('empty')
+        const candidates = open.filter((e) => !attempted.has(e.taskId) && !waiting.has(e.taskId))
+        let launched = false
+        for (const entry of candidates) {
+          const issue = Number(entry.issue)
+          if (!Number.isInteger(issue)) {
+            attempted.add(entry.taskId)
+            log(`skipping ${entry.taskId}: "${entry.issue}" is not an issue number`)
+            continue
+          }
+          // Read for the slot's own record, and to ask the collision question
+          // only where there is something to collide with.
+          const files = yield* Effect.promise(() => readFixFiles(options.client, issue))
+          const why = flying.length > 0 ? waitsFor(files, flying) : null
+          if (why !== null) {
+            waiting.add(entry.taskId)
+            log(`${entry.taskId}: ${why}`)
+            continue
+          }
+          attempted.add(entry.taskId)
+          log(`taking ${entry.taskId} — ${entry.title}`)
+          const leave = set.enter({ project: name, issue: entry.issue, files })
+          started += 1
+          const pass = Effect.runPromise(
+            runOnce({
+              project: options.project,
+              client: options.client,
+              runtime: options.runtime,
+              issue,
+              hookBinary: options.hookBinary,
+              ...(options.guard === undefined ? {} : { guard: options.guard }),
+              prompt: options.prompt,
+              ...(options.promptVersion === undefined ? {} : { promptVersion: options.promptVersion }),
+              ...(options.merge === undefined ? {} : { merge: options.merge }),
+              ...(options.token === undefined ? {} : { token: options.token }),
+              ...(options.home === undefined ? {} : { home: options.home }),
+              ...(options.store === undefined ? {} : { store: options.store }),
+              ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+              ...(options.remote === undefined ? {} : { remote: options.remote }),
+              log: options.log,
+            }).pipe(Effect.provide(context!)),
+          ).then(
+            (result) => {
+              ran.push(result)
+              reportEnding(log, result)
+              if (result.ok === false && result.stage === 'env') envRefused = true
+            },
+            (err: unknown) => log(`${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`),
+          )
+          handOver(pass.finally(leave))
+          launched = true
+          break
+        }
+        if (!launched) return finish(candidates.length === 0 ? 'empty' : 'exhausted')
+        continue
+      }
+
       const next = queue.find((entry) => !attempted.has(entry.taskId))
       if (!next) {
         // The queue has items and every one of them has already been through this
@@ -243,9 +327,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
 
       // Every ending is reported, including the ones that are nobody's fault.
       // A scheduler that only logs successes is the old loop.
-      if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
-      else if (result.ok === 'held') log(`held at ${result.step}`)
-      else log(`stopped at ${result.stage}: ${result.detail}`)
+      reportEnding(log, result)
 
       // The environment is the project's, not the item's. `runOnce` refused
       // before claiming anything, and the next ticket would be refused for the
@@ -253,6 +335,12 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       if (result.ok === false && result.stage === 'env') return finish('env')
     }
   })
+}
+
+function reportEnding(log: (line: string) => void, result: RunOnceResult): void {
+  if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
+  else if (result.ok === 'held') log(`held at ${result.step}`)
+  else log(`stopped at ${result.stage}: ${result.detail}`)
 }
 
 /**

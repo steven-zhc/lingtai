@@ -50,4 +50,27 @@ describe('the work loop drain', () => {
     expect(drained).toBe(true)
     expect(loop.busy).toBe(false)
   })
+
+  it('looks again when a pass a look started settles, since nothing else would wake it', async () => {
+    const releases: (() => void)[] = []
+    const reasons: string[] = []
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      eventLog: log,
+      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      pass: async (reason, started) => {
+        reasons.push(reason)
+        if (reasons.length === 1) started?.(new Promise<void>((r) => releases.push(r)))
+      },
+    })
+
+    await loop.start()
+    expect(reasons).toEqual(['startup'])
+
+    releases[0]!()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reasons).toEqual(['startup', 'completion'])
+
+    await loop.stop()
+  })
 })

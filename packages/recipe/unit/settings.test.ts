@@ -53,6 +53,7 @@ import {
   baseWrittenAt,
   boundsBesides,
   ceilingOf,
+  concurrencyOf,
   dispatchingSteps,
   excludeOf,
   kindsOf,
@@ -107,6 +108,20 @@ describe('the accessors', () => {
       runtime: { assignee: { login: 'steven-zhc', take: 'mine' } },
     })
     expect(assigneeOf(mine)).toEqual({ login: 'steven-zhc', take: 'mine' })
+  })
+
+  /**
+   * `runtime.concurrency` (#638, 0122 §1). Absent defaults in the accessor, not
+   * the schema — the parsed `runtime` carries no `concurrency` key at all, so the
+   * resolved recipe, and with it every stored `configHash`, is what it was.
+   */
+  it('reads `runtime.concurrency`, defaulting to 1 without putting a key in the recipe', () => {
+    expect(concurrencyOf(RECIPE)).toBe(1)
+    expect(RECIPE.runtime).not.toHaveProperty('concurrency')
+
+    const two = Recipe.parse({ ...WRITTEN, runtime: { ...WRITTEN.runtime, concurrency: 2 } })
+    expect(concurrencyOf(two)).toBe(2)
+    expect(Recipe.safeParse({ ...WRITTEN, runtime: { ...WRITTEN.runtime, concurrency: 0 } }).success).toBe(false)
   })
 
   /**
