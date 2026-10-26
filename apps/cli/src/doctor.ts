@@ -52,6 +52,7 @@ import {
   projectFilters,
   signedInHere,
 } from '@lingtai/conductor'
+import { daySpendText, type DaySpend } from '@lingtai/conductor'
 import {
   codeCurrency,
   codeRoot,
@@ -118,6 +119,7 @@ import {
 import { git } from '@lingtai/repo'
 import pg from 'pg'
 
+import { readDaySpend } from './day-ceiling.ts'
 import { heading, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
@@ -914,6 +916,8 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
+  spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
   /**
@@ -1466,6 +1470,31 @@ async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<Check
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
  */
+/**
+ * Today's spend against `limits.day_usd` (#637). `warn` when a ceiling is set
+ * and runs reported no cost: the ceiling cannot see them (#332). `fail` only
+ * where the figure is malformed.
+ */
+export async function spendToday(
+  read: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }> = readDaySpend,
+): Promise<CheckResult> {
+  const name = 'spend: today'
+  try {
+    const { day, ceilingUsd } = await read()
+    const detail = daySpendText(day, ceilingUsd)
+    if (ceilingUsd !== undefined && day.unknown > 0) {
+      return {
+        name,
+        status: 'warn',
+        detail: `${day.unknown} of today's runs reported no cost — the ceiling cannot see them (${detail})`,
+      }
+    }
+    return { name, status: 'ok', detail }
+  } catch (err) {
+    return { name, status: 'fail', detail: (err as Error).message }
+  }
+}
+
 /**
  * The grading, pulled out of the read so a test can hand it rows directly
  * (`#389`) — the same split `recipeRow` gets, and for the same reason.
@@ -2608,6 +2637,7 @@ export async function runDoctor(
     results.push(await projectionShapes(undefined, reach.shapes))
     results.push(await daemonLiveness(reach.status, reach.pause))
     results.push(await daemonCurrency(reach.status))
+    results.push(await spendToday(reach.spend))
     results.push(await passRefusals(load))
     results.push(await conductorLock(reach.lockHolder))
     results.push(await readableTypes(queries))
@@ -2645,6 +2675,7 @@ export async function runDoctor(
     // Beside liveness, never folded into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
     results.push(await daemonCurrency())
+    results.push(await spendToday())
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
@@ -2754,7 +2785,7 @@ const OTHER = 'Other'
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Machine', ['node', 'packages load under Node', 'release']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections']],
-  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers']],
+  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
   ['Runtimes', ['runtime']],

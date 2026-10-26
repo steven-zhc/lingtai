@@ -48,12 +48,6 @@ export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'cha
  */
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {
-    event: 'ConductorResumed',
-    why: "type is the call's first argument, a string",
-    file: 'packages/daemon/src/control.ts',
-    anchor: "await append('ConductorResumed', { by }, store)",
-  },
-  {
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
     file: 'packages/daemon/src/control.ts',

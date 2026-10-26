@@ -70,6 +70,16 @@ board:
   # ephemeral ports.
   port: 17820
 
+# --- spend ------------------------------------------------------------------
+limits:
+  # Dollars per local calendar day, for the whole installation (0122 §5). When
+  # the day's recorded spend reaches it the conductor pauses until local midnight
+  # or `lingtai resume`, finishing every pass in flight. Absent means no ceiling.
+  # Runs that reported no cost (every Codex run, and a Claude Code run that was
+  # killed) are NOT counted in it: they are named as unknown on every surface
+  # that shows today's spend, never priced. LINGTAI_LIMITS_DAY_USD overrides.
+  # day_usd: 50
+
 # --- optional Codex model-only calls ---------------------------------------
 # Requires a person's approval for separate OpenAI API billing before use.
 # This API key is distinct from `codex login`; no key is passed to an agent.

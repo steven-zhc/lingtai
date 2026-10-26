@@ -37,6 +37,7 @@ import type { Triage } from '@lingtai/recipe'
 
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorPass } from './conduct.ts'
+import { dayCeilingStop } from './day-ceiling.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
@@ -511,7 +512,11 @@ export async function daemonCommand(
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
-      paused: async () => (await readControl(undefined, since)).paused,
+      paused: async () => {
+        // The ceiling first: a raised figure lifts its own pause before it is read.
+        const stop = await dayCeilingStop(undefined)
+        return (await readControl(undefined, since)).paused || stop !== null
+      },
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
@@ -557,8 +562,9 @@ export async function daemonCommand(
           // pass (#210).
           paused: async () => {
             try {
+              const stop = await dayCeilingStop(undefined)
               const c = await readControl(undefined, since)
-              return c.paused ? `paused by ${c.by} — ${c.reason}` : null
+              return c.paused ? `paused by ${c.by} — ${c.reason}` : stop
             } catch (err) {
               // Not "not paused": a pause that could not be read is not consent.
               return `could not read whether the conductor is paused: ${(err as Error).message}`
