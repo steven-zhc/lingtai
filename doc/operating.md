@@ -2051,10 +2051,9 @@ every issue *Before*'s held-items note or its landed/closed note left held.**
 That is what actually keeps a freshly started daemon from claiming work during
 this section; the pause by itself does not.
 
-Rebuild every projection — there are three. `lingtai --help`'s closing line
-names all of them (`Projections: task_view, finding_backlog, spend`,
-`apps/cli/src/lingtai.ts:346`); check there first if this page is ever behind
-it again. `lingtai projection rebuild <name>` only refuses — and lists the
+Rebuild every projection — there are three. `PROJECTION_NAMES` in
+`apps/cli/src/commands.ts` names all of them (`task_view`, `finding_backlog`,
+`spend`); check there first if this page is ever behind it again. `lingtai projection rebuild <name>` only refuses — and lists the
 known names in doing so — when `<name>` is not one of them; a name that is
 one, typed only to probe, drops that table and replays the log for real:
 
