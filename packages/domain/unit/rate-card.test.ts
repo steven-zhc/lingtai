@@ -205,6 +205,16 @@ describe('priceRow', () => {
   it('prices Claude rows from the shipped card, and names no Codex model', () => {
     const usage = [{ model: 'claude-sonnet-5', tokens: { fresh: 1_000_000 } }]
     expect(priceRow({ at, usage })).toBeCloseTo(2)
-    expect(priceRow({ at, usage: [{ model: 'gpt-5.6-sol', tokens: { fresh: 1 } }] })).toBeNull()
+    expect(priceRow({ at, usage: [{ model: 'gpt-9-unlisted', tokens: { fresh: 1 } }] })).toBeNull()
+  })
+
+  it('prices a Codex run on the shipped card, reasoning at the output rate', () => {
+    const at = new Date('2026-10-27T00:00:00Z')
+    const usage = [
+      { model: 'gpt-5.6-sol', tokens: { fresh: 1_000_000, cacheRead: 1_000_000, output: 500_000, reasoning: 500_000 } },
+    ]
+    expect(priceRow({ at, usage })).toBeCloseTo(4 + 0.4 + 20)
+    expect(priceRow({ at: new Date('2026-10-01T00:00:00Z'), usage })).toBeNull()
+    expect(priceRow({ at, usage: [{ tokens: { fresh: 1 } }] })).toBeNull()
   })
 })

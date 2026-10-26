@@ -32,7 +32,7 @@ export interface RateRow {
   cacheWrite: number
 }
 
-/** The rows of `doc/rate-card.md`, in file order. Codex has none: no rate is established for it. */
+/** The rows of `doc/rate-card.md`, in file order. */
 export const RATE_CARD: readonly RateRow[] = [
   { from: '2026-06-24', model: 'claude-opus-5', mode: '', input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   { from: '2026-06-24', model: 'claude-opus-5', mode: 'fast', input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
@@ -40,6 +40,7 @@ export const RATE_CARD: readonly RateRow[] = [
   { from: '2026-06-24', model: 'claude-haiku-4-5', mode: '', input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
   { from: '2026-06-24', model: 'claude-fable-5-1', mode: '', input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
   { from: '2026-10-03', model: 'claude-sonnet-5', mode: '', input: 2, output: 10, cacheRead: 0.2, cacheWrite: 4 },
+  { from: '2026-10-26', model: 'gpt-5.6-sol', mode: '', input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 },
 ]
 
 /**
