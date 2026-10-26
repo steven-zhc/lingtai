@@ -916,6 +916,8 @@ export interface DoctorReach {
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
+  /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
+  spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
   /**
@@ -2626,7 +2628,7 @@ export async function runDoctor(
     results.push(await projectionShapes(undefined, reach.shapes))
     results.push(await daemonLiveness(reach.status, reach.pause))
     results.push(await daemonCurrency(reach.status))
-    results.push(await spendToday())
+    results.push(await spendToday(reach.spend))
     results.push(await passRefusals(load))
     results.push(await conductorLock(reach.lockHolder))
     results.push(await readableTypes(queries))
