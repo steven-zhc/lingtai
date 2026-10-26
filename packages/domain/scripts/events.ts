@@ -374,9 +374,11 @@ function definitions(root: string): Map<string, Definition> {
       if (!ts.isIdentifier(decl.name) || !isEventType(decl.name.text)) continue
       const line = sf.getLineAndCharacterOfPosition(decl.name.getStart(sf)).line + 1
       const group = banners.filter((b) => b.line < line).at(-1)?.name ?? ''
+      // Only a comment touching the statement is its doc: one with a blank line
+      // between is the file's own prose (the note above `TicketDiscovered`).
       const doc = (ts.getLeadingCommentRanges(text, stmt.getFullStart()) ?? [])
+        .filter((r) => text.startsWith('/**', r.pos) && !/\n\s*\n/.test(text.slice(r.end, stmt.getStart(sf))))
         .map((r) => text.slice(r.pos, r.end))
-        .filter((c) => c.startsWith('/**'))
         .at(-1)
       const first =
         doc
