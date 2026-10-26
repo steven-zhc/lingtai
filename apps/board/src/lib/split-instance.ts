@@ -34,6 +34,18 @@ function listeners(): Set<() => void> {
   return (g[ENDED] ??= new Set())
 }
 
+const COUNT = Symbol.for('lingtai.board.splitEndedCount')
+
+/**
+ * How many writers have left the running set in this process. A stream that
+ * connects (or reconnects) after one may have missed its notification, and a
+ * page that was showing *writing* has no append coming to correct it.
+ */
+export function splitsEnded(): number {
+  const g = globalThis as unknown as Record<symbol, number | undefined>
+  return g[COUNT] ?? 0
+}
+
 /**
  * Called when a writer in this process leaves the running set. *Writing* is read
  * off that set as well as the log, so its leaving changes what a page shows
@@ -61,6 +73,7 @@ export function runSplit<T>(waitId: string, start: () => Promise<T>): Promise<T 
     })
     .finally(() => {
       set.delete(waitId)
+      ;(globalThis as unknown as Record<symbol, number>)[COUNT] = splitsEnded() + 1
       for (const listener of listeners()) {
         try {
           listener()

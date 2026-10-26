@@ -5,7 +5,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { isSplitRunning, onSplitEnded, runSplit } from '../src/lib/split-instance.ts'
+import { isSplitRunning, onSplitEnded, runSplit, splitsEnded } from '../src/lib/split-instance.ts'
 
 describe('runSplit', () => {
   it('is running while the writer is, and not after it ends — however it ends', async () => {
@@ -47,6 +47,14 @@ describe('onSplitEnded', () => {
     off()
     await runSplit('w4', async () => 1)
     expect(seen).toHaveLength(2)
+  })
+})
+
+describe('splitsEnded', () => {
+  it('counts a writer that ended while nobody listened, so a stream connecting later can tell its page', async () => {
+    const before = splitsEnded()
+    await runSplit('w5', async () => 1)
+    expect(splitsEnded()).toBe(before + 1)
   })
 })
 
