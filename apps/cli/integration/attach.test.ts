@@ -46,7 +46,7 @@ describe('lingtai attach', () => {
     const { out, sinks } = recorder()
     expect(await attach({ runId: 'pass-9', home, ...sinks })).toBe(0)
 
-    expect(out[0]).toBe(`attached to lingtai · ${path}`)
+    expect(out.slice(0, 3)).toEqual(['attached to lingtai', `log  ${path}`, ''])
     expect(out.some((l) => l.includes('packages/conductor/src/conduct.ts'))).toBe(true)
     expect(out.at(-1)).toContain('the run log ends here')
     expect(out.at(-1)).toContain(path)

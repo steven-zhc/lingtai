@@ -10,7 +10,7 @@ import { Console, Effect } from 'effect'
 
 import type { BoardVerb } from './board.ts'
 import { definitionOf } from './commands.ts'
-import { applyNoColor, printJson, printJsonError, stripColour, symbol } from './output.ts'
+import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { refusal, renderVerdict, VERBS, verdictJson, type Answered } from './verdict.ts'
 import { versionFacts, versionLine } from './version.ts'
 import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
@@ -360,6 +360,335 @@ const board = Command.make('board', startOptions, boardHandler('start')).pipe(
   Command.withSubcommands([boardStart, boardStop, boardRestart, boardStatus]),
 )
 
+// ---- run, attach, ticket, end, backlog (#624) --------------------------------------------
+// `ask` is above and was #621's. Each of these loads its module in the handler, for the
+// reason `status` gives, and hands the parsed request to a runner a test can replace.
+
+/** What was typed after `run`; `merge` is false under `--no-merge`. */
+export interface RunRequest {
+  project: string
+  issue?: number
+  max?: number
+  merge: boolean
+}
+export interface AttachRequest {
+  runId: string
+}
+export interface EndRequest {
+  project?: string
+  issue?: number
+}
+export interface TicketRequest {
+  verb: 'list' | 'close' | 'new' | 'edit'
+  project?: string
+  /** `close` and `edit`: the number, already checked to be an integer. */
+  issue?: number
+  all?: boolean
+  json?: boolean
+}
+export type BacklogRequest =
+  | { verb: 'list'; project?: string; all: boolean; json: boolean }
+  | { verb: 'accept'; positional: string[]; kind?: string; unheld: boolean }
+  | { verb: 'decline'; positional: string[]; reason?: string }
+
+export interface Runners {
+  run: (request: RunRequest) => Promise<number>
+  attach: (request: AttachRequest) => Promise<number>
+  end: (request: EndRequest) => Promise<number>
+  ticket: (request: TicketRequest) => Promise<number>
+  backlog: (request: BacklogRequest) => Promise<number>
+}
+
+const liveRunners: Runners = {
+  async run(request) {
+    const { run: runPass } = await import('./run.ts')
+    return runPass(request)
+  },
+  async attach(request) {
+    const { attach } = await import('./attach.ts')
+    // Ctrl-C detaches rather than killing the process, so the command gets to
+    // say that the run is still going and where its log is. Nothing is being
+    // stopped: this is a reader, and 0034's file does not know it has one.
+    const detach = new AbortController()
+    process.on('SIGINT', () => detach.abort())
+    return attach({ runId: request.runId, signal: detach.signal })
+  },
+  async end(request) {
+    const { endReplay } = await import('./end.ts')
+    return endReplay(request)
+  },
+  async ticket(request) {
+    const { ticketClose, ticketEdit, ticketList, ticketNew } = await import('./ticket.ts')
+    const project = request.project === undefined ? {} : { project: request.project }
+    switch (request.verb) {
+      case 'list':
+        return ticketList({
+          ...project,
+          all: request.all === true,
+          json: request.json === true,
+          columns: process.stdout.columns,
+        })
+      case 'close':
+        return ticketClose({ ...project, issue: request.issue! })
+      case 'new':
+        return ticketNew(project)
+      case 'edit':
+        return ticketEdit({ ...project, issue: request.issue! })
+    }
+  },
+  async backlog(request) {
+    const backlog = await import('./backlog.ts')
+    if (request.verb === 'list') {
+      try {
+        const listing = await backlog.readBacklogListing({ project: request.project, all: request.all })
+        if (request.json) printJson('backlog', backlog.backlogJson(listing))
+        else for (const line of backlog.renderBacklog(listing)) console.log(line)
+        return 0
+      } catch (err) {
+        return failed('backlog', request.json, err)
+      }
+    }
+    const [project, key, ...extra] = request.positional
+    if (!project || !key) {
+      console.log(backlog.BACKLOG_USAGE)
+      return 2
+    }
+    return backlog.decideFinding(
+      request.verb === 'accept'
+        ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
+        : { verb: 'decline', project, key, extra, reason: request.reason },
+    )
+  },
+}
+
+let runners: Runners = liveRunners
+
+/** A runner that threw: the message and exit 1, as `lingtai.ts` ended every command that threw. */
+async function guarded(command: string, work: () => Promise<number>, asJson = false): Promise<void> {
+  try {
+    handlerCode = await work()
+  } catch (err) {
+    handlerCode = failed(command, asJson, err)
+  }
+}
+
+const optionalInteger = (name: string) => Options.integer(name).pipe(Options.optional)
+const givenNumber = (o: { _tag: string; value?: number }): number | undefined =>
+  o._tag === 'Some' ? o.value : undefined
+
+const RUN_USAGE = 'lingtai run <project> [--issue <n>] [--max <n>] [--no-merge]'
+
+const runCommand = Command.make(
+  'run',
+  {
+    project: Args.text({ name: 'project' }).pipe(Args.optional),
+    projectFlag: optionalText('project'),
+    issue: optionalInteger('issue'),
+    max: optionalInteger('max'),
+    once: Options.boolean('once'),
+    noMerge: Options.boolean('no-merge'),
+    noColor,
+  },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project) ?? given(args.projectFlag)
+      if (!project) {
+        console.error(RUN_USAGE)
+        handlerCode = 2
+        return
+      }
+      const issue = givenNumber(args.issue)
+      // `--once` with no `--issue` used to be the only mode. It now means the
+      // same as `--max 1`: take the queue, but stop after one.
+      const max = givenNumber(args.max) ?? (args.once && issue === undefined ? 1 : undefined)
+      if (max !== undefined && max < 1) {
+        console.error('--max takes a positive number')
+        handlerCode = 2
+        return
+      }
+      console.log(heading(`run ${project}`))
+      await guarded('run', () =>
+        runners.run({
+          project,
+          ...(issue === undefined ? {} : { issue }),
+          ...(max === undefined ? {} : { max }),
+          // `--no-merge` is absence of merging, so the flag's presence is the
+          merge: !args.noMerge,
+        }),
+      )
+    }),
+).pipe(Command.withDescription(definitionOf('run').task))
+
+const attachCommand = Command.make(
+  'attach',
+  { runId: Args.text({ name: 'runId' }).pipe(Args.optional), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const runId = given(args.runId)
+      if (!runId) {
+        console.error('lingtai attach <runId>')
+        handlerCode = 2
+        return
+      }
+      await guarded('attach', () => runners.attach({ runId }))
+    }),
+).pipe(Command.withDescription(definitionOf('attach').task))
+
+const END_USAGE = 'lingtai end replay [<project>] [--issue <n>]'
+
+const endReplay = Command.make(
+  'replay',
+  { project: Args.text({ name: 'project' }).pipe(Args.optional), issue: optionalInteger('issue'), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      const issue = givenNumber(args.issue)
+      await guarded('end', () =>
+        runners.end({ ...(project === undefined ? {} : { project }), ...(issue === undefined ? {} : { issue }) }),
+      )
+    }),
+)
+
+// One subcommand, spelled out. `lingtai end` on its own would read like an instruction to end something.
+const endCommand = Command.make('end', {}, () =>
+  Effect.sync(() => {
+    console.error(END_USAGE)
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('end').task), Command.withSubcommands([endReplay]))
+
+const TICKET_USAGE =
+  'lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]\n' +
+  'lingtai ticket new [--project <p>]\nlingtai ticket edit <n> [--project <p>]'
+
+const projectOption = optionalText('project')
+
+/** `close` and `edit` take a number as the argument, checked here so the sentence and exit 2 are the ones they always had. */
+function ticketNumbered(verb: 'close' | 'edit') {
+  return Command.make(
+    verb,
+    { number: Args.text({ name: 'n' }).pipe(Args.optional), project: projectOption, noColor },
+    (args) =>
+      Effect.promise(async () => {
+        if (args.noColor) applyNoColor()
+        const issue = Number(given(args.number))
+        if (!given(args.number) || !Number.isInteger(issue)) {
+          console.error(`lingtai ticket ${verb} <n> [--project <p>]`)
+          handlerCode = 2
+          return
+        }
+        const project = given(args.project)
+        await guarded('ticket', () => runners.ticket({ verb, issue, ...(project === undefined ? {} : { project }) }))
+      }),
+  )
+}
+
+const ticketList = Command.make(
+  'list',
+  { all: Options.boolean('all'), project: projectOption, json, noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      await guarded(
+        'ticket list',
+        () =>
+          runners.ticket({
+            verb: 'list',
+            all: args.all,
+            json: args.json,
+            ...(project === undefined ? {} : { project }),
+          }),
+        args.json,
+      )
+    }),
+)
+
+const ticketNew = Command.make('new', { project: projectOption, noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    const project = given(args.project)
+    await guarded('ticket', () => runners.ticket({ verb: 'new', ...(project === undefined ? {} : { project }) }))
+  }),
+)
+
+const ticketCommand = Command.make('ticket', {}, () =>
+  Effect.sync(() => {
+    console.error(TICKET_USAGE)
+    handlerCode = 2
+  }),
+).pipe(
+  Command.withDescription(definitionOf('ticket').task),
+  Command.withSubcommands([ticketList, ticketNew, ticketNumbered('close'), ticketNumbered('edit')]),
+)
+
+const rest = Args.text({ name: 'arg' }).pipe(Args.repeated)
+
+const backlogList = Command.make(
+  'list',
+  { project: Args.text({ name: 'project' }).pipe(Args.optional), all: Options.boolean('all'), json, noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      await guarded('backlog', () =>
+        runners.backlog({
+          verb: 'list',
+          all: args.all,
+          json: args.json,
+          ...(project === undefined ? {} : { project }),
+        }),
+      )
+    }),
+)
+
+const backlogAccept = Command.make(
+  'accept',
+  { positional: rest, kind: optionalText('kind'), unheld: Options.boolean('unheld'), noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const kind = given(args.kind)
+      await guarded('backlog', () =>
+        runners.backlog({
+          verb: 'accept',
+          positional: [...args.positional],
+          unheld: args.unheld,
+          ...(kind === undefined ? {} : { kind }),
+        }),
+      )
+    }),
+)
+
+const backlogDecline = Command.make('decline', { positional: rest, reason: optionalText('reason'), noColor }, (args) =>
+  Effect.promise(async () => {
+    if (args.noColor) applyNoColor()
+    const reason = given(args.reason)
+    await guarded('backlog', () =>
+      runners.backlog({
+        verb: 'decline',
+        positional: [...args.positional],
+        ...(reason === undefined ? {} : { reason }),
+      }),
+    )
+  }),
+)
+
+// `lingtai backlog [<project>] [--all]` is the listing: `runCli` writes `list` in front of anything that is not
+// a verb, so the parent has no positional of its own to share with them.
+const backlogCommand = Command.make('backlog', {}, () =>
+  Effect.promise(async () => {
+    const { BACKLOG_USAGE } = await import('./backlog.ts')
+    console.log(BACKLOG_USAGE)
+  }),
+).pipe(
+  Command.withDescription(definitionOf('backlog').task),
+  Command.withSubcommands([backlogList, backlogAccept, backlogDecline]),
+)
+
 const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
@@ -375,6 +704,11 @@ const root = Command.make('lingtai').pipe(
     answer,
     now,
     board,
+    runCommand,
+    attachCommand,
+    ticketCommand,
+    endCommand,
+    backlogCommand,
   ]),
 )
 
@@ -433,10 +767,47 @@ function withoutBareNote(args: readonly string[]): string[] {
   return args.filter((arg, i) => arg !== '--note' || !(args[i + 1] === undefined || args[i + 1]!.startsWith('--')))
 }
 
+/**
+ * `--reason style only` is one reason (#137): the words after it, up to the next flag, become one argument,
+ * because the parser takes one word and would leave the rest as keys. A `--reason` with nothing after it is
+ * dropped, and the verb refuses it by name.
+ */
+function withReasonFolded(args: readonly string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (arg !== '--reason') {
+      out.push(arg)
+      continue
+    }
+    const words: string[] = []
+    while (i + 1 < args.length && !args[i + 1]!.startsWith('--')) words.push(args[++i]!)
+    if (words.length > 0) out.push(arg, words.join(' '))
+  }
+  return out
+}
+
+/** `backlog [<project>] [--all]` is `backlog list …`, so the verbs and the listing do not share a first position. */
+function withBacklogVerb(args: readonly string[]): string[] {
+  return ['accept', 'decline', 'help'].includes(args[1] ?? '') ? [...args] : ['backlog', 'list', ...args.slice(1)]
+}
+
 /** `argv` is the full `process.argv` shape; resolves to the exit code. */
-export async function runCli(argv: readonly string[], deps: { board?: BoardRunner } = {}): Promise<number> {
-  const args = argv.slice(2)
+export async function runCli(
+  argv: readonly string[],
+  deps: { board?: BoardRunner } & Partial<Runners> = {},
+): Promise<number> {
+  let args = argv.slice(2)
   boardRunner = deps.board ?? liveBoardRunner
+  runners = { ...liveRunners, ...deps }
+  if (args[0] === 'backlog') {
+    if (args[1] === 'help') {
+      console.log((await import('./backlog.ts')).BACKLOG_USAGE)
+      return 0
+    }
+    args = withBacklogVerb(args[1] === 'decline' ? ['backlog', ...withReasonFolded(args.slice(1))] : args)
+    argv = [...argv.slice(0, 2), ...args]
+  }
   if (args[0] === 'board' && args[1] === 'shutdown') {
     const sentence =
       'lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the ' +

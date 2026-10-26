@@ -46,14 +46,11 @@ import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 
 import { parseFlags } from './add.ts'
-import { attach } from './attach.ts'
-import { backlogCommand } from './backlog.ts'
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
-import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
 import { commandHelp, rootHelp } from './help.ts'
 import { configPath } from './init.ts'
@@ -67,10 +64,8 @@ import {
   startRecorder,
   restartSupervised,
 } from './restart.ts'
-import { run as runOnceCommand } from './run.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
-import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
 import {
   catchUpChangedTriage,
   catchUpRegisteredTriage,
@@ -882,91 +877,6 @@ async function main(argv: string[]): Promise<number> {
   const command = asked
 
   switch (command) {
-    case 'run': {
-      const { flags } = parseFlags(rest)
-      const positional = rest.filter((a) => !a.startsWith('--') && a !== flags['issue'] && a !== flags['max'])
-      const project = positional.find((p) => p !== '--once') ?? flags['project']
-      if (!project) {
-        console.error('lingtai run <project> [--issue <n>] [--max <n>] [--no-merge]')
-        return 2
-      }
-
-      // `--once` with no `--issue` used to be the only mode. It now means the
-      // same as `--max 1`: take the queue, but stop after one.
-      const issue = 'issue' in flags ? Number(flags['issue']) : undefined
-      if (issue !== undefined && !Number.isInteger(issue)) {
-        console.error('--issue takes a number')
-        return 2
-      }
-      const max = 'max' in flags ? Number(flags['max']) : 'once' in flags && issue === undefined ? 1 : undefined
-      if (max !== undefined && (!Number.isInteger(max) || max < 1)) {
-        console.error('--max takes a positive number')
-        return 2
-      }
-
-      return runOnceCommand({
-        project,
-        ...(issue === undefined ? {} : { issue }),
-        ...(max === undefined ? {} : { max }),
-        // `--no-merge` is absence of merging, so the flag's presence is the
-        merge: !('no-merge' in flags),
-      })
-    }
-    case 'backlog':
-      return backlogCommand(rest)
-    case 'ticket': {
-      const [verb, ...ticketRest] = rest
-      const { positional, flags } = parseFlags(ticketRest)
-      const project = flags['project']
-      if (verb === 'list') {
-        if (positional.length > 0) {
-          console.error('lingtai ticket list [--all] [--project <p>]')
-          return 2
-        }
-        return ticketList({ ...(project === undefined ? {} : { project }), all: 'all' in flags })
-      }
-      if (verb === 'close') {
-        const issue = Number(positional[0])
-        if (!positional[0] || !Number.isInteger(issue)) {
-          console.error('lingtai ticket close <n> [--project <p>]')
-          return 2
-        }
-        return ticketClose({ issue, ...(project === undefined ? {} : { project }) })
-      }
-      if (verb === 'new') {
-        if (positional.length > 0) {
-          console.error('lingtai ticket new [--project <p>]')
-          return 2
-        }
-        return ticketNew(project === undefined ? {} : { project })
-      }
-      if (verb === 'edit') {
-        const issue = Number(positional[0])
-        if (!positional[0] || !Number.isInteger(issue)) {
-          console.error('lingtai ticket edit <n> [--project <p>]')
-          return 2
-        }
-        return ticketEdit({ issue, ...(project === undefined ? {} : { project }) })
-      }
-      console.error(
-        'lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]\n' +
-          'lingtai ticket new [--project <p>]\nlingtai ticket edit <n> [--project <p>]',
-      )
-      return 2
-    }
-    case 'attach': {
-      const runId = parseFlags(rest).positional[0]
-      if (!runId) {
-        console.error('lingtai attach <runId>')
-        return 2
-      }
-      // Ctrl-C detaches rather than killing the process, so the command gets to
-      // say that the run is still going and where its log is. Nothing is being
-      // stopped: this is a reader, and 0034's file does not know it has one.
-      const detach = new AbortController()
-      process.on('SIGINT', () => detach.abort())
-      return attach({ runId, signal: detach.signal })
-    }
     // **Not in the entry group below, though `board` is `@effect/cli`'s (#623).**
     // `lingtai service` writes the board job as `node <root>/apps/cli/src/lingtai.ts
     // board start --no-open` (`BOARD_JOB.argv`, `service.ts` — the launchd plist and
@@ -979,24 +889,6 @@ async function main(argv: string[]): Promise<number> {
     // argument here, and `KEY=--anything` is a legitimate one.
     case 'env':
       return envCommand(rest)
-    case 'end': {
-      const { positional, flags } = parseFlags(rest)
-      // One subcommand, spelled out. `lingtai end` on its own would read like
-      // an instruction to end something.
-      if (positional[0] !== 'replay') {
-        console.error('lingtai end replay [<project>] [--issue <n>]')
-        return 2
-      }
-      const issue = 'issue' in flags ? Number(flags['issue']) : undefined
-      if (issue !== undefined && !Number.isInteger(issue)) {
-        console.error('--issue takes a number')
-        return 2
-      }
-      return endReplay({
-        ...(positional[1] === undefined ? {} : { project: positional[1] }),
-        ...(issue === undefined ? {} : { issue }),
-      })
-    }
     case 'start':
     // **`daemon` still answers, and that is not indecision** (`#159`). An
     // installed LaunchAgent or systemd unit has `lingtai daemon` written into
@@ -1068,7 +960,8 @@ async function main(argv: string[]): Promise<number> {
     case 'version':
       console.log(versionLine())
       return 0
-    // `init`, `add`, `status`, `doctor` and the commands that answer a wait are `@effect/cli`'s (#618, #619, #620, #621) and `entry.ts` routes
+    // `init`, `add`, `status`, `doctor`, the commands that answer a wait, and `run`, `attach`, `ticket`, `end` and `backlog` are
+    // `@effect/cli`'s (#618, #619, #620, #621, #624) and `entry.ts` routes
     // them there; they are named here only because the command list is exhaustive.
     case 'init':
     case 'add':
@@ -1081,6 +974,11 @@ async function main(argv: string[]): Promise<number> {
     case 'answer':
     case 'ask':
     case 'now':
+    case 'run':
+    case 'attach':
+    case 'ticket':
+    case 'end':
+    case 'backlog':
       console.error(`lingtai ${command} runs from the entry — pnpm lingtai ${command}, or the installed lingtai`)
       return 2
     // The same: `entry.ts` answers these before the log is loaded (`install.ts`).

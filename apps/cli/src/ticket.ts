@@ -27,6 +27,8 @@ import { processTicketSql } from '@lingtai/event-store'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
 
+import { heading, jsonDocument, jsonErrorDocument, symbol, table } from './output.ts'
+
 /** `status.ts`'s own `oneLine`, copied rather than exported for one caller. */
 function oneLine(text: string, n = 140): string {
   const said = text.replace(/\s+/g, ' ').trim()
@@ -100,35 +102,47 @@ async function defaultEdit(command: string, initial: string, name: string): Prom
   }
 }
 
+/** Why a ticket verb could not start: a stable `code` for `--json`, and the sentence a person reads. */
+export interface TicketRefusal {
+  code: 'no-project' | 'no-projects' | 'ambiguous-project' | 'recipe-unreadable' | 'tickets-on-github'
+  message: string
+}
+
+type Picked<T> = { ok: true; value: T } | ({ ok: false } & TicketRefusal)
+
 /**
  * The one project this call is about: `--project` named, or the only one
  * registered. More than one with nothing named is refused rather than
  * guessed — `close <n>` against the wrong project closes a different
  * ticket carrying the same number.
  */
-async function pickProject(
+async function findProject(
   named: string | undefined,
   projects: () => Promise<ProjectState[]>,
-  log: (line: string) => void,
-): Promise<ProjectState | null> {
+): Promise<Picked<ProjectState>> {
   const all = await projects()
   if (named !== undefined) {
     const found = all.find((p) => p.project === named)
     if (!found) {
-      log(`no project named "${named}" — run lingtai add <owner>/<repo> first`)
-      return null
+      return {
+        ok: false,
+        code: 'no-project',
+        message: `no project named "${named}" — run lingtai add <owner>/<repo> first`,
+      }
     }
-    return found
+    return { ok: true, value: found }
   }
   if (all.length === 0) {
-    log('no projects registered — run lingtai add <owner>/<repo>')
-    return null
+    return { ok: false, code: 'no-projects', message: 'no projects registered — run lingtai add <owner>/<repo>' }
   }
   if (all.length > 1) {
-    log(`more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`)
-    return null
+    return {
+      ok: false,
+      code: 'ambiguous-project',
+      message: `more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`,
+    }
   }
-  return all[0]!
+  return { ok: true, value: all[0]! }
 }
 
 /**
@@ -138,30 +152,151 @@ async function pickProject(
  * `ticket_comments` tables for no reason — this check runs first so that
  * never happens.
  */
+async function findDbRecipe(
+  project: ProjectState,
+  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe>,
+): Promise<Picked<Recipe>> {
+  let resolved: ResolvedRecipe
+  try {
+    resolved = await recipeFor(project)
+  } catch (err) {
+    return { ok: false, code: 'recipe-unreadable', message: (err as Error).message }
+  }
+  if (ticketSourceOf(resolved.recipe) !== 'db') {
+    return {
+      ok: false,
+      code: 'tickets-on-github',
+      message: `${project.project}'s tickets are on GitHub (${project.owner}/${project.project}) — gh issue list reads them, not lingtai ticket`,
+    }
+  }
+  return { ok: true, value: resolved.recipe }
+}
+
+/** A refusal is a failure, so it carries the ✗ (0121 §2). */
+function refuse(log: (line: string) => void, why: TicketRefusal): void {
+  log(`${symbol.fail()} ${why.message}`)
+}
+
+async function pickProject(
+  named: string | undefined,
+  projects: () => Promise<ProjectState[]>,
+  log: (line: string) => void,
+): Promise<ProjectState | null> {
+  const picked = await findProject(named, projects)
+  if (picked.ok) return picked.value
+  refuse(log, picked)
+  return null
+}
+
 async function resolveDbRecipe(
   project: ProjectState,
   recipeFor: (state: ProjectState) => Promise<ResolvedRecipe>,
   log: (line: string) => void,
 ): Promise<Recipe | null> {
-  let resolved: ResolvedRecipe
-  try {
-    resolved = await recipeFor(project)
-  } catch (err) {
-    log((err as Error).message)
-    return null
-  }
-  if (ticketSourceOf(resolved.recipe) !== 'db') {
-    log(
-      `${project.project}'s tickets are on GitHub (${project.owner}/${project.project}) — gh issue list reads them, not lingtai ticket`,
-    )
-    return null
-  }
-  return resolved.recipe
+  const found = await findDbRecipe(project, recipeFor)
+  if (found.ok) return found.value
+  refuse(log, found)
+  return null
 }
 
 export interface TicketListOptions {
   project?: string
   all?: boolean
+  /** One document on `log` instead of the table (0121 §5). */
+  json?: boolean
+  /** The terminal's width, for `table`; `undefined` is a redirected stream. */
+  columns?: number | undefined
+}
+
+/** One ticket as the listing holds it: the facts, before either rendering chooses what to show. */
+export interface ListedTicket {
+  number: number
+  kind: string | null
+  /** The kind's own label as the ticket spells it, so the text does not repeat it among the others. */
+  kindLabel: string | null
+  title: string
+  state: 'open' | 'closed'
+  labels: string[]
+}
+
+export interface TicketListing {
+  project: string
+  all: boolean
+  tickets: ListedTicket[]
+}
+
+export type TicketListRead = { ok: true; listing: TicketListing } | ({ ok: false } & TicketRefusal)
+
+/** Reads the listing; the two renderings below are pure over it. */
+export async function readTicketListing(
+  options: TicketListOptions = {},
+  reading: TicketReading = {},
+): Promise<TicketListRead> {
+  const projects = reading.projects ?? loadProjects
+  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
+  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+
+  const project = await findProject(options.project, projects)
+  if (!project.ok) return project
+  const name = project.value.project!
+
+  const recipe = await findDbRecipe(project.value, recipeFor)
+  if (!recipe.ok) return recipe
+
+  const kinds = queueOf(recipe.value).kinds
+  const tickets = await ticketsFor(name)
+  const issues = options.all
+    ? [...(await tickets.listIssuesSince(new Date(0)))].sort((a, b) => a.number - b.number)
+    : await tickets.listOpenIssues()
+
+  return {
+    ok: true,
+    listing: {
+      project: name,
+      all: options.all === true,
+      tickets: issues.map((t) => {
+        const matched = kindLabelOf(t, kinds)
+        return {
+          number: t.number,
+          kind: kindOf(t, kinds) ?? null,
+          kindLabel: matched?.label.name ?? null,
+          title: t.title,
+          state: t.state === 'closed' ? 'closed' : 'open',
+          labels: t.labels.map((l) => l.name),
+        }
+      }),
+    },
+  }
+}
+
+/** The heading and a table; the empty case stays one line (0121 §1). */
+export function renderTicketList(listing: TicketListing, options: { columns?: number | undefined } = {}): string[] {
+  const { project, all, tickets } = listing
+  if (tickets.length === 0) return [all ? `no tickets for ${project}` : `no open tickets for ${project}`]
+  const rows = tickets.map((t) => {
+    // Every label except the one `kindOf` matched — matched by `kindLabelOf`'s
+    // own rule, so a label differing only in case or whitespace is not shown
+    // twice (`discover.ts:102-105`).
+    const others = t.labels.filter((n) => n !== t.kindLabel)
+    const tags = [...(t.state === 'closed' ? ['closed'] : []), ...others].map((s) => `[${s}]`).join(' ')
+    return [`#${t.number}`, t.kind ?? '—', oneLine(t.title) + (tags ? `  ${tags}` : '')]
+  })
+  return [heading(project), ...table(['ID', 'KIND', 'TITLE'], rows, options)]
+}
+
+/** The `--json` body: the full title, every label, and the kind or `null` (0121 §4, §5). */
+export function ticketListJson(listing: TicketListing): Record<string, unknown> {
+  return {
+    project: listing.project,
+    all: listing.all,
+    tickets: listing.tickets.map((t) => ({
+      number: t.number,
+      kind: t.kind,
+      title: t.title,
+      state: t.state,
+      labels: t.labels,
+    })),
+  }
 }
 
 export async function ticketList(
@@ -169,43 +304,14 @@ export async function ticketList(
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
 ): Promise<number> {
-  const projects = reading.projects ?? loadProjects
-  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
-  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
-
-  const project = await pickProject(options.project, projects, log)
-  if (!project) return 1
-  const name = project.project!
-
-  const recipe = await resolveDbRecipe(project, recipeFor, log)
-  if (!recipe) return 1
-
-  const kinds = queueOf(recipe).kinds
-  const tickets = await ticketsFor(name)
-  const listing = options.all
-    ? [...(await tickets.listIssuesSince(new Date(0)))].sort((a, b) => a.number - b.number)
-    : await tickets.listOpenIssues()
-
-  if (listing.length === 0) {
-    log(options.all ? `no tickets for ${name}` : `no open tickets for ${name}`)
-    return 0
+  const read = await readTicketListing(options, reading)
+  if (!read.ok) {
+    if (options.json) log(jsonErrorDocument('ticket list', read.code, read.message))
+    else refuse(log, read)
+    return 1
   }
-
-  const numberWidth = Math.max(...listing.map((t) => String(t.number).length))
-  const kindWidth = Math.max(...listing.map((t) => (kindOf(t, kinds) ?? '—').length))
-  for (const t of listing) {
-    const matched = kindLabelOf(t, kinds)
-    const kind = matched?.kind ?? '—'
-    // Every label except the one `kindOf` matched — matched by `kindLabelOf`'s
-    // own rule, so a label differing only in case or whitespace is not shown
-    // twice (`discover.ts:102-105`).
-    const others = t.labels.map((l) => l.name).filter((n) => n !== matched?.label.name)
-    const tags = [...(t.state === 'closed' ? ['closed'] : []), ...others].map((s) => `[${s}]`).join(' ')
-    log(
-      `#${String(t.number).padEnd(numberWidth)}  ${kind.padEnd(kindWidth)}  ${oneLine(t.title)}` +
-        (tags ? `  ${tags}` : ''),
-    )
-  }
+  if (options.json) log(jsonDocument('ticket list', ticketListJson(read.listing)))
+  else for (const line of renderTicketList(read.listing, { columns: options.columns })) log(line)
   return 0
 }
 
@@ -245,7 +351,7 @@ export async function ticketClose(
     return 0
   }
   await tickets.closeIssue(options.issue)
-  log(`closed #${ticket.number}  ${ticket.title}`)
+  log(`${symbol.pass()} closed #${ticket.number}  ${ticket.title}`)
   return 0
 }
 
@@ -468,7 +574,7 @@ export async function ticketNew(
     return 1
   }
   await edited.discard()
-  log(`created #${created.number}  ${created.title}`)
+  log(`${symbol.pass()} created #${created.number}  ${created.title}`)
   if (kindOf(created, kinds) === null) {
     log(`#${created.number} carries no kind label — the queue will not take it`)
   }
@@ -571,6 +677,6 @@ export async function ticketEdit(
     return 1
   }
   await edited.discard()
-  log(`updated #${ticket.number} — ${changed.join(', ')}`)
+  log(`${symbol.pass()} updated #${ticket.number} — ${changed.join(', ')}`)
   return 0
 }

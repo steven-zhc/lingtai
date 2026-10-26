@@ -91,8 +91,11 @@ using them in a terminal.
    beneath it, and `next:` only where that sentence already named a command.
 
    **A read-only verb of a `changes` command takes `--json` too** (#623):
-   `board status` today, whose `command` is `"board status"` so no other verb
-   of `board` can be mistaken for it. Its three facts — who serves, whether a
+   `board status`, `ticket list` and the listing `backlog [<project>]` today,
+   whose `command` is `"board status"`, `"ticket list"` and `"backlog"` so no
+   other verb of the same command can be mistaken for them. A command that
+   follows a stream (`attach`) is not a report and takes no `--json`; its lines
+   are the run's own (0034 §8). Its three facts — who serves, whether a
    board answers, whether a supervisor keeps one — each carry `{ "unread": … }`
    in their own key when that fact could not be read; the `error` document is
    for a handler that could not run at all.

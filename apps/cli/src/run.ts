@@ -62,6 +62,7 @@ import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
+import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -509,7 +510,9 @@ export async function run(
           try: () => world.tallyPass(outcome.ran),
           catch: (err) => refuse(`the pass ran, but its summary could not be read back: ${(err as Error).message}`),
         })
-        log(`${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`)
+        log(
+          `${stopped === 0 ? symbol.pass() : symbol.fail()} ${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`,
+        )
         // Exit 0 unless something actually went wrong. An empty queue is not a
         // failure, neither is a bounded run reaching its bound, and neither is an
         // item waiting on a person.
@@ -526,19 +529,19 @@ export async function run(
       })
 
       if (result.ok === true) {
-        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
+        log(`${symbol.pass()} landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
         return 0
       }
       if (result.ok === 'held') {
         // Exit 0: holding is what was asked for, and a non-zero code here would
         // teach a person to ignore it.
-        log(`held at ${result.headSha.slice(0, 7)} — ${result.ticketId} is waiting on you`)
+        log(`${symbol.signal()} held at ${result.headSha.slice(0, 7)} — ${result.ticketId} is waiting on you`)
         log(`nothing was merged. Re-run without --no-merge to merge it.`)
         return 0
       }
       // Every stage that can refuse names itself, so "why did nothing happen" has
       // an answer at the shell as well as on the board.
-      log(`stopped at ${result.stage}: ${result.detail}`)
+      log(`${symbol.fail()} stopped at ${result.stage}: ${result.detail}`)
       return 1
     })
 
@@ -562,7 +565,7 @@ export async function run(
       ),
       Effect.catchTag('Refused', (r) =>
         Effect.sync(() => {
-          log(r.detail)
+          log(`${symbol.fail()} ${r.detail}`)
           return 1
         }),
       ),
@@ -579,7 +582,7 @@ export async function run(
       // non-zero code, the same shape as every other refusal.
       Effect.catchTag('LockUnreadable', (err) =>
         Effect.sync(() => {
-          log(`could not reach the log to take the conductor lock: ${err.detail}`)
+          log(`${symbol.fail()} could not reach the log to take the conductor lock: ${err.detail}`)
           return 1
         }),
       ),

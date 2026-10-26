@@ -23,10 +23,13 @@
  * way out is narrower and is about the file: the writer let go, so there is
  * nothing more coming.
  *
- * No colour, on purpose. `#107` owns the vocabulary for every surface and the
- * ticket puts this outside it rather than have one more command invent its own.
+ * **Only the header is the layout's (0121, #624).** Every line after it is the
+ * run's own, byte for byte, and so is each ending: a log is a trace somebody
+ * greps, and painting it would make the file and the screen disagree.
  */
 import { findRunLog, followRunLog, listRunLogs } from '@lingtai/conductor/run-log'
+
+import { heading, keyValues, symbol } from './output.ts'
 
 export interface AttachOptions {
   runId: string
@@ -49,7 +52,7 @@ export async function attach(options: AttachOptions): Promise<number> {
     // heard of, and a run that landed and took its log with it (0034 §4) — are
     // named as the one question it can answer, with the list somebody wanting
     // to attach almost always actually wanted.
-    err(`no run log for ${options.runId}`)
+    err(`${symbol.fail()} no run log for ${options.runId}`)
     err('Either the run landed — a log is deleted when its diff reaches the base branch — or the id is not one.')
     const logs = await listRunLogs(options.home)
     if (logs.length === 0) {
@@ -63,7 +66,7 @@ export async function attach(options: AttachOptions): Promise<number> {
     return 1
   }
 
-  out(`attached to ${found.project} · ${found.path}`)
+  for (const line of attachHeader(found)) out(line)
 
   for await (const seen of followRunLog({
     path: found.path,
@@ -91,6 +94,11 @@ export async function attach(options: AttachOptions): Promise<number> {
   // is about the viewing: making it carry the run's verdict would be this file
   // settling something, which is the one thing 0034 §8 forbids it.
   return 0
+}
+
+/** The heading, where the log is, and one blank line before the run's own lines. */
+export function attachHeader(found: { project: string; path: string }): string[] {
+  return [heading(`attached to ${found.project}`), ...keyValues([['log', found.path]]), '']
 }
 
 /** Enough of a list to recognise the one you meant, and not a page of scroll. */

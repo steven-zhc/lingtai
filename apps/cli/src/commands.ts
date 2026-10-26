@@ -137,7 +137,7 @@ export const COMMANDS = [
     task: 'the minor findings passing steps raised',
     effect: 'changes',
     usage: [
-      'lingtai backlog [<project>] [--all]',
+      'lingtai backlog [<project>] [--all] [--json] [--no-color]',
       '  The open ones. --all adds the decided ones, and what was decided.',
       'lingtai backlog accept <project> <key> --kind <kind> [--unheld]',
       '  Open one as an issue through the ticket store. One key: there is',
@@ -155,7 +155,7 @@ export const COMMANDS = [
     task: 'a project’s own tickets, where the recipe keeps them',
     effect: 'changes',
     usage: [
-      'lingtai ticket list [--all] [--project <p>]',
+      'lingtai ticket list [--all] [--project <p>] [--json] [--no-color]',
       "  Only for a project whose recipe keeps tickets in Lingtai's",
       '  database (source.tickets: db); GitHub-backed ones are read with',
       '  gh issue list. Open ones by default; --all adds closed ones.',
