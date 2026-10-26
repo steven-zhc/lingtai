@@ -22,11 +22,21 @@
  * built for wherever the file lives — a local directory or a GitHub ref.
  */
 import { paint } from '@lingtai/env/colour'
-import { diskFiles, type RecipeChange, type RecipeFiles, recipePath, type Said, setRecipe } from '@lingtai/recipe'
+import {
+  baseOf,
+  diskFiles,
+  type RecipeChange,
+  type RecipeFiles,
+  recipePath,
+  resolveSource,
+  type Said,
+  setRecipe,
+} from '@lingtai/recipe'
 
 import { askAgents } from './agents.ts'
 import type { SetupReader } from './detect-setup.ts'
 import { askLanding, askLimits } from './landing.ts'
+import { heading, keyValues } from './output.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
 import { askInstallAndBuild } from './setup-build.ts'
@@ -116,8 +126,63 @@ export interface RecipeAt {
    * there must say what was true before this call, not `kept` (#432).
    */
   keptBeforeWrite: string
+  /** The command that changes what the summary shows — `lingtai add --local <dir>`, `lingtai add <owner>/<repo>`. */
+  again: string
   home?: string
   files?: RecipeFiles
+}
+
+/** What the recipe, as written, will do with a change — the three facts a newcomer needs before anything is registered (#542). */
+export interface Summary {
+  checks: readonly string[]
+  review: string | null
+  landsUnattended: boolean
+  base: string
+}
+
+/** The file as it stands, read the way the pass will read it — never the answers held in memory. */
+export async function summariseRecipe(
+  project: string,
+  options: { home?: string; files?: RecipeFiles },
+): Promise<Summary | { refused: string }> {
+  const path = recipePath(project, options.home)
+  const text = await (options.files ?? diskFiles).read(path)
+  if (text === null) return { refused: `no recipe at ${path} to summarise` }
+  try {
+    const { recipe } = resolveSource(text, path, path)
+    const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[]>
+    const checks = (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run']))
+    const reviewer = (steps['review'] ?? []).find((a) => typeof a['agent'] === 'string')
+    return {
+      checks,
+      review: reviewer === undefined ? null : String(reviewer['agent']),
+      landsUnattended: !(steps['proposed'] ?? []).some((a) => 'human' in a),
+      base: baseOf(recipe),
+    }
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
+
+/** The block printed ahead of the confirm: which checks run, whether anyone reads it, and whether a person approves the merge. */
+export function renderSummary(project: string, summary: Summary, again: string): string {
+  const rows: (readonly [string, string])[] = [
+    [
+      'checks',
+      summary.checks.length > 0
+        ? summary.checks.join(' · ')
+        : 'none — steps.build is empty, so nothing checks a diff before review',
+    ],
+    ['review', summary.review ?? 'none'],
+    [
+      'landing',
+      summary.landsUnattended
+        ? `unattended — a pass that clears review lands on ${summary.base || 'the base branch'} with no person`
+        : 'held — every pass stops at proposed for a person',
+    ],
+    ['change', again],
+  ]
+  return [heading(`Before registering ${project}`), ...keyValues(rows).map((line) => `  ${line}`)].join('\n')
 }
 
 /** `setRecipe`, with its throw turned into the same `{refused}` shape every question here returns. */
@@ -284,6 +349,34 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     { ...fileOptions, kept: at.kept },
   )
   if ('refused' in limited) return limited
+
+  // Last, and read back from the file: every registration follows this function (#542).
+  const summary = await summariseRecipe(at.project, fileOptions)
+  if ('refused' in summary) return summary
+  world.log(renderSummary(at.project, summary, at.again))
+
+  // Only the defaults can reach here without anyone having looked: a person who
+  // typed an answer, or named `--build none` or `--land <branch>`, chose it.
+  const unseenEmptyBuild = summary.checks.length === 0 && at.buildFlags.length === 0
+  const unseenUnattended = summary.landsUnattended && at.flags['land'] === undefined
+  if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
+    // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
+    const confirmed = await question(world, {
+      name: 'the summary above',
+      flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
+      given: at.flags['defaults'] !== undefined ? 'yes' : null,
+      prompt: 'register with the checks and landing above?',
+      choices: ['yes', 'no'],
+      fallback: 'yes',
+      kept: at.kept,
+    })
+    if ('refused' in confirmed) return confirmed
+    if (confirmed.answer === 'no') {
+      return {
+        refused: `stopped at the summary — nothing was registered. ${at.kept}; running it again offers what was written as the defaults`,
+      }
+    }
+  }
 
   return { ok: true }
 }

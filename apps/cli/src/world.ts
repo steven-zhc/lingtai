@@ -27,7 +27,6 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline/promises'
 
 // Only the configuration reader, which connects to nothing.
 import {
@@ -43,6 +42,7 @@ import {
 } from '@lingtai/env'
 
 import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from './install.ts'
+import { interactivity, askConfirm, PromptRefused } from './prompt.ts'
 
 /** Everything the live world reaches that a test must not: the log, and what is behind it. */
 export interface Live {
@@ -86,15 +86,13 @@ export function liveWorld(self: string, outside: Live = live()): World {
     fetch: (input, init) => fetch(input, init),
     log: outside.log,
     ask: async (question) => {
-      if (!process.stdin.isTTY) {
+      try {
+        return await askConfirm(question.replace(/\s*\[y\/N\]\s*:?\s*$/i, ''), '--yes', interactivity(false))
+      } catch (err) {
+        if (!(err instanceof PromptRefused)) throw err
+        // Not a terminal on both ends: refused by name, as before, and nothing is removed.
         outside.log('there is nobody at a terminal to ask — --yes answers for you, once you have read what it removes')
         return false
-      }
-      const rl = createInterface({ input: process.stdin, output: process.stdout })
-      try {
-        return /^y(es)?$/i.test((await rl.question(question)).trim())
-      } finally {
-        rl.close()
       }
     },
     running: runningFrom,

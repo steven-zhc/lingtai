@@ -142,9 +142,12 @@ import {
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
-import { liveAsk, question } from './question.ts'
+import { heading, keyValues, section, symbol } from './output.ts'
+import { liveAsk, liveSpin } from './prompt.ts'
+import { question, spun, type QuestionWorld } from './question.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
+import type { WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -177,7 +180,9 @@ export interface InitWorld {
   }
   log: (line: string) => void
   /** One line from the person. Null when nobody is at a terminal to answer. */
-  ask: (question: string) => Promise<string | null>
+  ask: QuestionWorld['ask']
+  /** `QuestionWorld.spin` — a slow step under a label; absent means just run it. */
+  spin?: QuestionWorld['spin']
   /** `git --version`, or null when there is no git. */
   git: () => Promise<string | null>
   /** Every runtime, asked whether it is installed and signed in. */
@@ -271,66 +276,23 @@ export { redactUrl as redact } from '@lingtai/env'
 
 // ------------------------------------------------------------ the command --
 
-function parseArgs(
-  argv: readonly string[],
-): { flags: Record<string, string>; repeated: Record<string, string[]> } | { refused: string } {
-  const flags: Record<string, string> = {}
-  const repeated: Record<string, string[]> = {}
-  for (let i = 0; i < argv.length; i++) {
-    const name = argv[i]!
-    if (
-      ![
-        '--store',
-        '--database-url',
-        '--port',
-        '--project',
-        '--local',
-        '--base',
-        '--github-app',
-        '--agent',
-        '--model',
-        '--reviewer',
-        '--reviewer-model',
-        '--install',
-        '--build',
-        '--tickets',
-        '--kinds',
-        '--land',
-        '--rounds',
-        '--wall',
-        '--budget',
-        '--defaults',
-      ].includes(name)
-    )
-      return { refused: `${USAGE} — no ${name}` }
-    // The one boolean flag here: without this branch, `--defaults` would
-    // read the next token as its own value — another flag, which is then
-    // refused by name instead of parsed (`--defaults --store sqlite` would
-    // refuse "no sqlite"), or nothing, which is refused as `--defaults takes
-    // a value` (#433).
-    if (name === '--defaults') {
-      flags['defaults'] = ''
-      ;(repeated['defaults'] ??= []).push('')
-      continue
-    }
-    const value = argv[i + 1]
-    if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
-    flags[name.slice(2)] = value
-    ;(repeated[name.slice(2)] ??= []).push(value)
-    i++
-  }
-  return { flags, repeated }
-}
-
 function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
-  world.log(paint.fail(line))
+  world.log(`${symbol.fail()} ${paint.fail(line)}`)
   return code
 }
 
-export async function initCommand(argv: readonly string[], world: InitWorld): Promise<number> {
-  const parsed = parseArgs(argv)
-  if ('refused' in parsed) return refuse(world, parsed.refused, 2)
-  const { flags, repeated } = parsed
+/** One block of facts under its heading, printed as soon as the facts are known (0121 §1). */
+function fact(
+  world: Pick<InitWorld, 'log'>,
+  title: string,
+  pairs: readonly (readonly [string, string])[],
+  note?: string,
+) {
+  world.log(section(title, [...keyValues(pairs), ...(note === undefined ? [] : [note])]))
+}
+
+export async function initCommand(args: WizardFlags, world: InitWorld): Promise<number> {
+  const { flags, repeated } = args
   const buildFlags = repeated['build'] ?? []
   const asked = flags['port'] === undefined ? null : Number(flags['port'])
   if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
@@ -351,15 +313,17 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const path = configPath(world.env)
 
   // ---- look -----------------------------------------------------------------
-  world.log(paint.accent('looking before asking'))
+  world.log(heading('init'))
   const git = await world.git()
-  world.log(git ? `  git          ${git}` : paint.fail('  git          not on PATH'))
-  const runtimes = await world.runtimes()
-  for (const r of runtimes) {
-    const state = !r.installed ? 'not installed' : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`
-    world.log(`  ${r.id.padEnd(12)} ${state}`)
-  }
-  world.log(`  ${'home'.padEnd(12)} ${home} — ${world.machine.describeHome(home, path)}`)
+  const runtimes = await spun(world, 'looking for runtimes', () => world.runtimes())
+  fact(world, 'Machine', [
+    ['git', git ? git : paint.fail('not on PATH')],
+    ...runtimes.map((r) => {
+      const state = !r.installed ? 'not installed' : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`
+      return [r.id, state] as const
+    }),
+    ['home', `${home} — ${world.machine.describeHome(home, path)}`],
+  ])
   if (!git) {
     return refuse(
       world,
@@ -391,11 +355,14 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         'fix its credentials, or remove them, and run lingtai init again',
     )
   }
-  world.log(
-    app.configured
-      ? paint.pass(`app          ${app.slug}, owned by ${app.owner} — it answered`)
-      : "app          none yet — the board's first screen creates it through GitHub's manifest flow",
-  )
+  fact(world, 'GitHub App', [
+    [
+      'app',
+      app.configured
+        ? paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)
+        : "none yet — the board's first screen creates it through GitHub's manifest flow",
+    ],
+  ])
 
   // ---- which project ---------------------------------------------------------
   // Registering a project *is* the record of the answer (#394) — nothing
@@ -416,9 +383,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   if (!explicitChoice) {
     const registered = await world.projects()
     if (registered.length > 0) {
+      const listed: string[] = []
       for (const p of registered) {
         if (p.owner !== null) {
-          world.log(`  ${p.owner}/${p.project} — github`)
+          listed.push(`${p.owner}/${p.project} — github`)
           continue
         }
         // `owner: null` is a local project, and also a GitHub one registered
@@ -426,17 +394,20 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         // only the remote a local registration writes tells the two apart.
         const remote =
           p.project === null ? null : await readRecipeKey(p.project, ['repo', 'remote'], { home, files: world.files })
-        world.log(
+        listed.push(
           typeof remote === 'string'
-            ? `  ${p.project} — local, ${remote}`
-            : `  ${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
+            ? `${p.project} — local, ${remote}`
+            : `${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
         )
       }
       world.log(
-        paint.muted(
-          'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
-            'the GitHub App on a machine that has only local projects',
-        ),
+        section('Projects', [
+          ...listed,
+          paint.muted(
+            'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
+              'the GitHub App on a machine that has only local projects',
+          ),
+        ]),
       )
       // Nothing below here reaches `chooseFirstProject`, so nothing reads any
       // of these flags — refused by name instead of silently discarded, the
@@ -579,10 +550,12 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     }
 
     if (chosen.project === 'local') {
-      world.log(paint.pass(`project      local — ${chosen.name}, registered with its own origin as repo.remote`))
+      fact(world, 'Projects', [
+        ['project', paint.pass(`local — ${chosen.name}, registered with its own origin as repo.remote`)],
+      ])
       const path = recipePath(chosen.name, home)
       const text = await world.files.read(path)
-      world.log(path)
+      world.log(heading(`Recipe  ${path}`))
       world.log(text === null ? paint.fail('the recipe could not be read back') : text)
     } else {
       if (chosen.app === 'already') {
@@ -594,23 +567,22 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
         world.log(
           (await world.open(wizard))
             ? paint.pass(`opened ${wizard}`)
-            : paint.signal(`no browser could be opened here — open ${wizard}`),
+            : `no browser could be opened here — open ${wizard}`,
         )
       } else if ('made' in chosen.app) {
         // Already started, successfully, to hand `waitForApp` its URL above —
         // this reads the same memo rather than starting a second one.
         const started = await startBoard()
         const url = 'url' in started ? started.url : ''
-        world.log(`next, install it and pick a repository: ${url}/setup/repository`)
+        world.log(`next: open ${url}/setup/repository to install it and pick a repository`)
       }
       // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
       // own call to `waitForApp` (`appComeBackLine`).
       //
       // `init`'s GitHub branch never has a slug, so there is no recipe file
       // to print here — it exists once a repository is picked.
-      world.log(
-        'the recipe is written once a repository is picked — lingtai add <owner>/<repo> asks its questions at the terminal',
-      )
+      world.log('the recipe is written once a repository is picked — it asks its questions at the terminal')
+      world.log('next: lingtai add <owner>/<repo>')
     }
   } else if (app.configured) {
     // Nothing new was asked — the machine already has projects, told above —
@@ -620,9 +592,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     if ('refused' in started) return boardRefused(started.refused)
     const wizard = `${started.url}/setup/repository`
     world.log(
-      (await world.open(wizard))
-        ? paint.pass(`opened ${wizard}`)
-        : paint.signal(`no browser could be opened here — open ${wizard}`),
+      (await world.open(wizard)) ? paint.pass(`opened ${wizard}`) : `no browser could be opened here — open ${wizard}`,
     )
   }
 
@@ -635,6 +605,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   world.log(doctorText)
 
   const started = boardSoFar()
+  world.log(heading('Board'))
   if (started === null) {
     // Nothing here asked for a board, but one may already be serving this
     // machine (#434 fix round) — `lingtai board` refuses by name rather than
@@ -643,8 +614,9 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     world.log(
       running !== null
         ? paint.muted(`the board was already running at ${running} — this started none`)
-        : paint.muted('no board was started — lingtai board starts it'),
+        : paint.muted('no board was started'),
     )
+    if (running === null) world.log('next: lingtai board')
   } else {
     world.log(
       'refused' in started
@@ -720,7 +692,7 @@ async function chooseStore(
           'an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written',
       )
     }
-    const check = await world.database(preset.url)
+    const check = await spun(world, 'connecting to the database', () => world.database(preset.url))
     if (!check.ok) {
       return refuse(
         world,
@@ -728,7 +700,7 @@ async function chooseStore(
           "It is not this command's to replace: fix it, or remove it, and run lingtai init again",
       )
     }
-    world.log(paint.pass(`store        ${describeStore(preset)} · ${describeSchema(check.schema)}`))
+    fact(world, 'Store', [['store', paint.pass(`${describeStore(preset)} · ${describeSchema(check.schema)}`)]])
     return null
   }
 
@@ -757,12 +729,12 @@ async function chooseStore(
     const settled = storeChoice(world.env, machineFor(world, path))
     if (!('refused' in settled)) {
       if (settled.store === 'sqlite') return sqliteChosen(world, settled)
-      const check = await world.database(settled.url)
+      const check = await spun(world, 'connecting to the database', () => world.database(settled.url))
       if (check.ok) {
-        world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`))
+        fact(world, 'Store', [['store', paint.pass(`${describeStore(settled)} · ${describeSchema(check.schema)}`)]])
         return null
       }
-      world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`))
+      fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
     } else if (settled.because === 'unreadable') {
       // `readConfig` refused this already; it is here because the two readers
       // are separate and one of them must not be the only one that looks.
@@ -783,14 +755,14 @@ async function chooseStore(
       // inheritable — a `url` with no `store` — is still true after it failed.
       const older = config.getIn(['database', 'url'])
       if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
-        const check = await world.database(older)
+        const check = await spun(world, 'connecting to the database', () => world.database(older))
         if (check.ok) {
           config.setIn(['database', 'store'], 'postgres')
           config.setIn(['database', 'url'], older)
           world.machine.write(path, config.toString())
           const read = confirm(world, path, 'postgres')
           if (typeof read === 'number') return read
-          world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`))
+          fact(world, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(check.schema)}`)]])
           return null
         }
         world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
@@ -814,7 +786,7 @@ async function chooseStore(
       if (!/^postgres(ql)?:\/\//.test(answer)) {
         return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
       }
-      const check = await world.database(answer)
+      const check = await spun(world, 'connecting to the database', () => world.database(answer))
       if (!check.ok) return `${redactUrl(answer)} does not answer — ${check.why}. Nothing was written`
       schema = check.schema
       return null
@@ -838,7 +810,7 @@ async function chooseStore(
   world.machine.write(path, config.toString())
   const read = confirm(world, path, 'postgres')
   if (typeof read === 'number') return read
-  world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(schema!)}`))
+  fact(world, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(schema!)}`)]])
   return null
 }
 
@@ -924,8 +896,7 @@ function confirm(world: InitWorld, path: string, expected: 'postgres' | 'sqlite'
  * amber: nothing here needs doing.
  */
 function sqliteChosen(world: Pick<InitWorld, 'log'>, choice: StoreChosen): null {
-  world.log(paint.pass(`store        ${describeStore(choice)}`))
-  world.log(paint.muted(SQLITE_MACHINE))
+  fact(world, 'Store', [['store', paint.pass(describeStore(choice))]], paint.muted(SQLITE_MACHINE))
   return null
 }
 
@@ -1003,6 +974,7 @@ export function liveInitWorld(): InitWorld {
     machine: liveMachine(),
     log: (line) => console.log(line),
     ask: liveAsk,
+    spin: liveSpin,
     git: async () => {
       const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
       return said.status === 0 ? said.stdout.trim() : null

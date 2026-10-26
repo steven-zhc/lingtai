@@ -18,7 +18,7 @@
  */
 import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
 import { chooseFirstProject, liveFirstProjectWorld, type FirstProjectWorld } from './first-project.ts'
-import { liveAsk } from './question.ts'
+import { liveAsk, liveSpin } from './prompt.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
 
 export interface AddWorld {
@@ -78,8 +78,12 @@ export function parseFlags(args: string[]): {
   return { positional, flags, repeated }
 }
 
-export async function addFlow(args: string[], world: AddWorld): Promise<number> {
-  const { positional, flags, repeated } = parseFlags(args)
+export async function addFlow(
+  args: { positional?: string | undefined; flags: Record<string, string>; repeated: Record<string, string[]> },
+  world: AddWorld,
+): Promise<number> {
+  const { flags, repeated } = args
+  const positional = args.positional === undefined ? [] : [args.positional]
   const buildFlags = repeated['build'] ?? []
   // A positional beside either flag names a second project, and neither one
   // may be dropped without a word (#394's review).
@@ -126,7 +130,7 @@ export async function addFlow(args: string[], world: AddWorld): Promise<number> 
 
 export function liveAddWorld(): AddWorld {
   return {
-    project: liveFirstProjectWorld({ ask: liveAsk, log: (line) => console.log(line) }),
+    project: liveFirstProjectWorld({ ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) }),
     error: (line) => console.error(line),
   }
 }

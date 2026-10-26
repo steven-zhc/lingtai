@@ -81,7 +81,7 @@ import {
   type AppWaitWorld,
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
-import { question, type QuestionWorld } from './question.ts'
+import { question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
@@ -456,6 +456,7 @@ async function runLocalBranch(
     defaultBranch: async () => detected,
     history: world.history,
     seeds,
+    again: `lingtai add --local ${toplevel}`,
     keptBeforeWrite: world.kept,
     kept: seededKept,
     home: world.home,
@@ -627,13 +628,15 @@ async function runGithubBranch(
   // failure twice (#394 finding 7). On success they are printed once, below.
   const said: string[] = []
   const baseFlag = flags['base']
-  const code = await world.github.add(
-    {
-      slug: givenSlug,
-      installation,
-      base: baseFlag === undefined ? undefined : { ref: baseFlag, named: true },
-    },
-    (line) => said.push(line),
+  const code = await spun(world, `registering ${givenSlug}`, () =>
+    world.github.add(
+      {
+        slug: givenSlug,
+        installation,
+        base: baseFlag === undefined ? undefined : { ref: baseFlag, named: true },
+      },
+      (line) => said.push(line),
+    ),
   )
   if (code !== 0) {
     return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
@@ -711,7 +714,8 @@ export function liveSetupReader(dir: string): SetupReader {
 }
 
 export interface LiveFirstProjectOptions {
-  ask: (prompt: string) => Promise<string | null>
+  ask: QuestionWorld['ask']
+  spin?: QuestionWorld['spin']
   log: (line: string) => void
   /**
    * What a refusal says was kept. `Nothing was written` unless the caller
@@ -742,6 +746,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
 
   return {
     ask: options.ask,
+    ...(options.spin === undefined ? {} : { spin: options.spin }),
     log: options.log,
     git: liveGit,
     projects: () => loadAllProjects(),
