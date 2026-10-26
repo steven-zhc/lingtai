@@ -37,14 +37,14 @@ using them in a terminal.
    glyphs, not colours.** Each glyph is drawn in an existing `paint` key and
    means one thing:
 
-   | glyph | `paint` | meaning |
-   |---|---|---|
-   | ✓ | `pass` | passed |
-   | ✗ | `fail` | failed |
-   | ● | `signal` | waiting on you, and nothing else |
-   | (none) | `held` | held by a person |
-   | (none) | `accent` | headings and running things |
-   | (none) | `muted` | ids, clocks and hashes |
+   | glyph  | `paint`  | meaning                          |
+   | ------ | -------- | -------------------------------- |
+   | ✓      | `pass`   | passed                           |
+   | ✗      | `fail`   | failed                           |
+   | ●      | `signal` | waiting on you, and nothing else |
+   | (none) | `held`   | held by a person                 |
+   | (none) | `accent` | headings and running things      |
+   | (none) | `muted`  | ids, clocks and hashes           |
 
    A state takes its colour from `stateInk` in `colour.ts`, not from a list
    here. Amber is `signal` and "nothing else may use this" (`colour.ts`): a
@@ -78,7 +78,7 @@ using them in a terminal.
    stderr is for people and is never parsed.
 
    **A command that changes state and answers with a verdict takes `--json`
-   too** (#621): the *waiting on you* group and `now`. Its document reports
+   too** (#621): the _waiting on you_ group and `now`. Its document reports
    the verdict and not the state: `outcome` is `"accepted"` or `"refused"`,
    `reason` carries the refusal's code where the function that refused names
    one (and is left out otherwise, never `null`), and `detail` is the sentence
@@ -102,25 +102,25 @@ using them in a terminal.
    for a handler that could not run at all.
 
 6. **A command's definition is the one source for its help.** Each definition
-   carries its group, a one-line task, whether it only *reads* or *changes*
+   carries its group, a one-line task, whether it only _reads_ or _changes_
    something, and one or two examples. `lingtai --help`,
    `lingtai <command> --help` and `doc/cli.md` are all generated from those
    definitions, and `doc/cli.md` is what the site's CLI page shows. For a
-   command that only *reads*, the `reads`/`changes` marker is what decides
+   command that only _reads_, the `reads`/`changes` marker is what decides
    whether it takes `--json` (clause 5); a `changes` command that answers
    with a verdict takes it as clause 5 says.
 
 7. **Help groups.** `lingtai --help` lists commands in four groups, each
    command in exactly one:
 
-   | group | commands |
-   |---|---|
-   | everyday | `add`, `run`, `status`, `now`, `attach`, `backlog`, `ticket`, `board`, `env`, `end` |
-   | waiting on you | `approve`, `answer`, `ask`, `grant-fix-round`, `requeue`, `close` |
-   | daemon | `start`, `daemon`, `service`, `restart`, `shutdown`, `pause`, `resume` |
-   | install and upkeep | `init`, `version`, `upgrade`, `rollback`, `uninstall`, `doctor`, `projection` |
+   | group              | commands                                                                            |
+   | ------------------ | ----------------------------------------------------------------------------------- |
+   | everyday           | `add`, `run`, `status`, `now`, `attach`, `backlog`, `ticket`, `board`, `env`, `end` |
+   | waiting on you     | `approve`, `answer`, `ask`, `grant-fix-round`, `requeue`, `close`                   |
+   | daemon             | `start`, `daemon`, `service`, `restart`, `shutdown`, `pause`, `resume`              |
+   | install and upkeep | `init`, `version`, `upgrade`, `rollback`, `uninstall`, `doctor`, `projection`       |
 
-   *Waiting on you* holds the commands that answer a wait of 0118.
+   _Waiting on you_ holds the commands that answer a wait of 0118.
 
 8. **Help needs no project and no network.** `help`, `--help` and
    `<command> --help` are answered from the command definitions alone, before
@@ -142,7 +142,7 @@ using them in a terminal.
     puts it in raw mode, never installs a signal listener and never calls
     `process.exit`. In raw mode Ctrl+C stops being `SIGINT` and arrives as a
     byte, so a command's own handler — `restart`'s drain, `service
-    shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
+shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
     that exits ends the process before that handler's asynchronous work has
     landed. Either way the cleanup is skipped and the exit code lies. The
     spinner is `ora` with `discardStdin: false` and `hideCursor: false`, which

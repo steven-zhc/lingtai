@@ -103,7 +103,12 @@ which kind a wait was got inferred again in each place that needed it, from
          findings: Finding[]
        }
      // the machine fell short, and nobody decided it
-     | { _tag: 'MergeRefused'; run: RunRef; reason: Exclude<RefusalReason, 'conflict' | 'verify-failed' | 'base-moved'>; raw: string }
+     | {
+         _tag: 'MergeRefused'
+         run: RunRef
+         reason: Exclude<RefusalReason, 'conflict' | 'verify-failed' | 'base-moved'>
+         raw: string
+       }
      | {
          _tag: 'BudgetExhausted'
          run: RunRef
@@ -237,7 +242,7 @@ which kind a wait was got inferred again in each place that needed it, from
      ```
 
      Which of these continue the saved branch and which cut a new one from the
-     base is the [glossary's *What happens next*](../glossary.md#what-happens-next).
+     base is the [glossary's _What happens next_](../glossary.md#what-happens-next).
 
      `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
      the board's buttons. `GrantFixRound` is a person's separately logged grant
@@ -253,25 +258,25 @@ which kind a wait was got inferred again in each place that needed it, from
      advises and never moves the item. The whole table, with where an approval
      continues (§11):
 
-     | `WaitReason`                                                             | Allowed (`GrantFixRound` only on its criterion, below)                                         | `Approve` continues at         |
-     | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------ |
-     | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                                           | —                              |
-     | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                                       | —                              |
-     | `SignoffRequired`                                                        | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                            | its step, the signoff `Waived` |
-     | `CheckRefused`                                                           | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | its step, the check `Waived`   |
-     | `FixerDisagrees`                                                         | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | `proposed`                     |
-     | `ProposedEscalated` over `ReviewFindings`                                 | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                 | `proposed`                     |
-     | `ProposedEscalated` over `ReviewEmpty`                                    | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                                          | `proposed`                     |
-     | `ProposedEscalated` over `BuildRed` or `VerifyRed`                        | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`                            | —                              |
-     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `Requeue`, `Close`                                                       | —                              |
-     | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                                     | —                              |
-     | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                                         | `merge`                        |
-     | `ProposedEscalated` over `BaseMoved`                                     | `Approve` (keep merging the base in), `Requeue`, `Close`                                       | `merge`                        |
-     | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                                              | —                              |
-     | `SetupRefused`                                                           | `Requeue`, `Close`                                                                             | —                              |
+     | `WaitReason`                                                             | Allowed (`GrantFixRound` only on its criterion, below)                        | `Approve` continues at         |
+     | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------ |
+     | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                          | —                              |
+     | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                      | —                              |
+     | `SignoffRequired`                                                        | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | its step, the signoff `Waived` |
+     | `CheckRefused`                                                           | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`          | its step, the check `Waived`   |
+     | `FixerDisagrees`                                                         | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`          | `proposed`                     |
+     | `ProposedEscalated` over `ReviewFindings`                                | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close` | `proposed`                     |
+     | `ProposedEscalated` over `ReviewEmpty`                                   | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | `proposed`                     |
+     | `ProposedEscalated` over `BuildRed` or `VerifyRed`                       | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`            | —                              |
+     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `Requeue`, `Close`                                           | —                              |
+     | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                      | —                              |
+     | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                        | `merge`                        |
+     | `ProposedEscalated` over `BaseMoved`                                     | `Approve` (keep merging the base in), `Requeue`, `Close`                      | `merge`                        |
+     | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                             | —                              |
+     | `SetupRefused`                                                           | `Requeue`, `Close`                                                            | —                              |
      - `BaseMoved` is held only after the system's own two merges of the base
        are spent (0120 §3, #593); `Approve` continues at `merge` as a new pass
-       whose count is zero, so it reads as *keep merging the base in*, and no
+       whose count is zero, so it reads as _keep merging the base in_, and no
        fix round is granted — there is nothing wrong with the lines.
      - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
        sides with the reviewer.
@@ -662,7 +667,7 @@ which kind a wait was got inferred again in each place that needed it, from
       by title, and never through GitHub's search index, which lags a create
       by seconds. An issue without its marker is never adopted, edited or
       linked. A lookup that fails fails the write; an empty answer is never
-      read as *not created*.
+      read as _not created_.
     - **Every run of the writer reconciles the frozen plan against GitHub**:
       it creates each child no marker answers for, attaches each missing
       sub-issue, adds each missing blocked-by, and records `TicketSplit` only
