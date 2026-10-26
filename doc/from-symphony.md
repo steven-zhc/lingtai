@@ -41,7 +41,7 @@ at a time.
 | `tracker.active_states`, `tracker.terminal_states` | none — Lingtai keeps its own states for a ticket, and a closed issue is finished |
 | `polling.interval_ms` | not a recipe setting: the daemon polls on its own schedule, for the whole machine |
 | `workspace.root`, `hooks.after_create` (cloning) | a worktree Lingtai cuts for each pass |
-| `hooks.after_create` (installing dependencies) | the install command you give `lingtai init --install` |
+| `hooks.after_create` (installing dependencies) | the install command you give `lingtai add --install` |
 | `agent.max_concurrent_agents` | one at a time today (#341) |
 | `agent.max_turns` | `runtime.limits.turns`, per run — a different count, so do not copy the number across ([reference](reference.md)) |
 | `agent.max_retry_backoff_ms` | `source.backoff`, `1h` by default and flat; `lingtai now <project> --issue <n>` takes one ticket ahead of the queue |
@@ -68,9 +68,12 @@ done by hand.
 
 ## Moving a project
 
-1. **Run `lingtai init` in the repository.** Give it your install and build
-   commands; the tutorial shows the flags ([tutorial](tutorial.md)). Label the
-   issues you want taken with one of the recipe's kinds.
+1. **Initialize, then add the repository.** Run `lingtai init --project github`,
+   then `lingtai add <owner>/<repo> --base main`. `init` asks nothing about the
+   recipe on a GitHub project; `add` does, and writes it — pass your install and
+   build commands there as `--install` and `--build`, as the tutorial's
+   [GitHub part](tutorial.md) does. Label the issues you want taken with one of
+   the recipe's kinds.
 2. **Paste your project guidance into the `prompt:` beside an `agent:` at
    `implement:`** — the conventions, and how to validate a change. Leave out every
    instruction about states, PRs, review comments and landing, and every
