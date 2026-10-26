@@ -1,8 +1,3 @@
-/**
- * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
- * `lingtai.ts` import — that file calls `main()` on import, which is why
- * `addFlow` lives in its own module (`add.ts`'s own header).
- */
 import type { RecipeFiles } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -10,6 +5,12 @@ import { type AddWorld, addFlow } from '../src/add.ts'
 import type { SetupReader } from '../src/detect-setup.ts'
 import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'
+/**
+ * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
+ * `lingtai.ts` import — that file calls `main()` on import, which is why
+ * `addFlow` lives in its own module (`add.ts`'s own header).
+ */
+import { flagsFromArgv } from '../test/flags.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -108,7 +109,7 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
   it('addFlow([], world) registers a local project, asked for through the terminal', async () => {
     const { world, asked, errors } = ttyHarness()
 
-    const code = await addFlow([], world)
+    const code = await addFlow(flagsFromArgv([]), world)
 
     expect(code).toBe(0)
     expect(errors).toEqual([])
@@ -118,10 +119,10 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     // Every later prompt is the directory, the base branch, or a recipe
     // question — `askRecipe`'s "use every default?" is the only one of
     // those actually reached, since taking its own default (an empty answer)
-    // answers every question beneath it without asking again.
+    // answers every question beneath it without asking again — and then the summary's confirm.
     for (const prompt of asked.slice(1)) {
       expect(prompt).toMatch(
-        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?/,
+        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?|register with the checks and landing above\?/,
       )
     }
     expect(asked.length).toBeGreaterThan(1)

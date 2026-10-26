@@ -79,3 +79,23 @@ export function flagsOf(parsed: Record<string, Option.Option<string> | readonly 
   }
   return { flags, repeated }
 }
+
+const VALUELESS_OK = new Set(['defaults'])
+
+/**
+ * The first `--flag` of `init` or `add` that takes a value and was given none —
+ * last on the line, or followed by another flag. `@effect/cli` reads that as the
+ * flag being absent, which would silently drop what the person typed; the hand
+ * parsers refused it by name (`--build takes a command, or none`), so this does.
+ */
+export function valuelessFlag(argv: readonly string[]): string | null {
+  const names = new Set([...Object.keys(initOptions), ...Object.keys(addOptions)].filter((n) => !VALUELESS_OK.has(n)))
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!
+    if (!token.startsWith('--') || token.includes('=')) continue
+    const name = token.slice(2)
+    const next = argv[i + 1]
+    if (names.has(name) && (next === undefined || next.startsWith('--'))) return name
+  }
+  return null
+}

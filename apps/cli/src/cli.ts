@@ -11,7 +11,7 @@ import { Console, Effect } from 'effect'
 import { definitionOf } from './commands.ts'
 import { applyNoColor, printJson, printJsonError, stripColour } from './output.ts'
 import { versionFacts, versionLine } from './version.ts'
-import { addOptions, flagsOf, initOptions } from './wizard-options.ts'
+import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
 
 const json = Options.boolean('json')
 const noColor = Options.boolean('no-color')
@@ -158,6 +158,13 @@ export async function runCli(argv: readonly string[]): Promise<number> {
   const args = argv.slice(2)
   if (args.includes('--no-color')) applyNoColor()
   const json = args.some(jsonOn)
+  if (args[0] === 'init' || args[0] === 'add') {
+    const valueless = valuelessFlag(args.slice(1))
+    if (valueless !== null) {
+      console.error(`lingtai ${args[0]}: --${valueless} takes a value`)
+      return 1
+    }
+  }
   const errors: string[] = []
   handlerCode = 0
   const code = await Effect.runPromise(

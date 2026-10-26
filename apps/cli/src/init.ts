@@ -614,9 +614,8 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     world.log(
       running !== null
         ? paint.muted(`the board was already running at ${running} — this started none`)
-        : paint.muted('no board was started'),
+        : `${paint.muted('no board was started')}\nnext: lingtai board`,
     )
-    if (running === null) world.log('next: lingtai board')
   } else {
     world.log(
       'refused' in started

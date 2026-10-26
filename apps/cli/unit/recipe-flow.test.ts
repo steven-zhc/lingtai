@@ -81,6 +81,7 @@ describe('askRecipe — an absent file (#432)', () => {
       local: true,
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -138,6 +139,7 @@ describe('askRecipe — an absent file (#432)', () => {
       local: false,
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -185,6 +187,7 @@ steps:
       seeds: [],
       flags: { ...BASE_AT.flags, kinds: 'bug,feature' },
       kept: 'Nothing was written',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -236,6 +239,7 @@ describe('askRecipe — --defaults (#433)', () => {
       flags: { ...BASE_AT.flags, defaults: '', rounds: '5' },
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -271,6 +275,7 @@ describe('askRecipe — --defaults (#433)', () => {
       flags: { ...BASE_AT.flags, defaults: '' },
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -330,6 +335,7 @@ describe('askRecipe — --defaults (#433)', () => {
       flags: FULLY_FLAGGED,
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
@@ -360,6 +366,7 @@ describe('askRecipe — --defaults (#433)', () => {
       flags: withoutKinds,
       seeds,
       kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
