@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+import { DOCS_PUBLIC } from '@/lib/docs'
 import { readEvents } from '@/lib/events'
 
 import { Bar, Foot } from '../../chrome'
@@ -19,9 +20,8 @@ export default async function EventsPage() {
       <main>
         <div className="wrap doc-wrap">
           <section style={{ paddingTop: 32 }}>
-            <p className="kicker">
-              <Link href="/docs/">Documentation</Link>
-            </p>
+            {/* /docs/ is a 404 while DOCS_PUBLIC is false, so the way back is a link only when it exists. */}
+            <p className="kicker">{DOCS_PUBLIC ? <Link href="/docs/">Documentation</Link> : 'Documentation'}</p>
             <h1>Events</h1>
             <p>
               A pass writes events as it goes. Pick a step to see the events it writes, and an event for where it is
