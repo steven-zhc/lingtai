@@ -126,7 +126,6 @@ describe('lingtai service', () => {
     const r = await capture(['service', 'start'])
     expect(r.code).toBe(0)
     expect(r.out).not.toContain('✓ started')
-    expect(r.out).toContain('nothing was started or confirmed')
   })
 
   it('does not claim the conductor started when the start was unconfirmed and the board failed', async () => {
@@ -143,6 +142,20 @@ describe('lingtai service', () => {
     const r = await capture(['service', 'start'])
     expect(r.out).toContain('✓ started')
     expect(r.out).not.toContain('nothing was started or confirmed')
+  })
+
+  it('says the board was started when only the conductor was unconfirmed', async () => {
+    seen.unconfirmed = true
+    const r = await capture(['service', 'start'])
+    expect(r.out).toContain('the board was started')
+    expect(r.out).not.toContain('nothing was started or confirmed')
+  })
+
+  it('says nothing was started when both jobs already had a process', async () => {
+    seen.unconfirmed = true
+    seen.board = true
+    const r = await capture(['service', 'start'])
+    expect(r.out).toContain('nothing was started or confirmed')
   })
 
   it('hands the steps to serviceCommand', async () => {

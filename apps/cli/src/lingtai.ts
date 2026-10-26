@@ -27,6 +27,7 @@ import { commandHelp, rootHelp } from './help.ts'
 import { rebuildProjection } from './projection.ts'
 import { run as runOnceCommand } from './run.ts'
 import { serviceCommand } from './service.ts'
+import { createSteps } from './steps.ts'
 import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
 import { versionLine } from './version.ts'
 
@@ -248,7 +249,7 @@ async function main(argv: string[]): Promise<number> {
     case 'daemon':
       return daemonCommand(parseFlags(rest).flags)
     case 'service':
-      return serviceCommand(rest, serviceOptions())
+      return serviceCommand(rest, { ...serviceOptions(), steps: createSteps(console.log) })
     case 'projection':
       return projectionCommand(rest)
     // `entry.ts` answers this before the log is loaded; here for a process

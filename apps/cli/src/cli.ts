@@ -387,18 +387,26 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
       // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
       if (verb === 'install') steps.begin('writing')
       if (verb === 'uninstall') steps.begin('removing')
-      let unconfirmed = false // the conductor's start only; the board's own line says its own
+      let unconfirmed = false // the supervisor already had a conductor process
+      let boardHad = false // ...and a board process, so the board's start was not made either
       const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
         ...serviceOptions(),
         steps,
         unconfirmed: (job) => {
           if (job === 'conductor') unconfirmed = true
+          else boardHad = true
         },
       })
       steps.end()
       if (unconfirmed && code === START_BOARD_ONLY)
         console.log(
           `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+        )
+      else if (code === 0 && unconfirmed && !boardHad)
+        console.log(
+          paint.muted(
+            `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
+          ),
         )
       else if (code === 0 && unconfirmed)
         console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
