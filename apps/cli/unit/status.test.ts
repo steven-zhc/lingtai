@@ -521,6 +521,11 @@ describe('conflictLines (#652)', () => {
     expect(conflictLines(reason, triage(8, 'Close'))).toEqual({ rec: 'recommends Close — why', advised: null })
   })
 
+  it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
+    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends Requeue — why', advised: null })
+    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
+  })
+
   it('says nothing for no triage', () => {
     expect(conflictLines(reason, undefined)).toBeNull()
   })

@@ -37,10 +37,11 @@ import { heading, keyValues, section, symbol, table } from './output.ts'
 export function conflictLines(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
+  savedHead?: boolean,
 ): { rec: string; advised: string | null } | null {
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
-  const rec = recommendedResolution(reason, { _tag: 'Done', result })
+  const rec = recommendedResolution(reason, { _tag: 'Done', result }, { savedHead })
   if (rec === null) return null
   if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
     return {
@@ -115,6 +116,29 @@ export interface StatusReading {
   recipeFor?: RecipeFor
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
+  /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
+  savedHeadOf?: (runId: string) => Promise<boolean>
+}
+
+/**
+ * Whether the run's last `RunRefsPublished` left a clean head to continue — the
+ * precondition `GrantFixRound` is offered on, which the recommendation must not
+ * outrun (#652). A stream that will not read is no saved head.
+ */
+async function hasSavedHead(runId: string): Promise<boolean> {
+  try {
+    const saved = (await eventStore.read(runId)).findLast((e) => e.type === 'RunRefsPublished')?.data as
+      | { outcome?: string; branchCarries?: boolean; headSha?: string; branch?: string }
+      | undefined
+    return (
+      (saved?.outcome === 'published' || saved?.outcome === 'already-published') &&
+      saved.branchCarries !== false &&
+      Boolean(saved.headSha) &&
+      Boolean(saved.branch)
+    )
+  } catch {
+    return false
+  }
 }
 
 /** Where one running pass is: its run, and the step and round of the last `StepStarted` (#640). */
@@ -316,6 +340,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         wait?: TaskCard['wait']
         triage?: TaskCard['triage']
         awaitingSha?: string | null
+        savedHead?: boolean
       },
       restarts: number,
     ): StatusRow => {
@@ -357,7 +382,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   needs: words.needs,
                 }),
                 detail: describeWaitLines(words).flatMap((l) => {
-                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage) : null
+                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage, t.savedHead) : null
                   return c === null ? [l.text] : c.advised === null ? [c.rec] : [c.rec, c.advised]
                 }),
                 raw: Boolean(words.diagnosis?.raw),
@@ -378,7 +403,13 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
       known: await Promise.all(
         tasks.map(async (t) => {
-          const row = rowOf(t, t.restarts ?? 0)
+          const conflict =
+            t.wait != null &&
+            t.runId &&
+            t.triage?.result?._tag === 'TriageAdvised' &&
+            t.triage.result.cause._tag === 'ConflictingHunks'
+          const savedHead = conflict ? await (reading.savedHeadOf ?? hasSavedHead)(t.runId as string) : undefined
+          const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
           // Every pass in flight is a row with its step, not only the first (#640).
           if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
             try {
