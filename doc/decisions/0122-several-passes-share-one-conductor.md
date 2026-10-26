@@ -116,6 +116,8 @@ and the dollar ceiling lands before any N > 1.
      ([0108](0108-a-refusal-buys-a-round.md) §11). It needs no
      `holdsAcrossStarts`: a restarted daemon recomputes and pauses again at its
      first check.
+   - A ceiling whose spend cannot be trusted to be current is not checked, and
+     no work is taken.
    - **The overshoot is bounded only as far as the recipe bounds a pass.** The
      figure is `passCeiling`'s (`packages/conductor/src/ceiling.ts`) times the
      slots in flight, and that product counts `implement`'s runs alone: the cold

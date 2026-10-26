@@ -177,7 +177,7 @@ export interface WorkLoopOptions {
    * change while a run is in flight — the point of a pause is that it lands
    * without a restart.
    */
-  paused?: () => Promise<boolean>
+  paused?: () => Promise<boolean | string | null>
   /**
    * Whether somebody has asked the conductor to stop, and why.
    *
@@ -494,11 +494,12 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           options.onShutdown?.(why)
           break
         }
-        if (await options.paused?.()) {
+        const paused = await options.paused?.()
+        if (paused) {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
           // used to sit here was a drain for the outbox's queue.
-          log('paused — taking no work')
+          log(typeof paused === 'string' ? paused : 'paused — taking no work')
           break
         }
         passes += 1
