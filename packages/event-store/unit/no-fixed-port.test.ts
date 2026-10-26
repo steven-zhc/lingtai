@@ -48,9 +48,9 @@ function testFiles(): { file: string; text: string }[] {
 /** `.listen(` calls in `text` whose first argument is a fixed, nonzero port. */
 export function fixedPorts(text: string): string[] {
   const constants = new Set<string>()
-  for (const m of text.matchAll(
-    /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*([1-9]\d*)\s*(?:[;\n]|$)/g,
-  )) {
+  // The number may be followed by anything but more of itself (`as const`, a
+  // trailing comment, `satisfies`), so only a fraction or an identifier tail is out.
+  for (const m of text.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*([1-9]\d*)(?![\w.$])/g)) {
     constants.add(m[1]!)
   }
   // Blank comments and strings in place, keeping every offset and newline, so a
@@ -83,6 +83,10 @@ describe('no test binds a fixed port (0122 §6)', () => {
     expect(fixedPorts('server.listen(\n  8080,\n  "127.0.0.1",\n)')).toHaveLength(1)
     expect(fixedPorts('const PORT = 8080\nserver\n  .listen(\n    PORT,\n  )')).toHaveLength(1)
     expect(fixedPorts('server.listen(\n  0,\n)')).toEqual([])
+    expect(fixedPorts('const PORT = 8080 // test server\nserver.listen(PORT, "127.0.0.1")')).toHaveLength(1)
+    expect(fixedPorts('const PORT = 8080 as const\nserver.listen(PORT)')).toHaveLength(1)
+    expect(fixedPorts('const PORT = 8080; /* x */ server.listen(PORT)')).toHaveLength(1)
+    expect(fixedPorts('const PORT = 0 // any\nserver.listen(PORT)')).toEqual([])
   })
 
   it('holds for every test file', () => {
