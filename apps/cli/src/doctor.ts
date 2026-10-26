@@ -60,7 +60,6 @@ import {
   describeInFlight,
   findOrphans,
   held as heldPasses,
-  inFlight,
   lastBeat,
   readCodeVersion,
   readControl,
@@ -1028,18 +1027,16 @@ export async function daemonLiveness(
   // `draining` says stopping; what it is stopping *for* is the pass, and the
   // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
   // was what this said for both, which is the folding #77 argued against.
-  const held = beat.state === 'draining' ? await inFlight().catch(() => []) : []
-  const stopping = beat.state === 'draining' ? ` — ${describeInFlight(held)}` : ''
+  // A task_view that cannot be read is said so, never passed off as no passes (#640).
+  let held: string[] | null = []
+  if (beat.state === 'draining' || beat.state === 'up') held = await readTasks().then(heldPasses, () => null)
+  const stopping =
+    beat.state === 'draining' ? ` — ${held === null ? 'what is in flight is unreadable' : describeInFlight(held)}` : ''
   // Up with several passes side by side says how many, and one or none stays as it was (#640).
-  // A task_view that cannot be read is said so, never passed off as no passes.
   let side = ''
   if (beat.state === 'up') {
-    try {
-      const running = heldPasses(await readTasks())
-      if (running.length > 1) side = ` — ${running.length} passes in flight`
-    } catch {
-      side = ' — passes in flight unreadable'
-    }
+    if (held === null) side = ' — passes in flight unreadable'
+    else if (held.length > 1) side = ` — ${held.length} passes in flight`
   }
   // The same argument one state along. `starting` is up and taking nothing
   // yet, and saying only `starting` would invite the restart that `#144`'s
