@@ -39,7 +39,36 @@ describe('createSteps', () => {
     steps.progress('still draining after 60s')
     steps.end()
     expect(lines).toEqual(['draining'])
-    expect(events).toEqual(['start:still draining after 30s', 'message:still draining after 60s', 'clear'])
+    expect(events).toEqual([
+      'start:draining…',
+      'message:still draining after 30s',
+      'message:still draining after 60s',
+      'clear',
+    ])
+  })
+
+  it('begins a spinner with the phase, before any progress is reported', () => {
+    const events: string[] = []
+    createSteps(() => {}, { live: true, spinner: fakeSpinner(events) }).begin('starting')
+    expect(events).toEqual(['start:starting…'])
+  })
+
+  it('shows no spinner when colour is off (NO_COLOR, --no-color, TERM=dumb)', () => {
+    const saved = process.env['NO_COLOR']
+    process.env['NO_COLOR'] = '1'
+    const realTty = process.stdout.isTTY
+    process.stdout.isTTY = true
+    try {
+      const events: string[] = []
+      const steps = createSteps(() => {}, { spinner: fakeSpinner(events) })
+      steps.begin('draining')
+      steps.progress('still draining')
+      expect(events).toEqual([])
+    } finally {
+      process.stdout.isTTY = realTty as boolean
+      if (saved === undefined) delete process.env['NO_COLOR']
+      else process.env['NO_COLOR'] = saved
+    }
   })
 
   it('clears a live spinner before the next phase writes its line', () => {
@@ -47,7 +76,7 @@ describe('createSteps', () => {
     const steps = createSteps(() => {}, { live: true, spinner: fakeSpinner(events) })
     steps.progress('waiting')
     steps.begin('checking again')
-    expect(events).toEqual(['start:waiting', 'clear'])
+    expect(events).toEqual(['start:waiting', 'clear', 'start:checking again…'])
   })
 })
 

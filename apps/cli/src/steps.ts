@@ -10,7 +10,7 @@
  * always was — a launchd log and a test's collector are not terminals, and
  * piped output is the same bytes either way (`prompt.ts`).
  */
-import { paint } from '@lingtai/env/colour'
+import { coloured, paint } from '@lingtai/env/colour'
 import ora from 'ora'
 
 import { interactivity, refusal } from './prompt.ts'
@@ -55,7 +55,7 @@ export function oraSpinner(stream: NodeJS.WriteStream = process.stdout): Spinner
 }
 
 export function createSteps(log: (line: string) => void, how: { live?: boolean; spinner?: () => Spinner } = {}): Steps {
-  const live = how.live ?? refusal('', interactivity(false)) === null
+  const live = how.live ?? (refusal('', interactivity(false)) === null && coloured(process.stdout))
   let spinner: Spinner | null = null
   const clear = (): void => {
     spinner?.clear()
@@ -65,6 +65,11 @@ export function createSteps(log: (line: string) => void, how: { live?: boolean; 
     begin(label) {
       clear()
       log(paint.accent(label))
+      // The phase may take a while with nothing else said; the spinner shows it is alive.
+      if (live) {
+        spinner = (how.spinner ?? (() => oraSpinner()))()
+        spinner.start(`${label}…`)
+      }
     },
     progress(line) {
       if (!live) {

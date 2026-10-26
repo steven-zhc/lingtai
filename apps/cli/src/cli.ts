@@ -905,13 +905,17 @@ const uninstallCommand = Command.make(
 // is loaded, and the supervisor's plist still runs that file with `daemon`.
 
 /** Every handler here ends the same way: a thrown error is a sentence and exit 1. */
-function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>) {
+function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>, jsonCommand?: string) {
   return Effect.promise(async () => {
     if (args.noColor) applyNoColor()
     try {
       handlerCode = await run()
     } catch (err) {
-      handlerCode = wizardFailed(err)
+      // A script reading `--json` gets the error document on stdout, not an empty string.
+      handlerCode =
+        jsonCommand === undefined
+          ? wizardFailed(err)
+          : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err))
     }
   })
 }
@@ -1045,11 +1049,15 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
 }
 
 const serviceStatus = Command.make('status', { json, noColor }, (args) =>
-  daemonHandler(args, async () => {
-    const { serviceOptions } = await import('./daemon.ts')
-    const { serviceCommand } = await import('./service.ts')
-    return serviceCommand(['status'], { ...serviceOptions(), json: args.json })
-  }),
+  daemonHandler(
+    args,
+    async () => {
+      const { serviceOptions } = await import('./daemon.ts')
+      const { serviceCommand } = await import('./service.ts')
+      return serviceCommand(['status'], { ...serviceOptions(), json: args.json })
+    },
+    args.json ? 'service status' : undefined,
+  ),
 ).pipe(Command.withDescription('each job on its own: the supervisor, and whether it answers'))
 
 const service = Command.make('service').pipe(

@@ -205,3 +205,13 @@ describe('lingtai pause, shutdown, resume, start', () => {
     expect(seen.calls.map((c) => c.options)).toEqual([{ 'no-conduct': '' }, { 'no-merge': '' }])
   })
 })
+
+describe('service status --json when the handler throws', () => {
+  it('prints the error document on stdout', async () => {
+    const service = await import('../src/service.ts')
+    vi.spyOn(service, 'serviceCommand').mockRejectedValueOnce(new Error('no passwd entry'))
+    const r = await capture(['service', 'status', '--json'])
+    expect(r.code).toBe(1)
+    expect(JSON.parse(r.out.trim())).toMatchObject({ command: 'service status', error: { message: 'no passwd entry' } })
+  })
+})
