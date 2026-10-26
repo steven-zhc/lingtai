@@ -10,7 +10,7 @@ import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { continueTicket } from '../src/claim.ts'
+import { claimTicket, continueTicket } from '../src/claim.ts'
 import { resolveWaitHolding } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
@@ -107,5 +107,20 @@ describe('continueTicket', () => {
     const result = await continueTicket(ticketId, 'pass-4', { store: staleRead })
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'lost-race' } })
+  })
+})
+
+describe('claimTicket under a race', () => {
+  it('two claims for one ticket at once: one is refused by the store, never two runs', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 9)
+
+    const [a, b] = await Promise.all([
+      claimTicket(ticketId, { runId: 'pass-a', store }),
+      claimTicket(ticketId, { runId: 'pass-b', store }),
+    ])
+
+    expect([a.ok, b.ok].sort()).toEqual([false, true])
+    expect((await store.read(ticketId)).filter((e) => e.type === 'TicketClaimed')).toHaveLength(1)
   })
 })

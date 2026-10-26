@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 
-import { currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { createSlots, currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
 import {
   clientsForProjects,
   createStatusTable,
@@ -498,6 +498,9 @@ export async function daemonCommand(
     })
     for (const line of declared.describe()) console.log(line)
 
+    // The passes in flight, held across looks (0122 §1): a look that starts
+    // several returns, and the next look must still know they are running.
+    const slots = createSlots()
     loop = createWorkLoop({
       log: (line) => console.log(line),
       subscribers: () => declared.subscribers(),
@@ -544,7 +547,7 @@ export async function daemonCommand(
             )
           : void drain(why, asked?.timeoutMs ?? null),
 
-      pass: async (reason) => {
+      pass: async (reason, started) => {
         await declared.retry()
         const recipes = new Map<string, Triage | null>()
         const outcome = await conductorPass({
@@ -558,6 +561,7 @@ export async function daemonCommand(
           // pass (#210).
           paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
           log: (line) => console.log(line),
+          ...(started ? { slots: { set: slots, started } } : {}),
           onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
         })
         for (const [project, triage] of recipes) await scanTriage(project, triage)

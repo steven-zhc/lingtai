@@ -3246,6 +3246,15 @@ export const Recipe = z
       tier: Tier.default('guarded'),
       prompt: z.string().optional(),
       /**
+       * How many passes of this project one conductor may keep in flight
+       * ([0122](../../../doc/decisions/0122-several-passes-share-one-conductor.md) §1).
+       *
+       * **Optional and never defaulted**, for the reason `limits.usd` is: `configHash` is
+       * the hash of the resolved recipe, and a default would change it for every project
+       * whose file nobody edited. `concurrencyOf` in `settings.ts` supplies the 1.
+       */
+      concurrency: z.number().int().min(1).optional(),
+      /**
        * What one pass may spend, as one block
        * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
        *

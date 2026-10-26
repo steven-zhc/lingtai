@@ -32,12 +32,20 @@
  * lives in the table rather than in memory precisely so that a daemon crashing
  * on a bad ticket does not come back and spend the money again.
  *
- * ## One pass at a time
+ * ## Looks are serial; passes may not be
  *
- * A pass takes minutes and events arrive during it. Running a second one
- * concurrently would race for the same claim, so an event during a pass sets a
- * flag and the loop goes round again when it finishes — which also collapses a
- * burst of events into one extra pass rather than one each.
+ * A look takes the queue and events arrive during it, so an event during a look
+ * sets a flag and the loop goes round again when it finishes — which also
+ * collapses a burst of events into one extra look rather than one each. Serial
+ * looks are what keep the claim race closed, and the claim's expected-version
+ * append is the backstop ([0122](../../../doc/decisions/0122-several-passes-share-one-conductor.md) §1).
+ *
+ * By default a look awaits its pass, as it always did. When `runtime.concurrency`
+ * asks for more, the look fills free slots, hands each pass it started to
+ * `started` and returns; **a pass settling is what calls for the next look**,
+ * because a pass that ends at the claim appends nothing that would wake one —
+ * unless it resolved `false`, which says it declined before doing any work and a
+ * look would only find the same refusal.
  *
  * ## Stopping is waiting for every pass in flight
  *
@@ -169,7 +177,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: PassReason, started?: (pass: Promise<void>) => void) => Promise<void>
+  pass: (reason: PassReason, started?: (pass: Promise<boolean | void>) => void) => Promise<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -339,6 +347,22 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    */
   let lookInFlight: Promise<void> | null = null
   const passesInFlight = createInFlight()
+  /**
+   * A pass a look started without waiting for. Tracked for the drain, and when it
+   * settles the slot it held is free, so the loop looks again. After `stop()` the
+   * look lapses on `if (stopped) break`.
+   */
+  const started = (pass: Promise<boolean | void>): void => {
+    passesInFlight.track(pass)
+    void pass
+      .then(
+        (worked) => worked !== false,
+        () => false,
+      )
+      .then((worked) => {
+        if (worked && !stopped) void pump('completion')
+      })
+  }
 
   // ------------------------------------------------ the subscriber boundary --
 
@@ -504,7 +528,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         }
         passes += 1
         try {
-          await options.pass(reason, passesInFlight.track)
+          await options.pass(reason, started)
         } catch (err) {
           // A pass that throws must not take the loop with it: the next
           // completion event is exactly when you want it to try again.
