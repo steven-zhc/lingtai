@@ -30,6 +30,7 @@ import { reduceTicket, ticketStream } from '@lingtai/domain'
 import { eventStore, type EventStore } from '@lingtai/event-store'
 
 import { withProjector } from './projector.ts'
+import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface RequeueCommandOptions {
   project: string
@@ -44,39 +45,40 @@ export interface RequeueCommandOptions {
   by?: string
 }
 
-export async function requeueCommand(
+type RequeueDeps = {
+  loadProject?: typeof loadProject
+  client?: IssueChannel
+  store?: EventStore
+  withProjector?: typeof withProjector
+  editBodyAndRequeue?: typeof editBodyAndRequeue
+  requeue?: typeof requeue
+}
+
+export async function requeueVerdict(
   options: RequeueCommandOptions,
-  log = console.log,
-  deps: {
-    loadProject?: typeof loadProject
-    client?: IssueChannel
-    store?: EventStore
-    withProjector?: typeof withProjector
-    editBodyAndRequeue?: typeof editBodyAndRequeue
-    requeue?: typeof requeue
-  } = {},
-): Promise<number> {
+  progress: (line: string) => void,
+  deps: RequeueDeps = {},
+): Promise<Answered> {
   // Checked before the stream is read, so a mistyped project says so. Without
   // it the refusal would be `ticket-lingati-130 is backlog, not blocked`, which is
   // true, unhelpful, and about the wrong mistake.
   const project = await (deps.loadProject ?? loadProject)(options.project)
   if (!project) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-    return 1
+    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
   // Moves a card off the lane the board exists for, so it follows the log while
   // it works — the same reason `lingtai approve` does. See `withProjector`.
-  return (deps.withProjector ?? withProjector)(log, async () => {
+  return (deps.withProjector ?? withProjector)(progress, async (): Promise<Answered> => {
     const by = options.by ?? `human:${userInfo().username}`
     if (options.intoBody !== undefined) {
       const { client } = deps.client ? { client: deps.client } : await projectClient(project)
-      const item = reduceTicket(await (deps.store ?? eventStore).read(ticketStream(options.project, options.issue)))
+      const ticketId = ticketStream(options.project, options.issue)
+      const item = reduceTicket(await (deps.store ?? eventStore).read(ticketId))
       if (item.lifecycle.status !== 'blocked') {
-        log(
-          `${ticketStream(options.project, options.issue)} is ${item.lifecycle.status}, not blocked — nothing was written`,
-        )
-        return 1
+        return refusal(1, 'not-blocked', `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was written`, {
+          ticketId,
+        })
       }
       const outcome = await (deps.editBodyAndRequeue ?? editBodyAndRequeue)({
         project: options.project,
@@ -88,8 +90,7 @@ export async function requeueCommand(
         github: client,
         ...(deps.store ? { store: deps.store } : {}),
       })
-      log(outcome.detail)
-      return outcome.ok ? 0 : 1
+      return fromOutcome(outcome, { written: outcome.written })
     }
     const outcome = await (deps.requeue ?? requeue)({
       project: options.project,
@@ -101,8 +102,14 @@ export async function requeueCommand(
       note: options.note,
       ...(deps.store ? { store: deps.store } : {}),
     })
-
-    log(outcome.detail)
-    return outcome.ok ? 0 : 1
+    return fromOutcome(outcome)
   })
+}
+
+export async function requeueCommand(
+  options: RequeueCommandOptions,
+  log = console.log,
+  deps: RequeueDeps = {},
+): Promise<number> {
+  return logVerdict(VERBS['requeue'], await requeueVerdict(options, log, deps), log)
 }

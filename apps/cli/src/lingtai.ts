@@ -27,7 +27,6 @@ import {
   readStatus,
   recordStart,
   reconcile,
-  requestRun,
   requestShutdown,
   requestShutdownUnlessStanding,
   resumeConductor,
@@ -50,8 +49,6 @@ import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 
 import { parseFlags } from './add.ts'
-import { approveCommand } from './approve.ts'
-import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
 import { backlogCommand } from './backlog.ts'
 import {
@@ -64,19 +61,16 @@ import {
   serveBoard,
   type BoardWorld,
 } from './board.ts'
-import { closeCommand } from './close.ts'
 import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
-import { grantFixRoundCommand } from './grant-fix-round.ts'
 import { commandHelp, rootHelp } from './help.ts'
 import { configPath } from './init.ts'
 import { pauseCommand } from './pause.ts'
 import { rebuildProjection } from './projection.ts'
-import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
   parseRestartArgs,
@@ -868,7 +862,7 @@ async function daemonCommand(
  * a daemon that has been down would replay the backlog before pausing anything.
  * See `withProjector` for the rule and for this exception.
  */
-async function controlCommand(verb: 'pause' | 'resume' | 'shutdown' | 'now', args: string[]): Promise<number> {
+async function controlCommand(verb: 'pause' | 'resume' | 'shutdown', args: string[]): Promise<number> {
   // **`--help` is a question, never an instruction.** `lingtai shutdown --help`
   // took `--help` as the reason and stopped the daemon — asking what a command
   // does by doing it, on the one command whose cost is a running system. Caught
@@ -957,15 +951,8 @@ async function controlCommand(verb: 'pause' | 'resume' | 'shutdown' | 'now', arg
     return 0
   }
 
-  const project = positional[0]
-  const issue = flags['issue'] ?? positional[1]
-  if (!project || !issue) {
-    console.error('lingtai now <project> --issue <n>')
-    return 2
-  }
-  await requestRun(project, issue, by)
-  console.log(`requested ${project} #${issue}`)
-  return 0
+  // `controlCommand` has no other verb: `now` is `@effect/cli`'s since #621.
+  return verb satisfies never
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -1019,88 +1006,8 @@ async function main(argv: string[]): Promise<number> {
         merge: !('no-merge' in flags),
       })
     }
-    case 'grant-fix-round': {
-      const { positional, flags } = parseFlags(rest)
-      const issue = Number(flags['issue'])
-      if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]')
-        return 2
-      }
-      if ('if-head' in flags && !flags['if-head']) {
-        console.error('--if-head takes the displayed commit SHA')
-        return 2
-      }
-      return grantFixRoundCommand({ project: positional[0], issue, ifHead: flags['if-head'] })
-    }
-    case 'approve': {
-      const { positional, flags } = parseFlags(rest)
-      const issue = Number(flags['issue'])
-      if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai approve <project> --issue <n> [--note <text>]')
-        return 2
-      }
-      if ('reject' in flags) {
-        // Gone (#150): it revoked the approval and put the run straight back
-        // into `awaiting-approval`, so the wait it seemed to end went on.
-        console.error('--reject is gone: it asked the same question again and ended nothing.')
-        console.error(`lingtai requeue ${positional[0]} --issue ${issue} ends the wait with a new run`)
-        return 2
-      }
-      return approveCommand({ project: positional[0], issue, note: flags['note'] })
-    }
     case 'backlog':
       return backlogCommand(rest)
-    case 'requeue': {
-      const { positional, flags } = parseFlags(rest)
-      const issue = Number(flags['issue'])
-      if (!positional[0] || !Number.isInteger(issue)) {
-        console.error('lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]')
-        return 2
-      }
-      if ('into-body' in flags && !flags['into-body']?.trim()) {
-        console.error('--into-body takes text')
-        return 2
-      }
-      // `--note` left off and `--note` with nothing after it both parse as the
-      // empty string, and both are recorded as `""` — not defaulted here or
-      // there (#424).
-      return requeueCommand({
-        project: positional[0],
-        issue,
-        note: flags['note'] ?? '',
-        ...('into-body' in flags ? { intoBody: flags['into-body'] } : {}),
-      })
-    }
-    case 'ask':
-    case 'answer': {
-      const { positional, flags } = parseFlags(rest)
-      const issue = Number(flags['issue'])
-      const usage =
-        command === 'ask'
-          ? `lingtai ask <project> --issue <n> "<question>"`
-          : `lingtai answer <project> --issue <n> "<choice>"`
-      if (!positional[0] || !Number.isInteger(issue)) {
-        console.error(usage)
-        return 2
-      }
-      // Everything after the project is the sentence, so an unquoted one still
-      // arrives whole. Blank is refused by the command, not defaulted here.
-      const text = positional.slice(1).join(' ')
-      const options = { project: positional[0], issue, text }
-      return command === 'ask' ? askCommand(options) : answerCommand(options)
-    }
-    case 'close': {
-      const { positional, flags } = parseFlags(rest)
-      const issue = Number(flags['issue'])
-      if (!positional[0] || !Number.isInteger(issue)) {
-        console.error(`lingtai close <project> --issue <n> "<reason>"`)
-        return 2
-      }
-      // Everything after the project is the reason, as `ask` takes its question:
-      // an unquoted sentence still arrives whole, and blank is refused by the
-      // command rather than defaulted here.
-      return closeCommand({ project: positional[0], issue, reason: positional.slice(1).join(' ') })
-    }
     case 'ticket': {
       const [verb, ...ticketRest] = rest
       const { positional, flags } = parseFlags(ticketRest)
@@ -1258,8 +1165,6 @@ async function main(argv: string[]): Promise<number> {
       return controlCommand('resume', rest)
     case 'shutdown':
       return controlCommand('shutdown', rest)
-    case 'now':
-      return controlCommand('now', rest)
     case 'projection':
       return projectionCommand(rest)
     // `entry.ts` answers this before the log is loaded; here for a process
@@ -1267,12 +1172,19 @@ async function main(argv: string[]): Promise<number> {
     case 'version':
       console.log(versionLine())
       return 0
-    // `init`, `add`, `status` and `doctor` are `@effect/cli`'s (#618, #619, #620) and `entry.ts` routes
+    // `init`, `add`, `status`, `doctor` and the commands that answer a wait are `@effect/cli`'s (#618, #619, #620, #621) and `entry.ts` routes
     // them there; they are named here only because the command list is exhaustive.
     case 'init':
     case 'add':
     case 'status':
     case 'doctor':
+    case 'approve':
+    case 'requeue':
+    case 'grant-fix-round':
+    case 'close':
+    case 'answer':
+    case 'ask':
+    case 'now':
       console.error(`lingtai ${command} runs from the entry — pnpm lingtai ${command}, or the installed lingtai`)
       return 2
     // The same: `entry.ts` answers these before the log is loaded (`install.ts`).

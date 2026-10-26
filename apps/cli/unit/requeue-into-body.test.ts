@@ -48,7 +48,7 @@ describe('requeue command', () => {
       },
     )
     expect(code).toBe(0)
-    expect(lines).toContain('back in the queue, and the answer is in the body')
+    expect(lines.join('\n')).toContain('back in the queue, and the answer is in the body')
     expect((await tickets.getIssue(1)).body).toContain('Use the small helper')
     expect((await store.read(ticketId)).find((e) => e.type === 'WaitResolved')?.data).toMatchObject({
       waitId,

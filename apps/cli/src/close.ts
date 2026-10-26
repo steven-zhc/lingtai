@@ -26,6 +26,7 @@ import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubApp } from '@lingtai/env'
 
 import { withProjector } from './projector.ts'
+import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface CloseCommandOptions {
   project: string
@@ -35,41 +36,41 @@ export interface CloseCommandOptions {
   by?: string
 }
 
-export function closeCommand(options: CloseCommandOptions, log = console.log): Promise<number> {
-  return (async () => {
-    if (!options.reason.trim()) {
-      log(`lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
-      return 2
-    }
+export async function closeVerdict(options: CloseCommandOptions, progress: (line: string) => void): Promise<Answered> {
+  if (!options.reason.trim()) {
+    return refusal(2, 'blank', `lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
+  }
 
-    const project = await loadProject(options.project)
-    if (!project?.owner) {
-      log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-      return 1
-    }
-    if (!hasGitHubApp()) {
-      log(
-        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
-      )
-      return 1
-    }
+  const project = await loadProject(options.project)
+  if (!project?.owner) {
+    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+  }
+  if (!hasGitHubApp()) {
+    return refusal(
+      1,
+      'no-github-app',
+      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+    )
+  }
 
-    const { client, resolved } = await projectClient(project)
+  const { client, resolved } = await projectClient(project)
 
-    return withProjector(log, async () => {
-      // The local account, as `requeue`, `ask` and the board record it (0007).
-      const by = options.by ?? `human:${userInfo().username}`
-      const outcome = await close({
-        project: options.project,
-        issue: options.issue,
-        reason: options.reason,
-        by,
-        state: project,
-        client,
-        recipe: async () => resolved,
-      })
-      log(outcome.detail)
-      return outcome.ok ? 0 : 1
+  return withProjector(progress, async (): Promise<Answered> => {
+    // The local account, as `requeue`, `ask` and the board record it (0007).
+    const by = options.by ?? `human:${userInfo().username}`
+    const outcome = await close({
+      project: options.project,
+      issue: options.issue,
+      reason: options.reason,
+      by,
+      state: project,
+      client,
+      recipe: async () => resolved,
     })
-  })()
+    return fromOutcome(outcome)
+  })
+}
+
+export async function closeCommand(options: CloseCommandOptions, log = console.log): Promise<number> {
+  return logVerdict(VERBS['close'], await closeVerdict(options, log), log)
 }

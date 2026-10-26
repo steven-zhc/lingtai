@@ -17,6 +17,7 @@ import { userInfo } from 'node:os'
 import { answer, ask, loadProject } from '@lingtai/conductor'
 
 import { withProjector } from './projector.ts'
+import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface AskCommandOptions {
   project: string
@@ -29,42 +30,49 @@ export interface AskCommandOptions {
 async function decide(
   verb: 'ask' | 'answer',
   options: AskCommandOptions,
-  log: (line: string) => void,
-): Promise<number> {
+  progress: (line: string) => void,
+): Promise<Answered> {
   // Refused here and not defaulted, for the reason `requeue` refuses an empty
   // note: a question nobody wrote holds a ticket for nothing, and an answer
   // nobody wrote is a block overruled in silence.
   if (!options.text.trim()) {
-    log(
+    return refusal(
+      2,
+      'blank',
       verb === 'ask'
         ? `lingtai ask <project> --issue <n> "<question>" — the question is the whole of the hold`
         : `lingtai answer <project> --issue <n> "<choice>" — the answer is what every attempt is told`,
     )
-    return 2
   }
 
   const project = await loadProject(options.project)
   if (!project) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-    return 1
+    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
-  return withProjector(log, async () => {
+  return withProjector(progress, async (): Promise<Answered> => {
     // The local account, as `requeue` and the board record it (0007).
     const by = options.by ?? `human:${userInfo().username}`
     const outcome =
       verb === 'ask'
         ? await ask({ project: options.project, issue: options.issue, question: options.text, by })
         : await answer({ project: options.project, issue: options.issue, answer: options.text, by })
-    log(outcome.detail)
-    return outcome.ok ? 0 : 1
+    return fromOutcome(outcome)
   })
 }
 
-export function askCommand(options: AskCommandOptions, log = console.log): Promise<number> {
-  return decide('ask', options, log)
+export function askVerdict(options: AskCommandOptions, progress: (line: string) => void): Promise<Answered> {
+  return decide('ask', options, progress)
 }
 
-export function answerCommand(options: AskCommandOptions, log = console.log): Promise<number> {
-  return decide('answer', options, log)
+export function answerVerdict(options: AskCommandOptions, progress: (line: string) => void): Promise<Answered> {
+  return decide('answer', options, progress)
+}
+
+export async function askCommand(options: AskCommandOptions, log = console.log): Promise<number> {
+  return logVerdict(VERBS['ask'], await askVerdict(options, log), log)
+}
+
+export async function answerCommand(options: AskCommandOptions, log = console.log): Promise<number> {
+  return logVerdict(VERBS.answer, await answerVerdict(options, log), log)
 }

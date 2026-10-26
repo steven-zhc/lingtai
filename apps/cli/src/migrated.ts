@@ -6,7 +6,20 @@
  * in `MIGRATED_COMMANDS` is never shown to `@effect/cli` — it would add
  * `--version`, `--help` and `--wizard` to commands that have their own answer.
  */
-export const MIGRATED_COMMANDS = ['version', 'status', 'doctor', 'init', 'add'] as const
+export const MIGRATED_COMMANDS = [
+  'version',
+  'status',
+  'doctor',
+  'init',
+  'add',
+  'approve',
+  'requeue',
+  'grant-fix-round',
+  'close',
+  'answer',
+  'ask',
+  'now',
+] as const
 
 /** `upgrade`, `rollback`, `uninstall` — answered by `install.ts` before `lingtai.ts` is imported. */
 export const INSTALL_ONLY = ['upgrade', 'rollback', 'uninstall'] as const
