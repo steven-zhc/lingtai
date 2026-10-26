@@ -103,6 +103,7 @@ replaces.
 | [0118](decisions/0118-a-hold-explains-itself.md)                          | **Waiting on you** — every wait is one `WaitReason`, says what is asked and what each resolution does; triage's advice is an event, the person's resolution is the decision, an answer is written into the body, and an approval continues the run | accepted; not yet built      |
 | [0120](decisions/0120-a-reason-is-a-type.md)                              | **Reasons are types** — an action is typed by what it yields, a step ends as one `StepEnded`, `proposed` chooses among offered candidates, every next move is one `PassNext`, and the decisions are pure functions                                 | accepted; not yet built      |
 | [0121](decisions/0121-the-cli-output-and-input-contract.md)               | **The CLI contract** — one layout, the board's palette, plain output without colour or a TTY, `--json` as one versioned document, help generated from each command's definition and grouped four ways                                              | accepted; not yet built      |
+| [0122](decisions/0122-several-passes-share-one-conductor.md)              | **Several passes, one conductor** — slots per project, tickets that collide never run together, one landing at a time, a drain waits for every pass, and a daily dollar ceiling that stops new work and kills nothing                              | accepted; not yet built      |
 
 ## Experiments
 
