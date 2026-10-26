@@ -145,15 +145,20 @@ jobs:
         run: |
           node packages/domain/scripts/events.ts --ref "${{ github.ref_name }}"
           cp doc/events.json artifacts/events.json
-          # The previous release is the nearest ancestor tag that was published,
-          # not the nearest tag: a tag whose publish failed has no release. Every
-          # gh call is an assignment, so a failed lookup fails the step (-e)
-          # instead of reading as "no earlier manifest".
+          # The previous release is the highest-versioned tag below this one that
+          # has a published release, whether or not it is an ancestor (a release
+          # branch's tag counts) and whatever happened to the tags in between: a
+          # tag whose publish failed has no release and is passed over. Every gh
+          # call is an assignment, so a failed lookup fails the step (-e) instead
+          # of reading as "no earlier manifest".
           published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName --jq '.[].tagName')
-          ancestors=$(git tag --merged "${{ github.ref_name }}^" --list 'v*' --sort=-creatordate)
+          tags=$(git tag --list 'v*' --sort=-v:refname)
           prev=
-          for t in $ancestors; do
-            if printf '%s\n' "$published" | grep -qx "$t"; then
+          seen=
+          for t in $tags; do
+            if [ "$t" = "${{ github.ref_name }}" ]; then
+              seen=1
+            elif [ -n "$seen" ] && printf '%s\n' "$published" | grep -qx "$t"; then
               prev=$t
               break
             fi
