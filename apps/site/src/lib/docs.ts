@@ -55,7 +55,8 @@ export const DOCS_PUBLIC = false
 /**
  * What is public while `DOCS_PUBLIC` is off: the tutorial, which is the way in for
  * somebody about to install Lingtai, `requirements` — the page the tutorial sends a
- * first-time installer to for everything else Lingtai needs — and `plugins` — the parent page and the
+ * first-time installer to for everything else Lingtai needs — `cli` — the generated
+ * command guide the tutorial ends on (#545) — and `plugins` — the parent page and the
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
@@ -64,7 +65,7 @@ export const DOCS_PUBLIC = false
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ['tutorial', 'requirements', 'from-symphony', 'plugins']
+export const PUBLIC_SLUGS = ['tutorial', 'cli', 'requirements', 'from-symphony', 'plugins']
 
 export function isPublicSlug(slug: string): boolean {
   return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`))
@@ -106,6 +107,7 @@ export const SECTIONS: Section[] = [
     note: 'Written to be read in order. Start at the tutorial.',
     files: [
       'tutorial.md',
+      'cli.md',
       'requirements.md',
       'from-symphony.md',
       'guide.md',

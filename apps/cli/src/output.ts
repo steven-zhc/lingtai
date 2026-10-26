@@ -106,9 +106,12 @@ export function table(
   return [line(header.map((h) => paint.muted(h))), ...rows.map(line)]
 }
 
+/** The schema `version` every `--json` document carries; `doc/cli.json` reads it from here (#545). */
+export const JSON_VERSION = 1
+
 /** The one document `--json` prints: 0121 §5's schema `version`, the command, then the body. */
 export function jsonDocument(command: string, body: Record<string, unknown>): string {
-  return JSON.stringify({ version: 1, command, ...body })
+  return JSON.stringify({ version: JSON_VERSION, command, ...body })
 }
 
 export function jsonErrorDocument(command: string, code: string, message: string): string {
