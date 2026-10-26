@@ -43,6 +43,14 @@ describe('the generated CLI guide', () => {
     for (const c of manifest.commands) expect(c.json !== null).toBe(c.flags.includes('--json'))
   })
 
+  it('promises --json on a verdict only where every invocation shows it', () => {
+    const page = renderCliPage(manifest)
+    const section = (name: string): string => page.split(`### lingtai ${name}\n`)[1]!.split('\n### ')[0]!
+    expect(section('env')).not.toContain('on its verdict')
+    expect(section('env')).toContain('only on the invocations that show it')
+    expect(section('approve')).toContain('on its verdict')
+  })
+
   it('has no flag in its usage prose that the parser does not take', () => {
     for (const c of manifest.commands) {
       // a line that runs another tool (`pnpm --filter …`) names that tool's flags, not ours

@@ -105,11 +105,25 @@ export function renderManifest(manifest: Manifest): string {
 
 const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
 
-function effectLine(c: ManifestCommand): string {
-  if (c.effect === 'reads') {
-    return c.json === null ? 'Reads only.' : `Reads only — takes \`--json\` (version ${c.json}).`
+/** Whether every invocation in `usage` names `--json` — a block is a `lingtai …` line and what is indented beneath it. */
+function jsonOnEveryInvocation(usage: readonly string[]): boolean {
+  const blocks: string[] = []
+  for (const line of usage) {
+    if (line.startsWith('lingtai ') || blocks.length === 0) blocks.push(line)
+    else blocks[blocks.length - 1] += `\n${line}`
   }
-  return c.json === null ? 'Changes state.' : `Changes state — \`--json\` on its verdict (version ${c.json}).`
+  return blocks.every((block) => block.includes('--json'))
+}
+
+function effectLine(c: ManifestCommand): string {
+  const lead = c.effect === 'reads' ? 'Reads only' : 'Changes state'
+  if (c.json === null) return `${lead}.`
+  if (!jsonOnEveryInvocation(c.usage)) {
+    return `${lead} — \`--json\` only on the invocations that show it below (version ${c.json}).`
+  }
+  return c.effect === 'reads'
+    ? `${lead} — takes \`--json\` (version ${c.json}).`
+    : `${lead} — \`--json\` on its verdict (version ${c.json}).`
 }
 
 /** The page: a function of the manifest alone. Headings carry no backticks, so the anchor is `lingtai-<name>`. */

@@ -142,7 +142,7 @@ lingtai attach <runId>
 
 The minor findings passing steps raised.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai backlog [<project>] [--all] [--json] [--no-color]
@@ -165,7 +165,7 @@ lingtai backlog accept lingtai <findingId> --kind tech-debt
 
 A project’s own tickets, where the recipe keeps them.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai ticket list [--all] [--project <p>] [--json] [--no-color]
@@ -194,7 +194,7 @@ lingtai ticket new --project lingtai
 
 Serve, stop or inspect the board.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai board start [--port <n>] [--dir <path>] [--no-open]
@@ -226,7 +226,7 @@ lingtai board status
 
 The values a project’s agents are given.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai env set <project> KEY=VALUE
@@ -426,7 +426,7 @@ lingtai daemon --no-conduct
 
 Keep the daemon and the board running.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai service install|start|shutdown [why]|restart [why]|uninstall
@@ -679,7 +679,7 @@ lingtai doctor --json
 
 How far projections lag, and rebuild one.
 
-Changes state — `--json` on its verdict (version 1).
+Changes state — `--json` only on the invocations that show it below (version 1).
 
 ```text
 lingtai projection lag [--json] [--no-color]
