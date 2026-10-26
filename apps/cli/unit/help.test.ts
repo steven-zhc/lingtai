@@ -12,7 +12,7 @@ const ADR_GROUPS: Record<(typeof GROUPS)[number], string[]> = {
   everyday: ['add', 'run', 'status', 'now', 'attach', 'backlog', 'ticket', 'board', 'env', 'end'],
   'waiting on you': ['approve', 'answer', 'ask', 'grant-fix-round', 'requeue', 'close'],
   daemon: ['start', 'daemon', 'service', 'restart', 'shutdown', 'pause', 'resume'],
-  'install and upkeep': ['init', 'version', 'upgrade', 'rollback', 'uninstall', 'doctor', 'projection'],
+  'install and upkeep': ['init', 'version', 'upgrade', 'rollback', 'uninstall', 'doctor', 'projection', 'events'],
 }
 
 const saved = { ...process.env }
