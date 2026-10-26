@@ -122,9 +122,13 @@ and the dollar ceiling lands before any N > 1.
      reviewer's and a judge's calls are outside it, and `runtime.limits.usd` is
      optional. So the daily ceiling is a bound on when new work stops being
      taken, not on the day's total; what a pass spends after the ceiling is
-     reached is whatever its own limits allow. An operator who wants a number
-     sets `runtime.limits.usd` on every step that dispatches and budgets slots ×
-     that figure over the ceiling. That is the price of never killing a pass.
+     reached is whatever its own limits allow, and **Lingtai states no figure for
+     it**: `passCeiling` is `implement`'s alone, so slots × that figure is not a
+     bound. An operator who wants one adds up `runtime.limits.usd` over every
+     step that dispatches (the implementation rounds, the cold reviewer, a judge)
+     for one pass, and multiplies by the slots in flight; a step with no
+     `runtime.limits.usd` makes the sum unbounded. That is the price of never
+     killing a pass.
 
 6. **Per pass, and shared.**
 
