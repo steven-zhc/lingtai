@@ -64,6 +64,12 @@ describe('lingtai env', () => {
     expect(r.seen).toEqual([])
   })
 
+  it('answers a missing project under --json with the usage error document on stdout', async () => {
+    const a = await capture(['env', 'list', '--json'], { env: recording<unknown>().run })
+    expect(a.code).toBe(2)
+    expect(JSON.parse(a.out)).toMatchObject({ command: 'env list', error: { code: 'usage' } })
+  })
+
   it('answers a read that threw with the error document under --json, exit 1', async () => {
     const a = await capture(['env', 'list', 'nope', '--json'], {
       env: async () => {
@@ -118,6 +124,8 @@ describe('lingtai projection', () => {
     const asJson = await capture(['projection', 'run', '--json'], { projection: r.run })
     expect(asJson.code).toBe(2)
     expect(JSON.parse(asJson.out).error.code).toBe('usage')
+    const plain = await capture(['projection', 'run', '--no-color'], { projection: r.run })
+    expect(plain.err).not.toContain(ESC)
     expect(r.seen).toEqual([])
   })
 })

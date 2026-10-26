@@ -773,8 +773,10 @@ const backlogCommand = Command.make('backlog', {}, () =>
 const envProject = Args.text({ name: 'project' }).pipe(Args.optional)
 
 /** `env` is the parent of three verbs and answers none itself: its usage, exit 2, as a missing verb always was. */
-function envUsage(): void {
-  console.error(ENV_USAGE)
+function envUsage(json = false, command = 'env'): void {
+  // Under --json the failure is the error document on stdout, as everywhere else (0121 §5).
+  if (json) printJsonError(command, 'usage', ENV_USAGE)
+  else console.error(ENV_USAGE)
   handlerCode = 2
 }
 
@@ -782,7 +784,7 @@ const envList = Command.make('list', { project: envProject, json, noColor }, (ar
   Effect.promise(async () => {
     if (args.noColor) applyNoColor()
     const project = given(args.project)
-    if (!project) return envUsage()
+    if (!project) return envUsage(args.json, 'env list')
     await guarded('env list', () => runners.env({ verb: 'list', project, json: args.json }), args.json)
   }),
 )
@@ -1030,6 +1032,7 @@ export async function runCli(
     // Gone, and answered by name rather than by a usage error. It was another name for
     // `lingtai daemon`, and two names for one process is how "why is the board stale" gets a
     // different answer depending on which name you happened to learn (0022).
+    if (args.includes('--no-color')) applyNoColor()
     const sentence =
       'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.'
     if (args.some(jsonOn)) printJsonError('projection', 'usage', sentence)
