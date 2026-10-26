@@ -844,6 +844,39 @@ export function machineBoardPort(
   return Option.getOrUndefined(written.right)
 }
 
+/**
+ * `limits.day_usd`, the most one local calendar day may spend, in dollars — or
+ * undefined where nothing names one (0122 §5). `LINGTAI_LIMITS_DAY_USD` exported,
+ * over `limits.day_usd` in `~/.lingtai/config.yml`.
+ *
+ * Read on every call, so a raised figure is seen without a restart. A value
+ * that is not a positive number is refused by name rather than ignored: a
+ * ceiling that quietly became no ceiling reads as a guarantee it is not.
+ */
+export function machineDayCeiling(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): number | undefined {
+  const ceiling = Config.option(Config.nested(Config.number('day_usd'), 'limits'))
+  const positive = (n: number) => Number.isFinite(n) && n > 0
+  const exported = readConfig(ceiling, environmentProvider(from))
+  if (Either.isLeft(exported) || (Option.isSome(exported.right) && !positive(exported.right.value))) {
+    throw new Error(
+      `${PREFIX}LIMITS_DAY_USD is not a positive number of dollars, so no ceiling was read — unset it or correct it`,
+    )
+  }
+  if (Option.isSome(exported.right)) return exported.right.value
+  if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its limits.day_usd could not be read`)
+  const written = readConfig(ceiling, file.provider)
+  if (Either.isLeft(written) || (Option.isSome(written.right) && !positive(written.right.value))) {
+    throw new Error(
+      `${file.path} sets limits.day_usd to something that is not a positive number of dollars, so no ceiling was read — ` +
+        `correct it or take that line out for no ceiling`,
+    )
+  }
+  return Option.getOrUndefined(written.right)
+}
+
 /** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
 export function boardPort(from: NodeJS.ProcessEnv = process.env, file?: MachineFile): number {
   return machineBoardPort(from, file) ?? BOARD_PORT

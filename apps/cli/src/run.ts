@@ -62,6 +62,7 @@ import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
+import { dayCeilingStop } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 
@@ -167,7 +168,9 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
 const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
   try {
     const control = await readControl(store)
-    return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null
+    if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
+    // The daily ceiling, asked here and so before a claim, never inside a pass.
+    return await dayCeilingStop(store)
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }

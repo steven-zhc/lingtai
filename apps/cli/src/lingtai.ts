@@ -46,6 +46,7 @@ import { parseFlags } from './add.ts'
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
+import { dayCeilingStop } from './day-ceiling.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { commandHelp, rootHelp } from './help.ts'
@@ -522,7 +523,7 @@ async function daemonCommand(
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
-      paused: async () => (await readControl(undefined, since)).paused,
+      paused: async () => (await readControl(undefined, since)).paused || (await dayCeilingStop(undefined)) !== null,
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
@@ -569,7 +570,7 @@ async function daemonCommand(
           paused: async () => {
             try {
               const c = await readControl(undefined, since)
-              return c.paused ? `paused by ${c.by} — ${c.reason}` : null
+              return c.paused ? `paused by ${c.by} — ${c.reason}` : await dayCeilingStop(undefined)
             } catch (err) {
               // Not "not paused": a pause that could not be read is not consent.
               return `could not read whether the conductor is paused: ${(err as Error).message}`

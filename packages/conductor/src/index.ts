@@ -142,3 +142,14 @@ export {
   type EditBodyAndRequeueResult,
   type WriteSectionResult,
 } from './edit-body.ts'
+export {
+  ceilingReached,
+  dayCeilingPause,
+  daySpend,
+  daySpendText,
+  nextLocalMidnight,
+  startOfLocalDay,
+  type DayCeilingOptions,
+  type DayRow,
+  type DaySpend,
+} from './day-ceiling.ts'

@@ -23,6 +23,7 @@ import { paint, stateInk } from '@lingtai/env/colour'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
+import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 
 export interface StatusOptions {
@@ -87,6 +88,8 @@ export function armLine(row: { restarts?: number }, restartsOf: number | null): 
 export interface StatusReading {
   clientFor?: ClientFor
   recipeFor?: RecipeFor
+  /** Today's spend against the ceiling, in the one sentence. */
+  spendLine?: () => Promise<string>
 }
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */
@@ -158,6 +161,8 @@ export interface StatusReport {
   projects: ProjectStatus[]
   /** The one-line answer when there is nothing to report on. */
   message: string | null
+  /** Today's spend across every project, and how much of it is unknown (#637). */
+  spend?: string
 }
 
 /** `verifying` folds into `running`: from an operator's seat they are the same fact. */
@@ -320,7 +325,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       known: tasks.map((t) => rowOf(t, t.restarts ?? 0)),
     })
   }
-  return { projects: out, message: null }
+  return { projects: out, message: null, spend: await (reading.spendLine ?? daySpendLine)() }
 }
 
 /** The state column: the wait's words, the clock, the absence — and the arm, muted. */
@@ -347,6 +352,7 @@ export function renderStatus(
 ): string[] {
   if (report.message !== null) return [report.message]
   const blocks: string[] = []
+  if (report.spend !== undefined) blocks.push(section('Spend', [report.spend]))
   for (const p of report.projects) {
     const lines: string[] = [heading(p.project), '']
     lines.push(
@@ -421,6 +427,7 @@ const rowJson = (r: StatusRow): Record<string, unknown> => ({
 /** The body `--json` wraps in `{ version, command }` (0121 §5). */
 export function statusJson(report: StatusReport): Record<string, unknown> {
   return {
+    ...(report.spend === undefined ? {} : { spend: report.spend }),
     projects: report.projects.map((p) => {
       const byState: Record<string, unknown[]> = {}
       for (const t of p.known)
