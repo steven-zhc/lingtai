@@ -36,150 +36,199 @@ export const APPEND_CALLEES: ReadonlySet<string> = new Set([
 export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-'
 
 /**
- * Appends the finder cannot see, one row per site; `site` is `path.ts:line` and
- * that line must hold the event's name as a quoted string
- * (`packages/domain/unit/events-json.test.ts` checks it). A row whose event the
- * finder now finds fails the test, so this table cannot go stale in that
- * direction.
+ * Appends the finder cannot see, one row per site. A row finds its line by
+ * `anchor`, a piece of one line of `file` that occurs exactly once in it, and
+ * that line must hold the event's name as a quoted string — never by a line
+ * number, which every unrelated edit above it would move (#651). If the line
+ * names the event only as part of something not unique, put a trailing comment
+ * on it and anchor on that. `packages/domain/unit/events-json.test.ts` checks
+ * both, and `generate` refuses an anchor that does not occur exactly once. A
+ * row whose event the finder now finds fails the test, so this table cannot go
+ * stale in that direction.
  */
-export const ELSEWHERE: readonly { event: EventType; why: string; site: string }[] = [
+export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {
     event: 'ConductorResumed',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:163',
+    file: 'packages/daemon/src/control.ts',
+    anchor: "await append('ConductorResumed', { by }, store)",
   },
   {
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:183',
+    file: 'packages/daemon/src/control.ts',
+    anchor: "return append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)",
   },
   {
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:219',
+    file: 'packages/daemon/src/control.ts',
+    anchor:
+      "const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, events.length)",
   },
   {
     event: 'ConductorShutdownWithdrawn',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:349',
+    file: 'packages/daemon/src/control.ts',
+    anchor: "'ConductorShutdownWithdrawn',",
   },
   {
     event: 'ConductorStarted',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:258',
+    file: 'packages/daemon/src/control.ts',
+    anchor: "'ConductorStarted',",
   },
   {
     event: 'RunRequested',
     why: "type is the call's first argument, a string",
-    site: 'packages/daemon/src/control.ts:402',
+    file: 'packages/daemon/src/control.ts',
+    anchor: "await append('RunRequested', { project, issue, by }, store)",
   },
   {
     event: 'DiscussionAsked',
     why: "type is a string argument of the module's own `append`",
-    site: 'packages/conductor/src/discuss.ts:503',
+    file: 'packages/conductor/src/discuss.ts',
+    anchor: "await append(ports.store, stream, before.length, options.by, 'DiscussionAsked', {",
   },
   {
     event: 'DiscussionAnswered',
     why: "type is a string argument of the module's own `append`",
-    site: 'packages/conductor/src/discuss.ts:533',
+    file: 'packages/conductor/src/discuss.ts',
+    anchor: "append(ports.store, stream, -1, `agent:${options.chatId}`, 'DiscussionAnswered', {",
   },
   {
     event: 'EndActionsResolved',
     why: 'the event is built, then handed on',
-    site: 'packages/conductor/src/end-step.ts:147',
+    file: 'packages/conductor/src/end-step.ts',
+    anchor: "type: 'EndActionsResolved',",
   },
   {
     event: 'IntegrationAttempted',
     why: "type is a string argument of the module's own `append`",
-    site: 'packages/repo/src/integrate.ts:655',
+    file: 'packages/repo/src/integrate.ts',
+    anchor: "append('IntegrationAttempted', {",
   },
   {
     event: 'IntegrationRefused',
     why: "type is a string argument of the module's own `append`",
-    site: 'packages/repo/src/integrate.ts:272',
+    file: 'packages/repo/src/integrate.ts',
+    anchor: "await append('IntegrationRefused', {",
   },
   {
     event: 'IntegrationSucceeded',
     why: "type is a string argument of the module's own `append`",
-    site: 'packages/repo/src/integrate.ts:290',
+    file: 'packages/repo/src/integrate.ts',
+    anchor: "await append('IntegrationSucceeded', {",
   },
   {
     event: 'IssueUpdated',
     why: 'type is a string argument of `record`',
-    site: 'packages/conductor/src/edit-body.ts:114',
+    file: 'packages/conductor/src/edit-body.ts',
+    anchor: "await record(store, ticketId, 'IssueUpdated', {",
   },
   {
     event: 'IssueUpdateFailed',
     why: 'type is a string argument of `record`',
-    site: 'packages/conductor/src/tell.ts:202',
+    file: 'packages/conductor/src/tell.ts',
+    anchor: "'IssueUpdateFailed', // the update threw",
   },
-  { event: 'PassRouted', why: 'the event is built, then handed on', site: 'packages/conductor/src/conduct.ts:4055' },
+  {
+    event: 'PassRouted',
+    why: 'the event is built, then handed on',
+    file: 'packages/conductor/src/conduct.ts',
+    anchor: "type: 'PassRouted' as const,",
+  },
   {
     event: 'ProjectRecovered',
     why: 'returned from a function; the caller appends it',
-    site: 'packages/domain/src/project.ts:185',
+    file: 'packages/domain/src/project.ts',
+    anchor:
+      "return { type: 'ProjectRecovered', actor: 'conductor', data: { project, ref: seen.ref, codeSha: seen.codeSha } }",
   },
   {
     event: 'ProjectRefused',
     why: 'returned from a function; the caller appends it',
-    site: 'packages/domain/src/project.ts:197',
+    file: 'packages/domain/src/project.ts',
+    anchor: "type: 'ProjectRefused',",
   },
   {
     event: 'RunAwaitingInput',
     why: 'type is a string argument of the hook socket’s `append`',
-    site: 'packages/agent/src/hook-socket.ts:249',
+    file: 'packages/agent/src/hook-socket.ts',
+    anchor: "await append(run, 'RunAwaitingInput', { prompt: prompt.slice(0, 2_000) }).catch(() => {})",
   },
   {
     event: 'RunContextExhausted',
     why: 'type is a string argument of the hook socket’s `append`',
-    site: 'packages/agent/src/hook-socket.ts:241',
+    file: 'packages/agent/src/hook-socket.ts',
+    anchor: "await append(run, 'RunContextExhausted', { turn: run.calls }).catch(() => {})",
   },
   {
     event: 'RunPrompted',
     why: 'type is a string argument of the hook socket’s `append`',
-    site: 'packages/agent/src/hook-socket.ts:230',
+    file: 'packages/agent/src/hook-socket.ts',
+    anchor: "await append(run, 'RunPrompted', { promptVersion: run.promptVersion, bytes, prompt }).catch(() => {",
   },
   {
     event: 'RunTouchedFile',
     why: 'type is a string argument of the hook socket’s `append`',
-    site: 'packages/agent/src/hook-socket.ts:326',
+    file: 'packages/agent/src/hook-socket.ts',
+    anchor: "await append(run, 'RunTouchedFile', t)",
   },
   {
     event: 'RunProducedDiff',
     why: 'the array is built before it is appended',
-    site: 'packages/conductor/src/conduct.ts:1795',
+    file: 'packages/conductor/src/conduct.ts',
+    anchor: "type: 'RunProducedDiff',",
   },
   {
     event: 'SplitStarted',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:209',
+    file: 'packages/conductor/src/split-ticket.ts',
+    anchor: "await note('SplitStarted', {",
   },
   {
     event: 'SplitFailed',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:219',
+    file: 'packages/conductor/src/split-ticket.ts',
+    anchor: "await note('SplitFailed', { waitId, step, detail })",
   },
   {
     event: 'SplitChildWritten',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:306',
+    file: 'packages/conductor/src/split-ticket.ts',
+    anchor: "await note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })",
   },
   {
     event: 'SplitLinkWritten',
     why: 'type is a string argument of `note`',
-    site: 'packages/conductor/src/split-ticket.ts:348',
+    file: 'packages/conductor/src/split-ticket.ts',
+    anchor: "await note('SplitLinkWritten', { waitId, ticket: d.ticket, blockedBy: d.blockedBy })",
   },
-  { event: 'StepStarted', why: 'handed to `options.emit`, which appends', site: 'packages/conductor/src/pass.ts:1396' },
-  { event: 'TicketClosed', why: 'the event is built, then handed on', site: 'packages/conductor/src/close.ts:191' },
+  {
+    event: 'StepStarted',
+    why: 'handed to `options.emit`, which appends',
+    file: 'packages/conductor/src/pass.ts',
+    anchor: "type: 'StepStarted',",
+  },
+  {
+    event: 'TicketClosed',
+    why: 'the event is built, then handed on',
+    file: 'packages/conductor/src/close.ts',
+    anchor: "type: 'TicketClosed',",
+  },
   {
     event: 'TicketSplit',
     why: 'the array is chosen by a conditional first',
-    site: 'packages/conductor/src/resolve-wait.ts:313',
+    file: 'packages/conductor/src/resolve-wait.ts',
+    anchor: "? [{ type: 'TicketSplit', actor: options.by, data: parsePayload('TicketSplit', options.split) }]",
   },
   {
     event: 'TicketDiscovered',
     why: 'the only append left is the probe event the bootstrap script writes (0012 took the queue off the log)',
-    site: 'packages/event-store/scripts/bootstrap.mjs:54',
+    file: 'packages/event-store/scripts/bootstrap.mjs',
+    anchor:
+      'const ev = (v) => [`ticket-probe-1`, v, "TicketDiscovered", JSON.stringify({ probe: true }), "conductor"];',
   },
 ]
 
@@ -386,6 +435,15 @@ function definitions(root: string): Map<string, Definition> {
   return out
 }
 
+/** The 1-based line of every occurrence of `anchor` in `text`; an anchor is part of one line. */
+export function anchorLines(text: string, anchor: string): number[] {
+  return text.split('\n').flatMap((line, i) => {
+    const hits: number[] = []
+    for (let at = line.indexOf(anchor); at !== -1; at = line.indexOf(anchor, at + 1)) hits.push(i + 1)
+    return hits
+  })
+}
+
 export function permalink(sha: string, file: string, line: number): string {
   return `${REPOSITORY}/blob/${sha}/${file}#L${line}`
 }
@@ -394,8 +452,13 @@ export function generate({ root, sha }: { root: string; sha: string }): EventsDo
   const defs = definitions(root)
   const found = findAppendSites(root)
   const elsewhere = ELSEWHERE.map((row) => {
-    const at = row.site.lastIndexOf(':')
-    return { event: row.event, file: row.site.slice(0, at), line: Number(row.site.slice(at + 1)) }
+    const lines = anchorLines(readFileSync(join(root, row.file), 'utf8'), row.anchor)
+    if (lines.length !== 1) {
+      throw new Error(
+        `${row.event} in ${row.file}: anchor ${JSON.stringify(row.anchor)} occurs ${lines.length} times, not once`,
+      )
+    }
+    return { event: row.event, file: row.file, line: lines[0]! }
   })
   const sites = [...found, ...elsewhere]
   const events = (Object.keys(EVENTS) as EventType[]).map((name) => {
