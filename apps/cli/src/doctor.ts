@@ -59,6 +59,7 @@ import {
   describeCurrency,
   describeInFlight,
   findOrphans,
+  held as heldPasses,
   inFlight,
   lastBeat,
   readCodeVersion,
@@ -1030,8 +1031,16 @@ export async function daemonLiveness(
   const held = beat.state === 'draining' ? await inFlight().catch(() => []) : []
   const stopping = beat.state === 'draining' ? ` — ${describeInFlight(held)}` : ''
   // Up with several passes side by side says how many, and one or none stays as it was (#640).
-  const running = beat.state === 'up' ? await inFlight().catch(() => []) : []
-  const side = running.length > 1 ? ` — ${running.length} passes in flight` : ''
+  // A task_view that cannot be read is said so, never passed off as no passes.
+  let side = ''
+  if (beat.state === 'up') {
+    try {
+      const running = heldPasses(await readTasks())
+      if (running.length > 1) side = ` — ${running.length} passes in flight`
+    } catch {
+      side = ' — passes in flight unreadable'
+    }
+  }
   // The same argument one state along. `starting` is up and taking nothing
   // yet, and saying only `starting` would invite the restart that `#144`'s
   // `not running` invited.
