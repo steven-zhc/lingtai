@@ -148,6 +148,7 @@ export {
 export {
   ceilingReached,
   dayCeilingPause,
+  dayFigure,
   daySpend,
   daySpendText,
   nextLocalMidnight,
