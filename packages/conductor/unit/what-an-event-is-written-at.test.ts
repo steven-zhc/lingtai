@@ -131,7 +131,7 @@ describe('what an event is written at (#628)', () => {
       const all = everything(store)
       expect(all.length).toBeGreaterThan(0)
       if (name.includes('waits for a person')) expect(all.some((e) => e.type === 'WaitStarted')).toBe(true)
-      if (name === 'a merge conflict') expect(all.some((e) => e.type === 'IntegrationRefused')).toBe(true)
+      if (name === 'a merge conflict') expect(all.some((e) => e.type === 'PassRouted')).toBe(true)
       expect(misplaced(all, EVENT_AT)).toEqual([])
     })
   }
