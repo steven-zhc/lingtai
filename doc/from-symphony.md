@@ -46,7 +46,7 @@ at a time.
 | `agent.max_turns` | `runtime.limits.turns`, per run — a different count, so do not copy the number across ([reference](reference.md)) |
 | `agent.max_retry_backoff_ms` | `source.backoff`, `1h` by default and flat; `lingtai now <project> --issue <n>` takes one ticket ahead of the queue |
 | `codex.command` | `runtime.agent: codex` |
-| the prompt body (Liquid) | the `prompt:` beside the `agent:` at `build:` — **project guidance only**, see below ([`agent:`](plugins/agent.md)) |
+| the prompt body (Liquid) | the `prompt:` beside an `agent:` at `implement:` — **project guidance only**, see below ([`agent:`](plugins/agent.md)) |
 | reloading `WORKFLOW.md` without a restart | the recipe is resolved again on each pass |
 
 ## What Lingtai does not have yet
@@ -59,8 +59,10 @@ at a time.
 
 Most of a `WORKFLOW.md` body is pipeline instruction — move the ticket to this
 state, open the PR, answer review comments, land it. None of that may reach
-Lingtai's brief, because Lingtai does those things itself and the agent has no
-tracker to move. And since the reference tracker differs, almost no real
+Lingtai's brief. The agent has no tracker to move, and Lingtai does not open
+pull requests or answer review comments at all: it runs the checks, has a cold
+reviewer read the diff, and the merge lane merges into the base branch locally
+and pushes. A branch that only accepts pull requests cannot be landed that way. And since the reference tracker differs, almost no real
 `WORKFLOW.md` could be imported today anyway. So moving a project is three steps
 done by hand.
 
@@ -69,8 +71,8 @@ done by hand.
 1. **Run `lingtai init` in the repository.** Give it your install and build
    commands; the tutorial shows the flags ([tutorial](tutorial.md)). Label the
    issues you want taken with one of the recipe's kinds.
-2. **Paste your project guidance into the `prompt:` beside the `agent:` at
-   `build:`** — the conventions, and how to validate a change. Leave out every
+2. **Paste your project guidance into the `prompt:` beside an `agent:` at
+   `implement:`** — the conventions, and how to validate a change. Leave out every
    instruction about states, PRs, review comments and landing, and every
    `{{ }}` and `{% %}`.
 3. **Run it** and read the board.
