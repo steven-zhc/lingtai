@@ -4217,7 +4217,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           resumed,
           head: headNow,
           wip,
-          unpushed: notPushed !== null,
+          // A keep that failed leaves the edits in the tree, for the finalizer to save
+          // as a WIP after this wait is written — so it is not an unmoved head either.
+          unpushed: notPushed !== null || wipFailure !== null,
         })
         return { ...reason, run: runRef, ...(standing === null ? {} : { standing }) } as WaitReason
       }

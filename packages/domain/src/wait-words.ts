@@ -341,11 +341,12 @@ export function waitWords(
 
     case 'AgentCrashed':
       return acknowledgement(
-        stepLine(reason.step, 'did-not-finish', reason.detail),
+        stepLine(reason.step, 'did-not-finish', reason.detail) +
+          (reason.standing === undefined
+            ? ''
+            : ' It changed nothing: what was offered before this round still stands.'),
         reason.run,
-        reason.standing === undefined
-          ? reason.detail
-          : `${reason.detail} It changed nothing: what was offered before this round still stands.`,
+        reason.detail,
       )
 
     case 'SetupRefused':
