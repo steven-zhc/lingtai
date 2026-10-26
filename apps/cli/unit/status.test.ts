@@ -463,4 +463,30 @@ describe('statusJson lists every running pass with its step (#640)', () => {
       ['pass-b', 'review', 1],
     ])
   })
+
+  it('says so when a run stream could not be read, rather than reporting no step', () => {
+    const report = {
+      message: null,
+      projects: [
+        {
+          project: 'lingtai',
+          base: 'main',
+          filter: { ok: false, problem: 'x', facts: [] },
+          source: 'github',
+          eligible: 0,
+          offerError: null,
+          passedOver: [],
+          passedOverLine: null,
+          dependenciesUnread: false,
+          runnable: [],
+          known: [
+            row({ taskId: 'a', ref: '1', state: 'running', run: { runId: 'pass-a', step: null, error: 'boom' } }),
+          ],
+        },
+      ],
+    } as unknown as StatusReport
+    const running = (statusJson(report).projects as { byState: { running: Record<string, unknown>[] } }[])[0]!.byState
+      .running
+    expect(running[0]).toMatchObject({ runId: 'pass-a', step: null, round: null, stepError: 'boom' })
+  })
 })

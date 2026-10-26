@@ -96,19 +96,23 @@ export interface StatusReading {
 export interface StatusRun {
   runId: string
   step: { step: string; round: number } | null
+  /** Set when the run's stream could not be read: `step` null then means unknown, not "no step". */
+  error?: string
 }
 
-/** The last `StepStarted` on a run's stream, or null when it has none or the read fails. */
+/**
+ * The step a run is inside: its last `StepStarted`, unless a `StepEnded` came after it,
+ * and then it is between steps (null). A failed read throws — it is not "no step".
+ */
 async function lastStep(runId: string): Promise<StatusRun['step']> {
-  try {
-    const events = await eventStore.read(runId)
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i]!
-      if (e.type !== 'StepStarted') continue
-      const d = e.data as { step: string; round: number }
-      return { step: d.step, round: d.round }
-    }
-  } catch {}
+  const events = await eventStore.read(runId)
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!
+    if (e.type === 'StepEnded') return null
+    if (e.type !== 'StepStarted') continue
+    const d = e.data as { step: string; round: number }
+    return { step: d.step, round: d.round }
+  }
   return null
 }
 
@@ -347,8 +351,13 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         tasks.map(async (t) => {
           const row = rowOf(t, t.restarts ?? 0)
           // Every pass in flight is a row with its step, not only the first (#640).
-          if ((t.state === 'running' || t.state === 'verifying') && t.runId)
-            row.run = { runId: t.runId, step: await (reading.stepOf ?? lastStep)(t.runId) }
+          if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
+            try {
+              row.run = { runId: t.runId, step: await (reading.stepOf ?? lastStep)(t.runId) }
+            } catch (err) {
+              row.run = { runId: t.runId, step: null, error: (err as Error).message }
+            }
+          }
           return row
         }),
       ),
@@ -466,7 +475,12 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
           unoffered: t.unoffered,
           ...(t.run === null
             ? {}
-            : { runId: t.run.runId, step: t.run.step?.step ?? null, round: t.run.step?.round ?? null }),
+            : {
+                runId: t.run.runId,
+                step: t.run.step?.step ?? null,
+                round: t.run.step?.round ?? null,
+                ...(t.run.error === undefined ? {} : { stepError: t.run.error }),
+              }),
         })
       return {
         project: p.project,
