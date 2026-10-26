@@ -65,6 +65,32 @@ const status = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('status').task))
 
+const eventsCommand = Command.make(
+  'events',
+  { name: Args.text({ name: 'name' }).pipe(Args.optional), json, noColor },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      // Loaded here, for the reason `status` gives: no other command parses the manifest.
+      const { events, eventsJson, findEvent, renderEvent, renderEvents } = await import('./events.ts')
+      if (args.name._tag === 'None') {
+        if (args.json) printJson('events', eventsJson(events))
+        else for (const line of renderEvents(events, { columns: process.stdout.columns })) console.log(line)
+        return
+      }
+      const found = findEvent(events, args.name.value)
+      if (found === undefined) {
+        const message = `no event named ${args.name.value} — lingtai events lists them`
+        if (args.json) handlerCode = printJsonError('events', 'unknown-event', message)
+        else {
+          console.error(`${symbol.fail()} ${message}`)
+          handlerCode = 1
+        }
+      } else if (args.json) printJson('events', eventsJson(events, found))
+      else for (const line of renderEvent(found)) console.log(line)
+    }),
+).pipe(Command.withDescription(definitionOf('events').task))
+
 const doctor = Command.make('doctor', { json, noColor }, (args) =>
   Effect.promise(async () => {
     if (args.noColor) applyNoColor()
@@ -1081,6 +1107,7 @@ export const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
     status,
+    eventsCommand,
     doctor,
     init,
     add,

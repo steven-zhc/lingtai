@@ -802,6 +802,27 @@
         "--no-color"
       ],
       "json": 1
+    },
+    {
+      "name": "events",
+      "group": "install and upkeep",
+      "task": "the events this version writes, by step",
+      "effect": "reads",
+      "usage": [
+        "lingtai events [<name>] [--json] [--no-color]",
+        "  Reads the list bundled with this version; needs no project and no",
+        "  network.",
+        "  --json  the manifest instead of the sections"
+      ],
+      "examples": [
+        "lingtai events",
+        "lingtai events TicketReleased --json"
+      ],
+      "flags": [
+        "--json",
+        "--no-color"
+      ],
+      "json": 1
     }
   ]
 }

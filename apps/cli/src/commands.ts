@@ -537,6 +537,19 @@ export const COMMANDS = [
     ],
     examples: ['lingtai projection lag', 'lingtai projection rebuild spend'],
   }),
+  define({
+    name: 'events',
+    group: 'install and upkeep',
+    task: 'the events this version writes, by step',
+    effect: 'reads',
+    usage: [
+      'lingtai events [<name>] [--json] [--no-color]',
+      '  Reads the list bundled with this version; needs no project and no',
+      '  network.',
+      '  --json  the manifest instead of the sections',
+    ],
+    examples: ['lingtai events', 'lingtai events TicketReleased --json'],
+  }),
 ] as const
 
 export type CommandName = (typeof COMMANDS)[number]['name']

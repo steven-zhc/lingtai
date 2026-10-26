@@ -533,6 +533,7 @@ lingtai resume
 | remove everything under ~/.lingtai and the shim | [lingtai uninstall](#lingtai-uninstall) |
 | check everything that can be checked | [lingtai doctor](#lingtai-doctor) |
 | how far projections lag, and rebuild one | [lingtai projection](#lingtai-projection) |
+| the events this version writes, by step | [lingtai events](#lingtai-events) |
 
 ### lingtai init
 
@@ -692,4 +693,22 @@ Projections: task_view, finding_backlog, spend
 ```sh
 lingtai projection lag
 lingtai projection rebuild spend
+```
+
+### lingtai events
+
+The events this version writes, by step.
+
+Reads only — takes `--json` (version 1).
+
+```text
+lingtai events [<name>] [--json] [--no-color]
+  Reads the list bundled with this version; needs no project and no
+  network.
+  --json  the manifest instead of the sections
+```
+
+```sh
+lingtai events
+lingtai events TicketReleased --json
 ```

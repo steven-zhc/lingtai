@@ -103,6 +103,18 @@ describe('pnpm build', () => {
     await servesAPage(process.execPath, [join(first, 'lingtai.cjs')])
   })
 
+  it('lists the events it was built with, offline', () => {
+    const run = spawnSync(process.execPath, [join(first, 'lingtai.cjs'), 'events', '--json'], {
+      cwd: work,
+      env: { ...childEnv(), HOME: '/nonexistent' },
+      encoding: 'utf8',
+    })
+    expect(run.status, run.stderr).toBe(0)
+    const committed = JSON.parse(readFileSync(join(import.meta.dirname, '../../../doc/events.json'), 'utf8'))
+    const { version: _v, command: _c, ...rest } = JSON.parse(run.stdout)
+    expect(rest).toEqual(committed)
+  })
+
   it('starts a pass from the bundled CLI without refusing its runtime assets', async () => {
     await startsEmptyPass(process.execPath, [join(first, 'lingtai.cjs')])
   })
