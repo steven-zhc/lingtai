@@ -194,7 +194,7 @@ export const COMMANDS = [
       'lingtai board restart',
       '  Stop, then start. Refuses nothing first: a UI at the wrong',
       '  commit costs a reload.',
-      'lingtai board status',
+      'lingtai board status [--port <n>] [--json] [--no-color]',
       '  Who serves it, whether a board answers, whether a supervisor',
       '  keeps one — three facts, none concluded from another.',
     ],

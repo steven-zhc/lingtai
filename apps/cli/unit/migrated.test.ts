@@ -24,6 +24,9 @@ describe('routeOf', () => {
     [['answer', 'lingtai', '--issue', '617', 'use the second option']],
     [['ask', 'lingtai', '--issue', '617', 'which groups?']],
     [['now', 'lingtai', '--issue', '617', '--json']],
+    [['board']],
+    [['board', 'status']],
+    [['board', '--port', '1', '--no-open']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })

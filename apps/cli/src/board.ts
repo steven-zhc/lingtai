@@ -8,6 +8,7 @@ import { constants, Script } from 'node:vm'
 import { boardPort, repoRoot } from '@lingtai/env'
 import type { FileLocker, HeldLock } from '@lingtai/env/lock'
 
+import { symbol, keyValues, heading } from './output.ts'
 import { BOARD_JOB, BOARD_WAIT_MS, UNLOAD_WAIT_MS, type Exec, type Keeper } from './service.ts'
 
 /**
@@ -212,7 +213,6 @@ async function listening(host: string, port: number): Promise<void> {
  * one is refused by it in words.
  */
 export type BoardVerb = 'start' | 'stop' | 'restart' | 'status'
-const VERBS: readonly BoardVerb[] = ['start', 'stop', 'restart', 'status']
 
 /**
  * The lock `board start` holds while it serves, **one per port**.
@@ -270,19 +270,13 @@ const ANSWER_POLLS = ANSWER_WAIT_MS / ANSWER_POLL_MS
 const GONE_POLL_MS = 500
 const GONE_POLLS = UNLOAD_WAIT_MS / GONE_POLL_MS
 
-/** What was typed. `port` and `dir` are null where nothing was, and the caller resolves them. */
-export interface BoardArgs {
+/** What `boardCommand` runs: the verb, with the port and the directory decided. */
+export interface BoardCommand {
   verb: BoardVerb
-  port: number | null
-  dir: string | null
-  /** False under a supervisor, which has nobody at a browser (`BOARD_JOB.argv`). */
-  open: boolean
-}
-
-/** What `boardCommand` runs: the same, with the port and the directory decided. */
-export interface BoardCommand extends BoardArgs {
   port: number
   dir: string
+  /** False under a supervisor, which has nobody at a browser (`BOARD_JOB.argv`). */
+  open: boolean
 }
 
 export interface BoardWorld {
@@ -332,59 +326,109 @@ export interface BoardWorld {
  */
 let held: HeldLock | null = null
 
-export function parseBoardArgs(args: readonly string[]): BoardArgs | { refused: string } {
-  const usage = 'lingtai board start|stop|restart|status [--port <n>] [--dir <path>] [--no-open]'
-  const rest = [...args]
-  // `lingtai board` on its own is `start`, which is what it did before it had
-  // verbs (#183) and what the wizard's last line still tells people to run.
-  const first = rest[0]
-  if (first === 'shutdown') {
-    return {
-      refused:
-        'lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the ' +
-        'wall limit for it. A board has no pass to finish: pnpm lingtai board stop, which returns at once',
-    }
-  }
-  const named = first !== undefined && !first.startsWith('-')
-  const verb = (named ? first : 'start') as BoardVerb
-  if (named) rest.shift()
-  if (!VERBS.includes(verb)) return { refused: `${usage} — no ${verb}` }
-  const out: { port?: number; dir?: string; open: boolean } = { open: true }
-  for (let i = 0; i < rest.length; i++) {
-    const name = rest[i]!
-    if (name === '--no-open') {
-      out.open = false
-      continue
-    }
-    const value = rest[i + 1]
-    if (name === '--port') {
-      if (value === undefined) return { refused: `${usage} — --port takes a port number` }
-      const port = Number(value)
-      if (!Number.isInteger(port) || port <= 0 || port > 65535)
-        return { refused: `${usage} — --port takes a port number` }
-      out.port = port
-      i++
-      continue
-    }
-    if (name === '--dir') {
-      if (value === undefined) return { refused: `${usage} — --dir takes a path` }
-      out.dir = value
-      i++
-      continue
-    }
-    return { refused: `${usage} — no ${name}` }
-  }
-  return { verb, port: out.port ?? null, dir: out.dir ?? null, open: out.open }
-}
-
 /** The pid in a lock holder's name — `board on 17820 pid 500 on host` — with the host it is on. */
 export function holdingProcess(holder: string): { pid: number; host: string } | null {
   const said = /\bpid (\d+) on (\S+)/.exec(holder)
   return said ? { pid: Number(said[1]), host: said[2]! } : null
 }
 
+/**
+ * `board status`'s three facts and the port, **each one read on its own** — an
+ * unreadable one is `{ unread }` inside its own key and does not fail the others.
+ */
+export interface BoardStatus {
+  port: number
+  url: string
+  portSetIn: string
+  serving: { holder: string | null } | { unread: string }
+  answering: { url: string | null } | { unread: string }
+  supervisor: Keeper
+}
+
+export async function readBoardStatus(command: Pick<BoardCommand, 'port'>, world: BoardWorld): Promise<BoardStatus> {
+  // Three facts, none concluded from another: who serves it, whether a board
+  // answers, and whether anything would start one again by itself.
+  let serving: BoardStatus['serving']
+  try {
+    serving = { holder: await world.locker.holder(boardLock(command.port)) }
+  } catch (err) {
+    serving = { unread: (err as Error).message }
+  }
+  let answering: BoardStatus['answering']
+  try {
+    answering = { url: await world.answering(command.port) }
+  } catch (err) {
+    answering = { unread: (err as Error).message }
+  }
+  return {
+    port: command.port,
+    url: `http://${world.host}:${command.port}`,
+    portSetIn: world.whereThePortIsSet,
+    serving,
+    answering,
+    supervisor: world.keeper(command.port),
+  }
+}
+
+export function renderBoardStatus(s: BoardStatus): string[] {
+  const serving =
+    'unread' in s.serving
+      ? `could not be read — ${s.serving.unread}`
+      : (s.serving.holder ?? "nobody — no board of this machine's holds the lock")
+  const answering =
+    'unread' in s.answering
+      ? `could not be asked — ${s.answering.unread}`
+      : s.answering.url === null
+        ? `nothing answers on ${s.url}`
+        : `answers on ${s.answering.url}`
+  const supervisor =
+    'unread' in s.supervisor
+      ? s.supervisor.unread
+      : s.supervisor.kept
+        ? `${s.supervisor.platform} keeps it (${s.supervisor.path})`
+        : "none keeps it — a board here is a terminal's"
+  return [
+    heading(`board on ${s.port}`),
+    ...keyValues([
+      ['serving', serving],
+      ['answering', answering],
+      ['supervisor', supervisor],
+      ['port', `${s.port}, set in ${s.portSetIn}`],
+    ]).map((line) => `  ${line}`),
+  ]
+}
+
+/** `board status --json`: a fact that could not be read is `{ unread }` in its own key, never an error document. */
+export function boardStatusJson(s: BoardStatus): Record<string, unknown> {
+  const holder = 'unread' in s.serving ? null : s.serving.holder
+  const process_ = holder === null ? null : holdingProcess(holder)
+  return {
+    serving:
+      'unread' in s.serving
+        ? { unread: s.serving.unread }
+        : holder === null
+          ? { holder: null }
+          : { holder, ...(process_ ? { pid: process_.pid, host: process_.host } : {}) },
+    answering: 'unread' in s.answering ? { unread: s.answering.unread } : { url: s.answering.url },
+    supervisor:
+      'unread' in s.supervisor
+        ? { unread: s.supervisor.unread }
+        : s.supervisor.kept
+          ? { kept: true, platform: s.supervisor.platform, path: s.supervisor.path }
+          : { kept: false },
+    port: s.port,
+    portSetIn: s.portSetIn,
+  }
+}
+
 export async function boardCommand(command: BoardCommand, world: BoardWorld): Promise<number> {
-  const { log, error } = world
+  const { log } = world
+  // The first line of a refusal carries the mark; the lines that explain it follow plainly.
+  let refused = false
+  const error = (line: string): void => {
+    world.error(refused ? line : `${symbol.fail()} ${line}`)
+    refused = true
+  }
   const url = `http://${world.host}:${command.port}`
 
   /** Where the port is set, said at every refusal the port causes. */
@@ -427,7 +471,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       error((err as Error).message)
       return 1
     }
-    log(`board on ${url}`)
+    log(`${symbol.pass()} board on ${url}`)
     if (command.open && !(await world.open(url))) log(`no browser could be opened here — open ${url}`)
     log('it serves in this terminal — ctrl-c stops it. Under lingtai service it is a job: pnpm lingtai board stop')
     return 0
@@ -460,7 +504,9 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       // The call returning is not the job being gone, and saying so would be
       // the one thing this verb is asked for.
       if (!(await gone())) return 1
-      log("stopped the board's job. It stays stopped: pnpm lingtai service start starts it again with the conductor")
+      log(
+        `${symbol.pass()} stopped the board's job. It stays stopped: pnpm lingtai service start starts it again with the conductor`,
+      )
       return 0
     }
     return (await answers()) ? 0 : 1
@@ -506,7 +552,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       if (i > 0 && world.now() >= until) break
       const at = await world.answering(command.port).catch(() => null)
       if (at !== null) {
-        log(`the board answers on ${at}`)
+        log(`${symbol.pass()} the board answers on ${at}`)
         return true
       }
       await world.sleep(ANSWER_POLL_MS)
@@ -565,7 +611,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
         return 1
       }
       if (now === null) {
-        log(`stopped the board on ${command.port} — pid ${process_.pid}`)
+        log(`${symbol.pass()} stopped the board on ${command.port} — pid ${process_.pid}`)
         return 0
       }
       await world.sleep(STOP_POLL_MS)
@@ -578,36 +624,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
   }
 
   const status = async (): Promise<number> => {
-    // Three facts, none concluded from another: who serves it, whether a board
-    // answers, and whether anything would start one again by itself.
-    let who: string
-    try {
-      who = (await holder()) ?? "nobody — no board of this machine's holds the lock"
-    } catch (err) {
-      who = `could not be read — ${(err as Error).message}`
-    }
-    log(`serving     ${who}`)
-    const at = await world.answering(command.port).catch((err: unknown) => err as Error)
-    log(
-      `answering   ${
-        at instanceof Error
-          ? `could not be asked — ${at.message}`
-          : at === null
-            ? `nothing answers on ${url}`
-            : `answers on ${at}`
-      }`,
-    )
-    const kept = world.keeper(command.port)
-    log(
-      `supervisor  ${
-        'unread' in kept
-          ? kept.unread
-          : kept.kept
-            ? `${kept.platform} keeps it (${kept.path})`
-            : "none keeps it — a board here is a terminal's"
-      }`,
-    )
-    log(`port        ${command.port}, set in ${world.whereThePortIsSet}`)
+    for (const line of renderBoardStatus(await readBoardStatus(command, world))) log(line)
     return 0
   }
 
