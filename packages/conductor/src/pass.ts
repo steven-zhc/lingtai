@@ -999,7 +999,7 @@ export interface RouteTaken {
 }
 
 /** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
-export type Ceiling = 'rounds' | 'restarts' | 'base-merges'
+export type Ceiling = 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds'
 
 /**
  * **The pass's own terminal, 0120 §6's seam** — the three `PassNext` tags that
@@ -1178,6 +1178,8 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
    * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
    */
   let baseMergesSpent = 0
+  /** The merge-conflict fix rounds this pass (#653), per pass for the same reason. */
+  let conflictRoundsSpent = 0
   const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
   // A restart is automatic fix routing too, and a bigger kind than a round: the lap
   // that spends a human grant ends at a person rather than at a restart nobody
@@ -1269,6 +1271,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         rounds: roundsSpent,
         restarts: ceilings.restartsSpent,
         baseMerges: baseMergesSpent,
+        conflictRounds: conflictRoundsSpent,
       },
     )
     const reply = await replyFor(offer, arrived, options.judge)
@@ -1360,7 +1363,9 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         // reached the review, which is still owed the section.
         if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
         lapStart = steps.length
-        roundsSpent = next.round
+        // A conflict round has its own counter and leaves `rounds` where it was (#653).
+        if (next.conflict === undefined) roundsSpent = next.round
+        else conflictRoundsSpent = next.conflict
         at = next.to
         return true
       case 'Requeued':
