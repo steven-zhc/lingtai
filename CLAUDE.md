@@ -123,8 +123,23 @@ Then, under a rule, the evidence — house style as in #52, #55, #58:
   number, because the log under a seq may have been reset by then.
 - Say **why it stayed hidden**, when it did. That is usually the real finding.
 - Cite `file.ts:line`, and quote the comment or doc that makes the claim.
+  **Every claim about the code carries one** — *X exists*, *nothing writes Y*,
+  *Z is called from here* — and a claim nobody found the line for is not in the
+  ticket. #629 and #637 were each written on one that was false.
+- `## Edges`: what the change does where it meets what is already there. Each
+  line names the case and the rule: a read that fails, a process that restarts
+  or dies halfway, two passes at once (0122), a pause, drain or shutdown, a page
+  that disconnects or is stale, a retry, a null or unknown value, and what it
+  costs every later ticket (a test that goes red whenever an unrelated line
+  moves). A case that does not apply says so. These are the findings a
+  reviewer otherwise discovers one fix round at a time (#603, #637, #640).
+- `## Out of scope`: what a reviewer must not hold this ticket to. A finding
+  there is a backlog entry, not a refusal.
 - `## Done when`, as checkboxes each of which a person or a test can check.
 - `## Related`, saying what the related ticket *decided* — not just its number.
+
+Edges and Out of scope are sections, not table rows: the task page reads the
+four rows above and shows an unrecognised table as a link only (0118 §2).
 
 ## Running Lingtai on Lingtai
 
