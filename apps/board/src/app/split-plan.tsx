@@ -89,6 +89,16 @@ interface Child {
 
 const firstLine = (text: string) => text.split('\n')[0]?.trim() ?? ''
 
+/** Re-reads the page on a timer; mounted only while the page says *writing*, so only then does it need the router. */
+function Recheck() {
+  const router = useRouter()
+  useEffect(() => {
+    const timer = setInterval(() => router.refresh(), WRITING_RECHECK_MS)
+    return () => clearInterval(timer)
+  }, [router])
+  return null
+}
+
 /** What the page needs to write the split: which wait, what the log says, and where the tickets live. */
 export interface SplitControls {
   project: string
@@ -113,15 +123,7 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const children: Child[] = frozen === null ? localChildren : frozen.children.map((child) => ({ ...child }))
   const links: Link[] = frozen === null ? localLinks : frozen.blockedBy.map((link) => ({ ...link }))
   const [pending, start] = useTransition()
-  const router = useRouter()
   const writing = progress.state === 'writing'
-  // *Writing* ends when the writer leaves this process's running set, and a writer whose last append
-  // failed leaves nothing on the log for `live.tsx` to hear. So while the page says writing, it re-reads.
-  useEffect(() => {
-    if (!writing) return
-    const timer = setInterval(() => router.refresh(), WRITING_RECHECK_MS)
-    return () => clearInterval(timer)
-  }, [writing, router])
   const [said, setSaid] = useState<string | null>(null)
   const written = new Map(progress.state === 'idle' ? [] : progress.children.map((c) => [c.key, c.number] as const))
   const [off, setOff] = useState<ReadonlySet<string>>(new Set())
@@ -368,6 +370,7 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
           </fieldset>
         </div>
       )}
+      {writing ? <Recheck /> : null}
       <div className="split-actions">
         {mode.unavailable ? (
           <p className="split-note">
