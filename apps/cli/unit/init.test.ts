@@ -18,6 +18,7 @@ import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineR
  * `LINGTAI_TEST_SQLITE_PATH` the environment used to answer from before this
  * seam existed.
  */
+import { stripColour } from '../src/output.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const PATH = '/home/me/.lingtai/config.yml'
@@ -190,6 +191,41 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     // Doctor's warning is printed, and it never sets the exit code.
     expect(code).toBe(0)
     expect(logged.at(-1)).toContain('no board was started')
+  })
+
+  it('under NO_COLOR, a local init with --defaults still prints every fact the old output did, in plain sections (#620)', async () => {
+    const before = process.env['NO_COLOR']
+    process.env['NO_COLOR'] = '1'
+    try {
+      const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''], doctor: async () => 'doctor: 3 ok' })
+      const code = await initCommand(
+        flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+        world,
+      )
+      expect(code).toBe(0)
+      const text = logged.join('\n')
+      expect(stripColour(text)).toBe(text)
+      for (const heading of ['init', 'Machine', 'Store', 'GitHub App', 'Projects', 'Recipe  ', 'Board']) {
+        expect(text).toContain(heading)
+      }
+      // The git version, every runtime's state, and the home line.
+      expect(text).toMatch(/git\s+git version 2\.50\.0/)
+      expect(text).toMatch(/claude-code\s+signed in/)
+      expect(text).toMatch(/home\s+\/nonexistent\/\.lingtai — nothing yet/)
+      // The store row, the app row, the project row.
+      expect(text).toMatch(/store\s+SQLite/)
+      expect(text).toMatch(/app\s+none yet — the board's first screen creates it through GitHub's manifest flow/)
+      expect(text).toMatch(/project\s+local — repo, registered with its own origin as repo.remote/)
+      // The recipe's path and text, then the doctor text and the board row.
+      expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
+      expect(text).toContain('repo:')
+      expect(text).toContain('doctor: 3 ok')
+      expect(text).toContain('no board was started')
+      expect(text).toContain('next: lingtai board')
+    } finally {
+      if (before === undefined) delete process.env['NO_COLOR']
+      else process.env['NO_COLOR'] = before
+    }
   })
 
   it('a local init exits 0 even when doctor throws, and prints why it did not finish', async () => {
