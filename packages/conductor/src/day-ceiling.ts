@@ -48,12 +48,12 @@ export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
 const dollars = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 
 /**
- * The one sentence. Never `$0.00` over unknown rows; with a ceiling, always the
- * unknown count — "+ 0 unknown" is a claim and leaving it out is not.
+ * The one sentence. Never `$0.00` over unknown rows; always the unknown count,
+ * ceiling or not — "+ 0 unknown" is a claim and leaving it out is not.
  */
 export function daySpendText(day: DaySpend, ceilingUsd: number | undefined): string {
   const figure = day.reportedRuns === 0 && day.unknown > 0 ? 'no reported cost' : dollars(day.reportedCents)
-  const unknown = day.unknown > 0 || ceilingUsd !== undefined ? ` + ${day.unknown} unknown` : ''
+  const unknown = ` + ${day.unknown} unknown`
   if (ceilingUsd === undefined) return `today ${figure}${unknown} — no daily ceiling (limits.day_usd)`
   return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — unknown costs are not counted`
 }
@@ -68,24 +68,24 @@ const CEILING_REASON = 'daily ceiling reached — '
 /** True when the last ceiling pause has been resumed and its day is not over. */
 function resumedPast(events: readonly Envelope[], now: Date): boolean {
   let until: number | null = null
-  let resumed = false
+  let waived = false
+  // Whether the pause now holding is the ceiling's own: a resume only waives the ceiling after that one.
+  let holding = false
   for (const e of events) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    if (
-      e.type === 'ConductorPaused' &&
-      d['by'] === 'lingtai' &&
-      typeof d['reason'] === 'string' &&
-      d['reason'].startsWith(CEILING_REASON)
-    ) {
-      until = typeof d['until'] === 'string' ? Date.parse(d['until']) : null
-      resumed = false
-    } else if (e.type === 'ConductorPaused') {
-      // Any other pause (a quota refusal, a person's) is not the ceiling's, and ends its waiver.
-      until = null
-      resumed = false
-    } else if (e.type === 'ConductorResumed' && until !== null) resumed = true
+    if (e.type === 'ConductorPaused') {
+      holding = d['by'] === 'lingtai' && typeof d['reason'] === 'string' && d['reason'].startsWith(CEILING_REASON)
+      if (holding) {
+        until = typeof d['until'] === 'string' ? Date.parse(d['until']) : null
+        waived = false
+      }
+      // Any other pause (a quota refusal, a person's) is not the ceiling's, and leaves its waiver as it was.
+    } else if (e.type === 'ConductorResumed') {
+      if (holding) waived = true
+      holding = false
+    }
   }
-  return resumed && until !== null && now.getTime() < until
+  return waived && until !== null && !Number.isNaN(until) && now.getTime() < until
 }
 
 export interface DayCeilingOptions {

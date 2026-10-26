@@ -99,6 +99,25 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
   })
 
+  it('a person’s pause and resume after the ceiling’s resume does not bring the ceiling back', async () => {
+    const store = createMemoryEventStore()
+    await check([today(60)], store)
+    const append = async (type: string, by: string) => {
+      const events = await store.read(CONTROL_STREAM)
+      const data = type === 'ConductorPaused' ? { by, reason: 'brief', until: null, holdsAcrossStarts: false } : { by }
+      await store.append(CONTROL_STREAM, events.length, [{ type, actor: by, data } as never])
+    }
+    await append('ConductorResumed', 'human:ops')
+    await append('ConductorPaused', 'human:ops')
+    await append('ConductorResumed', 'human:ops')
+    expect(await check([today(60)], store)).toBeNull()
+    expect(await store.read(CONTROL_STREAM)).toHaveLength(4)
+  })
+
+  it('names zero unknown with no ceiling', () => {
+    expect(daySpendText(daySpend([today(1)], now), undefined)).toContain('+ 0 unknown')
+  })
+
   it('a resumed provider-quota pause does not waive the ceiling', async () => {
     const store = createMemoryEventStore()
     await store.append(CONTROL_STREAM, 0, [
