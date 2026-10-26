@@ -474,6 +474,14 @@ export function foldProgress(
       // an empty action name `mine`'s own `k.startsWith('${step}:')` still
       // matches, so the step-level state still reads `running` until its
       // `StepEnded` closes an actual `step:action` key over it.
+      case 'MergeLaneWaited':
+        now = { label: 'waiting for the merge lane', since: event.at.toISOString(), budgetMs: null }
+        break
+
+      case 'MergeLaneEntered':
+        now = { label: 'merge', since: event.at.toISOString(), budgetMs: null }
+        break
+
       case 'StepStarted': {
         const stepName = String(data['step'])
         const round = Number(data['round'] ?? 0)
