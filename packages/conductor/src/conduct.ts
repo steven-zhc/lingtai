@@ -1477,7 +1477,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
-       * previous fix's session id, which it refuses.
+       * previous fix's session id, which it refuses. Within one `conduct` call
+       * only: a continuation keeps `runId` and `round` and restarts this at zero,
+       * so the id also carries the wait it resumes, as the judge's does.
        */
       let conflictFixes = 0
       /**
@@ -3667,7 +3669,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
         // Keyed on where the fix came from and not on `refusal`: a passing review's
         // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
-        const fixId = from === 'merge' ? `${runId}:fix:${round}:merge:${++conflictFixes}` : `${runId}:fix:${round}`
+        const fixId =
+          from === 'merge'
+            ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
+            : `${runId}:fix:${round}`
 
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
         runLog.note('fix', `round ${round} for ${from}`)
