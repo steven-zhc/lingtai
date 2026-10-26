@@ -20,6 +20,7 @@ import {
 } from '@lingtai/conductor'
 import { agentBranchOf, waitWords } from '@lingtai/domain'
 import { paint, stateInk } from '@lingtai/env/colour'
+import { eventStore } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
@@ -87,6 +88,28 @@ export function armLine(row: { restarts?: number }, restartsOf: number | null): 
 export interface StatusReading {
   clientFor?: ClientFor
   recipeFor?: RecipeFor
+  /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
+  stepOf?: (runId: string) => Promise<StatusRun['step']>
+}
+
+/** Where one running pass is: its run, and the step and round of the last `StepStarted` (#640). */
+export interface StatusRun {
+  runId: string
+  step: { step: string; round: number } | null
+}
+
+/** The last `StepStarted` on a run's stream, or null when it has none or the read fails. */
+async function lastStep(runId: string): Promise<StatusRun['step']> {
+  try {
+    const events = await eventStore.read(runId)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]!
+      if (e.type !== 'StepStarted') continue
+      const d = e.data as { step: string; round: number }
+      return { step: d.step, round: d.round }
+    }
+  } catch {}
+  return null
 }
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */
@@ -119,6 +142,8 @@ export interface StatusRow {
   /** Queued, but the ticket source is not offering it — closed by hand, relabelled, excluded. */
   unoffered: boolean
   wait: StatusWait | null
+  /** For a `running` or `verifying` row: which run, and the step it is at. Null otherwise. */
+  run: StatusRun | null
 }
 
 /** `ProjectFilter` reduced to what a reader needs, so a report can be built by hand in a test. */
@@ -287,6 +312,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         // Said only when the source actually answered: with no answer every row looks unoffered.
         // Against the offer and not `runnable`, which the retry window has already thinned.
         unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
+        run: null,
         wait:
           t.wait == null || words === null
             ? null
@@ -317,7 +343,15 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       passedOverLine: passed,
       dependenciesUnread: unread,
       runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
-      known: tasks.map((t) => rowOf(t, t.restarts ?? 0)),
+      known: await Promise.all(
+        tasks.map(async (t) => {
+          const row = rowOf(t, t.restarts ?? 0)
+          // Every pass in flight is a row with its step, not only the first (#640).
+          if ((t.state === 'running' || t.state === 'verifying') && t.runId)
+            row.run = { runId: t.runId, step: await (reading.stepOf ?? lastStep)(t.runId) }
+          return row
+        }),
+      ),
     })
   }
   return { projects: out, message: null }
@@ -430,6 +464,9 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
           held: t.held,
           arm: t.arm,
           unoffered: t.unoffered,
+          ...(t.run === null
+            ? {}
+            : { runId: t.run.runId, step: t.run.step?.step ?? null, round: t.run.step?.round ?? null }),
         })
       return {
         project: p.project,

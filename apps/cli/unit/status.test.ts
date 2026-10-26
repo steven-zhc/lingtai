@@ -60,6 +60,7 @@ const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): Stat
   held: null,
   unoffered: false,
   wait: null,
+  run: null,
   ...over,
 })
 
@@ -419,5 +420,47 @@ describe('lingtai status through @effect/cli', () => {
     const { code, out } = await run(['status', '--refresh', '--json'], async () => fixture)
     expect(code).toBe(1)
     expect(JSON.parse(out).error.code).toBe('usage')
+  })
+})
+
+describe('statusJson lists every running pass with its step (#640)', () => {
+  it('gives each running row a runId, step and round', () => {
+    const report = {
+      message: null,
+      projects: [
+        {
+          project: 'lingtai',
+          base: 'main',
+          filter: { ok: false, problem: 'x', facts: [] },
+          source: 'github',
+          eligible: 0,
+          offerError: null,
+          passedOver: [],
+          passedOverLine: null,
+          dependenciesUnread: false,
+          runnable: [],
+          known: [
+            row({
+              taskId: 'a',
+              ref: '1',
+              state: 'running',
+              run: { runId: 'pass-a', step: { step: 'build', round: 0 } },
+            }),
+            row({
+              taskId: 'b',
+              ref: '2',
+              state: 'running',
+              run: { runId: 'pass-b', step: { step: 'review', round: 1 } },
+            }),
+          ],
+        },
+      ],
+    } as unknown as StatusReport
+    const running = (statusJson(report).projects as { byState: { running: Record<string, unknown>[] } }[])[0]!.byState
+      .running
+    expect(running.map((r) => [r.runId, r.step, r.round])).toEqual([
+      ['pass-a', 'build', 0],
+      ['pass-b', 'review', 1],
+    ])
   })
 })

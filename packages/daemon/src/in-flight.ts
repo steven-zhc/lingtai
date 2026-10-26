@@ -32,7 +32,7 @@ export function createInFlight(): InFlight {
       return set.size
     },
     async settled() {
-      while (set.size > 0) await Promise.all([...set])
+      while (set.size > 0) await Promise.all(set)
     },
   }
 }
