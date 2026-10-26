@@ -10,6 +10,7 @@ import { Console, Effect } from 'effect'
 
 import { definitionOf } from './commands.ts'
 import { applyNoColor, printJson, printJsonError, stripColour } from './output.ts'
+import { refusal, renderVerdict, VERBS, verdictJson, type Answered } from './verdict.ts'
 import { versionFacts, versionLine } from './version.ts'
 import { addOptions, flagsOf, initOptions, valuelessFlag } from './wizard-options.ts'
 
@@ -123,7 +124,169 @@ const add = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('add').task))
 
-const root = Command.make('lingtai').pipe(Command.withSubcommands([version, status, doctor, init, add]))
+/** Where a wait-answering command's progress goes: stdout, or stderr so `--json` keeps stdout to its one document. */
+function progressFor(asJson: boolean): (line: string) => void {
+  return asJson ? (line) => console.error(line) : (line) => console.log(line)
+}
+
+/** Runs one of the `<verb>Verdict` functions and prints what it answered (#621). */
+function answerWith(
+  command: keyof typeof VERBS,
+  args: { json: boolean; noColor: boolean },
+  run: (progress: (line: string) => void) => Promise<Answered>,
+) {
+  return Effect.promise(() => printAnswer(command, args, run))
+}
+
+async function printAnswer(
+  command: keyof typeof VERBS,
+  args: { json: boolean; noColor: boolean },
+  run: (progress: (line: string) => void) => Promise<Answered>,
+): Promise<void> {
+  if (args.noColor) applyNoColor()
+  try {
+    const answered = await run(progressFor(args.json))
+    if (args.json) printJson(command, verdictJson(answered.verdict))
+    else
+      for (const line of renderVerdict(
+        answered.verdict.outcome === 'accepted' ? VERBS[command].accepted : VERBS[command].refused,
+        answered.verdict,
+      ))
+        console.log(line)
+    handlerCode = answered.code
+  } catch (err) {
+    handlerCode = failed(command, args.json, err)
+  }
+}
+
+const projectArg = Args.text({ name: 'project' })
+const issueOption = Options.integer('issue')
+const optionalText = (name: string) => Options.text(name).pipe(Options.optional)
+const given = (o: { _tag: string; value?: string }): string | undefined => (o._tag === 'Some' ? o.value : undefined)
+/** Everything after the project is the sentence, so an unquoted one still arrives whole. */
+const sentenceArg = Args.text({ name: 'text' }).pipe(Args.repeated)
+
+const approve = Command.make(
+  'approve',
+  {
+    project: projectArg,
+    issue: issueOption,
+    note: optionalText('note'),
+    reject: Options.boolean('reject'),
+    json,
+    noColor,
+  },
+  (args) =>
+    answerWith('approve', args, async (progress) => {
+      if (args.reject) {
+        // Gone (#150): it revoked the approval and put the run straight back
+        // into `awaiting-approval`, so the wait it seemed to end went on.
+        return refusal(2, 'removed-flag', '--reject is gone: it asked the same question again and ended nothing.', {
+          next: `lingtai requeue ${args.project} --issue ${args.issue}`,
+        })
+      }
+      const { approveVerdict } = await import('./approve.ts')
+      return approveVerdict({ project: args.project, issue: args.issue, note: given(args.note) }, progress)
+    }),
+).pipe(Command.withDescription(definitionOf('approve').task))
+
+const requeue = Command.make(
+  'requeue',
+  {
+    project: projectArg,
+    issue: issueOption,
+    note: optionalText('note'),
+    intoBody: optionalText('into-body'),
+    json,
+    noColor,
+  },
+  (args) =>
+    answerWith('requeue', args, async (progress) => {
+      const { requeueVerdict } = await import('./requeue.ts')
+      return requeueVerdict(
+        {
+          project: args.project,
+          issue: args.issue,
+          // `--note` left off and `--note` with nothing after it both mean `""` (#424).
+          note: given(args.note) ?? '',
+          ...(args.intoBody._tag === 'Some' ? { intoBody: args.intoBody.value } : {}),
+        },
+        progress,
+      )
+    }),
+).pipe(Command.withDescription(definitionOf('requeue').task))
+
+const grantFixRound = Command.make(
+  'grant-fix-round',
+  { project: projectArg, issue: issueOption, ifHead: optionalText('if-head'), json, noColor },
+  (args) =>
+    answerWith('grant-fix-round', args, async (progress) => {
+      const { grantFixRoundVerdict } = await import('./grant-fix-round.ts')
+      return grantFixRoundVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
+    }),
+).pipe(Command.withDescription(definitionOf('grant-fix-round').task))
+
+const close = Command.make(
+  'close',
+  { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor },
+  (args) =>
+    answerWith('close', args, async (progress) => {
+      const { closeVerdict } = await import('./close.ts')
+      return closeVerdict({ project: args.project, issue: args.issue, reason: args.text.join(' ') }, progress)
+    }),
+).pipe(Command.withDescription(definitionOf('close').task))
+
+const ask = Command.make('ask', { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor }, (args) =>
+  answerWith('ask', args, async (progress) => {
+    const { askVerdict } = await import('./ask.ts')
+    return askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
+  }),
+).pipe(Command.withDescription(definitionOf('ask').task))
+
+const answer = Command.make(
+  'answer',
+  { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor },
+  (args) =>
+    answerWith('answer', args, async (progress) => {
+      const { answerVerdict } = await import('./ask.ts')
+      return answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
+    }),
+).pipe(Command.withDescription(definitionOf('answer').task))
+
+const now = Command.make(
+  'now',
+  {
+    project: projectArg,
+    second: Args.text({ name: 'issue' }).pipe(Args.optional),
+    issue: Options.integer('issue').pipe(Options.optional),
+    json,
+    noColor,
+  },
+  (args) =>
+    answerWith('now', args, async () => {
+      const issue = args.issue._tag === 'Some' ? args.issue.value : Number(given(args.second) ?? Number.NaN)
+      if (!Number.isInteger(issue)) return refusal(2, 'usage', 'lingtai now <project> --issue <n>')
+      const { nowVerdict } = await import('./now.ts')
+      return nowVerdict(args.project, issue, `human:${process.env['USER'] ?? 'operator'}`)
+    }),
+).pipe(Command.withDescription(definitionOf('now').task))
+
+const root = Command.make('lingtai').pipe(
+  Command.withSubcommands([
+    version,
+    status,
+    doctor,
+    init,
+    add,
+    approve,
+    requeue,
+    grantFixRound,
+    close,
+    ask,
+    answer,
+    now,
+  ]),
+)
 
 const run = Command.run(root, { name: 'lingtai', version: versionFacts().lingtai })
 
@@ -153,9 +316,47 @@ function jsonOn(arg: string): boolean {
   return ['true', 'yes', 'y', 'on', '1'].includes(arg.slice('--json='.length).toLowerCase())
 }
 
+/**
+ * What `--name` is followed by: `undefined` when the flag is absent, `null` when it
+ * has nothing after it (the end of the line, or another flag), else the text.
+ */
+function flagValue(args: readonly string[], name: string): string | null | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (arg.startsWith(`--${name}=`)) return arg.slice(name.length + 3)
+    if (arg === `--${name}`) {
+      const next = args[i + 1]
+      return next === undefined || next.startsWith('--') ? null : next
+    }
+  }
+  return undefined
+}
+
+/** The sentences a flag with no value has always been refused with, and exit 2 (#621). */
+const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }[]> = {
+  requeue: [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
+  'grant-fix-round': [{ flag: 'if-head', sentence: '--if-head takes the displayed commit SHA', trimmed: false }],
+}
+
+/** `--note` with nothing after it means what leaving it off means, `""` (#424), so it is dropped before parsing. */
+function withoutBareNote(args: readonly string[]): string[] {
+  return args.filter((arg, i) => arg !== '--note' || !(args[i + 1] === undefined || args[i + 1]!.startsWith('--')))
+}
+
 /** `argv` is the full `process.argv` shape; resolves to the exit code. */
 export async function runCli(argv: readonly string[]): Promise<number> {
   const args = argv.slice(2)
+  for (const { flag, sentence, trimmed } of TAKES[args[0] ?? ''] ?? []) {
+    const value = flagValue(args.slice(1), flag)
+    if (value !== undefined && !(trimmed ? value?.trim() : value)) {
+      if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', sentence)
+      else console.error(sentence)
+      return 2
+    }
+  }
+  if (args[0] === 'approve' || args[0] === 'requeue') {
+    argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
+  }
   if (args.includes('--no-color')) applyNoColor()
   const json = args.some(jsonOn)
   if (args[0] === 'init' || args[0] === 'add') {

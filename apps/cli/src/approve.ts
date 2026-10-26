@@ -18,6 +18,7 @@ import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubApp } from '@lingtai/env'
 
 import { withProjector } from './projector.ts'
+import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface ApproveCommandOptions {
   project: string
@@ -26,11 +27,14 @@ export interface ApproveCommandOptions {
   by?: string
 }
 
-export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {
+/** `progress` is where `withProjector`'s warnings go: stdout, or stderr under `--json`. */
+export async function approveVerdict(
+  options: ApproveCommandOptions,
+  progress: (line: string) => void,
+): Promise<Answered> {
   const project = await loadProject(options.project)
   if (!project) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-    return 1
+    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
   // **A project with no owner has no App to check and no GitHub client to
@@ -42,10 +46,11 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
     client = (await ownerlessClient(project, resolved.recipe)).client
   } else {
     if (!hasGitHubApp()) {
-      log(
+      return refusal(
+        1,
+        'no-github-app',
         'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
       )
-      return 1
     }
     client = (await projectClient(project)).client
   }
@@ -55,7 +60,10 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
   // This is the command most likely to be run with the board open, and it moves
   // a card off the lane the board exists for. So it follows the log while it
   // works, like every other host that appends — see `withProjector`.
-  return withProjector(log, async () => {
+  return withProjector(progress, async (): Promise<Answered> => {
+    // `approveRun`'s own line carries the sha and the actor; it is held back and
+    // becomes the verdict's detail, so a success prints one verdict and not two.
+    const said: string[] = []
     const result = await approveRun({
       project: options.project,
       issue: options.issue,
@@ -69,18 +77,29 @@ export async function approveCommand(options: ApproveCommandOptions, log = conso
       // "the wait it resolves" are the same read — there is no card, read
       // before the lock, for a stale one to disagree with (#508).
       waitId: 'open',
-      log,
+      log: (line) => said.push(line),
     })
 
-    if (result.ok) {
-      log(
-        result.unscheduled === undefined
-          ? `approved ${result.ticketId} — continues at ${result.continuesAt}`
-          : `approved ${result.ticketId} — but the continuation was not scheduled (${result.unscheduled}); run lingtai approve again to schedule it`,
-      )
-      return 0
+    if (!result.ok) {
+      return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
     }
-    log(`not approved (${result.reason}): ${result.detail}`)
-    return 1
+    const unscheduled = result.unscheduled
+    return {
+      code: 0,
+      verdict: {
+        outcome: 'accepted',
+        ticketId: result.ticketId,
+        detail:
+          unscheduled === undefined
+            ? (said.at(-1)?.replace(/^approved /, '') ?? `continues at ${result.continuesAt}`)
+            : `continues at ${result.continuesAt}, but the continuation was not scheduled (${unscheduled}); run it again to schedule it`,
+        ...(unscheduled === undefined ? {} : { next: `lingtai approve ${options.project} --issue ${options.issue}` }),
+        extra: { continuesAt: result.continuesAt, ...(unscheduled === undefined ? {} : { unscheduled }) },
+      },
+    }
   })
+}
+
+export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {
+  return logVerdict(VERBS['approve'], await approveVerdict(options, log), log)
 }

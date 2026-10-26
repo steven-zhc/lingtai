@@ -77,13 +77,27 @@ using them in a terminal.
    with a non-zero exit, so a script needs one parser and one exit code.
    stderr is for people and is never parsed.
 
+   **A command that changes state and answers with a verdict takes `--json`
+   too** (#621): the *waiting on you* group and `now`. Its document reports
+   the verdict and not the state: `outcome` is `"accepted"` or `"refused"`,
+   `reason` carries the refusal's code where the function that refused names
+   one (and is left out otherwise, never `null`), and `detail` is the sentence
+   the text form prints. A refusal is an outcome and exits non-zero as it
+   always did; the `error` document stays for a command that could not run — a
+   usage error, or a handler that threw. Whatever such a command writes along
+   the way (the projector's warnings, the line `approve` prints as it
+   resolves) goes to stderr under `--json`. The text form is one verdict line,
+   `✓ approved <ticket>` or `✗ not approved (<reason>)`, the old sentence
+   beneath it, and `next:` only where that sentence already named a command.
+
 6. **A command's definition is the one source for its help.** Each definition
    carries its group, a one-line task, whether it only *reads* or *changes*
    something, and one or two examples. `lingtai --help`,
    `lingtai <command> --help` and `doc/cli.md` are all generated from those
-   definitions, and `doc/cli.md` is what the site's CLI page shows. The
-   `reads`/`changes` marker is what decides whether a command takes `--json`
-   (clause 5).
+   definitions, and `doc/cli.md` is what the site's CLI page shows. For a
+   command that only *reads*, the `reads`/`changes` marker is what decides
+   whether it takes `--json` (clause 5); a `changes` command that answers
+   with a verdict takes it as clause 5 says.
 
 7. **Help groups.** `lingtai --help` lists commands in four groups, each
    command in exactly one:

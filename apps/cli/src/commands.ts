@@ -21,7 +21,7 @@ export type CommandDefinition = {
   readonly group: Group
   /** One line: what it is for. At most 60 columns, so the root listing needs no wrapping. */
   readonly task: string
-  /** Decides whether the command takes `--json` (0121 §5). */
+  /** Decides whether the command takes `--json` (0121 §5): a `changes` command takes it only when it answers with a verdict (#621). */
   readonly effect: 'reads' | 'changes'
   readonly usage: readonly string[]
   readonly examples: readonly string[]
@@ -114,7 +114,7 @@ export const COMMANDS = [
     group: 'everyday',
     task: 'ask for one ticket ahead of the queue',
     effect: 'changes',
-    usage: ['lingtai now <project> --issue <n>'],
+    usage: ['lingtai now <project> --issue <n> [--json] [--no-color]'],
     examples: ['lingtai now lingtai --issue 617'],
   }),
   define({
@@ -235,7 +235,7 @@ export const COMMANDS = [
     task: 'merge what a held run produced',
     effect: 'changes',
     usage: [
-      'lingtai approve <project> --issue <n> [--note <text>]',
+      'lingtai approve <project> --issue <n> [--note <text>] [--json]',
       '  Merge what a held run produced, if its head has not moved since',
       '  the approval was asked for.',
       '  --note <text>   recorded with the approval, and required when a',
@@ -250,7 +250,7 @@ export const COMMANDS = [
     task: 'answer a question a ticket was held on',
     effect: 'changes',
     usage: [
-      'lingtai answer <project> --issue <n> "<choice>"',
+      'lingtai answer <project> --issue <n> "<choice>" [--json]',
       '  Answer it on the record: back in the queue, and every attempt at',
       '  the ticket is told the answer — no editing the issue body.',
     ],
@@ -262,7 +262,7 @@ export const COMMANDS = [
     task: 'hold a ticket on a decision before any run',
     effect: 'changes',
     usage: [
-      'lingtai ask <project> --issue <n> "<question>"',
+      'lingtai ask <project> --issue <n> "<question>" [--json]',
       '  Nothing is spent, the queue passes over the ticket, and lingtai',
       '  status prints the question.',
     ],
@@ -274,7 +274,7 @@ export const COMMANDS = [
     task: 'one more implementation round on saved work',
     effect: 'changes',
     usage: [
-      'lingtai grant-fix-round <project> --issue <n> [--if-head <sha>]',
+      'lingtai grant-fix-round <project> --issue <n> [--if-head <sha>] [--json]',
       '  Run one more implementation round on saved work, then repeat the',
       '  checks without waiving a refusal.',
     ],
@@ -287,6 +287,7 @@ export const COMMANDS = [
     effect: 'changes',
     usage: [
       'lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]',
+      '                [--json]',
       '  A blocked item goes back to the queue — held for approval or not —',
       '  and the next pass cuts a fresh branch from a base that has since',
       '  moved. The actor is still recorded in by.',
@@ -299,7 +300,7 @@ export const COMMANDS = [
     task: 'end a ticket nobody is going to do',
     effect: 'changes',
     usage: [
-      'lingtai close <project> --issue <n> "<reason>"',
+      'lingtai close <project> --issue <n> "<reason>" [--json]',
       '  The queue stops offering it because the log says it is over.',
       '  Nothing lifts a close: if the work is wanted again, open a new',
       '  ticket.',

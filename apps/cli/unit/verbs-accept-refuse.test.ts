@@ -320,7 +320,12 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
 
     const result = await answer({ project: PROJECT, issue: 120, answer: '  ', by: 'human:steven', store })
 
-    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 120), detail: 'an answer needs an answer' })
+    expect(result).toEqual({
+      ok: false,
+      ticketId: ticketStream(PROJECT, 120),
+      reason: 'blank',
+      detail: 'an answer needs an answer',
+    })
   })
 
   it('refuses an item nothing is asking anything of', async () => {
@@ -402,7 +407,12 @@ describe("close — apps/cli/src/close.ts's shape: { project, issue, reason, by,
 
     const result = await close({ project: PROJECT, issue: 130, reason: '  ', by: 'human:steven', store })
 
-    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 130), detail: 'a close needs a reason' })
+    expect(result).toEqual({
+      ok: false,
+      ticketId: ticketStream(PROJECT, 130),
+      reason: 'blank',
+      detail: 'a close needs a reason',
+    })
   })
 
   it('refuses an item already closed', async () => {

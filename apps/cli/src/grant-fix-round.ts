@@ -7,16 +7,16 @@ import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 
 import { withProjector } from './projector.ts'
+import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
-export async function grantFixRoundCommand(
+export async function grantFixRoundVerdict(
   options: { project: string; issue: number; ifHead?: string },
-  log = console.log,
-): Promise<number> {
+  progress: (line: string) => void,
+): Promise<Answered> {
   const project = await loadProject(options.project)
   if (!project) {
-    log(`no project named "${options.project}"`)
-    return 1
+    return refusal(1, 'no-project', `no project named "${options.project}"`)
   }
   let client: { refSha(ref: string): Promise<string | null> }
   if (project.owner === null) {
@@ -24,20 +24,18 @@ export async function grantFixRoundCommand(
     client = (await ownerlessClient(project, resolved.recipe)).client
   } else {
     if (!hasGitHubApp()) {
-      log('no GitHub App configured')
-      return 1
+      return refusal(1, 'no-github-app', 'no GitHub App configured')
     }
     client = (await projectClient(project)).client
   }
-  return withProjector(log, async () => {
+  return withProjector(progress, async (): Promise<Answered> => {
     const ticketId = ticketStream(options.project, options.issue)
     const item = reduceTicket(await eventStore.read(ticketId))
     if (
       item.lifecycle.status !== 'blocked' &&
       !(item.lifecycle.status === 'approved' && item.lifecycle.grantRef !== undefined)
     ) {
-      log(`${ticketId} is not waiting on a fix decision`)
-      return 1
+      return refusal(1, 'not-waiting', `${ticketId} is not waiting on a fix decision`, { ticketId })
     }
     const result = await resolveWait({
       ticketId,
@@ -48,14 +46,25 @@ export async function grantFixRoundCommand(
       client,
     })
     if (!result.ok) {
-      log(`fix round refused (${result.reason}): ${result.detail}`)
-      return 1
+      return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
     }
-    log(
-      result.unscheduled
-        ? `fix round granted; scheduling failed: ${result.unscheduled}`
-        : `fix round granted for ${ticketId}`,
-    )
-    return 0
+    return {
+      code: 0,
+      verdict: {
+        outcome: 'accepted',
+        ticketId,
+        detail: result.unscheduled
+          ? `scheduling failed: ${result.unscheduled}`
+          : 'one more implementation round is granted',
+        ...(result.unscheduled ? { extra: { unscheduled: result.unscheduled } } : {}),
+      },
+    }
   })
+}
+
+export async function grantFixRoundCommand(
+  options: { project: string; issue: number; ifHead?: string },
+  log = console.log,
+): Promise<number> {
+  return logVerdict(VERBS['grant-fix-round'], await grantFixRoundVerdict(options, log), log)
 }

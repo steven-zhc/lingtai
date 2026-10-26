@@ -79,7 +79,12 @@ describe('ask', () => {
   it('refuses a blank question', async () => {
     const store = createMemoryEventStore()
     const result = await ask({ project: PROJECT, issue: 1, question: '  ', by: 'human:steven', store })
-    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 1), detail: 'a question needs a question' })
+    expect(result).toEqual({
+      ok: false,
+      ticketId: ticketStream(PROJECT, 1),
+      reason: 'blank',
+      detail: 'a question needs a question',
+    })
   })
 
   it('refuses an item a run already holds', async () => {
@@ -118,7 +123,12 @@ describe('answer', () => {
   it('refuses a blank answer', async () => {
     const store = createMemoryEventStore()
     const result = await answer({ project: PROJECT, issue: 4, answer: '', by: 'human:steven', store })
-    expect(result).toEqual({ ok: false, ticketId: ticketStream(PROJECT, 4), detail: 'an answer needs an answer' })
+    expect(result).toEqual({
+      ok: false,
+      ticketId: ticketStream(PROJECT, 4),
+      reason: 'blank',
+      detail: 'an answer needs an answer',
+    })
   })
 
   it('refuses an item nothing is asking anything of', async () => {

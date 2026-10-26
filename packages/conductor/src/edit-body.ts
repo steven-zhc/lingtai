@@ -135,6 +135,7 @@ export async function writeSection(options: {
 export interface EditBodyAndRequeueResult {
   ok: boolean
   ticketId: string
+  reason?: string
   /** Whether the body carries the answer — set even when the resolve step itself refused. */
   written: boolean
   detail: string
@@ -168,6 +169,7 @@ export async function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Pr
     () => ({
       ok: false,
       ticketId,
+      reason: 'busy',
       written: false,
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
@@ -188,6 +190,7 @@ export async function editBodyAndRequeueHolding(
     return {
       ok: false,
       ticketId,
+      reason: 'not-waiting',
       written: false,
       detail: `${ticketId} is not waiting on ${options.waitId} — nothing was resolved. Reload and read it again.`,
     }
@@ -197,6 +200,7 @@ export async function editBodyAndRequeueHolding(
     return {
       ok: false,
       ticketId,
+      reason: 'not-offered',
       written: false,
       detail: `EditBodyAndRequeue is not offered for ${describeReason(reason)} — nothing was resolved.`,
     }
@@ -205,7 +209,7 @@ export async function editBodyAndRequeueHolding(
   const key = `${ticketId}/${options.waitId}`
   const result = await writeSection({ store, github: options.github, ticketId, key, text: options.text })
   if (!result.written) {
-    return { ok: false, ticketId, written: false, detail: result.detail }
+    return { ok: false, ticketId, reason: 'write-failed', written: false, detail: result.detail }
   }
 
   const resolved = await resolveWaitHolding(
@@ -226,6 +230,7 @@ export async function editBodyAndRequeueHolding(
     return {
       ok: false,
       ticketId,
+      reason: resolved.reason,
       written: true,
       detail: `the answer is in the body; ${ticketId} is ${now.lifecycle.status} now — ${resolved.detail}`,
     }
