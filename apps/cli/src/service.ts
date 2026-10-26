@@ -703,7 +703,7 @@ export interface ServiceOptions {
   /** The phases, shown by the entry (#622); none where a test passes none. */
   steps?: Steps
   /** Called when a start was answered 0 without being started or confirmed: the supervisor already had a process. */
-  unconfirmed?: () => void
+  unconfirmed?: (job: 'conductor' | 'board') => void
 }
 
 /** Whether launchd or systemd keeps a job here, as `lingtai restart` needs to know it (0042 §8). */
@@ -989,7 +989,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         "the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers",
       )
-      options.unconfirmed?.()
+      options.unconfirmed?.('board')
       return 0
     }
     // The port, before the supervisor is told anything. The lock is held by a
@@ -1321,7 +1321,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         'the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process ' +
           'may have lost the lock and be taking no work. lingtai doctor says who holds the lock',
       )
-      options.unconfirmed?.()
+      options.unconfirmed?.('conductor')
       return 0
     }
     if (platform === 'systemd') return startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])
@@ -1442,7 +1442,9 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`)
         mine = again.version
       }
-      let waited = await queue.wait(log, askAgain, (line) => steps.progress(line))
+      // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
+      const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
+      let waited = await queue.wait(log, askAgain, progress)
       // Asked again right before the supervisor is told: the lock is only worth
       // anything while its session lasts, and a wait that ended held says
       // nothing about a connection that dropped since. After `bootout` or
@@ -1452,7 +1454,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         log(
           'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
         )
-        waited = await queue.wait(log, askAgain, (line) => steps.progress(line))
+        waited = await queue.wait(log, askAgain, progress)
       }
       if (waited !== 'held') {
         await queue.leave()

@@ -7,6 +7,7 @@ import { parseRestartArgs } from '../src/restart.ts'
 const seen = vi.hoisted(() => ({
   calls: [] as { command: string; options: unknown }[],
   unconfirmed: false,
+  board: false,
   code: 0,
 }))
 
@@ -30,7 +31,9 @@ vi.mock('../src/service.ts', () => ({
   START_BOARD_ONLY: 4,
   serviceCommand: async (argv: string[], options: unknown) => {
     seen.calls.push({ command: `service ${argv.join('|')}`, options })
-    if (argv[0] === 'start' && seen.unconfirmed) (options as { unconfirmed: () => void }).unconfirmed()
+    const note = (options as { unconfirmed: (job: string) => void }).unconfirmed
+    if (argv[0] === 'start' && seen.unconfirmed) note('conductor')
+    if (argv[0] === 'start' && seen.board) note('board')
     return seen.code
   },
 }))
@@ -50,6 +53,7 @@ const saved = process.env['NO_COLOR']
 beforeEach(() => {
   seen.calls.length = 0
   seen.unconfirmed = false
+  seen.board = false
   seen.code = 0
   process.env['NO_COLOR'] = '1'
 })
@@ -132,6 +136,13 @@ describe('lingtai service', () => {
     expect(r.code).toBe(4)
     expect(r.out).not.toContain('the conductor did')
     expect(r.out).toContain('it was not confirmed, and the board did not start')
+  })
+
+  it('does not deny a confirmed conductor start because the board had a process already', async () => {
+    seen.board = true
+    const r = await capture(['service', 'start'])
+    expect(r.out).toContain('✓ started')
+    expect(r.out).not.toContain('nothing was started or confirmed')
   })
 
   it('hands the steps to serviceCommand', async () => {

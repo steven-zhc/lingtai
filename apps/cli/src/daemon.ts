@@ -874,6 +874,8 @@ export async function restartCommand(args: RestartArgs, steps: Steps): Promise<n
     steps.end()
     console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
   })
+  // A failed refusal or drain returns with a spinner still live; nothing else ends it.
+  if (!started) steps.end()
   // One closing line either way. After the start there is no second verdict: the daemon's own
   // lines follow, and a failure of the running daemon is not a restart that did not happen.
   if (!started && code !== 0) console.log(`${symbol.fail()} not restarted`)

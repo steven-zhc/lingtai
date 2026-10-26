@@ -387,12 +387,12 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
       // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
       if (verb === 'install') steps.begin('writing')
       if (verb === 'uninstall') steps.begin('removing')
-      let unconfirmed = false
+      let unconfirmed = false // the conductor's start only; the board's own line says its own
       const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
         ...serviceOptions(),
         steps,
-        unconfirmed: () => {
-          unconfirmed = true
+        unconfirmed: (job) => {
+          if (job === 'conductor') unconfirmed = true
         },
       })
       steps.end()
