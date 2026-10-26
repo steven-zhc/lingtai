@@ -3833,6 +3833,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // tells `keepUncommittedWork` to look — null only where the dispatch
         // itself reports none.
         stoppedBy = fixed.failure ? fixed.failure.kind : null
+        // #655: `committed` below drops the failure, so the blocked branch never sees
+        // the account's wall a fixer met after it had committed. Pause here instead.
+        if (fixed.failure?.kind === 'crash' && metTheAccountWall(fixed.failure.detail)) {
+          await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'implement' }, fixed.failure.detail))
+        }
         await recordDiff(branch, after)
         return { committed: after }
       }
