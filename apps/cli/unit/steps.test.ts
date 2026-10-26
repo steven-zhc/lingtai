@@ -1,7 +1,9 @@
 /** The phases of a long command (#622): a spinner on a terminal, the same bytes everywhere else. */
-import { describe, expect, it } from 'vitest'
+import { Writable } from 'node:stream'
 
-import { createSteps, lineSpinner, type Spinner } from '../src/steps.ts'
+import { describe, expect, it, vi } from 'vitest'
+
+import { createSteps, oraSpinner, type Spinner } from '../src/steps.ts'
 
 function fakeSpinner(events: string[]): () => Spinner {
   return () => ({
@@ -48,35 +50,40 @@ describe('createSteps', () => {
   })
 })
 
-describe('lineSpinner', () => {
-  it('leaves stdin alone, so Ctrl+C stays a SIGINT for the wait to handle', () => {
+describe('oraSpinner', () => {
+  it('never puts stdin in raw mode, so Ctrl+C stays a SIGINT for the wait to handle', () => {
+    const raw = vi.fn()
+    const stdin = process.stdin as unknown as { setRawMode?: (mode: boolean) => unknown }
+    const had = stdin.setRawMode
+    stdin.setRawMode = raw
     const before = [
       process.stdin.listenerCount('keypress'),
       process.stdin.listenerCount('data'),
       process.listenerCount('SIGINT'),
     ]
     const writes: string[] = []
-    const spinner = lineSpinner({ write: (t) => writes.push(t) })
-    spinner.start('still draining')
-    spinner.message('still draining after 60s')
-    spinner.clear()
+    const stream = Object.assign(new Writable({ write: (c, _e, done) => (writes.push(String(c)), done()) }), {
+      isTTY: true,
+      columns: 80,
+      cursorTo: () => true,
+      clearLine: () => true,
+      moveCursor: () => true,
+    }) as unknown as NodeJS.WriteStream
+    try {
+      const spinner = oraSpinner(stream)
+      spinner.start('still draining')
+      spinner.message('still draining after 60s')
+      spinner.clear()
+    } finally {
+      if (had === undefined) delete stdin.setRawMode
+      else stdin.setRawMode = had
+    }
+    expect(raw).not.toHaveBeenCalled()
     expect([
       process.stdin.listenerCount('keypress'),
       process.stdin.listenerCount('data'),
       process.listenerCount('SIGINT'),
     ]).toEqual(before)
-    expect(writes[0]).toContain('still draining')
-    expect(writes.at(-1)).toBe('\r\x1b[J')
-  })
-
-  it('keeps the whole message on a narrow terminal, wrapped and redrawn in place', () => {
-    const writes: string[] = []
-    const spinner = lineSpinner({ write: (t) => writes.push(t), columns: 80 })
-    const long = `still draining after 30s — ${'x'.repeat(60)}. ctrl-c stops waiting, and tells the supervisor nothing`
-    spinner.start(long)
-    expect(writes[0]!.split('\n').join('')).toContain(long)
-    expect(writes[0]!.split('\n').length).toBeGreaterThan(1)
-    spinner.clear()
-    expect(writes.at(-1)).toBe('\r\u001b[1A\u001b[J')
+    expect(writes.join('')).toContain('still draining')
   })
 })

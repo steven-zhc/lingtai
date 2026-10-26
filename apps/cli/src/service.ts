@@ -1446,7 +1446,13 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
       const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
-      let waited = await queue.wait(log, askAgain, progress)
+      // A line written while the spinner is live would be erased by its next redraw, so it ends first.
+      const waitLog = (line: string): void => {
+        steps.end()
+        log(line)
+      }
+      let waited = await queue.wait(waitLog, askAgain, progress)
+      steps.end()
       // Asked again right before the supervisor is told: the lock is only worth
       // anything while its session lasts, and a wait that ended held says
       // nothing about a connection that dropped since. After `bootout` or
@@ -1456,7 +1462,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         log(
           'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
         )
-        waited = await queue.wait(log, askAgain, progress)
+        waited = await queue.wait(waitLog, askAgain, progress)
+        steps.end()
       }
       if (waited !== 'held') {
         await queue.leave()

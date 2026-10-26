@@ -1013,7 +1013,11 @@ export async function prepareRestart(
     const waited = await waitForTheLock(
       plan.go === 'drain' ? 'draining' : 'waiting',
       giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
-      log,
+      // A line written while the spinner is live would be erased by its next redraw.
+      (line) => {
+        steps.end()
+        log(line)
+      },
       {
         ask: facts.holder,
         ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }),
