@@ -396,7 +396,11 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
         },
       })
       steps.end()
-      if (code === 0 && unconfirmed)
+      if (unconfirmed && code === START_BOARD_ONLY)
+        console.log(
+          `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+        )
+      else if (code === 0 && unconfirmed)
         console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
       else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
       else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)

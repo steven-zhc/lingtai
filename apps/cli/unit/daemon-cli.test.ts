@@ -7,6 +7,7 @@ import { parseRestartArgs } from '../src/restart.ts'
 const seen = vi.hoisted(() => ({
   calls: [] as { command: string; options: unknown }[],
   unconfirmed: false,
+  code: 0,
 }))
 
 vi.mock('../src/daemon.ts', () => ({
@@ -30,7 +31,7 @@ vi.mock('../src/service.ts', () => ({
   serviceCommand: async (argv: string[], options: unknown) => {
     seen.calls.push({ command: `service ${argv.join('|')}`, options })
     if (argv[0] === 'start' && seen.unconfirmed) (options as { unconfirmed: () => void }).unconfirmed()
-    return 0
+    return seen.code
   },
 }))
 
@@ -49,6 +50,7 @@ const saved = process.env['NO_COLOR']
 beforeEach(() => {
   seen.calls.length = 0
   seen.unconfirmed = false
+  seen.code = 0
   process.env['NO_COLOR'] = '1'
 })
 afterEach(() => {
@@ -121,6 +123,15 @@ describe('lingtai service', () => {
     expect(r.code).toBe(0)
     expect(r.out).not.toContain('✓ started')
     expect(r.out).toContain('nothing was started or confirmed')
+  })
+
+  it('does not claim the conductor started when the start was unconfirmed and the board failed', async () => {
+    seen.unconfirmed = true
+    seen.code = 4
+    const r = await capture(['service', 'start'])
+    expect(r.code).toBe(4)
+    expect(r.out).not.toContain('the conductor did')
+    expect(r.out).toContain('it was not confirmed, and the board did not start')
   })
 
   it('hands the steps to serviceCommand', async () => {

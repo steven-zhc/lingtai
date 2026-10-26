@@ -906,6 +906,9 @@ async function restartSteps(args: RestartArgs, steps: Steps, restarted: (sha: st
       service: (argv, asked) =>
         serviceCommand(argv, {
           ...options,
+          // The phases are `restartSupervised`'s own labels; the wait inside the drain still
+          // reaches the spinner through `progress`, and `end` clears it.
+          steps: { begin() {}, progress: (line) => steps.progress(line), end: () => steps.end() },
           drain: {
             ...options.drain,
             ask: (by: string, reason: string) =>
