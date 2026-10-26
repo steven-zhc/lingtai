@@ -137,7 +137,7 @@ const VALUE_FLAGS = ['timeout', 'reason'] as const
 /**
  * The line, read against the flags this command actually has.
  *
- * Not the entry point's `parseFlags`, whose rule is that a flag followed by a
+ * Not a generic `--flag value` reader, whose rule is that a flag followed by a
  * word takes the word as its value: `lingtai restart --dirty picking up #88`
  * would record `dirty: "picking"` and a reason of `up #88`, or with the word
  * alone no reason at all — and the reason is what `ConductorStarted` carries. A

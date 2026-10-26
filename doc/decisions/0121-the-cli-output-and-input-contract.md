@@ -126,7 +126,7 @@ using them in a terminal.
 
 8. **Help needs no project and no network.** `help`, `--help` and
    `<command> --help` are answered from the command definitions alone, before
-   `lingtai.ts` is imported — the same position as the commands `entry.ts`
+   `cli.ts` is imported — the same position as the commands `entry.ts`
    answers before the log is loaded — so they work with no project
    configured, no database and no network. `--help` anywhere in the arguments
    prints that command's help, does nothing else, and exits 0: it is a
@@ -158,6 +158,7 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 - The hand-written `USAGE` in `lingtai.ts` is deleted when this is built, not
   edited, and so is the comment there that argument parsing is hand-rolled.
+  Done (#626): `lingtai.ts` holds one import of `entry.ts`, the file a supervisor's unit names.
 - Neither library is a dependency of `apps/cli` today; adding them is part of
   building this.
 - A test generates `doc/cli.md` and fails when the checked-in copy differs, so

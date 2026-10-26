@@ -1,7 +1,7 @@
 /**
  * The `@effect/cli` side of the entry (#616). Loaded by `entry.ts` with a
- * dynamic `import()` and only for a command in `MIGRATED_COMMANDS`, so every
- * other command pays nothing for it and is parsed exactly as before.
+ * dynamic `import()` and only for a command named in `commands.ts`, so a word
+ * that is not one pays nothing for it. It is the only parser (#626).
  */
 import { Args, Command, Options } from '@effect/cli'
 import * as NodeContext from '@effect/platform-node/NodeContext'
@@ -1077,7 +1077,7 @@ const service = Command.make('service').pipe(
   ]),
 )
 
-const root = Command.make('lingtai').pipe(
+export const root = Command.make('lingtai').pipe(
   Command.withSubcommands([
     version,
     status,
