@@ -27,6 +27,7 @@ const board = (over: Partial<Health> = {}): Health => ({
   lag: 0,
   daemon: 'up',
   sinceBeatMs: 2_000,
+  inFlight: [],
   ...over,
 })
 
@@ -436,5 +437,13 @@ describe('the spend the bar handed to a page', () => {
     expect(rows).toEqual([])
     expect(total.cards).toBe(0)
     expect(total.byPurpose.Work.reportedRuns).toBe(0)
+  })
+})
+
+describe('the health dot counts passes in flight (#640)', () => {
+  it('says how many in the title when there are two, and nothing for one', () => {
+    const two = bearing('open', board({ inFlight: ['lingtai#1', 'lingtai#2'] }), null)
+    expect(two.title).toContain('2 passes in flight')
+    expect(bearing('open', board({ inFlight: ['lingtai#1'] }), null).title).not.toContain('in flight')
   })
 })
