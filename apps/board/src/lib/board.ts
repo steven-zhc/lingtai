@@ -588,6 +588,9 @@ function moveOf(
   fixHead: string | null,
 ): BoardCard['move'] {
   if (t.wait === null || status === null || status === 'Unknown') return null
+  // The card holds the crash wait's own triage; the standing wait's advice is the
+  // person's to read on the task page (#654).
+  if (t.wait.reason._tag === 'AgentCrashed' && t.wait.reason.standing !== undefined) return null
   if (status._tag !== 'Done' || status.result._tag !== 'TriageAdvised') return null
   const resolution = recommendedResolution(t.wait.reason, status, { savedHead: fixHead !== null })
   if (resolution === null) return null
