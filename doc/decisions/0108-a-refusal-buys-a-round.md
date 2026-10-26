@@ -58,10 +58,13 @@ fixes the bounds and the endings that router works inside.
    any agent has run (`prepared`) cannot offer `implement` however many rounds
    are left.
 
-5. **The fixer gets the findings and the diff, not the reasoning, and may
-   decline.** Each `failureScenario` is passed verbatim with the diff (clipped at
-   `runtime.budget.diff`) and no plan, transcript or session of the
-   implementer's. The re-review is handed the same findings
+5. **The fixer gets the findings, the diff and the ticket, not the reasoning,
+   and may decline.** Each `failureScenario` is passed verbatim with the diff
+   (clipped at `runtime.budget.diff`), the ticket's body as it reads at the round
+   (what the cold reviewer held the change to — context, and the findings stay
+   the criterion), and, on a round a person granted, the `FixableLines` advice
+   triage gave for the wait they granted it on, marked as what they accepted. No
+   plan, transcript or session of the implementer's. The re-review is handed the same findings
    (`ActionContext.recheck`) and asked whether those sequences still happen, so
    silencing a finding does not pass. `fixBrief` tells the fixer that if the
    refusal is wrong or not this diff's, it changes nothing and commits nothing;

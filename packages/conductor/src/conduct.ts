@@ -208,7 +208,7 @@ import { closeHolding } from './close.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
-import { fixBrief } from './fix.ts'
+import { fixBrief, grantedAdviceOf } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
@@ -1041,6 +1041,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // what tells one continuation's judge from the next one's (#580).
         resumedWaitId: approvedWaitId,
         ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
+        // Only a granted lap: it is one round long, so this reaches the round
+        // the person paid for, on the advice of the wait they granted it on (#643).
+        ...(granted && grantedAdviceOf(before, approvedWaitId) !== undefined
+          ? { advice: grantedAdviceOf(before, approvedWaitId)! }
+          : {}),
         roundsSpent: continuationRound(runEvents, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
         ...(granted && grantCriterion(reason) !== null
@@ -3694,6 +3699,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         diff: underReview,
                         diffBytes: recipe.runtime.budget.diff,
                         checks: buildCommands(recipe.steps),
+                        ticket: { title: brief.ticket.title, body: brief.ticket.body },
+                        ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
                       }),
                       spec.prompt,
                     ),
