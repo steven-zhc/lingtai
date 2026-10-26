@@ -433,5 +433,17 @@ export function generate({ root, sha }: { root: string; sha: string }): EventsDo
 if (import.meta.main) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+  // A permalink's line numbers come from the working tree and its sha from HEAD;
+  // they only agree when nothing under the scanned directories differs from HEAD.
+  const dirty = execFileSync('git', ['status', '--porcelain', '--', 'apps', 'packages'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  if (dirty !== '') {
+    console.error(
+      `refusing to generate: uncommitted changes would make the links point at the wrong lines of ${sha}\n${dirty}\ncommit them first, then run pnpm events:generate`,
+    )
+    process.exit(1)
+  }
   writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(generate({ root, sha }), null, 2) + '\n')
 }
