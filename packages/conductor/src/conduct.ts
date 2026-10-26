@@ -1475,6 +1475,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let stoppedBy: string | null = null
       /**
+       * Conflict fix rounds dispatched so far (#653). A conflict round leaves
+       * `round` where `rounds` was, so `round` alone would hand Claude Code the
+       * previous fix's session id, which it refuses.
+       */
+      let conflictFixes = 0
+      /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
        * The pass has one `implement` step and this file dispatches two different
@@ -3659,6 +3665,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 } as const)
               : ({ on: 'output', output: said } as const)
 
+        const fixId =
+          refusal.on === 'conflict' ? `${runId}:fix:${round}:conflict:${++conflictFixes}` : `${runId}:fix:${round}`
+
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
         runLog.note('fix', `round ${round} for ${from}`)
 
@@ -3688,7 +3697,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return yield* Effect.promise(() =>
                 dispatched
                   .run({
-                    runId: `${runId}:fix:${round}`,
+                    runId: fixId,
                     cwd: tree.path,
                     prompt: alsoSays(
                       fixBrief({
