@@ -2,7 +2,8 @@
 
 Everything Lingtai runs, reaches or asks you to sign in to, in one place. Read
 it before [the tutorial](tutorial.md), or when `lingtai doctor` complains about
-something you did not know you needed.
+something you did not know you needed. Coming from Symphony and wondering about
+Linear? See [coming from Symphony](from-symphony.md).
 
 Two things are **not** on this page:
 
