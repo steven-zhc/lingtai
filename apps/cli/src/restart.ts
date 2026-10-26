@@ -1010,7 +1010,7 @@ export async function prepareRestart(
       plan.go === 'drain' ? 'draining' : 'waiting',
       giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
       log,
-      { ask: facts.holder, ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }) },
+      { ask: facts.holder, held: facts.inFlight, ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }) },
     )
 
     if (waited !== 'free') {
@@ -1302,6 +1302,8 @@ export async function waitForTheLock(
   /** How the lock is asked about, and how often. Replaceable so a test need not own a database. */
   how: {
     ask?: () => Promise<string | null>
+    /** What is in flight, asked for the repeated line. Replaceable for the same reason. */
+    held?: () => Promise<string[]>
     pollMs?: number
     sayEveryMs?: number
     /** What Ctrl+C does, in the repeated line — the caller's to say, since it is the caller that acts on it. */
@@ -1348,7 +1350,7 @@ export async function waitForTheLock(
 
       if (Date.now() - said >= sayEveryMs) {
         said = Date.now()
-        const held = await inFlight().catch(() => [])
+        const held = await (how.held ?? (() => inFlight()))().catch(() => [])
         log(
           paint.muted(
             `still ${doing} after ${Math.round((Date.now() - began) / 1000)}s — ${describeInFlight(held)}. ` + ctrlC,
