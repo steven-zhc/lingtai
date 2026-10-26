@@ -19,7 +19,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, CONFLICT_ROUND_HUNKS, waitWords, type ProjectState } from '@lingtai/domain'
+import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -48,9 +48,12 @@ export function conflictLines(
     { _tag: 'Done', result },
     { savedHead: typeof savedHead === 'object' ? false : savedHead },
   )
-  if (unreadable !== null && result.cause.total <= CONFLICT_ROUND_HUNKS) {
+  if (unreadable !== null) {
     return {
-      rec: rec === null ? null : `recommends ${rec} — ${result.summary}`,
+      rec:
+        rec === null
+          ? `triage advised ${result.resolution} — ${result.summary}`
+          : `recommends ${rec} — ${result.summary}`,
       advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
     }
   }

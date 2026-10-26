@@ -534,7 +534,13 @@ describe('conflictLines (#652)', () => {
 
   it('names an unreadable saved head even when triage advised the round it cannot offer', () => {
     const c = conflictLines(reason, triage(2, 'GrantFixRound'), { unreadable: 'timeout' })
-    expect(c?.rec).toBeNull()
+    expect(c?.rec).toBe('triage advised GrantFixRound — why')
+    expect(c?.advised).toContain('saved head could not be checked (timeout)')
+  })
+
+  it('names the read failure and triage’s advice above 5 hunks too', () => {
+    const c = conflictLines(reason, triage(10, 'GrantFixRound'), { unreadable: 'timeout' })
+    expect(c?.rec).toBe('triage advised GrantFixRound — why')
     expect(c?.advised).toContain('saved head could not be checked (timeout)')
   })
 
