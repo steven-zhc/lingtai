@@ -61,7 +61,7 @@ export function runSplit<T>(waitId: string, start: () => Promise<T>): Promise<T 
     })
     .finally(() => {
       set.delete(waitId)
-      for (const listener of [...listeners()]) {
+      for (const listener of listeners()) {
         try {
           listener()
         } catch (err) {
