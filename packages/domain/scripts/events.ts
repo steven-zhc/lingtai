@@ -13,7 +13,7 @@
  * `pnpm events:generate` runs this and formats the result.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -181,17 +181,16 @@ export const ELSEWHERE: readonly { event: EventType; why: string; site: string }
     why: 'the array is chosen by a conditional first',
     site: 'packages/conductor/src/resolve-wait.ts:313',
   },
-]
-
-/**
- * Events that are not `RETIRED` and that no source file appends today. Neither
- * the finder nor `ELSEWHERE` can name a site for them, and inventing one would
- * be a false permalink, so the absence is stated here. A row whose event gains a
- * site fails the test.
- */
-export const NOT_APPENDED: readonly { event: EventType; why: string }[] = [
-  { event: 'TicketDiscovered', why: 'the queue left the log (0012); only the projector and the board read it' },
-  { event: 'TicketLinked', why: 'nothing in `src/` writes it; only the projector and the board read it' },
+  {
+    event: 'TicketDiscovered',
+    why: 'the only append left is the probe event the bootstrap script writes (0012 took the queue off the log)',
+    site: 'packages/event-store/scripts/bootstrap.mjs:54',
+  },
+  {
+    event: 'TicketLinked',
+    why: 'no production code appends it; the only writer is a test fixture, so the link is to that',
+    site: 'packages/domain/unit/ticket.test.ts:285',
+  },
 ]
 
 /**
@@ -432,31 +431,48 @@ export function generate({ root, sha }: { root: string; sha: string }): EventsDo
 }
 
 if (import.meta.main) {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
-  const sha = git('rev-parse', 'HEAD')
-  // A permalink's line numbers must be the lines of the commit it names, so the
-  // sources are read from that commit's own objects rather than the working
-  // tree: an edit saved, undone or redone while this runs cannot reach the
-  // output. `ELSEWHERE` and `STREAMS` are this file's, which the dirty check
-  // below holds to HEAD.
-  const dirty = git('status', '--porcelain', '--', 'apps', 'packages')
-  if (dirty !== '') {
-    console.error(
-      `refusing to generate: uncommitted changes would make the links point at the wrong lines of ${sha}\n${dirty}\ncommit them first, then run pnpm events:generate`,
-    )
-    process.exit(1)
-  }
-  const snapshot = mkdtempSync(join(tmpdir(), 'events-json-'))
-  try {
-    const tar = execFileSync('git', ['archive', '--format=tar', sha, 'apps', 'packages'], {
-      cwd: root,
-      maxBuffer: 1 << 30,
-    })
-    execFileSync('tar', ['-x', '-C', snapshot], { input: tar })
-    const doc = generate({ root: snapshot, sha })
-    writeFileSync(join(root, 'doc', 'events.json'), JSON.stringify(doc, null, 2) + '\n')
-  } finally {
-    rmSync(snapshot, { recursive: true, force: true })
+  const here = dirname(fileURLToPath(import.meta.url))
+  const root = join(here, '..', '..', '..')
+  if (process.argv[2] === '--emit') {
+    // The child: this file is the snapshot's own copy, so `ELSEWHERE`, `STREAMS`
+    // and everything imported from `src/` are the ones at the commit.
+    const [, , , sha, out] = process.argv
+    writeFileSync(out!, JSON.stringify(generate({ root, sha: sha! }), null, 2) + '\n')
+  } else {
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+    const sha = git('rev-parse', 'HEAD')
+    // A permalink's line numbers must be the lines of the commit it names, so
+    // everything is read from that commit's own objects, and the generator that
+    // reads them is that commit's copy of this file, run as a child: an edit
+    // saved, undone or redone while this runs cannot reach the output through
+    // the sources or through this module's tables.
+    const dirty = git('status', '--porcelain', '--', 'apps', 'packages')
+    if (dirty !== '') {
+      console.error(
+        `refusing to generate: uncommitted changes would make the links point at the wrong lines of ${sha}\n${dirty}\ncommit them first, then run pnpm events:generate`,
+      )
+      process.exit(1)
+    }
+    const snapshot = mkdtempSync(join(tmpdir(), 'events-json-'))
+    try {
+      const tar = execFileSync('git', ['archive', '--format=tar', sha, 'apps', 'packages'], {
+        cwd: root,
+        maxBuffer: 1 << 30,
+      })
+      execFileSync('tar', ['-x', '-C', snapshot], { input: tar })
+      symlinkSync(
+        join(root, 'packages', 'domain', 'node_modules'),
+        join(snapshot, 'packages', 'domain', 'node_modules'),
+      )
+      const out = join(snapshot, 'events.json')
+      execFileSync(
+        process.execPath,
+        [join(snapshot, 'packages', 'domain', 'scripts', 'events.ts'), '--emit', sha, out],
+        { cwd: snapshot, stdio: 'inherit' },
+      )
+      writeFileSync(join(root, 'doc', 'events.json'), readFileSync(out))
+    } finally {
+      rmSync(snapshot, { recursive: true, force: true })
+    }
   }
 }
