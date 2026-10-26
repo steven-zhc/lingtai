@@ -53,16 +53,15 @@ export function fixedPorts(text: string): string[] {
   )) {
     constants.add(m[1]!)
   }
+  // Blank comments and strings in place, keeping every offset and newline, so a
+  // call is matched across lines and a quoted or commented one is not a call.
+  const code = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|`[^`]*`|'[^'\n]*'|"[^"\n]*"/g, (m) => m.replace(/[^\n]/g, ' '))
   const out: string[] = []
-  for (const line of text.split('\n')) {
-    // Prose that quotes a call is not a call.
-    if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
-    // Nor is one inside a string, as a fixture for another test is.
-    const code = line.replace(/`[^`]*`|'[^']*'|"[^"]*"/g, '""')
-    for (const m of code.matchAll(/\.listen\(\s*([A-Za-z_$][\w$]*|\d+)/g)) {
-      const arg = m[1]!
-      if (/^\d+$/.test(arg) ? Number(arg) !== 0 : constants.has(arg)) out.push(line.trim())
-    }
+  for (const m of code.matchAll(/\.listen\(\s*([A-Za-z_$][\w$]*|\d+)/g)) {
+    const arg = m[1]!
+    if (!(/^\d+$/.test(arg) ? Number(arg) !== 0 : constants.has(arg))) continue
+    const start = text.lastIndexOf('\n', m.index) + 1
+    out.push(text.slice(start, text.indexOf('\n', m.index) + 1 || undefined).trim())
   }
   return out
 }
@@ -80,6 +79,10 @@ describe('no test binds a fixed port (0122 §6)', () => {
     expect(fixedPorts('server.listen(0, "127.0.0.1", cb)')).toEqual([])
     expect(fixedPorts('const port = await freePort()\nserver.listen(port)')).toEqual([])
     expect(fixedPorts('// server.listen(8080)')).toEqual([])
+    expect(fixedPorts("const a = 'server.listen(8080)'")).toEqual([])
+    expect(fixedPorts('server.listen(\n  8080,\n  "127.0.0.1",\n)')).toHaveLength(1)
+    expect(fixedPorts('const PORT = 8080\nserver\n  .listen(\n    PORT,\n  )')).toHaveLength(1)
+    expect(fixedPorts('server.listen(\n  0,\n)')).toEqual([])
   })
 
   it('holds for every test file', () => {
