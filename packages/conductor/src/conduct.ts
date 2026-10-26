@@ -215,7 +215,7 @@ import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
-import { type NeverStarted, standDown } from './never-started.ts'
+import { metTheAccountWall, type NeverStarted, standDown } from './never-started.ts'
 import {
   type Brief,
   type Claimed,
@@ -1345,7 +1345,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const it =
           what.of === 'run'
             ? 'a run'
-            : what.of === 'step' || what.of === 'draft'
+            : what.of === 'step' || what.of === 'draft' || what.of === 'mid-run'
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`
         const { until, reason } = standDown({
@@ -1358,9 +1358,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // restarting is itself a reasonable response to a run that never started.
         const outcome = yield* pauseConductorOnce({ until: until.toISOString(), reason, holdsAcrossStarts: false })
         if (outcome.kind === 'appended') {
-          log(`${it} never started — conductor paused until ${until.toISOString()}`)
+          log(
+            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'} — conductor paused until ${until.toISOString()}`,
+          )
         } else if (outcome.kind === 'already-paused') {
-          log(`${it} never started; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`)
+          log(
+            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'}; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`,
+          )
         }
         // 'failed': `pauseConductorOnce` has already logged why.
       })
@@ -2621,6 +2625,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
         }
         if (outcome.failure) {
+          // #655: the judge's crash is the ticket's wait, and the account's wall is the conductor's.
+          if (outcome.failure.kind === 'crash' && metTheAccountWall(outcome.failure.detail)) {
+            await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'proposed' }, outcome.failure.detail))
+          }
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
               `${outcome.failure.detail} — so the pass is held for a person (${spent})`,
@@ -4505,6 +4513,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             appended: endResolved,
           }),
         )
+        // #655: a run that started and met the account's limit. The wait above is
+        // the ticket's and is already written; this only stops the conductor.
+        if (reason._tag === 'AgentCrashed' && reason.cause === 'crash' && metTheAccountWall(reason.detail)) {
+          yield* standDownConductor({ of: 'mid-run', step: reason.step }, reason.detail)
+        }
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
           ok: 'held',

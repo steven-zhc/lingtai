@@ -42,9 +42,34 @@
  * apart — the first is a fault in this parser, and the sentence quotes the
  * fragment so a reader is pointed at it rather than away from it.
  *
+ * **One reading here is a verdict, and it is safe for the same reason** (#655).
+ * `metTheAccountWall` decides whether a run that *did* start ended on the
+ * runtime's own account-limit sentence, and the one thing that decides is a
+ * pause. A false match idles the conductor until a person resumes it; a miss is
+ * the behaviour from before it existed. It never touches the ticket's wait.
+ *
  * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
  * pause is written, and it is one call.
  */
+
+/**
+ * Whether a failure's detail is a runtime's own account-limit sentence.
+ *
+ * The runtimes' sentences and nothing looser: a word like *limit* turns up in
+ * a test's output and in an agent's prose (#655). The sentence is looked for as
+ * a substring, because a fix round and a drafting agent wrap it in their own.
+ */
+const ACCOUNT_WALLS: readonly RegExp[] = [
+  // Claude Code: `You've hit your monthly spend limit`, `…session limit`, `…weekly limit`.
+  /\bYou(?:'|\u2019)ve hit your [a-z ]{0,30}limit\b/i,
+  /\byour session limit resets\b/i,
+  // Codex.
+  /\bYou have hit your usage limit\b/i,
+]
+
+export function metTheAccountWall(detail: string): boolean {
+  return ACCOUNT_WALLS.some((wall) => wall.test(detail))
+}
 
 /**
  * A reset time read out of a runtime's own message, or null.
@@ -265,6 +290,12 @@ export type NeverStarted =
    * meets the same wall the others do. `action` is what refused.
    */
   | { readonly of: 'fix'; readonly action: string; readonly round: number }
+  /**
+   * An agent that **started** and met the account's limit part-way (#655). Unlike
+   * every other variant the run is not released: the ticket keeps its crash
+   * wait, and this only stops the conductor.
+   */
+  | { readonly of: 'mid-run'; readonly step: string }
 
 /** What each opens with, and whose words the quote at the end is. */
 function subject(what: NeverStarted): { opening: string; whose: string } {
@@ -288,6 +319,14 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
         `the agent bought to fix ${what.action} (round ${what.round}) never started, so nothing ` +
         `answered the refusal — the run that reached it did start, and was paid for`,
       whose: 'The fixing agent said',
+    }
+  }
+  if (what.of === 'mid-run') {
+    return {
+      opening:
+        `the ${what.step} step's agent met the account's usage limit after it had started and been ` +
+        `paid for; the ticket waits on its crash as usual`,
+      whose: `The ${what.step} step's agent said`,
     }
   }
   return {

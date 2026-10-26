@@ -149,13 +149,20 @@ fixes the bounds and the endings that router works inside.
     and falls back to `source.backoff`. A pause already holding (a person's has no
     `until`) is left alone. The pause lifts by itself and names which agent met
     the wall. The item is released (`failed`) and keeps its place; any commits
-    are published first.
+    are published first. **A run that started and met the account's limit pauses
+    the conductor the same way** — a crash whose detail is the runtime's own
+    account-limit sentence (`metTheAccountWall`: Claude Code's *You've hit your …
+    limit*, Codex's *You have hit your usage limit*) appends the same
+    `ConductorPaused`, with the same `until` and fallback — but the item is **not**
+    released: it keeps its crash wait (§12), and the match adds the pause and
+    changes nothing else.
 
 12. **An agent that started and did not finish judged nothing, and stops only
     the pass.** A crash, a spent turn budget, a missing receipt, or a fixer that
     committed nothing ends the step `did-not-finish` (`StepDidNotFinish`). It buys
     no round, reaches no judge, is not retried, and does not pause the conductor,
-    because a crash is local. The item is blocked for a person; the card offers no
+    because a crash is local — except a crash whose detail is the runtime's account-limit
+    sentence, which pauses it as §11 says and is still the ticket's wait. The item is blocked for a person; the card offers no
     approval, because no step judged the diff, and the move left is requeue. A step
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.
