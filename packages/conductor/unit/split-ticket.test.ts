@@ -4,6 +4,8 @@
  * and a retry that writes only what is missing.
  * A hand-written in-memory GitHub over `createMemoryEventStore()` (0060 §1).
  */
+import { readFileSync } from 'node:fs'
+
 import { reduceTicket, splitProgressOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait, aWaitId, aRun, aRunRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -84,12 +86,6 @@ class FakeGitHub {
         if (opts?.ifUnchanged !== undefined && opts.ifUnchanged !== issue.body) throw new BodyChanged(n)
         issue.body = body
       }),
-    addLabels: async (n, labels) =>
-      this.hit(`addLabels ${n}`, () => {
-        const issue = this.issues.get(n)!
-        for (const name of labels)
-          if (!issue.labels.some((l) => l.name === name)) issue.labels.push({ name, color: null })
-      }),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
         if (this.subs.has(`${p}>${c}`)) throw new Error('422')
@@ -135,13 +131,14 @@ async function setup(body = PARENT_BODY) {
     ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
   ])
   const gh = new FakeGitHub(body)
-  const go = () =>
+  const go = (given: SplitPlanInput | undefined = plan, onStarted?: () => void) =>
     splitTicketHolding(
       {
         project: PROJECT,
         issue: PARENT,
         waitId,
-        plan,
+        plan: given,
+        onStarted,
         kinds: ['bug', 'feature'],
         repository: REPO,
         by: 'human:steven',
@@ -152,13 +149,20 @@ async function setup(body = PARENT_BODY) {
       store,
       ticketId,
     )
-  return { store, ticketId, waitId, gh, go }
+  const ME = { waitId, instance: 'board-1' }
+  return { store, ticketId, waitId, gh, go, ME }
 }
 
 describe('splitTicketHolding', () => {
-  it('writes a full plan in order and appends TicketSplit, WaitResolved and the release once', async () => {
+  it('writes a full plan one child at a time and appends TicketSplit, WaitResolved and the release once', async () => {
     const { store, ticketId, gh, go } = await setup()
     const before = (await store.read(ticketId)).length
+    const real = store.append.bind(store)
+    store.append = async (id, version, events) => {
+      for (const e of events)
+        if (e.type === 'SplitChildWritten') gh.calls.push(`record ${(e.data as { key: string }).key}`)
+      return real(id, version, events)
+    }
     const result = await go()
     expect(result.ok).toBe(true)
     expect(result.steps.every((s) => s.status === 'done')).toBe(true)
@@ -168,14 +172,18 @@ describe('splitTicketHolding', () => {
       { key: 'c', number: 702 },
     ])
 
-    const order = gh.calls.filter((c) => /^(createIssue|addSubIssue|addBlockedBy|updateBody)/.test(c))
+    // Rule 6: create → attach → record for one child before the next child's create.
+    const order = gh.calls.filter((c) => /^(createIssue|addSubIssue|record|addBlockedBy|updateBody)/.test(c))
     expect(order).toEqual([
       'createIssue part a',
-      'createIssue part b',
-      'createIssue part c',
       'addSubIssue 601 700',
+      'record a',
+      'createIssue part b',
       'addSubIssue 601 701',
+      'record b',
+      'createIssue part c',
       'addSubIssue 601 702',
+      'record c',
       'addBlockedBy 701 700',
       'addBlockedBy 702 701',
       'addBlockedBy 601 700',
@@ -223,6 +231,19 @@ describe('splitTicketHolding', () => {
     expect(body.endsWith('## Related\r\n\r\n- #1\r\n')).toBe(true)
   })
 
+  it('has appended SplitStarted and fired onStarted before its first GitHub call', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    let fired = false
+    const list = gh.client.listIssuesSince
+    let seen: { fired: boolean; started: boolean } | null = null
+    gh.client.listIssuesSince = async (since) => {
+      seen ??= { fired, started: (await store.read(ticketId)).some((e) => e.type === 'SplitStarted') }
+      return list(since)
+    }
+    await go(plan, () => (fired = true))
+    expect(seen).toEqual({ fired: true, started: true })
+  })
+
   for (const mode of ['before', 'after'] as const) {
     for (const call of [
       'createIssue',
@@ -233,17 +254,16 @@ describe('splitTicketHolding', () => {
       'listSubIssues',
       'getIssue',
     ]) {
-      it(`a failure ${mode} ${call} leaves no TicketSplit, and a retry writes only what is missing`, async () => {
+      it(`a failure ${mode} ${call} leaves no TicketSplit, and a retry converges on the whole plan`, async () => {
         const { store, ticketId, gh, go } = await setup()
         const before = (await store.read(ticketId)).length
         gh.fail = { call, mode, times: 1 }
         const first = await go()
-        // A lost response is read back as landed; a refused write is a stop.
         if (!first.ok)
           expect((await store.read(ticketId)).slice(before).some((e) => e.type === 'TicketSplit')).toBe(false)
         gh.fail = null
         // A lost response is read back as landed, so the first call may have finished.
-        if (!first.ok) expect((await go()).ok).toBe(true)
+        if (!first.ok) expect((await go(undefined)).ok).toBe(true)
         expect(
           [...gh.issues.values()]
             .filter((i) => i.number !== PARENT)
@@ -261,6 +281,87 @@ describe('splitTicketHolding', () => {
     }
   }
 
+  it('a create whose response is lost is found by its marker on retry and not created twice', async () => {
+    const { gh, go } = await setup()
+    // The create lands, its response is lost, and so is the look-by-marker that follows it.
+    gh.fail = { call: 'createIssue part b', mode: 'after', times: 1 }
+    const list = gh.client.listIssuesSince
+    let listings = 0
+    gh.client.listIssuesSince = async (since) => {
+      if (++listings === 2) throw new Error('listing lost')
+      return list(since)
+    }
+    const first = await go()
+    expect(first.ok).toBe(false)
+    expect(gh.calls.filter((c) => c.startsWith('createIssue part b'))).toHaveLength(1)
+    expect((await go(undefined)).ok).toBe(true)
+    expect(gh.calls.filter((c) => c.startsWith('createIssue part b'))).toHaveLength(1)
+    expect([...gh.issues.values()].filter((i) => i.title === 'part b')).toHaveLength(1)
+  })
+
+  it('fails and records nothing but SplitFailed when the listing fails — an empty answer is never not-created', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    const before = (await store.read(ticketId)).length
+    gh.fail = { call: 'listIssuesSince', mode: 'before', times: 1 }
+    const result = await go()
+    expect(result.ok).toBe(false)
+    expect(gh.calls.some((c) => c.startsWith('createIssue'))).toBe(false)
+    expect((await store.read(ticketId)).slice(before).map((e) => e.type)).toEqual(['SplitStarted', 'SplitFailed'])
+  })
+
+  it('never adopts, edits, attaches or links an unrelated sub-issue that shares a planned title', async () => {
+    const { gh, go } = await setup()
+    const stranger = await gh.client.createIssue({ title: 'part a', body: 'not ours', labels: ['feature'] })
+    await gh.client.addSubIssue(PARENT, stranger.number)
+    gh.calls.length = 0
+    const result = await go()
+    expect(result.ok).toBe(true)
+    expect(gh.calls.some((c) => c.startsWith('createIssue part a'))).toBe(true)
+    const touched = gh.calls.filter((c) => /^(updateBody|addSubIssue|addBlockedBy)/.test(c))
+    expect(touched.some((c) => c.split(' ').slice(1).includes(String(stranger.number)))).toBe(false)
+    expect(gh.issues.get(stranger.number)!.body).toBe('not ours')
+    expect(result.children.find((c) => c.key === 'a')!.number).not.toBe(stranger.number)
+  })
+
+  it('ignores a later submission that differs from the frozen plan', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    const other: SplitPlanInput = {
+      children: [{ key: 'z', title: 'something else', body: 'z', kind: 'bug' }],
+      blockedBy: [],
+    }
+    expect((await go(other)).ok).toBe(true)
+    expect([...gh.issues.values()].some((i) => i.title === 'something else')).toBe(false)
+    const starts = (await store.read(ticketId)).filter((e) => e.type === 'SplitStarted')
+    expect(starts).toHaveLength(2)
+    for (const e of starts)
+      expect((e.data as { plan: unknown }).plan).toEqual((starts[0]!.data as { plan: unknown }).plan)
+    expect(gh.subs.size).toBe(3)
+  })
+
+  it('records in TicketSplit the links GitHub returned, after a retry too', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    await go()
+    gh.fail = null
+    // A person linked a to c meanwhile: GitHub's answer is the record, not the plan.
+    gh.blocks.add('702<700')
+    expect((await go(undefined)).ok).toBe(true)
+    const split = (await store.read(ticketId)).find((e) => e.type === 'TicketSplit')!.data as {
+      blockedBy: { ticket: string; blockedBy: string }[]
+    }
+    expect(split.blockedBy).toEqual(
+      expect.arrayContaining([
+        { ticket: 'b', blockedBy: 'a' },
+        { ticket: 'c', blockedBy: 'b' },
+        { ticket: 'c', blockedBy: 'a' },
+      ]),
+    )
+    expect(split.blockedBy).toHaveLength(3)
+  })
+
   it('a second call after success writes nothing and is refused as not waiting', async () => {
     const { gh, go } = await setup()
     await go()
@@ -270,45 +371,8 @@ describe('splitTicketHolding', () => {
     expect(gh.calls.length).toBe(writes)
   })
 
-  it('adopts a sub-issue whose title is a plan entry, and repairs its body and kind label', async () => {
-    const { gh, go } = await setup()
-    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: [] })
-    await gh.client.addSubIssue(PARENT, a.number)
-    const result = await go()
-    expect(result.ok).toBe(true)
-    expect(result.steps[0]).toMatchObject({ name: 'create a', status: 'done' })
-    expect(result.steps[3]).toMatchObject({ name: 'attach a', status: 'skipped' })
-    expect([...gh.issues.values()].filter((i) => i.title === 'part a')).toHaveLength(1)
-    const adopted = gh.issues.get(a.number)!
-    expect(adopted.body).toContain('do a')
-    expect(adopted.body).toContain('lingtai:split')
-    expect(adopted.labels.map((l) => l.name)).toEqual(['feature'])
-  })
-
-  it('repairs a created child that came back without its kind label', async () => {
-    const { gh, go } = await setup()
-    const create = gh.client.createIssue
-    gh.client.createIssue = async (input) => create({ ...input, labels: [] })
-    const result = await go()
-    expect(result.ok).toBe(true)
-    expect(gh.issues.get(700)!.labels.map((l) => l.name)).toEqual(['feature'])
-  })
-
-  it('adds the kind to an adopted child without dropping a label somebody added since', async () => {
-    const { gh, go } = await setup()
-    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: ['agent:hold'] })
-    await gh.client.addSubIssue(PARENT, a.number)
-    expect((await go()).ok).toBe(true)
-    expect(
-      gh.issues
-        .get(a.number)!
-        .labels.map((l) => l.name)
-        .sort(),
-    ).toEqual(['agent:hold', 'feature'])
-  })
-
   it('a failure on chain appends SplitFailed, and the retry appends a fresh SplitStarted and only the missing link', async () => {
-    const { store, ticketId, waitId, gh, go } = await setup()
+    const { store, ticketId, waitId, gh, go, ME } = await setup()
     gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
     const first = await go()
     expect(first.ok).toBe(false)
@@ -316,10 +380,10 @@ describe('splitTicketHolding', () => {
     const failed = afterFirst.at(-1)!
     expect(failed.type).toBe('SplitFailed')
     expect(failed.data).toMatchObject({ waitId, step: 'chain c←b' })
-    expect(splitProgressOf(afterFirst, { waitId, instance: 'board-1' }).state).toBe('failed')
+    expect(splitProgressOf(afterFirst, { ...ME, running: false }).state).toBe('failed')
 
     gh.fail = null
-    expect((await go()).ok).toBe(true)
+    expect((await go(undefined)).ok).toBe(true)
     const retried = (await store.read(ticketId)).slice(afterFirst.length)
     expect(retried.map((e) => e.type)).toEqual([
       'SplitStarted',
@@ -328,58 +392,23 @@ describe('splitTicketHolding', () => {
       'WaitResolved',
       'TicketReleased',
     ])
-    const progress = splitProgressOf(await store.read(ticketId), { waitId, instance: 'board-1' })
-    expect(progress.state).toBe('done')
+    expect(splitProgressOf(await store.read(ticketId), { ...ME, running: false }).state).toBe('done')
   })
 
-  it('a retry that adds a missing link appends only that link', async () => {
-    const { store, ticketId, gh, go } = await setup()
-    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
-    await go()
-    const afterFirst = await store.read(ticketId)
-    expect(afterFirst.filter((e) => e.type === 'SplitChildWritten')).toHaveLength(3)
-    expect(afterFirst.filter((e) => e.type === 'SplitLinkWritten')).toHaveLength(1)
-    gh.fail = null
-    await go()
-    const all = await store.read(ticketId)
-    expect(all.filter((e) => e.type === 'SplitChildWritten')).toHaveLength(3)
-    expect(all.filter((e) => e.type === 'SplitLinkWritten')).toHaveLength(2)
-  })
-
-  it('a retry whose titles swap the children records the new mapping, and the fold agrees with TicketSplit', async () => {
-    const { store, ticketId, waitId, gh, go } = await setup()
-    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
-    await go()
-    gh.fail = null
-    const [a, b, ...rest] = plan.children
-    const swapped = { ...plan, children: [{ ...a!, title: b!.title }, { ...b!, title: a!.title }, ...rest] }
-    const result = await splitTicketHolding(
-      {
-        project: PROJECT,
-        issue: PARENT,
-        waitId,
-        plan: swapped,
-        kinds: ['bug', 'feature'],
-        repository: REPO,
-        by: 'human:h',
-        instance: 'board-1',
-        github: gh.client,
-        store,
-      },
-      store,
-      ticketId,
-    )
-    expect(result.ok).toBe(true)
-    const events = await store.read(ticketId)
-    const progress = splitProgressOf(events, { waitId, instance: 'board-1' })
-    const split = events.find((e) => e.type === 'TicketSplit')!.data as {
-      children: { key: string; number: number; id: number }[]
-      blockedBy: { ticket: string; blockedBy: string }[]
+  it('leaves the page interrupted, not writing, when the final SplitFailed append throws', async () => {
+    const { store, ticketId, gh, go, ME } = await setup()
+    const real = store.append.bind(store)
+    store.append = async (id, version, events) => {
+      if (events.some((e) => e.type === 'SplitFailed')) throw new Error('store is down')
+      return real(id, version, events)
     }
-    if (progress.state !== 'done') throw new Error(`expected done, got ${progress.state}`)
-    expect(progress.children).toEqual(split.children)
-    expect(progress.links).toEqual(split.blockedBy)
-    expect(split.children.find((c) => c.key === 'a')!.number).toBe(701)
+    gh.fail = { call: 'addBlockedBy 702 701', mode: 'before', times: 1 }
+    const result = await go().catch(() => null)
+    expect(result === null || !result.ok).toBe(true)
+    const events = await store.read(ticketId)
+    expect(events.some((e) => e.type === 'SplitFailed')).toBe(false)
+    // The writer has ended, so the process's running set no longer has it.
+    expect(splitProgressOf(events, { ...ME, running: false }).state).toBe('interrupted')
   })
 
   it('a refusal before writing appends nothing', async () => {
@@ -404,17 +433,6 @@ describe('splitTicketHolding', () => {
     expect((await store.read(ticketId)).some((e) => e.type.startsWith('Split'))).toBe(false)
   })
 
-  it('a child adopted with no prior event gets its SplitChildWritten', async () => {
-    const { store, ticketId, gh, go } = await setup()
-    const a = await gh.client.createIssue({ title: 'part a', body: 'outdated', labels: [] })
-    await gh.client.addSubIssue(PARENT, a.number)
-    expect((await go()).ok).toBe(true)
-    const written = (await store.read(ticketId)).filter((e) => e.type === 'SplitChildWritten')
-    expect(written.map((e) => e.data)).toContainEqual(
-      expect.objectContaining({ key: 'a', number: a.number, id: a.number * 1_000_003 }),
-    )
-  })
-
   it('marks record the split done only once the append lands', async () => {
     const { store, ticketId, go } = await setup()
     const real = store.append.bind(store)
@@ -428,35 +446,14 @@ describe('splitTicketHolding', () => {
     expect(failed.steps.find((s) => s.name === 'end the wait')!.status).toBe('failed')
     expect((await store.read(ticketId)).some((e) => e.type === 'TicketSplit')).toBe(false)
     store.append = real
-    const ok = await go()
+    const ok = await go(undefined)
     expect(ok.steps.find((s) => s.name === 'record the split')!.status).toBe('done')
   })
 
-  it('refuses two children with one title before any GitHub call', async () => {
-    const { gh, store, ticketId, waitId } = await setup()
-    const dup: SplitPlanInput = {
-      ...plan,
-      children: [plan.children[0]!, { ...plan.children[1]!, title: ' part a ' }, plan.children[2]!],
-    }
-    const result = await splitTicketHolding(
-      {
-        project: PROJECT,
-        issue: PARENT,
-        waitId,
-        plan: dup,
-        kinds: ['bug', 'feature'],
-        repository: REPO,
-        by: 'human:h',
-        instance: 'board-1',
-        github: gh.client,
-        store,
-      },
-      store,
-      ticketId,
-    )
-    expect(result.ok).toBe(false)
-    expect(result.detail).toContain('part a')
-    expect(gh.calls).toEqual([])
+  it('knows a child by its marker and never by its title', () => {
+    const source = readFileSync(new URL('../src/split-ticket.ts', import.meta.url), 'utf8')
+    expect(source).not.toMatch(/\.title\s*[!=]==?/)
+    expect(source).not.toMatch(/titles?\b.*\bindexOf/)
   })
 })
 

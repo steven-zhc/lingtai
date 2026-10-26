@@ -129,7 +129,11 @@ export async function splitTicket(options: SplitTicketOptions): Promise<SplitTic
   return deciding(
     ticketId,
     () =>
-      refused(options.plan, ticketId, `${ticketId} is being decided by someone else right now. Reload and read it again.`),
+      refused(
+        options.plan,
+        ticketId,
+        `${ticketId} is being decided by someone else right now. Reload and read it again.`,
+      ),
     () => splitTicketHolding(options, store, ticketId),
   )
 }

@@ -1917,7 +1917,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     const state = await loadProject(ticket.project)
     const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
     standing.split = {
-      progress: splitProgressOf(own, { waitId: standing.waitId, instance: splitInstance(),
+      progress: splitProgressOf(own, {
+        waitId: standing.waitId,
+        instance: splitInstance(),
         running: isSplitRunning(standing.waitId),
       }),
       tickets,
