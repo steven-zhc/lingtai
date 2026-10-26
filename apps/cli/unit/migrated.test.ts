@@ -34,6 +34,11 @@ describe('routeOf', () => {
     [['end', 'replay', 'lingtai']],
     [['backlog']],
     [['backlog', 'accept', 'lingtai', 'a1b2c3', '--kind', 'bug']],
+    [['env', 'list', 'p']],
+    [['projection', 'lag', '--json']],
+    [['upgrade']],
+    [['rollback', '0.9.0']],
+    [['uninstall', '--yes']],
   ])('sends %j to @effect/cli', (argv) => {
     expect(routeOf(argv)).toBe('effect')
   })
@@ -62,13 +67,12 @@ describe('routeOf', () => {
     [['ticket', 'list', '--help'], 'help'],
     [['end', 'replay', '--help'], 'help'],
     [['backlog', '--help'], 'help'],
+    [['env', '--help'], 'help'],
+    [['projection', 'rebuild', '--help'], 'help'],
     // A whole argument, never a substring: this one is a question's text.
     [['ask', 'p', '--issue', '1', 'what --help'], 'effect'],
     [['--version'], 'lingtai'],
     [['daemon', '--no-conduct'], 'lingtai'],
-    [['upgrade'], 'install'],
-    [['rollback'], 'install'],
-    [['uninstall'], 'install'],
   ])('leaves %j on its existing path (%s)', (argv, route) => {
     expect(routeOf(argv)).toBe(route)
   })

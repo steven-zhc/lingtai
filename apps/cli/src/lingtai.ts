@@ -40,7 +40,6 @@ import { BOARD_PORT } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
 import { log } from '@lingtai/event-store'
-import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, spendProjection, taskViewProjection } from '@lingtai/projector'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
@@ -51,11 +50,10 @@ import { isCommand } from './commands.ts'
 import { conductorPass } from './conduct.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
-import { envCommand } from './env.ts'
 import { commandHelp, rootHelp } from './help.ts'
 import { configPath } from './init.ts'
 import { pauseCommand } from './pause.ts'
-import { rebuildProjection } from './projection.ts'
+import { PROJECTIONS } from './projection.ts'
 import {
   openDaemon,
   parseRestartArgs,
@@ -75,75 +73,6 @@ import {
 } from './triage.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
-
-/**
- * Every projection this system runs, named here in the open.
- *
- * A second one exists now (`finding_backlog`, `#137`), and a third (`spend`,
- * `#497`), and the comment in `projectionCommand` says where it has to be
- * added: here, visibly, or it does not exist.
- */
-const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
-
-async function projectionCommand(args: string[]): Promise<number> {
-  const [sub, name] = args
-
-  if (sub === 'lag') {
-    const lags = await projectionLag()
-    if (lags.length === 0) {
-      console.log('no projection has a checkpoint yet')
-      return 0
-    }
-    for (const l of lags) {
-      console.log(`${l.name}\t${l.lastSeq}/${l.headSeq}\t${l.lag} behind\t${l.updatedAt?.toISOString() ?? 'never'}`)
-    }
-    return 0
-  }
-
-  if (sub === 'rebuild') {
-    if (!name) {
-      console.error('lingtai projection rebuild <name>')
-      return 2
-    }
-    // Named, not discovered. A list whose only job was to let a projection be
-    // written and silently left out of it — no table, no checkpoint, no failing
-    // check — is what 0022 refused; `PROJECTIONS` is written out above, and a
-    // projection missing from it is missing from `--help` too — `help.test.ts`
-    // holds the names in `commands.ts` to it.
-    const projection = PROJECTIONS.find((p) => p.name === name)
-    if (!projection) {
-      console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(', ')}`)
-      return 2
-    }
-    // Drop the table, reset the checkpoint, replay — which is what makes a
-    // projection's shape free to change, a rebuild rather than a migration.
-    // `rebuildProjection` refuses before any of that if the log predates
-    // #445's payload reset (#451).
-    return rebuildProjection({
-      name,
-      queries: log.queries,
-      runnerFor: () => createProjectionRunner({ projection }),
-    })
-  }
-
-  // Gone, and answered by name rather than by falling through to the usage.
-  //
-  // It was an alias for `lingtai daemon`, and that is exactly what made it
-  // confusing: it read as a second way to follow the log, when it was only the
-  // same one wearing another name. Two names for one process is how "why is
-  // the board stale" gets a different answer depending on which name you
-  // happened to learn. Since 0022 there is one behaviour everywhere — every
-  // process that appends holds a projector while it runs.
-  if (sub === 'run') {
-    console.error(
-      'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.',
-    )
-    return 2
-  }
-
-  console.error(commandHelp('projection'))
-  return 2
-}
 
 /** What `lingtai service` reads off the log, shared with the restart that starts through it. */
 function serviceOptions(): ServiceOptions {
@@ -885,10 +814,6 @@ async function main(argv: string[]): Promise<number> {
     // would respawn it every thirty seconds (#187). One parser, two doors.
     case 'board':
       return (await import('./cli.ts')).runCli(['node', 'lingtai', 'board', ...rest])
-    // Positional throughout, and not through `parseFlags`: a value is an
-    // argument here, and `KEY=--anything` is a legitimate one.
-    case 'env':
-      return envCommand(rest)
     case 'start':
     // **`daemon` still answers, and that is not indecision** (`#159`). An
     // installed LaunchAgent or systemd unit has `lingtai daemon` written into
@@ -953,15 +878,13 @@ async function main(argv: string[]): Promise<number> {
       return controlCommand('resume', rest)
     case 'shutdown':
       return controlCommand('shutdown', rest)
-    case 'projection':
-      return projectionCommand(rest)
     // `entry.ts` answers this before the log is loaded; here for a process
     // started from this file, as a service's plist starts it.
     case 'version':
       console.log(versionLine())
       return 0
-    // `init`, `add`, `status`, `doctor`, the commands that answer a wait, and `run`, `attach`, `ticket`, `end` and `backlog` are
-    // `@effect/cli`'s (#618, #619, #620, #621, #624) and `entry.ts` routes
+    // `init`, `add`, `status`, `doctor`, the commands that answer a wait, `run`, `attach`, `ticket`, `end` and `backlog`, and
+    // `env` and `projection` are `@effect/cli`'s (#618, #619, #620, #621, #624, #625) and `entry.ts` routes
     // them there; they are named here only because the command list is exhaustive.
     case 'init':
     case 'add':
@@ -979,9 +902,11 @@ async function main(argv: string[]): Promise<number> {
     case 'ticket':
     case 'end':
     case 'backlog':
+    case 'env':
+    case 'projection':
       console.error(`lingtai ${command} runs from the entry — pnpm lingtai ${command}, or the installed lingtai`)
       return 2
-    // The same: `entry.ts` answers these before the log is loaded (`install.ts`).
+    // The same: `cli.ts` answers these before the log is loaded (`install.ts`).
     case 'upgrade':
     case 'rollback':
     case 'uninstall':

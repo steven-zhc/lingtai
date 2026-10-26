@@ -27,7 +27,7 @@ export type CommandDefinition = {
   readonly examples: readonly string[]
 }
 
-/** The projections `lingtai projection` knows; `help.test.ts` holds this to `lingtai.ts`'s list. */
+/** The projections `lingtai projection` knows; `help.test.ts` holds this to `PROJECTIONS` in `projection.ts`. */
 export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend'] as const
 
 const define = <const N extends string>(
@@ -210,7 +210,7 @@ export const COMMANDS = [
       '  Write one value into ~/.lingtai/env/<project>.env.',
       'lingtai env set <project> KEY',
       '  Read the value from stdin, unechoed.',
-      'lingtai env list <project>',
+      'lingtai env list <project> [--json] [--no-color]',
       '  Names and which layer answered — never values.',
       'lingtai env unset <project> KEY',
       '  Remove one.',
@@ -526,7 +526,7 @@ export const COMMANDS = [
     task: 'how far projections lag, and rebuild one',
     effect: 'changes',
     usage: [
-      'lingtai projection lag',
+      'lingtai projection lag [--json] [--no-color]',
       '  How far each projection is behind the log.',
       'lingtai projection rebuild <name>',
       '  Drop the table, reset the checkpoint, replay.',

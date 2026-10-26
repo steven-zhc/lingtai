@@ -3,7 +3,7 @@
  * `lingtai` — the entry, in front of `lingtai.ts`.
  *
  * **Some commands answer before the rest is imported** (#184, #186): `version`,
- * `upgrade`, `rollback`, `uninstall`, and `init` and `add`, which `cli.ts` parses (#620). `lingtai.ts`'s many commands
+ * `upgrade`, `rollback`, `uninstall`, `init` and `add`, all of which `cli.ts` parses (#620, #625). `lingtai.ts`'s many commands
  * all assume a database is already configured, and read or write the log
  * close to where they start. Since #179, importing `@lingtai/event-store`
  * does not itself build a client — the barrel hands out a deferred view, and
@@ -19,10 +19,7 @@
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
 import { helpCommand } from './help.ts'
-import { installCommand } from './install.ts'
 import { routeOf } from './migrated.ts'
-// Neither reaches the log: `world.ts` loads `@lingtai/env` and nothing else.
-import { liveWorld } from './world.ts'
 
 const argv = process.argv.slice(2)
 
@@ -46,18 +43,6 @@ if (route === 'effect') {
 } else if (route === 'help') {
   // From the definitions alone (0121 §8): no project, no log, no network.
   process.exitCode = helpCommand(argv)
-} else if (route === 'install') {
-  installCommand(argv, liveWorld(import.meta.filename)).then(
-    (code) => {
-      process.exitCode = code
-    },
-    (err: unknown) => {
-      const error = err as Error
-      console.error(error.message || String(err))
-      if (process.env['LINGTAI_DEBUG']) console.error(error.stack)
-      process.exitCode = 1
-    },
-  )
 } else {
   void import('./lingtai.ts')
 }

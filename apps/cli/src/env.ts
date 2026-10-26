@@ -24,29 +24,46 @@
  */
 import { type ProjectEnvListing, projectEnvNames, setProjectEnv, unsetProjectEnv } from '@lingtai/agent-env'
 
-const USAGE = `lingtai env set <project> KEY=VALUE   write or replace one value
-lingtai env set <project> KEY         read the value from stdin, unechoed
-lingtai env list <project>            names and where each came from
-lingtai env unset <project> KEY       remove one`
+import { heading, keyValues, printJson, symbol, table } from './output.ts'
+
+const DEFERRED = 'project file — asks for a secret source (a "!" value), which is not built yet'
 
 /**
  * Names, layers, and no values — asserted by a test, because this is the
  * function a screen share is pointed at.
  */
-export function formatEnvList(listing: ProjectEnvListing): string {
+export function renderEnvList(
+  listing: ProjectEnvListing,
+  project?: string,
+  options: { columns?: number | undefined } = {},
+): string[] {
+  if (listing.names.length === 0) return [`no names — nothing in ${listing.file}`]
   const deferred = new Set(listing.deferred)
-  if (listing.names.length === 0) {
-    return `no names — nothing in ${listing.file}`
-  }
+  return [
+    ...(project === undefined ? [] : [heading(`env ${project}`)]),
+    ...keyValues([['file', listing.file]]),
+    `${listing.names.length} name(s), values never shown`,
+    '',
+    ...table(
+      ['NAME', 'LAYER'],
+      listing.names.map((n) => [n.name, deferred.has(n.name) ? DEFERRED : n.layer]),
+      options,
+    ),
+  ]
+}
 
-  const width = Math.max(...listing.names.map((n) => n.name.length))
-  const lines = listing.names.map((n) => {
-    const where = deferred.has(n.name)
-      ? 'project file — asks for a secret source (a "!" value), which is not built yet'
-      : n.layer
-    return `  ${n.name.padEnd(width)}  ${where}`
-  })
-  return [`${listing.file} · ${listing.names.length} name(s), values never shown`, ...lines].join('\n')
+export function formatEnvList(listing: ProjectEnvListing): string {
+  return renderEnvList(listing).join('\n')
+}
+
+/** `--json`: names and layers, and no field that could carry a value. */
+export function envListJson(project: string, listing: ProjectEnvListing): Record<string, unknown> {
+  const deferred = new Set(listing.deferred)
+  return {
+    project,
+    file: listing.file,
+    names: listing.names.map((n) => ({ name: n.name, layer: n.layer, deferred: deferred.has(n.name) })),
+  }
 }
 
 /**
@@ -98,50 +115,44 @@ async function readValueFromStdin(name: string): Promise<string> {
   })
 }
 
-export async function envCommand(args: string[]): Promise<number> {
-  const [sub, project, ...rest] = args
+/** `env list`: reads, renders, prints. A project the machine does not know throws, and the caller answers it. */
+export async function envList(request: {
+  project: string
+  json: boolean
+  columns?: number | undefined
+}): Promise<number> {
+  const listing = await projectEnvNames({ project: request.project })
+  if (request.json) printJson('env list', envListJson(request.project, listing))
+  else for (const line of renderEnvList(listing, request.project, { columns: request.columns })) console.log(line)
+  return 0
+}
 
-  if (!sub || !project) {
-    console.error(USAGE)
-    return 2
-  }
+/** `env set`: `KEY=VALUE` writes, a bare `KEY` reads the value from stdin. */
+export async function envSet(request: { project: string; argument: string }): Promise<number> {
+  const { project, argument } = request
+  // The first `=` and no other: a value may hold as many as it likes, and
+  // splitting on all of them is how a base64 secret loses its padding.
+  const eq = argument.indexOf('=')
+  const name = eq === -1 ? argument : argument.slice(0, eq)
+  const value = eq === -1 ? await readValueFromStdin(name) : argument.slice(eq + 1)
 
-  if (sub === 'list') {
-    console.log(formatEnvList(await projectEnvNames({ project })))
-    return 0
-  }
+  const { file, created, replaced } = await setProjectEnv({ project, name, value })
+  console.log(
+    `${symbol.pass()} ${name} ${replaced ? 'replaced in' : 'written to'} ${file}${created ? ' (created, 0600)' : ''}`,
+  )
+  return 0
+}
 
-  if (sub === 'set') {
-    const argument = rest[0]
-    if (!argument) {
-      console.error(USAGE)
-      return 2
-    }
-    // The first `=` and no other: a value may hold as many as it likes, and
-    // splitting on all of them is how a base64 secret loses its padding.
-    const eq = argument.indexOf('=')
-    const name = eq === -1 ? argument : argument.slice(0, eq)
-    const value = eq === -1 ? await readValueFromStdin(name) : argument.slice(eq + 1)
-
-    const { file, created, replaced } = await setProjectEnv({ project, name, value })
-    console.log(`${name} ${replaced ? 'replaced in' : 'written to'} ${file}${created ? ' (created, 0600)' : ''}`)
-    return 0
-  }
-
-  if (sub === 'unset') {
-    const name = rest[0]
-    if (!name) {
-      console.error(USAGE)
-      return 2
-    }
-    const { file, removed } = await unsetProjectEnv({ project, name })
-    console.log(removed ? `${name} removed from ${file}` : `${name} was not set in ${file}`)
-    // Non-zero for a name that was not there: "I removed it" and "there was
-    // nothing to remove" are different answers, and the second is the one you
-    // want to hear about when you have spelled the name wrong.
-    return removed ? 0 : 1
-  }
-
-  console.error(USAGE)
-  return 2
+/** `env unset`: non-zero for a name that was not there. */
+export async function envUnset(request: { project: string; name: string }): Promise<number> {
+  const { file, removed } = await unsetProjectEnv({ project: request.project, name: request.name })
+  console.log(
+    removed
+      ? `${symbol.pass()} ${request.name} removed from ${file}`
+      : `${symbol.fail()} ${request.name} was not set in ${file}`,
+  )
+  // Non-zero for a name that was not there: "I removed it" and "there was
+  // nothing to remove" are different answers, and the second is the one you
+  // want to hear about when you have spelled the name wrong.
+  return removed ? 0 : 1
 }

@@ -21,12 +21,14 @@ import {
   artifactName,
   BOARD,
   compareVersions,
-  installCommand,
   installPaths,
   installPlatform,
   pointShim,
   releaseCheck,
+  rollback,
   runningFrom,
+  uninstall,
+  upgrade,
   unpackRelease,
   type Drained,
   type World,
@@ -204,7 +206,7 @@ describe('the platform', () => {
 describe('lingtai upgrade', () => {
   it('unpacks beside the old version, drains while the shim still points at it, then moves the shim', async () => {
     await installOld()
-    expect(await installCommand(['upgrade'], world())).toBe(0)
+    expect(await upgrade({ despiteDoctor: false }, world())).toBe(0)
 
     const paths = installPaths({ HOME: home })
     expect(existsSync(join(paths.versions, '1.0.0', 'lingtai'))).toBe(true)
@@ -217,7 +219,7 @@ describe('lingtai upgrade', () => {
   it('refuses an artifact that does not match its checksum, and unpacks and moves nothing', async () => {
     await installOld()
     corrupt = true
-    expect(await installCommand(['upgrade'], world())).toBe(1)
+    expect(await upgrade({ despiteDoctor: false }, world())).toBe(1)
 
     const paths = installPaths({ HOME: home })
     expect(lines.join('\n')).toContain(`${BOARD} does not match its checksum`)
@@ -229,11 +231,11 @@ describe('lingtai upgrade', () => {
 
   it('leaves the shim where it is when the drain refuses, and a second upgrade uses what was unpacked', async () => {
     await installOld()
-    expect(await installCommand(['upgrade'], world({ drain: async () => ({ ok: false, code: 130 }) }))).toBe(130)
+    expect(await upgrade({ despiteDoctor: false }, world({ drain: async () => ({ ok: false, code: 130 }) }))).toBe(130)
     expect(shimSays()).toBe('lingtai 1.0.0')
 
     lines = []
-    expect(await installCommand(['upgrade'], world())).toBe(0)
+    expect(await upgrade({ despiteDoctor: false }, world())).toBe(0)
     expect(lines.join('\n')).toContain('already unpacked')
     expect(shimSays()).toBe('lingtai 1.0.1')
   })
@@ -241,7 +243,7 @@ describe('lingtai upgrade', () => {
   it('says it is current, and drains nothing, when the newest release is the one installed', async () => {
     await installOld()
     latest = '1.0.0'
-    expect(await installCommand(['upgrade'], world())).toBe(0)
+    expect(await upgrade({ despiteDoctor: false }, world())).toBe(0)
     expect(lines.join('\n')).toContain('1.0.0 is current')
     expect(calls).toEqual([])
   })
@@ -255,7 +257,7 @@ describe('lingtai upgrade', () => {
         throw new Error('no request was expected')
       },
     })
-    expect(await installCommand(['upgrade'], w)).toBe(1)
+    expect(await upgrade({ despiteDoctor: false }, w)).toBe(1)
     expect(asked).toBe(false)
     expect(lines.join('\n')).toContain('a checkout upgrades with git pull')
   })
@@ -264,15 +266,15 @@ describe('lingtai upgrade', () => {
 describe('lingtai rollback', () => {
   it('points the shim back at the older directory, which still runs', async () => {
     await installOld()
-    expect(await installCommand(['upgrade'], world())).toBe(0)
+    expect(await upgrade({ despiteDoctor: false }, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.1')
 
-    expect(await installCommand(['rollback'], world())).toBe(0)
+    expect(await rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0')
     expect(existsSync(join(installPaths({ HOME: home }).versions, '1.0.1', 'lingtai'))).toBe(true)
 
     lines = []
-    expect(await installCommand(['rollback'], world())).toBe(1)
+    expect(await rollback({}, world())).toBe(1)
     expect(lines.join('\n')).toContain('nothing older than 1.0.0')
   })
 
@@ -280,7 +282,7 @@ describe('lingtai rollback', () => {
     const shim = installPaths({ HOME: home }).shim
     mkdirSync(join(home, '.local', 'bin'), { recursive: true })
     writeFileSync(shim, '#!/bin/sh\n')
-    expect(await installCommand(['rollback'], world())).toBe(1)
+    expect(await rollback({}, world())).toBe(1)
     expect(lines.join('\n')).toContain("not Lingtai's to replace")
     expect(readFileSync(shim, 'utf8')).toBe('#!/bin/sh\n')
   })
@@ -295,7 +297,7 @@ describe('lingtai rollback, among prereleases', () => {
       chmodSync(join(paths.versions, v, 'lingtai'), 0o755)
     }
     pointShim(paths, '1.0.0-rc.10')
-    expect(await installCommand(['rollback'], world())).toBe(0)
+    expect(await rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0-rc.2')
   })
 })
@@ -306,7 +308,7 @@ describe('lingtai uninstall', () => {
     const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'pass-1')
     mkdirSync(worktree, { recursive: true })
     const w = world({ conducting: async () => 'steven@host pid 777' })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(1)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(1)
     expect(lines.join('\n')).toContain('steven@host pid 777 holds the conductor lock')
     expect(existsSync(worktree)).toBe(true)
   })
@@ -330,7 +332,7 @@ describe('lingtai uninstall', () => {
     const asked: string[] = []
     const w = world({ conducting: async () => (asked.push('lock'), null) })
 
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     // Asked, and answered: no flag was needed to say what the lock already said.
     expect(asked).toEqual(['lock'])
     expect(lines.join('\n')).not.toContain('no log is configured')
@@ -352,7 +354,7 @@ describe('lingtai uninstall', () => {
       },
       logWhere: () => ({ kind: 'elsewhere', named: 'LINGTAI_DATABASE_URL names' }) as const,
     })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(1)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(1)
     const said = lines.join('\n')
     expect(said).toContain(`the conductor lock under ${locks} could not be read`)
     expect(said).toContain('EACCES: permission denied')
@@ -363,7 +365,7 @@ describe('lingtai uninstall', () => {
 
     lines = []
     expect(said).toContain('--nothing-conducts')
-    expect(await installCommand(['uninstall', '--yes', '--nothing-conducts'], w)).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: true }, w)).toBe(0)
     expect(existsSync(join(home, '.lingtai'))).toBe(false)
   })
 
@@ -391,7 +393,7 @@ describe('lingtai uninstall', () => {
         key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [] },
       }),
     })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     const said = lines.join('\n')
     expect(said).toContain(
       'Its private key is in LINGTAI_GITHUB_APP_PRIVATE_KEY in your environment, which nothing here removed',
@@ -413,14 +415,14 @@ describe('lingtai uninstall', () => {
         key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [file] },
       }),
     })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     expect(lines.join('\n')).toContain('which is gone')
   })
 
   it('refuses while a process runs from what it would remove', async () => {
     await installOld()
     const w = world({ running: () => [{ pid: 4242, command: 'node /x/.local/bin/lingtai start' }] })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(1)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(1)
     expect(lines.join('\n')).toContain('pid 4242')
     expect(existsSync(join(home, '.lingtai'))).toBe(true)
   })
@@ -428,7 +430,9 @@ describe('lingtai uninstall', () => {
   it('asks once, and removes nothing on a no', async () => {
     await installOld()
     const asked: string[] = []
-    expect(await installCommand(['uninstall'], world({ ask: async (q) => (asked.push(q), false) }))).toBe(1)
+    expect(
+      await uninstall({ yes: false, nothingConducts: false }, world({ ask: async (q) => (asked.push(q), false) })),
+    ).toBe(1)
     expect(asked).toHaveLength(1)
     expect(existsSync(join(home, '.lingtai', 'versions', '1.0.0'))).toBe(true)
   })
@@ -451,7 +455,7 @@ describe('lingtai uninstall', () => {
       },
       logWhere: () => ({ kind: 'elsewhere', named: 'LINGTAI_DATABASE_URL names' }) as const,
     })
-    expect(await installCommand(['uninstall'], w)).toBe(0)
+    expect(await uninstall({ yes: false, nothingConducts: false }, w)).toBe(0)
 
     expect(appAsked).toBe(true)
     expect(existsSync(join(home, '.lingtai'))).toBe(false)
@@ -477,7 +481,7 @@ describe('lingtai uninstall', () => {
     const w = world({
       logWhere: () => ({ kind: 'elsewhere', named: 'at postgresql://u:***@db.example.com:5432/postgres' }) as const,
     })
-    expect(await installCommand(['uninstall', '--yes'], w)).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
 
     const said = lines.join('\n')
     expect(said).toContain(
@@ -509,7 +513,7 @@ describe('lingtai uninstall', () => {
       logWhere: () => ({ kind: 'file', path: db, alsoElsewhere: false }) as const,
     })
 
-    expect(await installCommand(['uninstall'], w)).toBe(0)
+    expect(await uninstall({ yes: false, nothingConducts: false }, w)).toBe(0)
 
     const said = lines.join('\n')
     expect(said).toContain(`The event log is ${db}`)
@@ -544,7 +548,7 @@ describe('lingtai uninstall', () => {
       logWhere: () => ({ kind: 'file', path: db, alsoElsewhere: true }) as const,
     })
 
-    expect(await installCommand(['uninstall'], w)).toBe(0)
+    expect(await uninstall({ yes: false, nothingConducts: false }, w)).toBe(0)
 
     const said = lines.join('\n')
     // Warned before the question, naming the file, and never the claim that the
@@ -559,7 +563,7 @@ describe('lingtai uninstall', () => {
 
   it('says nothing about a log where none is configured', async () => {
     await installOld()
-    expect(await installCommand(['uninstall', '--yes'], world())).toBe(0)
+    expect(await uninstall({ yes: true, nothingConducts: false }, world())).toBe(0)
     const said = lines.join('\n')
     expect(said).not.toContain('The event log')
     expect(said).not.toContain('is untouched')
@@ -710,7 +714,7 @@ describe('install.sh', () => {
     expect(upgrade.said).toContain('now runs 1.0.1 (was 1.0.0')
     expect(shimSays()).toBe('lingtai 1.0.1')
 
-    expect(await installCommand(['rollback'], world())).toBe(0)
+    expect(await rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0')
   })
 })

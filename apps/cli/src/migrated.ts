@@ -25,12 +25,14 @@ export const MIGRATED_COMMANDS = [
   'ticket',
   'end',
   'backlog',
+  'env',
+  'projection',
+  'upgrade',
+  'rollback',
+  'uninstall',
 ] as const
 
-/** `upgrade`, `rollback`, `uninstall` — answered by `install.ts` before `lingtai.ts` is imported. */
-export const INSTALL_ONLY = ['upgrade', 'rollback', 'uninstall'] as const
-
-export type Route = 'effect' | 'help' | 'install' | 'lingtai'
+export type Route = 'effect' | 'help' | 'lingtai'
 
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
@@ -42,6 +44,5 @@ export function routeOf(argv: readonly string[]): Route {
   // argument, is answered from the definitions before any command sees it.
   if (argv.length === 0 || ['help', '--help', '-h'].includes(first) || argv.some((a) => a === '--help' || a === '-h'))
     return 'help'
-  if ((INSTALL_ONLY as readonly string[]).includes(first)) return 'install'
   return 'lingtai'
 }
