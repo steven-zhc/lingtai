@@ -1,6 +1,7 @@
 'use client'
 
 import { Graph, layout } from '@dagrejs/dagre'
+import type { SplitProgress, WaitId } from '@lingtai/domain'
 import type { RootCause } from '@lingtai/domain/wait'
 
 import '@xyflow/react/dist/style.css'
@@ -14,9 +15,11 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 
+import { splitModeOf } from '../lib/split-mode.ts'
 import { waves, wouldCycle, type Link } from '../lib/split-waves.ts'
+import { splitCard } from './actions.ts'
 
 /** The mockup's measurements (`doc/decisions/0118/Split.dc.html`): cards left to right, one column per wave. */
 const CARD_W = 236
@@ -40,17 +43,19 @@ interface CardData extends Record<string, unknown> {
   off: boolean
   faded: boolean
   selected: boolean
+  /** The number GitHub gave this child once its write was read back; null while it is owed. */
+  written: number | null
 }
 
 function Card({ data }: NodeProps<Node<CardData>>) {
-  const state = `${data.off ? ' split-card--off' : ''}${data.faded ? ' split-card--faded' : ''}${data.selected ? ' split-card--selected' : ''}`
+  const state = `${data.off ? ' split-card--off' : ''}${data.faded ? ' split-card--faded' : ''}${data.selected ? ' split-card--selected' : ''}${data.written !== null ? ' split-card--written' : ''}`
   return (
     <div className={`split-card${state}`}>
       <Handle type="target" position={Position.Left} className="split-handle" />
       <Handle type="source" position={Position.Right} className="split-handle" />
       <div className="split-card-head">
         <span className="split-card-name">{data.label}</span>
-        <span className="split-card-kind">{data.kind}</span>
+        <span className="split-card-kind">{data.written === null ? data.kind : `#${data.written} · ${data.kind}`}</span>
       </div>
       <div className="split-card-title">{data.title}</div>
     </div>
@@ -81,11 +86,34 @@ interface Child {
 
 const firstLine = (text: string) => text.split('\n')[0]?.trim() ?? ''
 
-/** Triage's split plan, drawn as waves of cards; every edit is local state until Create all (a separate ticket). */
-export function SplitPlan({ plan }: { plan: SplitProposal }) {
-  const [children, setChildren] = useState<Child[]>(() => plan.children.map((child) => ({ ...child })))
-  const [links, setLinks] = useState<Link[]>(() => plan.blockedBy.map((link) => ({ ...link })))
+/** What the page needs to write the split: which wait, what the log says, and where the tickets live. */
+export interface SplitControls {
+  project: string
+  issue: number
+  waitId: WaitId
+  progress: SplitProgress
+  tickets: 'github' | 'db'
+}
+
+/**
+ * Triage's split plan, drawn as waves of cards. Every edit is local state until
+ * Create all freezes the plan in the log (#603); from then on the cards draw
+ * the frozen plan, nothing is editable, and the page is locked exactly while
+ * the log says *writing*.
+ */
+export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: SplitControls }) {
+  const progress: SplitProgress = controls?.progress ?? { state: 'idle' }
+  const mode = splitModeOf(progress, controls?.tickets ?? 'github')
+  const frozen = progress.state === 'idle' ? null : progress.plan
+  const [localChildren, setChildren] = useState<Child[]>(() => plan.children.map((child) => ({ ...child })))
+  const [localLinks, setLinks] = useState<Link[]>(() => plan.blockedBy.map((link) => ({ ...link })))
+  const children: Child[] = frozen === null ? localChildren : frozen.children.map((child) => ({ ...child }))
+  const links: Link[] = frozen === null ? localLinks : frozen.blockedBy.map((link) => ({ ...link }))
+  const [pending, start] = useTransition()
+  const [said, setSaid] = useState<string | null>(null)
+  const written = new Map(progress.state === 'idle' ? [] : progress.children.map((c) => [c.key, c.number] as const))
   const [off, setOff] = useState<ReadonlySet<string>>(new Set())
+  const included = frozen === null ? children.filter((child) => !off.has(child.key)) : children
   const [selected, setSelected] = useState<string | null>(null)
 
   const keys = children.map((child) => child.key)
@@ -136,9 +164,10 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
           label: `Child ${index + 1}`,
           kind: child.kind,
           title: firstLine(child.title),
-          off: off.has(child.key),
+          off: frozen === null && off.has(child.key),
           faded: faded(child.key),
           selected: selected === child.key,
+          written: written.get(child.key) ?? null,
         } satisfies CardData,
         draggable: false,
         selectable: false,
@@ -199,14 +228,39 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
       width: Math.ceil(size.width ?? 0),
       height: Math.ceil(size.height ?? 0),
     }
-  }, [children, links, wave, off, selected])
+  }, [children, links, wave, off, selected, progress])
 
   const current = children.find((child) => child.key === selected)
   const edit = (key: string, patch: Partial<Child>) =>
     setChildren((all) => all.map((child) => (child.key === key ? { ...child, ...patch } : child)))
 
+  /** The plan as Create all sends it: without the cards switched off, and without any link that touches one. */
+  const send = () => {
+    if (controls === undefined) return
+    const keep = new Set(included.map((child) => child.key))
+    const body =
+      mode.button === 'create'
+        ? {
+            plan: {
+              children: included,
+              blockedBy: links.filter((link) => keep.has(link.ticket) && keep.has(link.blockedBy)),
+            },
+          }
+        : {}
+    start(async () => {
+      const result = await splitCard({
+        project: controls.project,
+        issue: controls.issue,
+        waitId: controls.waitId,
+        ...body,
+      })
+      setSaid(result.ok ? null : result.detail)
+    })
+  }
+  const already = progress.state === 'idle' ? [] : progress.children
+
   return (
-    <div className="split-plan">
+    <div className="split-plan" data-split-state={progress.state}>
       <div className="split-canvas">
         {/* React Flow sizes its own wrapper to 100% of this box, so the box carries the graph's size and the canvas scrolls inside its parent. */}
         <div style={{ width, height }}>
@@ -241,11 +295,16 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
         <div className="split-panel" role="group" aria-label={`Edit ${current.key}`}>
           <label className="split-field">
             <span>Title</span>
-            <input value={current.title} onChange={(event) => edit(current.key, { title: event.target.value })} />
+            <input
+              disabled={!mode.editable}
+              value={current.title}
+              onChange={(event) => edit(current.key, { title: event.target.value })}
+            />
           </label>
           <label className="split-field">
             <span>Body</span>
             <textarea
+              disabled={!mode.editable}
               rows={8}
               value={current.body}
               onChange={(event) => edit(current.key, { body: event.target.value })}
@@ -254,6 +313,7 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
           <label className="split-check">
             <input
               type="checkbox"
+              disabled={!mode.editable}
               checked={!off.has(current.key)}
               onChange={(event) =>
                 setOff((now) => {
@@ -278,7 +338,7 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
                     <input
                       type="checkbox"
                       checked={has}
-                      disabled={closes}
+                      disabled={closes || !mode.editable}
                       onChange={(event) =>
                         setLinks((now) =>
                           event.target.checked
@@ -296,6 +356,49 @@ export function SplitPlan({ plan }: { plan: SplitProposal }) {
           </fieldset>
         </div>
       )}
+      <div className="split-actions">
+        {mode.unavailable ? (
+          <p className="split-note">
+            Splitting is not available for this project yet — its tickets are in the database.
+          </p>
+        ) : null}
+        {progress.state === 'writing' ? (
+          <p className="split-note" role="status">
+            Writing the split…
+          </p>
+        ) : null}
+        {progress.state === 'failed' || progress.state === 'interrupted' ? (
+          <p className="split-note split-note--failed" role="alert">
+            {progress.state === 'failed' && progress.failed !== undefined
+              ? `Stopped at ${progress.failed.step}: ${progress.failed.detail}`
+              : 'The write was interrupted before it finished.'}
+          </p>
+        ) : null}
+        {already.length > 0 && progress.state !== 'writing' ? (
+          <p className="split-note">
+            Already created: {already.map((child) => `#${child.number} (${child.key})`).join(', ')}. A different split
+            leaves these for you to close.
+          </p>
+        ) : null}
+        {said !== null ? (
+          <p className="split-note split-note--failed" role="alert">
+            {said}
+          </p>
+        ) : null}
+        {controls === undefined ? (
+          <p className="split-note">Split is not offered for this wait, so this plan is only for reading.</p>
+        ) : null}
+        {mode.button === null || controls === undefined ? null : (
+          <button
+            type="button"
+            className="split-go"
+            disabled={pending || mode.locked || included.length === 0}
+            onClick={send}
+          >
+            {mode.button === 'create' ? `Create all (${included.length})` : 'Retry what is missing'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
