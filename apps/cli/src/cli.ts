@@ -5,7 +5,7 @@
  */
 import { Args, Command, Options } from '@effect/cli'
 import * as NodeContext from '@effect/platform-node/NodeContext'
-import { coloured } from '@lingtai/env/colour'
+import { coloured, paint } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
 import { definitionOf } from './commands.ts'
@@ -384,18 +384,21 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
       const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = await import('./service.ts')
       const why = Array.isArray(args.why) ? (args.why as string[]) : []
       const steps = createSteps(console.log)
-      steps.begin(
-        verb === 'shutdown'
-          ? 'draining'
-          : verb === 'install'
-            ? 'writing'
-            : verb === 'uninstall'
-              ? 'removing'
-              : 'starting',
-      )
-      const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], serviceOptions())
+      // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
+      if (verb === 'install') steps.begin('writing')
+      if (verb === 'uninstall') steps.begin('removing')
+      let unconfirmed = false
+      const code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+        ...serviceOptions(),
+        steps,
+        unconfirmed: () => {
+          unconfirmed = true
+        },
+      })
       steps.end()
-      if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
+      if (code === 0 && unconfirmed)
+        console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
+      else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
       else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
         console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
       else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)

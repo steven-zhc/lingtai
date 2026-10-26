@@ -1406,7 +1406,11 @@ export async function queueForTheLock(
     sayEveryMs?: number
   } = {},
 ): Promise<{
-  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<'held' | 'interrupted' | 'gave-up'>
+  wait: (
+    log: (line: string) => void,
+    retaken?: () => Promise<void>,
+    progress?: (line: string) => void,
+  ) => Promise<'held' | 'interrupted' | 'gave-up'>
   holds: () => Promise<boolean>
   leave: () => Promise<void>
 }> {
@@ -1415,7 +1419,7 @@ export async function queueForTheLock(
   let place = await take()
   const holds = async (): Promise<boolean> => place.lost() === null && place.held() && (await place.confirm())
   return {
-    wait: async (log, retaken) => {
+    wait: async (log, retaken, progress) => {
       const waited = await waitForTheLock('draining', null, log, {
         ask: async () => {
           if (await holds()) return null
@@ -1440,6 +1444,7 @@ export async function queueForTheLock(
           "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its pass, and the supervisor then starts one that takes work.",
         ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
         ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
+        ...(progress === undefined ? {} : { progress }),
       })
       return waited === 'free' ? 'held' : waited
     },

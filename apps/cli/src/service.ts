@@ -90,6 +90,7 @@ import {
   type ServiceStatus,
   type SupervisorAnswer,
 } from './service-status.ts'
+import { noSteps, type Steps } from './steps.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
@@ -586,7 +587,11 @@ export interface LockQueue {
    * never a fixed sleep: a quiet daemon reads the request and lets go at once.
    * `retaken` runs each time a place lost with its connection is taken again.
    */
-  wait: (log: (line: string) => void, retaken?: () => Promise<void>) => Promise<'held' | 'interrupted' | 'gave-up'>
+  wait: (
+    log: (line: string) => void,
+    retaken?: () => Promise<void>,
+    progress?: (line: string) => void,
+  ) => Promise<'held' | 'interrupted' | 'gave-up'>
   /**
    * Whether the lock is still this command's, asked on its own connection. A
    * wait that ended held is not proof a moment later: Postgres releases the
@@ -695,6 +700,10 @@ export interface ServiceOptions {
   now?: () => number
   log?: (line: string) => void
   error?: (line: string) => void
+  /** The phases, shown by the entry (#622); none where a test passes none. */
+  steps?: Steps
+  /** Called when a start was answered 0 without being started or confirmed: the supervisor already had a process. */
+  unconfirmed?: () => void
 }
 
 /** Whether launchd or systemd keeps a job here, as `lingtai restart` needs to know it (0042 §8). */
@@ -808,9 +817,12 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     file = fileFor(DAEMON_JOB)
     boardFile = fileFor(BOARD_JOB)
   } catch (err) {
-    error((err as Error).message)
+    if (options.json && verb === 'status')
+      log(jsonErrorDocument('service status', 'service-file', (err as Error).message))
+    else error((err as Error).message)
     return 1
   }
+  const steps = options.steps ?? noSteps
   const target = `gui/${uid}/${LAUNCHD_LABEL}`
   const boardTarget = `gui/${uid}/${BOARD_JOB.label}`
   const named = (job: Job): string => (platform === 'launchd' ? job.label : job.unit)
@@ -977,6 +989,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       log(
         "the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers",
       )
+      options.unconfirmed?.()
       return 0
     }
     // The port, before the supervisor is told anything. The lock is held by a
@@ -1308,6 +1321,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         'the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process ' +
           'may have lost the lock and be taking no work. lingtai doctor says who holds the lock',
       )
+      options.unconfirmed?.()
       return 0
     }
     if (platform === 'systemd') return startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])
@@ -1341,6 +1355,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
    *    next `service start` is not refused over it.
    */
   const drain = async (): Promise<number> => {
+    steps.begin('draining')
     const queue = await options.drain.queue().catch((err: unknown) => err as Error)
     if (queue instanceof Error) {
       // The database is what the drain goes through, and it is also what a
@@ -1427,7 +1442,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
           throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`)
         mine = again.version
       }
-      let waited = await queue.wait(log, askAgain)
+      let waited = await queue.wait(log, askAgain, (line) => steps.progress(line))
       // Asked again right before the supervisor is told: the lock is only worth
       // anything while its session lasts, and a wait that ended held says
       // nothing about a connection that dropped since. After `bootout` or
@@ -1437,7 +1452,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         log(
           'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
         )
-        waited = await queue.wait(log, askAgain)
+        waited = await queue.wait(log, askAgain, (line) => steps.progress(line))
       }
       if (waited !== 'held') {
         await queue.leave()
@@ -1644,6 +1659,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
 
     case 'start': {
       if (!installed) return notInstalled()
+      steps.begin('starting')
       const daemon = await start()
       // A standing shutdown request refuses both legs, and that is the one
       // failure of the daemon's that stops the board's start: the refusal says
@@ -1694,6 +1710,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // says, and not 1, since the conductor is drained and unloaded and a
       // restart has no reason to abandon its start over the UI.
       if (verb === 'shutdown') return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY
+      steps.begin('starting')
       const daemonStarted = await start(kept)
       // The sentinel stays inside this file: what a refused start is worth to
       // anybody outside is 1.
