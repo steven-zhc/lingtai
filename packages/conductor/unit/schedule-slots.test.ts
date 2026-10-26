@@ -75,7 +75,7 @@ const fix = (cell: string): string => `| | |\n|---|---|\n| **Fix** | ${cell} |\n
 
 /** One look: fill the free slots and return. */
 async function look(slots: ReturnType<typeof createSlots>, limit: number, lines: string[] = []) {
-  const handed: Promise<void>[] = []
+  const handed: Promise<boolean | void>[] = []
   const result = await Effect.runPromise(
     runQueue({
       project: { project: 'p' } as ProjectState,

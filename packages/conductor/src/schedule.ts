@@ -97,7 +97,7 @@ export interface ScheduleOptions {
     /** The project's `runtime.concurrency`. */
     limit: number
     /** Handed each started pass, which the work loop's drain waits for. */
-    started: (pass: Promise<void>) => void
+    started: (pass: Promise<boolean | void>) => void
   }
   log?: (line: string) => void
 }
@@ -273,8 +273,12 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               ran.push(result)
               reportEnding(log, result)
               if (result.ok === false && result.stage === 'env') envRefused = true
+              return !declinedBeforeWork(result)
             },
-            (err: unknown) => log(`${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`),
+            (err: unknown) => {
+              log(`${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`)
+              return false
+            },
           )
           handOver(pass.finally(leave))
           launched = true
@@ -335,6 +339,15 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       if (result.ok === false && result.stage === 'env') return finish('env')
     }
   })
+}
+
+/**
+ * A pass that ended before it did any work: refused at the recipe, the environment
+ * or the claim. It appended nothing a look would wake on and freed nothing worth
+ * a look, so settling it must not call for one — that is a loop with no backoff.
+ */
+export function declinedBeforeWork(result: RunOnceResult): boolean {
+  return result.ok === false && (result.stage === 'claim' || result.stage === 'env' || result.stage === 'recipe')
 }
 
 function reportEnding(log: (line: string) => void, result: RunOnceResult): void {

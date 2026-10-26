@@ -53,6 +53,7 @@ export {
   type RunnableOptions,
 } from './queue.ts'
 export { collision, fixFiles, readFixFiles, waitsFor } from './same-file.ts'
+export { declinedBeforeWork } from './schedule.ts'
 export { createSlots, type Slot, type Slots } from './slots.ts'
 export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from './ports.ts'
 export { AgentHostLive, PortsLive, RepoLive, livePorts } from './live.ts'

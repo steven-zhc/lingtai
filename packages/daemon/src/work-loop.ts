@@ -43,7 +43,9 @@
  * By default a look awaits its pass, as it always did. When `runtime.concurrency`
  * asks for more, the look fills free slots, hands each pass it started to
  * `started` and returns; **a pass settling is what calls for the next look**,
- * because a pass that ends at the claim appends nothing that would wake one.
+ * because a pass that ends at the claim appends nothing that would wake one —
+ * unless it resolved `false`, which says it declined before doing any work and a
+ * look would only find the same refusal.
  *
  * ## Stopping is waiting for every pass in flight
  *
@@ -175,7 +177,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: PassReason, started?: (pass: Promise<void>) => void) => Promise<void>
+  pass: (reason: PassReason, started?: (pass: Promise<boolean | void>) => void) => Promise<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -350,15 +352,15 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * settles the slot it held is free, so the loop looks again. After `stop()` the
    * look lapses on `if (stopped) break`.
    */
-  const started = (pass: Promise<void>): void => {
+  const started = (pass: Promise<boolean | void>): void => {
     passesInFlight.track(pass)
     void pass
       .then(
-        () => {},
-        () => {},
+        (worked) => worked !== false,
+        () => false,
       )
-      .then(() => {
-        if (!stopped) void pump('completion')
+      .then((worked) => {
+        if (worked && !stopped) void pump('completion')
       })
   }
 
