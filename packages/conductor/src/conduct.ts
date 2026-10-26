@@ -3665,8 +3665,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 } as const)
               : ({ on: 'output', output: said } as const)
 
-        const fixId =
-          refusal.on === 'conflict' ? `${runId}:fix:${round}:conflict:${++conflictFixes}` : `${runId}:fix:${round}`
+        // Keyed on where the fix came from and not on `refusal`: a passing review's
+        // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
+        const fixId = from === 'merge' ? `${runId}:fix:${round}:merge:${++conflictFixes}` : `${runId}:fix:${round}`
 
         log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
         runLog.note('fix', `round ${round} for ${from}`)
