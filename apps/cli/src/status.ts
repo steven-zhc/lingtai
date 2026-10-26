@@ -28,13 +28,27 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 
 import { heading, keyValues, section, symbol, table } from './output.ts'
 
-export function smallConflictRound(reason: WaitReason, triage: TaskCard['triage'] | undefined): boolean {
+/**
+ * A conflict's triage, worded for the listing: the recommendation the board
+ * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
+ * above) and triage's resolution and summary beside it, so the override is
+ * never hidden (#652). `null` for anything but an advised `ConflictingHunks`.
+ */
+export function conflictLines(
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+): { rec: string; advised: string | null } | null {
   const result = triage?.result
-  return (
-    result?._tag === 'TriageAdvised' &&
-    result.cause._tag === 'ConflictingHunks' &&
-    recommendedResolution(reason, { _tag: 'Done', result }) === 'GrantFixRound'
-  )
+  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  const rec = recommendedResolution(reason, { _tag: 'Done', result })
+  if (rec === null) return null
+  if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
+    return {
+      rec: 'recommends a fix round — each conflicting hunk has a recommended answer from triage, so it is resolved in place rather than started over',
+      advised: `triage advised ${result.resolution}: ${result.summary}`,
+    }
+  }
+  return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
 }
 
 export interface StatusOptions {
@@ -342,12 +356,10 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   awaitingSha: t.awaitingSha ?? null,
                   needs: words.needs,
                 }),
-                detail: describeWaitLines(words).map((l) =>
-                  // A small conflict recommends a fix round whatever triage chose (#652), as the board does.
-                  l.part === 'rec' && smallConflictRound(t.wait!.reason, t.triage)
-                    ? 'recommends a fix round — each conflicting hunk has a recommended answer from triage, so it is resolved in place rather than started over'
-                    : l.text,
-                ),
+                detail: describeWaitLines(words).flatMap((l) => {
+                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage) : null
+                  return c === null ? [l.text] : c.advised === null ? [c.rec] : [c.rec, c.advised]
+                }),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
