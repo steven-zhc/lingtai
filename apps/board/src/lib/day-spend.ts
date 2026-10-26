@@ -11,7 +11,7 @@ import { readSpend } from '@lingtai/projector'
 export interface DaySpendReading {
   /** The full sentence, for a title or a page. */
   text: string
-  /** The short form for the bar's reading; null where no ceiling is set. */
+  /** The short form for the bar's reading; null where no ceiling is set, and a failure to read is said here too. */
   short: string | null
 }
 
@@ -27,6 +27,6 @@ export async function readDayReading(now: Date = new Date()): Promise<DaySpendRe
       short: ceilingUsd === undefined ? null : `today ${figure} + ${day.unknown} unknown / $${ceilingUsd}`,
     }
   } catch (err) {
-    return { text: `today's spend could not be read: ${(err as Error).message}`, short: null }
+    return { text: `today's spend could not be read: ${(err as Error).message}`, short: 'today unreadable' }
   }
 }

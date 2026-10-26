@@ -523,6 +523,14 @@ export async function run(
       }
 
       // ---- one nominated issue -----------------------------------------------
+      // The daily ceiling is asked before this claim as `runQueue` asks it
+      // before each one: a nomination is not a waiver of it.
+      const stop = yield* Effect.promise(() => dayCeilingStop(options.store))
+      if (stop !== null) {
+        log(stop)
+        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+        return 0
+      }
       const result = yield* world.runOnce({
         ...common,
         issue: options.issue,

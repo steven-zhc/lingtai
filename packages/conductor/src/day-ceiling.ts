@@ -9,7 +9,7 @@
  * guarantee it is not (#332). A process that died before it appended `RunSpent`
  * leaves no row at all, and is not counted either.
  */
-import { CONTROL_STREAM, parsePayload, reduceControl } from '@lingtai/domain'
+import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
 export interface DayRow {
@@ -62,6 +62,20 @@ export function daySpendText(day: DaySpend, ceilingUsd: number | undefined): str
 export const ceilingReached = (day: DaySpend, ceilingUsd: number): boolean =>
   day.reportedCents >= Math.round(ceilingUsd * 100)
 
+/** True when the last ceiling pause has been resumed and its day is not over. */
+function resumedPast(events: readonly Envelope[], now: Date): boolean {
+  let until: number | null = null
+  let resumed = false
+  for (const e of events) {
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === 'ConductorPaused' && d['by'] === 'lingtai' && typeof d['until'] === 'string') {
+      until = Date.parse(d['until'])
+      resumed = false
+    } else if (e.type === 'ConductorResumed' && until !== null) resumed = true
+  }
+  return resumed && until !== null && now.getTime() < until
+}
+
 export interface DayCeilingOptions {
   ceilingUsd: number | undefined
   /** Rows at or after `since`. The live one is `readSpend({ since })`. */
@@ -74,7 +88,8 @@ export interface DayCeilingOptions {
  * Asked where the pause is already asked, before each claim and nowhere inside
  * a pass — a pass in flight is never killed. Returns the sentence when today is
  * at the ceiling (appending the pause once, never over one already holding),
- * else null.
+ * else null. A `resume` after our own pause waives the ceiling until that
+ * pause's midnight; a new day asks again.
  *
  * The `spend` projection can trail a just-appended `RunSpent` by a few events,
  * so the claim straight after a pass may be one row short; the next check
@@ -87,6 +102,9 @@ export async function dayCeilingPause(options: DayCeilingOptions): Promise<strin
   if (!ceilingReached(day, options.ceilingUsd)) return null
   const reason = daySpendText(day, options.ceilingUsd)
   const events = await options.store.read(CONTROL_STREAM)
+  // `lingtai resume` after one of our own pauses lifts the ceiling for the rest
+  // of the day that pause covered: it is not asked again until that midnight.
+  if (resumedPast(events, now)) return null
   if (!reduceControl(events, now).paused) {
     await options.store.append(CONTROL_STREAM, events.length, [
       {

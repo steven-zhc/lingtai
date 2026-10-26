@@ -80,7 +80,7 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
   })
 
-  it('after resume, a raised figure appends nothing and the same figure pauses again', async () => {
+  it('after resume, the ceiling stays lifted for the rest of that day and is asked again the next', async () => {
     const store = createMemoryEventStore()
     await check([today(60)], store)
     const resume = async () => {
@@ -90,9 +90,12 @@ describe('dayCeilingPause', () => {
       ])
     }
     await resume()
+    expect(await check([today(60)], store)).toBeNull()
     expect(await check([today(60)], store, now, 100)).toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(2)
-    expect(await check([today(60)], store)).not.toBeNull()
+    const next = new Date(nextLocalMidnight(now).getTime() + 3_600_000)
+    const tomorrow: DayRow = { at: new Date(next.getTime() - 60_000), costUsd: 60 }
+    expect(await check([tomorrow], store, next)).not.toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
   })
 
