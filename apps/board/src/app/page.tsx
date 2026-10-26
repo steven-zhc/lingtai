@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { Fragment } from 'react'
 
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
+import { readDayReading } from '@/lib/day-spend'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
@@ -565,6 +566,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // the board fails and not otherwise.
   const [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control] =
     await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()])
+  const today = await readDayReading()
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // folded cleanly — a chip is not free, and this is the ordinary case — and
@@ -640,11 +642,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           <Link
             className="reading"
             href={only === undefined ? '/spend' : `/spend?project=${encodeURIComponent(only)}`}
-            title={
+            title={`${
               total === 0
                 ? 'nothing has run — and what a pass may spend when it does'
                 : 'everything that is not waiting on you — and what it has cost'
-            }
+            }${today.short === null ? '' : ` — ${today.text}`}`}
           >
             {total === 0
               ? only === undefined
@@ -653,6 +655,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               : rest === ''
                 ? 'what this has cost'
                 : rest}
+            {today.short === null ? null : ` · ${today.short}`}
           </Link>
           {/* One health, out of two facts that were two chips. `#64` asks
               whether what you are looking at is current and `#98` asks whether
