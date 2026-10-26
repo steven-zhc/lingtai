@@ -150,9 +150,10 @@ jobs:
           # branch's tag counts) and whatever happened to the tags in between: a
           # tag whose publish failed has no release and is passed over. Every gh
           # call is an assignment, so a failed lookup fails the step (-e) instead
-          # of reading as "no earlier manifest".
-          published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName --jq '.[].tagName')
-          tags=$(git tag --list 'v*' --sort=-v:refname)
+          # of reading as "no earlier manifest". A draft is not a publication, and
+          # versionsort.suffix=- puts v1.0.0-rc.1 below v1.0.0 as semver does.
+          published=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft | not) | .tagName')
+          tags=$(git -c versionsort.suffix=- tag --list 'v*' --sort=-v:refname)
           prev=
           seen=
           for t in $tags; do
