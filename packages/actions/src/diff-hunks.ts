@@ -31,10 +31,12 @@ function headerPath(raw: string): string {
   const bytes: number[] = []
   let i = 1
   while (i < raw.length && raw[i] !== '"') {
-    const c = raw[i]!
-    if (c !== '\\') {
+    if (raw[i] !== '\\') {
+      // By code point: a supplementary character is two UTF-16 units, and
+      // encoding each alone would write a replacement character twice.
+      const c = String.fromCodePoint(raw.codePointAt(i)!)
       bytes.push(...Buffer.from(c, 'utf8'))
-      i += 1
+      i += c.length
       continue
     }
     const octal = /^[0-7]{1,3}/.exec(raw.slice(i + 1))
@@ -51,6 +53,9 @@ function headerPath(raw: string): string {
 }
 
 export function hunksOf(diff: string): DiffHunks | null {
+  // A colored diff hides every header behind an escape; reading it as empty
+  // would demote everything, so it is unreadable instead.
+  if (diff.includes('\x1b[')) return null
   const lines = new Map<string, Set<number>>()
   const deleted = new Set<string>()
   let oldPath: string | undefined

@@ -86,3 +86,14 @@ describe('demoteOutsideDiff', () => {
     expect(demoteOutsideDiff([once!], hunks)[0]).toEqual(once)
   })
 })
+
+describe('hunksOf, paths and colour', () => {
+  it('keeps a supplementary character in a quoted path', () => {
+    const diff = '--- "a/😀\\".ts"\n+++ "b/😀\\".ts"\n@@ -1 +1 @@\n-a\n+b\n'
+    expect(lines(diff, '😀".ts')).toEqual([1])
+  })
+
+  it('is null on a colored diff', () => {
+    expect(hunksOf('\x1b[1mdiff --git a/a b/a\x1b[m\n\x1b[36m@@ -1 +1 @@\x1b[m\n')).toBeNull()
+  })
+})
