@@ -238,7 +238,8 @@ async function main(): Promise<void> {
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout })
-  console.log(`${rows.length} real, paid runs (3 turns each). Probe dir: ${PROBE}`)
+  console.log(`${rows.length} real, paid runs (Claude Code: at most 3 turns; Codex has no turn flag, so only the 5-minute timer bounds it). Probe dir: ${PROBE}`)
+  console.log(`This script never edits ${CLAUDE_FILE} or ${CODEX_FILE}. Back them up now; you merge each snippet and restore them yourself.`)
   if ((await rl.question('Continue? [y/N] ')).trim().toLowerCase() !== 'y') return rl.close()
 
   const token = randomBytes(12).toString('hex')
@@ -293,7 +294,7 @@ async function main(): Promise<void> {
           .toLowerCase()
         result = refused === 'y' ? 'refused' : 'inconclusive (no token, refusal not shown)'
       }
-      console.log(`=> ${result}`)
+      console.log(`=> ${result}\nRestore your own ${row.runtime === 'claude' ? CLAUDE_FILE : CODEX_FILE} from your backup now.`)
       results.push(`| ${row.id} | ${row.title} | ${row.sandbox ?? '-'} | ${result} |`)
     }
   } finally {

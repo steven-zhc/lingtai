@@ -861,8 +861,11 @@ read from the runtimes' documentation.
 Measured on 2026-10-27 on darwin, with Claude Code 2.1.310 and codex-cli 0.164.0,
 by `scripts/runtime-restrictions-probe.ts` (`node scripts/runtime-restrictions-probe.ts`,
 run by a person; it is not in `pnpm test`). The probe builds the argv with the
-runtimes' own `invocation()` and the environment with `runnableEnv`, merges each
-snippet into the real config, and restores it afterwards. The file read was a
+runtimes' own `invocation()` and the environment with `runnableEnv`. It never
+edits your config: for each row it prints the snippet, you merge it into the
+real file, and you restore the file yourself afterwards, so back both files up
+before you start. Claude Code runs are capped at three turns; Codex has no turn
+flag, so only the probe's five-minute timer bounds a Codex row. The file read was a
 throwaway `~/.lingtai-probe/secret.txt`.
 
 | row | user config adds | read attempted | result |
