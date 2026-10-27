@@ -18,6 +18,38 @@ export interface DiffHunks {
 
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/
 
+const ESCAPES: Readonly<Record<string, number>> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+/**
+ * The path on a `--- ` / `+++ ` line, as git wrote it: a name with a space is
+ * followed by a tab, and one with a non-ASCII or control character is wrapped
+ * in double quotes with C escapes (octal bytes for UTF-8). Neither is the
+ * name a finding cites, so both are undone before the `a/` / `b/` prefix goes.
+ */
+function headerPath(raw: string): string {
+  if (!raw.startsWith('"')) return raw.split('\t')[0] ?? raw
+  const bytes: number[] = []
+  let i = 1
+  while (i < raw.length && raw[i] !== '"') {
+    const c = raw[i]!
+    if (c !== '\\') {
+      bytes.push(...Buffer.from(c, 'utf8'))
+      i += 1
+      continue
+    }
+    const octal = /^[0-7]{1,3}/.exec(raw.slice(i + 1))
+    if (octal !== null) {
+      bytes.push(parseInt(octal[0], 8) & 0xff)
+      i += 1 + octal[0].length
+    } else {
+      const e = ESCAPES[raw[i + 1] ?? '']
+      bytes.push(e ?? (raw[i + 1] ?? '\\').charCodeAt(0))
+      i += 2
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
+}
+
 export function hunksOf(diff: string): DiffHunks | null {
   const lines = new Map<string, Set<number>>()
   const deleted = new Set<string>()
@@ -43,9 +75,9 @@ export function hunksOf(diff: string): DiffHunks | null {
       oldPath = undefined
       current = undefined
     } else if (row.startsWith('--- ')) {
-      oldPath = row.slice(4).replace(/^a\//, '')
+      oldPath = headerPath(row.slice(4)).replace(/^a\//, '')
     } else if (row.startsWith('+++ ')) {
-      const path = row.slice(4)
+      const path = headerPath(row.slice(4))
       if (path === '/dev/null') {
         current = undefined
         if (oldPath !== undefined && oldPath !== '/dev/null') {

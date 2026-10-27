@@ -43,6 +43,21 @@ describe('hunksOf', () => {
     expect([...hunksOf(diff)!.lines.keys()]).toEqual(['a.ts'])
   })
 
+  it('drops the tab git appends to a path with a space', () => {
+    const diff = '--- a/has space.ts\t\n+++ b/has space.ts\t\n@@ -1,2 +1,2 @@\n a\n+b\n'
+    expect(lines(diff, 'has space.ts')).toEqual([1, 2])
+  })
+
+  it('unquotes a path git escaped for a non-ASCII name', () => {
+    const diff = '--- "a/caf\\303\\251.ts"\n+++ "b/caf\\303\\251.ts"\n@@ -1,2 +1,2 @@\n a\n+b\n'
+    expect(lines(diff, 'café.ts')).toEqual([1, 2])
+  })
+
+  it('unquotes the old path of a deleted file with a quoted name', () => {
+    const diff = '--- "a/caf\\303\\251.ts"\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n'
+    expect(hunksOf(diff)?.deleted.has('café.ts')).toBe(true)
+  })
+
   it('is null on a hunk header it cannot read', () => {
     expect(hunksOf('--- a/a\n+++ b/a\n@@ garbage @@\n')).toBeNull()
   })
