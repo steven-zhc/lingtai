@@ -65,6 +65,8 @@ on that path is paid for thousands of times per run.
    are the filtered environment, the disposable worktree and, where one exists,
    the runtime's sandbox. **A hook is not a security boundary**: a model can
    script around any pattern match.
+   The role sets the runtime's baseline permissions, and a user's own runtime
+   configuration may narrow them, never widen them.
 
 5. **Roles and their powers.**
 

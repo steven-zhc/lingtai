@@ -843,9 +843,108 @@ guard's, and both still hold ([0007](decisions-archive/0007-dual-runtime.md)).
 
 Tool limits belong to the agent runtime's own configuration —
 `permissions.deny` in `~/.claude/settings.json` or in the managed repository's
-`.claude/settings.json` — which holds even under `bypassPermissions`, because it
-removes the tool from the model's list so nothing is ever attempted
-([experiment 008](experiments/008-deny-survives-bypass.md)).
+`.claude/settings.json`. A deny of a whole tool holds even under
+`bypassPermissions`, because it removes the tool from the model's list so
+nothing is ever attempted ([experiment 008](experiments/008-deny-survives-bypass.md)).
+A deny scoped to a path is narrower than that, and does not cover a subprocess:
+see [what your own runtime configuration can
+narrow](#what-your-own-runtime-configuration-can-narrow).
+
+### What your own runtime configuration can narrow
+
+Lingtai builds no file-access policy of its own (#664). You configure Claude
+Code and Codex; Lingtai launches them. The role's flags are the baseline
+([0106](decisions/0106-a-role-keeps-its-powers-across-runtimes.md)) and your
+configuration may narrow it, never widen it. Whether it does was measured, not
+read from the runtimes' documentation.
+
+Measured on 2026-10-27 on darwin, with Claude Code 2.1.310 and codex-cli 0.164.0,
+by `scripts/runtime-restrictions-probe.ts` (`node scripts/runtime-restrictions-probe.ts`,
+run by a person; it is not in `pnpm test`). The probe builds the argv with the
+runtimes' own `invocation()` and the environment with `runnableEnv`, merges each
+snippet into the real config, and restores it afterwards. The file read was a
+throwaway `~/.lingtai-probe/secret.txt`.
+
+| row | user config adds | read attempted | result |
+|---|---|---|---|
+| c0 | nothing (control) | Read tool | read |
+| c1 | `permissions.deny: ["Read(~/.lingtai-probe/**)"]` | Read tool | refused ("Your permission settings block access to that directory") |
+| c2 | same deny | `python3` subprocess | read |
+| c3 | `sandbox: {enabled: true, filesystem: {denyRead: ["~/.lingtai-probe"]}}` | `python3` subprocess | refused (`PermissionError: [Errno 1] Operation not permitted`) |
+| c4 | same sandbox | `python3`, then retry with `dangerouslyDisableSandbox` | read: under `bypassPermissions` the unsandboxed retry is approved without asking |
+| c4b | sandbox + `allowUnsandboxedCommands: false` | same retry | refused (`PermissionError`; the retry was not possible) |
+| c5 | deny + `disableBypassPermissionsMode: "disable"` | Read tool | refused. Recorded only; not a recommendation |
+| x0 | nothing (control), `--sandbox workspace-write` | Codex's own tool | inconclusive: Codex has no non-shell read tool and declined to use the shell |
+| x1 | Codex profile below, `workspace-write` | Codex's own tool | inconclusive, same reason |
+| x2 | Codex profile below, `workspace-write` | `python3` subprocess | **read** |
+| x3 | Codex profile below, `read-only` | Codex's own read | **read** |
+| x4 | Codex profile below, `read-only` | `python3` subprocess | **read** |
+
+**Claude Code.** A user's restrictions hold under Lingtai's flags if the sandbox
+is configured with `allowUnsandboxedCommands: false`. Put exactly this in
+`~/.claude/settings.json` (row c4b):
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": { "denyRead": ["~/.lingtai-probe"] }
+  }
+}
+```
+
+Replace the path with the ones you want closed. Two things the table shows:
+
+- A `permissions.deny` rule alone covers Claude Code's own file tools and not a
+  subprocess (c1, c2). That is Claude Code's documented behaviour, not
+  Lingtai's.
+- The sandbox alone is escapable under Lingtai (c4): `bypassPermissions`
+  (`packages/agent/src/claude-code.ts:412`) approves the unsandboxed retry that
+  a person would otherwise be asked about. `allowUnsandboxedCommands: false`
+  removes the retry.
+
+c5 is recorded and is not advice. `disableBypassPermissionsMode` removes the
+mode Lingtai launches with, and a run without it could not write a file (see the
+comment at `claude-code.ts:252-260`).
+
+**Codex.** Under Lingtai today a user's permission profile does not apply,
+because `--sandbox` replaces it. The profile used in x1–x4 was:
+
+```toml
+default_permissions = "probe"
+
+[permissions.probe.filesystem]
+":project_roots" = "write"
+"~/.lingtai-probe" = "none"
+```
+
+With `--sandbox` removed from the argv, the same profile was enforced (Codex
+could not even start under it: `sandbox-exec: execvp() of '/opt/homebrew/bin/codex'
+failed: Operation not permitted`). So the role's own sandbox still holds (no
+writes outside the worktree, read-only for the reviewer), but a user cannot
+narrow reads. The fix is [#667](https://github.com/steven-zhc/lingtai/issues/667),
+held for design; this section changes no argv. `danger-full-access`,
+`--dangerously-bypass-approvals-and-sandbox` and `approval_policy=never` stay as
+they are.
+
+**A config in a non-default directory.** `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
+are not in `RUNNABLE` (`packages/agent-env/src/index.ts:146`), so a pass drops
+them and the runtime reads its default directory. Declare the name in the
+recipe's `env.required` and set it with `lingtai env set <project> <NAME>`
+(see above); the agent's environment is `runnableEnv({ ...env.values,
+...wiring.env })` (`packages/conductor/src/conduct.ts:3411`). This was not
+measured.
+
+**Not measured.**
+
+- Linux without bubblewrap: the sandbox is unavailable there, and installing it
+  is the user's runtime setup, not Lingtai's.
+- A full pass under the c4b sandbox. A commit from a Lingtai worktree writes
+  into the main checkout's `.git`, outside the worktree; whether Claude Code's
+  sandbox allows that was not tried. If it does not, the agent fails visibly,
+  which is the user's choice, as for any restriction that blocks its own work.
+- Other versions of either runtime: re-run the probe.
 
 ### Run one, and stop before it writes
 

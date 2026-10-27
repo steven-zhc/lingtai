@@ -279,9 +279,10 @@ export function createHookServer(options: HookServerOptions): HookServer {
     }
 
     // Everything else, `PreToolUse` included. Lingtai refuses no tool call
-    // (ADR 0016 §6): tool restrictions are the runtime's own configuration, and
-    // `permissions.deny` is enforced even under `bypassPermissions` — by
-    // removing the tool from the model's list, so nothing is ever attempted.
+    // (ADR 0016 §6): tool restrictions are the runtime's own configuration. A
+    // whole-tool `permissions.deny` is enforced even under `bypassPermissions`,
+    // by removing the tool from the model's list; a path-scoped one refuses the
+    // call and covers no subprocess (doc/operating.md, #664).
     //
     // `PreToolUse` is not wired at all any more, so this is defensive rather
     // than a path anything takes. It counts, because a run's tool-call count is
