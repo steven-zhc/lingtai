@@ -238,13 +238,7 @@ lingtai init --store sqlite --project github --github-app skip
 
 Use your own fork, `<you>/chapter-garden`; installing an App needs admin on it.
 
-**The base branch must accept direct pushes from the App.** Lingtai lands work
-by pushing a merge commit straight to the base and never opens a pull request.
-If the base is protected, `add` warns; a push the protection refuses is
-refused as `base-protected` and is not retried. Either let the Lingtai App
-bypass the protection (the ruleset's bypass list, or the classic rule's allowed
-actors and push restrictions), or set the recipe's `repo.base` to a branch that
-accepts direct pushes.
+**The base must accept direct pushes from the App**: Lingtai pushes to it and opens no pull request. If protected, let the App bypass it, or set the recipe's `repo.base` elsewhere.
 
 Use another terminal, same `LINGTAI_HOME`, from here on.
 
