@@ -1443,13 +1443,17 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     }
     // Only a review that was actually read: an unreadable answer, a reviewer
     // that never ran or did not finish, or an action skipped before the agent
-    // reached the head read nothing (#671).
+    // reached the head read nothing (#671). One reader is enough: a pipeline
+    // stops at its first failed verdict, so later reviewers may never run.
     if (at === 'review') {
       const listed = options.recipe.steps.review
-      const read =
-        listed.some((a) => kindOfAction(a) === 'agent') &&
-        reached.results.length === listed.length &&
-        reached.results.every((r) => (r.verdict === 'passed' || r.verdict === 'failed') && r.unreadable !== true)
+      const read = reached.results.some(
+        (r, i) =>
+          listed[i] !== undefined &&
+          kindOfAction(listed[i]) === 'agent' &&
+          (r.verdict === 'passed' || r.verdict === 'failed') &&
+          r.unreadable !== true,
+      )
       if (read) reviewedSha = visitContext.onSha
     }
     const ending = reached.ending
