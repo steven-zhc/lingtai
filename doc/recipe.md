@@ -12,10 +12,13 @@ page is for the first time you open it.
 The tutorial's Part 2 sets a different `LINGTAI_HOME`; that file is under that
 directory instead.
 
-It is **outside your repository**. It is not committed with the code, a pull
-request does not show a change to it, and an agent working in a worktree cannot
-edit it. That is deliberate: what stands between an agent and your base branch
-is not something the agent can rewrite.
+It is **outside your repository**. It is not committed with the code, so a
+change to it never appears in a diff or a pull request, and a change an agent
+makes inside its worktree cannot alter it. That is not a sandbox: an agent runs
+with your user's file access, and Claude Code in particular is not stopped from
+writing outside its worktree. Treat the file as configuration you own, keep
+tickets from asking an agent to edit it, and read `steps.proposed` again if you
+doubt it.
 
 ## What a choice becomes
 
