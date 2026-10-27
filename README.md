@@ -123,6 +123,45 @@ that does and does not protect.
   `--sandbox` until #667 lands; see
   [the measurements](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
 
+**How to limit it**
+
+Lingtai adds no file-access policy of its own. An agent is limited by Claude
+Code's and Codex's own configuration, which Lingtai leaves in force for Claude
+Code and, today, replaces for Codex (below). Measured on 2026-10-27 on darwin,
+with Claude Code 2.1.310 and codex-cli 0.164.0; the rows are in
+[what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
+
+- Claude Code: put exactly this in `~/.claude/settings.json`:
+
+  ```json
+  {
+    "sandbox": {
+      "enabled": true,
+      "allowUnsandboxedCommands": false,
+      "filesystem": { "denyRead": ["~/.lingtai-probe"] }
+    }
+  }
+  ```
+
+  Replace the path with the ones you want closed. The measurement used only a
+  throwaway directory, not `~/.lingtai/config.yml` or `~/.ssh`. It does not
+  stop these reads:
+  - `permissions.deny` alone covers Claude Code's own Read tool and not a
+    subprocess, so it is not a remedy.
+  - The sandbox without `allowUnsandboxedCommands: false` can be escaped under
+    Lingtai: `bypassPermissions` approves the unsandboxed retry without asking.
+  - Not measured: Linux without bubblewrap, where there is no sandbox; a full
+    pass under this sandbox, where a commit writes outside the worktree and the
+    agent may fail visibly; other runtime versions; and `CLAUDE_CONFIG_DIR`,
+    which a pass drops, so Claude Code reads `~/.claude`.
+  - `denyRead` says nothing about the network, and this setting does not limit
+    it.
+- Codex: nothing holds today. A permission profile in `~/.codex/config.toml`
+  has no effect under Lingtai, because Lingtai's `--sandbox` replaces it; reads
+  succeeded even under `read-only` (codex-cli 0.164.0). The fix is #667 and it
+  has not landed. Until then, run Lingtai under a user or machine whose files
+  you are willing to expose (below).
+
 **What to do**
 
 - Run Lingtai under a user or machine whose files you are willing to expose to
