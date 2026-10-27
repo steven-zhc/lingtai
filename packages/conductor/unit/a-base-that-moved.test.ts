@@ -28,7 +28,12 @@ const bodies = Object.fromEntries(
   STEPS.map((step) => [step, async (): Promise<StepEnding> => ({ ending: 'passed' })]),
 ) as unknown as StepBodies
 
-const recipe = { steps: StepMap.parse({ merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }] }) }
+const recipe = {
+  steps: StepMap.parse({
+    review: [{ name: 'cold', agent: 'claude-code', prompt: 'read the diff' }],
+    merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }],
+  }),
+}
 
 const moved = (toSha: string): ActionResult => ({
   verdict: 'failed',
@@ -47,6 +52,7 @@ async function walk(
   mergeBase: PassOptions['mergeBase'],
   buildAnswers: readonly ActionResult[] = [],
   from?: PassOptions['from'],
+  reviewAnswers: readonly ActionResult[] = [],
 ) {
   const events: PassEvent[] = []
   const reviewSaw: ActionContext[] = []
@@ -54,6 +60,7 @@ async function walk(
   const rounds: (number | undefined)[] = []
   let calls = 0
   let builds = 0
+  let reviews = 0
   const lane: Action = {
     name: 'land the branch',
     kind: 'merge',
@@ -80,7 +87,7 @@ async function walk(
           yields: 'verdict',
           run: async (ctx) => {
             reviewSaw.push(ctx)
-            return PASSED
+            return reviewAnswers[reviews++] ?? PASSED
           },
         },
       ]
@@ -217,5 +224,36 @@ describe('what the lane’s result becomes', () => {
     expect(refused).toMatchObject({
       result: { integration: { _tag: 'IntegrationRefused', reason: 'base-protected' } },
     })
+  })
+})
+
+describe('what the next review is told it already read (#671)', () => {
+  it('has no earlier head on a first review, nor after a base merge nobody approved', async () => {
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }))
+
+    expect(reviewSaw).toHaveLength(2)
+    expect('reviewedSha' in reviewSaw[0]!).toBe(false)
+    expect('reviewedSha' in reviewSaw[1]!).toBe(false)
+  })
+
+  it('names the approved head to the review of the merge that came after the approval', async () => {
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
+      step: 'proposed',
+      waive: [],
+    })
+
+    expect(reviewSaw).toHaveLength(1)
+    expect(reviewSaw[0]?.reviewedSha).toBe('abc1234def')
+    expect(reviewSaw[0]?.landedOnBase).toMatchObject({ toSha: 'base-1' })
+  })
+
+  it('does not name it for a continuation that is a fix round (a grant)', async () => {
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
+      step: 'implement',
+      waive: [],
+      grant: { rounds: 1 } as never,
+    })
+
+    expect(reviewSaw.every((c) => !('reviewedSha' in c))).toBe(true)
   })
 })

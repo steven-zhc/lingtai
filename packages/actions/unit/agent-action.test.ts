@@ -2176,3 +2176,118 @@ describe('a finding outside every hunk of the reviewed diff (#670)', () => {
     expect(notes.some((n) => n.includes('no finding was demoted'))).toBe(true)
   })
 })
+
+describe('a review after a fix round reviews the fix (#671)', () => {
+  const DELTA = [
+    'diff --git a/src/z.ts b/src/z.ts',
+    '--- a/src/z.ts',
+    '+++ b/src/z.ts',
+    '@@ -1,2 +1,2 @@',
+    '-a',
+    '+b',
+    ' c',
+    '',
+  ].join('\n')
+  const FULL = `${HUNK_DIFF}${DELTA}`
+  const answer = (findings: unknown[]) => outcome({ text: JSON.stringify({ findings }) })
+  const SECOND = { ...context, reviewedSha: 'b'.repeat(40) }
+  const RECHECK = finding({ line: 900, failureScenario: 'the earlier scenario, quoted' }) as ActionFinding
+
+  const build = (reply: RunOutcome, delta: () => Promise<string>) => {
+    const runtime = reviewer(reply)
+    const notes: string[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async (from) => (from === SECOND.reviewedSha ? delta() : FULL),
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    return { action, runtime, notes, log: { note: (_: string, t: string) => void notes.push(t) } as never }
+  }
+
+  it('shows the delta and drops the full-review sentence', async () => {
+    const { action, runtime } = build(answer([]), async () => DELTA)
+    await action.run({ ...SECOND, recheck: [RECHECK] })
+
+    const prompt = runtime.seen[0]!.prompt
+    expect(prompt).toContain('## What the fix changed')
+    expect(prompt).not.toContain('exactly as you would')
+  })
+
+  it('demotes a new blocker outside the delta, even with reachableBecause', async () => {
+    const { action } = build(
+      answer([finding(), finding({ file: 'src/z.ts', line: 1, claim: 'inside' })]),
+      async () => DELTA,
+    )
+    const result = await action.run(SECOND)
+
+    expect(result.findings[0]?.claim).toBe(`outside the fix — was blocker: ${finding().claim}`)
+    expect(result.findings[0]?.severity).toBe('minor')
+    expect(result.findings[1]?.severity).toBe('blocker')
+
+    const reach = build(answer([finding({ reachableBecause: 'a new caller' })]), async () => DELTA)
+    expect((await reach.action.run(SECOND)).findings[0]?.severity).toBe('minor')
+  })
+
+  it('never demotes a finding quoting a recheck scenario verbatim', async () => {
+    const { action } = build(answer([RECHECK]), async () => DELTA)
+    const result = await action.run({ ...SECOND, recheck: [RECHECK] })
+
+    expect(result.verdict).toBe('failed')
+    expect(result.findings[0]?.severity).toBe('blocker')
+    expect(result.findings[0]?.claim).toBe(RECHECK.claim)
+  })
+
+  it('is a full review with nothing demoted on the first review', async () => {
+    const { action, runtime } = build(answer([finding()]), async () => DELTA)
+    const result = await action.run(context)
+
+    expect(runtime.seen[0]!.prompt).not.toContain('## What the fix changed')
+    expect(result.findings[0]?.severity).toBe('blocker')
+  })
+
+  it('falls back to a full review when the delta cannot be read', async () => {
+    for (const delta of [
+      async () => {
+        throw new Error('bad revision')
+      },
+      async () => '  ',
+    ]) {
+      const { action, runtime, log } = build(answer([finding()]), delta)
+      const result = await action.run({ ...SECOND, log })
+
+      expect(runtime.seen[0]!.prompt).not.toContain('## What the fix changed')
+      expect(result.findings[0]?.severity).toBe('blocker')
+    }
+  })
+
+  it('shows the delta and the landed-on-base block after an approved merge', async () => {
+    const runtime = reviewer(answer([finding()]))
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async (from) => (from === SECOND.reviewedSha ? DELTA : FULL),
+        landed: async () => [{ path: 'src/y.ts', diff: 'landed change' }],
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    const result = await action.run({
+      ...SECOND,
+      mergedOnto: 'c'.repeat(40),
+      landedOnBase: { paths: ['src/y.ts'], fromSha: 'd'.repeat(40), toSha: 'c'.repeat(40) },
+    })
+
+    expect(runtime.seen[0]!.prompt).toContain('## What the fix changed')
+    expect(runtime.seen[0]!.prompt).toContain('While this change was being built the base moved')
+    expect(result.findings[0]?.severity).toBe('minor')
+  })
+})

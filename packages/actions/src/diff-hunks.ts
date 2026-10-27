@@ -146,3 +146,22 @@ export function demoteOutsideDiff(findings: readonly ActionFinding[], hunks: Dif
     }
   })
 }
+
+const FIX_PREFIX = 'outside the fix — was '
+
+/**
+ * Demote every finding outside what the fix changed to `minor` (#671). Unlike
+ * `demoteOutsideDiff` there is no `reachableBecause` escape: a new finding
+ * outside the fix is always a backlog entry. The caller exempts rechecks.
+ */
+export function demoteOutsideFix(findings: readonly ActionFinding[], delta: DiffHunks): ActionFinding[] {
+  return findings.map((f) => {
+    if (f.severity === 'minor') return f
+    if (isInsideHunks(f, delta)) return f
+    return {
+      ...f,
+      severity: 'minor',
+      claim: f.claim.startsWith(FIX_PREFIX) ? f.claim : `${FIX_PREFIX}${f.severity}: ${f.claim}`,
+    }
+  })
+}

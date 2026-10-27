@@ -114,7 +114,7 @@ import {
   type WaitId,
 } from '@lingtai/domain'
 import type { RunRef } from '@lingtai/domain/wait'
-import type { Recipe, StepAction } from '@lingtai/recipe'
+import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 
 import type { TerminalOutcome } from './end-step.ts'
 // `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
@@ -1215,6 +1215,25 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     options.from?.landedOnBase ?? null
   /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
   let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
+  /**
+   * The head the last review in this pass actually read (#671): set when a
+   * review visit ends having read it, cleared by a base merge, and passed on
+   * the context so the next review looks for new problems only in what changed
+   * since. Never shared between passes.
+   */
+  let reviewedSha: string | null = null
+  /**
+   * The head a person approved in this continuation, until the first base merge
+   * has used it (#671): that merge's review is of what came after the approval.
+   * A grant continuation is a fix round, and a wait before `proposed` was never
+   * reviewed.
+   */
+  let approvedAt: string | null =
+    options.from !== undefined &&
+    options.from.grant === undefined &&
+    (options.from.step === 'proposed' || options.from.step === 'merge')
+      ? options.context.onSha
+      : null
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
   let lapStart = 0
 
@@ -1233,6 +1252,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     recheck,
     ...(landedOnBase === null ? {} : { landedOnBase }),
     ...(mergedOnto === null ? {} : { mergedOnto }),
+    ...(reviewedSha === null ? {} : { reviewedSha }),
   })
 
   /**
@@ -1304,6 +1324,8 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
           ? { failed: 'this pass was handed no way to merge the base in' }
           : await options.mergeBase(next.toSha)
     }
+    // Read before `record` moves `onSha` to the merge commit (#671).
+    const approvedHeadStands = approvedAt !== null && onSha === approvedAt
     record({
       step: 'proposed',
       ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1348,6 +1370,10 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         // Nothing to diff without the fork point and the paths: the review then
         // falls back to the ordinary prompt. A second merge replaces the value.
         mergedOnto = next.toSha
+        // Only a person's approval of the head the merge started from keeps the
+        // earlier read; any other base move is a full review.
+        reviewedSha = approvedHeadStands ? approvedAt : null
+        approvedAt = null
         landedOnBase =
           offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
             ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
@@ -1414,6 +1440,21 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     // nothing declared to judge, which never opened one.
     if (reached.outcome !== undefined) {
       await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: reached.outcome } })
+    }
+    // Only a review that was actually read: an unreadable answer, a reviewer
+    // that never ran or did not finish, or an action skipped before the agent
+    // reached the head read nothing (#671). One reader is enough: a pipeline
+    // stops at its first failed verdict, so later reviewers may never run.
+    if (at === 'review') {
+      const listed = options.recipe.steps.review
+      const read = reached.results.some(
+        (r, i) =>
+          listed[i] !== undefined &&
+          kindOfAction(listed[i]) === 'agent' &&
+          (r.verdict === 'passed' || r.verdict === 'failed') &&
+          r.unreadable !== true,
+      )
+      if (read) reviewedSha = visitContext.onSha
     }
     const ending = reached.ending
     if (ending.ending === 'routed') {

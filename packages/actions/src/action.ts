@@ -509,6 +509,11 @@ export interface ActionContext {
    */
   mergedOnto?: string
   /**
+   * The head the last review in this pass read (#671). A review with this set
+   * and different from `onSha` reviews what changed since, and rechecks the rest.
+   */
+  reviewedSha?: string
+  /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */
