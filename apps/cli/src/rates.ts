@@ -19,7 +19,9 @@ export function modelsInRecipe(recipe: unknown): { model: string; runtime: strin
     if (Array.isArray(node)) return node.forEach(walk)
     const o = node as Record<string, unknown>
     if (typeof o['model'] === 'string') {
-      const agent = typeof o['agent'] === 'string' && o['agent'] in LITELLM_PROVIDER ? o['agent'] : fallback
+      // A block names its runtime by `agent:`, or by `judge:` when the judge is a runtime.
+      const named = [o['agent'], o['judge']].find((v): v is string => typeof v === 'string' && v in LITELLM_PROVIDER)
+      const agent = named ?? fallback
       found.push({ model: o['model'], runtime: agent })
     }
     Object.values(o).forEach(walk)

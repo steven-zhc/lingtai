@@ -32,7 +32,7 @@ export interface RateRow {
   cacheRead: number | null
   cacheWrite: number | null
   /** Reasoning output, where the source prices it apart from `output`; absent means the output rate. */
-  reasoning?: number
+  reasoning?: number | null
   /** Where a fetched row came from (#658). Absent on every shipped row. */
   source?: string
   /** A later fetch found this model's entry unusable: from `from` on it is unpriced again, and earlier rows stand. */
@@ -76,7 +76,7 @@ export function priceTokens(tokens: TokenCounts, row: RateRow): number {
   return (
     (tokens.fresh ?? 0) * (row.input / PER_MILLION) +
     (tokens.output ?? 0) * (row.output / PER_MILLION) +
-    (tokens.reasoning ?? 0) * ((row.reasoning ?? row.output) / PER_MILLION) +
+    (tokens.reasoning ?? 0) * ((row.reasoning === undefined ? row.output : (row.reasoning ?? 0)) / PER_MILLION) +
     (tokens.cacheRead ?? 0) * ((row.cacheRead ?? 0) / PER_MILLION) +
     (tokens.cacheWrite ?? 0) * ((row.cacheWrite ?? 0) / PER_MILLION)
   )
@@ -128,6 +128,7 @@ export function estimateRow(
     // A null rate is unknown only for an entry that has tokens of that class.
     if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return null
     if ((entry.tokens.cacheWrite ?? 0) > 0 && rate.cacheWrite === null) return null
+    if ((entry.tokens.reasoning ?? 0) > 0 && rate.reasoning === null) return null
     total += priceTokens(entry.tokens, rate)
     if (!listed) fetched = true
   }
@@ -161,10 +162,11 @@ export function ratesFromLiteLLM(
   for (const { model, runtime } of wanted) {
     const provider = LITELLM_PROVIDER[runtime]
     if (provider === undefined || seen.has(model)) continue
-    seen.add(model)
     if (!Object.hasOwn(table, model)) continue
     const entry = (table as Record<string, Record<string, unknown> | null>)[model]
     if (typeof entry !== 'object' || entry === null || entry['litellm_provider'] !== provider) continue
+    // Only a candidate whose provider matched uses up the model: a mismatched one must not hide the runtime's own.
+    seen.add(model)
     // undefined: absent or null; NaN: present and unusable.
     const rate = (key: string): number | undefined => {
       const v = entry[key]
@@ -176,7 +178,8 @@ export function ratesFromLiteLLM(
     const output = rate('output_cost_per_token')
     const cacheRead = rate('cache_read_input_token_cost')
     const cacheWrite = rate('cache_creation_input_token_cost')
-    const reasoning = rate('output_cost_per_reasoning_token')
+    // Present and null means the source gave no reasoning price: unknown, not the output rate.
+    const reasoning = entry['output_cost_per_reasoning_token'] === null ? null : rate('output_cost_per_reasoning_token')
     const all = [input, output, cacheRead, cacheWrite, reasoning]
     if (input === undefined || output === undefined || all.some((v) => v !== undefined && Number.isNaN(v))) {
       // A model with nothing priced at all (a subscription plan's key) is not worth a name; a broken one is.

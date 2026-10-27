@@ -45,6 +45,30 @@ describe('ratesFromLiteLLM', () => {
   })
 })
 
+describe('the second and third review findings', () => {
+  it('a mismatched candidate does not hide the runtime’s own, so a withdrawal still lands', () => {
+    const wild = [
+      { model: 'gpt-6-wild', runtime: 'claude-code' },
+      { model: 'gpt-6-wild', runtime: 'codex' },
+    ]
+    expect(ratesFromLiteLLM(LITELLM_FIXTURE, wild, '2026-10-28').rows).toMatchObject([{ withdrawn: true }])
+  })
+
+  it('an explicit null reasoning price leaves reasoning tokens unknown, not at the output rate', () => {
+    const table = {
+      m: {
+        litellm_provider: 'openai',
+        input_cost_per_token: 1e-5,
+        output_cost_per_token: 5e-5,
+        output_cost_per_reasoning_token: null,
+      },
+    }
+    const { rows } = ratesFromLiteLLM(table, wanted('m'), '2026-10-26')
+    expect(estimateRow(run('2026-10-26T00:00:00Z', { reasoning: 1_000_000 }, 'm'), rows)).toBeNull()
+    expect(estimateRow(run('2026-10-26T00:00:00Z', { output: 1_000_000 }, 'm'), rows)?.usd).toBeCloseTo(50)
+  })
+})
+
 describe('estimateRow', () => {
   it('ignores the snapshot for a model the shipped card prices', () => {
     const { rows } = ratesFromLiteLLM(LITELLM_FIXTURE, wanted('claude-sonnet-5', 'claude-code'), '2026-11-01')
