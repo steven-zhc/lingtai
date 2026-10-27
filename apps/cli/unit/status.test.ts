@@ -1,3 +1,5 @@
+import { waitWords } from '@lingtai/domain'
+import { describeWaitLines } from '@lingtai/projector'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
  * tickets actually live rather than always `GitHub` (`#389`).
@@ -15,6 +17,8 @@ import {
   offerLine,
   renderStatus,
   conflictLines,
+  conflictRecommendation,
+  waitDetail,
   statusJson,
   type StatusFilter,
   type StatusReport,
@@ -71,6 +75,7 @@ const asked: StatusWait = {
   needs: 'judgement',
   words: 'waiting for your answer',
   detail: ['your judgement is needed'],
+  recommendation: null,
   raw: true,
 }
 
@@ -118,6 +123,7 @@ const fixture: StatusReport = {
             needs: 'acknowledgement',
             words: null,
             detail: [],
+            recommendation: null,
             raw: false,
           },
         }),
@@ -218,6 +224,7 @@ describe('statusJson', () => {
               needs: 'judgement',
               asked: true,
               detail: ['your judgement is needed'],
+              recommendation: null,
               raw: true,
             },
             {
@@ -228,6 +235,7 @@ describe('statusJson', () => {
               needs: 'acknowledgement',
               asked: false,
               detail: [],
+              recommendation: null,
               raw: false,
             },
           ],
@@ -550,5 +558,59 @@ describe('conflictLines (#652)', () => {
 
   it('says nothing for no triage', () => {
     expect(conflictLines(reason, undefined)).toBeNull()
+  })
+})
+
+describe('waitDetail (#656)', () => {
+  const run = { runId: 'r', ref: 'agent/1', sha: 'abc' }
+  const triage = (resolution = 'Requeue') =>
+    ({
+      started: null,
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'ConflictingHunks', hunks: [], total: 2 },
+        resolution,
+        summary: 'why',
+        want: null,
+      },
+    }) as never
+  const disagrees = { _tag: 'FixerDisagrees', run, said: 'the hunks overlap' } as never
+  const detail = (reason: never, t: never | undefined) =>
+    waitDetail(waitWords(reason, { branch: 'agent/1', base: '', findings: [] }), reason, t, true)
+
+  it('prints the recommendation and triage’s own words for a reason with no recommendation line', () => {
+    const lines = detail(disagrees, triage())
+    expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
+    expect(lines).toContain('triage advised Requeue: why')
+  })
+
+  it('names the recommended resolution as a field, for --json, without parsing the prose', () => {
+    expect(conflictRecommendation(disagrees, triage(), true)).toBe('GrantFixRound')
+    expect(conflictRecommendation(disagrees, undefined, true)).toBeNull()
+  })
+
+  it('still prints triage’s resolution and summary when the saved head is absent and no resolution is recommended', () => {
+    const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
+    expect(conflictRecommendation(disagrees, triage('GrantFixRound'), false)).toBeNull()
+    expect(lines.some((l) => l.includes('triage advised GrantFixRound: why'))).toBe(true)
+    expect(lines.some((l) => l.includes('recommends'))).toBe(false)
+  })
+
+  it('drops the reason’s own recommendation line when the shared rule recommends nothing', () => {
+    const words = {
+      needs: 'judgement',
+      diagnosis: { what: 'it conflicted', done: null, recommendation: { action: 'requeue', why: 'try again' } },
+    } as never
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
+    expect(lines.some((l) => l.includes('recommends'))).toBe(false)
+    expect(lines).toContain('it conflicted')
+    expect(lines.some((l) => l.includes('triage advised GrantFixRound: why'))).toBe(true)
+  })
+
+  it('prints what it printed before when there is no triage', () => {
+    const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
+    expect(detail(disagrees, undefined)).toEqual(describeWaitLines(words).map((l) => l.text))
+    expect(detail(disagrees, undefined).join('\n')).not.toContain('recommends')
   })
 })

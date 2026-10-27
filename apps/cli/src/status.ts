@@ -32,11 +32,27 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 
+/** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
+export function conflictRecommendation(
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+  savedHead?: SavedHead,
+): string | null {
+  const result = triage?.result
+  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  return recommendedResolution(
+    reason,
+    { _tag: 'Done', result },
+    { savedHead: typeof savedHead === 'object' ? false : savedHead },
+  )
+}
+
 /**
  * A conflict's triage, worded for the listing: the recommendation the board
  * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
  * above) and triage's resolution and summary beside it, so the override is
- * never hidden (#652). `null` for anything but an advised `ConflictingHunks`.
+ * never hidden (#652). `null` for anything but an advised `ConflictingHunks`; when the recommendation is
+ * unavailable, `rec` is null and triage's own words still come back (#656).
  */
 export function conflictLines(
   reason: WaitReason,
@@ -46,11 +62,7 @@ export function conflictLines(
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
   const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
-  const rec = recommendedResolution(
-    reason,
-    { _tag: 'Done', result },
-    { savedHead: typeof savedHead === 'object' ? false : savedHead },
-  )
+  const rec = conflictRecommendation(reason, triage, savedHead)
   if (unreadable !== null) {
     return {
       rec:
@@ -60,7 +72,12 @@ export function conflictLines(
       advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
     }
   }
-  if (rec === null) return null
+  if (rec === null) {
+    return {
+      rec: null,
+      advised: `triage advised ${result.resolution}: ${result.summary} — this wait does not offer it, so no resolution is recommended`,
+    }
+  }
   if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
     return {
       rec:
@@ -72,6 +89,27 @@ export function conflictLines(
     }
   }
   return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
+}
+
+/**
+ * The wait's detail lines, with the conflict recommendation and triage's own
+ * words wherever triage advised `ConflictingHunks` — whether or not the reason
+ * supplied a recommendation line of its own, as `FixerDisagrees` does not (#656).
+ * The rule stays in `conflictLines`; this only places its lines.
+ */
+export function waitDetail(
+  words: Parameters<typeof describeWaitLines>[0],
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+  savedHead?: SavedHead,
+): string[] {
+  const lines = describeWaitLines(words)
+  const c = conflictLines(reason, triage, savedHead)
+  if (c === null) return lines.map((l) => l.text)
+  const advised = c.advised === null ? [] : [c.advised]
+  if (!lines.some((l) => l.part === 'rec'))
+    return [...lines.map((l) => l.text), ...(c.rec === null ? [] : [c.rec]), ...advised]
+  return lines.flatMap((l) => (l.part === 'rec' ? [...(c.rec === null ? [] : [c.rec]), ...advised] : [l.text]))
 }
 
 /** A run's saved head: whether one is there, or why that could not be read. */
@@ -213,6 +251,8 @@ export interface StatusWait {
   words: 'waiting for your answer' | 'waiting for your review' | null
   /** `describeWaitLines`' lines — what was diagnosed about it. */
   detail: string[]
+  /** The resolution recommended for a conflict triage advised, as `recommendedResolution` names it; null when none. */
+  recommendation: string | null
   /** There is raw failure output, kept on the log and the card rather than printed. */
   raw: boolean
 }
@@ -435,10 +475,8 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   awaitingSha: t.awaitingSha ?? null,
                   needs: words.needs,
                 }),
-                detail: describeWaitLines(words).flatMap((l) => {
-                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage, t.savedHead) : null
-                  return c === null ? [l.text] : [c.rec ?? l.text, ...(c.advised === null ? [] : [c.advised])]
-                }),
+                detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
+                recommendation: conflictRecommendation(t.wait.reason, t.triage, t.savedHead),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
@@ -638,6 +676,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
             needs: t.wait!.needs,
             asked: t.wait!.reason === 'OwnQuestion',
             detail: t.wait!.detail,
+            recommendation: t.wait!.recommendation,
             raw: t.wait!.raw,
           })),
       }
