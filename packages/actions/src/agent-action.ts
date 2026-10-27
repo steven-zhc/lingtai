@@ -66,7 +66,7 @@ import {
   type SentBack,
 } from './action.ts'
 import { boundedEvidence } from './command.ts'
-import { demoteOutsideDiff, hunksOf } from './diff-hunks.ts'
+import { demoteOutsideDiff, demoteOutsideFix, hunksOf, type DiffHunks } from './diff-hunks.ts'
 
 /**
  * **What a dispatch billed, attached once after every branch** (#494). The
@@ -257,7 +257,7 @@ export interface ReviewIssue {
  * cheap way to pass — a capability deleted along with its defect is a scenario
  * that no longer *runs*, not one that no longer produces the outcome.
  */
-function recheckBlock(findings: readonly ActionFinding[]): string {
+function recheckBlock(findings: readonly ActionFinding[], deltaShown = false): string {
   const items = findings.map((f, i) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`
     return [
@@ -295,10 +295,38 @@ matters: **does that sequence still produce that outcome?**
   reported. Do not say so, and do not argue with the finding that made it. Where
   every scenario above is closed and nothing else is wrong, the answer is an
   empty findings list — \`{"findings":[]}\` is as real an answer here as on a
-  first review.
+  first review.${
+    deltaShown
+      ? ''
+      : `
 
 Then review the diff as it now stands for anything else, exactly as you would
 have without this section. The fix is part of the diff and is not above review.`
+  }`
+}
+
+/** What a fix round changed since the head the last review read (#671). */
+export interface ReviewDelta {
+  readonly fromSha: string
+  readonly toSha: string
+  readonly text: string
+}
+
+function deltaBlock(delta: ReviewDelta, limitBytes: number): string {
+  const clipped =
+    delta.text.length > limitBytes
+      ? `${delta.text.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
+      : delta.text
+  return `## What the fix changed
+
+\`${delta.fromSha.slice(0, 7)}..${delta.toSha.slice(0, 7)}\` is what changed since the last review read this diff. The
+rest of the diff above was already reviewed. Look for **new** problems only in
+what this section changed; the rest is context for that and for any scenario
+above. A new finding outside these lines is demoted to a minor note.
+
+\`\`\`diff
+${clipped}
+\`\`\``
 }
 
 /** How many lines of what landed on the base the review is shown (#594). */
@@ -353,6 +381,7 @@ export function buildReviewPrompt(
   limitBytes: number,
   recheck: readonly ActionFinding[] = [],
   landed = '',
+  delta?: ReviewDelta,
 ): string {
   const clipped =
     diff.length > limitBytes ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : diff
@@ -375,13 +404,13 @@ ${CHECKLIST}
 ${RUBRIC}
 
 ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ''}
-${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ''}## The diff
+${recheck.length > 0 ? `${recheckBlock(recheck, delta !== undefined)}\n\n` : ''}## The diff
 
 \`\`\`diff
 ${clipped}
 \`\`\`
 
-${landed ? `${landed}\n\n` : ''}## How to report
+${delta ? `${deltaBlock(delta, limitBytes)}\n\n` : ''}${landed ? `${landed}\n\n` : ''}## How to report
 ${CONTRACT}
 `
 }
@@ -590,9 +619,28 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
       const landedBlock =
         moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, await deps.landed(moved))
+      // The fix's own delta (#671): only when a review of this pass has read an
+      // earlier head. Anything unreadable falls back to a full review.
+      let delta: ReviewDelta | undefined
+      let deltaHunks: DiffHunks | undefined
+      if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
+        try {
+          const text = await deps.diff(context.reviewedSha)
+          const read = text.trim() === '' ? null : hunksOf(text)
+          if (read === null) {
+            context.log?.note('review', 'the fix delta was empty or unreadable; this is a full review')
+          } else {
+            delta = { fromSha: context.reviewedSha, toSha: context.onSha, text }
+            deltaHunks = read
+          }
+        } catch (error) {
+          context.log?.note('review', `the fix delta could not be read (${errorMessage(error)}); this is a full review`)
+        }
+      }
       context.log?.note(
         'review',
         `${reviewId} · ${diff.length} bytes of diff` +
+          (delta === undefined ? '' : ` · fix delta ${delta.text.length} bytes since ${delta.fromSha.slice(0, 7)}`) +
           (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : '') +
           (moved === undefined ? '' : ` · base moved on ${moved.paths.length} paths`),
       )
@@ -602,7 +650,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         outcome = await deps.runtime.run({
           runId: reviewId,
           cwd: context.cwd,
-          prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock),
+          prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock, delta),
           // The cold reviewer's own flag (`#369`): the only action that sends one.
           // Each adapter turns it into the runtime's own way of forcing the shape
           // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
@@ -650,7 +698,10 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       }
       if (outcome === undefined) throw new Error('the review returned no outcome')
 
-      const result = { ...reviewAnswer(outcome, diff, context.log), spent: spentOf(outcome, deps.runtime) }
+      const result = {
+        ...reviewAnswer(outcome, diff, context.log, deltaHunks, recheck),
+        spent: spentOf(outcome, deps.runtime),
+      }
       // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
       // and `verdict`, `findings` and `because` are not touched: a reviewer
       // that edited the tree has not refused the diff.
@@ -668,7 +719,13 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
  * used to return directly, so `evidence`'s `(N turns · $X)` suffixes stay
  * exactly as they were.
  */
-function reviewAnswer(outcome: RunOutcome, diff: string, log: RunTrace | undefined): ActionResult {
+function reviewAnswer(
+  outcome: RunOutcome,
+  diff: string,
+  log: RunTrace | undefined,
+  deltaHunks?: DiffHunks,
+  recheck: readonly ActionFinding[] = [],
+): ActionResult {
   if (outcome.failure) {
     /**
      * A reviewer that never started has not reviewed anything, and saying
@@ -793,7 +850,14 @@ function reviewAnswer(outcome: RunOutcome, diff: string, log: RunTrace | undefin
 
   const hunks = hunksOf(diff)
   if (hunks === null) log?.note('review', 'the diff could not be read as hunks; no finding was demoted')
-  const kept = hunks === null ? findings : demoteOutsideDiff(findings, hunks)
+  // A finding that quotes a recheck scenario verbatim is a recheck, never demoted (#671).
+  const scenarios = new Set(recheck.map((f) => f.failureScenario))
+  const isRecheck = (f: ActionFinding): boolean => scenarios.has(f.failureScenario)
+  const fresh = findings.filter((f) => !isRecheck(f))
+  const demoted = [...(hunks === null ? fresh : demoteOutsideDiff(fresh, hunks))]
+  const afterFix = deltaHunks === undefined ? demoted : demoteOutsideFix(demoted, deltaHunks)
+  let at = 0
+  const kept = findings.map((f) => (isRecheck(f) ? f : afterFix[at++]!))
   const verdict = verdictFor(kept)
   return {
     verdict,
