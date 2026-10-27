@@ -13,8 +13,10 @@
  * leaves no row at all, and is not counted either.
  */
 import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope, type Usage } from '@lingtai/domain'
-import { priceRow } from '@lingtai/domain/rate-card'
+import { estimateRow } from '@lingtai/domain/rate-card'
 import type { EventStore } from '@lingtai/event-store'
+
+import { readRateSnapshot } from './rate-snapshot.ts'
 
 export interface DayRow {
   at: Date
@@ -28,6 +30,8 @@ export interface DaySpend {
   /** Cents the rate card priced, rounded once over the day's sum. Never part of `reportedCents`. */
   estimatedCents: number
   estimatedRuns: number
+  /** Of the estimated runs, those priced at least partly from the fetched snapshot (#658). */
+  fetchedRuns: number
   unknown: number
 }
 
@@ -41,10 +45,17 @@ export const nextLocalMidnight = (now: Date): Date => new Date(now.getFullYear()
 export function daySpend(
   rows: readonly DayRow[],
   now: Date,
-  price: (row: DayRow) => number | null = (row) => priceRow(row),
+  price: (row: DayRow) => number | { usd: number; fetched: boolean } | null = snapshotPricer(),
 ): DaySpend {
   const since = startOfLocalDay(now).getTime()
-  const day: DaySpend = { reportedCents: 0, reportedRuns: 0, estimatedCents: 0, estimatedRuns: 0, unknown: 0 }
+  const day: DaySpend = {
+    reportedCents: 0,
+    reportedRuns: 0,
+    estimatedCents: 0,
+    estimatedRuns: 0,
+    fetchedRuns: 0,
+    unknown: 0,
+  }
   let estimatedUsd = 0
   for (const row of rows) {
     if (row.at.getTime() < since) continue
@@ -58,8 +69,10 @@ export function daySpend(
       day.unknown += 1
       continue
     }
-    estimatedUsd += estimate
+    const usd = typeof estimate === 'number' ? estimate : estimate.usd
+    estimatedUsd += usd
     day.estimatedRuns += 1
+    if (typeof estimate !== 'number' && estimate.fetched) day.fetchedRuns += 1
   }
   // Summed in dollars and rounded once: a run's estimate is often a fraction of a cent, and rounding each would drop spend the board shows.
   day.estimatedCents = Math.round(estimatedUsd * 100)
@@ -79,9 +92,19 @@ export const dayFigure = (day: DaySpend): string =>
  */
 export function daySpendText(day: DaySpend, ceilingUsd: number | undefined): string {
   const figure = dayFigure(day)
-  const unknown = ` + ~${dollars(day.estimatedCents)} est. + ${day.unknown} unknown`
+  const unknown = ` + ~${dollars(day.estimatedCents)} est.${fetchedNote(day)} + ${day.unknown} unknown`
   if (ceilingUsd === undefined) return `today ${figure}${unknown} — no daily ceiling (limits.day_usd)`
   return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — reported and estimated count, unknown costs are not`
+}
+
+/** Said wherever an estimate is shown that part of it is not from the shipped card; empty otherwise. */
+export const fetchedNote = (day: { fetchedRuns: number }): string =>
+  day.fetchedRuns > 0 ? ` (${day.fetchedRuns} at fetched LiteLLM prices)` : ''
+
+/** The default pricer: the shipped card, then the fetched snapshot, read once per call and never the network. */
+export function snapshotPricer(): (row: DayRow) => { usd: number; fetched: boolean } | null {
+  const snapshot = readRateSnapshot()
+  return (row) => estimateRow(row, snapshot)
 }
 
 /** Reached when reported plus estimated cents are at the figure. Unknown rows count toward nothing. */

@@ -150,6 +150,7 @@ export {
   dayCeilingPause,
   dayFigure,
   daySpend,
+  fetchedNote,
   daySpendText,
   nextLocalMidnight,
   startOfLocalDay,

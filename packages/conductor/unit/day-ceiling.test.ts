@@ -30,7 +30,14 @@ const check = (rows: DayRow[], store: ReturnType<typeof createMemoryEventStore>,
 describe('daySpend', () => {
   it('excludes yesterday, counts null as unknown, and rounds per row', () => {
     const day = daySpend([yesterday(99), today(0.004), today(0.004), today(null)], now)
-    expect(day).toEqual({ reportedCents: 0, reportedRuns: 2, estimatedCents: 0, estimatedRuns: 0, unknown: 1 })
+    expect(day).toEqual({
+      reportedCents: 0,
+      reportedRuns: 2,
+      estimatedCents: 0,
+      estimatedRuns: 0,
+      fetchedRuns: 0,
+      unknown: 1,
+    })
   })
 })
 

@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./wait": "./src/wait.ts",
     "./rate-card": "./src/rate-card.ts",
+    "./test/litellm-fixture": "./test/litellm-fixture.ts",
     "./test/events": "./test/events.ts",
     "./test/support": "./test/support.ts"
   },

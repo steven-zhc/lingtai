@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs'
 
 import { createSlots, currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
   clientsForProjects,
   createStatusTable,
@@ -44,6 +45,7 @@ import { configPath } from './init.ts'
 import { symbol } from './output.ts'
 import { pauseCommand } from './pause.ts'
 import { PROJECTIONS } from './projection.ts'
+import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
@@ -379,6 +381,7 @@ export async function daemonCommand(
       // The projections are stopped and the lock is released by this; what it
       // does not do, and must not, is wait for the pass.
       await started.daemon.stopped
+      await ratesSettled()
       process.exit(0)
     })()
   }
@@ -594,6 +597,9 @@ export async function daemonCommand(
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
     await loop.start()
+    startRates()
+    // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
+    setInterval(() => startRates(), 3_600_000).unref()
     // The subscription is live; a wait made during this scan is delivered by its live handler.
     await catchUpRegisteredTriage(
       await loadProjects(),
@@ -648,6 +654,7 @@ export async function daemonCommand(
   process.on('SIGTERM', () => stop('SIGTERM'))
 
   const reason = await started.daemon.stopped
+  await ratesSettled()
   if (reason === 'projection-failed') {
     const failed = started.daemon.failure
     console.error(`stopped: ${failed?.projection} failed — ${String(failed?.error)}`)

@@ -44,6 +44,7 @@ import {
   type Tickets,
 } from '@lingtai/conductor'
 import { PortsLive } from '@lingtai/conductor'
+import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { readControl } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
@@ -65,6 +66,7 @@ import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadab
 import { dayCeilingStop } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
+import { startRates } from './rates.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot()
@@ -318,6 +320,7 @@ export async function run(
      * projector — which creates tables and replays to the head — cannot.
      */
     yield* ConductorLock
+    startRates()
 
     const project = yield* Effect.tryPromise({
       try: () => world.loadProject(options.project),
@@ -565,7 +568,7 @@ export async function run(
   // and where a `Refused` becomes the line and the exit code it always was.
   return Effect.runPromise(
     heedThePause(options.store).pipe(
-      Effect.zipRight(program.pipe(Effect.provide(world.lock))),
+      Effect.zipRight(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
       // line is for.
