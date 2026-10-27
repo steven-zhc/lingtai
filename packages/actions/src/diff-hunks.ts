@@ -34,7 +34,7 @@ function headerPath(raw: string): string {
     if (raw[i] !== '\\') {
       // By code point: a supplementary character is two UTF-16 units, and
       // encoding each alone would write a replacement character twice.
-      const c = String.fromCodePoint(raw.codePointAt(i)!)
+      const c = /^[\s\S]/u.exec(raw.slice(i))![0]
       bytes.push(...Buffer.from(c, 'utf8'))
       i += c.length
       continue
