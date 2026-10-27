@@ -1,3 +1,5 @@
+English · [中文](README.zh-CN.md)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/logo-dark.png">
   <img src="doc/logo.png" alt="" width="64">

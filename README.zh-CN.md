@@ -1,0 +1,100 @@
+[English](README.md) · 中文
+
+> 这是 [README.md](README.md) 的中文本。**英文本是正本**；两者不一致时以英文本为准。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/logo-dark.png">
+  <img src="doc/logo.png" alt="" width="64">
+</picture>
+
+# Lingtai
+
+Lingtai（灵台）接收一个由票组成的队列，把它们交给编码 agent——可以同时交给多个，每个都在各自的工作树里——并让每一处改动停在检查和冷审查处，直到通过为止。通过的改动它会合并，否则就停下来等你，每一个决定都会写进你本机上的日志。
+
+## Install
+
+你需要 Git 和已登录的 Claude Code，下面的示例还需要 Node.js 和 npm；其余要求见 [requirements](doc/requirements.md)。
+
+```sh
+curl -fsSL https://lingtai.hczhang.com/install.sh | sh
+```
+
+## Quickstart
+
+这一节带你从零开始，在本机上合并一张票，不需要 GitHub 账号。示例使用 [Chapter Garden](https://github.com/steven-zhc/chapter-garden)，一个小型 Astro 站点。这里给出的是 POSIX shell 命令；[tutorial](doc/tutorial.md) 里有 Fish 的写法，并逐一解释每个选项。
+
+先克隆它，再在旁边建一个裸仓库，作为这份检出的 `origin`，这样 Lingtai 会推送并合并到那里，原仓库不会被碰到：
+
+```sh
+export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
+mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
+git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
+git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
+git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
+```
+
+把它注册到 Lingtai，使用本地 SQLite 日志，并在任何合并之前等你批准：
+
+```sh
+lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
+  --base main \
+  --agent claude-code --reviewer claude-code \
+  --install 'npm ci' --build 'npm run check' \
+  --build 'npm run build' --defaults --land hold
+```
+
+开一张票。编辑器会打开；把表单替换成类似 *Add the next chapter to* 加上[书架](https://cg.hczhang.com/en/)中某个故事的请求（完整文本见 tutorial），并包含 `labels: feature`。等 Lingtai 打印出 `created #N` 再继续，这个编号就是下面你要批准的那个：
+
+```sh
+lingtai ticket new --project chapter-garden
+```
+
+在一个终端里启动 Lingtai 并让它一直运行；它停留在前台。在第二个终端里打开看板：
+
+```sh
+lingtai start
+lingtai board
+```
+
+当这张票在等你时，在看板上阅读这处改动并按下 **Approve**，也可以在终端里完成：
+
+```sh
+lingtai status chapter-garden --all
+lingtai approve chapter-garden --issue <ticket-number>
+```
+
+在你的 Chapter Garden 检出里运行 `git pull`，就能看到合并后的改动。
+
+## What an agent can reach
+
+Lingtai 派出的 agent 在你的机器上运行，以你的用户身份。下面说明这样做保护了什么，又没有保护什么。
+
+**已隔离**
+
+- agent 在它自己的 git 工作树里工作，而不是在你的检出里。
+- 它的环境被过滤为 `PATH`、`HOME`、`TMPDIR`、`LANG`、`USER` 和 `LOGNAME`，再加上你的项目声明的变量。Lingtai 自己的 `LINGTAI_*` 凭据和数据库 URL 不会通过环境交给它，但它可以读取存放这些内容的文件（见下文）。
+- 设定其关卡的 recipe 不在 agent 的工作树里，所以它提交的改动无法削弱它自己的检查。
+
+**未隔离**
+
+- Claude Code 运行时没有文件系统沙箱。该 agent 可以读取任何你能读的文件，包括 `~/.lingtai/config.yml`（数据库 URL 和 GitHub App 设置）和 `~/.ssh`，并且它可以访问网络。
+- Codex 运行时确实在沙箱中运行（`--sandbox workspace-write`），沙箱会拒绝在其工作目录、`$TMPDIR` 和 `/tmp` 之外的写入，以及 Lingtai 为提交而添加的少数几个目录之外的写入。带有 `tier: sandboxed` 的 recipe 只由这样的运行时提供服务，Claude Code 不行。不要假定沙箱涵盖读取或网络。
+
+**该怎么做**
+
+- 在一个用户或一台机器下运行 Lingtai，并且你愿意让 agent 看到该用户或机器上的文件。
+- 要报告漏洞，请开一个标题为 "security" 的 issue，不要写任何细节，我们会私下联系你。见 [SECURITY.md](SECURITY.md)。
+
+## Next
+
+- [Why it is built this way](doc/why.md)：日志、目标与架构。
+- [The tutorial](doc/tutorial.md)：同一条路径的完整版，含 Fish，以及把项目迁到 GitHub 的第 2 部分。
+- [The ten steps of a pass](doc/the-pass.html)：一张票是如何被构建的。
+- [Architecture](doc/architecture.html)：你在哪个进程里、谁在向日志追加、状态存放在哪里。
+- [Operating](doc/operating.md)：你要输入的一切，以及每一次拒绝的含义。
+- [Reference](doc/reference.md)：每个术语、事件类型和动作种类。
+- [The decision log](doc/README.md) 和 [roadmap](doc/roadmap.md)。
+
+## License
+
+[Apache License 2.0](LICENSE)。见 [`NOTICE`](NOTICE)。
