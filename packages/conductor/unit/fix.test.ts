@@ -336,6 +336,41 @@ describe('what the fixer is told', () => {
   })
 })
 
+describe('a finding that names its class', () => {
+  const SENTENCE = 'This is a class of mistake: find and fix every instance of it in the diff'
+  const briefFor = (findings: ActionFinding[]) =>
+    fixBrief({
+      refusal: { on: 'findings', findings },
+      round: 1,
+      of: 2,
+      action: 'review',
+      diff: 'diff --git a/x b/x',
+      diffBytes: 100,
+      checks: ['pnpm test'],
+      ticket: TICKET,
+    })
+  const count = (s: string) => s.split(SENTENCE).length - 1
+
+  it('says every-instance once per class, inside the diff only', () => {
+    const same = briefFor([finding({ class: 'read as empty' }), finding({ line: 90, class: 'read as empty' })])
+    expect(count(same)).toBe(1)
+    expect(same).toContain('not elsewhere in the repository')
+    expect(same.split('Class: read as empty').length - 1).toBe(2)
+    expect(count(briefFor([finding({ class: 'a' }), finding({ class: 'b' })]))).toBe(2)
+  })
+
+  it('is untouched without a class', () => {
+    const brief = briefFor([finding()])
+    expect(brief).not.toContain('Class:')
+    expect(count(brief)).toBe(0)
+    expect(brief).toContain(
+      ['### 1. blocker · packages/daemon/src/subscribers.ts:71', '', finding().claim, '', 'The failure scenario'].join(
+        '\n',
+      ),
+    )
+  })
+})
+
 describe('what a person is shown when the rounds are over', () => {
   const diagnosis = diagnoseDisagreement({
     action: 'review',
