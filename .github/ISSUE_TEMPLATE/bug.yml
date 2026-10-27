@@ -1,0 +1,42 @@
+name: Bug report
+description: Report something that fails.
+labels: [bug, agent:hold]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A person reads this before anything is worked on. Say what fails, not
+        which area it is in. For a vulnerability or a conduct concern, use the
+        "Private contact" form instead and put no details in a public issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: "One sentence: the failure, not the area."
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: Want
+      description: What is true when this is done.
+    validations:
+      required: true
+  - type: textarea
+    id: watch-out
+    attributes:
+      label: Watch out
+      description: The trap. What costs money, fails silently, or has been got wrong before. Write "none known" if there is none.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: "The exact output, the command you ran and the Lingtai version."
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: Checkboxes that a person or a test can check.
+      placeholder: "- [ ] ..."
