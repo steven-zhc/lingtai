@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { SpendTable } from '../src/app/spend-table.tsx'
-import { billOf } from '../src/lib/spend.ts'
+import { billOf, type RateCard } from '../src/lib/spend.ts'
 
 function row(over: Partial<SpendRow> = {}): SpendRow {
   return {
@@ -70,5 +70,13 @@ describe('the /spend table', () => {
     )
     expect(html).toContain('—')
     expect(html).not.toContain('$0.00')
+  })
+
+  it('says the fetched-prices note on a run priced from the snapshot', () => {
+    const price: RateCard = () => ({ usd: 0.5, fetched: true })
+    const byPurpose = billOf([row({ costUsd: null })], price)
+    const total = { project: 'all', cards: 1, byPurpose }
+    const html = renderToStaticMarkup(<SpendTable rows={[{ project: 'pin', cards: 1, byPurpose }]} total={total} />)
+    expect(html).toContain('~$0.50 est. (1 at fetched LiteLLM prices)')
   })
 })
