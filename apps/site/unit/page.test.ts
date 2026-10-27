@@ -69,16 +69,26 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-evidence"')
   })
 
-  it('keeps repository docs out of the public site except the tutorial, the recipe guide, the CLI guide, the requirements, the Symphony page, the plugin pages and the events', async () => {
+  it('keeps repository docs out of the public site except the tutorial, the concepts page, the recipe guide, the CLI guide, the requirements, the Symphony page, the plugin pages and the events', async () => {
     const [home, chrome] = await Promise.all([
       prose(),
       readFile(path.resolve(import.meta.dirname, '../src/app/chrome.tsx'), 'utf8'),
     ])
     expect(DOCS_PUBLIC).toBe(false)
-    expect(PUBLIC_SLUGS).toEqual(['tutorial', 'recipe', 'cli', 'requirements', 'from-symphony', 'plugins', 'events'])
+    expect(PUBLIC_SLUGS).toEqual([
+      'tutorial',
+      'concepts',
+      'recipe',
+      'cli',
+      'requirements',
+      'from-symphony',
+      'plugins',
+      'events',
+    ])
     const links = [...`${home}\n${chrome}`.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1])
-    expect(links.every((l) => l === '/docs/tutorial/' || l === '/docs/plugins/')).toBe(true)
+    expect(links.every((l) => l === '/docs/tutorial/' || l === '/docs/concepts/' || l === '/docs/plugins/')).toBe(true)
     expect(chrome).toContain('href="/docs/tutorial/"')
+    expect(chrome).toContain('href="/docs/concepts/"')
     expect(chrome).toContain('href="/docs/plugins/"')
     expect(home).toContain('href="#setup"')
   })

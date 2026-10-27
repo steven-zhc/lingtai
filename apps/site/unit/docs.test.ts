@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { STEPS } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -90,6 +91,15 @@ describe('what the site publishes', () => {
     expect(await unpublished()).toContain('plugins/_template.md')
   })
 })
+
+const RESOLUTION_LABELS = [
+  'Approve and continue',
+  'Continue fixing current work',
+  'Answer the question',
+  'Start over from base',
+  'Add to the ticket and start over',
+  'Close the ticket',
+]
 
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path short and in order', async () => {
@@ -205,6 +215,33 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('tutorial.md', 'recipe.md', served$)).toBe('/docs/recipe/')
     expect(resolveHref('recipe.md', 'plugins/run.md', served$)).toBe('/docs/plugins/run/')
     expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(recipe.md)')
+  })
+
+  it('publishes the concepts page, built from doc/, and links it from the tutorial', async () => {
+    const served = await servable()
+    const served$ = (file: string) => served.includes(file)
+    expect(served).toContain('concepts.md')
+    expect(resolveHref('tutorial.md', 'concepts.md', served$)).toBe('/docs/concepts/')
+    expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(concepts.md)')
+    const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
+    expect(body).toContain('(img/concepts.svg)')
+    await expect(readFile(path.join(docRoot, 'img/concepts.svg'), 'utf8')).resolves.toContain('<svg')
+    let at = -1
+    for (const step of STEPS) {
+      const next = body.indexOf(`\`${step}\``, at + 1)
+      expect(next, `the page names ${step} after the step before it`).toBeGreaterThan(at)
+      at = next
+    }
+  })
+
+  it('quotes only the labels the board shows', async () => {
+    const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
+    const copy = await readFile(path.join(docRoot, '../apps/board/src/lib/resolution-copy.ts'), 'utf8')
+    const labels = [...body.matchAll(/\*\*([A-Z][^*]+)\*\*/g)]
+      .map((m) => m[1]!)
+      .filter((l) => RESOLUTION_LABELS.includes(l))
+    expect(labels.length).toBeGreaterThanOrEqual(6)
+    for (const label of RESOLUTION_LABELS) expect(copy, label).toContain(`title: '${label}'`)
   })
 
   it('publishes the Symphony page and links it from the requirements', async () => {
