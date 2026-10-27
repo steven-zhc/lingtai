@@ -108,6 +108,12 @@ const finding = (over: Record<string, unknown> = {}) => ({
 })
 
 describe('the review prompt', () => {
+  it('asks for the class of a repeatable mistake, listed within this diff', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES)
+    expect(prompt).toContain('Name the class where the same mistake could occur elsewhere')
+    expect(prompt).toMatch(/every place in\s+\*\*this diff\*\*/)
+  })
+
   it('carries the ticket and the diff and nothing from the implementer', () => {
     const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES)
 
@@ -459,6 +465,15 @@ describe("reading the reviewer's answer", () => {
 
     expect(parsed).toBe(true)
     expect(findings).toEqual([])
+  })
+
+  it('keeps a class, and leaves no key for a null, empty or absent one', () => {
+    const read = (over: Record<string, unknown>) =>
+      parseFindings(JSON.stringify({ findings: [finding(over)] })).findings[0]!
+    expect(read({ class: ' a failed read taken as empty ' }).class).toBe('a failed read taken as empty')
+    expect('class' in read({ class: null })).toBe(false)
+    expect('class' in read({ class: '  ' })).toBe(false)
+    expect('class' in read({})).toBe(false)
   })
 
   it('reads an unrecognised severity as the highest, not the lowest', () => {
@@ -1894,6 +1909,7 @@ describe('the schema and ActionFinding cannot diverge', () => {
       failureScenario: 'f',
       severity: 'minor',
       reachableBecause: 'r',
+      class: 'k',
     }
     const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
       string,

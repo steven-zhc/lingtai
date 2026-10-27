@@ -651,13 +651,28 @@ state in your final message.
  * handing it none.
  */
 function findingsHalf(findings: readonly ActionFinding[], action: string): { evidence: string; criterion: string } {
+  const classesSeen = new Set<string>()
   const items = findings.map((f, i) => {
     const at = f.line === null ? f.file : `${f.file}:${f.line}`
+    // The every-instance sentence once per class, and the diff named in it:
+    // "every instance" is this change's, never a sweep of the repository (#672).
+    const classLines: string[] = []
+    if (f.class !== undefined) {
+      classLines.push(`Class: ${f.class}`, '')
+      if (!classesSeen.has(f.class)) {
+        classesSeen.add(f.class)
+        classLines.push(
+          'This is a class of mistake: find and fix every instance of it in the diff shown under "The change under review", not only the line cited, and not elsewhere in the repository.',
+          '',
+        )
+      }
+    }
     return [
       `### ${i + 1}. ${f.severity} · ${at}`,
       '',
       f.claim,
       '',
+      ...classLines,
       'The failure scenario, which is the acceptance criterion, verbatim:',
       '',
       '```',

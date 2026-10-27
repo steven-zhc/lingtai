@@ -136,5 +136,7 @@ export const Finding = z.object({
    * finding outside every hunk is not demoted to a pre-existing minor.
    */
   reachableBecause: z.string().optional(),
+  /** The class of mistake, where the same one could occur elsewhere in the diff (#672). Absent on old events. */
+  class: z.string().optional(),
 })
 export type Finding = z.infer<typeof Finding>
