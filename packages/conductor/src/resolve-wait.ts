@@ -179,6 +179,17 @@ export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveW
 }
 
 /**
+ * `--if-head` names the saved head in full or by a prefix of at least 7 hex
+ * characters (#668). The comparison is against the one saved head, never a
+ * lookup, so a prefix cannot be ambiguous.
+ */
+function matchHead(given: string, head: string): 'match' | 'bad-sha' | 'mismatch' {
+  const sha = given.toLowerCase()
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return 'bad-sha'
+  return head.startsWith(sha) ? 'match' : 'mismatch'
+}
+
+/**
  * **Exported for the unit half alone**, the same reason `approveHolding` was
  * (`#487`): `resolveWait()` above takes `createFileLocker()`, which is the
  * filesystem, so by 0060 §1 the whole of `resolveWait()` cannot be
@@ -187,6 +198,18 @@ export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveW
 export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: string): Promise<ResolveWaitResult> {
   const store = options.store ?? eventStore
   const note = options.note?.trim() ?? ''
+
+  if (
+    options.resolution._tag === 'GrantFixRound' &&
+    options.resolution.onSha &&
+    matchHead(options.resolution.onSha, '') === 'bad-sha'
+  )
+    return {
+      ok: false,
+      ticketId,
+      reason: 'bad-sha',
+      detail: `--if-head needs a commit SHA of at least 7 hex characters, not ${options.resolution.onSha} — nothing was resolved.`,
+    }
 
   const item = reduceTicket(await store.read(ticketId))
 
@@ -206,7 +229,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     item.lifecycle.waitId === options.waitId &&
     (options.resolution._tag === 'GrantFixRound'
       ? item.lifecycle.grantRef !== undefined &&
-        (!options.resolution.onSha || item.lifecycle.onSha === options.resolution.onSha)
+        (!options.resolution.onSha || matchHead(options.resolution.onSha, item.lifecycle.onSha ?? '') === 'match')
       : item.lifecycle.onSha === options.resolution.onSha)
   ) {
     const parsed = parseTicketStream(ticketId)!
@@ -275,7 +298,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     const saved = await savedHead(store, ticketId, block.runId)
     if (!saved.ok) return saved
     const { head, ref } = saved
-    if (resolution.onSha && resolution.onSha !== head) {
+    if (resolution.onSha && matchHead(resolution.onSha, head) !== 'match') {
       return {
         ok: false,
         ticketId,

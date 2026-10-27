@@ -252,6 +252,100 @@ describe('resolveWait', () => {
     expect((await store.read(CONTROL_STREAM)).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
   })
 
+  describe('--if-head by prefix (#668)', () => {
+    async function waiting(issue: number) {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream(PROJECT, issue)
+      const item = makeStream(ticketId)
+      const run = aRun(`pass-${issue}`)
+      const waitId = aWaitId()
+      await seed(store, ticketId, [
+        ...aClaim(item, run.runId),
+        ...aWait(
+          item,
+          {
+            _tag: 'ProposedEscalated',
+            run: aRunRef(run.runId),
+            proposal: { _tag: 'BuildRed', output: 'typecheck failed' },
+            because: { _tag: 'NotAsked' },
+          },
+          waitId,
+        ),
+      ])
+      await seed(store, run.runId, [
+        run.event('RunRefsPublished', {
+          branch: `agent/${issue}`,
+          arm: `agent/${issue}-attempt-1`,
+          headSha: HEAD,
+          armSha: HEAD,
+          branchCarries: true,
+          outcome: 'published',
+          detail: null,
+        }),
+      ])
+      const grant = (onSha: string, selectedStore: EventStore = store) =>
+        resolveWaitHolding(
+          {
+            ticketId,
+            issue,
+            waitId,
+            resolution: { _tag: 'GrantFixRound', onSha, ref: '' },
+            by: 'human:steven',
+            client: fakeClient(HEAD),
+            store: selectedStore,
+          },
+          ticketId,
+        )
+      return { store, ticketId, grant }
+    }
+    const HEAD = '609d8894ba009144cde199b064788d6df839cf57'
+
+    it.each([HEAD.slice(0, 7), HEAD.slice(0, 8), HEAD.slice(0, 8).toUpperCase()])('grants %s', async (given) => {
+      const { store, ticketId, grant } = await waiting(668)
+      expect(await grant(given)).toEqual({ ok: true, ticketId })
+      expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
+        _tag: 'GrantFixRound',
+        onSha: HEAD,
+        ref: 'agent/668',
+      })
+    })
+
+    it.each(['609d88', 'HEAD', 'agent/668', '609d889z'])('refuses %s as bad-sha and appends nothing', async (given) => {
+      const { store, ticketId, grant } = await waiting(669)
+      const before = (await store.read(ticketId)).length
+      expect(await grant(given)).toMatchObject({
+        ok: false,
+        reason: 'bad-sha',
+        detail: expect.stringContaining('7 hex'),
+      })
+      expect((await store.read(ticketId)).length).toBe(before)
+    })
+
+    it('refuses a prefix of a different sha as stale', async () => {
+      const { grant } = await waiting(670)
+      expect(await grant('b'.repeat(8))).toMatchObject({
+        ok: false,
+        reason: 'stale',
+        detail: expect.stringContaining('displayed'),
+      })
+    })
+
+    it('retries a committed grant by prefix without a second WaitResolved', async () => {
+      const { store, ticketId, grant } = await waiting(671)
+      const unschedulable: EventStore = {
+        ...store,
+        append: async (streamId, expectedVersion, events) => {
+          if (streamId === CONTROL_STREAM) throw new ConcurrencyError(streamId, expectedVersion, [expectedVersion + 1])
+          return store.append(streamId, expectedVersion, events)
+        },
+      }
+      expect(await grant(HEAD.slice(0, 7), unschedulable)).toMatchObject({ ok: true, unscheduled: expect.any(String) })
+      expect(await grant(HEAD.slice(0, 7))).toEqual({ ok: true, ticketId })
+      expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(1)
+      expect((await store.read(CONTROL_STREAM)).at(-1)?.type).toBe('ContinueRequested')
+    })
+  })
+
   it('refuses an arm-only head so a fix cannot overwrite a diverged issue branch', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 540)
