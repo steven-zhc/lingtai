@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, REFUSED_ABOUT, ReviewAnswer } from '../src/index.ts'
+import { Finding, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, REFUSED_ABOUT, ReviewAnswer } from '../src/index.ts'
 
 describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
   it('parses as an object schema with no generator statement left in it', () => {
@@ -35,10 +35,12 @@ describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
     return array.items as Record<string, unknown>
   }
 
-  it('requires every key on a finding — none of the five is optional', () => {
+  it('requires every key on a finding — none of the six is optional', () => {
     const finding = findingSchema()
-    expect(finding.required).toEqual(expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity']))
-    expect(finding.required).toHaveLength(5)
+    expect(finding.required).toEqual(
+      expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity', 'class']),
+    )
+    expect(finding.required).toHaveLength(6)
   })
 
   it('refuses an unknown key on a finding', () => {
@@ -69,6 +71,20 @@ describe('ReviewAnswer', () => {
   it('parses a schema-shaped answer, about included as null', () => {
     const parsed = ReviewAnswer.parse({ findings: [], about: null })
     expect(parsed).toEqual({ findings: [], about: null })
+  })
+
+  it('parses a finding with a class, or a null one, in the answer', () => {
+    const base = { file: 'x.ts', line: null, claim: 'c', failureScenario: 'f', severity: 'minor' }
+    expect(
+      ReviewAnswer.parse({ findings: [{ ...base, class: 'a failed read taken as empty' }], about: null }),
+    ).toBeTruthy()
+    expect(ReviewAnswer.parse({ findings: [{ ...base, class: null }], about: null })).toBeTruthy()
+  })
+
+  it('keeps a stored finding class, and reads an old finding without one', () => {
+    const base = { file: 'x.ts', line: 1, claim: 'c', failureScenario: 'f', severity: 'minor' as const }
+    expect(Finding.parse({ ...base, class: 'k' })).toEqual({ ...base, class: 'k' })
+    expect('class' in Finding.parse(base)).toBe(false)
   })
 
   it('refuses a finding with an extra key, which the strict mode forbids', () => {

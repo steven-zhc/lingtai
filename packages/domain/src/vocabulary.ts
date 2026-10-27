@@ -131,5 +131,7 @@ export const Finding = z.object({
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
   severity: z.enum(SEVERITIES),
+  /** The class of mistake, where the same one could occur elsewhere in the diff (#672). Absent on old events. */
+  class: z.string().optional(),
 })
 export type Finding = z.infer<typeof Finding>

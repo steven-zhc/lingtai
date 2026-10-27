@@ -1077,7 +1077,8 @@ export type RefusedAbout = (typeof REFUSED_ABOUT)[number]
  */
 export const ReviewAnswer = z
   .object({
-    findings: z.array(Finding.strict()),
+    // `class` is required-but-nullable here for the same reason `about` is (#672).
+    findings: z.array(Finding.extend({ class: z.string().nullable() }).strict()),
     about: z.enum(REFUSED_ABOUT).nullable(),
   })
   .strict()

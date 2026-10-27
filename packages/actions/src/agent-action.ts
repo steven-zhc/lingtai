@@ -218,6 +218,10 @@ Rules:
   true, never as a hedge. Answer \`null\` whenever you cannot say which of the
   two it is, and **always** where your findings list is empty: nothing is
   stopping the change, so there is nothing for the answer to be about.
+- **Name the class where the same mistake could occur elsewhere.** Put a few
+  words in \`class\` (for example \`a failed read treated as empty\`) and list in
+  \`claim\` every place in **this diff** where it occurs. Answer \`null\` where
+  the mistake is particular to the one line.
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
@@ -422,6 +426,7 @@ function normaliseAnswer(value: unknown): ReadAnswer {
           // `SEVERITIES` is worst first, so the highest is its own head
           // rather than a name spelled again here.
           SEVERITIES[0],
+      ...(typeof f.class === 'string' && f.class.trim() !== '' ? { class: f.class.trim() } : {}),
     })
   }
   // The reviewer's own classification, taken only where it is one of the two
