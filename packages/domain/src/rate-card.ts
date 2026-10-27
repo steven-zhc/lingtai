@@ -35,6 +35,8 @@ export interface RateRow {
   reasoning?: number
   /** Where a fetched row came from (#658). Absent on every shipped row. */
   source?: string
+  /** A later fetch found this model's entry unusable: from `from` on it is unpriced again, and earlier rows stand. */
+  withdrawn?: true
 }
 
 /** The rows of `doc/rate-card.md`, in file order. */
@@ -122,7 +124,7 @@ export function estimateRow(
     if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return null
     const listed = card.some((r) => r.model === entry.model)
     const rate = rateFor(listed ? card : snapshot, entry.model, entry.mode ?? '', row.at)
-    if (rate === undefined) return null
+    if (rate === undefined || rate.withdrawn) return null
     // A null rate is unknown only for an entry that has tokens of that class.
     if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return null
     if ((entry.tokens.cacheWrite ?? 0) > 0 && rate.cacheWrite === null) return null
@@ -179,6 +181,8 @@ export function ratesFromLiteLLM(
     if (input === undefined || output === undefined || all.some((v) => v !== undefined && Number.isNaN(v))) {
       // A model with nothing priced at all (a subscription plan's key) is not worth a name; a broken one is.
       if (all.some((v) => v !== undefined)) rejected.push(model)
+      // Unusable now: a price held from an earlier fetch must not keep pricing new runs.
+      rows.push({ from: day, model, mode: '', input: 0, output: 0, cacheRead: null, cacheWrite: null, withdrawn: true })
       continue
     }
     rows.push({
@@ -201,7 +205,8 @@ const sameRates = (a: RateRow, b: RateRow): boolean =>
   a.output === b.output &&
   a.cacheRead === b.cacheRead &&
   a.cacheWrite === b.cacheWrite &&
-  a.reasoning === b.reasoning
+  a.reasoning === b.reasoning &&
+  a.withdrawn === b.withdrawn
 
 /**
  * The snapshot after a fetch, or `null` when nothing changed.
@@ -217,6 +222,8 @@ export function mergeSnapshot(previous: readonly RateRow[], fetched: readonly Ra
     const own = rows.filter((r) => r.model === next.model && r.mode === next.mode)
     const latest = own.reduce<RateRow | undefined>((a, r) => (a === undefined || r.from >= a.from ? r : a), undefined)
     if (latest !== undefined && sameRates(latest, next)) continue
+    // Nothing priced to withdraw.
+    if (next.withdrawn && (latest === undefined || latest.withdrawn)) continue
     changed = true
     if (latest !== undefined && latest.from === next.from) rows = rows.map((r) => (r === latest ? next : r))
     else rows.push(next)

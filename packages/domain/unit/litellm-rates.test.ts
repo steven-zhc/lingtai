@@ -24,7 +24,10 @@ describe('ratesFromLiteLLM', () => {
 
   it('rejects a null input rate, an out-of-range rate, and a provider that is not the runtime’s', () => {
     expect(ratesFromLiteLLM(LITELLM_FIXTURE, wanted('chatgpt/gpt-6-astra'), 'd').rows).toEqual([])
-    expect(ratesFromLiteLLM(LITELLM_FIXTURE, wanted('gpt-6-wild'), 'd')).toEqual({ rows: [], rejected: ['gpt-6-wild'] })
+    expect(ratesFromLiteLLM(LITELLM_FIXTURE, wanted('gpt-6-wild'), 'd')).toMatchObject({
+      rows: [{ model: 'gpt-6-wild', withdrawn: true }],
+      rejected: ['gpt-6-wild'],
+    })
     expect(ratesFromLiteLLM(LITELLM_FIXTURE, wanted('gpt-6-astra', 'claude-code'), 'd').rows).toEqual([])
   })
 
@@ -84,6 +87,17 @@ describe('mergeSnapshot', () => {
       ['2026-10-26', 10],
       ['2026-10-27', 30],
     ])
+  })
+
+  it('a rejected entry withdraws a held price from its day on, and leaves earlier runs their price', () => {
+    const { rows } = ratesFromLiteLLM(LITELLM_FIXTURE, wanted('gpt-6-wild'), '2026-10-28')
+    const merged = mergeSnapshot([{ ...row('2026-10-26', 10), model: 'gpt-6-wild' }], rows)!
+    const at = (d: string) =>
+      estimateRow({ at: new Date(d), usage: [{ model: 'gpt-6-wild', tokens: { fresh: 1_000_000 } }] }, merged)?.usd
+    expect(at('2026-10-27T00:00:00Z')).toBe(10)
+    expect(at('2026-10-28T12:00:00Z')).toBeUndefined()
+    // and with nothing held, nothing is written
+    expect(mergeSnapshot([], rows)).toBeNull()
   })
 
   it('changes nothing when the rates are unchanged', () => {

@@ -6,7 +6,14 @@ import type { RateRow } from '@lingtai/domain/rate-card'
 import { LITELLM_FIXTURE } from '@lingtai/domain/test/litellm-fixture'
 import { describe, expect, it } from 'vitest'
 
-import { readRateSnapshot, ratesDue, refreshRates, type FetchNote, type RatePorts } from '../src/rate-snapshot.ts'
+import {
+  readRateSnapshot,
+  ratesDue,
+  realRatePorts,
+  refreshRates,
+  type FetchNote,
+  type RatePorts,
+} from '../src/rate-snapshot.ts'
 
 function ports(over: Partial<RatePorts> = {}) {
   let stored: RateRow[] = []
@@ -70,13 +77,28 @@ describe('the snapshot file', () => {
     const file = join(dir, 'rates.json')
     writeFileSync(file, '{"rows":[]}\n')
     const before = readFileSync(file)
-    const { p } = ports({
+    // The real ports, aimed at this directory: only the fetch is faked.
+    const real = realRatePorts(async () => [{ model: 'gpt-6-astra', runtime: 'codex' }], env)
+    await refreshRates({
+      ...real,
       table: async () => {
         throw new Error('boom')
       },
     })
-    await refreshRates(p)
     expect(readFileSync(file).equals(before)).toBe(true)
+    expect(JSON.parse(readFileSync(join(dir, 'rates-fetch.json'), 'utf8'))).toMatchObject({ ok: false, error: 'boom' })
+  })
+
+  it('a note that cannot be written does not reject the refresh', async () => {
+    const { p } = ports({
+      table: async () => {
+        throw new Error('boom')
+      },
+      note: () => {
+        throw new Error('ENOSPC')
+      },
+    })
+    await expect(refreshRates(p)).resolves.toBeUndefined()
   })
 
   it('is due when never fetched or last tried before today (UTC)', () => {

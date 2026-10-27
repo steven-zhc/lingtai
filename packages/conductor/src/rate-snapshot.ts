@@ -129,8 +129,14 @@ export function ratesDue(now: Date, note: FetchNote | null = readFetchNote()): b
 }
 
 async function run(ports: RatePorts): Promise<void> {
-  const fail = (error: unknown) =>
-    ports.note({ at: ports.now().toISOString(), ok: false, error: (error as Error).message, rejected: [] })
+  // Reporting can fail on the same disk the write did; a refresh never rejects.
+  const fail = (error: unknown) => {
+    try {
+      ports.note({ at: ports.now().toISOString(), ok: false, error: (error as Error).message, rejected: [] })
+    } catch {
+      // nothing left to tell anyone
+    }
+  }
   try {
     const wanted = (await ports.wanted()).filter((w) => !shipped(w.model))
     if (wanted.length === 0) return

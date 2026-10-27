@@ -598,6 +598,8 @@ export async function daemonCommand(
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
     await loop.start()
     startRates()
+    // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
+    setInterval(() => startRates(), 3_600_000).unref()
     // The subscription is live; a wait made during this scan is delivered by its live handler.
     await catchUpRegisteredTriage(
       await loadProjects(),
