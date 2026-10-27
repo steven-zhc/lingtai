@@ -1,0 +1,19 @@
+name: Private contact (security or conduct)
+description: Ask to be reached privately about a vulnerability or a conduct concern. Write no details here.
+labels: [agent:hold]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Title this issue `security` or `conduct` and write nothing else in it.
+        We will reach you privately. Please do not put the vulnerability or
+        the incident itself in this public issue.
+  - type: dropdown
+    id: route
+    attributes:
+      label: Which is this?
+      options:
+        - security
+        - conduct
+    validations:
+      required: true

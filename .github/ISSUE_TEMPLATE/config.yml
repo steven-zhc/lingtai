@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or conduct report
+    url: https://github.com/steven-zhc/lingtai/blob/main/SECURITY.md
+    about: Do not put details in a public issue. Read SECURITY.md, then open the "Private contact" form, which asks for nothing else.
