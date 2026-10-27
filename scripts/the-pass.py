@@ -223,7 +223,9 @@ EN = dict(
          "no round, because it passed no judgement on your change. Nor does a "
          "review finding on a line your diff never touched: it is recorded as a "
          "pre-existing minor, unless the reviewer says how the diff makes that "
-         "code reachable.",
+         "code reachable. A review after a fix round reviews what the fix "
+         "changed and rechecks the earlier findings: a new finding outside the "
+         "fix is recorded as a minor, and a recheck never is.",
     s4p2b="<b>A base that moved on your branch's files buys no round "
           "either — if it merges in cleanly.</b> Lingtai merges it in itself and runs <code>build</code> "
           "and <code>review</code> again, with the base's new changes in front "
@@ -397,7 +399,9 @@ ZH = dict(
     s4p2="<b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— "
          "agent 停下来问、reviewer 崩了 —— 不买任何一轮，"
          "因为它对你的改动没有做出任何裁决。review 里落在你的 diff 从未碰过的行上的 "
-         "finding 同样不买：它会被记为既有的 minor，除非 reviewer 说明这份 diff 如何让那段代码变得可达。",
+         "finding 同样不买：它会被记为既有的 minor，除非 reviewer 说明这份 diff 如何让那段代码变得可达。"
+         "修复一轮之后的 review 只审查这次修复改动的部分，并复查之前的 finding："
+         "修复之外的新 finding 记为 minor，复查的 finding 则从不降级。",
     s4p2b="<b>base 在你分支改过的文件上有了变动，同样不买任何一轮 —— 只要能干净并入。</b>"
           "Lingtai 自己把它并进来，再跑一遍 <code>build</code> 和 "
           "<code>review</code>，并把 base 带来的新改动摆在 reviewer 面前 —— "

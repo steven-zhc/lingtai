@@ -2191,7 +2191,7 @@ describe('a review after a fix round reviews the fix (#671)', () => {
   const FULL = `${HUNK_DIFF}${DELTA}`
   const answer = (findings: unknown[]) => outcome({ text: JSON.stringify({ findings }) })
   const SECOND = { ...context, reviewedSha: 'b'.repeat(40) }
-  const RECHECK = finding({ line: 900, failureScenario: 'the earlier scenario, quoted' })
+  const RECHECK = finding({ line: 900, failureScenario: 'the earlier scenario, quoted' }) as ActionFinding
 
   const build = (reply: RunOutcome, delta: () => Promise<string>) => {
     const runtime = reviewer(reply)

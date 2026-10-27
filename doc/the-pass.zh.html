@@ -431,7 +431,7 @@
     <h2>一趟 pass 最多花你多少</h2>
     <p class="lede">四个数，前三个会被第四个乘一遍。</p>
     <p>把它当算术读：一趟 pass 最多 <code>rounds + 1</code> 次 agent run，每次由 <code>turns</code> 和 <code>wall</code> 封顶 —— 而 <code>restarts</code> 是一张票最多买几趟 pass。<code>lingtai add</code> 会在任何东西跑起来之前把这笔总账打印给你。</p>
-    <p><b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— agent 停下来问、reviewer 崩了 —— 不买任何一轮，因为它对你的改动没有做出任何裁决。review 里落在你的 diff 从未碰过的行上的 finding 同样不买：它会被记为既有的 minor，除非 reviewer 说明这份 diff 如何让那段代码变得可达。</p>
+    <p><b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— agent 停下来问、reviewer 崩了 —— 不买任何一轮，因为它对你的改动没有做出任何裁决。review 里落在你的 diff 从未碰过的行上的 finding 同样不买：它会被记为既有的 minor，除非 reviewer 说明这份 diff 如何让那段代码变得可达。修复一轮之后的 review 只审查这次修复改动的部分，并复查之前的 finding：修复之外的新 finding 记为 minor，复查的 finding 则从不降级。</p>
     <p><b>base 在你分支改过的文件上有了变动，同样不买任何一轮 —— 只要能干净并入。</b>Lingtai 自己把它并进来，再跑一遍 <code>build</code> 和 <code>review</code>，并把 base 带来的新改动摆在 reviewer 面前 —— 每趟 pass 最多两次，之后停下来等你。base 改了相同的行而无法兼容时，则是冲突，按冲突处理。base 只在别处有变动时，则在 <code>merge</code> 的 verify 之后落地。</p>
     <p>人额外批准的一轮修复，是在保存的改动上再付费运行 <b>一次</b> agent。这不会提高 recipe 的 <code>rounds</code> 上限；再来一轮还须再决定。这次运行仍受自己的 <code>turns</code>、<code>wall</code> 以及已声明的金额上限约束。</p>
   </section>

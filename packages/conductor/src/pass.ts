@@ -1324,6 +1324,8 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
           ? { failed: 'this pass was handed no way to merge the base in' }
           : await options.mergeBase(next.toSha)
     }
+    // Read before `record` moves `onSha` to the merge commit (#671).
+    const approvedHeadStands = approvedAt !== null && onSha === approvedAt
     record({
       step: 'proposed',
       ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1370,7 +1372,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         mergedOnto = next.toSha
         // Only a person's approval of the head the merge started from keeps the
         // earlier read; any other base move is a full review.
-        reviewedSha = approvedAt !== null && onSha === approvedAt ? approvedAt : null
+        reviewedSha = approvedHeadStands ? approvedAt : null
         approvedAt = null
         landedOnBase =
           offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
