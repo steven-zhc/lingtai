@@ -5,8 +5,10 @@ what to type. For the commands, begin at the [tutorial](tutorial.md).
 
 Lingtai takes a queue of work, hands items to coding agents — several passes at
 once, each in a worktree of its own — holds each at a series of steps, and
-releases it only when every step, including a human one, has passed. Nothing
-advances without leaving a record of why.
+releases it only when every step the recipe declares has passed. A person is one
+of those steps only if the recipe puts one there; a recipe with no human hold
+merges what passes without asking. Nothing advances without leaving a record of
+why.
 
 **One agent loop, driven by an append-only event log. Everything else is a
 projection of that log or a subscriber to it.**
