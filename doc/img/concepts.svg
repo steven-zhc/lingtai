@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 400" role="img" aria-labelledby="title description">
+<title id="title">One Chapter Garden ticket, its ten steps and its two ways back</title>
+<desc id="description">A ticket goes through claim, admit, prepared, design, implement, build, review, proposed, merge and end. A red build or a refusing review returns to implement in the same worktree and on the same branch: a fix round. At the proposed wait a person can continue the saved work, or start over from the base branch, which begins a new pass in a fresh worktree. The ticket ends landed, closed or still waiting.</desc>
+<style>
+:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
+@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
+text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
+.title{font-size:15px;font-weight:700}.step{font-size:10.5px;fill:var(--mute)}.name{font-size:13px;font-weight:600}.note{font-size:12px;fill:var(--mute)}.acct{fill:var(--acc);font-size:12px;font-weight:600}.wrn{fill:var(--warn);font-size:12px;font-weight:600}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}.accent{fill:var(--accf);stroke:var(--acc);stroke-width:1.5}.hold{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
+.arrow{fill:none;stroke:var(--line);stroke-width:1.5;marker-end:url(#arrow)}.back{fill:none;stroke:var(--acc);stroke-width:1.8;marker-end:url(#arrow)}.again{fill:none;stroke:var(--warn);stroke-width:1.8;stroke-dasharray:6 4;marker-end:url(#arrow)}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<text class="title" x="18" y="27">one ticket · one pass · two ways back</text>
+<rect class="box" x="18" y="50" width="76" height="46" rx="6"/><text class="step" x="26" y="67">1</text><text class="name" x="26" y="86">claim</text>
+<rect class="box" x="104" y="50" width="76" height="46" rx="6"/><text class="step" x="112" y="67">2</text><text class="name" x="112" y="86">admit</text>
+<rect class="box" x="190" y="50" width="86" height="46" rx="6"/><text class="step" x="198" y="67">3</text><text class="name" x="198" y="86">prepared</text>
+<rect class="box" x="286" y="50" width="76" height="46" rx="6"/><text class="step" x="294" y="67">4</text><text class="name" x="294" y="86">design</text>
+<rect class="accent" x="372" y="50" width="96" height="46" rx="6"/><text class="step" x="380" y="67">5</text><text class="name" x="380" y="86">implement</text>
+<rect class="accent" x="478" y="50" width="76" height="46" rx="6"/><text class="step" x="486" y="67">6</text><text class="name" x="486" y="86">build</text>
+<rect class="accent" x="564" y="50" width="76" height="46" rx="6"/><text class="step" x="572" y="67">7</text><text class="name" x="572" y="86">review</text>
+<rect class="hold" x="650" y="50" width="96" height="46" rx="6"/><text class="step" x="658" y="67">8</text><text class="name" x="658" y="86">proposed</text>
+<rect class="box" x="756" y="50" width="90" height="46" rx="6"/><text class="step" x="764" y="67">9 · 10</text><text class="name" x="764" y="86">merge, end</text>
+<path class="arrow" d="M94 73H102"/><path class="arrow" d="M180 73H188"/><path class="arrow" d="M276 73H284"/><path class="arrow" d="M362 73H370"/><path class="arrow" d="M468 73H476"/><path class="arrow" d="M554 73H562"/><path class="arrow" d="M640 73H648"/><path class="arrow" d="M746 73H754"/>
+<path class="back" d="M516 96V150H420V98"/>
+<path class="back" d="M602 96V122H516"/>
+<text class="acct" x="18" y="146">Inside the pass: a fix round</text>
+<text class="note" x="18" y="164">A red build or a refusing review goes back to implement,</text>
+<text class="note" x="18" y="180">in the same worktree, on the same branch. Still the same pass.</text>
+<path class="arrow" d="M698 96V230"/>
+<rect class="hold" x="380" y="232" width="440" height="40" rx="6"/>
+<text class="wrn" x="394" y="256">Waiting on you, at proposed. What you pick decides what is next.</text>
+<rect class="accent" x="18" y="300" width="400" height="76" rx="7"/>
+<text class="acct" x="32" y="322">Continue the saved work</text>
+<text class="note" x="32" y="342">Approve and continue · Continue fixing current work</text>
+<text class="note" x="32" y="360">Same branch. The pass resumes there; it is not a fresh one.</text>
+<rect class="hold" x="446" y="300" width="400" height="76" rx="7"/>
+<text class="wrn" x="460" y="322">Start over from the base branch</text>
+<text class="note" x="460" y="342">You: Start over from base · Add to the ticket and start over</text>
+<text class="note" x="460" y="360">A new pass back at claim, in a fresh worktree. Dashed: restart or requeue.</text>
+<path class="arrow" d="M620 272V298"/>
+<path class="arrow" d="M420 272H320V298"/>
+<path class="again" d="M646 376V392H8V73H16"/>
+</svg>
