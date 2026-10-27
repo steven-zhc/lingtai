@@ -225,6 +225,7 @@ function dispatchDeps(
   return {
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
+    designAsks: base.designAsks,
     diff: base.diff,
     restore: base.restore,
     get settingsPath() {

@@ -1354,6 +1354,85 @@ describe('the design prompt', () => {
 })
 
 /**
+ * **Up to five questions in one fence** (`#649`): the list is one string, one
+ * `AgentQuestion` wait, and the brief is what holds the bar.
+ */
+describe('the design step asks about undecided edges', () => {
+  const SPEC = { name: 'draft', prompt: '' }
+  const THREE =
+    '1. What happens when the read fails?\n   - (a) retry once (recommended) — costs a second read\n   - (b) refuse — stops the pass\n' +
+    '2. Does a restart resume?\n   - (a) yes (recommended) — needs a checkpoint\n   - (b) no — starts over\n' +
+    '3. Is a null value an error?\n   - (a) no (recommended) — treated as absent\n   - (b) yes — refuses'
+  const CHECKLIST = [
+    'a read that fails',
+    'a process that restarts or dies halfway',
+    'two runs at once',
+    'a pause or a shutdown',
+    'a stale or disconnected page',
+    'a retry',
+    'a null or unknown value',
+    'the cost to every later change',
+  ]
+
+  it('keeps a fence of three numbered questions as one question, and charges no round', async () => {
+    expect(parseDraft(`\`\`\`question\n${THREE}\n\`\`\``)).toEqual({ kind: 'question', question: THREE, draft: '' })
+
+    const result = await createDraftAction(SPEC, {
+      runtime: reviewer(outcome({ text: `\`\`\`question\n${THREE}\n\`\`\`` })),
+      issue: async () => ISSUE,
+      diff: async () => '',
+      restore: async () => ({ untouched: true as const }),
+      settingsPath: '/tmp/settings.json',
+      limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+    }).run(context)
+
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.because).toBe(NEEDS_INPUT)
+    expect(result.evidence).toBe(THREE)
+  })
+
+  it('still reads an answer with no question form as a document, and an empty one as empty', () => {
+    expect(parseDraft('## Shape\n\n1. one\n2. two')).toEqual({
+      kind: 'document',
+      document: '## Shape\n\n1. one\n2. two',
+    })
+    expect(parseDraft('')).toEqual({ kind: 'document', document: '' })
+  })
+
+  it.each([0, 1])('carries the checklist, the bar and the question form with %i earlier asks', (asks) => {
+    const prompt = buildDesignPrompt(SPEC, ISSUE, null, asks)
+
+    for (const edge of CHECKLIST) expect(prompt).toContain(edge)
+    expect(prompt).toContain(
+      'Ask only where two reasonable readings of the ticket would build different code\nand the body does not say which.',
+    )
+    expect(prompt).toContain('```question')
+    expect(prompt).toContain('at most five questions')
+    expect(prompt).toContain('(recommended)')
+    expect(prompt).toContain('A ticket with no `## Edges` section is not a question in itself')
+    expect(prompt).not.toContain('One question, not a list')
+    expect(prompt).not.toContain('## Assumptions')
+  })
+
+  it('forbids the fence from the second ask and says where assumptions go', () => {
+    const prompt = buildDesignPrompt(SPEC, ISSUE, null, 2)
+
+    expect(prompt).not.toContain('```question')
+    expect(prompt).not.toContain('`question` block')
+    expect(prompt).toContain('## Assumptions')
+    for (const edge of CHECKLIST) expect(prompt).toContain(edge)
+  })
+
+  it('forbids the fence for a judge send-back too', () => {
+    const prompt = buildDesignPrompt(SPEC, ISSUE, { why: 'assume', asked: 'which?', printed: null }, 0)
+
+    expect(prompt).not.toContain('```question')
+    expect(prompt).toContain('## Assumptions')
+    expect(prompt).toContain('**Do not ask again.**')
+  })
+})
+
+/**
  * **The bound a `run:` had and an `agent:` did not** (`#298`, 0066 §8).
  *
  * `command.ts` has clipped a command's output to `EVIDENCE_LINES` and

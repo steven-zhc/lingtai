@@ -116,6 +116,10 @@ export interface AgentActionDeps {
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
    *  recipe without an agent action costs no API call. */
   issue: () => Promise<{ ref: string; title: string; body: string }>
+  /** How many times this ticket has already stopped at `design` with an
+   *  `AgentQuestion` (`designAsksOf`, counted at claim). Absent is 0. From 2 the
+   *  design brief forbids the fence (`#649`). `dispatchDeps` forwards it by hand. */
+  designAsks?: number
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
   diff: (from?: string) => Promise<string>
@@ -825,7 +829,8 @@ function reviewAnswer(outcome: RunOutcome): ActionResult {
  *
  * **The three states, and the third is the one `#294` added.** Absent, empty and
  * a question: a document, *this change needs no design*, and *I cannot design
- * this until somebody answers X*. The first two were here from the day the step
+ * this until somebody answers X* — up to five of them in one fence since `#649`,
+ * which is still one string and one wait. The first two were here from the day the step
  * was, and the block that teaches the third is written so it cannot eat the
  * second — a question is announced by a fence and by nothing else, because *the
  * common answer is silence* and a parse that read silence as a question would
@@ -852,7 +857,16 @@ export function buildDesignPrompt(
    * what computes it, off this pass's own visits.
    */
   again: SentBack | null = null,
+  /**
+   * How many times this ticket has already stopped at design for a person
+   * (`designAsksOf`), and the fence is forbidden from the second (`#649`): a
+   * ticket stops here at most twice, then the agent writes its assumptions.
+   */
+  asks: number = 0,
 ): string {
+  // A judge's send-back forbids the fence too: `sentBackBlock` says *do not ask
+  // again*, and a section that still taught the fence would contradict it.
+  const asking = asks < 2 && again === null
   return `You are writing the design note for a change nobody has written yet. You
 have the ticket and the worktree it will be made in, and nothing has been
 committed. What you write is handed to the agent that does the work, beside the
@@ -875,30 +889,7 @@ whose shape is obvious from the ticket does not need a design, and a document
 written anyway is a paragraph the implementing agent will work from instead of
 from the issue. If this is one of those, reply with nothing at all.
 
-## When the ticket cannot be designed as it stands
-
-Some tickets cannot be answered with a document, however long you read: they ask
-for two incompatible things and do not say which wins, or the shape turns on
-something only the person who opened it knows. **Ask, rather than writing your
-doubts into the document.** A doubt in the document is handed to the agent that
-writes the code, which is the one reader who cannot answer it.
-
-To ask, reply with exactly this and nothing else:
-
-\`\`\`question
-the one thing somebody has to tell you before you could write the design
-\`\`\`
-
-**A question is not a doubt, and the bar is high.** *I would probably put it in
-\`x.ts\`* is a design decision — make it, and write it down; that is what this
-step is for. *The ticket asks for two incompatible things and does not say which
-wins* is a question. The test: if you cannot say what you would have to be
-**told** before you could write the document, you do not have a question — you
-have a preference, and the document is where preferences go.
-
-One question, not a list, and only where the document is impossible without the
-answer. It stops the pass: either a person answers it, or you are asked again and
-told to state your assumption instead.
+${asking ? ASKING_BLOCK : ASSUMING_BLOCK}
 
 Read whatever you need to in this worktree. **Do not change it**: do not edit a
 file, do not run a command that writes one, and do not commit. The agent that
@@ -906,10 +897,80 @@ does the work runs in this same worktree after you and starts from what you
 return, not from what you left behind — so anything you write here is turns
 nobody reads.
 
-Reply with the document and nothing else, or with the \`question\` block and
-nothing else: no preamble, no summary of what you read, no offer to continue.
+${asking ? 'Reply with the document and nothing else, or with the `question` block and\nnothing else' : 'Reply with the document and nothing else'}: no preamble, no summary of what you read, no offer to continue.
 ${again === null ? '' : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ''}`
 }
+
+/** The edges a ticket may leave undecided, and the same eight whether the brief asks or assumes. */
+const EDGE_CHECKLIST = `- a read that fails;
+- a process that restarts or dies halfway;
+- two runs at once;
+- a pause or a shutdown;
+- a stale or disconnected page;
+- a retry;
+- a null or unknown value;
+- the cost to every later change.`
+
+/**
+ * The form of *When the ticket cannot be designed as it stands* that may open the
+ * fence (`#649`): up to five questions in one fence, which is still one string and
+ * one `AgentQuestion` wait.
+ */
+const ASKING_BLOCK = `## When the ticket leaves an edge undecided
+
+Before you write anything, check the ticket's edges against this list:
+
+${EDGE_CHECKLIST}
+
+A ticket with no \`## Edges\` section is not a question in itself: apply the list
+to whatever the ticket says. Anything the body answers, or lists under
+\`## Out of scope\`, is decided and is never asked.
+
+**Ask only where two reasonable readings of the ticket would build different code
+and the body does not say which.** Everything else is a design decision: make it,
+and write it down in the document. A ticket whose edges are all decided passes
+with no question, and answering with nothing stays the common answer. Asking
+**stops the pass** and waits on a person, so a question asked too readily turns
+every ticket into a wait.
+
+To ask, reply with exactly this and nothing else — at most five questions, in one
+fence, as a numbered list. Each item is one sentence, then two to four options,
+the recommended one first and marked \`(recommended)\`:
+
+\`\`\`question
+1. the one thing somebody has to tell you, in a sentence
+   - (a) the reading you recommend (recommended) — what building it means
+   - (b) the other reading — what building that means
+2. the next, if there is one
+   - (a) … (recommended) — …
+   - (b) … — …
+\`\`\`
+
+**A question is not a doubt, and the bar is high.** *I would probably put it in
+\`x.ts\`* is a design decision. *The ticket asks for two incompatible things and
+does not say which wins* is a question. The test: if you cannot say what you would
+have to be **told** before you could write the document, you do not have a
+question — you have a preference, and the document is where preferences go. It
+stops the pass: either a person answers it, or you are asked again and told to
+state your assumption instead.`
+
+/**
+ * The form with no fence in it (`#649`): this ticket has already stopped at design
+ * twice, or a judge sent the pass back here. The assumption is written where the
+ * implementer and the reviewer both see it.
+ */
+const ASSUMING_BLOCK = `## Where the ticket leaves an edge undecided
+
+Check the ticket's edges against this list:
+
+${EDGE_CHECKLIST}
+
+You may not ask: this ticket has stopped for a person already. For each edge the
+ticket leaves open, write the reading you took and why, in the document, under a
+heading \`## Assumptions\` — where the agent that writes the code and the reviewer
+that reads it both see it. Anything the body answers, or lists under
+\`## Out of scope\`, is decided and needs no entry. A ticket with nothing open
+needs no heading, and answering with nothing stays a real answer.`
 
 /**
  * **You asked, somebody answered, and the answer is *design it anyway*** —
@@ -1090,7 +1151,7 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         // `context.again` is the pass's own fold over its visits (`sentBackTo`),
         // and it is null on every way through — which is every pass but one a
         // judge sent back here.
-        prompt: buildDesignPrompt(spec, issue, context.again ?? null),
+        prompt: buildDesignPrompt(spec, issue, context.again ?? null, deps.designAsks ?? 0),
         ...(spec.model === undefined ? {} : { model: spec.model }),
         settingsPath: deps.settingsPath,
         log: context.log,

@@ -95,6 +95,11 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
     })
 }
 
+/** How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`). */
+export function designAsksOf(events: readonly Envelope[]): number {
+  return waitsOf(events).filter((w) => w.reason._tag === 'AgentQuestion' && w.reason.step === 'design').length
+}
+
 // ----------------------------------------------------------- triageFactsOf ----
 
 /**

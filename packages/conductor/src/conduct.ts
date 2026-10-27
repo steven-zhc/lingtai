@@ -52,6 +52,7 @@ import {
   routesOf,
   stepOutcomesOf,
   waitsOf,
+  designAsksOf,
   ticketStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
@@ -3022,6 +3023,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
+          // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
+          designAsks: designAsksOf(before),
           diff: async (from?: string) =>
             gitOrDie(['diff', `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`]),
           // One call per path, so no `diff --git` header has to be parsed back
