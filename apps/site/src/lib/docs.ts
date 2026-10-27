@@ -110,6 +110,7 @@ export const SECTIONS: Section[] = [
       'cli.md',
       'requirements.md',
       'from-symphony.md',
+      'why.md',
       'guide.md',
       'operating.md',
       'reference.md',
