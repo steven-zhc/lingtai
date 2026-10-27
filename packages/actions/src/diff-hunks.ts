@@ -62,6 +62,7 @@ export function hunksOf(diff: string): DiffHunks | null {
   let current: Set<number> | undefined
   let currentName: string | undefined
   let inHunk = false
+  let sawHeader = false
   let remainingOld = 0
   let remainingNew = 0
 
@@ -78,11 +79,13 @@ export function hunksOf(diff: string): DiffHunks | null {
     }
     inHunk = false
     if (row.startsWith('diff --git ')) {
+      sawHeader = true
       oldPath = undefined
       current = undefined
     } else if (row.startsWith('--- ')) {
       oldPath = headerPath(row.slice(4)).replace(/^a\//, '')
     } else if (row.startsWith('+++ ')) {
+      sawHeader = true
       const path = headerPath(row.slice(4))
       if (path === '/dev/null') {
         current = undefined
@@ -110,6 +113,9 @@ export function hunksOf(diff: string): DiffHunks | null {
       inHunk = remainingOld > 0 || remainingNew > 0
     }
   }
+  // The conductor fixes the diff's format, so output with no file header is
+  // not a diff this reads (an external driver, say): unreadable, not empty.
+  if (!sawHeader && diff.trim() !== '') return null
   return { lines, deleted }
 }
 

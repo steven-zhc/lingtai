@@ -58,6 +58,11 @@ describe('hunksOf', () => {
     expect(hunksOf(diff)?.deleted.has('café.ts')).toBe(true)
   })
 
+  it('is null on non-empty output with no file header, and empty on an empty diff', () => {
+    expect(hunksOf('changed: foo.ts (3 lines)\n')).toBeNull()
+    expect(hunksOf('')?.lines.size).toBe(0)
+  })
+
   it('is null on a hunk header it cannot read', () => {
     expect(hunksOf('--- a/a\n+++ b/a\n@@ garbage @@\n')).toBeNull()
   })
