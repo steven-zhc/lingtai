@@ -196,6 +196,17 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('requirements.md', '../README.md', served$)).toBe(`${GITHUB_BLOB}README.md`)
   })
 
+  it('publishes the recipe guide beside the tutorial without publishing the reference', async () => {
+    const served = await servable()
+    const served$ = (file: string) => served.includes(file)
+    expect(served).toContain('recipe.md')
+    expect(served).not.toContain('reference.md')
+    expect(served).not.toContain('operating.md')
+    expect(resolveHref('tutorial.md', 'recipe.md', served$)).toBe('/docs/recipe/')
+    expect(resolveHref('recipe.md', 'plugins/run.md', served$)).toBe('/docs/plugins/run/')
+    expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(recipe.md)')
+  })
+
   it('publishes the Symphony page and links it from the requirements', async () => {
     const served = await servable()
     const served$ = (file: string) => served.includes(file)
