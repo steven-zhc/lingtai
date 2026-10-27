@@ -1,3 +1,5 @@
+import { waitWords } from '@lingtai/domain'
+import { describeWaitLines } from '@lingtai/projector'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
  * tickets actually live rather than always `GitHub` (`#389`).
@@ -15,6 +17,7 @@ import {
   offerLine,
   renderStatus,
   conflictLines,
+  waitDetail,
   statusJson,
   type StatusFilter,
   type StatusReport,
@@ -550,5 +553,35 @@ describe('conflictLines (#652)', () => {
 
   it('says nothing for no triage', () => {
     expect(conflictLines(reason, undefined)).toBeNull()
+  })
+})
+
+describe('waitDetail (#656)', () => {
+  const run = { runId: 'r', ref: 'agent/1', sha: 'abc' }
+  const triage = (resolution = 'Requeue') =>
+    ({
+      started: null,
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'ConflictingHunks', hunks: [], total: 2 },
+        resolution,
+        summary: 'why',
+        want: null,
+      },
+    }) as never
+  const disagrees = { _tag: 'FixerDisagrees', run, said: 'the hunks overlap' } as never
+  const detail = (reason: never, t: never | undefined) =>
+    waitDetail(waitWords(reason, { branch: 'agent/1', base: '', findings: [] }), reason, t, true)
+
+  it('prints the recommendation and triage’s own words for a reason with no recommendation line', () => {
+    const lines = detail(disagrees, triage())
+    expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
+    expect(lines).toContain('triage advised Requeue: why')
+  })
+
+  it('prints what it printed before when there is no triage', () => {
+    const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
+    expect(detail(disagrees, undefined)).toEqual(describeWaitLines(words).map((l) => l.text))
+    expect(detail(disagrees, undefined).join('\n')).not.toContain('recommends')
   })
 })

@@ -74,6 +74,26 @@ export function conflictLines(
   return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
 }
 
+/**
+ * The wait's detail lines, with the conflict recommendation and triage's own
+ * words wherever triage advised `ConflictingHunks` — whether or not the reason
+ * supplied a recommendation line of its own, as `FixerDisagrees` does not (#656).
+ * The rule stays in `conflictLines`; this only places its lines.
+ */
+export function waitDetail(
+  words: Parameters<typeof describeWaitLines>[0],
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+  savedHead?: SavedHead,
+): string[] {
+  const lines = describeWaitLines(words)
+  const c = conflictLines(reason, triage, savedHead)
+  if (c === null) return lines.map((l) => l.text)
+  const extra = [...(c.rec === null ? [] : [c.rec]), ...(c.advised === null ? [] : [c.advised])]
+  if (!lines.some((l) => l.part === 'rec')) return [...lines.map((l) => l.text), ...extra]
+  return lines.flatMap((l) => (l.part === 'rec' ? extra : [l.text]))
+}
+
 /** A run's saved head: whether one is there, or why that could not be read. */
 export type SavedHead = boolean | { unreadable: string }
 
@@ -435,10 +455,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   awaitingSha: t.awaitingSha ?? null,
                   needs: words.needs,
                 }),
-                detail: describeWaitLines(words).flatMap((l) => {
-                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage, t.savedHead) : null
-                  return c === null ? [l.text] : [c.rec ?? l.text, ...(c.advised === null ? [] : [c.advised])]
-                }),
+                detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
