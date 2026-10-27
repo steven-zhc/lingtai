@@ -32,6 +32,21 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 
+/** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
+export function conflictRecommendation(
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+  savedHead?: SavedHead,
+): string | null {
+  const result = triage?.result
+  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  return recommendedResolution(
+    reason,
+    { _tag: 'Done', result },
+    { savedHead: typeof savedHead === 'object' ? false : savedHead },
+  )
+}
+
 /**
  * A conflict's triage, worded for the listing: the recommendation the board
  * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
@@ -46,11 +61,7 @@ export function conflictLines(
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
   const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
-  const rec = recommendedResolution(
-    reason,
-    { _tag: 'Done', result },
-    { savedHead: typeof savedHead === 'object' ? false : savedHead },
-  )
+  const rec = conflictRecommendation(reason, triage, savedHead)
   if (unreadable !== null) {
     return {
       rec:
@@ -233,6 +244,8 @@ export interface StatusWait {
   words: 'waiting for your answer' | 'waiting for your review' | null
   /** `describeWaitLines`' lines — what was diagnosed about it. */
   detail: string[]
+  /** The resolution recommended for a conflict triage advised, as `recommendedResolution` names it; null when none. */
+  recommendation: string | null
   /** There is raw failure output, kept on the log and the card rather than printed. */
   raw: boolean
 }
@@ -456,6 +469,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   needs: words.needs,
                 }),
                 detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
+                recommendation: conflictRecommendation(t.wait.reason, t.triage, t.savedHead),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
@@ -655,6 +669,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
             needs: t.wait!.needs,
             asked: t.wait!.reason === 'OwnQuestion',
             detail: t.wait!.detail,
+            recommendation: t.wait!.recommendation,
             raw: t.wait!.raw,
           })),
       }

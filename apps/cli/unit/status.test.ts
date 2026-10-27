@@ -17,6 +17,7 @@ import {
   offerLine,
   renderStatus,
   conflictLines,
+  conflictRecommendation,
   waitDetail,
   statusJson,
   type StatusFilter,
@@ -74,6 +75,7 @@ const asked: StatusWait = {
   needs: 'judgement',
   words: 'waiting for your answer',
   detail: ['your judgement is needed'],
+  recommendation: null,
   raw: true,
 }
 
@@ -121,6 +123,7 @@ const fixture: StatusReport = {
             needs: 'acknowledgement',
             words: null,
             detail: [],
+            recommendation: null,
             raw: false,
           },
         }),
@@ -221,6 +224,7 @@ describe('statusJson', () => {
               needs: 'judgement',
               asked: true,
               detail: ['your judgement is needed'],
+              recommendation: null,
               raw: true,
             },
             {
@@ -231,6 +235,7 @@ describe('statusJson', () => {
               needs: 'acknowledgement',
               asked: false,
               detail: [],
+              recommendation: null,
               raw: false,
             },
           ],
@@ -577,6 +582,11 @@ describe('waitDetail (#656)', () => {
     const lines = detail(disagrees, triage())
     expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
     expect(lines).toContain('triage advised Requeue: why')
+  })
+
+  it('names the recommended resolution as a field, for --json, without parsing the prose', () => {
+    expect(conflictRecommendation(disagrees, triage(), true)).toBe('GrantFixRound')
+    expect(conflictRecommendation(disagrees, undefined, true)).toBeNull()
   })
 
   it('prints what it printed before when there is no triage', () => {
