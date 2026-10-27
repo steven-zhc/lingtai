@@ -589,6 +589,14 @@ describe('waitDetail (#656)', () => {
     expect(conflictRecommendation(disagrees, undefined, true)).toBeNull()
   })
 
+  it('still prints triage’s resolution and summary when the saved head is absent and no resolution is recommended', () => {
+    const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
+    expect(conflictRecommendation(disagrees, triage('GrantFixRound'), false)).toBeNull()
+    expect(lines.some((l) => l.includes('triage advised GrantFixRound: why'))).toBe(true)
+    expect(lines.some((l) => l.includes('recommends'))).toBe(false)
+  })
+
   it('prints what it printed before when there is no triage', () => {
     const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
     expect(detail(disagrees, undefined)).toEqual(describeWaitLines(words).map((l) => l.text))

@@ -51,7 +51,8 @@ export function conflictRecommendation(
  * A conflict's triage, worded for the listing: the recommendation the board
  * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
  * above) and triage's resolution and summary beside it, so the override is
- * never hidden (#652). `null` for anything but an advised `ConflictingHunks`.
+ * never hidden (#652). `null` for anything but an advised `ConflictingHunks`; when the recommendation is
+ * unavailable, `rec` is null and triage's own words still come back (#656).
  */
 export function conflictLines(
   reason: WaitReason,
@@ -71,7 +72,12 @@ export function conflictLines(
       advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
     }
   }
-  if (rec === null) return null
+  if (rec === null) {
+    return {
+      rec: null,
+      advised: `triage advised ${result.resolution}: ${result.summary} — this wait does not offer it, so no resolution is recommended`,
+    }
+  }
   if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
     return {
       rec:
@@ -100,9 +106,10 @@ export function waitDetail(
   const lines = describeWaitLines(words)
   const c = conflictLines(reason, triage, savedHead)
   if (c === null) return lines.map((l) => l.text)
-  const extra = [...(c.rec === null ? [] : [c.rec]), ...(c.advised === null ? [] : [c.advised])]
-  if (!lines.some((l) => l.part === 'rec')) return [...lines.map((l) => l.text), ...extra]
-  return lines.flatMap((l) => (l.part === 'rec' ? extra : [l.text]))
+  const advised = c.advised === null ? [] : [c.advised]
+  if (!lines.some((l) => l.part === 'rec'))
+    return [...lines.map((l) => l.text), ...(c.rec === null ? [] : [c.rec]), ...advised]
+  return lines.flatMap((l) => (l.part === 'rec' ? [c.rec ?? l.text, ...advised] : [l.text]))
 }
 
 /** A run's saved head: whether one is there, or why that could not be read. */
