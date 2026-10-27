@@ -3026,7 +3026,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksOf(before),
           diff: async (from?: string) =>
-            gitOrDie(['diff', '--no-color', `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`]),
+            // The prefixes are named because `hunksOf` strips `a/` and `b/`, and
+            // `diff.srcPrefix`, `diff.dstPrefix` or `diff.noprefix` would change them.
+            gitOrDie([
+              'diff',
+              '--no-color',
+              '--src-prefix=a/',
+              '--dst-prefix=b/',
+              `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`,
+            ]),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
           landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
