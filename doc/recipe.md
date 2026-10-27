@@ -29,7 +29,7 @@ top-level blocks, and the steps are one of them.
 | You chose | Where it is written | Step it acts at |
 |---|---|---|
 | Which branch changes land on, and where it is pushed | `repo.base`, `repo.remote` | `admit` cuts from it, `merge` lands on it |
-| Which agent, and how much it may spend | `runtime.agent`, `runtime.limits` | `implement` |
+| Which agent, and how much it may spend | `agent:` on the `implement` entry, else `runtime.agent`; `runtime.limits` | `implement` |
 | How a worktree is made ready | `steps.prepared` | `prepared` |
 | What must pass before review | `steps.build` | `build` |
 | Who reads the diff cold | `steps.review` | `review` |
@@ -83,6 +83,12 @@ source:
     - feature
     - documentation
 ```
+
+To switch the implementer, change the `agent:` on the `implement` entry as
+well as `runtime.agent`. An `agent:` written on the entry wins; `runtime.agent`
+is only what an entry with no `agent:` (or an empty `implement`) falls back to.
+Change only `runtime.agent` in this excerpt and the next pass still runs
+`claude-code`.
 
 `runtime.limits` is absent from the file, and that is fine: a key you leave out
 takes its default, and `lingtai doctor` prints each value with `← default` or
