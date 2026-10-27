@@ -78,7 +78,36 @@ Run `git pull` in your Chapter Garden checkout to see the merged change.
 
 ## What an agent can reach
 
-See below.
+An agent Lingtai dispatches runs on your machine, as your user. Here is what
+that does and does not protect.
+
+**Contained**
+
+- The agent works in its own git worktree, not in your checkout.
+- Its environment is filtered to `PATH`, `HOME`, `TMPDIR`, `LANG`, `USER` and
+  `LOGNAME`, plus the variables your project declares. Lingtai's own
+  `LINGTAI_*` credentials and database URL are not handed to it in its
+  environment, though it can read the file they are kept in (see below).
+- The recipe that sets its gates is not in the agent's worktree, so a change it
+  commits cannot weaken its own checks.
+
+**Not contained**
+
+- The Claude Code runtime has no filesystem sandbox. That agent can read any
+  file you can, including `~/.lingtai/config.yml` (the database URL and GitHub
+  App settings) and `~/.ssh`, and it has network access.
+- The Codex runtime does run in a sandbox (`--sandbox workspace-write`), which
+  refuses writes outside its working directory, `$TMPDIR` and `/tmp`, and a few
+  directories Lingtai adds for committing. A recipe with `tier: sandboxed` is served only by a
+  runtime like that one, not by Claude Code. Do not assume the sandbox covers
+  reads, or the network.
+
+**What to do**
+
+- Run Lingtai under a user or machine whose files you are willing to expose to
+  the agent.
+- To report a vulnerability, open an issue titled "security" with no details
+  and we will reach you privately. See [SECURITY.md](SECURITY.md).
 
 ## Next
 
