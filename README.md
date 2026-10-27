@@ -50,15 +50,28 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --build 'npm run build' --defaults --land hold
 ```
 
-Open one ticket. Your editor opens; replace the form with a request such as
-*Add the next chapter to* a story from the
-[bookshelf](https://cg.hczhang.com/en/) (the tutorial has the full text),
-including `labels: feature`. Continue when Lingtai prints `created #N`, which is
-the number you approve below:
+Open one ticket. This writes a complete request to a file and opens the ticket
+from it. Continue when Lingtai prints `created #N`, which is the number you
+approve below:
 
 ```sh
-lingtai ticket new --project chapter-garden
+cat > "${TMPDIR:-/tmp}/chapter-garden-ticket.md" <<'EOF'
+Add the next chapter to After the Rain
+labels: feature
+
+Find the latest chapter of this story and write one new chapter that continues it.
+Follow the story's existing language, chapter numbering, and Markdown layout.
+Keep earlier chapters unchanged. Done when the new chapter appears on the site.
+EOF
+VISUAL="cp ${TMPDIR:-/tmp}/chapter-garden-ticket.md" lingtai ticket new --project chapter-garden
 ```
+
+`VISUAL="cp …"` stands in for an editor, so you do not need `cp`; plain
+`lingtai ticket new --project chapter-garden` opens your own editor on the same
+form. To pick another story, change the title on the first line: the titles are
+on the [bookshelf](https://cg.hczhang.com/en/) and in the
+[tutorial's table](doc/tutorial.md#step-2--open-one-ticket), and `labels:` takes
+`feature`, `bug` or `documentation`.
 
 Start Lingtai in one terminal and leave it running; it stays in the foreground.
 In a second terminal, open the board:
