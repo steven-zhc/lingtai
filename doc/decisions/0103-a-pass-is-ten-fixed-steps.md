@@ -58,7 +58,7 @@ never report a fault.
    - `refused` — `{ because, at, detail }`: a machine-readable reason beside the
      words; only the four refusing steps.
    - `asked` — `{ at, detail }`, the question in the agent's words and no
-     `because`. Only `admit`, `design` and `implement` can ask.
+     `because`. Only `admit`, `design` and `implement` can ask. The design step asks when an edge is undecided and two readings build different code.
    - `did-not-finish` — `{ because, at, detail }`: a crash, a timeout or an
      abort, a spent turn or dollar budget, a body that threw
      (`because: "threw"`), or a mechanical decline. A crash, timeout or abort

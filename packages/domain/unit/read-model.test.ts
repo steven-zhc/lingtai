@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import type { Action, StepOutcome } from '../src/index.ts'
 import {
   attemptFactOf,
+  designAsksOf,
   boardFactOf,
   cardFactOf,
   findingsRaisedOf,
@@ -110,6 +111,28 @@ describe('waitsOf', () => {
     const item = makeStream('ticket-1')
     const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }
     expect(waitsOf(aWait(item, reason))[0]!.resolution).toBeNull()
+  })
+})
+
+describe('designAsksOf', () => {
+  it('counts the design AgentQuestion waits, and not implement or any other', () => {
+    const item = makeStream('ticket-1')
+    const events = [
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: { runId: 'r', attempt: 1 },
+        step: 'design',
+        question: 'which?',
+      } as never),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: { runId: 'r', attempt: 1 },
+        step: 'implement',
+        question: 'which?',
+      } as never),
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }),
+    ]
+    expect(designAsksOf(events)).toBe(1)
   })
 })
 
