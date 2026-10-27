@@ -103,6 +103,19 @@ export interface AttributedFailure {
 }
 
 /**
+ * What a person whose base is protected has to know, once, for the warning at
+ * `add` and the refusal at merge to say the same thing (#662).
+ */
+export function baseProtectedRemedies(base: string): string {
+  return (
+    `Lingtai pushes a merge commit straight to ${base} and does not open pull requests. ` +
+    `Either let the Lingtai App bypass the protection (add it to the ruleset's bypass list, or to the ` +
+    `classic rule's allowed actors and push restrictions), or set the recipe's repo.base to a branch that ` +
+    `accepts direct pushes.`
+  )
+}
+
+/**
  * Every refusal the integrator can make, and whose it is.
  *
  * A total record rather than a `switch` with a default: a tenth
@@ -149,6 +162,13 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    * Lingtai's own commit; nothing about the branch's code is in question.
    */
   'wip-commit': 'lingtai',
+  /**
+   * A repository setting refused the push. Not `repository` — that is the diff
+   * or its gates — and not `lingtai`, since nothing in Lingtai is broken. Only a
+   * person's change to the branch's protection, or to the recipe's base, lifts
+   * it, which is the shape `pending-migration` has.
+   */
+  'base-protected': 'person',
   /**
    * The base moved on files the branch also changed, so the pass merges it in
    * and reviews again (#593). Nothing about the branch is wrong, and the merge is
@@ -302,6 +322,13 @@ const REFUSAL_READING: Record<
     says: ({ branch }) => `the merge lane failed in a way it does not handle, and nothing about ${branch} was judged.`,
     // Nothing is recommended: a defect is not a question about the diff, and
     // requeueing would walk straight back into whatever broke.
+    move: null,
+  },
+  'base-protected': {
+    says: ({ branch, base }) =>
+      `${base} refused the push because it is protected, so ${branch} was not merged into it. ` +
+      baseProtectedRemedies(base),
+    // Requeueing lands on the same refusal until a person changes a setting.
     move: null,
   },
   'wip-commit': {

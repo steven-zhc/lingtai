@@ -29,7 +29,9 @@ type Call = { args: string[]; cwd: string }
  * the branch always has something to merge), and everything else succeeds —
  * except what a test asks to fail.
  */
-function fakeGit(opts: { failMerge?: boolean; failCompareAndSwap?: boolean; subjects?: string[] } = {}) {
+function fakeGit(
+  opts: { failMerge?: boolean; failCompareAndSwap?: boolean; subjects?: string[]; failPush?: string } = {},
+) {
   const calls: Call[] = []
   const sha = '1'.repeat(40)
 
@@ -42,6 +44,9 @@ function fakeGit(opts: { failMerge?: boolean; failCompareAndSwap?: boolean; subj
     if (cmd === 'status' || cmd === 'diff' || cmd === 'for-each-ref') return Effect.succeed('')
     if (cmd === 'merge' && second !== '--abort' && opts.failMerge) {
       return Effect.fail(new RepoFailed({ operation: 'git merge', detail: 'CONFLICT (content): Merge conflict' }))
+    }
+    if (cmd === 'push' && opts.failPush !== undefined) {
+      return Effect.fail(new RepoFailed({ operation: 'git push', detail: opts.failPush }))
     }
     // The delete half of cleanup (`update-ref -d`) must never be the thing a
     // test makes fail — that would hide what it exists to catch.
@@ -173,5 +178,31 @@ describe('the merge lane refuses a WIP commit (#468)', () => {
     const fake = fakeGit({ subjects: ['implement the fix', 'wip: partial refactor'] })
     const result = await integrate(options(fake.git))
     expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
+})
+
+describe('a push the base refuses (#662)', () => {
+  const pushes = (calls: { args: string[] }[]) => calls.filter((c) => c.args[0] === 'push')
+
+  it('is base-protected, names both remedies, and is not retried', async () => {
+    const fake = fakeGit({
+      failPush:
+        '! [remote rejected] HEAD -> main (protected branch hook declined)\nremote: error: GH006: Protected branch update failed',
+    })
+    const result = await integrate(options(fake.git))
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('base-protected')
+    expect(pushes(fake.calls)).toHaveLength(1)
+    expect(result.detail).toContain('does not open pull requests')
+    expect(result.detail).toContain('bypass')
+    expect(result.detail).toContain('repo.base')
+  })
+
+  it('leaves an ordinary non-fast-forward a lost push, retried', async () => {
+    const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)' })
+    const result = await integrate(options(fake.git))
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('push-rejected')
+    expect(pushes(fake.calls)).toHaveLength(4)
   })
 })

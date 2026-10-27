@@ -635,6 +635,14 @@ move with that store, and `lingtai projection rebuild` never touches them.
 pnpm lingtai add steven-zhc/nextloom-ai-admin
 ```
 
+**The base branch must accept direct pushes from the App.** Lingtai lands work
+by pushing a merge commit straight to the base and never opens a pull request.
+If the base is protected, `add` warns; a push the protection refuses is
+refused as `base-protected` and is not retried. Either let the Lingtai App
+bypass the protection (the ruleset's bypass list, or the classic rule's allowed
+actors and push restrictions), or set the recipe's `repo.base` to a branch that
+accepts direct pushes.
+
 When there is an App on this machine, it checks the installation and its
 permissions **before it asks or writes anything** (`#402`): a project the App
 cannot reach, or reaches without the permissions Lingtai needs, gets nothing

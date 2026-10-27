@@ -237,6 +237,9 @@ lingtai init --store sqlite --project github --github-app skip
 ```
 
 Use your own fork, `<you>/chapter-garden`; installing an App needs admin on it.
+
+**The base must accept direct pushes from the App**: Lingtai pushes to it and opens no pull request. If protected, let the App bypass it, or set the recipe's `repo.base` elsewhere.
+
 Use another terminal, same `LINGTAI_HOME`, from here on.
 
 ### Create the App

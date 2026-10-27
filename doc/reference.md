@@ -1764,7 +1764,7 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/even
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
 `verify-failed` · `no-commits` · `push-rejected` · `lane-busy` ·
-`wip-commit` · `unexpected`
+`wip-commit` · `base-protected` · `unexpected`
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about
