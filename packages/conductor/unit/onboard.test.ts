@@ -17,6 +17,7 @@ import {
   recheck,
   registrationLine,
   resumeOnboarding,
+  warnIfProtected,
 } from '../src/onboard.ts'
 
 const recipe = (base: string) => `
@@ -352,5 +353,42 @@ describe('the last line lingtai add prints', () => {
 
   it('says added on a stream with nothing on it at all', async () => {
     expect(registrationLine([], 'nextloom-ai-admin', await resolved())).toContain('added')
+  })
+})
+
+/** The base's protection is warned about and never refused on (#662). */
+describe('warnIfProtected', () => {
+  const asked = (answers: Record<string, unknown>) =>
+    (async (_method: string, path: string) => {
+      const answer = answers[path.includes('/rules/') ? 'rules' : 'branch']
+      if (answer instanceof Error) throw answer
+      return answer
+    }) as <T>(method: string, path: string) => Promise<T>
+
+  const run = async (answers: Record<string, unknown>) => {
+    const said: string[] = []
+    await warnIfProtected(asked(answers), 'o', 'r', 'main', (line) => said.push(line))
+    return said.join('\n')
+  }
+
+  it('warns with both remedies when the branch reports protected: true', async () => {
+    const said = await run({ branch: { protected: true }, rules: [] })
+    expect(said).toContain('main is protected')
+    expect(said).toContain('does not open pull requests')
+    expect(said).toContain('bypass')
+    expect(said).toContain('repo.base')
+  })
+
+  it('warns for a ruleset that refuses a push, and not for deletion or non_fast_forward alone', async () => {
+    expect(await run({ branch: { protected: false }, rules: [{ type: 'pull_request' }] })).toContain('is protected')
+    expect(
+      await run({ branch: { protected: false }, rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }] }),
+    ).toBe('')
+  })
+
+  it('says it could not tell when a read fails, and never reads that as not protected', async () => {
+    const said = await run({ branch: new Error('403'), rules: [] })
+    expect(said).toContain('could not tell whether main is protected')
+    expect(await run({ branch: { protected: false }, rules: new Error('404') })).toContain('could not tell')
   })
 })

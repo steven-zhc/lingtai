@@ -107,6 +107,7 @@ describe('whose failure it is', () => {
       'push-rejected',
       'lane-busy',
       'wip-commit',
+      'base-protected',
       'unexpected',
     ]
     for (const reason of every) {
@@ -175,6 +176,7 @@ describe('a refusal, read for a person', () => {
     // repository's own history.
     'lane-busy',
     'wip-commit',
+    'base-protected',
     'unexpected',
   ]
 

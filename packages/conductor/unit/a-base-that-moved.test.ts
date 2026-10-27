@@ -211,4 +211,11 @@ describe('what the lane’s result becomes', () => {
       result: { integration: { _tag: 'BaseMoved', paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha: 'base-1' } },
     })
   })
+
+  it('keeps base-protected as itself rather than the generic unexpected (#662)', () => {
+    const refused = merge({ verdict: 'failed', evidence: 'x', findings: [], because: 'base-protected' })
+    expect(refused).toMatchObject({
+      result: { integration: { _tag: 'IntegrationRefused', reason: 'base-protected' } },
+    })
+  })
 })

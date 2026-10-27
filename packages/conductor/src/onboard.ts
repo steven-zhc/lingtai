@@ -37,7 +37,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
-import { STEPS, parsePayload } from '@lingtai/domain'
+import { STEPS, baseProtectedRemedies, parsePayload } from '@lingtai/domain'
 import { githubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import {
@@ -305,6 +305,68 @@ export async function checkInstallation(
   return installation
 }
 
+/** What reading the base's protection came to. `unknown` is never *not protected*. */
+export type BaseProtection =
+  | { kind: 'protected'; by: string }
+  | { kind: 'not-protected' }
+  | { kind: 'unknown'; why: string }
+
+type Request = <T>(method: string, path: string) => Promise<T>
+
+/**
+ * Rules that never refuse a fast-forward push of a merge commit. Every other
+ * type — `required_linear_history` among them, since the lane makes a merge
+ * commit — and every type not named here counts as protection, so a rule this
+ * code has not heard of errs on the warn side.
+ */
+const HARMLESS_RULES = new Set(['deletion', 'non_fast_forward', 'creation'])
+
+/**
+ * Whether `base` refuses a direct push, from the two reads an installation can
+ * make without admin permission (#662). Either saying yes is `protected`; a
+ * failed read is `unknown` unless the other already said yes.
+ */
+export async function baseProtection(
+  request: Request,
+  owner: string,
+  repo: string,
+  base: string,
+): Promise<BaseProtection> {
+  const ref = encodeURIComponent(base)
+  const [branch, rules] = await Promise.allSettled([
+    request<{ protected?: boolean }>('GET', `/repos/${owner}/${repo}/branches/${ref}`),
+    request<{ type: string }[]>('GET', `/repos/${owner}/${repo}/rules/branches/${ref}`),
+  ])
+  if (branch.status === 'fulfilled' && branch.value.protected === true)
+    return { kind: 'protected', by: 'a branch protection rule' }
+  if (
+    rules.status === 'fulfilled' &&
+    Array.isArray(rules.value) &&
+    rules.value.some((r) => !HARMLESS_RULES.has(r.type))
+  ) {
+    return { kind: 'protected', by: 'a ruleset' }
+  }
+  if (branch.status === 'rejected') return { kind: 'unknown', why: String(branch.reason?.message ?? branch.reason) }
+  if (rules.status === 'rejected') return { kind: 'unknown', why: String(rules.reason?.message ?? rules.reason) }
+  return { kind: 'not-protected' }
+}
+
+/** Says what `baseProtection` found, if it is worth saying. Never changes the outcome of `add`. */
+export async function warnIfProtected(
+  request: Request,
+  owner: string,
+  repo: string,
+  base: string,
+  log: (line: string) => void,
+): Promise<void> {
+  const found = await baseProtection(request, owner, repo, base)
+  if (found.kind === 'protected') {
+    log(`warning: ${base} is protected (${found.by}). ${baseProtectedRemedies(base)}`)
+  } else if (found.kind === 'unknown') {
+    log(`could not tell whether ${base} is protected (${found.why}). ${baseProtectedRemedies(base)}`)
+  }
+}
+
 export async function add(options: AddOptions, log = console.log): Promise<number> {
   const { owner, repo } = parseSlug(options.slug)
   const auth = githubApp()
@@ -345,6 +407,7 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   }
 
   const fromSha = await client.refSha(base)
+  await warnIfProtected((m, path) => client.request(m, path), owner, repo, base, log)
   log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`)
   // All ten steps, including the empty ones. Onboarding is the first place a
   // person sees the shape of their workflow, and a step that is not mentioned

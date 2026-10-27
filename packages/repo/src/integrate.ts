@@ -60,7 +60,13 @@ import { basename } from 'node:path'
  * correct only because one function happened to own both ends of it.
  */
 import { integrationStream } from '@lingtai/domain'
-import { WIP_COMMIT_PREFIX, type RefusalReason, parsePayload, reduceIntegration } from '@lingtai/domain'
+import {
+  WIP_COMMIT_PREFIX,
+  type RefusalReason,
+  baseProtectedRemedies,
+  parsePayload,
+  reduceIntegration,
+} from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import { Effect, Either } from 'effect'
@@ -166,9 +172,18 @@ const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i
  * wording has moved between versions, so what is matched is the rejection
  * itself rather than any one cause of it. A push that failed for some other
  * reason (no credentials, no network) is not this, and goes to the unexpected
- * channel where it belongs.
+ * channel where it belongs. The exception is a protected base (`BASE_PROTECTED`).
  */
 const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i
+
+/**
+ * GitHub's words for *this branch is protected*: `GH006` and `protected branch
+ * hook declined` for a classic rule, `GH013` and `repository rule violations`
+ * for a ruleset. Matched before `PUSH_REJECTED`, which a `[remote rejected]`
+ * line would otherwise satisfy — and never retried, because nothing a later
+ * push does can lift a setting (#662).
+ */
+const BASE_PROTECTED = /protected branch hook declined|GH006|GH013|repository rule violations/i
 
 /**
  * How many times a base may move out from under this merge before a person is
@@ -593,6 +608,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       if (Either.isLeft(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
+        if (BASE_PROTECTED.test(pushed.left.detail)) {
+          return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.left.detail}`)
+        }
         if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left)
         return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush
       }

@@ -59,6 +59,7 @@ const REFUSAL_REASONS: readonly RefusalReasonNoConflict[] = [
   'push-rejected',
   'lane-busy',
   'wip-commit',
+  'base-protected',
   'unexpected',
 ]
 

@@ -480,10 +480,11 @@ An agent crash does not route because the judge would be an agent too, on
 the same usage cap or login; retrying it is the scheduler's. A signoff is
 `proposed`'s own gate. `Landed` and `Requeued` have nothing left to decide.
 
-The seven lane refusals (§2's `MergeRefused`) are `dirty-base`, `unpushed-base`, `pending-migration`,
-`no-commits`, `push-rejected`, `wip-commit` and `unexpected`
+The eight lane refusals (§2's `MergeRefused`) are `dirty-base`, `unpushed-base`, `pending-migration`,
+`no-commits`, `push-rejected`, `base-protected`, `wip-commit` and `unexpected`
 (`pass-steps.ts:606`): they stop the lane before the diff is in doubt.
-`wip-commit` is the lane refusing a branch that carries a WIP commit
+`base-protected` is the push refused by the base's own protection (`GH006`/`GH013`): a person's
+setting, owned by `person`, never retried (#662). `wip-commit` is the lane refusing a branch that carries a WIP commit
 `conduct.ts`'s own `keepUncommittedWork` made for a stopped run (`#468`) —
 never a judgement about the diff either, since the WIP is Lingtai's own
 commit and not the agent's. `lane-busy` has not been written since #194

@@ -66,6 +66,9 @@ export const RefusalReason = z.enum([
   // the trial merge was clean: the lane does not land, the pass merges the base
   // in itself and builds and reviews again (#593). Nothing is wrong with the branch.
   'base-moved',
+  // The base branch refused the lane's direct push because it is protected —
+  // a setting on the repository, which only a person can change (#662).
+  'base-protected',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 
