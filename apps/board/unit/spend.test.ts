@@ -168,6 +168,13 @@ describe('billText renders the one table every reader shows', () => {
     expect(billText(bills.Work)).toBe('$3.10 ~$0.50 est.')
   })
 
+  it('says the fetched-prices note only when asked', () => {
+    const price: RateCard = () => ({ usd: 0.5, fetched: true })
+    const bill = billOf([row({ costUsd: null }), row({ costUsd: null })], price).Work
+    expect(billText(bill)).toBe('~$1.00 est.')
+    expect(billText(bill, { fetchedNote: true })).toBe('~$1.00 est. (2 at fetched LiteLLM prices)')
+  })
+
   /**
    * A row with no reported figure and no unknown count — every row priced by
    * the rate card — used to fall through `billText`'s first two arms and hit

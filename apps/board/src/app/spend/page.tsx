@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic'
 export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
   const board = await loadBoard(only)
-  const today = await readDayReading()
+  const today = await readDayReading({ fetchedNote: true })
   const { limits } = board
   const chip = spendChip(board.spend.currency)
   const { rows: byProject, total } = ledger(board.columns, board.spend.rows)

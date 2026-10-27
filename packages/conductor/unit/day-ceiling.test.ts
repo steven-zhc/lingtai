@@ -72,6 +72,12 @@ describe('daySpend estimates', () => {
 })
 
 describe('daySpendText', () => {
+  it('says the fetched-prices note only when asked', () => {
+    const day = { ...daySpend([today(null)], now), estimatedCents: 100, estimatedRuns: 2, fetchedRuns: 2 }
+    expect(daySpendText(day, 50)).not.toContain('LiteLLM')
+    expect(daySpendText(day, 50, { fetchedNote: true })).toContain('~$1.00 est. (2 at fetched LiteLLM prices) + ')
+  })
+
   it('never says $0.00 over unknown rows, and names the unknown count with a ceiling', () => {
     const text = daySpendText(daySpend([today(null)], now), 50)
     expect(text).not.toContain('today $0.00')

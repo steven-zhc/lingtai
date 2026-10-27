@@ -179,7 +179,7 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`
  * not the `—` the first row of this table is for. **No row of this table is
  * `$0.00` for a bill that has an unknown run in it.**
  */
-export function billText(bill: Bill): string {
+export function billText(bill: Bill, options: { fetchedNote?: boolean } = {}): string {
   const parts: string[] = []
   if (bill.reportedRuns > 0) {
     parts.push(money(bill.reportedCents))
@@ -191,7 +191,7 @@ export function billText(bill: Bill): string {
   }
   const est = bill.estimates.reduce((a, b) => a + b, 0)
   if (bill.estimates.length > 0)
-    parts.push(`~$${est.toFixed(2)} est.${fetchedNote({ fetchedRuns: bill.fetched ?? 0 })}`)
+    parts.push(`~$${est.toFixed(2)} est.${options.fetchedNote ? fetchedNote({ fetchedRuns: bill.fetched ?? 0 }) : ''}`)
   return parts.join(' ')
 }
 

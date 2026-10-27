@@ -144,8 +144,9 @@ leaves the model, or that token class, unknown. A changed price appends a row; a
 second fetch on the same day replaces that day's row.
 
 **This file always wins** for a model it lists, and a user cannot edit the
-snapshot's prices. Pricing reads the snapshot and never the network, and an
-estimate that used it says `(N at fetched LiteLLM prices)`. `lingtai doctor`'s
+snapshot's prices. Pricing reads the snapshot and never the network, and the
+`/spend` page's *today* line and table say `(N at fetched LiteLLM prices)` for an
+estimate that used it; every other estimate reads `~$X est.` with no note. `lingtai doctor`'s
 `rates:` line says when it was last fetched and why a fetch failed.
 
 ## Not a billing record

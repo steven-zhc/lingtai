@@ -90,14 +90,18 @@ export const dayFigure = (day: DaySpend): string =>
  * unknown count, ceiling or not — "+ 0 unknown" is a claim and leaving it out is
  * not. Reported and estimated stay two figures, never one sum.
  */
-export function daySpendText(day: DaySpend, ceilingUsd: number | undefined): string {
+export function daySpendText(
+  day: DaySpend,
+  ceilingUsd: number | undefined,
+  options: { fetchedNote?: boolean } = {},
+): string {
   const figure = dayFigure(day)
-  const unknown = ` + ~${dollars(day.estimatedCents)} est.${fetchedNote(day)} + ${day.unknown} unknown`
+  const unknown = ` + ~${dollars(day.estimatedCents)} est.${options.fetchedNote ? fetchedNote(day) : ''} + ${day.unknown} unknown`
   if (ceilingUsd === undefined) return `today ${figure}${unknown} — no daily ceiling (limits.day_usd)`
   return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — reported and estimated count, unknown costs are not`
 }
 
-/** Said wherever an estimate is shown that part of it is not from the shipped card; empty otherwise. */
+/** Said on `/spend` only, where an estimate is shown that part of it is not from the shipped card; empty otherwise. */
 export const fetchedNote = (day: { fetchedRuns: number }): string =>
   day.fetchedRuns > 0 ? ` (${day.fetchedRuns} at fetched LiteLLM prices)` : ''
 

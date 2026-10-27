@@ -39,9 +39,9 @@ export function SpendTable({ rows, total }: { rows: readonly LedgerRow[]; total:
             <th scope="row">{r.project}</th>
             <td>{r.cards}</td>
             {PURPOSES.map((p) => (
-              <td key={p}>{billText(r.byPurpose[p])}</td>
+              <td key={p}>{billText(r.byPurpose[p], { fetchedNote: true })}</td>
             ))}
-            <td>{billText(totalBill(r.byPurpose))}</td>
+            <td>{billText(totalBill(r.byPurpose), { fetchedNote: true })}</td>
           </tr>
         ))}
       </tbody>
@@ -54,9 +54,9 @@ export function SpendTable({ rows, total }: { rows: readonly LedgerRow[]; total:
           <th scope="row">all</th>
           <td>{total.cards}</td>
           {PURPOSES.map((p) => (
-            <td key={p}>{billText(total.byPurpose[p])}</td>
+            <td key={p}>{billText(total.byPurpose[p], { fetchedNote: true })}</td>
           ))}
-          <td>{billText(totalBill(total.byPurpose))}</td>
+          <td>{billText(totalBill(total.byPurpose), { fetchedNote: true })}</td>
         </tr>
       </tfoot>
     </table>
