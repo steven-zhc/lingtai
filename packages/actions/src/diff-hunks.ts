@@ -1,0 +1,101 @@
+import type { ActionFinding } from './action.ts'
+
+/**
+ * **Which new-side lines a unified diff touches, per path** (#670).
+ *
+ * A hunk `@@ -a,b +c,d @@` covers new-side lines `c … c+d-1`, context lines
+ * included: a bug made by deleting a guard is cited next to the deletion, and
+ * that line is inside the hunk. A file the diff deletes (`+++ /dev/null`) has no
+ * new-side lines, and is keyed by its old path with an empty set and listed in
+ * `deleted`, because a finding on it is about code the diff removed.
+ *
+ * `null` when a hunk header cannot be read: the caller demotes nothing.
+ */
+export interface DiffHunks {
+  readonly lines: ReadonlyMap<string, ReadonlySet<number>>
+  readonly deleted: ReadonlySet<string>
+}
+
+const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/
+
+export function hunksOf(diff: string): DiffHunks | null {
+  const lines = new Map<string, Set<number>>()
+  const deleted = new Set<string>()
+  let oldPath: string | undefined
+  let current: Set<number> | undefined
+  let inHunk = false
+  let remainingOld = 0
+  let remainingNew = 0
+
+  for (const row of diff.split('\n')) {
+    if (inHunk && (remainingOld > 0 || remainingNew > 0)) {
+      if (row.startsWith('\\')) continue
+      if (row.startsWith('+')) remainingNew -= 1
+      else if (row.startsWith('-')) remainingOld -= 1
+      else {
+        remainingOld -= 1
+        remainingNew -= 1
+      }
+      continue
+    }
+    inHunk = false
+    if (row.startsWith('diff --git ')) {
+      oldPath = undefined
+      current = undefined
+    } else if (row.startsWith('--- ')) {
+      oldPath = row.slice(4).replace(/^a\//, '')
+    } else if (row.startsWith('+++ ')) {
+      const path = row.slice(4)
+      if (path === '/dev/null') {
+        current = undefined
+        if (oldPath !== undefined && oldPath !== '/dev/null') {
+          deleted.add(oldPath)
+          lines.set(oldPath, new Set())
+        }
+      } else {
+        const name = path.replace(/^b\//, '')
+        current = lines.get(name) ?? new Set<number>()
+        lines.set(name, current)
+      }
+    } else if (row.startsWith('@@')) {
+      const m = HUNK.exec(row)
+      if (m === null) return null
+      const start = Number(m[1])
+      const count = m[2] === undefined ? 1 : Number(m[2])
+      const old = /^@@ -\d+(?:,(\d+))? /.exec(row)
+      remainingOld = old?.[1] === undefined ? 1 : Number(old[1])
+      remainingNew = count
+      if (current !== undefined) for (let n = start; n < start + count; n++) current.add(n)
+      inHunk = remainingOld > 0 || remainingNew > 0
+    }
+  }
+  return { lines, deleted }
+}
+
+/** Whether a finding's location is inside (or about) what the diff touched. */
+export function isInsideHunks(finding: Pick<ActionFinding, 'file' | 'line'>, hunks: DiffHunks): boolean {
+  if (hunks.deleted.has(finding.file)) return true
+  const set = hunks.lines.get(finding.file)
+  if (set === undefined || set.size === 0) return false
+  return finding.line === null ? true : set.has(finding.line)
+}
+
+const PREFIX = 'pre-existing — was '
+
+/**
+ * Demote every finding the diff does not reach to `minor`, unless the reviewer
+ * said how the diff makes it reachable. `failureScenario` is left alone: the
+ * recheck block quotes it word for word.
+ */
+export function demoteOutsideDiff(findings: readonly ActionFinding[], hunks: DiffHunks): ActionFinding[] {
+  return findings.map((f) => {
+    if (f.severity === 'minor') return f
+    if (f.reachableBecause !== undefined && f.reachableBecause.trim() !== '') return f
+    if (isInsideHunks(f, hunks)) return f
+    return {
+      ...f,
+      severity: 'minor',
+      claim: f.claim.startsWith(PREFIX) ? f.claim : `${PREFIX}${f.severity}: ${f.claim}`,
+    }
+  })
+}

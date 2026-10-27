@@ -1077,7 +1077,9 @@ export type RefusedAbout = (typeof REFUSED_ABOUT)[number]
  */
 export const ReviewAnswer = z
   .object({
-    findings: z.array(Finding.strict()),
+    // Required but nullable, like `about`: strict structured output refuses an
+    // optional property, so the stored `Finding`'s optional key is made so here.
+    findings: z.array(Finding.extend({ reachableBecause: z.string().nullable() }).strict()),
     about: z.enum(REFUSED_ABOUT).nullable(),
   })
   .strict()

@@ -35,10 +35,12 @@ describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
     return array.items as Record<string, unknown>
   }
 
-  it('requires every key on a finding — none of the five is optional', () => {
+  it('requires every key on a finding — none of the six is optional, `reachableBecause` being nullable instead', () => {
     const finding = findingSchema()
-    expect(finding.required).toEqual(expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity']))
-    expect(finding.required).toHaveLength(5)
+    expect(finding.required).toEqual(
+      expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity', 'reachableBecause']),
+    )
+    expect(finding.required).toHaveLength(6)
   })
 
   it('refuses an unknown key on a finding', () => {

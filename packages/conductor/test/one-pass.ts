@@ -779,7 +779,8 @@ export function fakePorts(
           // purpose: an `agent:` gate short-circuits to `passed` on an empty
           // diff, so a fake that answered "" would make every review pass and
           // the refusal under test unreachable.
-          if (args[0] === 'diff') return 'diff --git a/src/fix.ts b/src/fix.ts\n+  return ok;\n'
+          if (args[0] === 'diff')
+            return 'diff --git a/src/fix.ts b/src/fix.ts\n--- a/src/fix.ts\n+++ b/src/fix.ts\n@@ -10,3 +10,4 @@\n a\n b\n c\n+  return ok;\n'
           return ''
         }),
       integrate: () =>

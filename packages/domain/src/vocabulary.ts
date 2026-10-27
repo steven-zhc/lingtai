@@ -131,5 +131,10 @@ export const Finding = z.object({
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
   severity: z.enum(SEVERITIES),
+  /**
+   * How the diff makes code it did not touch reachable (#670). Present, a
+   * finding outside every hunk is not demoted to a pre-existing minor.
+   */
+  reachableBecause: z.string().optional(),
 })
 export type Finding = z.infer<typeof Finding>
