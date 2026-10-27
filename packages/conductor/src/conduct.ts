@@ -3026,11 +3026,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksOf(before),
           diff: async (from?: string) =>
-            // The prefixes are named because `hunksOf` strips `a/` and `b/`, and
-            // `diff.srcPrefix`, `diff.dstPrefix` or `diff.noprefix` would change them.
+            // The format is fixed here, not by the user's git config: `hunksOf` strips
+            // `a/` and `b/`, which `diff.srcPrefix`, `diff.dstPrefix` or `diff.noprefix`
+            // would change, and an external driver or textconv filter is not unified.
             gitOrDie([
               'diff',
               '--no-color',
+              '--no-ext-diff',
+              '--no-textconv',
               '--src-prefix=a/',
               '--dst-prefix=b/',
               `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`,
