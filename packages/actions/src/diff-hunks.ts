@@ -60,6 +60,7 @@ export function hunksOf(diff: string): DiffHunks | null {
   const deleted = new Set<string>()
   let oldPath: string | undefined
   let current: Set<number> | undefined
+  let currentName: string | undefined
   let inHunk = false
   let remainingOld = 0
   let remainingNew = 0
@@ -91,6 +92,7 @@ export function hunksOf(diff: string): DiffHunks | null {
         }
       } else {
         const name = path.replace(/^b\//, '')
+        currentName = name
         current = lines.get(name) ?? new Set<number>()
         lines.set(name, current)
       }
@@ -103,6 +105,8 @@ export function hunksOf(diff: string): DiffHunks | null {
       remainingOld = old?.[1] === undefined ? 1 : Number(old[1])
       remainingNew = count
       if (current !== undefined) for (let n = start; n < start + count; n++) current.add(n)
+      // A file emptied without being deleted has a hunk and no new-side line: like a deletion, it is about code the diff removed.
+      if (current !== undefined && count === 0) deleted.add(currentName!)
       inHunk = remainingOld > 0 || remainingNew > 0
     }
   }
@@ -113,7 +117,7 @@ export function hunksOf(diff: string): DiffHunks | null {
 export function isInsideHunks(finding: Pick<ActionFinding, 'file' | 'line'>, hunks: DiffHunks): boolean {
   if (hunks.deleted.has(finding.file)) return true
   const set = hunks.lines.get(finding.file)
-  if (set === undefined || set.size === 0) return false
+  if (set === undefined) return false
   return finding.line === null ? true : set.has(finding.line)
 }
 

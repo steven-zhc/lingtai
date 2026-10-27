@@ -87,6 +87,16 @@ describe('demoteOutsideDiff', () => {
   })
 })
 
+describe('a file emptied without being deleted', () => {
+  const hunks = hunksOf('diff --git a/guard.ts b/guard.ts\n--- a/guard.ts\n+++ b/guard.ts\n@@ -1 +0,0 @@\n-auth()\n')!
+  const f = { file: 'guard.ts', claim: 'c', failureScenario: 's', severity: 'blocker' as const }
+
+  it('keeps a null-line and a numbered finding as reported', () => {
+    expect(demoteOutsideDiff([{ ...f, line: null }], hunks)[0]?.severity).toBe('blocker')
+    expect(demoteOutsideDiff([{ ...f, line: 1 }], hunks)[0]?.severity).toBe('blocker')
+  })
+})
+
 describe('hunksOf, paths and colour', () => {
   it('keeps a supplementary character in a quoted path', () => {
     const diff = '--- "a/😀\\".ts"\n+++ "b/😀\\".ts"\n@@ -1 +1 @@\n-a\n+b\n'
