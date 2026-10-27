@@ -43,11 +43,21 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --build 'npm run build' --defaults --land hold
 ```
 
-开一张票。编辑器会打开；把表单替换成类似 *Add the next chapter to* 加上[书架](https://cg.hczhang.com/en/)中某个故事的请求（完整文本见 tutorial），并包含 `labels: feature`。等 Lingtai 打印出 `created #N` 再继续，这个编号就是下面你要批准的那个：
+开一张票。下面的命令把一份完整的请求写进文件，再用它开票（表单保持英文，因为 agent 收到的就是原文）。等 Lingtai 打印出 `created #N` 再继续，这个编号就是下面你要批准的那个：
 
 ```sh
-lingtai ticket new --project chapter-garden
+cat > "${TMPDIR:-/tmp}/chapter-garden-ticket.md" <<'EOF'
+Add the next chapter to After the Rain
+labels: feature
+
+Find the latest chapter of this story and write one new chapter that continues it.
+Follow the story's existing language, chapter numbering, and Markdown layout.
+Keep earlier chapters unchanged. Done when the new chapter appears on the site.
+EOF
+VISUAL="cp ${TMPDIR:-/tmp}/chapter-garden-ticket.md" lingtai ticket new --project chapter-garden
 ```
+
+`VISUAL="cp …"` 只是代替编辑器，并不是必须用 `cp`；单独运行 `lingtai ticket new --project chapter-garden` 会用你自己的编辑器打开同一份表单。想换一个故事，改第一行的标题即可：标题见[书架](https://cg.hczhang.com/en/)和 [tutorial 的表格](doc/tutorial.md#step-2--open-one-ticket)，`labels:` 可以是 `feature`、`bug` 或 `documentation`。
 
 在一个终端里启动 Lingtai 并让它一直运行；它停留在前台。在第二个终端里打开看板：
 
