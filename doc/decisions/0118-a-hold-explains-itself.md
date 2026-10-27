@@ -331,7 +331,11 @@ which kind a wait was got inferred again in each place that needed it, from
      running, interrupted or failed) the wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
      `BudgetExhausted` and `AgentCrashed`, nothing elsewhere. `TicketTooBig`
      may advise `Split` at the first wait; `ConflictingHunks` shows its hunks
-     and advises nothing past `GrantFixRound`. The person chooses before either
+     and advises nothing past `GrantFixRound` while the conflict is at most 5
+     hunks (`CONFLICT_ROUND_HUNKS`): there `GrantFixRound` is recommended
+     whatever resolution triage chose, shown beside triage's own words, and the
+     fix brief carries each divergent hunk's recommended answer. Above 5,
+     triage's resolution stands. The person chooses before either
      action runs.
 
 2. **The page is in this order:** the ticket, where it is, triage, the resolutions,

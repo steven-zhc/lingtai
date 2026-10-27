@@ -465,6 +465,45 @@ describe('recommendedResolution', () => {
     expect(recommendedResolution(handedOver, advised)).toBe('Close')
   })
 
+  describe('a small conflict (#652)', () => {
+    const conflict = parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: {
+        _tag: 'MergeConflict',
+        output: 'conflict',
+        paths: ['a.ts'],
+        baseSha: 'abc',
+        headSha: 'def',
+      },
+      because: { _tag: 'NotAsked' },
+    })
+    const advising = (total: number, resolution: 'Requeue' | 'Close'): TriageStatus => ({
+      _tag: 'Done',
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'ConflictingHunks', hunks: [], total },
+        resolution,
+        summary: 'triage advice',
+        want: null,
+      },
+    })
+
+    it('recommends a fix round at 5 hunks or fewer whatever triage chose', () => {
+      expect(recommendedResolution(conflict, advising(2, 'Requeue'))).toBe('GrantFixRound')
+      expect(recommendedResolution(conflict, advising(5, 'Close'))).toBe('GrantFixRound')
+    })
+
+    it('leaves triage’s resolution above 5 hunks', () => {
+      expect(recommendedResolution(conflict, advising(6, 'Requeue'))).toBe('Requeue')
+      expect(recommendedResolution(conflict, advising(10, 'Requeue'))).toBe('Requeue')
+    })
+
+    it('never recommends a fix round the wait does not offer', () => {
+      expect(recommendedResolution(conflict, advising(2, 'Requeue'), { savedHead: false })).toBe('Requeue')
+    })
+  })
+
   describe('Split (#560)', () => {
     const plan = {
       children: [

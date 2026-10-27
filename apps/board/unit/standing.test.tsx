@@ -1436,6 +1436,64 @@ function closeOn(standing: StandingView): { key: string | null; prefill: string 
   return close
 }
 
+it('says why a small conflict draws a fix round over what triage advised (#652)', () => {
+  const triageStatus = {
+    _tag: 'Done' as const,
+    result: {
+      _tag: 'TriageAdvised' as const,
+      cause: { _tag: 'ConflictingHunks' as const, hunks: [], total: 2 },
+      resolution: 'Requeue' as const,
+      summary: 'Start from main again',
+      want: null,
+    },
+  }
+  const saved = { ...CONFLICT, fixWork: { head: SHA, ref: 'agent/590' } }
+  const html = render({ ...saved, triageStatus }, OUTGOING)
+  expect(html).toContain('Start from main again')
+  expect(html).toContain(
+    'Triage advised Start over from base. With 2 hunks to resolve, a fix round is drawn first instead',
+  )
+  expect(html).not.toContain('which this wait does not offer')
+  expect(html).not.toContain('recommended answer goes to the fixer')
+  const divergent = {
+    _tag: 'Divergent' as const,
+    path: 'a.ts',
+    line: 1,
+    question: {
+      id: 'q',
+      text: 'Where?',
+      answers: [
+        { id: 'port', text: 'Port it' },
+        { id: 'requeue', text: 'Start over' },
+      ],
+      recommended: 'port',
+    },
+  }
+  const withHunks = render(
+    {
+      ...saved,
+      triageStatus: {
+        ...triageStatus,
+        result: { ...triageStatus.result, cause: { ...triageStatus.result.cause, hunks: [divergent] } },
+      },
+    },
+    OUTGOING,
+  )
+  expect(withHunks).toContain('each divergent hunk’s recommended answer goes to the fixer')
+  const large = render(
+    {
+      ...CONFLICT,
+      triageStatus: {
+        ...triageStatus,
+        result: { ...triageStatus.result, cause: { ...triageStatus.result.cause, total: 8 } },
+      },
+    },
+    OUTGOING,
+  )
+  expect(large).toContain('Recommends ')
+  expect(large).not.toContain('a fix round is drawn first instead')
+})
+
 it('keeps the body editor at the same mount when a written wait moves out of blocked', () => {
   const editorOn = (standing: StandingView) => {
     const page = Standing({

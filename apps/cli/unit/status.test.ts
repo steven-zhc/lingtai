@@ -14,6 +14,7 @@ import {
   offerFailedLine,
   offerLine,
   renderStatus,
+  conflictLines,
   statusJson,
   type StatusFilter,
   type StatusReport,
@@ -488,5 +489,66 @@ describe('statusJson lists every running pass with its step (#640)', () => {
     const running = (statusJson(report).projects as { byState: { running: Record<string, unknown>[] } }[])[0]!.byState
       .running
     expect(running[0]).toMatchObject({ runId: 'pass-a', step: null, round: null, stepError: 'boom' })
+  })
+})
+
+describe('conflictLines (#652)', () => {
+  const reason = {
+    _tag: 'ProposedEscalated',
+    run: { runId: 'r', ref: 'agent/1', sha: 'abc' },
+    proposal: { _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: 'a', headSha: 'b' },
+    because: { _tag: 'NotAsked' },
+  } as never
+  const triage = (total: number, resolution = 'Requeue') =>
+    ({
+      started: null,
+      result: {
+        _tag: 'TriageAdvised',
+        cause: { _tag: 'ConflictingHunks', hunks: [], total },
+        resolution,
+        summary: 'why',
+        want: null,
+      },
+    }) as never
+
+  it('recommends a fix round at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
+    const c = conflictLines(reason, triage(2))
+    expect(c?.rec).toContain('recommends a fix round')
+    expect(c?.advised).toBe('triage advised Requeue: why')
+  })
+
+  it('recommends triage’s resolution above 5 hunks', () => {
+    expect(conflictLines(reason, triage(8, 'Close'))).toEqual({ rec: 'recommends Close — why', advised: null })
+  })
+
+  it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
+    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends Requeue — why', advised: null })
+    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
+  })
+
+  it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
+    const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
+    expect(c?.rec).toBe('recommends Requeue — why')
+    expect(c?.advised).toContain('saved head could not be checked (rate limited)')
+  })
+
+  it('names an unreadable saved head even when triage advised the round it cannot offer', () => {
+    const c = conflictLines(reason, triage(2, 'GrantFixRound'), { unreadable: 'timeout' })
+    expect(c?.rec).toBe('triage advised GrantFixRound — why')
+    expect(c?.advised).toContain('saved head could not be checked (timeout)')
+  })
+
+  it('names the read failure and triage’s advice above 5 hunks too', () => {
+    const c = conflictLines(reason, triage(10, 'GrantFixRound'), { unreadable: 'timeout' })
+    expect(c?.rec).toBe('triage advised GrantFixRound — why')
+    expect(c?.advised).toContain('saved head could not be checked (timeout)')
+  })
+
+  it('leaves the divergent-hunk clause out when no hunk is divergent', () => {
+    expect(conflictLines(reason, triage(2))?.rec).not.toContain('divergent hunk')
+  })
+
+  it('says nothing for no triage', () => {
+    expect(conflictLines(reason, undefined)).toBeNull()
   })
 })

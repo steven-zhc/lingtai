@@ -25,6 +25,13 @@ export const READS_PER_TURN = 6
 /** Past this many hunks, a conflict is triaged as a whole rather than one by one (0118 §8). */
 export const MERGE_HUNKS_ONE_BY_ONE = 20
 
+/**
+ * Up to this many hunks, a conflict is resolved in place by a fix round whatever
+ * resolution triage chose: its hunks' own recommended answers say how, and
+ * starting over throws that away (#652). Past it, triage's resolution stands.
+ */
+export const CONFLICT_ROUND_HUNKS = 5
+
 /** At most 5 questions a `Decision` may ask (0118 §3). */
 export const TRIAGE_QUESTIONS_MAX = 5
 /** At most 4 answers a question — `Decision`'s or a divergent hunk's — may offer (0118 §3). */

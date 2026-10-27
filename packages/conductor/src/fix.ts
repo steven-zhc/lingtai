@@ -499,7 +499,7 @@ export function fixBrief(input: {
    * (`grantedAdviceOf`). Evidence, not a second spec; absent or empty leaves
    * the brief without the section.
    */
-  advice?: readonly LineFix[]
+  advice?: GrantedAdvice
 }): string {
   const clipped =
     input.diff.length > input.diffBytes
@@ -570,22 +570,51 @@ and committing nothing is the move that exists so you never have to.`
 /** One line triage advised fixing, as `FixableLines` carries it. */
 export type LineFix = { readonly path: string; readonly line: number | null; readonly what: string }
 
-/**
- * Triage's `FixableLines` advice for the wait a granted continuation resumes,
- * or `undefined` — another wait's advice, an earlier attempt's, any other
- * cause and an empty list are all none. `triageFactsOf` keeps 0118 §3's
- * latest-attempt rule, so this does not write a second fold.
- */
-export function grantedAdviceOf(events: readonly Envelope[], waitId: WaitId): readonly LineFix[] | undefined {
-  const { result } = triageFactsOf(events, waitId)
-  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'FixableLines') return undefined
-  return result.cause.fixes.length > 0 ? result.cause.fixes : undefined
+/** A divergent hunk's question and the text of the answer triage recommended, or `null` where none matches. */
+export type HunkAnswer = {
+  readonly path: string
+  readonly line: number | null
+  readonly question: string
+  readonly recommended: string | null
 }
 
-function adviceSection(advice: readonly LineFix[] | undefined): string {
-  if (advice === undefined || advice.length === 0) return ''
-  const lines = advice.map((f) => `- \`${f.line === null ? f.path : `${f.path}:${f.line}`}\` — ${f.what}`)
-  return `
+/** What a granted round was advised: the lines to fix, or how each divergent hunk should go (#652). */
+export type GrantedAdvice =
+  | { readonly on: 'lines'; readonly fixes: readonly LineFix[] }
+  | { readonly on: 'hunks'; readonly hunks: readonly HunkAnswer[] }
+
+/**
+ * Triage's advice for the wait a granted continuation resumes, or `undefined` —
+ * another wait's advice, an earlier attempt's, any other cause, an empty list
+ * and a conflict with no `Divergent` hunk (a `Mechanical` one carries no
+ * question) are all none. `triageFactsOf` keeps 0118 §3's latest-attempt rule,
+ * so this does not write a second fold.
+ */
+export function grantedAdviceOf(events: readonly Envelope[], waitId: WaitId): GrantedAdvice | undefined {
+  const { result } = triageFactsOf(events, waitId)
+  if (result?._tag !== 'TriageAdvised') return undefined
+  const { cause } = result
+  if (cause._tag === 'FixableLines') return cause.fixes.length > 0 ? { on: 'lines', fixes: cause.fixes } : undefined
+  if (cause._tag === 'ConflictingHunks') {
+    const hunks: HunkAnswer[] = []
+    for (const h of cause.hunks) {
+      if (h._tag !== 'Divergent') continue
+      const answer = h.question.answers.find((a) => a.id === h.question.recommended)
+      hunks.push({ path: h.path, line: h.line, question: h.question.text, recommended: answer?.text ?? null })
+    }
+    return hunks.length > 0 ? { on: 'hunks', hunks } : undefined
+  }
+  return undefined
+}
+
+const at = (path: string, line: number | null) => `\`${line === null ? path : `${path}:${line}`}\``
+
+function adviceSection(advice: GrantedAdvice | undefined): string {
+  if (advice === undefined) return ''
+  if (advice.on === 'lines') {
+    if (advice.fixes.length === 0) return ''
+    const lines = advice.fixes.map((f) => `- ${at(f.path, f.line)} — ${f.what}`)
+    return `
 ## What the person who granted this round accepted
 
 ${lines.join('\n')}
@@ -593,6 +622,21 @@ ${lines.join('\n')}
 The findings above are what the re-review asks about. This is how the person
 expects them to be met, so depart from it only for a reason you state in your
 final message.
+`
+  }
+  if (advice.hunks.length === 0) return ''
+  const hunks = advice.hunks.map(
+    (h) =>
+      `- ${at(h.path, h.line)} — ${h.question}${h.recommended === null ? '' : `\n  Triage's answer: ${h.recommended}`}`,
+  )
+  return `
+## What the person who granted this round accepted
+
+${hunks.join('\n')}
+
+This is how the person expects each of those hunks to be resolved. The merge
+still has to land and stay green, so depart from an answer only for a reason you
+state in your final message.
 `
 }
 

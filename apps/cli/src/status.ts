@@ -9,6 +9,7 @@
 import {
   backingOff,
   filterFacts,
+  githubClientFor,
   heldUntil,
   loadProjects,
   passedOver,
@@ -20,7 +21,9 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, waitWords } from '@lingtai/domain'
+import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
+import { recommendedResolution } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
@@ -28,6 +31,51 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
+
+/**
+ * A conflict's triage, worded for the listing: the recommendation the board
+ * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
+ * above) and triage's resolution and summary beside it, so the override is
+ * never hidden (#652). `null` for anything but an advised `ConflictingHunks`.
+ */
+export function conflictLines(
+  reason: WaitReason,
+  triage: TaskCard['triage'] | undefined,
+  savedHead?: SavedHead,
+): { rec: string | null; advised: string | null } | null {
+  const result = triage?.result
+  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
+  const rec = recommendedResolution(
+    reason,
+    { _tag: 'Done', result },
+    { savedHead: typeof savedHead === 'object' ? false : savedHead },
+  )
+  if (unreadable !== null) {
+    return {
+      rec:
+        rec === null
+          ? `triage advised ${result.resolution} — ${result.summary}`
+          : `recommends ${rec} — ${result.summary}`,
+      advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
+    }
+  }
+  if (rec === null) return null
+  if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
+    return {
+      rec:
+        'recommends a fix round — a small conflict is resolved in place rather than started over' +
+        (result.cause.hunks.some((h) => h._tag === 'Divergent')
+          ? ', and triage’s recommended answer for each divergent hunk goes to the fixer'
+          : ''),
+      advised: `triage advised ${result.resolution}: ${result.summary}`,
+    }
+  }
+  return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
+}
+
+/** A run's saved head: whether one is there, or why that could not be read. */
+export type SavedHead = boolean | { unreadable: string }
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -95,6 +143,39 @@ export interface StatusReading {
   spendLine?: () => Promise<string>
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
+  /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
+  savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHead>
+}
+
+/**
+ * Whether the run's last `RunRefsPublished` left a clean head to continue, and
+ * the remote ref still points at it — the precondition `GrantFixRound` is
+ * offered on, which the recommendation must not outrun (#652). The task page
+ * makes the same remote comparison, so a deleted or moved branch is no saved
+ * head here either. A stream or a remote that will not read is neither: it is reported as unreadable, so the recommendation is not drawn from a guess.
+ */
+async function hasSavedHead(
+  runId: string,
+  project: ProjectState,
+  clientFor: ClientFor = githubClientFor,
+): Promise<SavedHead> {
+  try {
+    const saved = (await eventStore.read(runId)).findLast((e) => e.type === 'RunRefsPublished')?.data as
+      | { outcome?: string; branchCarries?: boolean; headSha?: string; branch?: string }
+      | undefined
+    if (
+      !(
+        (saved?.outcome === 'published' || saved?.outcome === 'already-published') &&
+        saved.branchCarries !== false &&
+        saved.headSha &&
+        saved.branch
+      )
+    )
+      return false
+    return (await (await clientFor(project)).refSha(`heads/${saved.branch}`)) === saved.headSha
+  } catch (e) {
+    return { unreadable: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 /** Where one running pass is: its run, and the step and round of the last `StepStarted` (#640). */
@@ -311,7 +392,9 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         lastAttemptAt?: Date | null
         repairPending?: boolean
         wait?: TaskCard['wait']
+        triage?: TaskCard['triage']
         awaitingSha?: string | null
+        savedHead?: SavedHead
       },
       restarts: number,
     ): StatusRow => {
@@ -352,7 +435,10 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                   awaitingSha: t.awaitingSha ?? null,
                   needs: words.needs,
                 }),
-                detail: describeWaitLines(words).map((l) => l.text),
+                detail: describeWaitLines(words).flatMap((l) => {
+                  const c = l.part === 'rec' ? conflictLines(t.wait!.reason, t.triage, t.savedHead) : null
+                  return c === null ? [l.text] : [c.rec ?? l.text, ...(c.advised === null ? [] : [c.advised])]
+                }),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
@@ -371,7 +457,18 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
       known: await Promise.all(
         tasks.map(async (t) => {
-          const row = rowOf(t, t.restarts ?? 0)
+          const conflict =
+            t.wait != null &&
+            t.runId &&
+            t.triage?.result?._tag === 'TriageAdvised' &&
+            t.triage.result.cause._tag === 'ConflictingHunks'
+          const savedHead = conflict
+            ? await (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(
+                t.runId as string,
+                project,
+              )
+            : undefined
+          const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
           // Every pass in flight is a row with its step, not only the first (#640).
           if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
             try {

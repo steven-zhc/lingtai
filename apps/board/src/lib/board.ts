@@ -5,6 +5,7 @@ import { currentRecipe, loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readStatus } from '@lingtai/daemon/control'
 import {
+  CONFLICT_ROUND_HUNKS,
   type BlockDiagnosis,
   type ProjectState,
   type WaitId,
@@ -167,7 +168,13 @@ export interface BoardCard {
    * `Approve`, and nothing for the rest. `note` is `Approve`'s, because a
    * one-click approve over a refusing step must say whose reading it took.
    */
-  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null } | null
+  move: {
+    resolution: Resolution['_tag']
+    onSha: string | null
+    note: string | null
+    /** Triage's own resolution, present only where the recommendation overrides it (#652). */
+    advised?: Resolution['_tag']
+  } | null
   /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
   triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | null
   /**
@@ -596,7 +603,14 @@ function moveOf(
   if (resolution === null) return null
   switch (resolution) {
     case 'GrantFixRound':
-      return fixHead === null ? null : { resolution, onSha: fixHead, note: null }
+      return fixHead === null
+        ? null
+        : {
+            resolution,
+            onSha: fixHead,
+            note: null,
+            ...(status.result.resolution === resolution ? {} : { advised: status.result.resolution }),
+          }
     case 'Approve':
       return t.awaitingSha === null
         ? null
@@ -974,15 +988,16 @@ async function laneProgress(
   const railed = railCandidates(tasks)
   const railedIds = new Set(railed.map((c) => c.task.taskId))
   // A waiting card past the rail cap still gets its one button (#647), so the
-  // saved head is read for it too — but only where triage advised
-  // `GrantFixRound`, the one advice that needs the stream. No rail is folded.
+  // saved head is read for it too — but only where `GrantFixRound` can be
+  // recommended: triage advised it, or a small conflict swaps it in (#652). No rail is folded.
   const headOnly = tasks.filter(
     (t) =>
       t.runId !== null &&
       t.wait !== null &&
       !railedIds.has(t.taskId) &&
       t.triage.result?._tag === 'TriageAdvised' &&
-      t.triage.result.resolution === 'GrantFixRound',
+      (t.triage.result.resolution === 'GrantFixRound' ||
+        (t.triage.result.cause._tag === 'ConflictingHunks' && t.triage.result.cause.total <= CONFLICT_ROUND_HUNKS)),
   )
   const headOf = (task: TaskCard, events: Awaited<ReturnType<typeof eventStore.read>>) => {
     const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)

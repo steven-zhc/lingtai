@@ -188,3 +188,44 @@ describe('the cause line', () => {
     expect(questionOf(html)).toBe(fx.expectedQuestion)
   })
 })
+
+describe('a small conflict’s card (#652)', () => {
+  const fx = FIXTURES.find((f) => f.name === 'proposedescalated-mergeconflict')!
+
+  async function cardOf(total: number, fixHead: string | null): Promise<string> {
+    const db = openSqliteProjections(':memory:')
+    try {
+      const store = createSqliteProjectionStore(db)
+      await store.transact((ctx) => taskViewProjection.create(ctx))
+      await store.transact((ctx) => taskViewProjection.apply(fx.events, ctx))
+      const row = (await store.tasks({ retentionDays: 2 })).find((r) => r.taskId === fx.taskId)!
+      const triage = {
+        started: null,
+        result: {
+          _tag: 'TriageAdvised' as const,
+          cause: { _tag: 'ConflictingHunks' as const, hunks: [], total },
+          resolution: 'Requeue' as const,
+          summary: 'The daemon entry moved.',
+          want: null,
+        },
+      }
+      const card = toCard({ ...row, triage }, null, null, null, null, undefined, undefined, undefined, fixHead)
+      return renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
+    } finally {
+      db.close()
+    }
+  }
+
+  it('offers the round and names triage’s Start over advice beside the summary', async () => {
+    const html = await cardOf(2, 'abc123')
+    expect(html).toContain('The daemon entry moved.')
+    expect(buttonsOf(html)).toEqual(['Continue fixing current work'])
+    expect(html).toContain('Triage advised Start over from base; a fix round is drawn first.')
+  })
+
+  it('says nothing extra above the threshold', async () => {
+    const html = await cardOf(8, 'abc123')
+    expect(html).not.toContain('a fix round is drawn first')
+    expect(buttonsOf(html)).toEqual(['Start over from base'])
+  })
+})

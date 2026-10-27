@@ -27,6 +27,7 @@ import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
 import { SplitProposal, SplitResolution } from './split.ts'
 import {
+  CONFLICT_ROUND_HUNKS,
   Hunk,
   MERGE_HUNKS_ONE_BY_ONE,
   READS_PER_TURN,
@@ -634,7 +635,9 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  * `allowedResolutions` offers it — a disallowed advice returns `null`, not
  * the default, because there was advice and it is simply not drawn. The same
  * goes for an advice its own cause contradicts: `Approve` or `GrantFixRound`
- * on a `WrongApproach`, and `Approve` on `FixableLines`. With no
+ * on a `WrongApproach`, and `Approve` on `FixableLines`. The one swap is a
+ * `ConflictingHunks` of at most `CONFLICT_ROUND_HUNKS` hunks, which recommends
+ * `GrantFixRound` whatever triage chose when that is offered (#652). With no
  * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
  * `Done` with `TriageFailed`) the wait's own default stands, itself run back
  * through `allowedResolutions` so a default an `unpushed` run disallows is
@@ -660,11 +663,21 @@ export function recommendedResolution(
     case 'Done':
       if (status.result._tag === 'TriageAdvised') {
         const advised = status.result.resolution
-        if (!allowed.includes(advised)) return null
-        // An advice that contradicts its own diagnosis is dropped, not swapped
-        // for another: a wrong approach is not continued or waived, and a
-        // fixable line is repaired rather than waived (#529, #551).
         const cause = status.result.cause._tag
+        // The one swap: a small conflict's hunks carry their own recommended
+        // answers, which are triage's reading of it, so they outrank the
+        // top-level resolution that may say start over (#652).
+        if (
+          status.result.cause._tag === 'ConflictingHunks' &&
+          status.result.cause.total <= CONFLICT_ROUND_HUNKS &&
+          allowed.includes('GrantFixRound')
+        ) {
+          return 'GrantFixRound'
+        }
+        if (!allowed.includes(advised)) return null
+        // Any other advice that contradicts its own diagnosis is dropped, not
+        // swapped for another: a wrong approach is not continued or waived, and
+        // a fixable line is repaired rather than waived (#529, #551).
         if (cause === 'WrongApproach' && (advised === 'Approve' || advised === 'GrantFixRound')) return null
         if (cause === 'FixableLines' && advised === 'Approve') return null
         return advised
