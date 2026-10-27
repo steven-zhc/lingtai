@@ -117,7 +117,7 @@ describe('requeue', () => {
 describe('grant-fix-round', () => {
   it('--if-head with no value is refused in its own words, exit 2', async () => {
     const r = await capture(['grant-fix-round', 'p', '--issue', '5', '--if-head'])
-    expect(r).toEqual({ code: 2, out: '', err: '--if-head takes the displayed commit SHA\n' })
+    expect(r).toEqual({ code: 2, out: '', err: '--if-head takes the commit SHA, full or at least 7 characters\n' })
     expect(seen.calls).toEqual([])
   })
 

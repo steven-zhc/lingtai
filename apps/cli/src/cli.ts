@@ -1186,7 +1186,9 @@ function flagValue(args: readonly string[], name: string): string | null | undef
 /** The sentences a flag with no value has always been refused with, and exit 2 (#621). */
 const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }[]> = {
   requeue: [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
-  'grant-fix-round': [{ flag: 'if-head', sentence: '--if-head takes the displayed commit SHA', trimmed: false }],
+  'grant-fix-round': [
+    { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
+  ],
 }
 
 /** `--note` with nothing after it means what leaving it off means, `""` (#424), so it is dropped before parsing. */
