@@ -36,6 +36,7 @@
     "./memory-tickets": "./test/memory-tickets.ts",
     "./db-tickets": "./src/db-tickets.ts",
     "./wizard": "./src/wizard.ts",
+    "./rate-snapshot": "./src/rate-snapshot.ts",
     "./wizard-page": "./src/wizard-page.ts"
   },
   "scripts": {

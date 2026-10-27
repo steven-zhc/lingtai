@@ -130,6 +130,24 @@ Codex's `model` is the recipe's `request.model`, and is absent when the recipe
 sets none (`packages/agent/src/codex.ts`): an event with no model is still
 **unpriced**, and any other model id is unpriced until a row is appended.
 
+## The fetched snapshot
+
+A model this file does not list can still be priced from `~/.lingtai/rates.json`
+(#658): dated rows, `from` the fetch day (UTC), `source` the URL of LiteLLM's
+`model_prices_and_context_window.json`. It is filled by the process holding the
+conductor lock — `lingtai start` and `lingtai run`, once at start and at most
+once a day after — for the models of runs that reported no dollars and that this
+file does not list. `lingtai init` only reads it. Only the entry whose key is
+exactly the model id and whose `litellm_provider` is the runtime's own is taken
+(`openai` for Codex, `anthropic` for Claude Code). A null or out-of-range price
+leaves the model, or that token class, unknown. A changed price appends a row; a
+second fetch on the same day replaces that day's row.
+
+**This file always wins** for a model it lists, and a user cannot edit the
+snapshot's prices. Pricing reads the snapshot and never the network, and an
+estimate that used it says `(N at fetched LiteLLM prices)`. `lingtai doctor`'s
+`rates:` line says when it was last fetched and why a fetch failed.
+
 ## Not a billing record
 
 Every number computed through this file is an **estimate from token counts**. The

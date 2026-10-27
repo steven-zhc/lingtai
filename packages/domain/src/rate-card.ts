@@ -28,8 +28,13 @@ export interface RateRow {
   /** Dollars per million tokens. */
   input: number
   output: number
-  cacheRead: number
-  cacheWrite: number
+  /** `null` on a fetched row whose source gave no rate: a run with tokens of that class is *unknown*, never free. */
+  cacheRead: number | null
+  cacheWrite: number | null
+  /** Reasoning output, where the source prices it apart from `output`; absent means the output rate. */
+  reasoning?: number
+  /** Where a fetched row came from (#658). Absent on every shipped row. */
+  source?: string
 }
 
 /** The rows of `doc/rate-card.md`, in file order. */
@@ -62,16 +67,16 @@ const PER_MILLION = 1_000_000
 /**
  * One entry's tokens, priced at one row.
  *
- * Reasoning output is charged at the output rate (0110 §3's table): the two
- * fields are summed before multiplying rather than priced separately, because
- * they are the same rate.
+ * Reasoning output is charged at the output rate (0110 §3's table) unless the
+ * row carries a `reasoning` rate of its own, which only a fetched row does.
  */
 export function priceTokens(tokens: TokenCounts, row: RateRow): number {
   return (
     (tokens.fresh ?? 0) * (row.input / PER_MILLION) +
-    ((tokens.output ?? 0) + (tokens.reasoning ?? 0)) * (row.output / PER_MILLION) +
-    (tokens.cacheRead ?? 0) * (row.cacheRead / PER_MILLION) +
-    (tokens.cacheWrite ?? 0) * (row.cacheWrite / PER_MILLION)
+    (tokens.output ?? 0) * (row.output / PER_MILLION) +
+    (tokens.reasoning ?? 0) * ((row.reasoning ?? row.output) / PER_MILLION) +
+    (tokens.cacheRead ?? 0) * ((row.cacheRead ?? 0) / PER_MILLION) +
+    (tokens.cacheWrite ?? 0) * ((row.cacheWrite ?? 0) / PER_MILLION)
   )
 }
 
@@ -89,14 +94,132 @@ const TOKEN_FIELDS = ['fresh', 'cacheRead', 'cacheWrite', 'output', 'reasoning']
  * branch, where it already makes it.
  */
 export function priceRow(row: { at: Date; usage: Usage }, card: readonly RateRow[] = RATE_CARD): number | null {
+  return estimateRow(row, [], card)?.usd ?? null
+}
+
+/** Whether the shipped card has any row for `model`, at any mode or date. */
+export const shipped = (model: string): boolean => RATE_CARD.some((r) => r.model === model)
+
+/**
+ * `priceRow`, with a fetched snapshot behind the shipped card (#658).
+ *
+ * **The two lists are never concatenated**: `rateFor` takes the latest `from`,
+ * so a snapshot row dated after a shipped one would beat it. A model the
+ * shipped card lists at all is priced from the shipped card alone; any other
+ * model from the snapshot alone. `fetched` is true when any entry was priced
+ * from the snapshot, which is what lets a reader label the estimate.
+ */
+export function estimateRow(
+  row: { at: Date; usage: Usage },
+  snapshot: readonly RateRow[],
+  card: readonly RateRow[] = RATE_CARD,
+): { usd: number; fetched: boolean } | null {
   if (row.usage.length === 0) return null
   let total = 0
+  let fetched = false
   for (const entry of row.usage) {
     if (entry.model === undefined) return null
     if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return null
-    const rate = rateFor(card, entry.model, entry.mode ?? '', row.at)
+    const listed = card.some((r) => r.model === entry.model)
+    const rate = rateFor(listed ? card : snapshot, entry.model, entry.mode ?? '', row.at)
     if (rate === undefined) return null
+    // A null rate is unknown only for an entry that has tokens of that class.
+    if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return null
+    if ((entry.tokens.cacheWrite ?? 0) > 0 && rate.cacheWrite === null) return null
     total += priceTokens(entry.tokens, rate)
+    if (!listed) fetched = true
   }
-  return total
+  return { usd: total, fetched }
+}
+
+/** Where a runtime's own prices are listed in LiteLLM's table. A runtime not here asks for nothing. */
+export const LITELLM_PROVIDER: Readonly<Record<string, string>> = { codex: 'openai', 'claude-code': 'anthropic' }
+
+export const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+
+const MAX_PER_MILLION = 1000
+
+/**
+ * Rows for the wanted models out of LiteLLM's table, dated `day`.
+ *
+ * **The table is indexed by the model id and never iterated**, so a prefix or
+ * fuzzy match (`azure/us/…`, `chatgpt/…`) cannot happen. The entry must also
+ * name the runtime's own provider. A null or missing input or output rate, or
+ * any rate out of range, rejects the model.
+ */
+export function ratesFromLiteLLM(
+  table: unknown,
+  wanted: readonly { model: string; runtime: string }[],
+  day: string,
+): { rows: RateRow[]; rejected: string[] } {
+  const rows: RateRow[] = []
+  const rejected: string[] = []
+  if (typeof table !== 'object' || table === null) return { rows, rejected }
+  const seen = new Set<string>()
+  for (const { model, runtime } of wanted) {
+    const provider = LITELLM_PROVIDER[runtime]
+    if (provider === undefined || seen.has(model)) continue
+    seen.add(model)
+    if (!Object.hasOwn(table, model)) continue
+    const entry = (table as Record<string, Record<string, unknown> | null>)[model]
+    if (typeof entry !== 'object' || entry === null || entry['litellm_provider'] !== provider) continue
+    // undefined: absent or null; NaN: present and unusable.
+    const rate = (key: string): number | undefined => {
+      const v = entry[key]
+      if (v === undefined || v === null) return undefined
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v * PER_MILLION > MAX_PER_MILLION) return NaN
+      return v * PER_MILLION
+    }
+    const input = rate('input_cost_per_token')
+    const output = rate('output_cost_per_token')
+    const cacheRead = rate('cache_read_input_token_cost')
+    const cacheWrite = rate('cache_creation_input_token_cost')
+    const reasoning = rate('output_cost_per_reasoning_token')
+    const all = [input, output, cacheRead, cacheWrite, reasoning]
+    if (input === undefined || output === undefined || all.some((v) => v !== undefined && Number.isNaN(v))) {
+      // A model with nothing priced at all (a subscription plan's key) is not worth a name; a broken one is.
+      if (all.some((v) => v !== undefined)) rejected.push(model)
+      continue
+    }
+    rows.push({
+      from: day,
+      model,
+      mode: '',
+      input,
+      output,
+      cacheRead: cacheRead ?? null,
+      cacheWrite: cacheWrite ?? null,
+      ...(reasoning === undefined ? {} : { reasoning }),
+      source: LITELLM_URL,
+    })
+  }
+  return { rows, rejected }
+}
+
+const sameRates = (a: RateRow, b: RateRow): boolean =>
+  a.input === b.input &&
+  a.output === b.output &&
+  a.cacheRead === b.cacheRead &&
+  a.cacheWrite === b.cacheWrite &&
+  a.reasoning === b.reasoning
+
+/**
+ * The snapshot after a fetch, or `null` when nothing changed.
+ *
+ * Per `(model, mode)`: the same rates as the latest row change nothing; a
+ * latest row dated `day` is replaced (the last fetch of a day wins); otherwise
+ * a row is appended, so an earlier day keeps the price it had.
+ */
+export function mergeSnapshot(previous: readonly RateRow[], fetched: readonly RateRow[]): RateRow[] | null {
+  let rows = [...previous]
+  let changed = false
+  for (const next of fetched) {
+    const own = rows.filter((r) => r.model === next.model && r.mode === next.mode)
+    const latest = own.reduce<RateRow | undefined>((a, r) => (a === undefined || r.from >= a.from ? r : a), undefined)
+    if (latest !== undefined && sameRates(latest, next)) continue
+    changed = true
+    if (latest !== undefined && latest.from === next.from) rows = rows.map((r) => (r === latest ? next : r))
+    else rows.push(next)
+  }
+  return changed ? rows : null
 }

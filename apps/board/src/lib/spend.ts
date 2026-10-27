@@ -24,7 +24,9 @@
  * *unknown*, and **no path through this file prints `$0.00` for a bill that has
  * an unknown run in it.** A total is a floor (0110 §2) and every reader says so.
  */
-import { priceRow } from '@lingtai/domain/rate-card'
+import { fetchedNote } from '@lingtai/conductor'
+import { readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
+import { estimateRow } from '@lingtai/domain/rate-card'
 import { createProjectionRunner, readSpend, spendProjection, type SpendRow } from '@lingtai/projector'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
@@ -40,6 +42,8 @@ export interface Bill {
   reportedRuns: number
   /** Dollars the rate card priced from a row's usage. Never summed into `reportedCents`. */
   estimates: number[]
+  /** Of those estimates, how many were priced at least partly from the fetched snapshot (#658). */
+  fetched?: number
   /** Rows with no reported figure and no estimate. Never shown as `$0.00`. */
   unknown: number
 }
@@ -54,6 +58,7 @@ export function addBill(a: Bill, b: Bill): Bill {
     reportedCents: a.reportedCents + b.reportedCents,
     reportedRuns: a.reportedRuns + b.reportedRuns,
     estimates: [...a.estimates, ...b.estimates],
+    ...((a.fetched ?? 0) + (b.fetched ?? 0) > 0 ? { fetched: (a.fetched ?? 0) + (b.fetched ?? 0) } : {}),
     unknown: a.unknown + b.unknown,
   }
 }
@@ -121,7 +126,7 @@ export function withNoSpendFallback(
  * A price for a row with no reported figure, or null — unknown. A parameter so
  * a test can hand the estimate arm its own card; the default is the shipped one.
  */
-export type RateCard = (row: SpendRow) => number | null
+export type RateCard = (row: SpendRow) => number | { usd: number; fetched: boolean } | null
 
 /** `Action` at round 0 is the work; at round 1 or above it is answering a refusal (0039 §3). */
 function purposeOf(row: SpendRow): Purpose {
@@ -133,7 +138,9 @@ function purposeOf(row: SpendRow): Purpose {
  * Every row, sorted into its purpose and then into reported, estimated or
  * unknown — the one fold every reader in this directory goes through.
  */
-export function billOf(rows: readonly SpendRow[], price: RateCard = (row) => priceRow(row)): Record<Purpose, Bill> {
+export function billOf(rows: readonly SpendRow[], price?: RateCard): Record<Purpose, Bill> {
+  const snapshot = readRateSnapshot()
+  const priced: RateCard = price ?? ((row) => estimateRow(row, snapshot))
   const bills = emptyBills()
   for (const row of rows) {
     const bill = bills[purposeOf(row)]
@@ -142,9 +149,10 @@ export function billOf(rows: readonly SpendRow[], price: RateCard = (row) => pri
       bill.reportedRuns += 1
       continue
     }
-    const estimate = price(row)
+    const estimate = priced(row)
     if (estimate !== null) {
-      bill.estimates.push(estimate)
+      bill.estimates.push(typeof estimate === 'number' ? estimate : estimate.usd)
+      if (typeof estimate !== 'number' && estimate.fetched) bill.fetched = (bill.fetched ?? 0) + 1
       continue
     }
     bill.unknown += 1
@@ -182,7 +190,8 @@ export function billText(bill: Bill): string {
     return '—'
   }
   const est = bill.estimates.reduce((a, b) => a + b, 0)
-  if (bill.estimates.length > 0) parts.push(`~$${est.toFixed(2)} est.`)
+  if (bill.estimates.length > 0)
+    parts.push(`~$${est.toFixed(2)} est.${fetchedNote({ fetchedRuns: bill.fetched ?? 0 })}`)
   return parts.join(' ')
 }
 

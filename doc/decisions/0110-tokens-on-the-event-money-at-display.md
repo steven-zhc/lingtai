@@ -135,7 +135,9 @@ about something else are the three whose spend is not recorded.
    old run still prices at the rate in force when it happened. A model with no
    row is _unpriced_, and its runs are unknown under decision 7. Codex has no
    rows today. The card is not fetched from the Models API, which carries no
-   price, and is not scraped from a pricing page.
+   price, and is not scraped from a pricing page. Rows not in the shipped card
+   may come from a fetched, dated snapshot, read after the shipped rows and
+   never fetched while pricing.
 
 7. **`/spend` shows the `spend` projection, split by purpose.**
    `apps/board/src/app/spend/page.tsx` shows one row per project, with the

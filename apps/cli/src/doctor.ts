@@ -53,6 +53,7 @@ import {
   signedInHere,
 } from '@lingtai/conductor'
 import { daySpendText, type DaySpend } from '@lingtai/conductor'
+import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
   codeCurrency,
   codeRoot,
@@ -1052,6 +1053,38 @@ export async function daemonLiveness(
     status: 'ok',
     detail: `${beat.state}${stopping}${side}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
   }
+}
+
+/**
+ * The fetched half of the rate card (#658): when prices were last fetched, and
+ * what the last attempt said. A failed fetch is a warning, never a failure —
+ * pricing reads the snapshot and is unaffected. Never fetched is the offline
+ * machine's ordinary state, said plainly.
+ */
+export function ratesCheck(from: NodeJS.ProcessEnv = process.env): CheckResult {
+  const name = 'rates'
+  const note = readFetchNote(from)
+  if (note === null) {
+    return {
+      name,
+      status: 'ok',
+      detail: 'never fetched — models the shipped rate card does not list stay unknown until the conductor starts',
+    }
+  }
+  const day = note.at.slice(0, 10)
+  const rejected = note.rejected.length > 0 ? `; out of range, left unknown: ${note.rejected.join(', ')}` : ''
+  if (!note.ok) {
+    return {
+      name,
+      status: 'warn',
+      detail: `last fetched ${day}, ${note.error ?? 'failed'} — the previous snapshot stands${rejected}`,
+    }
+  }
+  // Nothing detects a ChatGPT plan, so the note is conditional in its wording.
+  const plan = readRateSnapshot(from).some((r) => r.source !== undefined && r.model.startsWith('gpt'))
+    ? ". A Codex user on a ChatGPT plan: an estimate from per-token prices is not that plan's bill; the daily ceiling still counts it"
+    : ''
+  return { name, status: 'ok', detail: `last fetched ${day}, ok${rejected}${plan}` }
 }
 
 /**
@@ -2638,6 +2671,7 @@ export async function runDoctor(
     results.push(await daemonLiveness(reach.status, reach.pause))
     results.push(await daemonCurrency(reach.status))
     results.push(await spendToday(reach.spend))
+    results.push(ratesCheck())
     results.push(await passRefusals(load))
     results.push(await conductorLock(reach.lockHolder))
     results.push(await readableTypes(queries))
@@ -2676,6 +2710,7 @@ export async function runDoctor(
     // for thirty-nine minutes only one of them was measured.
     results.push(await daemonCurrency())
     results.push(await spendToday())
+    results.push(ratesCheck())
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
@@ -2785,7 +2820,7 @@ const OTHER = 'Other'
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Machine', ['node', 'packages load under Node', 'release']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections']],
-  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend']],
+  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
   ['Runtimes', ['runtime']],

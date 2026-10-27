@@ -4,7 +4,7 @@
  * installation. The sentence is `@lingtai/conductor`'s, the one `lingtai status`
  * prints, so the surfaces cannot disagree about how much cost is unknown.
  */
-import { dayFigure, daySpend, daySpendText, startOfLocalDay } from '@lingtai/conductor'
+import { dayFigure, daySpend, daySpendText, fetchedNote, startOfLocalDay } from '@lingtai/conductor'
 import { machineDayCeiling } from '@lingtai/env'
 import { readSpend } from '@lingtai/projector'
 
@@ -20,7 +20,7 @@ export async function readDayReading(now: Date = new Date()): Promise<DaySpendRe
   try {
     const ceilingUsd = machineDayCeiling()
     const day = daySpend(await readSpend({ since: startOfLocalDay(now) }), now)
-    const estimate = `~$${(day.estimatedCents / 100).toFixed(2)} est.`
+    const estimate = `~$${(day.estimatedCents / 100).toFixed(2)} est.${fetchedNote(day)}`
     return {
       text: daySpendText(day, ceilingUsd),
       short:
