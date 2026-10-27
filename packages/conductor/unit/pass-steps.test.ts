@@ -163,7 +163,8 @@ const coldReviewerSaying = (text: string | null): Action =>
         }),
       },
       issue: async () => ({ ref: '269', title: 'T5d', body: 'the queue is a plugin at `claim`' }),
-      diff: async () => 'diff --git a/x b/x\n+1',
+      diff: async () =>
+        'diff --git a/packages/conductor/src/pass.ts b/packages/conductor/src/pass.ts\n--- a/packages/conductor/src/pass.ts\n+++ b/packages/conductor/src/pass.ts\n@@ -1200,3 +1200,3 @@\n a\n+b\n c\n',
       restore: async () => ({ untouched: true as const }),
       settingsPath: '/nowhere/settings.json',
       limits: { turns: 80, wallMs: 3_600_000, diffBytes: 400_000 },

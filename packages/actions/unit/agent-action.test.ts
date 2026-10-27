@@ -68,7 +68,22 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
   }
 }
 
-const actionWith = (reply: RunOutcome, diff = 'diff --git a/x b/x\n+1', prompt = '') =>
+/** A diff whose one hunk covers `src/x.ts` lines 40–44, where `finding()` sits. */
+const HUNK_DIFF = [
+  'diff --git a/src/x.ts b/src/x.ts',
+  '--- a/src/x.ts',
+  '+++ b/src/x.ts',
+  '@@ -40,5 +40,5 @@',
+  ' a',
+  ' b',
+  '-c',
+  '+d',
+  ' e',
+  ' f',
+  '',
+].join('\n')
+
+const actionWith = (reply: RunOutcome, diff = HUNK_DIFF, prompt = '') =>
   createAgentAction(
     { name: 'review', prompt },
     {
@@ -1893,6 +1908,7 @@ describe('the schema and ActionFinding cannot diverge', () => {
       claim: 'c',
       failureScenario: 'f',
       severity: 'minor',
+      reachableBecause: 'r',
       class: 'k',
     }
     const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
@@ -2010,7 +2026,7 @@ describe('the worktree after a review (#587)', () => {
     },
   }
 
-  function withRestore(restore: AgentActionDeps['restore'], runtime: Runtime, diff = 'diff --git a/x b/x\n+1') {
+  function withRestore(restore: AgentActionDeps['restore'], runtime: Runtime, diff = HUNK_DIFF) {
     const calls: string[] = []
     const action = createAgentAction(
       { name: 'review', prompt: '' },
@@ -2090,5 +2106,73 @@ describe('the worktree after a review (#587)', () => {
 
     await action.run(context)
     expect(calls).toEqual([])
+  })
+})
+
+describe('a finding outside every hunk of the reviewed diff (#670)', () => {
+  const OUTSIDE = finding({ line: 900 })
+  const answer = (findings: unknown[]) => outcome({ text: JSON.stringify({ findings }) })
+
+  it('is demoted to a pre-existing minor, and a review with only that finding passes', async () => {
+    const result = await actionWith(answer([OUTSIDE])).run(context)
+
+    expect(result.verdict).toBe('passed')
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0]?.severity).toBe('minor')
+    expect(result.findings[0]?.claim).toBe(`pre-existing — was blocker: ${OUTSIDE.claim}`)
+    expect(result.findings[0]?.failureScenario).toBe(OUTSIDE.failureScenario)
+  })
+
+  it('stays as reported when the reviewer says how the diff makes it reachable', async () => {
+    const reach = finding({ line: 900, reachableBecause: 'the new caller passes null into it' })
+    const result = await actionWith(answer([reach])).run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.findings[0]?.severity).toBe('blocker')
+    expect(result.findings[0]?.reachableBecause).toBe('the new caller passes null into it')
+  })
+
+  it('treats a blank reachableBecause as absent', async () => {
+    const result = await actionWith(answer([finding({ line: 900, reachableBecause: '  ' })])).run(context)
+
+    expect(result.verdict).toBe('passed')
+  })
+
+  it('stays a blocker on a context line next to a deletion', async () => {
+    const result = await actionWith(answer([finding({ line: 41 })])).run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.findings[0]?.severity).toBe('blocker')
+  })
+
+  it('classifies against the diff taken from mergedOnto, unclipped', async () => {
+    const froms: (string | undefined)[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime: reviewer(answer([finding({ line: 900 })])),
+        issue: async () => ISSUE,
+        diff: async (from) => {
+          froms.push(from)
+          return from === 'base0002' ? HUNK_DIFF.replace('@@ -40,5 +40,5 @@', '@@ -898,5 +898,5 @@') : HUNK_DIFF
+        },
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: 10 },
+      },
+    )
+    const result = await action.run({ ...context, mergedOnto: 'base0002' })
+
+    expect(froms).toEqual(['base0002'])
+    expect(result.verdict).toBe('failed')
+  })
+
+  it('demotes nothing, and says so, when the diff has a hunk header it cannot read', async () => {
+    const notes: string[] = []
+    const log = { note: (_tag: string, line: string) => void notes.push(line) } as unknown as ActionContext['log']
+    const result = await actionWith(answer([OUTSIDE]), '--- a/x\n+++ b/x\n@@ nonsense @@\n').run({ ...context, log })
+
+    expect(result.verdict).toBe('failed')
+    expect(notes.some((n) => n.includes('no finding was demoted'))).toBe(true)
   })
 })

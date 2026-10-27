@@ -53,6 +53,7 @@
  * `recheckBlock`.
  */
 import type { RunOutcome, Runtime } from '@lingtai/agent'
+import type { RunTrace } from '@lingtai/agent/run-log'
 import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, type RefusedAbout, type Severity } from '@lingtai/domain'
 
 import {
@@ -65,6 +66,7 @@ import {
   type SentBack,
 } from './action.ts'
 import { boundedEvidence } from './command.ts'
+import { demoteOutsideDiff, hunksOf } from './diff-hunks.ts'
 
 /**
  * **What a dispatch billed, attached once after every branch** (#494). The
@@ -171,7 +173,11 @@ Severity is not a judgement call. Use this rubric exactly.
   happens.
 - minor — a real defect that is cosmetic, or so narrow it needs contrivance.
 
-If you are between two levels, take the higher one.`
+If you are between two levels, take the higher one.
+
+A finding on a line this diff does not touch is recorded as a pre-existing
+minor and buys no fix round, unless you fill \`reachableBecause\` with how this
+diff makes that code reachable. Otherwise leave it null.`
 
 const CHECKLIST = `
 Look at these first. They are where the defects have actually been.
@@ -426,6 +432,9 @@ function normaliseAnswer(value: unknown): ReadAnswer {
           // `SEVERITIES` is worst first, so the highest is its own head
           // rather than a name spelled again here.
           SEVERITIES[0],
+      ...(typeof f.reachableBecause === 'string' && f.reachableBecause.trim() !== ''
+        ? { reachableBecause: f.reachableBecause }
+        : {}),
       ...(typeof f.class === 'string' && f.class.trim() !== '' ? { class: f.class.trim() } : {}),
     })
   }
@@ -641,7 +650,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       }
       if (outcome === undefined) throw new Error('the review returned no outcome')
 
-      const result = { ...reviewAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
+      const result = { ...reviewAnswer(outcome, diff, context.log), spent: spentOf(outcome, deps.runtime) }
       // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
       // and `verdict`, `findings` and `because` are not touched: a reviewer
       // that edited the tree has not refused the diff.
@@ -659,7 +668,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
  * used to return directly, so `evidence`'s `(N turns · $X)` suffixes stay
  * exactly as they were.
  */
-function reviewAnswer(outcome: RunOutcome): ActionResult {
+function reviewAnswer(outcome: RunOutcome, diff: string, log: RunTrace | undefined): ActionResult {
   if (outcome.failure) {
     /**
      * A reviewer that never started has not reviewed anything, and saying
@@ -782,11 +791,14 @@ function reviewAnswer(outcome: RunOutcome): ActionResult {
     }
   }
 
-  const verdict = verdictFor(findings)
+  const hunks = hunksOf(diff)
+  if (hunks === null) log?.note('review', 'the diff could not be read as hunks; no finding was demoted')
+  const kept = hunks === null ? findings : demoteOutsideDiff(findings, hunks)
+  const verdict = verdictFor(kept)
   return {
     verdict,
-    evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns)`),
-    findings,
+    evidence: boundedEvidence(`${summarise(kept)}\n\n(${outcome.turns} turns)`),
+    findings: kept,
     /**
      * **The reviewer's own classification of its refusal, and only of a
      * refusal** (`#293`).

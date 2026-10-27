@@ -35,12 +35,12 @@ describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
     return array.items as Record<string, unknown>
   }
 
-  it('requires every key on a finding — none of the six is optional', () => {
+  it('requires every key on a finding — none of the seven is optional, `class` and `reachableBecause` being nullable instead', () => {
     const finding = findingSchema()
     expect(finding.required).toEqual(
-      expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity', 'class']),
+      expect.arrayContaining(['file', 'line', 'claim', 'failureScenario', 'severity', 'class', 'reachableBecause']),
     )
-    expect(finding.required).toHaveLength(6)
+    expect(finding.required).toHaveLength(7)
   })
 
   it('refuses an unknown key on a finding', () => {
@@ -76,9 +76,14 @@ describe('ReviewAnswer', () => {
   it('parses a finding with a class, or a null one, in the answer', () => {
     const base = { file: 'x.ts', line: null, claim: 'c', failureScenario: 'f', severity: 'minor' }
     expect(
-      ReviewAnswer.parse({ findings: [{ ...base, class: 'a failed read taken as empty' }], about: null }),
+      ReviewAnswer.parse({
+        findings: [{ ...base, class: 'a failed read taken as empty', reachableBecause: null }],
+        about: null,
+      }),
     ).toBeTruthy()
-    expect(ReviewAnswer.parse({ findings: [{ ...base, class: null }], about: null })).toBeTruthy()
+    expect(
+      ReviewAnswer.parse({ findings: [{ ...base, class: null, reachableBecause: null }], about: null }),
+    ).toBeTruthy()
   })
 
   it('keeps a stored finding class, and reads an old finding without one', () => {

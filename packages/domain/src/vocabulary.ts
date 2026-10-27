@@ -131,6 +131,11 @@ export const Finding = z.object({
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
   severity: z.enum(SEVERITIES),
+  /**
+   * How the diff makes code it did not touch reachable (#670). Present, a
+   * finding outside every hunk is not demoted to a pre-existing minor.
+   */
+  reachableBecause: z.string().optional(),
   /** The class of mistake, where the same one could occur elsewhere in the diff (#672). Absent on old events. */
   class: z.string().optional(),
 })

@@ -1077,8 +1077,12 @@ export type RefusedAbout = (typeof REFUSED_ABOUT)[number]
  */
 export const ReviewAnswer = z
   .object({
-    // `class` is required-but-nullable here for the same reason `about` is (#672).
-    findings: z.array(Finding.extend({ class: z.string().nullable() }).strict()),
+    // Required but nullable, like `about`: strict structured output refuses an
+    // optional property, so the stored `Finding`'s optional keys are made so here
+    // (`class`, #672; `reachableBecause`, #670).
+    findings: z.array(
+      Finding.extend({ class: z.string().nullable(), reachableBecause: z.string().nullable() }).strict(),
+    ),
     about: z.enum(REFUSED_ABOUT).nullable(),
   })
   .strict()
