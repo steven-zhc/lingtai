@@ -597,6 +597,17 @@ describe('waitDetail (#656)', () => {
     expect(lines.some((l) => l.includes('recommends'))).toBe(false)
   })
 
+  it('drops the reason’s own recommendation line when the shared rule recommends nothing', () => {
+    const words = {
+      needs: 'judgement',
+      diagnosis: { what: 'it conflicted', done: null, recommendation: { action: 'requeue', why: 'try again' } },
+    } as never
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
+    expect(lines.some((l) => l.includes('recommends'))).toBe(false)
+    expect(lines).toContain('it conflicted')
+    expect(lines.some((l) => l.includes('triage advised GrantFixRound: why'))).toBe(true)
+  })
+
   it('prints what it printed before when there is no triage', () => {
     const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
     expect(detail(disagrees, undefined)).toEqual(describeWaitLines(words).map((l) => l.text))

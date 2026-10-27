@@ -109,7 +109,7 @@ export function waitDetail(
   const advised = c.advised === null ? [] : [c.advised]
   if (!lines.some((l) => l.part === 'rec'))
     return [...lines.map((l) => l.text), ...(c.rec === null ? [] : [c.rec]), ...advised]
-  return lines.flatMap((l) => (l.part === 'rec' ? [c.rec ?? l.text, ...advised] : [l.text]))
+  return lines.flatMap((l) => (l.part === 'rec' ? [...(c.rec === null ? [] : [c.rec]), ...advised] : [l.text]))
 }
 
 /** A run's saved head: whether one is there, or why that could not be read. */
