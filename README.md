@@ -93,10 +93,14 @@ that does and does not protect.
 
 **Not contained**
 
-- There is no filesystem sandbox. The agent can read any file you can,
-  including `~/.lingtai/config.yml` (the database URL and GitHub App settings)
-  and `~/.ssh`, and it has network access.
-- A recipe's `tier: sandboxed` is not available today.
+- The Claude Code runtime has no filesystem sandbox. That agent can read any
+  file you can, including `~/.lingtai/config.yml` (the database URL and GitHub
+  App settings) and `~/.ssh`, and it has network access.
+- The Codex runtime does run in a sandbox (`--sandbox workspace-write`), which
+  refuses writes outside its working directory and a few directories Lingtai
+  adds for committing. A recipe with `tier: sandboxed` is served only by a
+  runtime like that one, not by Claude Code. Do not assume the sandbox covers
+  reads, or the network.
 
 **What to do**
 
