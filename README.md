@@ -108,14 +108,20 @@ that does and does not protect.
 
 **Not contained**
 
-- The Claude Code runtime has no filesystem sandbox. That agent can read any
-  file you can, including `~/.lingtai/config.yml` (the database URL and GitHub
-  App settings) and `~/.ssh`, and it has network access.
+- Lingtai gives the Claude Code runtime no filesystem sandbox. Unless you
+  configure one, that agent can read any file you can, including
+  `~/.lingtai/config.yml` (the database URL and GitHub App settings) and `~/.ssh`,
+  and it has network access. Your own Claude Code sandbox with
+  `allowUnsandboxedCommands: false` does hold under Lingtai; see
+  [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
 - The Codex runtime does run in a sandbox (`--sandbox workspace-write`), which
   refuses writes outside its working directory, `$TMPDIR` and `/tmp`, and a few
   directories Lingtai adds for committing. A recipe with `tier: sandboxed` is served only by a
   runtime like that one, not by Claude Code. Do not assume the sandbox covers
   reads, or the network.
+  A permission profile in your own `~/.codex/config.toml` is replaced by that
+  `--sandbox` until #667 lands; see
+  [the measurements](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
 
 **What to do**
 
