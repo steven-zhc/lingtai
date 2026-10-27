@@ -5,203 +5,90 @@
 
 # Lingtai
 
-**One agent loop, driven by an append-only event log. Everything else is a
-projection of that log or a subscriber to it.**
+Lingtai takes a queue of tickets, hands them to coding agents — several at
+once, each in a worktree of its own — and holds each change at checks and a
+cold review until it passes. It merges what passes, or stops for you, and every
+decision is written to a log on your machine.
 
-Lingtai takes a queue of work, hands one item at a time to a coding agent, holds
-it at a series of gates, and releases it only when every gate — including a human
-one — has passed. Nothing advances without leaving a record of why.
+## Install
 
-## Why
+You need Git and Claude Code, signed in, plus Node.js and npm for the
+example below; [requirements](doc/requirements.md) lists the rest.
 
-Three questions decide whether you can leave a coding agent running:
-
-- *what state is this ticket in?*
-- *why did this not merge?*
-- *what is waiting on me?*
-
-Everything here follows from making those three **the same query against the
-same table**. Scatter them — state in labels, history in comments, telemetry in
-a log nobody parses — and each is answerable only by someone who already knows
-where to look, which is near enough to not answerable at all.
-
-The load-bearing word is **log**, not *event*: plenty of systems are
-event-driven and still keep authoritative mutable state somewhere. Here the log
-is the only truth — every table is derived, can be dropped, and rebuilds to
-exactly what it was.
-
-## Goals
-
-| | |
-|---|---|
-| **Nothing decides in private** | Every component appends to one table and keeps no state of its own, so the board and the CLI cannot disagree. |
-| **The managed repository stays ordinary** | **Nothing is committed to it at all.** No configuration file, no bot account, no CI job, no label state machine. Delete Lingtai tomorrow and the repository would not notice, because there is nothing there to delete. |
-| **The rules are yours, and they are on your machine** | What may be picked up, what environment it gets, what must pass — `~/.lingtai/<project>/recipe.yml`. Nothing privileged sits above that file, and an agent cannot reach it: its blast radius is a worktree, and `~/.lingtai/` is not in it ([0046](doc/decisions-archive/0046-lingtai-is-personal.md) §3). What a *team* shares was never the recipe — it is branch protection. |
-| **Nothing is sent anywhere** | No telemetry, no analytics, no crash reports, no account. Cost and duration are recorded — on your own log, and on `/spend` — and nothing reports them anywhere. **Where that log is, is yours to decide, and `lingtai init` writes the answer down** ([0100](doc/decisions/0100-one-append-only-log.md) §7): an empty answer is SQLite, one file at `~/.lingtai/lingtai.db` that nothing off this machine can read; a Postgres URL is the other store. `config.example.yml` templates `database.url` as a bare host — `postgresql://user:password@host:5432/lingtai` — and names no provider, so where that database sits, if you choose one, is a choice you make rather than one it makes for you. A URL pointing off this machine puts the log there — the costs and durations, and the issue bodies, prompts and gate evidence beside them. Point it at a Postgres of your own and none of it leaves. The one question Lingtai asks on its own account is which release is newest: `lingtai upgrade` and `lingtai doctor` ask the GitHub Releases API, sending nothing but the question and the version you are on ([0051](doc/decisions-archive/0051-a-version-is-a-directory.md) §7). An `upgrade` you then ask for downloads that release's artifacts from GitHub as well, so an allowlist naming only the API is not enough (§4). Everything else it talks to is the job you gave it: GitHub about your repository's issues and branches, the agent about the work, and whatever your recipe's own subscribers run — the `telegram` one posts the notification to Telegram, because you configured it to. The board's two typefaces are files in the repository — `next/font/local` in `apps/board/src/app/layout.tsx` — so building it fetches nothing from Google. An installed copy carries the same files: `board.tar.gz` ships the board built ([0051](doc/decisions-archive/0051-a-version-is-a-directory.md) §3). |
-| **A configured check that did not run is a bug** | Not a preference — the thing the design is built to make visible. An unconfigured gate is *shown as skipped*, never omitted, because absent and silently-not-run must be distinguishable. |
-| **Refusing is cheap and early** | A missing environment value refuses the whole project before an issue is claimed: no worktree, no agent, no money. |
-
-**Watch it.** Nothing has run unattended long enough to have earned trust, and
-`lingtai pause` exists because that is the honest state to be in.
-
-## The big picture
-
-Lingtai runs on one machine of yours. It owns its log — a SQLite file by
-default, the empty answer at `lingtai init`, or a Postgres database if you give
-it one — a clone of each repository it manages, and the agent processes it
-starts.
-
-```mermaid
-flowchart TB
-  gh(["<b>GitHub</b> — the authority on what work exists"])
-  cond["<b>conductor</b><br/>discover · claim · worktree · gates · integrate"]
-  agent["<b>agent</b><br/>claude-code, in a worktree of its own"]
-  log[("<b>events</b> — append-only, and the only truth")]
-  you["<b>board</b> · <b>lingtai</b> — where you see it and decide"]
-
-  gh -->|"issues, recipe"| cond
-  cond -->|"branch, merge, labels"| gh
-  cond -->|"starts it, hears it back"| agent
-  cond -->|"append"| log
-  agent -->|"append, through the hook"| log
-  log -->|"read"| you
-  you -->|"approve · reject · pause"| log
-
-  classDef out fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
-  classDef work fill:#e6e9ec,stroke:#5c646d,stroke-width:1.5px,color:#14181c;
-  classDef truth fill:#e9dcc0,stroke:#8a6a2e,stroke-width:3px,color:#14181c;
-  classDef read fill:#e2ecea,stroke:#2c6b67,stroke-width:1.5px,color:#14181c;
-  class gh out;
-  class cond,agent work;
-  class log truth;
-  class you read;
+```sh
+curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 ```
 
-**Everything writes to the middle, and everything else reads it.** Nothing keeps
-private state, which is why the board and the CLI cannot disagree — and why the
-three questions above are one query rather than three investigations.
+## Quickstart
 
-GitHub is on both sides and is neither the middle: an **input**, since it is the
-authority on what work exists, and an **output**, told what the log says. It is
-never where Lingtai keeps what it did.
+This takes you from nothing to one ticket merged on this machine, with no
+GitHub account. It uses [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
+a small Astro site. These are the POSIX shell commands; the
+[tutorial](doc/tutorial.md) has Fish, and explains every option.
 
-## The loop, and the five places it stops
+Clone it, and make a bare repository beside it the checkout's `origin`, so
+Lingtai pushes and merges there and the original is never touched:
 
-```mermaid
-flowchart LR
-  Q[queue] --> A{{admit}}
-  A --> C[claim + worktree]
-  C --> P{{prepared}}
-  P --> AG[agent runs]
-  AG --> D{{proposed}}
-  D --> M{{merge}}
-  M --> I[integrate<br/>no lock: git refuses the second push]
-  I -->|merged| L[landed]
-  L --> E{{end}}
-
-  D -->|refuses| R
-  M -->|refuses| R
-  I -->|conflict| R
-  R[["a refusal, carrying what refused it"]]
-  R -->|"× runtime.limits.rounds<br/>the same worktree"| AG
-  R -->|"rounds spent on a refused review<br/>× runtime.limits.restarts — from the base"| C
-  R -->|"every ceiling spent"| Y
-  Y(["waiting on you"]) --> E
-
-  classDef gate fill:#e9dcc0,stroke:#8a6a2e,stroke-width:2px,color:#14181c;
-  classDef core fill:#e6e9ec,stroke:#5c646d,color:#14181c;
-  classDef back fill:#f3efe4,stroke:#8a6a2e,stroke-width:1.5px,color:#14181c;
-  class A,P,D,M,E gate;
-  class Q,C,AG,I,L core;
-  class R,Y back;
+```sh
+export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
+mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
+git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
+git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
+git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
-The rectangles are the loop's own work and are not configurable. The hexagons
-are the five points where the conductor stops and waits for a verdict — and what
-runs at each is the recipe's.
+Register it with Lingtai, using a local SQLite log and holding for your
+approval before anything merges:
 
-**It is not a line, and `end` is not the last thing that can happen — it is the
-thing that happens to every outcome.** Landing and waiting on you both reach it,
-which is why its actions are effects and it cannot refuse.
+```sh
+lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
+  --base main \
+  --agent claude-code --reviewer claude-code \
+  --install 'npm ci' --build 'npm run check' \
+  --build 'npm run build' --defaults --land hold
+```
 
-A refusal is answered by the agent that is still standing in the worktree, not
-by a new run: that is the whole of
-[0039](doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md), and
-`runtime.limits.rounds` is how many times. When those are spent on a *refused
-review* — an opinion that the approach is wrong, rather than a red check or a
-moved base, for which the work is still there — the claim is released and the
-next one starts over from the base carrying every finding, `runtime.limits.restarts`
-times ([0040](doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
-Only when every ceiling is spent does it reach a person.
+Open one ticket. Your editor opens; replace the form with a request such as
+*Add the next chapter to* a story from the
+[bookshelf](https://cg.hczhang.com/en/) (the tutorial has the full text),
+including `labels: feature`. Continue when Lingtai prints `created #N`, which is
+the number you approve below:
 
-| Point | When | May refuse? |
-|---|---|---|
-| `admit` | the queue offers an item, before it is claimed | yes — it stays queued |
-| `prepared` | the worktree exists, before the agent starts | yes — refuse before money is spent |
-| `proposed` | the agent stopped and there are commits | yes |
-| `merge` | after `proposed` passes, before the merge lane | yes |
-| `end` | the item reached any terminal outcome | **no** — its actions are effects |
+```sh
+lingtai ticket new --project chapter-garden
+```
 
-**The set is closed.** No sixth point will ever be added. What runs *at* a point
-is open, which is what lets extension be unbounded while the core stays finite:
-adding a security scan or a second reviewer is a line in a recipe, not a change
-here.
+Start Lingtai in one terminal and leave it running; it stays in the foreground.
+In a second terminal, open the board:
 
-## The architecture, in one screen
+```sh
+lingtai start
+lingtai board
+```
 
-Thirteen packages in two columns. **Nothing on the left names anything on the
-right** — `conductor` declares the interfaces it needs, the right column
-implements them, and a host wires the two together.
+When the ticket is waiting on you, read the change on the board and press
+**Approve**, or do it from a terminal:
 
-| Decides · no I/O of its own | Touches the world · one thing each |
-|---|---|
-| **`conductor`** the order of one pass, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
-| **`actions`** what runs at a point, and what its verdict means | **`projector`** the fold, and the checkpoint in the same transaction |
-| **`agent-env`** what the agent's environment holds | **`github`** the App, the token, issues and labels |
-| **`recipe`** what the managed repository asked for | **`repo`** git: the mirror, the worktree, the merge lane |
-| **`domain`** the vocabulary: event types, streams, reducers | **`agent`** starting the process, hearing it back on the socket |
-| | **`env`** the *machine's* credentials, and its state directory |
-| | **`hook`** one Bun binary, inside the agent's sandbox |
+```sh
+lingtai status chapter-garden --all
+lingtai approve chapter-garden --issue <ticket-number>
+```
 
-Two hosts assemble them — `apps/cli` and `packages/daemon` — plus `apps/board`,
-which reads the projection and appends decisions. **Every process that appends
-holds a projector while it runs**, so the board follows a run by hand just as it
-follows the daemon. The daemon adds what only a long-lived process can owe: a
-lock file, a heartbeat, a repair at startup, and a loop that keeps taking
-work.
+Run `git pull` in your Chapter Garden checkout to see the merged change.
 
-There is **one projection**, `task_view`, rebuilt with
-`lingtai projection rebuild task_view`. Anything else you want to know is folded
-from the log on demand.
+## What an agent can reach
 
-## Where to read next
+See below.
 
-| | |
-|---|---|
-| [`doc/architecture.html`](doc/architecture.html) | **Start here.** Six diagrams answering *which process am I in* — who appends, who is told, where state lives, how GitHub is brought back into line. Also in [中文](doc/architecture.zh.html). |
-| [`doc/tutorial.md`](doc/tutorial.md) | The shortest path from nothing to an issue merged unattended. |
-| [`doc/requirements.md`](doc/requirements.md) | Everything Lingtai needs outside itself — programs, services and accounts — and which choice makes each one required. |
-| [`doc/operating.md`](doc/operating.md) | Everything you actually type: setup, the GitHub App, onboarding a repository, running work, and what every refusal means. |
-| [`doc/README.md`](doc/README.md) | The decision log — one file per decision, append-only in spirit — and what is still open. |
-| [`doc/reference.md`](doc/reference.md) | Every term, and everything currently in it: the event types (generated), 5 gate points, 4 action kinds. |
-| [`doc/roadmap.md`](doc/roadmap.md) | The phases, each with an exit criterion that is a fact. |
-| [`doc/design.md`](doc/design.md) | How it is meant to work, as a whole. |
+## Next
 
-## Status
-
-Phases 0–3 are done. `nextloom-ai-admin` #155 went from a GitHub issue to a
-commit on `develop` on 2026-09-01; #156 closed the loop unattended on 09-02; and
-#157 and #158 landed on the settled model, each **closed on GitHub by an action
-at the `end` point** rather than by a person.
-
-The third run of that sitting is the more useful one: 30 turns and $1.82 spent
-to produce **no commits**, refused before the gates and the work item released.
-Nothing merged, and the log says why — which is the whole point of the refusal
-being typed.
-
-Lingtai now runs on itself: the tickets in this repository are worked by agents
-Lingtai dispatched. See [`doc/roadmap.md`](doc/roadmap.md) for what is proven and
-[`doc/README.md`](doc/README.md) for what is not.
+- [Why it is built this way](doc/why.md): the log, the goals, and the architecture.
+- [The tutorial](doc/tutorial.md): the same path in full, with Fish, and Part 2, which moves the project to GitHub.
+- [The ten steps of a pass](doc/the-pass.html): how one ticket gets built.
+- [Architecture](doc/architecture.html): which process you are in, who appends to the log, and where state lives.
+- [Operating](doc/operating.md): everything you type, and what every refusal means.
+- [Reference](doc/reference.md): every term, the event types and the action kinds.
+- [The decision log](doc/README.md) and the [roadmap](doc/roadmap.md).
 
 ## License
 
