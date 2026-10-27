@@ -152,8 +152,9 @@ refuses it, in the same row:
 ```
 
 `human:` serves `proposed` and nothing else, so that is where it goes. A
-daemon already running keeps the recipe it started with; a change takes effect
-for the next one.
+running daemon reads the file again at the start of each pass, so an edit
+applies to the next pass without a restart. That works both ways: delete a
+hold and the next pass can land unattended, so edit the file with that in mind.
 
 ## Every other key
 
