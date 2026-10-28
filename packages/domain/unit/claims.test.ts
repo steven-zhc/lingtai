@@ -24,7 +24,7 @@ function stream(continuation: 'old' | 'new') {
       resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) },
       note: '',
     }),
-    e('PromptEdited', { text: 'mind the edge', digest: 'd' } as never),
+    e('PromptEdited', { text: 'mind the edge', hash: null, by: 'human:steven', basedOn: null, chatId: null }),
     continuation === 'old' ? e('TicketClaimed', claim('r1')) : e('TicketContinued', { runId: 'r1', worker: 'w' }),
   ]
 }
