@@ -1,6 +1,6 @@
 # 0109 — The ticket, the claim, branches and attempts, and close: the core takes a ticket, every claim leaves its commits on a named ref, and a close is a terminal outcome
 
-**Status** accepted · 2026-10-01
+**Status** accepted · 2026-10-01, revised 2026-10-28 (§5: a continuation is its own event)
 
 The core runs a ticket. Where the ticket came from is an adapter's business,
 recorded for write-back and never branched on. A claim is one attempt. Whatever
@@ -97,7 +97,25 @@ run.
    conductor that takes the lock releases claims recorded by other workers. The
    attempt ordinal `k` is the number of `TicketClaimed` events with distinct
    run ids, counted by `priorAttempts` (`packages/conductor/src/attempts.ts`).
-   Every restart is a new claim and so a new attempt. GitHub is told
+   Every restart is a new claim and so a new attempt.
+
+   **A continuation is not a claim.** When a person's approval lets a held run
+   go on (`continueTicket`, `packages/conductor/src/claim.ts:210`), the
+   conductor appends `TicketContinued { runId, worker }` on the ticket's stream,
+   never a second `TicketClaimed`. It is checked at an expected version as a
+   claim is, carries no title and no kind, and starts no attempt. So every
+   `TicketClaimed` is one attempt with a `runId` of its own, and a reader counts
+   attempts by counting claims.
+
+   **The log already holds continuations written as claims**: a
+   `TicketClaimed` with `title: null` and `kind: null` whose `runId` an earlier
+   `TicketClaimed` on the same stream already carries. They are not rewritten
+   and cannot be upcast, because 0100 §4's upcaster changes one payload of one
+   type and never sees the stream around it. Every fold that reads claims
+   applies one rule instead: **a `TicketClaimed` whose `runId` was already
+   claimed on its stream is read as a `TicketContinued`.** The rule is
+   structural, needs no text read, and is the only place the old form is
+   known; `TicketContinued` is the one form written from now on. GitHub is told
    `lingtai:working` or `lingtai:waiting`, computed from state (`labelsFor`),
    and never read back.
 
