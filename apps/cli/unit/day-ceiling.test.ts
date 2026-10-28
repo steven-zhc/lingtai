@@ -105,4 +105,20 @@ describe('the daily ceiling while spend is rebuilt (#680)', () => {
       'could not check the daily ceiling: the spend projection is being rebuilt after a model was priced — taking no work',
     )
   })
+
+  it('discards a read when a rebuild began while it was awaited', async () => {
+    let began = 0
+    const stop = await dayCeilingStop(createMemoryEventStore(), {
+      ...ports(async () => [spend(0n, 1000)]),
+      rows: async () => {
+        began += 1
+        return []
+      },
+      rebuilding: () => null,
+      rebuilds: () => began,
+    })
+    expect(stop).toBe(
+      'could not check the daily ceiling: the spend projection began a rebuild while it was read — taking no work',
+    )
+  })
 })

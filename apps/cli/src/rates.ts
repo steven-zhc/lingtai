@@ -10,6 +10,8 @@ import { ratesDue, realRatePorts, refreshRates } from '@lingtai/conductor/rate-s
 import { LITELLM_PROVIDER } from '@lingtai/domain/rate-card'
 import { createProjectionRunner, readSpend, spendProjection, type ProjectionLag } from '@lingtai/projector'
 
+import { holdLiveSpend } from './projector.ts'
+
 /** Every `model:` a recipe names, with the runtime beside it (its own `agent:`, else `runtime.agent`). */
 export function modelsInRecipe(recipe: unknown): { model: string; runtime: string }[] {
   const found: { model: string; runtime: string }[] = []
@@ -65,6 +67,12 @@ const ESTIMATE_PROJECTIONS = [spendProjection] as const
  * it takes no work.
  */
 let hold: { settled: boolean } | null = null
+let rebuildsBegun = 0
+
+/** Counts the rebuilds begun, so a check that spans an `await` can tell one began under it. */
+export function spendRebuilds(): number {
+  return rebuildsBegun
+}
 
 export function spendRebuildHold(lags: readonly ProjectionLag[]): string | null {
   if (hold === null) return null
@@ -84,7 +92,13 @@ export async function rebuildEstimates(priced: string[]): Promise<string> {
   const lines: string[] = []
   const mine = { settled: false }
   hold = mine
+  rebuildsBegun += 1
+  // The live `spend` subscriber in this process shares the checkpoint the
+  // rebuild rewinds; left running it could commit a new event and carry the
+  // checkpoint to the head before the rebuild's replay reads where to start.
+  let resume = async () => {}
   try {
+    resume = await holdLiveSpend()
     for (const projection of ESTIMATE_PROJECTIONS) {
       await rebuildProjection({
         name: projection.name,
@@ -95,6 +109,7 @@ export async function rebuildEstimates(priced: string[]): Promise<string> {
       })
     }
   } finally {
+    await resume()
     mine.settled = true
   }
   return `priced ${priced.join(', ')}; ${lines.join('; ')}`

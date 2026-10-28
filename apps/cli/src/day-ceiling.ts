@@ -10,7 +10,7 @@ import { machineDayCeiling } from '@lingtai/env'
 import { eventStore, type EventStore } from '@lingtai/event-store'
 import { projectionLag, readSpend, type ProjectionLag } from '@lingtai/projector'
 
-import { spendRebuildHold } from './rates.ts'
+import { spendRebuildHold, spendRebuilds } from './rates.ts'
 
 /** Behind and quiet for this long is a stopped subscriber; the lag after a pass is not. */
 const STALL_AFTER_MS = 60_000
@@ -66,6 +66,8 @@ export interface DayCeilingPorts {
   now?: () => Date
   /** A sentence while `spend` is being rebuilt (#680); null otherwise. */
   rebuilding?: (lags: readonly ProjectionLag[]) => string | null
+  /** How many rebuilds have begun; a change across the read means the read may be of a table being rebuilt. */
+  rebuilds?: () => number
 }
 
 /**
@@ -82,6 +84,8 @@ export async function dayCeilingStop(
   try {
     const ceilingUsd = (ports.ceiling ?? machineDayCeiling)()
     const rows = ports.rows ?? ((since: Date) => readSpend({ since }))
+    const rebuilds = ports.rebuilds ?? spendRebuilds
+    const began = rebuilds()
     if (ceilingUsd !== undefined) {
       const lags = await (ports.lags ?? (() => projectionLag()))()
       // A replay moves the checkpoint on every batch, so the stall check reads
@@ -91,7 +95,13 @@ export async function dayCeilingStop(
         (await spendStallIn(lags, (ports.now ?? (() => new Date()))(), store ?? eventStore))
       if (stall !== null) return `could not check the daily ceiling: ${stall} — taking no work`
     }
-    return await dayCeilingPause({ ceilingUsd, rows, store: store ?? eventStore })
+    const pause = await dayCeilingPause({ ceilingUsd, rows, store: store ?? eventStore })
+    // The hold was checked before an asynchronous read; a rebuild that began
+    // meanwhile may have dropped the table under it, so that answer is not used.
+    if (ceilingUsd !== undefined && rebuilds() !== began) {
+      return 'could not check the daily ceiling: the spend projection began a rebuild while it was read — taking no work'
+    }
+    return pause
   } catch (err) {
     return `could not check the daily ceiling: ${(err as Error).message} — taking no work`
   }

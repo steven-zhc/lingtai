@@ -70,6 +70,22 @@ async function defaultPredatesHold(): Promise<LogPredatesHoldError | null> {
  * each has its own checkpoint. Its failure is reported and never fatal, for
  * the reason the board's is not: the log is intact either way.
  */
+/** The `spend` runners this process is following with, so a rebuild can stand them down (#680). */
+const liveSpend = new Set<ProjectionRunner>()
+
+/**
+ * Stops every live `spend` runner in this process and returns what starts them
+ * again: a rebuild rewinds the checkpoint they share, and a runner that commits
+ * meanwhile would carry it past events the replay has not folded.
+ */
+export async function holdLiveSpend(): Promise<() => Promise<void>> {
+  const held = [...liveSpend].filter((r) => r.running)
+  await Promise.all(held.map((r) => r.stop()))
+  return async () => {
+    for (const r of held) if (liveSpend.has(r)) await r.start().catch(() => {})
+  }
+}
+
 async function followSecondary(
   projection: Projection,
   log: (line: string) => void,
@@ -83,6 +99,7 @@ async function followSecondary(
   const runner = runnerFor(projection)
   try {
     await runner.start()
+    if (projection.name === spendProjection.name) liveSpend.add(runner)
     return runner
   } catch (err) {
     log(`${projection.name} will not follow this run: ${(err as Error).message}`)
@@ -97,6 +114,7 @@ async function releaseSecondary(
   log: (line: string) => void,
 ): Promise<void> {
   if (!runner) return
+  liveSpend.delete(runner)
   if (runner.failure) {
     log(`the ${name} projection stopped during this run: ${String(runner.failure)}`)
     log(`${name} is behind until it is rebuilt — lingtai projection rebuild ${name}`)
