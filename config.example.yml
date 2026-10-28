@@ -53,6 +53,10 @@ database:
 # from here. An id from one source beside a key or secret from the other is a
 # pair nobody configured, so it is never assembled.
 github:
+  # How this machine reaches GitHub. `app` is the App below; `gh` is the saved
+  # `gh auth login`, and under it the App keys are not read.
+  # LINGTAI_GITHUB_AUTH overrides it, and either beats the presence of an app_id.
+  auth: app
   app_id: '123456'
   # A path, so the key is never pasted anywhere; `~` is expanded, and a relative
   # path is relative to ~/.lingtai. `app_private_key` takes the PEM inline

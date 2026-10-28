@@ -84,7 +84,7 @@ console.log(`rung 1 against ${owner}/${repo}\n`)
 let done = step('app → installation token')
 const client = await createGitHubClient({ auth: githubApp(), owner, repo })
 const token = await client.token()
-done(`installation ${client.installation.id}, token ${token.slice(0, 8)}…`)
+done(`installation ${client.installation?.id ?? 'none (gh)'}, token ${token.slice(0, 8)}…`)
 
 // ---- the recipe, from the branch that governs ------------------------------
 done = step('recipe')

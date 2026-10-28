@@ -286,3 +286,25 @@ describe('updateBody with ifUnchanged', () => {
     expect(sent.at(-1)).toMatchObject({ method: 'PATCH' })
   })
 })
+
+describe('createGitHubClient under gh', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('makes no installation call and authorises with the port’s token, asked afresh', async () => {
+    const urls: string[] = []
+    const auths: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      urls.push(String(url))
+      auths.push(String((init.headers as Record<string, string>).authorization))
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    let asked = 0
+    const gh = async () => ({ code: 0, stdout: `gho_t${++asked}\n`, stderr: '' })
+    const client = await createGitHubClient({ auth: { kind: 'gh' }, owner: 'o', repo: 'r', gh })
+    expect(client.installation).toBeNull()
+    await client.listOpenIssues()
+    expect(urls.some((u) => u.includes('/installation') || u.includes('/access_tokens'))).toBe(false)
+    expect(auths[0]).toBe('Bearer gho_t1')
+    expect(await client.token()).toBe('gho_t2')
+  })
+})

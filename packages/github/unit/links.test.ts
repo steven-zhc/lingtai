@@ -175,6 +175,23 @@ describe('sub-issue and blocked-by links', () => {
     expect((write as PermissionDenied).message).toMatch(/`issues`.*`write`/)
   })
 
+  it('tells a gh login to fix its own access, not the App installation', async () => {
+    stub({
+      [`GET ${REPO}/issues/599/sub_issues?per_page=100&page=1`]: {
+        status: 403,
+        json: { message: 'Resource not accessible by personal access token' },
+      },
+    })
+    const gh = async () => ({ code: 0, stdout: 'gho_t\n', stderr: '' })
+    const c = await createGitHubClient({ auth: { kind: 'gh' }, owner: 'steven-zhc', repo: 'lingtai', gh })
+
+    const err = (await c.listSubIssues(599).catch((e: unknown) => e)) as PermissionDenied
+
+    expect(err).toBeInstanceOf(PermissionDenied)
+    expect(err.message).toMatch(/gh login/)
+    expect(err.message).not.toMatch(/installation|App/)
+  })
+
   it('leaves a secondary rate limit as the GitHubError it was', async () => {
     stub({
       [`GET ${REPO}/issues/599/sub_issues?per_page=100&page=1`]: {

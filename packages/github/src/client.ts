@@ -18,6 +18,7 @@ import {
   createTokenSource,
   installationForRepo,
 } from './app.ts'
+import { type GhRun, ghToken, liveGh } from './gh.ts'
 
 /**
  * `updateBody`'s `ifUnchanged` refused: the body read no longer matches what
@@ -50,12 +51,15 @@ export class PermissionDenied extends GitHubError {
   readonly permission: string
   readonly level: 'read' | 'write'
 
-  constructor(denied: GitHubError, permission: string, level: 'read' | 'write') {
+  constructor(denied: GitHubError, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
     super(
       denied.status,
       denied.path,
-      `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
-        `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
+      kind === 'gh'
+        ? `the saved gh login lacks \`${permission}\` access at \`${level}\` for this endpoint — ` +
+            `its account needs access to the repository, or \`gh auth refresh\` must grant the scope (${denied.message})`
+        : `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
+            `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
     )
     this.permission = permission
     this.level = level
@@ -162,7 +166,8 @@ export interface Issue {
 export interface GitHubClient {
   readonly owner: string
   readonly repo: string
-  readonly installation: Installation
+  /** Null under `gh`, which has none. */
+  readonly installation: Installation | null
 
   /** Raw REST, for the calls that do not have a method yet. */
   request<T>(method: string, path: string, body?: unknown): Promise<T>
@@ -348,19 +353,34 @@ const LIST_SINCE_PAGES = 50
 const LINK_PAGES = 20
 
 export interface CreateClientOptions {
-  auth: AppAuth
+  /** The App, or the machine's saved `gh` login. */
+  auth: AppAuth | { kind: 'gh' }
   owner: string
   repo: string
-  /** Skips the installation lookup when one has already been made. */
+  /** The `gh` runner, read only under `{ kind: 'gh' }`. Defaults to the real one. */
+  gh?: GhRun
+  /** The App's only: skips the installation lookup when one has already been made. */
   installation?: Installation
   /** Stops the installation lookup when it aborts; later requests take their own. */
   signal?: AbortSignal
 }
 
+function isGh(auth: AppAuth | { kind: 'gh' }): auth is { kind: 'gh' } {
+  return 'kind' in auth && auth.kind === 'gh'
+}
+
 export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
   const { auth, owner, repo } = options
-  const installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
-  const tokenFor = createTokenSource(auth, installation.id)
+  let installation: Installation | null = null
+  let tokenFor: (signal?: AbortSignal) => Promise<string>
+  if (isGh(auth)) {
+    // No installation: the saved login is a person's, and each call asks `gh` afresh.
+    const run = options.gh ?? liveGh
+    tokenFor = (signal) => ghToken(run, signal)
+  } else {
+    installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
+    tokenFor = createTokenSource(auth, installation.id)
+  }
 
   async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const token = await tokenFor(signal)
@@ -481,7 +501,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       return await run()
     } catch (err) {
       if (err instanceof GitHubError && err.status === 403 && !/rate limit/i.test(err.message)) {
-        throw new PermissionDenied(err, 'issues', level)
+        throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
       }
       throw err
     }

@@ -43,3 +43,13 @@ export {
   PermissionDenied,
 } from './client.ts'
 export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'
+export {
+  ghExecOptions,
+  ghStatus,
+  ghToken,
+  liveGh,
+  scrubbedEnv,
+  type GhRun,
+  type GhRunResult,
+  type GhStatus,
+} from './gh.ts'
