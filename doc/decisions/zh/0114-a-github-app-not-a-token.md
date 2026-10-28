@@ -29,18 +29,19 @@ App 同时也是安装 Lingtai 时最重的一步：要创建它、保管私钥�
 
 2. **App 装在每个仓库上。** `packages/github` 是唯一的客户端。它在本地用 RS256 签一个 App JWT（`packages/github/src/app.ts` 里的 `appJwt`，除了 `node:crypto` 不依赖任何东西），再用它换一个安装令牌。`installationToken` 缓存每个令牌，在过期前一分钟刷新，同一时间只刷新一次，所以令牌绝不会在合并到一半时过期。
 
-3. **权限就是这四项，只有这四项。**
+3. **权限就是这五项，只有这五项。**
 
 | Permission | Level | For |
 |---|---|---|
 | Issues | read + write | reading work items, writing `agent:*` labels and comments |
 | Contents | read + write | cloning, pushing `agent/*`, merging into base |
 | Pull requests | read + write | opening and reading pull requests |
+| Workflows | read + write | pushing changes to `.github/workflows` |
 | Metadata | read | required by GitHub for any App |
 
-   （表格保留英文，与英文原文逐字一致：Issues 读写，用于读取工作项、写 `agent:*` 标签和评论；Contents 读写，用于克隆、推送 `agent/*`、合并到 base；Pull requests 读写，用于开 pull request 和读取它们；Metadata 只读，GitHub 对任何 App 都要求这一项。）
+   （表格保留英文，与英文原文逐字一致：Issues 读写，用于读取工作项、写 `agent:*` 标签和评论；Contents 读写，用于克隆、推送 `agent/*`、合并到 base；Pull requests 读写，用于开 pull request 和读取它们；Workflows 读写，用于推送对 `.github/workflows` 的改动；Metadata 只读，GitHub 对任何 App 都要求这一项。）
 
-   `packages/github/src/app.ts` 里的 `REQUIRED_PERMISSIONS` 就是这张表的代码版本，`packages/github/unit/manifest.test.ts` 从英文原文里解析这张表来比对。添加仓库时（`packages/conductor/src` 里的 `onboard.ts`、`pick-repository.ts`），`permissionGaps` 拿同一份清单检查安装，逐项点名缺少的权限，而不是留到之后变成一个 403。
+   `packages/github/src/app.ts` 里的 `REQUIRED_PERMISSIONS` 就是这张表的代码版本，`packages/github/unit/manifest.test.ts` 从英文原文里解析这张表来比对。添加仓库时（`packages/conductor/src` 里的 `onboard.ts`、`pick-repository.ts`），`permissionGaps` 拿同一份清单检查安装，逐项点名缺少的权限，而不是留到之后变成一个 403。manifest 只在创建 App 时生效：在此之前创建的 App 要先由所有者在 App 的权限页（`github.com/settings/apps/<slug>/permissions`，组织的 App 在组织设置里）加上 Workflows，之后每个安装才会收到需要同意的请求；同意之前，`permissionGaps` 会点名这个缺口。
 
 4. **App 只订阅 `issues` 事件。** `MANIFEST_EVENTS` 是 `["issues"]`，和 `packages/github/src/webhook.ts` 里接收端的 `ACTED_ON` 一致。不订阅 `push`，因为接收端会丢掉每一次 push 投递。webhook 是一种优化，绝不是依赖，因为 daemon 无论如何都会扫描 GitHub。没有公网 `https://` 地址时，manifest 把这个 hook 声明为**未启用**，也不会把它指向本机。`unreachableWebhook` 拒绝回环、私有、链路本地和只在局域网内的地址。接收端是 board 的 `/api/webhook`，它用常量时间校验 `x-hub-signature-256`，没有配置密钥时返回 503。
 
@@ -75,7 +76,6 @@ App 同时也是安装 Lingtai 时最重的一步：要创建它、保管私钥�
 ## 尚未实现
 
 - `github.auth`、`--github-auth`、`gh` 令牌来源、内嵌登录和提问顺序（§1、§8）；目前只有 App。
-- App 的 `Workflows: write`：§3 的表格要和 `REQUIRED_PERMISSIONS` 在同一次改动里加上这一行，因为 `manifest.test.ts` 要求两者一致。在此之前创建的 App 需要它的所有者同意新权限；同意之前，`permissionGaps` 会点名这个缺口。
 
 ---
 *取代 [decisions-archive](../../decisions-archive/) 中已归档的 0006。*

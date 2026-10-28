@@ -43,7 +43,9 @@ import { eventStore } from '@lingtai/event-store'
 import {
   type Installation,
   NotInstalledError,
+  REQUIRED_PERMISSIONS,
   createGitHubClient,
+  gapRemedyLines,
   installationForRepo,
   parseSlug,
   permissionGaps,
@@ -297,12 +299,25 @@ export async function checkInstallation(
   if (gaps.length > 0) {
     log('the installation is missing permissions:')
     for (const g of gaps) log(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
-    log("Fix them in the App's settings, then re-run.")
+    for (const line of gapRemedyLines(installation.appSlug, installation.htmlUrl)) log(line)
     return null
   }
-  log('permissions: issues, contents, pull requests write; metadata read')
+  log(`permissions: ${describeRequired()}`)
 
   return installation
+}
+
+/** `issues, contents, pull requests, workflows write; metadata read`, from the table the check uses. */
+function describeRequired(): string {
+  const levels = [...new Set(REQUIRED_PERMISSIONS.map((r) => r.level))].sort().reverse()
+  return levels
+    .map(
+      (l) =>
+        `${REQUIRED_PERMISSIONS.filter((r) => r.level === l)
+          .map((r) => r.name.replace(/_/g, ' '))
+          .join(', ')} ${l}`,
+    )
+    .join('; ')
 }
 
 /** What reading the base's protection came to. `unknown` is never *not protected*. */

@@ -237,7 +237,7 @@ const USAGE =
   '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
   '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
   '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
-  '[--wall <duration>] [--budget <amount>] [--defaults]'
+  '[--wall <duration>] [--budget <amount>] [--defaults|--yes]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'

@@ -15,7 +15,15 @@ import { createPublicKey, createVerify, generateKeyPairSync } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { type AppAuth, type Installation, appJwt, createTokenSource, parseSlug, permissionGaps } from '../src/index.ts'
+import {
+  type AppAuth,
+  type Installation,
+  appJwt,
+  createTokenSource,
+  gapRemedyLines,
+  parseSlug,
+  permissionGaps,
+} from '../src/index.ts'
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -59,11 +67,31 @@ describe('permissionGaps', () => {
     account: 'steven-zhc',
     repositorySelection: 'selected',
     htmlUrl: null,
+    appSlug: null,
+  })
+
+  it('names workflows when an installation holds only the old four', () => {
+    expect(
+      permissionGaps(installed({ issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' })).map(
+        ({ name, need, have }) => ({ name, need, have }),
+      ),
+    ).toEqual([{ name: 'workflows', need: 'write', have: 'none' }])
+  })
+
+  it('sends the owner to the App page before the installation page, with fallbacks for both', () => {
+    const [app, installation] = gapRemedyLines('my-app', 'https://github.com/settings/installations/7')
+    expect(app).toContain('https://github.com/settings/apps/my-app/permissions')
+    expect(installation).toContain('https://github.com/settings/installations/7')
+    const [appWords, installationWords] = gapRemedyLines(null, null)
+    expect(appWords).toContain("the App's permissions page")
+    expect(installationWords).toContain("the installation's settings page")
   })
 
   it('is empty when the installation grants everything', () => {
     expect(
-      permissionGaps(installed({ issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' })),
+      permissionGaps(
+        installed({ issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }),
+      ),
     ).toEqual([])
   })
 
@@ -76,7 +104,7 @@ describe('permissionGaps', () => {
   it('names each missing permission, what it has, and what it is for', () => {
     const gaps = permissionGaps(installed({ issues: 'read', contents: 'write', metadata: 'read' }))
 
-    expect(gaps.map((g) => g.name).sort()).toEqual(['issues', 'pull_requests'])
+    expect(gaps.map((g) => g.name).sort()).toEqual(['issues', 'pull_requests', 'workflows'])
     const issues = gaps.find((g) => g.name === 'issues')!
     expect(issues.have).toBe('read')
     expect(issues.need).toBe('write')
@@ -86,7 +114,15 @@ describe('permissionGaps', () => {
 
   it('accepts a level above what is required', () => {
     expect(
-      permissionGaps(installed({ issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'write' })),
+      permissionGaps(
+        installed({
+          issues: 'write',
+          contents: 'write',
+          pull_requests: 'write',
+          workflows: 'write',
+          metadata: 'write',
+        }),
+      ),
     ).toEqual([])
   })
 })

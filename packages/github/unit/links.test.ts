@@ -26,6 +26,7 @@ const installation: Installation = {
   account: 'steven-zhc',
   repositorySelection: 'selected',
   htmlUrl: null,
+  appSlug: null,
 }
 
 interface Call {

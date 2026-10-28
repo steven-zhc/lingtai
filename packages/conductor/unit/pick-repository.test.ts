@@ -19,7 +19,7 @@ import {
   verifiedInstallation,
 } from '../src/pick-repository.ts'
 
-const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' }
+const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }
 
 interface FakeInstallation {
   id: number
@@ -219,13 +219,18 @@ describe('listRepositories', () => {
     ])
     const picker = await listRepositories({ reader, projects: [], installUrl: INSTALL })
 
-    expect(picker.installations[0]!.gaps.map((g) => g.name)).toEqual(['issues', 'contents', 'pull_requests'])
+    expect(picker.installations[0]!.gaps.map((g) => g.name)).toEqual([
+      'issues',
+      'contents',
+      'pull_requests',
+      'workflows',
+    ])
     const choice = choose(picker, 'steven-zhc/lingtai')
     expect(choice).toMatchObject({
       ok: false,
       fix: { href: 'https://github.com/settings/installations/7' },
     })
-    expect(!choice.ok && choice.gaps.map((g) => g.name)).toEqual(['issues', 'contents', 'pull_requests'])
+    expect(!choice.ok && choice.gaps.map((g) => g.name)).toEqual(['issues', 'contents', 'pull_requests', 'workflows'])
   })
 })
 
@@ -280,6 +285,7 @@ describe('alreadyOnboarded', () => {
           account: 'steven-zhc',
           repositorySelection: 'selected',
           htmlUrl: null,
+          appSlug: null,
         },
         unanswered: null,
         gaps: [],
