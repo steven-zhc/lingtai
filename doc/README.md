@@ -105,7 +105,7 @@ replaces.
 | [0120](decisions/0120-a-reason-is-a-type.md)                              | **Reasons are types** — an action is typed by what it yields, a step ends as one `StepEnded`, `proposed` chooses among offered candidates, every next move is one `PassNext`, and the decisions are pure functions                                 | accepted; not yet built      |
 | [0121](decisions/0121-the-cli-output-and-input-contract.md)               | **The CLI contract** — one layout, the board's palette, plain output without colour or a TTY, `--json` as one versioned document, help generated from each command's definition and grouped four ways                                              | accepted; not yet built      |
 | [0122](decisions/0122-several-passes-share-one-conductor.md)              | **Several passes, one conductor** — slots per project, tickets that collide never run together, one landing at a time, a drain waits for every pass, and a daily dollar ceiling that stops new work and kills nothing                              | accepted; not yet built      |
-| [0123](decisions/0123-the-report-counts-what-the-log-holds.md)            | **The report** — one `ticket_report` row per ticket, spend by day from `spend`, convergence as the share of tickets at five or more rounds and as a review survival curve, and the tickets that went round most explained from facts | proposed; not yet built      |
+| [0123](decisions/0123-the-report-counts-what-the-log-holds.md)            | **The report** — one `ticket_report` row per ticket, spend by day from `spend`, convergence as the share of tickets at five or more rounds and as a review survival curve, and the tickets that went round most explained from facts | accepted                     |
 
 ## Experiments
 

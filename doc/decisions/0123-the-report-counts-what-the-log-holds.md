@@ -1,6 +1,6 @@
 # 0123 — The report: what it counts per ticket, what it averages, and how the tickets that went round most are explained
 
-**Status** proposed · 2026-10-28
+**Status** accepted · 2026-10-28
 
 The report says, for a window of time and a project, how many tickets the
 pipeline resolved, and for each landed ticket how many passes, fix rounds and
