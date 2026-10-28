@@ -106,10 +106,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               <Panel title="fix rounds" sub="landed tickets, stacked by kind · convergence is the right-hand column">
                 <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
               </Panel>
-              <Panel
-                title="not yet past review"
-                sub="tickets whose first review is in the window · falling fast is converging, staying high is not · across is reviews already done"
-              >
+              <Panel title="reviews to pass" sub="share still not passed after k reviews">
                 <SurvivalPanel steps={report.survival} />
               </Panel>
               <Panel title="landed per day" sub="stacked by kind">

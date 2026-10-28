@@ -202,7 +202,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
         table(
           ['review', 'at risk', 'passed', 'censored', 'not yet past'],
           r.survival.map((s) => [
-            String(s.k),
+            s.plus ? `${s.k}+` : String(s.k),
             String(s.atRisk),
             String(s.passed),
             String(s.censored),
