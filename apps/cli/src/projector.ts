@@ -86,6 +86,11 @@ export async function holdLiveSpend(): Promise<() => Promise<void>> {
   }
 }
 
+/** Registers a runner that follows `spend` so `holdLiveSpend` can stand it down. */
+export function trackLiveSpend(projection: Projection, runner: ProjectionRunner): void {
+  if (projection.name === spendProjection.name) liveSpend.add(runner)
+}
+
 async function followSecondary(
   projection: Projection,
   log: (line: string) => void,
@@ -99,7 +104,7 @@ async function followSecondary(
   const runner = runnerFor(projection)
   try {
     await runner.start()
-    if (projection.name === spendProjection.name) liveSpend.add(runner)
+    trackLiveSpend(projection, runner)
     return runner
   } catch (err) {
     log(`${projection.name} will not follow this run: ${(err as Error).message}`)
