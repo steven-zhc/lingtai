@@ -182,7 +182,7 @@ describe('sub-issue and blocked-by links', () => {
       },
     })
     const gh = async () => ({ code: 0, stdout: 'gho_t\n', stderr: '' })
-    const c = await createGitHubClient({ auth: { kind: 'gh' }, owner: 'o', repo: 'r', gh })
+    const c = await createGitHubClient({ auth: { kind: 'gh' }, owner: 'steven-zhc', repo: 'lingtai', gh })
 
     const err = (await c.listSubIssues(599).catch((e: unknown) => e)) as PermissionDenied
 
