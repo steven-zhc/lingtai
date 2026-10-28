@@ -15,7 +15,17 @@ import type { SpendRow } from '@lingtai/projector'
  */
 import { describe, expect, it } from 'vitest'
 
-import { claimsOf, foldRun, groupHistory, totalsOf, type Claim, type RunView } from '../src/lib/task.ts'
+import { backoffOf } from '../src/lib/queued.ts'
+import {
+  claimsOf,
+  foldRun,
+  groupHistory,
+  standingOf,
+  ticketFieldsOf,
+  totalsOf,
+  type Claim,
+  type RunView,
+} from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -319,5 +329,76 @@ describe('the history', () => {
 
     expect(run?.from).toBe(String(events[2]?.seq))
     expect(run?.to).toBe(String(events[4]?.seq))
+  })
+})
+
+describe('a TicketContinued is read as an old-form continuation is', () => {
+  const stream = 'ticket-lingtai-686'
+  const at = (iso: string) => new Date(iso)
+  const reason = {
+    _tag: 'SignoffRequired' as const,
+    run: { runId: RUN_1 },
+    step: 'merge' as const,
+    action: 'human:land',
+    question: 'land it?',
+  }
+  const withAt = (env: Envelope, when: string): Envelope => ({ ...env, at: at(when) })
+
+  const runsOf = (own: Envelope[]): RunView[] => claimsOf(own).map((c, i) => foldRun(c, i + 1, []))
+
+  /** The same stream twice: only the last event differs in type and payload. */
+  function streams(): { old: Envelope[]; next: Envelope[] } {
+    const head = [
+      withAt(
+        e(stream, 'TicketClaimed', { runId: RUN_1, worker: 'w', title: 'the title', kind: 'bug', labels: ['bug'] }),
+        '2026-09-08T04:00:00Z',
+      ),
+      withAt(e(stream, 'WaitStarted', { waitId: 'wait-1', reason }), '2026-09-08T04:10:00Z'),
+      withAt(
+        e(stream, 'WaitResolved', {
+          waitId: 'wait-1',
+          by: 'human:steven',
+          resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) },
+          note: '',
+        }),
+        '2026-09-08T04:20:00Z',
+      ),
+    ]
+    return {
+      old: [
+        ...head,
+        withAt(
+          e(stream, 'TicketClaimed', { runId: RUN_1, worker: 'w', title: null, kind: null }),
+          '2026-09-08T05:00:00Z',
+        ),
+      ],
+      next: [...head, withAt(e(stream, 'TicketContinued', { runId: RUN_1, worker: 'w' }), '2026-09-08T05:00:00Z')],
+    }
+  }
+
+  it('moves the last attempt time to the continuation', () => {
+    const { old, next } = streams()
+    expect(backoffOf(old, 60_000, 0)).toEqual(new Date('2026-09-08T05:01:00Z'))
+    expect(backoffOf(next, 60_000, 0)).toEqual(backoffOf(old, 60_000, 0))
+  })
+
+  it('moves the lifecycle and its since to the continuation', () => {
+    const { old, next } = streams()
+    const today = standingOf(old, runsOf(old))
+    expect(today.since).toBe('2026-09-08T05:00:00.000Z')
+    expect(standingOf(next, runsOf(next))).toEqual(today)
+  })
+
+  it('opens no second claim', () => {
+    const { old, next } = streams()
+    expect(claimsOf(old)).toHaveLength(1)
+    expect(claimsOf(next)).toEqual(claimsOf(old))
+  })
+
+  it('keeps the title, kind and labels from the claim', () => {
+    const { old, next } = streams()
+    const fields = { title: 'the title', kind: 'bug', labels: ['bug'] }
+    expect(ticketFieldsOf(old)).toEqual(fields)
+    expect(ticketFieldsOf(next)).toEqual(fields)
   })
 })
