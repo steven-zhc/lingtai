@@ -18,6 +18,7 @@ import {
   createTokenSource,
   installationForRepo,
 } from './app.ts'
+import { type GhRun, ghToken, liveGh } from './gh.ts'
 
 /**
  * `updateBody`'s `ifUnchanged` refused: the body read no longer matches what
@@ -162,7 +163,8 @@ export interface Issue {
 export interface GitHubClient {
   readonly owner: string
   readonly repo: string
-  readonly installation: Installation
+  /** Null under `gh`, which has none. */
+  readonly installation: Installation | null
 
   /** Raw REST, for the calls that do not have a method yet. */
   request<T>(method: string, path: string, body?: unknown): Promise<T>
@@ -348,19 +350,34 @@ const LIST_SINCE_PAGES = 50
 const LINK_PAGES = 20
 
 export interface CreateClientOptions {
-  auth: AppAuth
+  /** The App, or the machine's saved `gh` login. */
+  auth: AppAuth | { kind: 'gh' }
   owner: string
   repo: string
-  /** Skips the installation lookup when one has already been made. */
+  /** The `gh` runner, read only under `{ kind: 'gh' }`. Defaults to the real one. */
+  gh?: GhRun
+  /** The App's only: skips the installation lookup when one has already been made. */
   installation?: Installation
   /** Stops the installation lookup when it aborts; later requests take their own. */
   signal?: AbortSignal
 }
 
+function isGh(auth: AppAuth | { kind: 'gh' }): auth is { kind: 'gh' } {
+  return 'kind' in auth && auth.kind === 'gh'
+}
+
 export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
   const { auth, owner, repo } = options
-  const installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
-  const tokenFor = createTokenSource(auth, installation.id)
+  let installation: Installation | null = null
+  let tokenFor: (signal?: AbortSignal) => Promise<string>
+  if (isGh(auth)) {
+    // No installation: the saved login is a person's, and each call asks `gh` afresh.
+    const run = options.gh ?? liveGh
+    tokenFor = (signal) => ghToken(run, signal)
+  } else {
+    installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
+    tokenFor = createTokenSource(auth, installation.id)
+  }
 
   async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const token = await tokenFor(signal)

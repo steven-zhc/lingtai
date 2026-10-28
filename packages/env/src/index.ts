@@ -1168,6 +1168,7 @@ const GITHUB_APP = Config.nested(
     privateKeyPath: Config.option(Config.string('app_private_key_path')),
     privateKey: Config.option(Config.string('app_private_key')),
     webhookSecret: Config.option(Config.string('webhook_secret')),
+    auth: Config.option(Config.string('auth')),
   }),
   'github',
 )
@@ -1178,6 +1179,8 @@ export interface GitHubAppSection {
   privateKeyPath?: string
   privateKey?: string
   webhookSecret?: string
+  /** `app` or `gh` — which way the machine reaches GitHub. Chosen outside the App election. */
+  auth?: string
 }
 
 /** `github:` as one provider has it. Total: a malformed section is an empty one. */
@@ -1337,4 +1340,72 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
 export function hasGitHubApp(from: NodeJS.ProcessEnv = process.env): boolean {
   const { values } = githubAppValues(from)
   return Boolean(values.appId && (values.privateKeyPath || values.privateKey))
+}
+
+/** How a machine reaches GitHub: the App's credentials, or the saved `gh` login (0114 §1). */
+export type GitHubAuth = { kind: 'app' } | { kind: 'gh' }
+
+/** The outcome of `electGithubAuth`, before anything throws. */
+export type ElectedGitHubAuth =
+  | { kind: 'app' | 'gh'; source: string }
+  | { kind: null; unreadable?: string }
+  | { refused: string }
+
+/**
+ * **`auth` is a written choice and is not part of the App election.**
+ *
+ * `LINGTAI_GITHUB_AUTH` beats the file's `github.auth`, and either beats any
+ * `app_id`; with no `auth` at all, an App that is configured is `app` and
+ * nothing configured is `kind: null`. Taken from the two sections rather than
+ * from `electGithubApp`'s values, because that returns one source whole and a
+ * file's `auth: gh` would be lost beside an exported id.
+ *
+ * Pure, over sources already read.
+ */
+export function electGithubAuth(environment: GitHubAppSection, machine: MachineGithub): ElectedGitHubAuth {
+  const named: [string, string] | null =
+    environment.auth !== undefined
+      ? [environment.auth, `${PREFIX}GITHUB_AUTH`]
+      : machine.path !== null && machine.section.auth !== undefined
+        ? [machine.section.auth, `${machine.path} github.auth`]
+        : null
+  if (named !== null) {
+    const [value, source] = named
+    if (value === 'app' || value === 'gh') return { kind: value, source }
+    return { refused: `${source} is "${value}" — it is "app" or "gh"` }
+  }
+  const configured = (section: GitHubAppSection) =>
+    Boolean(section.appId && (section.privateKeyPath || section.privateKey))
+  if (configured(environment)) return { kind: 'app', source: 'environment' }
+  if (environment.appId === undefined && machine.path !== null && configured(machine.section)) {
+    return { kind: 'app', source: machine.path }
+  }
+  return machine.unreadable === undefined ? { kind: null } : { kind: null, unreadable: machine.unreadable }
+}
+
+function githubAuthElection(from: NodeJS.ProcessEnv): ElectedGitHubAuth {
+  return electGithubAuth(githubSection(environmentProvider(from)), machineGithub(machineFile(from)))
+}
+
+/**
+ * The machine's GitHub auth. Throws, by name, where it is refused or where
+ * nothing is configured. `{ kind: 'app' }` carries no credentials: `githubApp()`
+ * reads them when a client is built.
+ */
+export function githubAuth(from: NodeJS.ProcessEnv = process.env): GitHubAuth {
+  const elected = githubAuthElection(from)
+  if ('refused' in elected) throw new Error(elected.refused)
+  if (elected.kind !== null) return { kind: elected.kind }
+  const file = machineFilePath(from) ?? join(stateDir(from), 'config.yml')
+  throw new Error(
+    `no GitHub auth: ${file} names no github.auth and no github.app_id, and nothing exported does — ` +
+      `set github.auth to "gh" or "app", or export ${PREFIX}GITHUB_AUTH.` +
+      (elected.unreadable === undefined ? '' : ` ${elected.unreadable}.`),
+  )
+}
+
+/** Whether any GitHub auth is configured, without throwing to find out. */
+export function hasGitHubAuth(from: NodeJS.ProcessEnv = process.env): boolean {
+  const elected = githubAuthElection(from)
+  return !('refused' in elected) && elected.kind !== null
 }

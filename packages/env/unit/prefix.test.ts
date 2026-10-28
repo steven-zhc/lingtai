@@ -150,7 +150,12 @@ describe('the LINGTAI_ prefix', () => {
     const example = parseYaml(readFileSync(join(ROOT, 'config.example.yml'), 'utf8')) as {
       github: Record<string, unknown>
     }
-    const read = { app_id: 'appId', app_private_key_path: 'privateKeyPath', webhook_secret: 'webhookSecret' }
+    const read = {
+      auth: 'auth',
+      app_id: 'appId',
+      app_private_key_path: 'privateKeyPath',
+      webhook_secret: 'webhookSecret',
+    }
     expect(Object.keys(example.github).sort()).toEqual(Object.keys(read).sort())
     const section = githubSection(yamlProvider({ github: { ...example.github, webhook_secret: 'x' } }))
     expect(Object.keys(section).sort()).toEqual(Object.values(read).sort())
