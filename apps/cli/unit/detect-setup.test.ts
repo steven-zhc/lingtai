@@ -257,6 +257,32 @@ describe('the Python detector', () => {
     expect(result.build.map((b) => b.name)).toEqual(['format', 'lint'])
   })
 
+  it('a lockfile `has` that rejects is "could not tell", not "no lockfile"', async () => {
+    const base = reader({ 'requirements.txt': '' })
+    const result = await detectSetup({
+      ...base,
+      has: async (path) => {
+        if (path === 'uv.lock') throw new Error('network')
+        return base.has(path)
+      },
+    })
+    expect(result.install).toBeNull()
+    expect(result.notes).toContain('could not tell whether uv.lock is at the root')
+    expect(result.notes.join('\n')).not.toMatch(/no uv\.lock or poetry\.lock/)
+  })
+
+  it('a ruff.toml that does not parse gives a note and no ruff commands', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'ruff.toml': '[invalid' }))
+    expect(result.build).toEqual([])
+    expect(result.notes).toContain('ruff.toml does not parse')
+  })
+
+  it('a pytest.ini that does not parse gives a note and no pytest command', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'pytest.ini': '[pytest\n' }))
+    expect(result.build).toEqual([])
+    expect(result.notes).toContain('pytest.ini does not parse')
+  })
+
   it('Node and Python in one root: Node wins and Python is named in a note', async () => {
     const result = await detectSetup(
       reader({ 'pnpm-lock.yaml': '', 'package.json': pkg({ lint: 'eslint .' }), 'uv.lock': '' }),

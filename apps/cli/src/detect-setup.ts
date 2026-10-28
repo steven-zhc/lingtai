@@ -242,6 +242,48 @@ function tableAt(root: unknown, path: readonly string[]): boolean {
   return typeof node === 'object' && node !== null
 }
 
+/** Every non-blank, non-comment line is a `[section]`, a `key = value`/`key: value`, or a continuation. */
+function iniParses(text: string): boolean {
+  return text.split(/\r?\n/).every((raw) => {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#') || line.startsWith(';')) return true
+    if (/^\s/.test(raw)) return true
+    return /^\[[^\][]+\]$/.test(line) || /^[^=:\s][^=:]*[=:]/.test(line)
+  })
+}
+
+/**
+ * A standalone configuration file counts only if it reads and parses; either
+ * failure is a note ("could not tell"), once per file, and nothing from it.
+ */
+async function configParses(reader: SetupReader, file: string, notes: string[], said: Set<string>): Promise<boolean> {
+  let text: string | null
+  try {
+    text = await reader.read(file)
+  } catch {
+    text = null
+  }
+  if (text === null) {
+    if (!said.has(file)) notes.push(`${file} could not be read`)
+    said.add(file)
+    return false
+  }
+  let ok: boolean
+  if (file.endsWith('.toml')) {
+    try {
+      parseToml(text)
+      ok = true
+    } catch {
+      ok = false
+    }
+  } else {
+    ok = iniParses(text)
+  }
+  if (!ok && !said.has(file)) notes.push(`${file} does not parse`)
+  if (!ok) said.add(file)
+  return ok
+}
+
 const pythonDetector: StackDetector = {
   stack: 'Python',
   async detect(reader) {
@@ -255,11 +297,14 @@ const pythonDetector: StackDetector = {
     })
 
     const lockfiles: typeof PYTHON_LOCKFILES = []
+    const unknownLockfiles: string[] = []
     let uncertain = false
     for (const lockfile of PYTHON_LOCKFILES) {
       const found = await hasOrUnknown(reader, lockfile.path)
-      if (found === 'unknown') uncertain = true
-      else if (found) lockfiles.push(lockfile)
+      if (found === 'unknown') {
+        uncertain = true
+        unknownLockfiles.push(lockfile.path)
+      } else if (found) lockfiles.push(lockfile)
     }
     const pyproject = await hasOrUnknown(reader, 'pyproject.toml')
     const requirements = await hasOrUnknown(reader, 'requirements.txt')
@@ -278,6 +323,9 @@ const pythonDetector: StackDetector = {
     if (chosen !== undefined) {
       install = { run: chosen.install, because: `${chosen.path} is at the root` }
       for (const other of lockfiles.slice(1)) notes.push(`${other.path} is also at the root; ${chosen.path} was used`)
+    } else if (unknownLockfiles.length > 0) {
+      for (const path of unknownLockfiles) notes.push(`could not tell whether ${path} is at the root`)
+      if (requirements === true) notes.push('requirements.txt is at the root: type the install command')
     } else if (requirements === true) {
       notes.push(
         'requirements.txt is at the root with no uv.lock or poetry.lock: create a virtual environment and type the install command',
@@ -321,7 +369,10 @@ const pythonDetector: StackDetector = {
         if (found === 'unknown') {
           if (!unreadable.has(file)) notes.push(`could not tell whether ${file} is at the root`)
           unreadable.add(file)
-        } else if (found) because = `${file}${file === 'tests' ? '/' : ''} is at the root`
+        } else if (found) {
+          if (file === 'tests') because = 'tests/ is at the root'
+          else if (await configParses(reader, file, notes, unreadable)) because = `${file} is at the root`
+        }
       }
       if (because !== null) build.push({ name: key, run: `${chosen.manager} run ${run}`, because })
     }
