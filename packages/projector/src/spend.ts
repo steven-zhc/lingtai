@@ -10,9 +10,23 @@
  * held one too, until 0118 removed it; it stays named here because it is still
  * an exported type a later edit could reach for.
  *
- * **Facts only, never a price** (0110 §5): no rate card, no clock, no network
- * call lives here. `cost_usd` is written exactly as the runtime reported it,
- * `null` staying `null` rather than becoming a free lunch.
+ * **An event never carries a price; a projection may store an estimate, kept
+ * apart from what was reported** (0110 §5, #679). `cost_usd` is written exactly
+ * as the runtime reported it, `null` staying `null` rather than becoming a free
+ * lunch. Where it is null the fold prices the run's usage at the rate in force
+ * on the run's own `at` — the shipped card, then the snapshot's dated rows
+ * (`estimateRow`) — and stores `estimated_usd` and `estimate_fetched` beside it,
+ * or null where nothing can price it, which stays *unknown* and never `0`. The
+ * snapshot is read through a port and never fetched, and no clock is read: the
+ * same log folds to the same figures. A reported figure is never repriced.
+ * Readers sum the stored columns and none prices.
+ *
+ * ## `kind`
+ *
+ * The ticket's kind as its run's claim carried it when the row was folded
+ * (0123 §3), and not updated afterwards. A continuation written as a second
+ * claim carries none and never clears it; a triage or discussion row takes the
+ * ticket's latest non-null claim kind (`spend_kind`).
  *
  * ## Filling `ticket`
  *
@@ -48,13 +62,21 @@
  */
 import type { PayloadOf, Usage } from '@lingtai/domain'
 import { chatStream, isPassStream, isTicketStream, parseTicketStream } from '@lingtai/domain'
+import type { RateRow } from '@lingtai/domain/rate-card'
+import { estimateRow } from '@lingtai/domain/rate-card'
 
 import { withProjectionStore } from './choose.ts'
+import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
 
 export const SPEND_TABLE = 'spend'
 
-export const spendProjection: Projection = {
+export interface SpendPorts {
+  /** The fetched snapshot's rows — read, never fetched. Called at most once per batch. */
+  snapshot: () => readonly RateRow[]
+}
+
+export const spendProjectionWith = (ports: SpendPorts): Projection => ({
   name: SPEND_TABLE,
 
   async create(ctx) {
@@ -75,7 +97,10 @@ export const spendProjection: Projection = {
         turns       integer not null,
         duration_ms bigint not null,
         cost_usd    double precision,
-        usage       jsonb not null
+        usage       jsonb not null,
+        estimated_usd    double precision,
+        estimate_fetched boolean,
+        kind        text
       )`)
     // `readSpend({ ticket })` and `readSpend({ project })` are both filters on
     // a table that grows with the log's whole lifetime (0110 §10's six
@@ -91,16 +116,25 @@ export const spendProjection: Projection = {
     await ctx.query(`
       create table if not exists spend_stream (
         stream_id text primary key,
-        ticket    text not null
+        ticket    text not null,
+        kind      text
+      )`)
+    // The ticket's latest non-null claim kind, for the rows no claim links.
+    await ctx.query(`
+      create table if not exists spend_kind (
+        ticket text primary key,
+        kind   text not null
       )`)
   },
 
   async reset(ctx) {
     await ctx.query('drop table if exists spend')
     await ctx.query('drop table if exists spend_stream')
+    await ctx.query('drop table if exists spend_kind')
   },
 
   async apply(events, ctx) {
+    let snapshot: readonly RateRow[] | null = null
     for (const event of events) {
       const seq = event.seq.toString()
 
@@ -118,10 +152,17 @@ export const spendProjection: Projection = {
         case 'TicketClaimed': {
           const d = event.data as PayloadOf<'TicketClaimed'>
           await ctx.query(
-            `insert into spend_stream (stream_id, ticket) values ($1, $2)
-             on conflict (stream_id) do nothing`,
-            [d.runId, event.streamId],
+            `insert into spend_stream (stream_id, ticket, kind) values ($1, $2, $3)
+             on conflict (stream_id) do update set kind = coalesce(spend_stream.kind, excluded.kind)`,
+            [d.runId, event.streamId, d.kind],
           )
+          if (d.kind !== null) {
+            await ctx.query(
+              `insert into spend_kind (ticket, kind) values ($1, $2)
+               on conflict (ticket) do update set kind = excluded.kind`,
+              [event.streamId, d.kind],
+            )
+          }
           break
         }
 
@@ -139,13 +180,28 @@ export const spendProjection: Projection = {
           const d = event.data as PayloadOf<'RunSpent'>
 
           let ticket: string | null
+          let streamKind: string | null = null
           if (isTicketStream(event.streamId)) {
             ticket = event.streamId
           } else {
-            const [link] = await ctx.query<{ ticket: string }>('select ticket from spend_stream where stream_id = $1', [
-              event.streamId,
-            ])
+            const [link] = await ctx.query<{ ticket: string; kind: string | null }>(
+              'select ticket, kind from spend_stream where stream_id = $1',
+              [event.streamId],
+            )
             ticket = link ? link.ticket : null
+            streamKind = link ? (link.kind ?? null) : null
+          }
+          let kind = streamKind
+          if (kind === null && ticket !== null) {
+            const [latest] = await ctx.query<{ kind: string }>('select kind from spend_kind where ticket = $1', [
+              ticket,
+            ])
+            kind = latest ? latest.kind : null
+          }
+          let estimate: { usd: number; fetched: boolean } | null = null
+          if (d.costUsd === null) {
+            snapshot ??= ports.snapshot()
+            estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
           }
           const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
           const pass = isPassStream(event.streamId) ? event.streamId : null
@@ -156,8 +212,10 @@ export const spendProjection: Projection = {
           await ctx.query(
             `insert into spend
                (seq, at, stream_id, ticket, project, pass, purpose, step, action, round,
-                spent_for, runtime, turns, duration_ms, cost_usd, usage)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
+                spent_for, runtime, turns, duration_ms, cost_usd, usage,
+                estimated_usd, estimate_fetched, kind)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb,
+                     $17, $18, $19)
              on conflict (seq) do nothing`,
             [
               seq,
@@ -176,6 +234,9 @@ export const spendProjection: Projection = {
               d.durationMs,
               d.costUsd,
               JSON.stringify(d.usage),
+              estimate === null ? null : estimate.usd,
+              estimate === null ? null : estimate.fetched,
+              kind,
             ],
           )
           break
@@ -186,10 +247,13 @@ export const spendProjection: Projection = {
       }
     }
   },
-}
+})
+
+export const spendProjection: Projection = spendProjectionWith({ snapshot: () => readRateSnapshot() })
 
 /**
- * A `spend` row, as the board reads it — facts only, never a price (0110 §5).
+ * A `spend` row, as the board reads it — what was reported, and an estimate
+ * stored beside it, never added into it (0110 §5).
  *
  * `purpose` is `RunSpent.for._tag` exactly as written: `step`, `action` and
  * `round` are filled only where it is `'Action'`, and null otherwise, the same
@@ -218,6 +282,12 @@ export interface SpendRow {
   durationMs: number
   costUsd: number | null
   usage: Usage
+  /** The fold's estimate where `costUsd` is null and the run was priceable; null is unknown, never 0. */
+  estimatedUsd: number | null
+  /** Whether the snapshot priced any of `estimatedUsd`; null exactly when `estimatedUsd` is. */
+  estimateFetched: boolean | null
+  /** The ticket's kind as its run's claim carried it when folded; null where unclassified. */
+  kind: string | null
 }
 
 export interface ReadSpendOptions extends SpendQuery {

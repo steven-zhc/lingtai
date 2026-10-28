@@ -149,7 +149,7 @@ of time and later rows take over from their own date. The shipped card's dates
 are real price changes and keep the strict rule above.
 
 **This file always wins** for a model it lists, and a user cannot edit the
-snapshot's prices. Pricing reads the snapshot and never the network, and the
+snapshot's prices. Pricing reads the snapshot and never the network, and the estimate is stored when the `spend` row is folded, at the rate in force on the run's own day (`estimated_usd`, `estimate_fetched`) — readers sum the stored columns and none prices. The
 `/spend` page's *today* line and table say `(N at fetched LiteLLM prices)` for an
 estimate that used it; every other estimate reads `~$X est.` with no note. `lingtai doctor`'s
 `rates:` line says when it was last fetched and why a fetch failed.

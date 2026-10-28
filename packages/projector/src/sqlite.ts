@@ -346,6 +346,10 @@ function toSpendRow(row: ProjectionRow): SpendRow {
     durationMs: Number(row.duration_ms),
     costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
     usage: parseJson(row.usage) as SpendRow['usage'],
+    estimatedUsd: row.estimated_usd === null || row.estimated_usd === undefined ? null : Number(row.estimated_usd),
+    estimateFetched:
+      row.estimate_fetched === null || row.estimate_fetched === undefined ? null : parseBool(row.estimate_fetched),
+    kind: (row.kind as string | null) ?? null,
   }
 }
 

@@ -2256,3 +2256,16 @@ recipes and the environment files are all untouched.
   wrong (`create-app.ts:590-592`) is exactly what the reset removed. Find the
   existing App under GitHub → Settings → Developer settings → GitHub Apps
   instead of accepting that offer.
+
+## Upgrade notes
+
+**#679 — `spend` stores each run's estimate and its ticket's kind.** The table
+has new columns (`estimated_usd`, `estimate_fetched`, `kind`), so `lingtai
+doctor` reports `spend` as drifted until it is rebuilt once, after the restart
+onto the new code:
+
+    pnpm lingtai projection rebuild spend
+
+The rebuild prices every row at the rate in force on its own day, from the
+shipped card and the dated snapshot, so the figures match what a live fold
+writes.
