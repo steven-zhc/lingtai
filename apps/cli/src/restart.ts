@@ -1468,7 +1468,7 @@ export function gatingFailures(results: readonly { status: string; restartAnswer
 /**
  * What failed, and nothing else.
  *
- * `formatReport` prints every check, which is right for `lingtai doctor` and
+ * `lingtai doctor --verbose` prints every check, which is right there and
  * wrong in the middle of a restart: thirty green lines between the command and
  * the drain is how the two red ones get scrolled past.
  */
