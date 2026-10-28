@@ -118,6 +118,7 @@ import {
   type StoreChosen,
   boardPort,
   describeStore,
+  githubAuthElectionFrom,
   machineFileFrom,
   redactUrl,
   stateDir,
@@ -126,6 +127,7 @@ import {
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
+import { ghStatus, type GhStatus } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
@@ -141,6 +143,7 @@ import {
   type RegisterLocalPayload,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
+import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { heading, keyValues, section, symbol } from './output.ts'
 import { liveAsk, liveSpin } from './prompt.ts'
@@ -193,6 +196,8 @@ export interface InitWorld {
   database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
   app: () => Promise<AppCheck>
+  /** `gh auth status` (#706) — asked only when the GitHub-auth question is, or `--github-auth gh` is given. */
+  ghStatus: () => Promise<GhStatus>
   /**
    * Resolves once an App is configured and answers — written by the board's
    * first screen. Stops polling once `signal` aborts; the loser of a race.
@@ -234,7 +239,7 @@ export interface InitWorld {
 
 const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
-  '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] ' +
+  '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] [--github-auth gh|app] ' +
   '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
   '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
   '[--wall <duration>] [--budget <amount>] [--defaults|--yes]'
@@ -347,7 +352,15 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   if (agentRefusal !== null) return refuse(world, agentRefusal)
 
   // ---- the App --------------------------------------------------------------
-  const app = await world.app()
+  // How this machine reaches GitHub, read off the file this world was handed
+  // and the environment, not off the disk. A refused `github.auth` stops here,
+  // by name, before anything is asked (0114 §1).
+  const authElection = githubAuthElectionFrom(world.env, machineFor(world, path))
+  if ('refused' in authElection) return refuse(world, `${authElection.refused}. Fix it and run lingtai init again`)
+  const ghMachine = authElection.kind === 'gh'
+
+  // A `gh` machine's App, if it carries one, is never consulted (0114 §1).
+  const app: AppCheck = ghMachine ? { configured: false } : await world.app()
   if (app.configured && !app.ok) {
     return refuse(
       world,
@@ -358,9 +371,11 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   fact(world, 'GitHub App', [
     [
       'app',
-      app.configured
-        ? paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)
-        : "none yet — the board's first screen creates it through GitHub's manifest flow",
+      ghMachine
+        ? 'not used — github.auth is gh'
+        : app.configured
+          ? paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)
+          : "none yet — the board's first screen creates it through GitHub's manifest flow",
     ],
   ])
 
@@ -429,6 +444,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         'rounds',
         'wall',
         'budget',
+        'github-auth',
       ].find((name) => flags[name] !== undefined)
       if (discardedFlag !== undefined) {
         return refuse(
@@ -512,6 +528,15 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       // is refused rather than asked past.
       githubAppIsTheProject: true,
       github: {
+        // The same election `githubAuthKind` makes, over the file this world
+        // was handed — a refusal of it already stopped the run above.
+        auth: () => {
+          const elected = githubAuthElectionFrom(world.env, machineFor(world, path))
+          if ('refused' in elected) throw new Error(elected.refused)
+          return elected.kind
+        },
+        ghStatus: world.ghStatus,
+        writeAuth: async (kind) => writeGithubAuth(world.machine, path, kind),
         // Already fetched above, for the "the App" line — a second real call
         // (`GET /app`) for the same run would answer the same question twice.
         app: async () => app,
@@ -560,7 +585,10 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       fact(world, 'Projects', [['recipe', text === null ? paint.fail('the recipe could not be read back') : path]])
     } else {
       github = true
-      if (chosen.app === 'already') {
+      if (chosen.auth === 'gh') {
+        // No App to start a board for: the saved `gh` login is the whole of
+        // the auth, and a repository is named to `lingtai add`, not picked.
+      } else if (chosen.app === 'already') {
         // Nothing upstream asked for a URL on this path — `app.configured` was
         // already true, so `boardUrl()` above was never called.
         const started = await startBoard()
@@ -955,17 +983,7 @@ let kept: HeldLock | null = null
  */
 export function liveMachine(): InitWorld['machine'] {
   return {
-    read: (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null),
-    // Beside, then renamed over: an interruption mid-write leaves the old
-    // file or the new one, never half of either. `0600`, because a database
-    // URL carries its password.
-    write: (path, text) => {
-      mkdirSync(dirname(path), { recursive: true })
-      const partial = `${path}.${process.pid}.partial`
-      writeFileSync(partial, text, { mode: 0o600 })
-      chmodSync(partial, 0o600)
-      renameSync(partial, path)
-    },
+    ...liveMachineText(),
     describeHome: (home, path) => {
       if (!existsSync(home)) return 'nothing yet'
       const said: string[] = [existsSync(path) ? 'config.yml' : 'no config.yml']
@@ -1013,6 +1031,7 @@ export function liveInitWorld(): InitWorld {
       }
     },
     app: checkApp,
+    ghStatus: () => ghStatus(),
     appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal),
     boardAt,

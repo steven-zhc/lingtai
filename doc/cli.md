@@ -34,6 +34,9 @@ lingtai add [<owner>/<repo>] [flags]
                             a slug nor --local is given
   --github-app <create|skip>
       create or skip the App, asked only when none is configured
+  --github-auth <gh|app>
+      how this machine reaches GitHub, asked only when nothing is set:
+      the signed-in gh login, or the App. gh is checked, not trusted
   --base <branch>
       github: where to read the recipe from, not what the base is —
       the recipe's own repo.base says that, and a --base
@@ -588,6 +591,9 @@ lingtai init [flags]
   --local <dir>             a directory on this machine, as the project
   --github-app <create|skip>
       create or skip the App, asked only when none is configured
+  --github-auth <gh|app>
+      how this machine reaches GitHub, asked only when nothing is set:
+      the signed-in gh login, or the App. gh is checked, not trusted
   --base <branch>           the branch a local project governs
   --tickets <github|db>     where tickets come from
   --kinds <a,b,c>          which labels are work, first taken first

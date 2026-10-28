@@ -1,3 +1,4 @@
+import type { GhStatus } from '@lingtai/github'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
@@ -73,6 +74,7 @@ function harness(
     boardAt?: string | null
     board?: { url: string } | { refused: string }
     appeared?: { slug: string; owner: string }
+    ghStatus?: GhStatus
   } = {},
 ): Harness {
   const logged: string[] = []
@@ -106,6 +108,7 @@ function harness(
     // detected default to answer against.
     setupReader: () => ({ has: async (path) => path === 'pnpm-lock.yaml', read: async () => null }),
     database: async () => ({ ok: true, schema: { created: false, repaired: [] } }),
+    ghStatus: async () => options.ghStatus ?? { ok: false, reason: 'missing', detail: 'gh is not installed' },
     app: async () => options.app ?? { configured: false },
     appeared: async () => options.appeared ?? { slug: 'lingtai-me', owner: 'me' },
     pressed: (signal) => new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true })),
@@ -326,6 +329,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
         countsWhenProjectAsked = { ...calls }
         return 'github'
       }
+      if (/GitHub App of its own/.test(question)) return 'app'
       if (/the GitHub App now/.test(question)) return 'create'
       return null
     }

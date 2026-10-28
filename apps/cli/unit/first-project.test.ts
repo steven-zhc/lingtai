@@ -83,6 +83,7 @@ interface Harness {
   asked: string[]
   logged: string[]
   registered: RegisterLocalPayload[]
+  authWrites: string[]
   files: RecipeFiles & { replaced: Record<string, string> }
 }
 
@@ -100,11 +101,15 @@ function harness(options: {
   add?: FirstProjectWorld['github']['add']
   kept?: string
   history?: FirstProjectWorld['history']
+  auth?: () => 'app' | 'gh' | null
+  ghStatus?: FirstProjectWorld['github']['ghStatus']
+  writeAuth?: FirstProjectWorld['github']['writeAuth']
 }): Harness {
   const answers = [...(options.answers ?? [])]
   const asked: string[] = []
   const logged: string[] = []
   const registered: RegisterLocalPayload[] = []
+  const authWrites: string[] = []
   const files = mapFiles(options.files ?? {})
   const signedIn = options.signedIn ?? ['claude-code']
 
@@ -128,6 +133,13 @@ function harness(options: {
     kept: options.kept ?? 'Nothing was written',
     history: options.history ?? (async () => []),
     github: {
+      ...(options.auth === undefined ? {} : { auth: options.auth }),
+      ghStatus: options.ghStatus ?? (async () => ({ ok: false, reason: 'missing', detail: 'gh is not installed' })),
+      writeAuth:
+        options.writeAuth ??
+        (async (kind) => {
+          authWrites.push(kind)
+        }),
       app: options.app ?? (async () => ({ configured: false })),
       boardUrl: async () => options.boardUrl ?? null,
       waitForApp: options.waitForApp ?? (async () => ({ skipped: true })),
@@ -135,7 +147,7 @@ function harness(options: {
       add: options.add ?? (async () => 1),
     },
   }
-  return { world, asked, logged, registered, files }
+  return { world, asked, logged, registered, files, authWrites }
 }
 
 /**
@@ -610,7 +622,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     const picker = await listRepositories({ reader, projects: [], installUrl: null })
 
     const added: unknown[] = []
-    const { world, logged } = harness({
+    const { world, logged, authWrites } = harness({
       answers: ['create'],
       boardUrl: 'http://127.0.0.1:17820',
       waitForApp: async () => ({ made: { slug: 'lingtai-steven', owner: 'steven-zhc' } }),
@@ -622,7 +634,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       },
     })
 
-    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+    const result = await chooseFirstProject(world, { github: 'acme/widget', 'github-auth': 'app' })
 
     expect(result).toEqual({
       ok: true,
@@ -630,6 +642,8 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: { made: { slug: 'lingtai-steven', owner: 'steven-zhc' } },
       slug: 'acme/widget',
     })
+    // Written once the App answered, not before.
+    expect(authWrites).toEqual(['app'])
     expect(added).toHaveLength(1)
     expect(added[0]).toMatchObject({ slug: 'acme/widget' })
     expect(logged).toContain('installation 7 on acme (selected)')
@@ -745,7 +759,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     })
     // Not logged during the call — only returned, so a caller that prints
     // `refused` is the one and only place these lines are shown.
-    expect(logged).toEqual([])
+    expect(logged).toEqual(['github       app — a GitHub App is configured here'])
   })
 
   it('a successful registration is logged once, after add returns', async () => {
@@ -764,7 +778,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     const result = await chooseFirstProject(world, { github: 'acme/widget' })
 
     expect(result).toMatchObject({ ok: true, project: 'github' })
-    expect(logged).toEqual(['added acme/widget'])
+    expect(logged).toEqual(['github       app — a GitHub App is configured here', 'added acme/widget'])
   })
 
   it('--github-app given beside a slug, with an App already configured, is refused rather than silently discarded (#394 finding 8)', async () => {
@@ -993,7 +1007,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       return null
     }
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
-    expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets' })
+    expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets', auth: 'gh' })
     expect(calls).toMatchObject({ app: 0, board: 0, wait: 0, picker: 0 })
     expect(calls.added).toEqual([{ slug: 'acme/widgets', installation: undefined, base: undefined }])
   })

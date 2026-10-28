@@ -56,7 +56,7 @@ import {
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
-import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
+import { createAppReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import {
   baseOf,
   diskFiles,
@@ -81,6 +81,7 @@ import {
   type AppWaitResult,
   type AppWaitWorld,
 } from './github-app.ts'
+import { askGithubAuth, liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
 import { acceptingDefaults, question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
@@ -142,10 +143,14 @@ export interface FirstProjectWorld extends QuestionWorld {
   githubAppIsTheProject?: boolean
   github: {
     /**
-     * The machine's elected auth. Absent reads as "not `gh`" — `init`'s world
-     * leaves it out (child 5's), so it keeps the App path it always had.
+     * The machine's elected auth, or null where nothing is configured. Absent
+     * reads as null. Throws where `github.auth` is refused.
      */
     auth?: () => 'app' | 'gh' | null
+    /** `gh auth status` (#706) — asked only when the auth question is, or `--github-auth gh` is given. */
+    ghStatus: () => Promise<GhStatus>
+    /** Writes `github.auth` into `config.yml`, keeping every other key and comment (0114 §6). */
+    writeAuth: (kind: 'gh' | 'app') => Promise<void>
     app: () => Promise<AppCheck>
     /** A board already running, or null — `add` starts none of its own. */
     boardUrl: () => Promise<string | null>
@@ -157,7 +162,7 @@ export interface FirstProjectWorld extends QuestionWorld {
 
 export type FirstProjectOutcome =
   | { ok: true; project: 'local'; name: string; remote: string; base: string }
-  | { ok: true; project: 'github'; app: 'already' | AppWaitResult; slug?: string }
+  | { ok: true; project: 'github'; app: 'already' | AppWaitResult; slug?: string; auth?: 'gh' }
   | { refused: string }
 
 /** Why a combination of flags cannot both be obeyed, or null when they can. */
@@ -178,6 +183,22 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   }
   if (local !== undefined && flags['project'] === 'github') {
     return `--local ${local}, but --project github names the other kind. Leave out --project, or leave out --local. ${kept}`
+  }
+  const auth = flags['github-auth']
+  if (auth !== undefined && local !== undefined) {
+    return (
+      `--github-auth ${auth}, but --local ${local} reaches no GitHub. Leave out --github-auth, or leave out ` +
+      `--local. ${kept}`
+    )
+  }
+  if (auth !== undefined && flags['project'] === 'local') {
+    return `--github-auth ${auth}, but --project local reaches no GitHub. Leave out --github-auth, or pass --project github. ${kept}`
+  }
+  if (auth === 'gh' && flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
+    return (
+      `--github-auth gh, but --github-app ${flags['github-app']} creates an App. Leave out --github-app, or ` +
+      `pass --github-app skip. ${kept}`
+    )
   }
   if (local !== undefined && flags['github-app'] !== undefined) {
     return (
@@ -233,6 +254,13 @@ async function askProjectKind(
           `--github-app, or pass --project github. ${kept}`,
       }
     }
+    if (flags['github-auth'] !== undefined) {
+      return {
+        refused:
+          `--github-auth ${flags['github-auth']}, but --project local reaches no GitHub. Leave out ` +
+          `--github-auth, or pass --project github. ${kept}`,
+      }
+    }
     return { kind: 'local' }
   }
   return { kind: 'github' }
@@ -249,7 +277,6 @@ export async function chooseFirstProject(
 
   let kind: 'local' | 'github' | null =
     flags['local'] !== undefined ? 'local' : flags['github'] !== undefined ? 'github' : null
-  let askedApp: 'create' | 'skip' | null = null
   // Fetched at most once here, and handed to `runGithubBranch` rather than
   // left for it to ask again — `world.github.app()` is a real call (`GET
   // /app`, or `init`'s already-fetched one), and asking it twice for one run
@@ -305,19 +332,18 @@ export async function chooseFirstProject(
       if ('refused' in asked) return { refused: asked.refused }
       kind = asked.kind
     } else {
-      const asked = await askFirstProject(world, flags, world.kept)
+      // The project question only: how this machine reaches GitHub is asked
+      // next, in `runGithubBranch`, ahead of the App's create-or-skip — which
+      // `askFirstProject` would otherwise ask first.
+      const asked = await askProjectKind(world, flags)
       if ('refused' in asked) return { refused: asked.refused }
-      if (asked.project === 'local') kind = 'local'
-      else {
-        kind = 'github'
-        askedApp = asked.app
-      }
+      kind = asked.kind
     }
   }
 
   return kind === 'local'
     ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
-    : runGithubBranch(world, flags, flags['github'] ?? null, askedApp, appCheck)
+    : runGithubBranch(world, flags, flags['github'] ?? null, appCheck)
 }
 
 /** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
@@ -531,7 +557,6 @@ async function runGithubBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
   givenSlug: string | null,
-  askedApp: 'create' | 'skip' | null,
   knownApp: AppCheck | null,
 ): Promise<FirstProjectOutcome> {
   // #396's two questions are asked only by `lingtai add`'s `askBeforeGithubAdd`
@@ -574,7 +599,14 @@ async function runGithubBranch(
     }
   }
 
-  if (world.github.auth?.() === 'gh') {
+  // How this machine reaches GitHub, ahead of any App question (0114 §1). A
+  // `gh` machine never has the App asked about, so `GET /app` is not made for it.
+  let app: AppCheck | null = knownApp
+  if (app === null && world.github.auth?.() !== 'gh') app = await world.github.app()
+  const decided = await askGithubAuth(world, flags, app?.configured === true, world.kept)
+  if ('refused' in decided) return { refused: decided.refused }
+
+  if (decided.auth === 'gh') {
     // The saved `gh` login is the whole of the auth: no App to ask about or
     // create, no board to wait on, no picker (`livePicker` reads the App), and
     // no installation — `add()` checks the login's access itself.
@@ -585,7 +617,7 @@ async function runGithubBranch(
           `--github-app, or pass --github-app skip. ${world.kept}`,
       }
     }
-    if (givenSlug === null) return { ok: true, project: 'github', app: 'already' }
+    if (givenSlug === null) return { ok: true, project: 'github', app: 'already', auth: 'gh' }
     // The picker's `taken` guard, which this branch skips: a project is keyed by
     // the repository's name, so another owner's repository of the same name
     // would be written onto the existing project's stream.
@@ -610,10 +642,10 @@ async function runGithubBranch(
       return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
     }
     for (const line of said) world.log(line)
-    return { ok: true, project: 'github', app: 'already', slug: givenSlug }
+    return { ok: true, project: 'github', app: 'already', slug: givenSlug, auth: 'gh' }
   }
 
-  const app = knownApp ?? (await world.github.app())
+  app ??= await world.github.app()
   if (app.configured && !app.ok) {
     return {
       refused:
@@ -639,12 +671,9 @@ async function runGithubBranch(
   let appOutcome: 'already' | AppWaitResult = 'already'
 
   if (!app.configured) {
-    let appAnswer = askedApp
-    if (appAnswer === null) {
-      const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept)
-      if ('refused' in asked) return { refused: asked.refused }
-      appAnswer = asked.project === 'github' ? asked.app : 'create'
-    }
+    const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept)
+    if ('refused' in asked) return { refused: asked.refused }
+    const appAnswer = asked.project === 'github' ? asked.app : 'create'
 
     const boardUrl = await world.github.boardUrl()
     if (boardUrl === null) {
@@ -663,6 +692,15 @@ async function runGithubBranch(
     const waited = await world.github.waitForApp(boardUrl)
     if (!('made' in waited)) return { ok: true, project: 'github', app: waited }
     appOutcome = waited
+    // Written only now that the App exists: `app` ahead of one would make the
+    // next `add` take an App check that throws rather than saying "not installed".
+    if (decided.pending) {
+      try {
+        await world.github.writeAuth('app')
+      } catch (err) {
+        return { refused: `${(err as Error).message}. ${world.kept}` }
+      }
+    }
   }
 
   if (givenSlug === null) return { ok: true, project: 'github', app: appOutcome }
@@ -832,6 +870,10 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     history: liveHistory,
     github: {
       auth: () => githubAuthKind(),
+      ghStatus: () => ghStatus(),
+      writeAuth: async (kind) => {
+        writeGithubAuth(liveMachineText(), join(home, 'config.yml'), kind)
+      },
       app: checkApp,
       boardUrl: () => boardAt(boardPort()),
       waitForApp: (boardUrl) => waitForApp({ log: options.log, ...appWait }, boardUrl, { waitMs: APP_WAIT_MS }),

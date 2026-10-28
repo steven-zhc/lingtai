@@ -95,6 +95,8 @@ function ttyHarness(): Harness {
     kept: 'Nothing was written',
     history: async () => [],
     github: {
+      ghStatus: async () => ({ ok: false, reason: 'missing', detail: 'gh is not installed' }),
+      writeAuth: async () => {},
       app: async () => ({ configured: false }),
       boardUrl: async () => null,
       waitForApp: async () => ({ skipped: true }),
