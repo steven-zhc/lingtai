@@ -240,8 +240,17 @@ export const taskViewProjection: Projection = {
           break
         }
 
+        // `TicketContinued` is a continuation by type (domain `claims.ts`) and folds
+        // as the old form does: a claim carrying no title or kind. The helper's
+        // `claimed` set is not used — the SQL in `upsert` decides from the row's
+        // own run_id whether this is a fresh attempt (#509), and survives a
+        // checkpoint where an in-memory set would not.
+        case 'TicketContinued':
         case 'TicketClaimed': {
-          const d = event.data as PayloadOf<'TicketClaimed'>
+          const d =
+            event.type === 'TicketContinued'
+              ? { ...(event.data as PayloadOf<'TicketContinued'>), title: null, kind: null }
+              : (event.data as PayloadOf<'TicketClaimed'>)
           await linkRun(ctx, d.runId, event.streamId)
           // The claim creates the row, not just updates it. With the queue out
           // of the log there is no earlier event to have made one, so an UPDATE
