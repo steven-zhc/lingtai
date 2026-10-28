@@ -5,8 +5,11 @@
  * `?repo=` — a bookmarked one of those should answer something rather than
  * 404.
  */
+import { isGhMachine } from '../gh-machine.ts'
 import { TerminalScreen } from '../terminal.tsx'
 
+export const dynamic = 'force-dynamic'
+
 export default function Wizard() {
-  return <TerminalScreen />
+  return <TerminalScreen gh={isGhMachine()} />
 }

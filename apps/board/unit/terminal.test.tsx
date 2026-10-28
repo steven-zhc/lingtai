@@ -32,3 +32,28 @@ describe('a requested install', () => {
     expect(out).toContain('owner has to approve')
   })
 })
+
+describe('a gh machine', () => {
+  const out = renderToStaticMarkup(<TerminalScreen gh />)
+
+  it('says the gh login is used and shows lingtai add <owner>/<repo>', () => {
+    expect(out).toContain('<code>gh</code> login')
+    expect(out).toContain('lingtai add &lt;owner&gt;/&lt;repo&gt;')
+  })
+
+  it('offers no installation and no App picker', () => {
+    for (const s of ['/setup/github-app', 'installations/new', 'the App can see', 'owner has to approve']) {
+      expect(out).not.toContain(s)
+    }
+  })
+
+  it('does not mention a pending approval even when requested', () => {
+    expect(renderToStaticMarkup(<TerminalScreen gh requested />)).not.toContain('owner has to approve')
+  })
+})
+
+describe('a machine that is not gh', () => {
+  it('still describes the App picker', () => {
+    expect(renderToStaticMarkup(<TerminalScreen />)).toContain('the App can see')
+  })
+})

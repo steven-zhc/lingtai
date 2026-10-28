@@ -40,7 +40,8 @@
  * registered.** `filters.length === 0` was the proxy for that and they come
  * apart in both directions: a board with an App and no repository yet wants
  * the picker, and a board with neither wants step 0. `page.tsx` reads
- * `hasGitHubApp()` and hands the answer down, so this stays a fold over its
+ * `hasGitHubAuth()` and hands the answer down — `app` means GitHub is reachable
+ * (an App, or the `gh` login), not that an App exists — so this stays a fold over its
  * arguments and all three states are assertable without a configured App.
  */
 import Link from 'next/link'

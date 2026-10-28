@@ -7,7 +7,7 @@ import { readControl } from '@lingtai/daemon/control'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a fold over its arguments (#216).
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 import Link from 'next/link'
 import { Fragment } from 'react'
 
@@ -629,7 +629,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             four the rule below names, it has been a list of tabs since #81,
             and a list gaining an action at its end is that object rather than
             a fifth one (#216). */}
-        <Projects filters={filters} only={only} app={hasGitHubApp()} />
+        <Projects filters={filters} only={only} app={hasGitHubAuth()} />
         <span className="sep" />
         {/* Everything from here is the right rail, and it is a rail rather than
             four more children of `.bar` so that a narrow window breaks between
