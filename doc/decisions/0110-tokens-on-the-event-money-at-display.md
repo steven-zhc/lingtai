@@ -1,6 +1,6 @@
-# 0110 — Spend: every paid call appends one `RunSpent`, the `spend` projection holds them, and money is computed only where it is displayed
+# 0110 — Spend: every paid call appends one `RunSpent`, the `spend` projection holds them, and an estimate is folded at the price of the run's own day
 
-**Status** accepted · 2026-10-01, revised 2026-10-18
+**Status** accepted · 2026-10-01, revised 2026-10-18 and 2026-10-28 (§5: projections store estimates)
 
 Every paid call appends one `RunSpent` when it returns, and nothing else on the
 log carries spend. A paid call is one process: one _run_. `RunSpent` records
@@ -10,9 +10,11 @@ with the model and mode needed to price them. `costUsd` is always written, and
 `null` when the runtime did not say; every token field is optional, and absent
 means the same. Neither is ever zero for _not said_. The `spend` projection
 folds one row per `RunSpent`. Lingtai never computes money on the way into the
-log and never computes it inside a fold. Money is computed where it is
-displayed, from the row's own counts and occurrence time, using
-[`doc/rate-card.md`](../rate-card.md), a dated table that a person appends to.
+log: an event carries what the runtime said and nothing priced. A projection
+may store money, as facts of its own, kept apart: the dollars the runtime
+reported, and an estimate priced in the fold from the row's counts at the rate
+in force on the run's own day, from [`doc/rate-card.md`](../rate-card.md) and
+the dated snapshot behind it. A reader then sums stored columns.
 
 ## Context
 
@@ -39,7 +41,7 @@ about something else are the three whose spend is not recorded.
    Claude Code fills it from its receipt; Codex always records `null`, never
    `0`. `usage` is decision 3's five counts. `runtime` is the runtime's id.
    There is no field for a price: it would be money on the way into the log,
-   which decision 5 forbids.
+   which decision 5 forbids for events.
 
 2. **One `RunSpent` per paid call, and nothing else carries spend.** Every
    place that starts a paid process appends it; no other event has a spend
@@ -121,12 +123,32 @@ about something else are the three whose spend is not recorded.
    `Reading<T>` wrapper: `null` and an absent count already say _not said_,
    and a reported `0` is a `0`.
 
-5. **Money is never stored, and never computed in a fold.** A reducer may read
-   the event and nothing else: no clock, no network, no rate table. If a fold
-   priced tokens, `lingtai projection rebuild` would silently disagree with the
-   live fold the day a price changed, or the day a row was added for a model
-   that had none. A projection may carry the facts, `costUsd` and `usage`, as
-   columns; it never carries a price computed from them.
+5. **An event never carries a price; a projection may store an estimate, kept
+   apart from what was reported.** An event records what the runtime said. A
+   fold that prices a run reads the event, the shipped card and the dated
+   snapshot, and nothing else: no clock and no network. It prices at the rate in
+   force on the run's own `at`, so a price that changes later never moves a row
+   already folded, and a rebuild gives the same figure, with one accepted
+   exception below. It stores, per row,
+   `cost_usd` (the runtime's own `costUsd`, `null` when not said), and
+   `estimated_usd` with whether the snapshot was used (`null` when it could not
+   be priced). The two are never added into one column, and a row with neither
+   is unknown, never `0`.
+
+   **A model that gains its first price re-folds what stored an estimate.** The
+   one way a stored estimate goes stale that is repaired is a run of a model that had no row when
+   it was folded. So when a snapshot refresh prices a model that had none, the
+   projections that store estimates (`spend` and `ticket_report`, 0123) are
+   rebuilt, and every row is priced again by its own day. A price that only
+   changes, for a model already priced, rebuilds nothing.
+
+   **Accepted exception: a same-day replacement.** A second fetch on the same
+   UTC day replaces that day's row (`mergeSnapshot`,
+   `packages/domain/src/rate-card.ts:231`), which happens only when a conductor
+   restarts on a day the upstream price changed. Rows already folded keep the
+   earlier estimate, and a rebuild would give the later one. Nothing is
+   rebuilt for it: an estimate is not a bill, and a full rebuild for this
+   case is not worth its time (0123 §6).
 
 6. **The rate card is a file that a person appends to.** `doc/rate-card.md`
    holds one row per (model, mode, `from` date), with input, output, cache-read
@@ -152,8 +174,9 @@ about something else are the three whose spend is not recorded.
    tokens and marked as an estimate. Where neither holds, the run's cost is
    unknown, and is shown as unknown. **A total keeps the three apart: the
    reported total, the estimates listed beside it and never added into it, and
-   a count of unknown runs.** The board, `lingtai status` and any report price
-   at display time, from the row's counts and its occurrence time.
+   a count of unknown runs.** The board, `lingtai status` and any report read
+   the stored `cost_usd` and `estimated_usd` and sum them; none prices at
+   display time.
 
 8. **`RunSpent` is appended to the stream its run belongs to, and carries no
    ticket id.** A run inside a pass (implement, a fix round, the reviewer, the
@@ -203,12 +226,14 @@ about something else are the three whose spend is not recorded.
 11. **The `spend` projection holds one row per `RunSpent`**: `seq`, `at`,
     `ticket`, `pass` (null off a pass stream), `for` with its `step`, `action`
     and `round`, `runtime`, `turns`, `duration_ms`, `cost_usd` and `usage`
-    (jsonb). The fold fills `ticket` from the pass stream's `RunStarted`, the
+    (jsonb), the estimate of decision 5 (`estimated_usd` and
+    `estimate_fetched`), and `kind`, the ticket's kind as its run's claim
+    carried it when the row was folded (0123 §3). The fold fills `ticket` from the pass stream's `RunStarted`, the
     ticket stream itself, or the discussion's `DiscussionRequested`, each of
     which it has read by then. A card's total, `/spend`'s rows and the task
     page's list of calls are all queries over it. It is a row per run, not a
-    total per ticket, because an estimate (decision 7) needs each run's model,
-    tokens and time.
+    total per ticket, because an estimate (decision 5) needs each run's model,
+    tokens and time, and because spend per day is a query over it.
 
 12. **Ceilings are the runtime's, and read nothing on the log.**
     `runtime.limits.usd` bounds one run and is enforced by the runtime
@@ -241,12 +266,19 @@ about something else are the three whose spend is not recorded.
   are the long ones. A total is a floor, and the page says so.
 - A judge's spend is a `RunSpent` like any other. The judge still has no event
   for its decision of its own: that is `PassRouted`.
-- There are three projections to rebuild, not two.
-- A Lingtai-enforced dollar ceiling, if one is wanted, is a new decision. It
-  would read `spend` at dispatch time and price by decision 7, which decision
-  5 allows because it is not a fold.
+- There are four projections to rebuild: `task_view`, `finding_backlog`,
+  `spend` and `ticket_report` (0123).
+- A Lingtai-enforced dollar ceiling reads `spend`'s stored figures: the daily
+  one (0122 §5) and a per-ticket one if it is added (#674).
+- A refresh that prices a new model costs a rebuild of every projection that
+  stores an estimate. That is rare: once per model, on the first day it is
+  fetched.
 
 ## Not built yet
+
+- **Decision 5's stored estimate.** `spend` stores `cost_usd` only, and
+  `apps/board/src/lib/spend.ts` and `packages/conductor/src/day-ceiling.ts`
+  still price at read time; the rebuild on a newly priced model is not wired.
 
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.
