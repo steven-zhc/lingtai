@@ -15,6 +15,7 @@ import type { SetupReader } from '../src/detect-setup.ts'
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'
+import { flagsOf } from '../src/wizard-options.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -378,6 +379,50 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         'the base branch needs an answer: pass --base <branch>. the store chosen above is kept',
       ),
     })
+  })
+
+  const LOCAL_GIT = {
+    '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+    '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+    '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+  }
+
+  it.each([['defaults'], ['yes']])('--%s takes the detected base branch (#700)', async (flag) => {
+    const { world, registered } = harness({
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify main^{commit}': ok('abc123f\n') },
+    })
+
+    const { flags } = flagsOf({ [flag]: true })
+    const result = await chooseFirstProject(world, { ...flags, local: '/repo', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, base: 'main' })
+    expect(registered[0]).toMatchObject({ base: 'main', fromSha: 'abc123f' })
+  })
+
+  it('--defaults with no --project refuses at the project question and starts nothing (#700)', async () => {
+    const calls: string[] = []
+    const { world } = harness({
+      kept: 'the store chosen above is kept',
+      waitForApp: async () => (calls.push('waitForApp'), { skipped: true }),
+      picker: async () => (calls.push('picker'), { installations: [], installUrl: null }),
+      add: async () => (calls.push('add'), 1),
+    })
+
+    const result = await chooseFirstProject(world, { defaults: '' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('pass --project github, or --project local') })
+    expect(calls).toEqual([])
+  })
+
+  it('--defaults refuses a detected base that does not exist, with the validation reason logged (#700)', async () => {
+    const { world, logged } = harness({
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify main^{commit}': fail('unknown revision') },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('pass --base <branch>') })
+    expect(logged.join('\n')).toContain('main is not a branch in /repo')
   })
 
   it('writes source.tickets: db, so the resolved recipe takes work (#396, ownerlessRefusal returns null)', async () => {

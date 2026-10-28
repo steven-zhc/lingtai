@@ -101,6 +101,11 @@ describe('flagsOf', () => {
     },
   )
 
+  it('reads --yes as --defaults, and does not call it valueless (#700)', () => {
+    expect(flagsOf({ yes: true })).toEqual({ flags: { defaults: '' }, repeated: { defaults: [''] } })
+    expect(valuelessFlag(['--yes', '--local', '/repo'])).toBeNull()
+  })
+
   it('does not call --defaults or --flag=value valueless', () => {
     expect(valuelessFlag(['--defaults', '--store=sqlite', '--build', 'npm test'])).toBeNull()
   })

@@ -81,7 +81,7 @@ import {
   type AppWaitWorld,
 } from './github-app.ts'
 import { waitForKeypress } from './keypress.ts'
-import { question, spun, type QuestionWorld } from './question.ts'
+import { acceptingDefaults, question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
@@ -401,21 +401,25 @@ async function runLocalBranch(
       ? current.stdout.trim()
       : null
 
-  const baseAnswer = await question(world, {
-    name: 'the base branch',
-    flag: '--base <branch>',
-    given: flags['base'] ?? null,
-    prompt: "the branch this project's recipe governs and merges into",
-    current: typeof currentBase === 'string' ? currentBase : null,
-    detected,
-    kept: world.kept,
-    validate: async (answer) => {
-      const check = await world.git(toplevel, ['rev-parse', '--verify', `${answer}^{commit}`])
-      if (!check.ok) return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
-      fromSha = check.stdout.trim()
-      return null
+  // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
+  const baseAnswer = await question(
+    flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world,
+    {
+      name: 'the base branch',
+      flag: '--base <branch>',
+      given: flags['base'] ?? null,
+      prompt: "the branch this project's recipe governs and merges into",
+      current: typeof currentBase === 'string' ? currentBase : null,
+      detected,
+      kept: world.kept,
+      validate: async (answer) => {
+        const check = await world.git(toplevel, ['rev-parse', '--verify', `${answer}^{commit}`])
+        if (!check.ok) return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
+        fromSha = check.stdout.trim()
+        return null
+      },
     },
-  })
+  )
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 

@@ -59,8 +59,9 @@ lingtai add [<owner>/<repo>] [flags]
   --rounds <n>                 fix rounds a pass may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
-  --defaults
-      use every default the questions have. With no terminal, this
+  --defaults, --yes
+      use the default of every question whose answer was detected or is
+      easy to change later. With no terminal, this
       or an answer to every question is required. Before anything is
       registered the checks and the landing are printed, and a run
       that took the defaults for an empty build or an unattended
@@ -604,8 +605,9 @@ lingtai init [flags]
   --rounds <n>                 fix rounds a pass may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
-  --defaults
-      use every default the recipe questions have. With no terminal,
+  --defaults, --yes
+      use the default of every question whose answer was detected or is
+      easy to change later. With no terminal,
       this or an answer to every question is required. The checks and
       the landing are printed before a project is registered, and a
       run that took the defaults for an empty build or an unattended

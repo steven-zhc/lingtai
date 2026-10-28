@@ -29,6 +29,7 @@ export const recipeOptions = {
   wall: text('wall'),
   budget: text('budget'),
   defaults: Options.boolean('defaults'),
+  yes: Options.boolean('yes'),
   // `runCli` applies NO_COLOR itself; this only lets the parser accept the flag.
   'no-color': Options.boolean('no-color'),
 }
@@ -57,7 +58,7 @@ export interface WizardFlags {
 }
 
 /**
- * An absent option is an absent key; `--defaults` is `''`; `flags.build` is the
+ * An absent option is an absent key; `--defaults` is `''`, and `--yes` is read as `--defaults`; `flags.build` is the
  * last `--build` and `repeated.build` is every one, in order.
  */
 export function flagsOf(parsed: Record<string, Option.Option<string> | readonly string[] | boolean>): WizardFlags {
@@ -67,8 +68,10 @@ export function flagsOf(parsed: Record<string, Option.Option<string> | readonly 
     if (name === 'no-color') continue
     if (typeof value === 'boolean') {
       if (value) {
-        flags[name] = ''
-        repeated[name] = ['']
+        // `--yes` is another name for `--defaults`: one key, so no reader can forget the second.
+        const key = name === 'yes' ? 'defaults' : name
+        flags[key] = ''
+        repeated[key] = ['']
       }
     } else if (Array.isArray(value)) {
       if (value.length > 0) {
@@ -84,7 +87,7 @@ export function flagsOf(parsed: Record<string, Option.Option<string> | readonly 
   return { flags, repeated }
 }
 
-const VALUELESS_OK = new Set(['defaults', 'no-color'])
+const VALUELESS_OK = new Set(['defaults', 'yes', 'no-color'])
 
 /**
  * The first `--flag` of `init` or `add` that takes a value and was given none —
