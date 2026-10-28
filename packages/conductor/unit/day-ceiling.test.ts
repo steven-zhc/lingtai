@@ -1,4 +1,4 @@
-import { CONTROL_STREAM, reduceControl, type Usage } from '@lingtai/domain'
+import { CONTROL_STREAM, reduceControl } from '@lingtai/domain'
 import { machineDayCeiling, machineFileFrom } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -14,15 +14,19 @@ import {
 } from '../src/day-ceiling.ts'
 
 const now = new Date(2026, 9, 26, 14, 0, 0)
-const today = (costUsd: number | null, usage: Usage = []): DayRow => ({
+/** A row as the fold stored it: `estimatedUsd` null is unknown. */
+const today = (costUsd: number | null, estimatedUsd: number | null = null, estimateFetched = false): DayRow => ({
   at: new Date(2026, 9, 26, 9, 0, 0),
   costUsd,
-  usage,
+  estimatedUsd,
+  estimateFetched: estimatedUsd === null ? null : estimateFetched,
 })
-const yesterday = (costUsd: number | null): DayRow => ({ at: new Date(2026, 9, 25, 23, 59, 0), costUsd, usage: [] })
-/** A million fresh tokens at 1 dollar per million: exactly $1.00 on the injected card. */
-const codexUsage = (model = 'gpt-x'): Usage => [{ model, tokens: { fresh: 1_000_000 } }]
-const price = (row: DayRow) => (row.usage[0]?.model === 'gpt-x' ? 1 : null)
+const yesterday = (costUsd: number | null): DayRow => ({
+  at: new Date(2026, 9, 25, 23, 59, 0),
+  costUsd,
+  estimatedUsd: null,
+  estimateFetched: null,
+})
 
 const check = (rows: DayRow[], store: ReturnType<typeof createMemoryEventStore>, at = now, ceilingUsd = 50) =>
   dayCeilingPause({ ceilingUsd, rows: async () => rows, store, now: at })
@@ -42,32 +46,36 @@ describe('daySpend', () => {
 })
 
 describe('daySpend estimates', () => {
-  it('prices a null-cost row from usage, apart from the reported cents', () => {
-    const day = daySpend([today(3.1), today(null, codexUsage())], now, price)
+  it('sums a stored estimate, apart from the reported cents', () => {
+    const day = daySpend([today(3.1), today(null, 1)], now)
     expect(day).toMatchObject({ reportedCents: 310, estimatedCents: 100, estimatedRuns: 1, unknown: 0 })
   })
 
   it('leaves a row the card does not name unknown, adding nothing', () => {
-    const day = daySpend([today(null, codexUsage('mystery'))], now, price)
+    const day = daySpend([today(null)], now)
     expect(day).toMatchObject({ reportedCents: 0, estimatedCents: 0, unknown: 1 })
   })
 
   it('never reprices a reported figure', () => {
-    const day = daySpend([today(0.5, codexUsage())], now, price)
+    const day = daySpend([today(0.5, 1)], now)
     expect(day).toMatchObject({ reportedCents: 50, estimatedCents: 0, estimatedRuns: 0 })
   })
 
   it('reaches the ceiling by reported plus estimated, and says the estimated part', async () => {
-    const day = daySpend([today(3.1), today(null, codexUsage())], now, price)
+    const day = daySpend([today(3.1), today(null, 1)], now)
     expect(ceilingReached(day, 4.1)).toBe(true)
     expect(ceilingReached(day, 4.11)).toBe(false)
     const text = daySpendText(day, 4.1)
     expect(text).toContain('$3.10 + ~$1.00 est. + 0 unknown')
   })
 
-  it('counts Claude estimates through the shipped card', () => {
-    const usage: Usage = [{ model: 'claude-sonnet-5', tokens: { fresh: 1_000_000 } }]
-    expect(daySpend([today(null, usage)], now)).toMatchObject({ estimatedCents: 200, unknown: 0 })
+  it('counts a fetched estimate and says how many were', () => {
+    expect(daySpend([today(null, 2, true), today(null, 1)], now)).toMatchObject({
+      estimatedCents: 300,
+      estimatedRuns: 2,
+      fetchedRuns: 1,
+      unknown: 0,
+    })
   })
 })
 
@@ -145,7 +153,12 @@ describe('dayCeilingPause', () => {
     expect(await check([today(60)], store, now, 100)).toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(2)
     const next = new Date(nextLocalMidnight(now).getTime() + 3_600_000)
-    const tomorrow: DayRow = { at: new Date(next.getTime() - 60_000), costUsd: 60, usage: [] }
+    const tomorrow: DayRow = {
+      at: new Date(next.getTime() - 60_000),
+      costUsd: 60,
+      estimatedUsd: null,
+      estimateFetched: null,
+    }
     expect(await check([tomorrow], store, next)).not.toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
   })
@@ -250,8 +263,8 @@ describe('machineDayCeiling', () => {
 
 describe('daySpend sub-cent estimates', () => {
   it('sums a thousand $0.004 estimates to $4.00 and reaches a $1 ceiling', () => {
-    const rows = Array.from({ length: 1000 }, () => today(null, codexUsage()))
-    const day = daySpend(rows, now, () => 0.004)
+    const rows = Array.from({ length: 1000 }, () => today(null, 0.004))
+    const day = daySpend(rows, now)
     expect(day).toMatchObject({ estimatedCents: 400, estimatedRuns: 1000, unknown: 0 })
     expect(ceilingReached(day, 1)).toBe(true)
   })

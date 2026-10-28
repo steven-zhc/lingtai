@@ -348,6 +348,9 @@ function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow
     durationMs: 1000,
     costUsd,
     usage: [],
+    estimatedUsd: null,
+    estimateFetched: null,
+    kind: null,
     ...over,
   }
 }

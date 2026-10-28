@@ -57,7 +57,15 @@ export {
   type BacklogStatus,
   type ReadBacklogOptions,
 } from './backlog.ts'
-export { SPEND_TABLE, readSpend, spendProjection, type ReadSpendOptions, type SpendRow } from './spend.ts'
+export { rateDir, readJson, readRateSnapshot, snapshotPath } from './rate-snapshot.ts'
+export {
+  SPEND_TABLE,
+  spendProjectionWith,
+  readSpend,
+  spendProjection,
+  type ReadSpendOptions,
+  type SpendRow,
+} from './spend.ts'
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,

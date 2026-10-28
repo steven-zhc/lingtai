@@ -193,5 +193,8 @@ function discussionSpent(costUsd: number | null): SpendRow {
     durationMs: 1000,
     costUsd,
     usage: [],
+    estimatedUsd: null,
+    estimateFetched: null,
+    kind: null,
   }
 }
