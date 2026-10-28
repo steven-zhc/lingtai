@@ -131,3 +131,52 @@ describe('spend carries the ticket kind its claim carried', () => {
     }
   })
 })
+
+describe('spend folds TicketContinued as the old-form continuation (#684)', () => {
+  const continuation = (stream: ReturnType<typeof makeStream>, runId: string): Envelope =>
+    stream('TicketContinued', { runId, worker: 'local:1' })
+
+  async function tables(events: Envelope[]) {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      const projection = spendProjectionWith({ snapshot: () => SNAPSHOT })
+      await store.transact((ctx) => projection.create(ctx))
+      await store.transact((ctx) => projection.apply(events, ctx))
+      const spendKinds = (await store.spend({})).map((r) => r.kind)
+      return await store.transact(async (ctx) => ({
+        spend: spendKinds,
+        stream: await ctx.query('select stream_id, ticket, kind from spend_stream order by stream_id'),
+        kind: await ctx.query('select ticket, kind, seq from spend_kind order by ticket'),
+      }))
+    } finally {
+      await store.close()
+    }
+  }
+
+  const build = (reclaim: typeof claim | typeof continuation) => {
+    const t1 = makeStream(wi(21))
+    const run = makeStream('pass-pin-c1')
+    const first = makeStream(wi(22))
+    const orphan = makeStream('pass-pin-c2')
+    return [
+      claim(t1, 'pass-pin-c1', 'bug'),
+      spent(run),
+      reclaim === claim ? claim(t1, 'pass-pin-c1', null) : continuation(t1, 'pass-pin-c1'),
+      spent(run),
+      // a continuation that is the first event seen for its run
+      reclaim === claim ? claim(first, 'pass-pin-c2', null) : continuation(first, 'pass-pin-c2'),
+      spent(orphan),
+    ]
+  }
+
+  it('links, keeps the kind and moves nothing, in all three tables', async () => {
+    const a = await tables(build(claim))
+    const b = await tables(build(continuation))
+    expect(a.spend).toEqual(['bug', 'bug', null])
+    expect(b.spend).toEqual(a.spend)
+    expect(b.stream).toEqual(a.stream)
+    expect(b.kind.map((r) => r.kind)).toEqual(['bug'])
+    expect(a.kind.map((r) => r.kind)).toEqual(['bug'])
+  })
+})

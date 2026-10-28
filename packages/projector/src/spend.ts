@@ -150,8 +150,17 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           break
         }
 
+        // `TicketContinued` is a continuation by type (domain `claims.ts`) and folds
+        // as the old form does: a claim with a null kind. The stream insert is
+        // idempotent per run and `spend_kind` moves only on a non-null kind, so
+        // the table decides, not the helper's `claimed` set (which a batch
+        // boundary or checkpoint would empty).
+        case 'TicketContinued':
         case 'TicketClaimed': {
-          const d = event.data as PayloadOf<'TicketClaimed'>
+          const d =
+            event.type === 'TicketContinued'
+              ? { ...(event.data as PayloadOf<'TicketContinued'>), kind: null }
+              : (event.data as PayloadOf<'TicketClaimed'>)
           await ctx.query(
             `insert into spend_stream (stream_id, ticket, kind) values ($1, $2, $3)
              on conflict (stream_id) do update set kind = coalesce(spend_stream.kind, excluded.kind)`,
