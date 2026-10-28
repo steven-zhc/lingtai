@@ -83,20 +83,24 @@ describe('the report page', () => {
     expect(out).toContain('<title>2026-10-27\ntotal: 0</title>')
   })
 
-  it('draws the survival curve as a step line with each step counted', () => {
+  it('draws the survival curve as a step line capped at 7+, counted in the hover only', () => {
     const out = renderToStaticMarkup(
       <SurvivalPanel
         steps={[
           { k: 1, atRisk: 10, passed: 5, censored: 0, survival: 0.5 },
           { k: 2, atRisk: 5, passed: 3, censored: 1, survival: 0.2 },
+          { k: 7, atRisk: 1, passed: 0, censored: 1, survival: 0.2, plus: true },
         ]}
       />,
     )
-    expect(out).toContain('n=10')
-    expect(out).toContain('n=5')
+    expect(out).not.toContain('n=')
+    expect(out).toContain('>7+<')
+    expect(out).toContain('reviews done')
+    expect(out).toContain('after 7 or more reviews')
+    expect(out).toContain('still not passed after k reviews')
     expect(out).toContain('50%')
     expect(out).toContain(
-      'after 2 reviews\n20% not yet past review\n5 still counted at this review\n3 passed\n1 ended without passing',
+      'after 2 reviews\n20% still not passed\n5 still counted at this review\n3 passed\n1 ended without passing',
     )
     expect(out).toMatch(/<path d="M[\d.]+,[\d.]+H[\d.]+V[\d.]+H/)
     expect(renderToStaticMarkup(<SurvivalPanel steps={[]} />)).toContain('no ticket began review')

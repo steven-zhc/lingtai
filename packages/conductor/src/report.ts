@@ -129,7 +129,12 @@ export interface SurvivalStep {
   censored: number
   /** Share not yet past review after k reviews, 0..1. */
   survival: number
+  /** The step holds every ticket with `k` or more reviews, not exactly `k`. */
+  plus?: true
 }
+
+/** The curve has one step per review up to here; later reviews fold into a last `7+` step. */
+export const SURVIVAL_CAP = 7
 
 export interface WaitCauseCell {
   reason: string
@@ -321,7 +326,18 @@ export function survivalCurve(tickets: readonly ReportTicketRow[]): SurvivalStep
     survival *= 1 - passed / atRisk
     steps.push({ k, atRisk, passed, censored: at.length - passed, survival })
   }
-  return steps
+  if (maxK < SURVIVAL_CAP) return steps
+  // Fold after the running product, so steps before the cap are untouched.
+  const tail = steps.slice(SURVIVAL_CAP - 1)
+  const folded: SurvivalStep = {
+    k: SURVIVAL_CAP,
+    atRisk: tail[0]!.atRisk,
+    passed: tail.reduce((n, t) => n + t.passed, 0),
+    censored: tail.reduce((n, t) => n + t.censored, 0),
+    survival: tail[tail.length - 1]!.survival,
+    plus: true,
+  }
+  return [...steps.slice(0, SURVIVAL_CAP - 1), folded]
 }
 
 const PURPOSE_WORDS: Record<string, string> = {

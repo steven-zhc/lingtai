@@ -224,11 +224,14 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
 
 /**
  * The share of tickets not yet past review after k reviews — a step line from
- * 100%. Falling fast is converging; staying high is not. Each step is labelled
- * with its `atRisk`, the tickets still being counted at that k.
+ * 100%. Falling fast is converging; staying high is not. The count of tickets
+ * still being counted at each step is in its hover, not drawn on the chart.
  */
 export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
   if (steps.length === 0) return <Empty>no ticket began review in this window</Empty>
+  // Room under the ticks for the axis caption.
+  const H = 224
+  const B = 40
   const K = Math.max(1, steps.length)
   const right = 30
   const x = (k: number) => L + ((W - L - right) * k) / K
@@ -237,8 +240,8 @@ export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
   const line = stepPath(knots.map((p) => ({ x: x(p.k), y: y(p.survival) })))
   return (
     <>
-      <Legend series={[{ key: 'survival', name: 'share not yet past review', colour: 'var(--s1)' }]} />
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="share of tickets not yet past review after k reviews">
+      <Legend series={[{ key: 'survival', name: 'still not passed', colour: 'var(--s1)' }]} />
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="share of tickets still not passed after k reviews">
         {[0, 0.25, 0.5, 0.75, 1].map((v) => (
           <g key={v}>
             <line className="gl" x1={L} x2={W - right} y1={y(v)} y2={y(v)} />
@@ -248,10 +251,13 @@ export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
           </g>
         ))}
         {knots.map((p) => (
-          <text key={p.k} x={x(p.k)} y={H - 8} textAnchor="middle">
-            {p.k}
+          <text key={p.k} x={x(p.k)} y={H - 22} textAnchor="middle">
+            {'plus' in p && p.plus ? `${p.k}+` : p.k}
           </text>
         ))}
+        <text x={(L + W - right) / 2} y={H - 6} textAnchor="middle">
+          reviews done
+        </text>
         <path d={`${line}V${y(0)}H${x(0)}Z`} fill="var(--s1)" opacity={0.1} />
         <path d={line} fill="none" stroke="var(--s1)" strokeWidth={2} />
         <line className="ax" x1={L} x2={W - right} y1={y(0)} y2={y(0)} />
@@ -260,7 +266,7 @@ export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
             <title>
               {p.k === 0
                 ? `start\n${p.atRisk} ticket${p.atRisk === 1 ? '' : 's'}`
-                : `after ${p.k} review${p.k === 1 ? '' : 's'}\n${Math.round(p.survival * 100)}% not yet past review\n${p.atRisk} still counted at this review\n${p.passed} passed\n${p.censored} ended without passing`}
+                : `after ${'plus' in p && p.plus ? `${p.k} or more reviews` : `${p.k} review${p.k === 1 ? '' : 's'}`}\n${Math.round(p.survival * 100)}% still not passed\n${p.atRisk} still counted at this review\n${p.passed} passed\n${p.censored} ended without passing`}
             </title>
             <rect className="hit" x={x(p.k) - 18} y={T} width={36} height={H - T - B} />
             <circle cx={x(p.k)} cy={y(p.survival)} r={4.5} fill="var(--s1)" stroke="var(--surface)" strokeWidth={2} />
@@ -269,9 +275,6 @@ export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
                 {Math.round(p.survival * 100)}%
               </text>
             ) : null}
-            <text x={x(p.k)} y={y(0) - 6} textAnchor="middle" className="rp-risk">
-              n={p.atRisk}
-            </text>
           </g>
         ))}
       </svg>

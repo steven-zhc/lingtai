@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   report,
   resolveWindow,
+  reviewPassed,
   survivalCurve,
   ticketMoney,
   type ReportInput,
@@ -114,6 +115,37 @@ describe('the survival curve', () => {
       { k: 2, atRisk: 2, passed: 1, censored: 1 },
     ])
     expect(steps.map((s) => s.survival)).toEqual([expect.closeTo(2 / 3), expect.closeTo(1 / 3)])
+  })
+
+  it('folds reviews past the sixth into one 7+ step and leaves steps 1-6 alone', () => {
+    const tickets = [
+      ...[1, 2, 3, 4, 5, 6, 7, 9, 12].map((m) => ticket({ reviews: reviewsOf(m, true) })),
+      ticket({ reviews: reviewsOf(34, false) }),
+      ticket({ reviews: reviewsOf(8, false) }),
+    ]
+    // The uncapped Kaplan–Meier, recomputed here.
+    const spans = tickets.map((t) => ({ k: t.reviews.length, passed: t.reviews.some(reviewPassed) }))
+    let s = 1
+    const uncapped = Array.from({ length: 34 }, (_, i) => {
+      const k = i + 1
+      const atRisk = spans.filter((x) => x.k >= k).length
+      const passed = spans.filter((x) => x.k === k && x.passed).length
+      s *= 1 - passed / atRisk
+      return { k, atRisk, passed, censored: spans.filter((x) => x.k === k).length - passed, survival: s }
+    })
+    const steps = survivalCurve(tickets)
+    expect(steps).toHaveLength(7)
+    expect(steps.slice(0, 6)).toEqual(uncapped.slice(0, 6))
+    const last = steps[6]!
+    expect(last).toMatchObject({ k: 7, plus: true, atRisk: 5, passed: 3, censored: 2 })
+    expect(last.atRisk).toBe(last.passed + last.censored)
+    expect(last.survival).toBeCloseTo(uncapped[33]!.survival)
+  })
+
+  it('draws no 7+ step when no ticket reaches seven reviews', () => {
+    const steps = survivalCurve([ticket({ reviews: reviewsOf(6, true) })])
+    expect(steps).toHaveLength(6)
+    expect(steps.some((x) => x.plus)).toBe(false)
   })
 
   it('does not count an interrupted review as passed', () => {

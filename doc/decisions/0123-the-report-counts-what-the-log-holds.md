@@ -208,8 +208,10 @@ The operator's decisions in epic #648 are the inputs here.
      5-or-more share, the 0-or-1 share, spend in the window (by run day) with
      its unknown count, median machine time;
    - five panels: fix rounds by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
-     tickets still not past review after k reviews, a step line from 100%
-     down, each step labelled with the tickets still at risk;
+     **reviews to pass**, the share of tickets still not passed after k
+     reviews, a step line from 100% down with steps 1 to 6 and then one 7+
+     step holding every ticket with seven or more, the tickets still counted
+     shown in each step's hover;
      landings per day stacked by kind; spend per day stacked by purpose (from
      `spend`, by each run's day); and
      **why tickets waited, as a cross-table of each wait's reason against its
