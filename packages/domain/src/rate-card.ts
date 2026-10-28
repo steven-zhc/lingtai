@@ -64,6 +64,13 @@ export function rateFor(rows: readonly RateRow[], model: string, mode: string, a
     .sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0]
 }
 
+/** The row with the smallest `from` for `(model, mode)`, or `undefined` when there is none. */
+function earliestRow(rows: readonly RateRow[], model: string, mode: string): RateRow | undefined {
+  return rows
+    .filter((r) => r.model === model && r.mode === mode)
+    .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))[0]
+}
+
 const PER_MILLION = 1_000_000
 
 /**
@@ -110,6 +117,10 @@ export const shipped = (model: string): boolean => RATE_CARD.some((r) => r.model
  * shipped card lists at all is priced from the shipped card alone; any other
  * model from the snapshot alone. `fetched` is true when any entry was priced
  * from the snapshot, which is what lets a reader label the estimate.
+ *
+ * **A snapshot's first row reaches backwards and the shipped card's does not**:
+ * a snapshot row is dated the day Lingtai first looked, not the day the price
+ * changed, so a run from before it is priced at the earliest row (#678).
  */
 export function estimateRow(
   row: { at: Date; usage: Usage },
@@ -123,7 +134,10 @@ export function estimateRow(
     if (entry.model === undefined) return null
     if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return null
     const listed = card.some((r) => r.model === entry.model)
-    const rate = rateFor(listed ? card : snapshot, entry.model, entry.mode ?? '', row.at)
+    const mode = entry.mode ?? ''
+    const rate = listed
+      ? rateFor(card, entry.model, mode, row.at)
+      : (rateFor(snapshot, entry.model, mode, row.at) ?? earliestRow(snapshot, entry.model, mode))
     if (rate === undefined || rate.withdrawn) return null
     // A null rate is unknown only for an entry that has tokens of that class.
     if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return null

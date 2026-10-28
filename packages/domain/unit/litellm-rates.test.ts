@@ -128,3 +128,37 @@ describe('mergeSnapshot', () => {
     expect(mergeSnapshot([row('2026-10-26', 10)], [row('2026-10-27', 10)])).toBeNull()
   })
 })
+
+describe('a model’s first fetched price also prices its earlier runs (#678)', () => {
+  const row = (from: string, input: number, extra: Partial<RateRow> = {}): RateRow => ({
+    from,
+    model: 'gpt-6-astra',
+    mode: '',
+    input,
+    output: input,
+    cacheRead: null,
+    cacheWrite: null,
+    ...extra,
+  })
+  const one = { fresh: 1_000_000 }
+
+  it('prices a run from before the first row at that row, as fetched', () => {
+    expect(estimateRow(run('2026-10-26T00:00:00Z', one), [row('2026-10-27', 3)])).toEqual({ usd: 3, fetched: true })
+  })
+
+  it('takes the earliest row before it and the latest row in force after it', () => {
+    const rows = [row('2026-11-01', 5), row('2026-10-27', 3)]
+    expect(estimateRow(run('2026-10-26T00:00:00Z', one), rows)?.usd).toBe(3)
+    expect(estimateRow(run('2026-11-02T00:00:00Z', one), rows)?.usd).toBe(5)
+  })
+
+  it('leaves a shipped-card model before its first row unpriced', () => {
+    const usage = [{ model: 'gpt-5.6-sol', tokens: one }]
+    const snapshot = [row('2026-10-20', 1, { model: 'gpt-5.6-sol' })]
+    expect(estimateRow({ at: new Date('2026-10-01T00:00:00Z'), usage }, snapshot)).toBeNull()
+  })
+
+  it('leaves the run unknown when the earliest row is withdrawn', () => {
+    expect(estimateRow(run('2026-10-26T00:00:00Z', one), [row('2026-10-27', 3, { withdrawn: true })])).toBeNull()
+  })
+})
