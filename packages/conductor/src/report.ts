@@ -266,6 +266,27 @@ function spendMoney(rows: readonly ReportSpendRow[]): Money {
   return m
 }
 
+/**
+ * A day's money split by purpose, so the parts add up to the day: each purpose's
+ * estimates are summed in dollars, then the day's one rounded figure is shared
+ * out by largest remainder rather than rounding every part on its own.
+ */
+function splitByPurpose(day: Money, ofDay: readonly ReportSpendRow[]): { purpose: string; money: Money }[] {
+  const purposes = [...new Set(ofDay.map(spendPurpose))].sort()
+  const parts = purposes.map((purpose) => {
+    const rows = ofDay.filter((r) => spendPurpose(r) === purpose)
+    const money = spendMoney(rows)
+    const exact =
+      rows.reduce((n, r) => n + (r.costUsd === null && r.estimatedUsd !== null ? r.estimatedUsd : 0), 0) * 100
+    const floor = Math.floor(exact + 1e-9)
+    return { purpose, money: { ...money, estimatedCents: floor }, rest: exact - floor }
+  })
+  let left = day.estimatedCents - parts.reduce((n, p) => n + p.money.estimatedCents, 0)
+  const order = [...parts].sort((a, b) => b.rest - a.rest)
+  for (let i = 0; left > 0 && order.length > 0; i = (i + 1) % order.length, left--) order[i]!.money.estimatedCents += 1
+  return parts.map(({ purpose, money }) => ({ purpose, money }))
+}
+
 const addMoney = (a: Money, b: Money): Money => ({
   reportedCents: a.reportedCents + b.reportedCents,
   estimatedCents: a.estimatedCents + b.estimatedCents,
@@ -386,15 +407,8 @@ export function report(input: ReportInput): Report {
   for (let d = new Date(w.from); d < w.to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
     const key = dayKey(d)
     const ofDay = runs.filter((r) => dayKey(r.at) === key)
-    const purposes = [...new Set(ofDay.map(spendPurpose))].sort()
-    days.push({
-      day: key,
-      ...spendMoney(ofDay),
-      byPurpose: purposes.map((purpose) => ({
-        purpose,
-        money: spendMoney(ofDay.filter((r) => spendPurpose(r) === purpose)),
-      })),
-    })
+    const money = spendMoney(ofDay)
+    days.push({ day: key, ...money, byPurpose: splitByPurpose(money, ofDay) })
   }
   const total = days.reduce<Money>(addMoney, { reportedCents: 0, estimatedCents: 0, unknown: 0 })
 

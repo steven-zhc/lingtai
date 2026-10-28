@@ -205,6 +205,19 @@ describe('money', () => {
     expect(r.spend.total).toEqual({ reportedCents: 33, estimatedCents: 0, unknown: 1 })
   })
 
+  it('keeps sub-cent estimates in the purpose bars, which sum to the day', () => {
+    const r = run([], {
+      spend: [
+        spend({ costUsd: null, estimatedUsd: 0.004, round: 0 }),
+        spend({ costUsd: null, estimatedUsd: 0.004, round: 1 }),
+      ],
+    })
+    const day = r.spend.days[0]!
+    expect(day.estimatedCents).toBe(1)
+    expect(r.spend.total.estimatedCents).toBe(1)
+    expect(day.byPurpose.reduce((n, p) => n + p.money.estimatedCents, 0)).toBe(1)
+  })
+
   it('narrows window spend by the kind and project each run recorded', () => {
     const r = run([], {
       spend: [spend({ kind: 'bug' }), spend({ kind: null }), spend({ project: null, ticket: null })],
