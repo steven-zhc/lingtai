@@ -69,7 +69,7 @@ function harness(
     gitPlan?: Record<string, GitResult>
     answers?: (string | null)[]
     app?: AppCheck
-    doctor?: () => Promise<string>
+    doctor?: () => Promise<{ text: string; failed: boolean }>
     boardAt?: string | null
     board?: { url: string } | { refused: string }
     appeared?: { slug: string; owner: string }
@@ -133,7 +133,9 @@ function harness(
     signedIn: async () => ['claude-code'] as never[],
     registerLocal: async (payload) => `added ${payload.project}`,
     history: async () => [],
-    doctor: options.doctor ?? (async () => 'doctor: 3 ok, 0 not checked here, 0 not implemented yet, 0 failed'),
+    doctor:
+      options.doctor ??
+      (async () => ({ text: 'doctor: 3 ok, 0 not checked here, 0 not implemented yet, 0 failed', failed: false })),
   }
   return {
     world,
@@ -162,7 +164,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     const { world, logged, files, machineFiles } = harness({
       gitPlan: GIT_PLAN,
       answers: [''],
-      doctor: async () => warning,
+      doctor: async () => ({ text: warning, failed: false }),
     })
 
     const code = await initCommand(
@@ -182,22 +184,26 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
     const pathIndex = logged.findIndex((line) => line.includes(path))
     expect(pathIndex).toBeGreaterThan(-1)
-    // The file's bytes, exactly as read back — not trimmed, not summarised.
-    expect(logged[pathIndex + 1]).toBe(written)
+    // The path only — the file's body is not printed.
+    expect(logged.join('\n')).not.toContain('repo:')
 
     const doctorIndex = logged.indexOf(warning)
     expect(doctorIndex).toBeGreaterThan(pathIndex)
 
     // Doctor's warning is printed, and it never sets the exit code.
     expect(code).toBe(0)
-    expect(logged.at(-1)).toContain('no board was started')
+    expect(logged.at(-1)).toBe('next: lingtai board · lingtai ticket new · lingtai run')
   })
 
   it('under NO_COLOR, a local init with --defaults still prints every fact the old output did, in plain sections (#620)', async () => {
     const before = process.env['NO_COLOR']
     process.env['NO_COLOR'] = '1'
     try {
-      const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''], doctor: async () => 'doctor: 3 ok' })
+      const { world, logged } = harness({
+        gitPlan: GIT_PLAN,
+        answers: [''],
+        doctor: async () => ({ text: 'doctor: 3 ok', failed: false }),
+      })
       const code = await initCommand(
         flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
         world,
@@ -205,7 +211,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(code).toBe(0)
       const text = logged.join('\n')
       expect(stripColour(text)).toBe(text)
-      for (const heading of ['init', 'Machine', 'Store', 'GitHub App', 'Projects', 'Recipe  ', 'Board']) {
+      for (const heading of ['init', 'Machine', 'Store', 'GitHub App', 'Projects', 'Board']) {
         expect(text).toContain(heading)
       }
       // The git version, every runtime's state, and the home line.
@@ -218,10 +224,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(text).toMatch(/project\s+local — repo, registered with its own origin as repo.remote/)
       // The recipe's path and text, then the doctor text and the board row.
       expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
-      expect(text).toContain('repo:')
+      expect(text).not.toContain('repo:')
       expect(text).toContain('doctor: 3 ok')
       expect(text).toContain('no board was started')
-      expect(text).toContain('next: lingtai board')
+      expect(text).toContain('next: lingtai board · lingtai ticket new · lingtai run')
     } finally {
       if (before === undefined) delete process.env['NO_COLOR']
       else process.env['NO_COLOR'] = before
@@ -244,7 +250,43 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
     expect(code).toBe(0)
     expect(logged).toContain('doctor did not finish — the beacon file does not parse')
-    expect(logged.at(-1)).toContain('no board was started')
+    expect(logged.at(-1)).toBe('next: lingtai doctor --verbose · lingtai board · lingtai ticket new · lingtai run')
+  })
+
+  const LOCAL = ['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']
+
+  it('with a board serving and doctor green, the one closing line is ticket new and run', async () => {
+    const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''], boardAt: 'http://127.0.0.1:17820' })
+    expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
+    expect(logged.at(-1)).toBe('next: lingtai ticket new · lingtai run')
+  })
+
+  it('a failing doctor puts lingtai doctor --verbose first', async () => {
+    const { world, logged } = harness({
+      gitPlan: GIT_PLAN,
+      answers: [''],
+      boardAt: 'http://127.0.0.1:17820',
+      doctor: async () => ({ text: '1 failed', failed: true }),
+    })
+    expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
+    expect(logged.at(-1)).toBe('next: lingtai doctor --verbose · lingtai ticket new · lingtai run')
+  })
+
+  it('exactly one next: line appears on the local path, and it is the last', async () => {
+    const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
+    expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
+    const nexts = logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
+    expect(nexts).toHaveLength(1)
+    expect(logged.at(-1)).toBe(nexts[0])
+  })
+
+  it('re-running init on a machine with a project ends the same way, once', async () => {
+    const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
+    world.projects = async () => [{ name: 'repo' }] as never
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    const nexts = logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
+    expect(nexts).toEqual(['next: lingtai board · lingtai ticket new · lingtai run'])
+    expect(logged.at(-1)).toBe(nexts[0])
   })
 
   it('a local init never binds a board, though it probes the port once to say whether one is already running', async () => {
