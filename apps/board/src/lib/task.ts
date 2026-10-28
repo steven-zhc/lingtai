@@ -7,6 +7,7 @@ import {
   applyTicket,
   boardFactOf,
   chatStream,
+  claimShapeOf,
   emptyTicket,
   reduceControl,
   splitProgressOf,
@@ -594,7 +595,16 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
  * `TicketLinked`, a restarted pass or a gate reporting late are all
  * appended while the hold stands, and none of them is the hold starting.
  */
-const LIFECYCLE_MOVES = new Set(['TicketClaimed', 'TicketReleased', ...WAIT_EVENTS, 'TicketLanded', 'TicketClosed'])
+// A `TicketContinued` moves it by type, even naming a run nobody claimed (which
+// `applyTicket` ignores): that case has no old-form counterpart and nothing writes it.
+const LIFECYCLE_MOVES = new Set([
+  'TicketClaimed',
+  'TicketContinued',
+  'TicketReleased',
+  ...WAIT_EVENTS,
+  'TicketLanded',
+  'TicketClosed',
+])
 
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
@@ -1182,9 +1192,14 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
 
   for (const e of own) {
     const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'TicketClaimed') {
+    if (
+      claimShapeOf(
+        e,
+        claims.map((c) => c.runId),
+      ) === 'claim'
+    ) {
       const runId = String(d['runId'] ?? '')
-      if (runId && !claims.some((c) => c.runId === runId)) {
+      if (runId) {
         claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null })
       }
     }
@@ -1542,19 +1557,16 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
 }
 
 /**
- * The ticket, from the log first and GitHub second.
+ * What the log recorded about the ticket: title, kind and labels.
  *
- * The order matters. A title recorded on `TicketClaimed` is what the ticket
- * said when the run started, and it survives a repository the App can no longer
- * reach — so it is read first and only overwritten by an answer. GitHub is
- * asked once, for the three things the log has never carried, and a refusal
- * costs the body and not the page.
+ * A continuation carries none of them, which is why `TicketContinued` is not in
+ * this loop and the first claim's title is not blanked.
  */
-async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
-  const parsed = parseTicketStream(taskId)
-  if (!parsed) return null
-  const { project, issue } = parsed
-
+export function ticketFieldsOf(own: readonly Envelope[]): {
+  title: string | null
+  kind: string | null
+  labels: string[]
+} {
   let title: string | null = null
   let kind: string | null = null
   let labels: string[] = []
@@ -1568,6 +1580,24 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
       if (Array.isArray(d['labels'])) labels = d['labels'] as string[]
     }
   }
+  return { title, kind, labels }
+}
+
+/**
+ * The ticket, from the log first and GitHub second.
+ *
+ * The order matters. A title recorded on `TicketClaimed` is what the ticket
+ * said when the run started, and it survives a repository the App can no longer
+ * reach — so it is read first and only overwritten by an answer. GitHub is
+ * asked once, for the three things the log has never carried, and a refusal
+ * costs the body and not the page.
+ */
+async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
+  const parsed = parseTicketStream(taskId)
+  if (!parsed) return null
+  const { project, issue } = parsed
+
+  const { title, kind, labels } = ticketFieldsOf(own)
 
   const state = await loadProject(project).catch(() => null)
   const base = { project, ref: issue, title, kind, labels, compareUrl: null as string | null }
