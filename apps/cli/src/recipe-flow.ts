@@ -23,6 +23,7 @@
  * built for wherever the file lives — a local directory or a GitHub ref.
  */
 import { existsSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { paint } from '@lingtai/env/colour'
@@ -96,6 +97,13 @@ export const SAID: Said = {
   'steps.proposed': 'what happens once a pass is ready to land',
   'runtime.limits': 'what one pass may spend before it comes back to you',
   env: "what the agent's environment is filtered to",
+}
+
+/** Whether `tool` is an existing file in a directory on this process's PATH. */
+async function toolOnPath(tool: string): Promise<boolean> {
+  const dirs = (process.env['PATH'] ?? '').split(delimiter).filter((d) => d !== '')
+  const names = process.platform === 'win32' ? [tool, `${tool}.exe`, `${tool}.cmd`] : [tool]
+  return dirs.some((dir) => names.some((name) => existsSync(join(dir, name))))
 }
 
 function announce(world: QuestionWorld, keys: readonly string[]): void {
@@ -326,6 +334,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
     tryBuild: at.tryBuild ?? null,
+    onPath: toolOnPath,
     home: at.home,
     files: at.files,
     kept: askKept,

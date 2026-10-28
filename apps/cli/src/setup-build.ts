@@ -46,6 +46,12 @@ export interface AskInstallAndBuildInput {
   files?: RecipeFiles
   /** `question.ts`'s `kept` — what a refusal below says is already written. */
   kept?: string
+  /**
+   * Whether `tool` is on this machine's PATH. Absent where nothing is checked.
+   * The conductor runs build here, so a missing manager is worth a line; it
+   * never changes what is suggested.
+   */
+  onPath?: (tool: string) => Promise<boolean>
 }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
@@ -170,11 +176,30 @@ function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
   return merged
 }
 
-function printFound(world: SetupWorld, detected: DetectedSetup): void {
+async function printFound(
+  world: SetupWorld,
+  detected: DetectedSetup,
+  onPath: AskInstallAndBuildInput['onPath'],
+): Promise<void> {
   if (detected.install) world.log(`install: ${detected.install.run} — ${detected.install.because}`)
   for (const b of detected.build) world.log(`build (${b.name}): ${b.run} — ${b.because}`)
   for (const s of detected.skipped) world.log(`skipped \`${s.script}\`: ${s.why}`)
   for (const n of detected.notes) world.log(n)
+  if (onPath === undefined) return
+  // The first word is the manager (`uv`, `poetry`, `pnpm`…). ruff, mypy and
+  // pytest come from the project's environment after install, so they are not
+  // probed; a probe that throws says nothing.
+  const commands = [detected.install?.run, ...detected.build.map((b) => b.run)]
+  const tools = new Set(commands.flatMap((c) => (c === undefined ? [] : [c.split(' ')[0]!])))
+  for (const tool of tools) {
+    try {
+      if (!(await onPath(tool))) {
+        world.log(`${tool} is not on this machine's PATH; the conductor runs these commands here`)
+      }
+    } catch {
+      // extra information only
+    }
+  }
 }
 
 async function askInstall(
@@ -334,7 +359,7 @@ export async function askInstallAndBuild(
   input: AskInstallAndBuildInput,
 ): Promise<AskInstallAndBuildResult> {
   const detected = await detectSetup(input.reader)
-  printFound(world, detected)
+  await printFound(world, detected, input.onPath)
 
   const install = await askInstall(world, input, detected)
   if ('refused' in install) return { refused: install.refused }
