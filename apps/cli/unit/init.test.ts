@@ -417,3 +417,37 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(h.machineWrites).toBe(writesAfterFirst)
   })
 })
+
+describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
+  it('a signed-in gh is the default: github.auth is written, no board starts, and it ends with lingtai add', async () => {
+    const { world, calls, logged, machineFiles } = harness({
+      ghStatus: { ok: true, login: 'steven', scopes: ['repo', 'workflow'] },
+    })
+    let opened = 0
+    world.open = async () => {
+      opened++
+      return true
+    }
+    world.ask = async (question) =>
+      /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
+
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
+    expect(code).toBe(0)
+    expect(parseDocument(machineFiles.get('/nonexistent/.lingtai/config.yml')!).getIn(['github', 'auth'])).toBe('gh')
+    expect(calls.board).toBe(0)
+    expect(opened).toBe(0)
+    expect(logged.join('\n')).toContain('next: lingtai add <owner>/<repo>')
+  })
+
+  it('--github-auth gh signed out refuses by name and writes no github.auth', async () => {
+    const { world, logged, machineFiles } = harness()
+    const code = await initCommand(
+      flagsFromArgv(['--store', 'sqlite', '--project', 'github', '--github-auth', 'gh']),
+      world,
+    )
+    expect(code).toBe(1)
+    expect(stripColour(logged.join('\n'))).toContain('--github-auth gh, but gh is not installed')
+    const file = machineFiles.get('/nonexistent/.lingtai/config.yml') ?? ''
+    expect(file).not.toContain('auth: gh')
+  })
+})

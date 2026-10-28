@@ -106,8 +106,8 @@
  * no database, network or browser.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { addLocal } from '@lingtai/conductor/onboard'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'

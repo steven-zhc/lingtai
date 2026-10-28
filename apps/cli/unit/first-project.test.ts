@@ -7,7 +7,7 @@
 import { ownerlessRefusal } from '@lingtai/conductor'
 import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
-import { GitHubError } from '@lingtai/github'
+import { GitHubError, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -1047,5 +1047,123 @@ describe('runGithubBranch on a gh machine (#708)', () => {
     h.world.github.auth = () => 'gh'
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets', 'github-app': 'create' })
     expect(result).toMatchObject({ refused: expect.stringContaining('github.auth is gh') })
+  })
+})
+
+describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => {
+  const READY: GhStatus = { ok: true, login: 'steven', scopes: ['repo', 'workflow', 'read:org'] }
+  const SIGNED_OUT: GhStatus = {
+    ok: false,
+    reason: 'signed-out',
+    detail: 'gh is signed out of github.com — run `gh auth login`',
+  }
+
+  it('signed in with both scopes, the default is gh: written, no board, no App question', async () => {
+    let boards = 0
+    const h = harness({ answers: [''], ghStatus: async () => READY })
+    h.world.github.boardUrl = async () => {
+      boards++
+      return null
+    }
+    const result = await chooseFirstProject(h.world, { project: 'github' })
+    expect(result).toEqual({ ok: true, project: 'github', app: 'already', auth: 'gh' })
+    expect(h.authWrites).toEqual(['gh'])
+    expect(boards).toBe(0)
+    expect(h.asked).toHaveLength(1)
+    expect(h.asked[0]).toContain('signed in as steven')
+    expect(h.asked[0]).toContain('labels, comments, pull requests and pushes will appear as that account')
+  })
+
+  it('signed out, the choice is app or gh-after-login: the default is app, and nothing is written for gh', async () => {
+    const h = harness({ answers: ['', 'skip'], ghStatus: async () => SIGNED_OUT, boardUrl: 'http://127.0.0.1:17820' })
+    const result = await chooseFirstProject(h.world, { project: 'github' })
+    expect(result).toEqual({ ok: true, project: 'github', app: { skipped: true } })
+    expect(h.logged.join('\n')).toContain('gh cannot be used yet')
+    // `app` is written once the App exists, not on a skip.
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('signed out, answering gh refuses with the command that fixes it and writes nothing', async () => {
+    const h = harness({ answers: ['gh'], ghStatus: async () => SIGNED_OUT })
+    const result = await chooseFirstProject(h.world, { project: 'github' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('gh auth login') })
+    expect(result).toMatchObject({ refused: expect.stringContaining('run this again') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('no terminal and no flag refuses naming --github-auth', async () => {
+    const h = harness({ answers: [], ghStatus: async () => READY })
+    const result = await chooseFirstProject(h.world, { project: 'github' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--github-auth gh, or --github-auth app') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('--github-auth app takes the App path and asks no auth question', async () => {
+    const h = harness({ answers: ['skip'], boardUrl: 'http://127.0.0.1:17820', ghStatus: async () => READY })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'app' })
+    expect(result).toEqual({ ok: true, project: 'github', app: { skipped: true } })
+    expect(h.asked).toHaveLength(1)
+    expect(h.asked[0]).toContain('GitHub App now')
+  })
+
+  it('--github-auth gh is checked: signed out refuses by name and writes nothing', async () => {
+    const h = harness({ ghStatus: async () => SIGNED_OUT })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'gh' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--github-auth gh, but gh is signed out') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('--github-auth gh without the workflow scope names the refresh command', async () => {
+    const h = harness({ ghStatus: async () => ({ ok: true, login: 'steven', scopes: ['repo'] }) })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'gh' })
+    expect(result).toMatchObject({
+      refused: expect.stringContaining('gh auth refresh --hostname github.com --scopes workflow'),
+    })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('--github-auth gh beside a configured App is refused by name', async () => {
+    const h = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-me', owner: 'me' }),
+      ghStatus: async () => READY,
+    })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'gh' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--github-auth gh, but app is already') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('--github-auth gh with --github-app create is refused before anything is asked', async () => {
+    const h = harness({ ghStatus: async () => READY })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'gh', 'github-app': 'create' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--github-app create') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('--project local with --github-auth is refused', async () => {
+    const h = harness({ ghStatus: async () => READY })
+    const result = await chooseFirstProject(h.world, { project: 'local', 'github-auth': 'gh' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--project local') })
+    expect(h.authWrites).toEqual([])
+  })
+
+  it('a machine with github.auth or an App is not asked, and ghStatus is never called', async () => {
+    for (const configured of ['auth', 'app'] as const) {
+      let statuses = 0
+      const h = harness({
+        ...(configured === 'auth' ? { auth: () => 'gh' as const } : {}),
+        ...(configured === 'app'
+          ? { app: async () => ({ configured: true as const, ok: true as const, slug: 's', owner: 'o' }) }
+          : {}),
+        ghStatus: async () => {
+          statuses++
+          return READY
+        },
+        answers: ['github'],
+      })
+      await chooseFirstProject(h.world, { github: 'acme/widget' })
+      expect(h.asked.join('\n')).not.toContain('GitHub App of its own')
+      expect(statuses).toBe(0)
+      expect(h.authWrites).toEqual([])
+    }
   })
 })
