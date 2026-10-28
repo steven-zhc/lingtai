@@ -232,10 +232,20 @@ async function tryTheBuild(
   if (check.answer === 'no') return { ok: true }
 
   world.log('running the trial build — this can take minutes')
-  const results = await input.tryBuild(
-    install,
-    build.map((b) => b.run),
-  )
+  let results: TrialResult[]
+  try {
+    results = await input.tryBuild(
+      install,
+      build.map((b) => b.run),
+    )
+  } catch (err) {
+    // Ctrl+C is not a result: the worktree is already gone, and a failed list
+    // is not what was asked. Anything else is a bug and propagates.
+    if (err instanceof Error && err.name === 'TrialInterrupted') {
+      return { refused: `the trial run was interrupted. ${input.kept ?? 'Nothing was written'}` }
+    }
+    throw err
+  }
   const failed = results.filter((r) => !r.ok)
   if (failed.length === 0) return { ok: true }
 

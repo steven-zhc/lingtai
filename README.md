@@ -50,6 +50,10 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --build 'npm run build' --defaults --land hold
 ```
 
+Interactive setup offers to run the confirmed install and build commands once in a
+throwaway worktree before it finishes (`--check-build yes|no` answers it, `yes` is
+the default). `--defaults` skips that trial unless `--check-build yes` is given.
+
 Open one ticket. This writes a complete request to a file and opens the ticket
 from it. Continue when Lingtai prints `created #N`, which is the number you
 approve below:

@@ -52,6 +52,8 @@ lingtai add [<owner>/<repo>] [flags]
   --install <cmd>              what prepares a worktree, e.g. npm ci
   --build <cmd|none>           a check that must pass before review;
                                repeat it for more than one
+  --check-build yes|no         try install and build once first;
+                               --defaults skips it unless yes
   --land <branch|hold>
       where a pass lands, or hold every pass for a person at proposed
   --rounds <n>                 fix rounds a pass may buy
@@ -595,6 +597,8 @@ lingtai init [flags]
   --install <cmd>              what prepares a worktree, e.g. npm ci
   --build <cmd|none>           a check that must pass before review;
                                repeat it for more than one
+  --check-build yes|no         try install and build once first;
+                               --defaults skips it unless yes
   --land <branch|hold>
       where a pass lands, or hold every pass for a person at proposed
   --rounds <n>                 fix rounds a pass may buy

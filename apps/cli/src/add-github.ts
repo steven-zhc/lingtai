@@ -33,6 +33,7 @@ import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
+import { liveTrialBuild } from './trial-build.ts'
 
 /**
  * The repository's default branch, through the same calls `checkInstallation`
@@ -303,6 +304,18 @@ export async function askBeforeGithubAdd(
     flags,
     buildFlags,
     defaultBranch,
+    ...(installation === undefined || ref === null
+      ? {}
+      : {
+          tryBuild: liveTrialBuild({
+            project: repo,
+            owner,
+            repo,
+            base: ref,
+            token: async () => (await createGitHubClient({ auth: githubApp(), owner, repo, installation })).token(),
+            files: deps.files,
+          }),
+        }),
     history: deps.history,
     seeds,
     again: `lingtai add ${owner}/${repo}`,
@@ -323,6 +336,7 @@ export async function askBeforeGithubAdd(
     'reviewer-model',
     'install',
     'build',
+    'check-build',
     'land',
     'rounds',
     'wall',

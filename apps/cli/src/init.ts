@@ -424,6 +424,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         'reviewer-model',
         'install',
         'build',
+        'check-build',
         'land',
         'rounds',
         'wall',

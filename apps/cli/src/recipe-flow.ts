@@ -12,8 +12,9 @@
  * below) — #395's rule that a new file is written once, by whoever collects
  * every first-run answer.
  *
- * **In order:** `askAgents`, `askInstallAndBuild` (with `tryBuild: null` —
- * nothing here spends money, #391), `askTickets`, `askKinds` — these four are
+ * **In order:** `askAgents`, `askInstallAndBuild` (with the caller's
+ * `tryBuild`, which runs the repository's own commands once and spends machine
+ * time, never money, #436), `askTickets`, `askKinds` — these four are
  * where the two shapes differ — then, once the file is known to exist (on
  * disk already, or just created), `askLanding`, `askLimits`.
  *
@@ -43,7 +44,7 @@ import { askLanding, askLimits } from './landing.ts'
 import { heading, keyValues } from './output.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
-import { askInstallAndBuild } from './setup-build.ts'
+import { type AskInstallAndBuildInput, askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
 /**
@@ -112,6 +113,8 @@ export interface RecipeAt {
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[]
   defaultBranch: () => Promise<string | null>
+  /** The trial run (#436) — absent where there is no checkout to cut, and `setup-build.ts` then says so. */
+  tryBuild?: AskInstallAndBuildInput['tryBuild']
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
@@ -317,9 +320,12 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     given: {
       install: at.flags['install'] ?? null,
       build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
-      check: null,
+      // Keyed on the world and not on the flag, so a person who typed `yes` at
+      // "use every default?" is held to it as `--defaults` is: no scripted or
+      // defaulted setup runs minutes of somebody's build (#436).
+      check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
-    tryBuild: null,
+    tryBuild: at.tryBuild ?? null,
     home: at.home,
     files: at.files,
     kept: askKept,
