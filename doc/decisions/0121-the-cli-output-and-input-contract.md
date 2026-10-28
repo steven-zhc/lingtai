@@ -41,6 +41,7 @@ using them in a terminal.
    | ------ | -------- | -------------------------------- |
    | ✓      | `pass`   | passed                           |
    | ✗      | `fail`   | failed                           |
+   | !      | (none)   | needs attention, nobody is waiting on you |
    | ●      | `signal` | waiting on you, and nothing else |
    | (none) | `held`   | held by a person                 |
    | (none) | `accent` | headings and running things      |

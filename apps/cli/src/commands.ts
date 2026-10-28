@@ -545,12 +545,13 @@ export const COMMANDS = [
     task: 'check everything that can be checked',
     effect: 'reads',
     usage: [
-      'lingtai doctor [--json] [--no-color]',
+      'lingtai doctor [--verbose] [--json] [--no-color]',
+      '  Lists only what needs attention; --verbose lists every check, explained.',
       '  Exits non-zero on any failure. Under --json a failing report is still the',
       '  report document, on exit 1: test .error first (the report could not be',
       '  produced), then .failed.',
     ],
-    examples: ['lingtai doctor', 'lingtai doctor --json'],
+    examples: ['lingtai doctor', 'lingtai doctor --verbose', 'lingtai doctor --json'],
   }),
   define({
     name: 'projection',

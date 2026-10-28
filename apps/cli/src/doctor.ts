@@ -2916,10 +2916,10 @@ function marker(status: CheckStatus): string {
       return slot('✓', symbol.pass())
     case 'fail':
       return slot('✗', symbol.fail())
-    // `note` is not amber: amber is a person being waited on, and nothing else (0121 §2).
-    // A note is read because its section is drawn above the green ones.
+    // `!` is not amber, and not bold: amber is a person being waited on, and nothing else (0121 §2).
+    // It is read because its section is drawn above the green ones.
     case 'warn':
-      return slot('note', 'note')
+      return slot('!', '!')
     case 'skip':
       return slot('skip', paint.muted('skip'))
   }
@@ -2945,7 +2945,8 @@ function marker(status: CheckStatus): string {
  * with a note; each is the marker and the name, then what it found — which is
  * where the remedy is — on the next line.
  */
-export function renderDoctor(report: DoctorReport): string[] {
+export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; next?: boolean } = {}): string[] {
+  const { verbose = false, next = true } = opts
   const groups = new Map<string, CheckResult[]>()
   for (const r of report.results) {
     const area = areaOf(r)
@@ -2963,6 +2964,33 @@ export function renderDoctor(report: DoctorReport): string[] {
     })
 
   const lines = [heading('doctor'), '']
+  if (!verbose) {
+    // #214's rule, extended: the short view hides no count at zero, `need attention` and `failed` included.
+    const counts = [
+      report.failed === 0 ? paint.pass(`${report.ok} ok`) : `${report.ok} ok`,
+      `${report.warned} need attention`,
+      report.failed > 0 ? paint.fail(`${report.failed} failed`) : `${report.failed} failed`,
+      `${report.notChecked} not checked here`,
+      `${report.deferred} not implemented yet`,
+    ]
+    lines.push(counts.join(' · '), '')
+    for (const { area, rows } of areas) {
+      if (area === NOT_IMPLEMENTED || rows.every((r) => r.status === 'skip')) continue
+      const glyph = rows.some((r) => r.status === 'fail')
+        ? symbol.fail()
+        : rows.some((r) => r.status === 'warn')
+          ? '!'
+          : symbol.pass()
+      const shown = (['fail', 'warn'] as const).flatMap((status) => rows.filter((r) => r.status === status))
+      const checks = shown.flatMap((r) => [
+        `${marker(r.status)}  ${r.name}`,
+        ...r.detail.split('\n').map((line) => `${' '.repeat(6)}${line}`),
+      ])
+      lines.push(...section(`${glyph} ${area}`, checks).split('\n'))
+    }
+    if (next && report.warned + report.failed > 0) lines.push('', 'next: lingtai doctor --verbose')
+    return lines
+  }
   for (const { area, rows } of areas) {
     const ordered = STATUS_ORDER.flatMap((status) => rows.filter((r) => r.status === status))
     const checks = ordered.flatMap((r) => [
@@ -2984,9 +3012,9 @@ export function renderDoctor(report: DoctorReport): string[] {
   return lines
 }
 
-/** The report as one string: what `lingtai init` shows after it has set up. */
+/** The report as one string: what `lingtai init` shows after it has set up — the short view, and no closing `next:` (init owns its closing line). */
 export function formatReport(report: DoctorReport): string {
-  return renderDoctor(report).join('\n')
+  return renderDoctor(report, { next: false }).join('\n')
 }
 
 /**

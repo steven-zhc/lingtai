@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { areaOf, doctorJson, type DoctorReport, formatReport, renderDoctor, tally } from '../src/doctor.ts'
-import { stripColour } from '../src/output.ts'
 
 const results: DoctorReport['results'] = [
   { name: 'daemon: liveness', status: 'ok', detail: 'up, last beat 2s ago' },
@@ -140,7 +139,7 @@ describe('renderDoctor', () => {
 
   it('puts sections with a failure first, then a note, then the rest, and not implemented last', () => {
     process.env['NO_COLOR'] = '1'
-    const lines = renderDoctor(report)
+    const lines = renderDoctor(report, { verbose: true })
     const headings = lines.filter((l) => /^\S/.test(l) && l !== '' && !/ok|FAILED/.test(l))
     expect(headings).toEqual([
       'doctor',
@@ -155,15 +154,15 @@ describe('renderDoctor', () => {
 
   it('orders a section fail, note, ok, skip, and puts the detail on the next line', () => {
     process.env['NO_COLOR'] = '1'
-    const text = renderDoctor(report).join('\n')
+    const text = renderDoctor(report, { verbose: true }).join('\n')
     expect(text).toContain(
-      'Daemon\n  note  daemon: currency\n        running 8f3a1c2 — 3 commit(s) behind origin/main — restart the daemon to take them\n  ✓     daemon: liveness\n        up, last beat 2s ago',
+      'Daemon\n  !     daemon: currency\n        running 8f3a1c2 — 3 commit(s) behind origin/main — restart the daemon to take them\n  ✓     daemon: liveness\n        up, last beat 2s ago',
     )
     expect(text.indexOf('✗     environment')).toBeLessThan(text.indexOf('✗     schema: tables'))
   })
 
   it('loses no name and no detail', () => {
-    const text = formatReport(report)
+    const text = renderDoctor(report, { verbose: true }).join('\n')
     for (const r of results) {
       expect(text).toContain(r.name)
       expect(text).toContain(r.detail)
@@ -172,32 +171,66 @@ describe('renderDoctor', () => {
 
   it('keeps the summary words, in the FAILED form and the green one', () => {
     process.env['NO_COLOR'] = '1'
-    expect(formatReport(report)).toContain(
-      '2 check(s) FAILED — 3 ok, 1 to note, 1 not checked here, 1 not implemented yet',
-    )
+    const verbose = (r: DoctorReport): string => renderDoctor(r, { verbose: true }).join('\n')
+    expect(verbose(report)).toContain('2 check(s) FAILED — 3 ok, 1 to note, 1 not checked here, 1 not implemented yet')
     const green = results.filter((r) => r.status !== 'fail')
-    expect(formatReport({ results: green, ...tally(green) })).toContain(
+    expect(verbose({ results: green, ...tally(green) })).toContain(
       '3 ok, 1 to note, 1 not checked here, 1 not implemented yet, 0 failed',
     )
     const plain = [{ name: 'node: at or above the floor', status: 'ok' as const, detail: 'x' }]
-    expect(formatReport({ results: plain, ...tally(plain) })).toContain(
+    expect(verbose({ results: plain, ...tally(plain) })).toContain(
       '1 ok, 0 not checked here, 0 not implemented yet, 0 failed',
     )
   })
 
-  it('draws no colour under NO_COLOR, and colours the cross but not the note under FORCE_COLOR', () => {
+  it('draws no colour under NO_COLOR, and colours the cross but not the ! under FORCE_COLOR', () => {
     process.env['NO_COLOR'] = '1'
     delete process.env['FORCE_COLOR']
+    expect(renderDoctor(report, { verbose: true }).join('\n')).not.toContain('\u001b')
     expect(formatReport(report)).not.toContain('\u001b')
     delete process.env['NO_COLOR']
     // `TERM=dumb` suppresses colour whatever FORCE_COLOR says.
     delete process.env['TERM']
     process.env['FORCE_COLOR'] = '1'
-    const coloured = renderDoctor(report)
+    const coloured = renderDoctor(report, { verbose: true })
     expect(coloured.find((l) => l.includes('✗') && l.includes('environment'))).toContain('\u001b')
-    const note = coloured.find((l) => l.includes('note') && l.includes('daemon: currency'))!
-    expect(note).not.toContain('\u001b')
-    expect(coloured.map(stripColour).join('\n')).toBe(formatReport(report).split('\n').map(stripColour).join('\n'))
+    const warn = coloured.find((l) => l.includes('!') && l.includes('daemon: currency'))!
+    expect(warn).not.toContain('\u001b')
+    expect(renderDoctor(report).find((l) => l.includes('!') && l.includes('daemon: currency'))).not.toContain('\u001b')
+  })
+
+  it('prints a summary, one line per area, and only what needs attention', () => {
+    process.env['NO_COLOR'] = '1'
+    const lines = renderDoctor(report)
+    expect(lines[0]).toBe('doctor')
+    expect(lines[2]).toBe('3 ok · 1 need attention · 2 failed · 1 not checked here · 1 not implemented yet')
+    const areas = lines.filter((l) => /^\S/.test(l)).slice(2, -1)
+    expect(areas).toEqual(['✗ Store and log', '! Daemon', '✓ Machine', '✓ Other'])
+    const text = lines.join('\n')
+    expect(text).toContain('! Daemon\n  !     daemon: currency\n        running 8f3a1c2')
+    expect(text).not.toContain('daemon: liveness')
+    expect(text).not.toContain('Not implemented here')
+    expect(lines.at(-1)).toBe('next: lingtai doctor --verbose')
+  })
+
+  it('formatReport is the short view with no next line', () => {
+    process.env['NO_COLOR'] = '1'
+    const text = formatReport(report)
+    expect(text).toContain('! Daemon')
+    expect(text).not.toContain('next:')
+  })
+
+  it('expands nothing and prints no next line when everything is ok', () => {
+    process.env['NO_COLOR'] = '1'
+    const ok = [{ name: 'node: at or above the floor', status: 'ok' as const, detail: 'x' }]
+    const lines = renderDoctor({ results: ok, ...tally(ok) })
+    expect(lines).toEqual([
+      'doctor',
+      '',
+      '1 ok · 0 need attention · 0 failed · 0 not checked here · 0 not implemented yet',
+      '',
+      '✓ Machine',
+    ])
   })
 })
 
@@ -256,8 +289,8 @@ describe('lingtai doctor through @effect/cli', () => {
     process.env['NO_COLOR'] = '1'
     const { code, out } = await run(['doctor'], async () => green())
     expect(code).toBe(0)
-    expect(out).toContain('✓     node: at or above the floor')
-    expect(out).toContain('2 ok, 0 not checked here, 0 not implemented yet, 0 failed')
+    expect(out).toContain('2 ok · 0 need attention · 0 failed · 0 not checked here · 0 not implemented yet')
+    expect(out).toContain('✓ Machine')
   })
 
   it('answers unavailable when the report could not be produced', async () => {
