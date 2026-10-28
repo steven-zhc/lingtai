@@ -123,7 +123,8 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
     await ctx.query(`
       create table if not exists spend_kind (
         ticket text primary key,
-        kind   text not null
+        kind   text not null,
+        seq    bigint not null
       )`)
   },
 
@@ -158,9 +159,10 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           )
           if (d.kind !== null) {
             await ctx.query(
-              `insert into spend_kind (ticket, kind) values ($1, $2)
-               on conflict (ticket) do update set kind = excluded.kind`,
-              [event.streamId, d.kind],
+              `insert into spend_kind (ticket, kind, seq) values ($1, $2, $3)
+               on conflict (ticket) do update set kind = excluded.kind, seq = excluded.seq
+               where excluded.seq > spend_kind.seq`,
+              [event.streamId, d.kind, seq],
             )
           }
           break
@@ -180,7 +182,8 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           const d = event.data as PayloadOf<'RunSpent'>
 
           let ticket: string | null
-          let streamKind: string | null = null
+          let kind: string | null = null
+          let fromTicket = true
           if (isTicketStream(event.streamId)) {
             ticket = event.streamId
           } else {
@@ -189,10 +192,13 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
               [event.streamId],
             )
             ticket = link ? link.ticket : null
-            streamKind = link ? (link.kind ?? null) : null
+            // A pass stream's kind is its own claim's, null included: it never borrows the ticket's.
+            if (isPassStream(event.streamId)) {
+              kind = link ? (link.kind ?? null) : null
+              fromTicket = false
+            }
           }
-          let kind = streamKind
-          if (kind === null && ticket !== null) {
+          if (fromTicket && ticket !== null) {
             const [latest] = await ctx.query<{ kind: string }>('select kind from spend_kind where ticket = $1', [
               ticket,
             ])

@@ -104,4 +104,30 @@ describe('spend carries the ticket kind its claim carried', () => {
   it('leaves an unlinked run unclassified', async () => {
     expect((await fold([spent(makeStream('pass-pin-orphan'))]))[0]?.kind).toBeNull()
   })
+
+  it('keeps a run claimed with kind null unclassified, though the ticket was claimed as bug before', async () => {
+    const t = makeStream(wi(3))
+    const events = [claim(t, 'pass-pin-n1', 'bug'), claim(t, 'pass-pin-n2', null), spent(makeStream('pass-pin-n2'))]
+    expect((await fold(events))[0]?.kind).toBeNull()
+  })
+
+  it('does not let a lagging projector replaying an older claim overwrite a newer kind', async () => {
+    const t = makeStream(wi(4))
+    const older = claim(t, 'pass-pin-l1', 'bug')
+    const newer = claim(t, 'pass-pin-l2', 'feature')
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      const projection = spendProjectionWith({ snapshot: () => SNAPSHOT })
+      await store.transact((ctx) => projection.create(ctx))
+      await store.transact((ctx) => projection.apply([older, newer], ctx))
+      await store.transact((ctx) => projection.apply([older], ctx))
+      await store.transact((ctx) =>
+        projection.apply([spent(makeStream(wi(4)), {}, { _tag: 'Triage', waitId: 'w' as never })], ctx),
+      )
+      expect((await store.spend({}))[0]?.kind).toBe('feature')
+    } finally {
+      await store.close()
+    }
+  })
 })
